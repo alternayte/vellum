@@ -1,9 +1,9 @@
 import { memo } from 'react'
-import { Handle, Position, type NodeProps } from '@xyflow/react'
+import { Handle, Position, type Node, type NodeProps } from '@xyflow/react'
 import { kindColor } from '@/lib/kind-colors'
 import { useCanvasStore } from '@/stores/canvas-store'
 
-export interface C4ElementData {
+export interface C4ElementData extends Record<string, unknown> {
   id: string
   kind: string
   name: string
@@ -14,8 +14,10 @@ export interface C4ElementData {
   ownerId: string | null
 }
 
-export const C4ElementNode = memo(function C4ElementNode({ data }: NodeProps) {
-  const d = data as C4ElementData
+export type C4ElementNodeType = Node<C4ElementData, 'c4-element'>
+
+export const C4ElementNode = memo(function C4ElementNode({ data }: NodeProps<C4ElementNodeType>) {
+  const d = data
   const activeLens = useCanvasStore((s) => s.activeLens)
   const showMetadata = activeLens === 'metadata'
   const showStatus = activeLens === 'status'
