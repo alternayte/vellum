@@ -84,6 +84,7 @@ app.MapSpaceEndpoints();
 app.MapDocEndpoints();
 app.MapDraftEndpoints();
 app.MapMergeEndpoints();
+app.MapCommentEndpoints();
 
 if (app.Environment.IsDevelopment())
 {
