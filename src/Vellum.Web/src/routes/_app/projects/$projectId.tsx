@@ -14,6 +14,7 @@ import { useDocs } from '@/hooks/use-docs'
 import { useSpaces } from '@/hooks/use-spaces'
 import { useShellStore } from '@/stores/shell-store'
 import { useCanvasStore } from '@/stores/canvas-store'
+import { useDraftStore } from '@/stores/draft-store'
 import { computeLayout } from '@/lib/layout'
 import { Skeleton } from '@/components/ui/skeleton'
 
@@ -23,8 +24,9 @@ export const Route = createFileRoute('/_app/projects/$projectId')({
 
 function ProjectWorkspace() {
   const { projectId } = Route.useParams()
-  const { data: elements, isLoading: elementsLoading } = useElements(projectId)
-  const { data: relationships, isLoading: relsLoading } = useRelationships(projectId)
+  const { activeDraftStreamId } = useDraftStore()
+  const { data: elements, isLoading: elementsLoading } = useElements(projectId, activeDraftStreamId ?? undefined)
+  const { data: relationships, isLoading: relsLoading } = useRelationships(projectId, activeDraftStreamId ?? undefined)
   const { data: views } = useViews(projectId)
   const { data: docs } = useDocs(projectId)
   const { data: spaces } = useSpaces(projectId)
@@ -78,7 +80,7 @@ function ProjectWorkspace() {
   if (elementsLoading || relsLoading) {
     return (
       <div className="flex h-screen flex-col">
-        <TopBar />
+        <TopBar projectId={projectId} />
         <div className="flex flex-1 items-center justify-center">
           <Skeleton className="h-8 w-48" />
         </div>
@@ -98,9 +100,10 @@ function ProjectWorkspace() {
 
   return (
     <div className="flex h-screen flex-col">
-      <TopBar activeDoc={activeDocForBreadcrumb} />
+      <TopBar projectId={projectId} activeDoc={activeDocForBreadcrumb} />
       <div className="flex flex-1 overflow-hidden">
         <Navigator
+          projectId={projectId}
           elements={elements ?? []}
           views={views ?? []}
           spaces={spaces ?? []}

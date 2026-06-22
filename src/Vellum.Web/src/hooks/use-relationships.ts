@@ -20,13 +20,13 @@ interface Page<T> {
   cursor: string | null
 }
 
-export function useRelationships(projectId: string) {
+export function useRelationships(projectId: string, branchId?: string) {
   return useQuery({
-    queryKey: ['projects', projectId, 'relationships'],
+    queryKey: ['projects', projectId, 'relationships', { branchId }],
     queryFn: async () => {
       const result = await getApiProjectsByProjectIdRelationships({
         path: { projectId },
-        query: { limit: 200 },
+        query: { limit: 200, branchId },
       })
       return (result.data as Page<Relationship>).items
     },

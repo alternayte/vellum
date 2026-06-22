@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { useShellStore } from '@/stores/shell-store'
 import { useCanvasStore } from '@/stores/canvas-store'
 import { kindColor } from '@/lib/kind-colors'
+import { DraftList } from '@/components/draft/draft-list'
 
 interface ElementItem {
   id: string
@@ -29,13 +30,14 @@ interface DocItem {
 }
 
 interface NavigatorProps {
+  projectId: string
   elements: ElementItem[]
   views: ViewItem[]
   spaces?: SpaceItem[]
   docs?: DocItem[]
 }
 
-export function Navigator({ elements, views, spaces = [], docs = [] }: NavigatorProps) {
+export function Navigator({ projectId, elements, views, spaces = [], docs = [] }: NavigatorProps) {
   const { navigatorOpen, selectElement } = useShellStore()
   const { drillInto } = useCanvasStore()
 
@@ -73,6 +75,8 @@ export function Navigator({ elements, views, spaces = [], docs = [] }: Navigator
           />
         ))}
       </div>
+
+      <DraftList projectId={projectId} />
 
       <div className="border-t border-border">
         <div className="flex items-center justify-between px-3 py-2">

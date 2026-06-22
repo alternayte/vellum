@@ -24,13 +24,13 @@ interface Page<T> {
   cursor: string | null
 }
 
-export function useElements(projectId: string) {
+export function useElements(projectId: string, branchId?: string) {
   return useQuery({
-    queryKey: ['projects', projectId, 'elements'],
+    queryKey: ['projects', projectId, 'elements', { branchId }],
     queryFn: async () => {
       const result = await getApiProjectsByProjectIdElements({
         path: { projectId },
-        query: { limit: 200 },
+        query: { limit: 200, branchId },
       })
       return (result.data as Page<Element>).items
     },

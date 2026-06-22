@@ -1,13 +1,17 @@
 import { useShellStore } from '@/stores/shell-store'
+import { useDraftStore } from '@/stores/draft-store'
 import { StrataBreadcrumb } from './strata-breadcrumb'
 import { Button } from '@/components/ui/button'
+import { DraftPill } from '@/components/draft/draft-pill'
 
 interface TopBarProps {
+  projectId?: string
   activeDoc?: { id: string; title: string; spaceName?: string | null } | null
 }
 
-export function TopBar({ activeDoc }: TopBarProps = {}) {
+export function TopBar({ projectId, activeDoc }: TopBarProps = {}) {
   const { toggleCommandPalette } = useShellStore()
+  const { activeDraftId } = useDraftStore()
 
   return (
     <header className="flex h-12 items-center gap-3 border-b border-border bg-card px-4">
@@ -26,6 +30,10 @@ export function TopBar({ activeDoc }: TopBarProps = {}) {
       <div className="mx-4">
         <StrataBreadcrumb activeDoc={activeDoc} />
       </div>
+
+      {activeDraftId && projectId && (
+        <DraftPill projectId={projectId} />
+      )}
 
       <div className="flex-1" />
 
