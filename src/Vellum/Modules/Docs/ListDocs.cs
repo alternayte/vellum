@@ -10,7 +10,7 @@ public static class ListDocs
 {
     public static async Task<IResult> Handle(
         Guid projectId,
-        Guid? spaceId, Guid? elementId, string? cursor, int? limit,
+        Guid? spaceId, Guid? elementId, Guid? draftId, string? adrStatus, string? cursor, int? limit,
         ClaimsPrincipal user,
         DocsDbContext db,
         WorkspaceAuthorizationService auth,
@@ -26,6 +26,8 @@ public static class ListDocs
 
         if (spaceId.HasValue) query = query.Where(d => d.SpaceId == spaceId.Value);
         if (elementId.HasValue) query = query.Where(d => d.ElementId == elementId.Value);
+        if (draftId.HasValue) query = query.Where(d => d.DraftId == draftId.Value);
+        if (adrStatus is not null) query = query.Where(d => d.AdrStatus == adrStatus);
 
         query = query.OrderBy(d => d.Title).ThenBy(d => d.Id);
 
@@ -40,7 +42,7 @@ public static class ListDocs
         var items = await query
             .Take(pageSize + 1)
             .Select(d => new DocDto(d.Id, d.ProjectId, d.SpaceId, d.ElementId,
-                d.Title, string.Empty, d.CreatedBy, d.CreatedAt, d.UpdatedAt))
+                d.Title, string.Empty, d.CreatedBy, d.CreatedAt, d.UpdatedAt, d.DraftId, d.AdrStatus))
             .ToListAsync(ct);
 
         string? nextCursor = null;

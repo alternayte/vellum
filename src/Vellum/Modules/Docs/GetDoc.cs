@@ -23,6 +23,6 @@ public static class GetDoc
         if (doc is null) return Results.NotFound(new ErrorResponse("not_found", "Document not found"));
 
         return Results.Ok(new DocDto(doc.Id, doc.ProjectId, doc.SpaceId, doc.ElementId,
-            doc.Title, doc.Content, doc.CreatedBy, doc.CreatedAt, doc.UpdatedAt));
+            doc.Title, doc.Content, doc.CreatedBy, doc.CreatedAt, doc.UpdatedAt, doc.DraftId, doc.AdrStatus));
     }
 }
