@@ -30,8 +30,9 @@ public static class ListDocs
         query = query.OrderBy(d => d.Title).ThenBy(d => d.Id);
 
         var decoded = CursorEncoder.Decode(cursor);
-        if (decoded is var (sortKey, afterId))
+        if (decoded is not null)
         {
+            var (sortKey, afterId) = decoded.Value;
             query = query.Where(d => d.Title.CompareTo(sortKey) > 0
                 || (d.Title == sortKey && d.Id.CompareTo(afterId) > 0));
         }
