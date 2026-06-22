@@ -17,7 +17,7 @@ interface CreatePopoverProps {
 }
 
 export function CreatePopover({ open, sourceKind, position, onSelect, onClose }: CreatePopoverProps) {
-  if (!open || !sourceKind) return null
+  if (!open) return null
 
   const isTopLevel = sourceKind === null
   const validKinds = isTopLevel
