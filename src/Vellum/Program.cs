@@ -7,6 +7,7 @@ using Vellum.Kernel.EventTypes;
 using Vellum.Kernel.Outbox;
 using Vellum.Kernel.Projections;
 using Vellum.Modules.Identity;
+using Vellum.Modules.Workspaces;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -30,6 +31,7 @@ builder.Services.AddHostedService<AsyncProjectionHost>();
 
 // Modules
 builder.Services.AddIdentityModule(builder.Configuration);
+builder.Services.AddWorkspacesModule(builder.Configuration);
 
 var app = builder.Build();
 
@@ -46,6 +48,7 @@ app.MapGet("/health", () => Results.Ok());
 
 // Endpoints
 app.MapIdentityEndpoints();
+app.MapWorkspaceEndpoints();
 
 app.Run();
 
