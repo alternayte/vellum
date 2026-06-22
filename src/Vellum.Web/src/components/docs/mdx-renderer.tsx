@@ -5,6 +5,23 @@ import { jsx, jsxs } from 'react/jsx-runtime'
 import { ElementLink } from './element-link'
 import { LiveViewCard } from './live-view-card'
 
+function remarkStripExpressions() {
+  return (tree: any) => {
+    function strip(node: any) {
+      if (node.children) {
+        node.children = node.children.filter(
+          (child: any) =>
+            child.type !== 'mdxFlowExpression' &&
+            child.type !== 'mdxTextExpression' &&
+            child.type !== 'mdxjsEsm'
+        )
+        node.children.forEach(strip)
+      }
+    }
+    strip(tree)
+  }
+}
+
 interface MdxRendererProps {
   content: string
   elements: { id: string; kind: string; name: string }[]
@@ -36,6 +53,7 @@ export function MdxRenderer({ content, elements, views }: MdxRendererProps) {
           jsx,
           jsxs,
           Fragment,
+          remarkPlugins: [remarkStripExpressions],
           useMDXComponents: () => components,
         })
         if (!cancelled) {
