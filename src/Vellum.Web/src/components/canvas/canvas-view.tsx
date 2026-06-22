@@ -14,6 +14,7 @@ import { nodeTypes } from './nodes/node-types'
 import { edgeTypes } from './edges/edge-types'
 import { useCanvasStore } from '@/stores/canvas-store'
 import { useShellStore } from '@/stores/shell-store'
+import { useLod } from '@/hooks/use-lod'
 import type { C4ElementData } from './nodes/c4-element-node'
 
 interface ElementModel {
@@ -57,8 +58,9 @@ export function CanvasView({
   onNodeDragStop,
   onNodeDoubleClick,
 }: CanvasViewProps) {
-  const { currentRootId } = useCanvasStore()
+  const { currentRootId, zoomLevel, setZoom } = useCanvasStore()
   const { selectElement, selectRelationship } = useShellStore()
+  const tier = useLod(zoomLevel)
 
   const visibleElements = useMemo(() => {
     if (currentRootId === null) {
@@ -86,7 +88,7 @@ export function CanvasView({
       const pos = positionMap.get(el.id) ?? { x: index * 320, y: index * 100 }
       return {
         id: el.id,
-        type: 'c4-element',
+        type: tier === 'full' ? 'c4-element' : 'c4-label-chip',
         position: pos,
         data: {
           id: el.id,
@@ -100,7 +102,7 @@ export function CanvasView({
         } satisfies C4ElementData,
       }
     })
-  }, [visibleElements, positionMap])
+  }, [visibleElements, positionMap, tier])
 
   const edges: Edge[] = useMemo(() => {
     return visibleRelationships.map((rel) => ({
@@ -144,6 +146,7 @@ export function CanvasView({
       onNodeDragStop={onNodeDragStop ? (_event, node) => onNodeDragStop(node.id, node.position.x, node.position.y) : undefined}
       onEdgeClick={handleEdgeClick}
       onPaneClick={handlePaneClick}
+      onMoveEnd={(_event, viewport) => setZoom(viewport.zoom)}
       fitView
       snapToGrid
       snapGrid={[16, 16]}
