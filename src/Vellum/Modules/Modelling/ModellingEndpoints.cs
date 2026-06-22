@@ -21,6 +21,7 @@ public static class ModellingEndpoints
 
         elements.MapPost("/", async (
             Guid projectId,
+            Guid? branchId,
             AddElementRequest request,
             ClaimsPrincipal user,
             WorkspacesDbContext workspacesDb,
@@ -31,13 +32,15 @@ public static class ModellingEndpoints
             var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
             await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
             var proj = await workspacesDb.Projects.AsNoTracking().FirstAsync(p => p.Id == projectId, ct);
+            var streamId = branchId ?? proj.StreamId;
             return (await handler.HandleAsync(
-                new AddElementCommandEnvelope(projectId, proj.StreamId, userId, request), ct))
+                new AddElementCommandEnvelope(projectId, streamId, userId, request), ct))
                 .ToCreatedResult($"/api/projects/{projectId}/elements/{request.Id}");
         });
 
         elements.MapGet("/", async (
             Guid projectId,
+            Guid? branchId,
             string? kind, string? status, Guid? parentId, string? cursor, int? limit,
             ClaimsPrincipal user, WorkspacesDbContext workspacesDb,
             WorkspaceAuthorizationService auth,
@@ -46,7 +49,8 @@ public static class ModellingEndpoints
             var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
             await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Viewer, ct);
             var proj = await workspacesDb.Projects.AsNoTracking().FirstAsync(p => p.Id == projectId, ct);
-            return await ListElements.Handle(projectId, proj.StreamId, kind, status, parentId, cursor, limit, db, ct);
+            var streamId = branchId ?? proj.StreamId;
+            return await ListElements.Handle(projectId, streamId, kind, status, parentId, cursor, limit, db, ct);
         });
 
         elements.MapGet("/{elementId}", async (
@@ -62,6 +66,7 @@ public static class ModellingEndpoints
 
         elements.MapPatch("/{elementId}", async (
             Guid projectId, Guid elementId,
+            Guid? branchId,
             UpdateElementRequest request,
             ClaimsPrincipal user, WorkspacesDbContext workspacesDb,
             WorkspaceAuthorizationService auth,
@@ -71,13 +76,15 @@ public static class ModellingEndpoints
             var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
             await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
             var proj = await workspacesDb.Projects.AsNoTracking().FirstAsync(p => p.Id == projectId, ct);
+            var streamId = branchId ?? proj.StreamId;
             return (await handler.HandleAsync(
-                new UpdateElementCommandEnvelope(projectId, proj.StreamId, elementId, userId, request), ct))
+                new UpdateElementCommandEnvelope(projectId, streamId, elementId, userId, request), ct))
                 .ToHttpResult();
         });
 
         elements.MapDelete("/{elementId}", async (
             Guid projectId, Guid elementId,
+            Guid? branchId,
             ClaimsPrincipal user, WorkspacesDbContext workspacesDb,
             WorkspaceAuthorizationService auth,
             ICommandHandler<RemoveElementCommandEnvelope, CommandResult> handler,
@@ -86,8 +93,9 @@ public static class ModellingEndpoints
             var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
             await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
             var proj = await workspacesDb.Projects.AsNoTracking().FirstAsync(p => p.Id == projectId, ct);
+            var streamId = branchId ?? proj.StreamId;
             return (await handler.HandleAsync(
-                new RemoveElementCommandEnvelope(projectId, proj.StreamId, elementId, userId), ct))
+                new RemoveElementCommandEnvelope(projectId, streamId, elementId, userId), ct))
                 .ToHttpResult();
         });
 
@@ -95,6 +103,7 @@ public static class ModellingEndpoints
 
         relationships.MapPost("/", async (
             Guid projectId,
+            Guid? branchId,
             AddRelationshipRequest request,
             ClaimsPrincipal user, WorkspacesDbContext workspacesDb,
             WorkspaceAuthorizationService auth,
@@ -104,13 +113,16 @@ public static class ModellingEndpoints
             var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
             await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
             var proj = await workspacesDb.Projects.AsNoTracking().FirstAsync(p => p.Id == projectId, ct);
+            var streamId = branchId ?? proj.StreamId;
             return (await handler.HandleAsync(
-                new AddRelationshipCommandEnvelope(projectId, proj.StreamId, userId, request), ct))
+                new AddRelationshipCommandEnvelope(projectId, streamId, userId, request), ct))
                 .ToCreatedResult($"/api/projects/{projectId}/relationships/{request.Id}");
         });
 
         relationships.MapGet("/", async (
-            Guid projectId, Guid? fromId, Guid? toId, string? cursor, int? limit,
+            Guid projectId,
+            Guid? branchId,
+            Guid? fromId, Guid? toId, string? cursor, int? limit,
             ClaimsPrincipal user, WorkspacesDbContext workspacesDb,
             WorkspaceAuthorizationService auth,
             ModellingDbContext db, CancellationToken ct) =>
@@ -118,7 +130,8 @@ public static class ModellingEndpoints
             var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
             await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Viewer, ct);
             var proj = await workspacesDb.Projects.AsNoTracking().FirstAsync(p => p.Id == projectId, ct);
-            return await ListRelationships.Handle(projectId, proj.StreamId, fromId, toId, cursor, limit, db, ct);
+            var streamId = branchId ?? proj.StreamId;
+            return await ListRelationships.Handle(projectId, streamId, fromId, toId, cursor, limit, db, ct);
         });
 
         relationships.MapGet("/{relationshipId}", async (
@@ -134,6 +147,7 @@ public static class ModellingEndpoints
 
         relationships.MapPatch("/{relationshipId}", async (
             Guid projectId, Guid relationshipId,
+            Guid? branchId,
             UpdateRelationshipRequest request,
             ClaimsPrincipal user, WorkspacesDbContext workspacesDb,
             WorkspaceAuthorizationService auth,
@@ -143,13 +157,15 @@ public static class ModellingEndpoints
             var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
             await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
             var proj = await workspacesDb.Projects.AsNoTracking().FirstAsync(p => p.Id == projectId, ct);
+            var streamId = branchId ?? proj.StreamId;
             return (await handler.HandleAsync(
-                new UpdateRelationshipCommandEnvelope(projectId, proj.StreamId, relationshipId, userId, request), ct))
+                new UpdateRelationshipCommandEnvelope(projectId, streamId, relationshipId, userId, request), ct))
                 .ToHttpResult();
         });
 
         relationships.MapDelete("/{relationshipId}", async (
             Guid projectId, Guid relationshipId,
+            Guid? branchId,
             ClaimsPrincipal user, WorkspacesDbContext workspacesDb,
             WorkspaceAuthorizationService auth,
             ICommandHandler<RemoveRelationshipCommandEnvelope, CommandResult> handler,
@@ -158,8 +174,9 @@ public static class ModellingEndpoints
             var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
             await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
             var proj = await workspacesDb.Projects.AsNoTracking().FirstAsync(p => p.Id == projectId, ct);
+            var streamId = branchId ?? proj.StreamId;
             return (await handler.HandleAsync(
-                new RemoveRelationshipCommandEnvelope(projectId, proj.StreamId, relationshipId, userId), ct))
+                new RemoveRelationshipCommandEnvelope(projectId, streamId, relationshipId, userId), ct))
                 .ToHttpResult();
         });
 
