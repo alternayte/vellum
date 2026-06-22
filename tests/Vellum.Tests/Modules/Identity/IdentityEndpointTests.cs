@@ -15,14 +15,13 @@ public class IdentityEndpointTests
 
     public IdentityEndpointTests(IntegrationFixture fixture) => _fixture = fixture;
 
-    private HttpClient CreateClient()
+    private WebApplicationFactory<Program> CreateFactory()
     {
-        var factory = new WebApplicationFactory<Program>()
+        return new WebApplicationFactory<Program>()
             .WithWebHostBuilder(builder =>
             {
                 builder.ConfigureServices(services =>
                 {
-                    // Replace DbContext registrations with test connection string
                     services.RemoveAll<DbContextOptions<EventStoreDbContext>>();
                     services.RemoveAll<DbContextOptions<AppIdentityDbContext>>();
                     services.AddDbContext<EventStoreDbContext>(o =>
@@ -31,6 +30,10 @@ public class IdentityEndpointTests
                         o.UseNpgsql(_fixture.ConnectionString).UseSnakeCaseNamingConvention());
                 });
             });
+    }
+
+    private static HttpClient CreateClient(WebApplicationFactory<Program> factory)
+    {
         return factory.CreateClient(new WebApplicationFactoryClientOptions
         {
             HandleCookies = true,
@@ -41,7 +44,8 @@ public class IdentityEndpointTests
     [Fact]
     public async Task Register_and_get_me_returns_user()
     {
-        using var client = CreateClient();
+        using var factory = CreateFactory();
+        using var client = CreateClient(factory);
         var email = $"test-{Guid.NewGuid():N}@vellum.local";
 
         var registerResponse = await client.PostAsJsonAsync("/api/auth/register",
@@ -59,7 +63,8 @@ public class IdentityEndpointTests
     [Fact]
     public async Task Login_with_wrong_password_returns_401()
     {
-        using var client = CreateClient();
+        using var factory = CreateFactory();
+        using var client = CreateClient(factory);
 
         var response = await client.PostAsJsonAsync("/api/auth/login",
             new { email = "noone@vellum.local", password = "Wrong123!" });
@@ -69,7 +74,8 @@ public class IdentityEndpointTests
     [Fact]
     public async Task Me_without_auth_returns_401()
     {
-        using var client = CreateClient();
+        using var factory = CreateFactory();
+        using var client = CreateClient(factory);
 
         var response = await client.GetAsync("/api/auth/me");
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
@@ -78,7 +84,8 @@ public class IdentityEndpointTests
     [Fact]
     public async Task Register_with_weak_password_returns_400()
     {
-        using var client = CreateClient();
+        using var factory = CreateFactory();
+        using var client = CreateClient(factory);
         var email = $"test-{Guid.NewGuid():N}@vellum.local";
 
         var response = await client.PostAsJsonAsync("/api/auth/register",
