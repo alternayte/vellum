@@ -29,7 +29,10 @@ export const C4ElementNode = memo(function C4ElementNode({ data }: NodeProps) {
       style={{
         borderLeftWidth: '4px',
         borderLeftColor: kindColor(d.kind),
-        borderStyle,
+        borderLeftStyle: 'solid',
+        borderTopStyle: borderStyle,
+        borderRightStyle: borderStyle,
+        borderBottomStyle: borderStyle,
         backgroundColor: bgTint,
       }}
     >
