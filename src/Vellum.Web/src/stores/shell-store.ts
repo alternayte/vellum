@@ -6,12 +6,15 @@ interface ShellState {
   selectedElementId: string | null
   selectedRelationshipId: string | null
   activeViewId: string | null
+  activeDocId: string | null
   commandPaletteOpen: boolean
 
   toggleNavigator: () => void
   selectElement: (id: string | null) => void
   selectRelationship: (id: string | null) => void
   setActiveView: (id: string | null) => void
+  openDoc: (id: string) => void
+  closeDoc: () => void
   toggleCommandPalette: () => void
   closeCommandPalette: () => void
   reset: () => void
@@ -23,6 +26,7 @@ export const useShellStore = create<ShellState>((set) => ({
   selectedElementId: null,
   selectedRelationshipId: null,
   activeViewId: null,
+  activeDocId: null,
   commandPaletteOpen: false,
 
   toggleNavigator: () =>
@@ -42,7 +46,10 @@ export const useShellStore = create<ShellState>((set) => ({
       detailPanelOpen: id !== null,
     }),
 
-  setActiveView: (id) => set({ activeViewId: id }),
+  setActiveView: (id) => set({ activeViewId: id, activeDocId: null }),
+
+  openDoc: (id) => set({ activeDocId: id, activeViewId: null }),
+  closeDoc: () => set({ activeDocId: null }),
 
   toggleCommandPalette: () =>
     set((state) => ({ commandPaletteOpen: !state.commandPaletteOpen })),
@@ -56,6 +63,7 @@ export const useShellStore = create<ShellState>((set) => ({
       selectedElementId: null,
       selectedRelationshipId: null,
       activeViewId: null,
+      activeDocId: null,
       commandPaletteOpen: false,
     }),
 }))

@@ -2,7 +2,11 @@ import { useShellStore } from '@/stores/shell-store'
 import { StrataBreadcrumb } from './strata-breadcrumb'
 import { Button } from '@/components/ui/button'
 
-export function TopBar() {
+interface TopBarProps {
+  activeDoc?: { id: string; title: string; spaceName?: string | null } | null
+}
+
+export function TopBar({ activeDoc }: TopBarProps = {}) {
   const { toggleCommandPalette } = useShellStore()
 
   return (
@@ -20,7 +24,7 @@ export function TopBar() {
       </div>
 
       <div className="mx-4">
-        <StrataBreadcrumb />
+        <StrataBreadcrumb activeDoc={activeDoc} />
       </div>
 
       <div className="flex-1" />

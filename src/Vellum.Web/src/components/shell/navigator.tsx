@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { useShellStore } from '@/stores/shell-store'
 import { useCanvasStore } from '@/stores/canvas-store'
 import { kindColor } from '@/lib/kind-colors'
@@ -17,12 +17,25 @@ interface ViewItem {
   name: string
 }
 
+interface SpaceItem {
+  id: string
+  name: string
+}
+
+interface DocItem {
+  id: string
+  title: string
+  spaceId: string | null
+}
+
 interface NavigatorProps {
   elements: ElementItem[]
   views: ViewItem[]
+  spaces?: SpaceItem[]
+  docs?: DocItem[]
 }
 
-export function Navigator({ elements, views }: NavigatorProps) {
+export function Navigator({ elements, views, spaces = [], docs = [] }: NavigatorProps) {
   const { navigatorOpen, selectElement } = useShellStore()
   const { drillInto } = useCanvasStore()
 
@@ -79,7 +92,95 @@ export function Navigator({ elements, views }: NavigatorProps) {
           ))}
         </div>
       </div>
+
+      <DocsSection spaces={spaces} docs={docs} />
     </aside>
+  )
+}
+
+function DocsSection({ spaces, docs }: { spaces: SpaceItem[]; docs: DocItem[] }) {
+  const [expandedSpaces, setExpandedSpaces] = useState<Set<string>>(new Set())
+
+  const toggleSpace = (spaceId: string) => {
+    setExpandedSpaces((prev) => {
+      const next = new Set(prev)
+      if (next.has(spaceId)) {
+        next.delete(spaceId)
+      } else {
+        next.add(spaceId)
+      }
+      return next
+    })
+  }
+
+  const openDoc = (docId: string) => {
+    useShellStore.getState().openDoc(docId)
+  }
+
+  const looseDocs = docs.filter((d) => d.spaceId === null)
+
+  return (
+    <div className="border-t border-border">
+      <div className="flex items-center justify-between px-3 py-2">
+        <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+          Docs
+        </span>
+      </div>
+      <div className="px-2 pb-2">
+        {spaces.map((space) => {
+          const spaceDocs = docs.filter((d) => d.spaceId === space.id)
+          const isExpanded = expandedSpaces.has(space.id)
+          return (
+            <div key={space.id}>
+              <button
+                className="flex w-full items-center gap-1 rounded px-2 py-1 text-left text-sm hover:bg-muted"
+                onClick={() => toggleSpace(space.id)}
+              >
+                <span className="text-muted-foreground">{isExpanded ? '▾' : '▸'}</span>
+                <span className="truncate">{space.name}</span>
+              </button>
+              {isExpanded && (
+                <div>
+                  {spaceDocs.map((doc) => (
+                    <button
+                      key={doc.id}
+                      className="w-full rounded px-2 py-1 pl-7 text-left text-sm hover:bg-muted"
+                      onClick={() => openDoc(doc.id)}
+                    >
+                      {doc.title}
+                    </button>
+                  ))}
+                  {spaceDocs.length === 0 && (
+                    <p className="px-7 py-1 text-xs text-muted-foreground">No docs</p>
+                  )}
+                </div>
+              )}
+            </div>
+          )
+        })}
+
+        {looseDocs.length > 0 && (
+          <div>
+            {spaces.length > 0 && (
+              <p className="px-2 py-1 text-xs text-muted-foreground">Unsorted</p>
+            )}
+            {looseDocs.map((doc) => (
+              <button
+                key={doc.id}
+                className="w-full rounded px-2 py-1 text-left text-sm hover:bg-muted"
+                onClick={() => openDoc(doc.id)}
+              >
+                {doc.title}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {docs.length === 0 && spaces.length === 0 && (
+          <p className="px-2 py-1 text-xs text-muted-foreground">No docs yet</p>
+        )}
+      </div>
+    </div>
   )
 }
 
