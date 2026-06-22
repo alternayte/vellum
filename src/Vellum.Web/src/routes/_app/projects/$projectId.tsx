@@ -3,6 +3,8 @@ import { TopBar } from '@/components/shell/top-bar'
 import { Navigator } from '@/components/shell/navigator'
 import { DetailPanel } from '@/components/shell/detail-panel'
 import { LensBar } from '@/components/shell/lens-bar'
+import { CanvasView } from '@/components/canvas/canvas-view'
+import { useCanvasStore } from '@/stores/canvas-store'
 
 const MOCK_ELEMENTS = [
   { id: '1', kind: 'actor', name: 'Customer', description: 'End user', technology: null, status: 'current', parentId: null, tags: ['external'] },
@@ -32,8 +34,31 @@ function ProjectWorkspace() {
       <TopBar />
       <div className="flex flex-1 overflow-hidden">
         <Navigator elements={MOCK_ELEMENTS} views={MOCK_VIEWS} />
-        <main className="flex flex-1 items-center justify-center text-muted-foreground">
-          Canvas (Task 4)
+        <main className="flex-1">
+          <CanvasView
+            elements={MOCK_ELEMENTS.map((e) => ({ ...e, ownerId: null }))}
+            relationships={MOCK_RELATIONSHIPS}
+            positions={[
+              { elementId: '1', x: 0, y: 200 },
+              { elementId: '2', x: 400, y: 100 },
+              { elementId: '3', x: 400, y: 300 },
+              { elementId: '4', x: 800, y: 50 },
+              { elementId: '5', x: 800, y: 200 },
+            ]}
+            onNodeDoubleClick={(elementId) => {
+              const el = MOCK_ELEMENTS.find((e) => e.id === elementId)
+              if (el) {
+                const children = MOCK_ELEMENTS.filter((e) => e.parentId === elementId)
+                if (children.length > 0) {
+                  useCanvasStore.getState().drillInto({
+                    elementId: el.id,
+                    name: el.name,
+                    kind: el.kind,
+                  })
+                }
+              }
+            }}
+          />
         </main>
         <DetailPanel
           elements={MOCK_ELEMENTS}
