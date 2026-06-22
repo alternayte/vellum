@@ -27,3 +27,17 @@ migrate-views name:
 
 seed:
     dotnet run --project src/Vellum -- seed
+
+dev-web:
+    cd src/Vellum.Web && npm run dev
+
+build-web:
+    cd src/Vellum.Web && npm run build
+
+install-web:
+    cd src/Vellum.Web && npm install
+
+openapi:
+    dotnet build src/Vellum
+    cp src/Vellum/obj/Vellum.json src/Vellum.Web/openapi.json
+    cd src/Vellum.Web && npm run generate
