@@ -8,3 +8,6 @@ obj/
 *.suo
 appsettings.*.local.json
 .docker-test/
+
+# Frontend build output (SPA built to .NET wwwroot)
+src/Vellum/wwwroot/
