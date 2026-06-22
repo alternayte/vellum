@@ -40,7 +40,7 @@ public static class ListDocs
         var items = await query
             .Take(pageSize + 1)
             .Select(d => new DocDto(d.Id, d.ProjectId, d.SpaceId, d.ElementId,
-                d.Title, d.Content, d.CreatedBy, d.CreatedAt, d.UpdatedAt))
+                d.Title, string.Empty, d.CreatedBy, d.CreatedAt, d.UpdatedAt))
             .ToListAsync(ct);
 
         string? nextCursor = null;

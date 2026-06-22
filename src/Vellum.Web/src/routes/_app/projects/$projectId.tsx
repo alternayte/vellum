@@ -49,7 +49,7 @@ function ProjectWorkspace() {
     const handler = (e: KeyboardEvent) => {
       const meta = e.metaKey || e.ctrlKey
       const target = e.target as HTMLElement | null
-      const inInput = target?.closest?.('input, textarea, select')
+      const inInput = target?.closest?.('input, textarea, select, [contenteditable="true"]')
 
       if (meta && e.key === 'k') {
         e.preventDefault()

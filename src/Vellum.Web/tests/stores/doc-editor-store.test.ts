@@ -3,7 +3,11 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { useDocEditorStore } from '../../src/stores/doc-editor-store'
 
 beforeEach(() => {
-  useDocEditorStore.getState().closeDoc()
+  const store = useDocEditorStore.getState()
+  store.closeDoc()
+  store.setMode('edit')
+  // Clear preserved content by setting a fresh state
+  useDocEditorStore.setState({ preservedContent: new Map() })
 })
 
 describe('doc-editor-store', () => {
