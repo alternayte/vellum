@@ -99,7 +99,7 @@ public static class ModelDecider
             return new CommandResult<IReadOnlyList<ModelEvent>>.NotFound("Element not found");
 
         var events = new List<ModelEvent>();
-        CollectCascadeRemovals(state, elementId, events);
+        CollectCascadeRemovals(state, elementId, events, new HashSet<Guid>());
         return new CommandResult<IReadOnlyList<ModelEvent>>.Success(events);
     }
 
@@ -143,18 +143,21 @@ public static class ModelDecider
             [new ModelEvent.RelationshipRemoved(relationshipId)]);
     }
 
-    private static void CollectCascadeRemovals(ModelState state, Guid elementId, List<ModelEvent> events)
+    private static void CollectCascadeRemovals(ModelState state, Guid elementId, List<ModelEvent> events, HashSet<Guid> seenRelationships)
     {
         // Recursively remove children first
         var children = state.Elements.Values.Where(e => e.ParentId == elementId).ToList();
         foreach (var child in children)
-            CollectCascadeRemovals(state, child.Id, events);
+            CollectCascadeRemovals(state, child.Id, events, seenRelationships);
 
-        // Remove relationships referencing this element
+        // Remove relationships referencing this element, deduplicating across the cascade
         foreach (var rel in state.Relationships.Values)
         {
             if (rel.FromId == elementId || rel.ToId == elementId)
-                events.Add(new ModelEvent.RelationshipRemoved(rel.Id));
+            {
+                if (seenRelationships.Add(rel.Id))
+                    events.Add(new ModelEvent.RelationshipRemoved(rel.Id));
+            }
         }
 
         events.Add(new ModelEvent.ElementRemoved(elementId));

@@ -212,6 +212,32 @@ public class ModelDeciderTests
         Assert.IsType<CommandResult<IReadOnlyList<ModelEvent>>.NotFound>(result);
     }
 
+    [Fact]
+    public void RemoveElement_cascade_emits_relationship_removed_exactly_once_when_both_endpoints_are_children()
+    {
+        // System with two App children connected by a relationship.
+        // When the System is removed, the relationship's endpoints (AppA and AppB) are
+        // both visited during the cascade. Without deduplication this would emit
+        // RelationshipRemoved twice — once per child.
+        var sysId = Guid.NewGuid();
+        var appAId = Guid.NewGuid();
+        var appBId = Guid.NewGuid();
+        var relId = Guid.NewGuid();
+
+        var state = StateWith(
+            new ModelEvent.ElementAdded(sysId, ElementKind.System, "System", null, null, null, ElementStatus.Current, null, []),
+            new ModelEvent.ElementAdded(appAId, ElementKind.App, "AppA", null, null, null, ElementStatus.Current, sysId, []),
+            new ModelEvent.ElementAdded(appBId, ElementKind.App, "AppB", null, null, null, ElementStatus.Current, sysId, []),
+            new ModelEvent.RelationshipAdded(relId, appAId, appBId, "calls", null, null));
+
+        var result = ModelDecider.RemoveElement(state, sysId);
+        var success = Assert.IsType<CommandResult<IReadOnlyList<ModelEvent>>.Success>(result);
+
+        var relationshipRemovals = success.Value.OfType<ModelEvent.RelationshipRemoved>().ToList();
+        Assert.Single(relationshipRemovals);
+        Assert.Equal(relId, relationshipRemovals[0].RelationshipId);
+    }
+
     // --- AddRelationship ---
 
     [Fact]
