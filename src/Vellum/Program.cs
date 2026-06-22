@@ -9,6 +9,7 @@ using Vellum.Kernel.Outbox;
 using Vellum.Kernel.Projections;
 using Vellum.Modules.Identity;
 using Vellum.Modules.Modelling;
+using Vellum.Modules.Views;
 using Vellum.Modules.Workspaces;
 using Vellum.Shared;
 
@@ -40,6 +41,7 @@ builder.Services.AddHostedService<AsyncProjectionHost>();
 builder.Services.AddIdentityModule(builder.Configuration);
 builder.Services.AddWorkspacesModule(builder.Configuration);
 builder.Services.AddModellingModule(builder.Configuration);
+builder.Services.AddViewsModule(builder.Configuration);
 
 // Command handlers (Scrutor scan + TransactionBehavior decoration)
 builder.Services.Scan(s => s.FromAssemblyOf<Program>()
@@ -70,6 +72,7 @@ app.MapGet("/health", () => Results.Ok());
 app.MapIdentityEndpoints();
 app.MapWorkspaceEndpoints();
 app.MapModellingEndpoints();
+app.MapViewEndpoints();
 
 app.Run();
 

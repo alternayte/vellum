@@ -3,6 +3,7 @@ using Testcontainers.PostgreSql;
 using Vellum.Kernel.EventStore;
 using Vellum.Modules.Identity;
 using Vellum.Modules.Modelling;
+using Vellum.Modules.Views;
 using Vellum.Modules.Workspaces;
 
 namespace Vellum.Tests;
@@ -22,6 +23,7 @@ public class IntegrationFixture : IAsyncLifetime
         await MigrateAsync<AppIdentityDbContext>();
         await MigrateAsync<WorkspacesDbContext>();
         await MigrateAsync<ModellingDbContext>();
+        await MigrateAsync<ViewsDbContext>();
     }
 
     private async Task MigrateAsync<TContext>() where TContext : DbContext
