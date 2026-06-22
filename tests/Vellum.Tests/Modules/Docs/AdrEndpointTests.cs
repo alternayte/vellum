@@ -8,6 +8,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Vellum.Kernel.EventStore;
 using Vellum.Modules.Docs;
 using Vellum.Modules.Identity;
+using Vellum.Modules.Drafts;
 using Vellum.Modules.Modelling;
 using Vellum.Modules.Views;
 using Vellum.Modules.Workspaces;
@@ -35,6 +36,7 @@ public class AdrEndpointTests
                     services.RemoveAll<DbContextOptions<ModellingDbContext>>();
                     services.RemoveAll<DbContextOptions<ViewsDbContext>>();
                     services.RemoveAll<DbContextOptions<DocsDbContext>>();
+                    services.RemoveAll<DbContextOptions<DraftsDbContext>>();
                     var cs = _fixture.ConnectionString;
                     services.AddDbContext<EventStoreDbContext>(o => o.UseNpgsql(cs).UseSnakeCaseNamingConvention());
                     services.AddDbContext<AppIdentityDbContext>(o => o.UseNpgsql(cs).UseSnakeCaseNamingConvention());
@@ -42,6 +44,7 @@ public class AdrEndpointTests
                     services.AddDbContext<ModellingDbContext>(o => o.UseNpgsql(cs).UseSnakeCaseNamingConvention());
                     services.AddDbContext<ViewsDbContext>(o => o.UseNpgsql(cs).UseSnakeCaseNamingConvention());
                     services.AddDbContext<DocsDbContext>(o => o.UseNpgsql(cs).UseSnakeCaseNamingConvention());
+                    services.AddDbContext<DraftsDbContext>(o => o.UseNpgsql(cs).UseSnakeCaseNamingConvention());
                 });
             });
     }

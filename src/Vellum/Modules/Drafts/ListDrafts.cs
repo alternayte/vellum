@@ -40,7 +40,8 @@ public static class ListDrafts
 
         var items = await query
             .Take(pageSize + 1)
-            .Select(d => CreateDraft.ToDto(d))
+            .Select(d => new DraftDto(d.Id, d.ProjectId, d.Name, d.StreamId, d.BaseStreamId,
+                d.ForkVersion, d.Status, d.CreatedBy, d.CreatedAt, d.MergedAt, d.AbandonedAt))
             .ToListAsync(ct);
 
         string? nextCursor = null;
