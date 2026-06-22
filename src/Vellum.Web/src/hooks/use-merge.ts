@@ -64,6 +64,8 @@ export function useExecuteMerge(projectId: string) {
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['projects', projectId, 'drafts'] })
+      queryClient.invalidateQueries({ queryKey: ['projects', projectId, 'elements'] })
+      queryClient.invalidateQueries({ queryKey: ['projects', projectId, 'relationships'] })
     },
   })
 }

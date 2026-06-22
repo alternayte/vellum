@@ -17,7 +17,7 @@ public static class ListComments
         CancellationToken ct)
     {
         var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
-        await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
+        await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Viewer, ct);
 
         var draft = await db.Drafts.AsNoTracking()
             .FirstOrDefaultAsync(d => d.Id == draftId && d.ProjectId == projectId, ct);
@@ -45,7 +45,7 @@ public static class ListComments
 
         var items = await query
             .Take(pageSize + 1)
-            .Select(c => CreateComment.ToDto(c))
+            .Select(c => new CommentDto(c.Id, c.DraftId, c.EntityId, c.EntityType, c.Author, c.Body, c.CreatedAt, c.UpdatedAt))
             .ToListAsync(ct);
 
         string? nextCursor = null;

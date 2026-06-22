@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Vellum.Kernel.EventStore;
+using Vellum.Modules.Drafts;
 using Vellum.Modules.Identity;
 using Vellum.Modules.Modelling;
 using Vellum.Modules.Modelling.Elements;
@@ -41,6 +42,7 @@ public class ModelProjectionTests
                     services.RemoveAll<DbContextOptions<AppIdentityDbContext>>();
                     services.RemoveAll<DbContextOptions<WorkspacesDbContext>>();
                     services.RemoveAll<DbContextOptions<ModellingDbContext>>();
+                    services.RemoveAll<DbContextOptions<DraftsDbContext>>();
                     services.AddDbContext<EventStoreDbContext>(o =>
                         o.UseNpgsql(_fixture.ConnectionString).UseSnakeCaseNamingConvention());
                     services.AddDbContext<AppIdentityDbContext>(o =>
@@ -48,6 +50,8 @@ public class ModelProjectionTests
                     services.AddDbContext<WorkspacesDbContext>(o =>
                         o.UseNpgsql(_fixture.ConnectionString).UseSnakeCaseNamingConvention());
                     services.AddDbContext<ModellingDbContext>(o =>
+                        o.UseNpgsql(_fixture.ConnectionString).UseSnakeCaseNamingConvention());
+                    services.AddDbContext<DraftsDbContext>(o =>
                         o.UseNpgsql(_fixture.ConnectionString).UseSnakeCaseNamingConvention());
                 });
             });

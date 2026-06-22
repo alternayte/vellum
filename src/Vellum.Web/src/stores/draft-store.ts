@@ -52,7 +52,7 @@ export const useDraftStore = create<DraftStore>((set) => ({
   enterReviewMode: (data) =>
     set({ isReviewMode: true, reviewData: data, resolutions: {} }),
   exitReviewMode: () =>
-    set({ isReviewMode: false, reviewData: null, resolutions: {} }),
+    set({ activeDraftId: null, activeDraftStreamId: null, isReviewMode: false, reviewData: null, resolutions: {} }),
   setResolution: (entityId, resolution) =>
     set((s) => ({ resolutions: { ...s.resolutions, [entityId]: resolution } })),
   clearResolution: (entityId) =>
