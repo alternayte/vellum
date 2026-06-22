@@ -1,9 +1,11 @@
+import { useEffect } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { TopBar } from '@/components/shell/top-bar'
 import { Navigator } from '@/components/shell/navigator'
 import { DetailPanel } from '@/components/shell/detail-panel'
 import { LensBar } from '@/components/shell/lens-bar'
 import { CanvasView } from '@/components/canvas/canvas-view'
+import { CommandPalette } from '@/components/command-palette/command-palette'
 import { useElements, useUpdateElement } from '@/hooks/use-elements'
 import { useRelationships, useUpdateRelationship } from '@/hooks/use-relationships'
 import { useViews, useView, useSaveLayout } from '@/hooks/use-views'
@@ -26,6 +28,42 @@ function ProjectWorkspace() {
   const updateElement = useUpdateElement(projectId)
   const updateRelationship = useUpdateRelationship(projectId)
   const { saveLayout } = useSaveLayout(projectId, activeViewId)
+
+  const handleTidy = async () => {
+    if (!elements || !relationships) return
+    const newPositions = await computeLayout(elements, relationships)
+    saveLayout(newPositions)
+  }
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      const meta = e.metaKey || e.ctrlKey
+      const target = e.target as HTMLElement | null
+      const inInput = target?.closest?.('input, textarea, select')
+
+      if (meta && e.key === 'k') {
+        e.preventDefault()
+        useShellStore.getState().toggleCommandPalette()
+      }
+      if (e.key === '1' && !inInput) {
+        useCanvasStore.getState().toggleLens('status')
+      }
+      if (e.key === '2' && !inInput) {
+        useCanvasStore.getState().toggleLens('metadata')
+      }
+      if (e.key === 't' && !inInput) {
+        handleTidy()
+      }
+      if (e.key === 'Escape') {
+        useShellStore.getState().closeCommandPalette()
+        useShellStore.getState().selectElement(null)
+      }
+    }
+
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [elements, relationships])
 
   if (elementsLoading || relsLoading) {
     return (
@@ -71,13 +109,8 @@ function ProjectWorkspace() {
           onUpdateRelationship={(id, fields) => updateRelationship.mutate({ id, ...fields })}
         />
       </div>
-      <LensBar
-        onTidy={async () => {
-          if (!elements || !relationships) return
-          const newPositions = await computeLayout(elements, relationships)
-          saveLayout(newPositions)
-        }}
-      />
+      <LensBar onTidy={handleTidy} />
+      <CommandPalette elements={elements ?? []} onTidy={handleTidy} />
     </div>
   )
 }

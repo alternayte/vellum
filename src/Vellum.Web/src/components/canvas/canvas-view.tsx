@@ -15,6 +15,7 @@ import { edgeTypes } from './edges/edge-types'
 import { useCanvasStore } from '@/stores/canvas-store'
 import { useShellStore } from '@/stores/shell-store'
 import { useLod } from '@/hooks/use-lod'
+import { Button } from '@/components/ui/button'
 import type { C4ElementData } from './nodes/c4-element-node'
 
 interface ElementModel {
@@ -134,6 +135,29 @@ export function CanvasView({
     selectElement(null)
     selectRelationship(null)
   }, [selectElement, selectRelationship])
+
+  if (visibleElements.length === 0) {
+    const isTopLevel = currentRootId === null
+    return (
+      <div className="flex h-full items-center justify-center">
+        <div className="text-center">
+          <p className="text-sm text-muted-foreground">
+            {isTopLevel
+              ? 'Start with a system. Draw a connection to add the next one.'
+              : 'Nothing here yet. Add an element to get started.'}
+          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            className="mt-3"
+            onClick={() => {/* open create dialog */}}
+          >
+            {isTopLevel ? 'Add System' : 'Add Element'}
+          </Button>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <ReactFlow
