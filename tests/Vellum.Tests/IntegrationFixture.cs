@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Testcontainers.PostgreSql;
 using Vellum.Kernel.EventStore;
+using Vellum.Modules.Identity;
 
 namespace Vellum.Tests;
 
@@ -15,11 +16,17 @@ public class IntegrationFixture : IAsyncLifetime
     {
         await _postgres.StartAsync();
 
-        var options = new DbContextOptionsBuilder<EventStoreDbContext>()
+        await MigrateAsync<EventStoreDbContext>();
+        await MigrateAsync<AppIdentityDbContext>();
+    }
+
+    private async Task MigrateAsync<TContext>() where TContext : DbContext
+    {
+        var options = new DbContextOptionsBuilder<TContext>()
             .UseNpgsql(ConnectionString)
             .UseSnakeCaseNamingConvention()
             .Options;
-        await using var db = new EventStoreDbContext(options);
+        await using var db = (TContext)Activator.CreateInstance(typeof(TContext), options)!;
         await db.Database.MigrateAsync();
     }
 

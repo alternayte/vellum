@@ -6,6 +6,7 @@ using Vellum.Kernel.EventStore;
 using Vellum.Kernel.EventTypes;
 using Vellum.Kernel.Outbox;
 using Vellum.Kernel.Projections;
+using Vellum.Modules.Identity;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -27,6 +28,9 @@ builder.Services.AddSingleton<IEventTypeRegistry>(sp => sp.GetRequiredService<Ev
 builder.Services.AddHostedService<OutboxDispatcher>();
 builder.Services.AddHostedService<AsyncProjectionHost>();
 
+// Modules
+builder.Services.AddIdentityModule(builder.Configuration);
+
 var app = builder.Build();
 
 if (app.Environment.IsDevelopment())
@@ -35,7 +39,13 @@ if (app.Environment.IsDevelopment())
     app.MapScalarApiReference();
 }
 
+app.UseAuthentication();
+app.UseAuthorization();
+
 app.MapGet("/health", () => Results.Ok());
+
+// Endpoints
+app.MapIdentityEndpoints();
 
 app.Run();
 
