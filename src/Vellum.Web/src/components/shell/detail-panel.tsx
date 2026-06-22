@@ -52,7 +52,7 @@ export function DetailPanel({
     <Sheet open={detailPanelOpen} onOpenChange={(open) => !open && handleClose()}>
       <SheetContent side="right" className="w-80 border-l border-border bg-card">
         {selectedElement && (
-          <>
+          <div key={selectedElement.id}>
             <SheetHeader>
               <SheetTitle className="flex items-center gap-2 font-display">
                 <span
@@ -116,7 +116,7 @@ export function DetailPanel({
                 </div>
               </div>
             </div>
-          </>
+          </div>
         )}
 
         {selectedRel && (

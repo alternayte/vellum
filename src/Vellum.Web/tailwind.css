@@ -120,6 +120,17 @@
     --accent: 210 10% 90%;
     --accent-foreground: 212 17% 14%;
 
+    --status-current: transparent;
+    --status-planned: 217 66% 42%;
+    --status-deprecated: 38 70% 36%;
+    --status-removed: 6 50% 40%;
+
+    --kind-actor: 265 30% 42%;
+    --kind-system: 150 35% 34%;
+    --kind-app: 212 50% 38%;
+    --kind-store: 30 40% 36%;
+    --kind-component: 195 35% 38%;
+
     --sidebar: hsl(0 0% 100%);
     --sidebar-foreground: hsl(212 17% 14%);
     --sidebar-primary: hsl(190 83% 36%);

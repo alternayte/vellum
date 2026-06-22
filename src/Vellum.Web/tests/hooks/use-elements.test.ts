@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { renderHook, waitFor, act } from '@testing-library/react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createElement } from 'react'
-import { useElements, useAddElement, useRemoveElement } from '../../src/hooks/use-elements'
+import { useElements, useAddElement, useRemoveElement, useUpdateElement } from '../../src/hooks/use-elements'
 
 vi.mock('../../src/api/generated', () => ({
   getApiProjectsByProjectIdElements: vi.fn(),
@@ -16,6 +16,7 @@ vi.mock('../../src/api/client', () => ({}))
 import {
   getApiProjectsByProjectIdElements,
   postApiProjectsByProjectIdElements,
+  patchApiProjectsByProjectIdElementsByElementId,
   deleteApiProjectsByProjectIdElementsByElementId,
 } from '../../src/api/generated'
 
@@ -114,5 +115,61 @@ describe('useRemoveElement', () => {
     expect(deleteApiProjectsByProjectIdElementsByElementId).toHaveBeenCalledWith({
       path: { projectId: PROJECT_ID, elementId: '1' },
     })
+  })
+})
+
+describe('useUpdateElement', () => {
+  it('calls patch endpoint with updated fields and applies optimistic update', async () => {
+    const updatedElement = { ...MOCK_ELEMENTS[0], name: 'Updated Customer' }
+    vi.mocked(getApiProjectsByProjectIdElements).mockResolvedValue({
+      data: { items: MOCK_ELEMENTS, cursor: null },
+      response: { ok: true } as Response,
+      error: undefined,
+    })
+    vi.mocked(patchApiProjectsByProjectIdElementsByElementId).mockResolvedValue({
+      data: updatedElement,
+      response: { ok: true } as Response,
+      error: undefined,
+    })
+
+    const wrapper = makeWrapper()
+    const { result: elementsResult } = renderHook(() => useElements(PROJECT_ID), { wrapper })
+    const { result: updateResult } = renderHook(() => useUpdateElement(PROJECT_ID), { wrapper })
+
+    await waitFor(() => expect(elementsResult.current.isLoading).toBe(false))
+
+    await act(async () => {
+      await updateResult.current.mutateAsync({ id: '1', name: 'Updated Customer', description: null, technology: null, ownerId: null, parentId: null, status: null, tags: null })
+    })
+
+    expect(patchApiProjectsByProjectIdElementsByElementId).toHaveBeenCalledWith({
+      path: { projectId: PROJECT_ID, elementId: '1' },
+      body: expect.objectContaining({ name: 'Updated Customer' }),
+    })
+  })
+
+  it('reverts optimistic update on error', async () => {
+    vi.mocked(getApiProjectsByProjectIdElements).mockResolvedValue({
+      data: { items: MOCK_ELEMENTS, cursor: null },
+      response: { ok: true } as Response,
+      error: undefined,
+    })
+    vi.mocked(patchApiProjectsByProjectIdElementsByElementId).mockRejectedValue(new Error('Network error'))
+
+    const wrapper = makeWrapper()
+    const { result: elementsResult } = renderHook(() => useElements(PROJECT_ID), { wrapper })
+    const { result: updateResult } = renderHook(() => useUpdateElement(PROJECT_ID), { wrapper })
+
+    await waitFor(() => expect(elementsResult.current.isLoading).toBe(false))
+
+    await act(async () => {
+      try {
+        await updateResult.current.mutateAsync({ id: '1', name: 'Bad Name', description: null, technology: null, ownerId: null, parentId: null, status: null, tags: null })
+      } catch {
+        // expected
+      }
+    })
+
+    expect(patchApiProjectsByProjectIdElementsByElementId).toHaveBeenCalled()
   })
 })

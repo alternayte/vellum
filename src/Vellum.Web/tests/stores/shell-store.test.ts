@@ -2,10 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest'
 import { useShellStore } from '../../src/stores/shell-store'
 
 beforeEach(() => {
-  const store = useShellStore.getState()
-  store.selectElement(null)
-  store.selectRelationship(null)
-  store.closeCommandPalette()
+  useShellStore.getState().reset()
 })
 
 describe('shell store', () => {

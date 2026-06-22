@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import { useShellStore } from '@/stores/shell-store'
 import { useCanvasStore } from '@/stores/canvas-store'
 import { kindColor } from '@/lib/kind-colors'
@@ -25,9 +26,19 @@ export function Navigator({ elements, views }: NavigatorProps) {
   const { navigatorOpen, selectElement } = useShellStore()
   const { drillInto } = useCanvasStore()
 
+  const childrenMap = useMemo(() => {
+    const map = new Map<string | null, ElementItem[]>()
+    for (const el of elements) {
+      const key = el.parentId
+      if (!map.has(key)) map.set(key, [])
+      map.get(key)!.push(el)
+    }
+    return map
+  }, [elements])
+
   if (!navigatorOpen) return null
 
-  const topLevel = elements.filter((e) => e.parentId === null)
+  const topLevel = childrenMap.get(null) ?? []
 
   return (
     <aside className="flex w-60 flex-col border-r border-border bg-card">
@@ -42,7 +53,7 @@ export function Navigator({ elements, views }: NavigatorProps) {
           <TreeNode
             key={element.id}
             element={element}
-            elements={elements}
+            childrenMap={childrenMap}
             onSelect={selectElement}
             onDrill={drillInto}
             depth={0}
@@ -74,18 +85,18 @@ export function Navigator({ elements, views }: NavigatorProps) {
 
 function TreeNode({
   element,
-  elements,
+  childrenMap,
   onSelect,
   onDrill,
   depth,
 }: {
   element: ElementItem
-  elements: ElementItem[]
+  childrenMap: Map<string | null, ElementItem[]>
   onSelect: (id: string) => void
   onDrill: (e: { elementId: string; name: string; kind: string }) => void
   depth: number
 }) {
-  const children = elements.filter((e) => e.parentId === element.id)
+  const children = childrenMap.get(element.id) ?? []
 
   return (
     <div>
@@ -109,7 +120,7 @@ function TreeNode({
         <TreeNode
           key={child.id}
           element={child}
-          elements={elements}
+          childrenMap={childrenMap}
           onSelect={onSelect}
           onDrill={onDrill}
           depth={depth + 1}
