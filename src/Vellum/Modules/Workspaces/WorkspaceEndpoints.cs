@@ -20,15 +20,11 @@ public static class WorkspaceEndpoints
         projects.MapPost("/", CreateProject.Handle);
         projects.MapGet("/", ListProjects.Handle);
 
-        app.MapGroup("/api/projects")
+        var projectsGroup = app.MapGroup("/api/projects")
             .RequireAuthorization()
-            .WithTags("Projects")
-            .MapPatch("/{projectId}", UpdateProject.Handle);
-
-        app.MapGroup("/api/projects")
-            .RequireAuthorization()
-            .WithTags("Projects")
-            .MapDelete("/{projectId}", DeleteProject.Handle);
+            .WithTags("Projects");
+        projectsGroup.MapPatch("/{projectId}", UpdateProject.Handle);
+        projectsGroup.MapDelete("/{projectId}", DeleteProject.Handle);
 
         return app;
     }

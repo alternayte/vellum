@@ -8,6 +8,7 @@ using Vellum.Kernel.Outbox;
 using Vellum.Kernel.Projections;
 using Vellum.Modules.Identity;
 using Vellum.Modules.Workspaces;
+using Vellum.Shared;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -15,6 +16,10 @@ var connectionString = builder.Configuration.GetConnectionString("DefaultConnect
 
 // OpenAPI
 builder.Services.AddOpenApi();
+
+// Exception handling
+builder.Services.AddProblemDetails();
+builder.Services.AddExceptionHandler<UnauthorizedExceptionHandler>();
 
 // Kernel
 builder.Services.AddDbContext<EventStoreDbContext>(options =>
@@ -41,6 +46,7 @@ if (app.Environment.IsDevelopment())
     app.MapScalarApiReference();
 }
 
+app.UseExceptionHandler();
 app.UseAuthentication();
 app.UseAuthorization();
 
