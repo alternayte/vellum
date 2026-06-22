@@ -26,11 +26,12 @@ public static class GetView
             .Select(p => new LayoutPositionDto(p.ElementId, p.X, p.Y))
             .ToListAsync(ct);
 
-        var edges = await db.LayoutEdges.AsNoTracking()
+        var rawEdges = await db.LayoutEdges.AsNoTracking()
             .Where(e => e.ViewId == viewId)
-            .Select(e => new LayoutEdgeDto(e.RelationshipId,
-                e.RoutePoints != null ? JsonSerializer.Deserialize<object>(e.RoutePoints) : null))
             .ToListAsync(ct);
+        var edges = rawEdges.Select(e => new LayoutEdgeDto(e.RelationshipId,
+            e.RoutePoints != null ? JsonSerializer.Deserialize<object>(e.RoutePoints.RootElement.GetRawText()) : null))
+            .ToList();
 
         return Results.Ok(new ViewDetailDto(
             view.Id, view.ProjectId, view.Name, view.RootElementId,

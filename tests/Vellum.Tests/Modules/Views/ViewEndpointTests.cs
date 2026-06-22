@@ -178,6 +178,37 @@ public class ViewEndpointTests
         var response = await client.GetAsync($"/api/projects/{Guid.NewGuid()}/views");
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
+
+    [Fact]
+    public async Task Delete_view_cascades_to_layout_positions_and_edges()
+    {
+        using var factory = CreateFactory();
+        using var client = await CreateAuthenticatedClientAsync(factory);
+        var projectId = await SetupProjectAsync(client);
+        var viewId = Guid.NewGuid();
+        var elementId = Guid.NewGuid();
+        var relationshipId = Guid.NewGuid();
+
+        await client.PostAsJsonAsync($"/api/projects/{projectId}/views",
+            new { id = viewId, name = "Cascade Test" });
+
+        await client.PutAsJsonAsync($"/api/projects/{projectId}/views/{viewId}/layout",
+            new
+            {
+                positions = new[] { new { elementId, x = 10.0, y = 20.0 } },
+                edges = new[] { new { relationshipId, routePoints = (object?)null } }
+            });
+
+        var deleteResponse = await client.DeleteAsync($"/api/projects/{projectId}/views/{viewId}");
+        Assert.Equal(HttpStatusCode.OK, deleteResponse.StatusCode);
+
+        using var scope = factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<ViewsDbContext>();
+        var orphanedPositions = await db.LayoutPositions.Where(p => p.ViewId == viewId).CountAsync();
+        var orphanedEdges = await db.LayoutEdges.Where(e => e.ViewId == viewId).CountAsync();
+        Assert.Equal(0, orphanedPositions);
+        Assert.Equal(0, orphanedEdges);
+    }
 }
 
 file static class ViewsServiceCollectionExtensions

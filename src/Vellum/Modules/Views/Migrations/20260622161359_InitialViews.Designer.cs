@@ -13,7 +13,7 @@ using Vellum.Modules.Views;
 namespace Vellum.Modules.Views.Migrations
 {
     [DbContext(typeof(ViewsDbContext))]
-    [Migration("20260622160933_InitialViews")]
+    [Migration("20260622161359_InitialViews")]
     partial class InitialViews
     {
         /// <inheritdoc />
@@ -141,6 +141,26 @@ namespace Vellum.Modules.Views.Migrations
                         .HasDatabaseName("ix_views_project_id");
 
                     b.ToTable("views", "views");
+                });
+
+            modelBuilder.Entity("Vellum.Modules.Views.Entities.LayoutEdgeEntity", b =>
+                {
+                    b.HasOne("Vellum.Modules.Views.Entities.ViewEntity", null)
+                        .WithMany()
+                        .HasForeignKey("ViewId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_layout_edges_views_view_id");
+                });
+
+            modelBuilder.Entity("Vellum.Modules.Views.Entities.LayoutPositionEntity", b =>
+                {
+                    b.HasOne("Vellum.Modules.Views.Entities.ViewEntity", null)
+                        .WithMany()
+                        .HasForeignKey("ViewId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_layout_positions_views_view_id");
                 });
 #pragma warning restore 612, 618
         }

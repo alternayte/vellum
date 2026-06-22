@@ -16,37 +16,6 @@ namespace Vellum.Modules.Views.Migrations
                 name: "views");
 
             migrationBuilder.CreateTable(
-                name: "layout_edges",
-                schema: "views",
-                columns: table => new
-                {
-                    id = table.Column<Guid>(type: "uuid", nullable: false),
-                    view_id = table.Column<Guid>(type: "uuid", nullable: false),
-                    relationship_id = table.Column<Guid>(type: "uuid", nullable: false),
-                    route_points = table.Column<JsonDocument>(type: "jsonb", nullable: true)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("pk_layout_edges", x => x.id);
-                });
-
-            migrationBuilder.CreateTable(
-                name: "layout_positions",
-                schema: "views",
-                columns: table => new
-                {
-                    id = table.Column<Guid>(type: "uuid", nullable: false),
-                    view_id = table.Column<Guid>(type: "uuid", nullable: false),
-                    element_id = table.Column<Guid>(type: "uuid", nullable: false),
-                    x = table.Column<double>(type: "double precision", nullable: false),
-                    y = table.Column<double>(type: "double precision", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("pk_layout_positions", x => x.id);
-                });
-
-            migrationBuilder.CreateTable(
                 name: "views",
                 schema: "views",
                 columns: table => new
@@ -64,6 +33,51 @@ namespace Vellum.Modules.Views.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("pk_views", x => x.id);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "layout_edges",
+                schema: "views",
+                columns: table => new
+                {
+                    id = table.Column<Guid>(type: "uuid", nullable: false),
+                    view_id = table.Column<Guid>(type: "uuid", nullable: false),
+                    relationship_id = table.Column<Guid>(type: "uuid", nullable: false),
+                    route_points = table.Column<JsonDocument>(type: "jsonb", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("pk_layout_edges", x => x.id);
+                    table.ForeignKey(
+                        name: "fk_layout_edges_views_view_id",
+                        column: x => x.view_id,
+                        principalSchema: "views",
+                        principalTable: "views",
+                        principalColumn: "id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "layout_positions",
+                schema: "views",
+                columns: table => new
+                {
+                    id = table.Column<Guid>(type: "uuid", nullable: false),
+                    view_id = table.Column<Guid>(type: "uuid", nullable: false),
+                    element_id = table.Column<Guid>(type: "uuid", nullable: false),
+                    x = table.Column<double>(type: "double precision", nullable: false),
+                    y = table.Column<double>(type: "double precision", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("pk_layout_positions", x => x.id);
+                    table.ForeignKey(
+                        name: "fk_layout_positions_views_view_id",
+                        column: x => x.view_id,
+                        principalSchema: "views",
+                        principalTable: "views",
+                        principalColumn: "id",
+                        onDelete: ReferentialAction.Cascade);
                 });
 
             migrationBuilder.CreateIndex(
