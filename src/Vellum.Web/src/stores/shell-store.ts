@@ -14,6 +14,7 @@ interface ShellState {
   setActiveView: (id: string | null) => void
   toggleCommandPalette: () => void
   closeCommandPalette: () => void
+  reset: () => void
 }
 
 export const useShellStore = create<ShellState>((set) => ({
@@ -47,4 +48,14 @@ export const useShellStore = create<ShellState>((set) => ({
     set((state) => ({ commandPaletteOpen: !state.commandPaletteOpen })),
 
   closeCommandPalette: () => set({ commandPaletteOpen: false }),
+
+  reset: () =>
+    set({
+      navigatorOpen: true,
+      detailPanelOpen: false,
+      selectedElementId: null,
+      selectedRelationshipId: null,
+      activeViewId: null,
+      commandPaletteOpen: false,
+    }),
 }))

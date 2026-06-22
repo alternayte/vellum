@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useRef, useCallback } from 'react'
+import { useRef, useCallback, useEffect } from 'react'
 import {
   getApiProjectsByProjectIdViews,
   getApiProjectsByProjectIdViewsByViewId,
@@ -88,6 +88,8 @@ export function useSaveLayout(projectId: string, viewId: string | null) {
     },
     [saveFn],
   )
+
+  useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current) }, [])
 
   return { saveLayout: debouncedSave }
 }
