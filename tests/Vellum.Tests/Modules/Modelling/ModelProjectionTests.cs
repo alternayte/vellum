@@ -155,7 +155,7 @@ public class ModelProjectionTests
             new { id = elementId, kind = "system", name = "Ephemeral" });
 
         var delete = await client.DeleteAsync($"/api/projects/{projectId}/elements/{elementId}");
-        Assert.Equal(HttpStatusCode.OK, delete.StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, delete.StatusCode);
 
         var get = await client.GetAsync($"/api/projects/{projectId}/elements/{elementId}");
         Assert.Equal(HttpStatusCode.NotFound, get.StatusCode);
@@ -207,7 +207,7 @@ public class ModelProjectionTests
             new { id = relId, fromId = sysA, toId = sysB, label = "sends to" });
 
         var delete = await client.DeleteAsync($"/api/projects/{projectId}/relationships/{relId}");
-        Assert.Equal(HttpStatusCode.OK, delete.StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, delete.StatusCode);
 
         var get = await client.GetAsync($"/api/projects/{projectId}/relationships/{relId}");
         Assert.Equal(HttpStatusCode.NotFound, get.StatusCode);
@@ -237,7 +237,7 @@ public class ModelProjectionTests
             new { id = relChildPeer, fromId = child, toId = peer, label = "depends on" });
 
         var delete = await client.DeleteAsync($"/api/projects/{projectId}/elements/{parent}");
-        Assert.Equal(HttpStatusCode.OK, delete.StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, delete.StatusCode);
 
         var childGet = await client.GetAsync($"/api/projects/{projectId}/elements/{child}");
         Assert.Equal(HttpStatusCode.NotFound, childGet.StatusCode);

@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Vellum.Shared;
 
 namespace Vellum.Modules.Modelling.Elements;
 
@@ -11,7 +12,7 @@ public static class GetElement
         var entity = await db.Elements.AsNoTracking()
             .FirstOrDefaultAsync(e => e.Id == elementId && e.ProjectId == projectId, ct);
 
-        if (entity is null) return Results.NotFound();
+        if (entity is null) return Results.NotFound(new ErrorResponse("not_found", "Element not found"));
 
         return Results.Ok(new ElementDto(
             entity.Id, entity.Kind, entity.Name, entity.Description,

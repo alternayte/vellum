@@ -36,6 +36,6 @@ public static class RemoveMember
 
         db.Memberships.Remove(membership);
         await db.SaveChangesAsync(ct);
-        return Results.Ok();
+        return Results.NoContent();
     }
 }

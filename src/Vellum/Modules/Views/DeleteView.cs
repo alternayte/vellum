@@ -22,6 +22,6 @@ public static class DeleteView
 
         db.Views.Remove(view);
         await db.SaveChangesAsync(ct);
-        return Results.Ok();
+        return Results.NoContent();
     }
 }

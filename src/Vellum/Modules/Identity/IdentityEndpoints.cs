@@ -103,7 +103,17 @@ public static class IdentityEndpoints
                     Email = email,
                     DisplayName = info.Principal.FindFirstValue(ClaimTypes.Name)
                 };
-                await userManager.CreateAsync(user);
+                var createResult = await userManager.CreateAsync(user);
+                if (!createResult.Succeeded)
+                {
+                    var errors = createResult.Errors
+                        .Select(e => new FieldError(e.Code, e.Description))
+                        .ToList();
+                    return Results.Problem(
+                        detail: string.Join("; ", createResult.Errors.Select(e => e.Description)),
+                        statusCode: 500,
+                        title: "Failed to create user account");
+                }
             }
 
             await userManager.AddLoginAsync(user, info);

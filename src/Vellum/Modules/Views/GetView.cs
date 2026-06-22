@@ -2,6 +2,7 @@ using System.Security.Claims;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Vellum.Modules.Workspaces.Authorization;
+using Vellum.Shared;
 
 namespace Vellum.Modules.Views;
 
@@ -19,7 +20,7 @@ public static class GetView
 
         var view = await db.Views.AsNoTracking()
             .FirstOrDefaultAsync(v => v.Id == viewId && v.ProjectId == projectId, ct);
-        if (view is null) return Results.NotFound();
+        if (view is null) return Results.NotFound(new ErrorResponse("not_found", "View not found"));
 
         var positions = await db.LayoutPositions.AsNoTracking()
             .Where(p => p.ViewId == viewId)
