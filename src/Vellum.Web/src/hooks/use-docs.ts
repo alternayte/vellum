@@ -118,18 +118,29 @@ export function useDeleteDoc(projectId: string) {
 
 export function useAutoSaveDoc(projectId: string, docId: string | null) {
   const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
-  const updateDoc = useUpdateDoc(projectId)
+  const queryClient = useQueryClient()
 
-  const save = useCallback(
-    (content: string) => {
+  const saveFn = useCallback(
+    async (content: string) => {
       if (!docId) return
-      if (timerRef.current) clearTimeout(timerRef.current)
-      timerRef.current = setTimeout(() => updateDoc.mutate({ id: docId, content }), 300)
+      await patchApiProjectsByProjectIdDocsByDocId({
+        path: { projectId, docId },
+        body: { title: null, content, spaceId: null, elementId: null, setSpaceId: false, setElementId: false },
+      })
+      queryClient.invalidateQueries({ queryKey: ['projects', projectId, 'docs'] })
     },
-    [docId, updateDoc],
+    [docId, projectId, queryClient],
+  )
+
+  const autoSave = useCallback(
+    (content: string) => {
+      if (timerRef.current) clearTimeout(timerRef.current)
+      timerRef.current = setTimeout(() => saveFn(content), 300)
+    },
+    [saveFn],
   )
 
   useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current) }, [])
 
-  return { autoSave: save }
+  return { autoSave }
 }
