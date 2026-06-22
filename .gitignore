@@ -6,3 +6,4 @@ obj/
 *.user
 *.suo
 appsettings.*.local.json
+.docker-test/
