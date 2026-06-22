@@ -1,13 +1,19 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Vellum.Kernel.CommandHandling;
 
 namespace Vellum.Kernel.EventStore;
 
 public sealed class EventStore : IEventStore
 {
     private readonly EventStoreDbContext _db;
+    private readonly EventCollector _collector;
 
-    public EventStore(EventStoreDbContext db) => _db = db;
+    public EventStore(EventStoreDbContext db, EventCollector collector)
+    {
+        _db = db;
+        _collector = collector;
+    }
 
     public async Task<StreamSnapshot?> LoadAsync(Guid streamId, CancellationToken ct = default)
     {
@@ -64,6 +70,8 @@ public sealed class EventStore : IEventStore
                 Payload = events[i].Payload,
                 Metadata = events[i].Metadata,
             });
+
+            _collector.Add(streamId, events[i].EventType, events[i].Payload);
         }
 
         try
