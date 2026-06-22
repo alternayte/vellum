@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Vellum.Kernel.Aggregates;
+using Vellum.Kernel.CommandHandling;
 using Vellum.Kernel.EventStore;
 using Vellum.Kernel.EventTypes;
 
@@ -19,7 +20,7 @@ public class AggregateStoreTests
             .UseSnakeCaseNamingConvention()
             .Options;
         var db = new EventStoreDbContext(options);
-        var eventStore = new Vellum.Kernel.EventStore.EventStore(db);
+        var eventStore = new Vellum.Kernel.EventStore.EventStore(db, new EventCollector());
 
         var registry = new EventTypeRegistry();
         registry.Register<CounterEvent.Incremented>("counter.incremented.v1");

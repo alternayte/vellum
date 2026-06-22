@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Vellum.Kernel.CommandHandling;
 using Vellum.Kernel.EventStore;
 
 namespace Vellum.Tests.Kernel.EventStore;
@@ -18,7 +19,7 @@ public class EventStoreTests
             .UseSnakeCaseNamingConvention()
             .Options;
         var db = new EventStoreDbContext(options);
-        return (db, new Vellum.Kernel.EventStore.EventStore(db));
+        return (db, new Vellum.Kernel.EventStore.EventStore(db, new EventCollector()));
     }
 
     private static NewEvent MakeEvent(string type, object payload) => new(
