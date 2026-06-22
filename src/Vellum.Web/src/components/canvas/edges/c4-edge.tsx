@@ -6,10 +6,19 @@ import {
   type EdgeProps,
 } from '@xyflow/react'
 import { useCanvasStore } from '@/stores/canvas-store'
+import type { DiffState } from '@/stores/draft-store'
 
 export interface C4EdgeData extends Record<string, unknown> {
   label: string | null
   technology: string | null
+  diffState?: DiffState
+}
+
+const diffEdgeColor: Record<string, string> = {
+  added: '#2F855A',
+  modified: '#B7791F',
+  removed: '#B5483D',
+  conflict: '#B7791F',
 }
 
 export type C4EdgeType = Edge<C4EdgeData, 'c4-edge'>
@@ -38,6 +47,10 @@ export const C4Edge = memo(function C4Edge({
     borderRadius: 8,
   })
 
+  const diff = d.diffState
+  const strokeColor = diff && diff !== 'unchanged' ? (diffEdgeColor[diff] ?? 'hsl(var(--border))') : 'hsl(var(--border))'
+  const strokeOpacity = diff === 'removed' ? 0.5 : diff === 'unchanged' ? 0.6 : 1
+
   return (
     <>
       <path
@@ -45,7 +58,7 @@ export const C4Edge = memo(function C4Edge({
         className="react-flow__edge-path"
         d={edgePath}
         markerEnd={markerEnd}
-        style={{ stroke: 'hsl(var(--border))', strokeWidth: 1.5 }}
+        style={{ stroke: strokeColor, strokeWidth: 1.5, opacity: strokeOpacity }}
       />
       {d.label && (
         <EdgeLabelRenderer>

@@ -1,9 +1,12 @@
 import { useShellStore } from '@/stores/shell-store'
+import { useDraftStore } from '@/stores/draft-store'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { kindColor } from '@/lib/kind-colors'
+import { DiffDetail } from '@/components/review/diff-detail'
+import { ConflictResolver } from '@/components/review/conflict-resolver'
 
 interface ElementData {
   id: string
@@ -39,9 +42,22 @@ export function DetailPanel({
 }: DetailPanelProps) {
   const { detailPanelOpen, selectedElementId, selectedRelationshipId, selectElement, selectRelationship } =
     useShellStore()
+  const { isReviewMode, reviewData } = useDraftStore()
 
   const selectedElement = elements.find((e) => e.id === selectedElementId)
   const selectedRel = relationships.find((r) => r.id === selectedRelationshipId)
+
+  // Look up review info for the selected entity
+  const selectedChange = isReviewMode && reviewData
+    ? reviewData.autoResolved.find(
+        (c) => c.entityId === (selectedElementId ?? selectedRelationshipId)
+      )
+    : null
+  const selectedConflict = isReviewMode && reviewData
+    ? reviewData.conflicts.find(
+        (c) => c.entityId === (selectedElementId ?? selectedRelationshipId)
+      )
+    : null
 
   const handleClose = () => {
     selectElement(null)
@@ -66,56 +82,66 @@ export function DetailPanel({
               </Badge>
             </SheetHeader>
 
-            <div className="mt-4 space-y-4">
-              <div>
-                <label className="mb-1 block text-xs text-muted-foreground">Name</label>
-                <Input
-                  defaultValue={selectedElement.name}
-                  onBlur={(e) => onUpdateElement?.(selectedElement.id, { name: e.target.value })}
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs text-muted-foreground">Description</label>
-                <Textarea
-                  defaultValue={selectedElement.description ?? ''}
-                  onBlur={(e) =>
-                    onUpdateElement?.(selectedElement.id, { description: e.target.value || null })
-                  }
-                  rows={3}
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs text-muted-foreground">Technology</label>
-                <Input
-                  defaultValue={selectedElement.technology ?? ''}
-                  onBlur={(e) =>
-                    onUpdateElement?.(selectedElement.id, { technology: e.target.value || null })
-                  }
-                />
-              </div>
-              <div>
-                <label className="mb-1 block text-xs text-muted-foreground">Status</label>
-                <select
-                  defaultValue={selectedElement.status}
-                  onChange={(e) => onUpdateElement?.(selectedElement.id, { status: e.target.value })}
-                  className="w-full rounded border border-input bg-background px-3 py-2 text-sm"
-                >
-                  <option value="current">Current</option>
-                  <option value="planned">Planned</option>
-                  <option value="deprecated">Deprecated</option>
-                </select>
-              </div>
-              <div>
-                <label className="mb-1 block text-xs text-muted-foreground">Tags</label>
-                <div className="flex flex-wrap gap-1">
-                  {selectedElement.tags.map((tag) => (
-                    <Badge key={tag} variant="secondary" className="text-xs">
-                      {tag}
-                    </Badge>
-                  ))}
+            {isReviewMode ? (
+              <>
+                {selectedConflict && <ConflictResolver conflict={selectedConflict} />}
+                {selectedChange && !selectedConflict && <DiffDetail change={selectedChange} />}
+                {!selectedConflict && !selectedChange && (
+                  <p className="mt-4 text-xs text-muted-foreground">No changes to this element.</p>
+                )}
+              </>
+            ) : (
+              <div className="mt-4 space-y-4">
+                <div>
+                  <label className="mb-1 block text-xs text-muted-foreground">Name</label>
+                  <Input
+                    defaultValue={selectedElement.name}
+                    onBlur={(e) => onUpdateElement?.(selectedElement.id, { name: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs text-muted-foreground">Description</label>
+                  <Textarea
+                    defaultValue={selectedElement.description ?? ''}
+                    onBlur={(e) =>
+                      onUpdateElement?.(selectedElement.id, { description: e.target.value || null })
+                    }
+                    rows={3}
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs text-muted-foreground">Technology</label>
+                  <Input
+                    defaultValue={selectedElement.technology ?? ''}
+                    onBlur={(e) =>
+                      onUpdateElement?.(selectedElement.id, { technology: e.target.value || null })
+                    }
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs text-muted-foreground">Status</label>
+                  <select
+                    defaultValue={selectedElement.status}
+                    onChange={(e) => onUpdateElement?.(selectedElement.id, { status: e.target.value })}
+                    className="w-full rounded border border-input bg-background px-3 py-2 text-sm"
+                  >
+                    <option value="current">Current</option>
+                    <option value="planned">Planned</option>
+                    <option value="deprecated">Deprecated</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs text-muted-foreground">Tags</label>
+                  <div className="flex flex-wrap gap-1">
+                    {selectedElement.tags.map((tag) => (
+                      <Badge key={tag} variant="secondary" className="text-xs">
+                        {tag}
+                      </Badge>
+                    ))}
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
           </div>
         )}
 
@@ -124,26 +150,36 @@ export function DetailPanel({
             <SheetHeader>
               <SheetTitle className="font-display">Relationship</SheetTitle>
             </SheetHeader>
-            <div className="mt-4 space-y-4">
-              <div>
-                <label className="mb-1 block text-xs text-muted-foreground">Label</label>
-                <Input
-                  defaultValue={selectedRel.label ?? ''}
-                  onBlur={(e) =>
-                    onUpdateRelationship?.(selectedRel.id, { label: e.target.value || null })
-                  }
-                />
+            {isReviewMode ? (
+              <>
+                {selectedConflict && <ConflictResolver conflict={selectedConflict} />}
+                {selectedChange && !selectedConflict && <DiffDetail change={selectedChange} />}
+                {!selectedConflict && !selectedChange && (
+                  <p className="mt-4 text-xs text-muted-foreground">No changes to this relationship.</p>
+                )}
+              </>
+            ) : (
+              <div className="mt-4 space-y-4">
+                <div>
+                  <label className="mb-1 block text-xs text-muted-foreground">Label</label>
+                  <Input
+                    defaultValue={selectedRel.label ?? ''}
+                    onBlur={(e) =>
+                      onUpdateRelationship?.(selectedRel.id, { label: e.target.value || null })
+                    }
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs text-muted-foreground">Technology</label>
+                  <Input
+                    defaultValue={selectedRel.technology ?? ''}
+                    onBlur={(e) =>
+                      onUpdateRelationship?.(selectedRel.id, { technology: e.target.value || null })
+                    }
+                  />
+                </div>
               </div>
-              <div>
-                <label className="mb-1 block text-xs text-muted-foreground">Technology</label>
-                <Input
-                  defaultValue={selectedRel.technology ?? ''}
-                  onBlur={(e) =>
-                    onUpdateRelationship?.(selectedRel.id, { technology: e.target.value || null })
-                  }
-                />
-              </div>
-            </div>
+            )}
           </>
         )}
       </SheetContent>

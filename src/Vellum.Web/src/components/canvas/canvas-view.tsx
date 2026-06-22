@@ -18,6 +18,7 @@ import { useShellStore } from '@/stores/shell-store'
 import { useLod } from '@/hooks/use-lod'
 import { Button } from '@/components/ui/button'
 import type { C4ElementData } from './nodes/c4-element-node'
+import type { DiffState } from '@/stores/draft-store'
 
 interface ElementModel {
   id: string
@@ -49,6 +50,8 @@ interface CanvasViewProps {
   elements: ElementModel[]
   relationships: RelationshipModel[]
   positions: LayoutPosition[]
+  diffStateMap?: Map<string, DiffState>
+  isReviewMode?: boolean
   onNodeDragStop?: (id: string, x: number, y: number) => void
   onNodeDoubleClick?: (elementId: string) => void
   onFitViewReady?: (fitView: () => void) => void
@@ -58,6 +61,8 @@ export function CanvasView({
   elements,
   relationships,
   positions,
+  diffStateMap,
+  isReviewMode,
   onNodeDragStop,
   onNodeDoubleClick,
   onFitViewReady,
@@ -96,6 +101,7 @@ export function CanvasView({
   const nodes: Node[] = useMemo(() => {
     return visibleElements.map((el, index) => {
       const pos = positionMap.get(el.id) ?? { x: index * 320, y: index * 100 }
+      const entityDiffState = diffStateMap?.get(el.id) ?? (isReviewMode ? 'unchanged' : undefined)
       return {
         id: el.id,
         type: tier === 'full' ? 'c4-element' : 'c4-label-chip',
@@ -109,10 +115,11 @@ export function CanvasView({
           status: el.status,
           tags: el.tags,
           ownerId: el.ownerId,
+          diffState: entityDiffState,
         } satisfies C4ElementData,
       }
     })
-  }, [visibleElements, positionMap, tier])
+  }, [visibleElements, positionMap, tier, diffStateMap, isReviewMode])
 
   const edges: Edge[] = useMemo(() => {
     return visibleRelationships.map((rel) => ({
@@ -121,9 +128,13 @@ export function CanvasView({
       target: rel.toId,
       type: 'c4-edge',
       markerEnd: { type: MarkerType.ArrowClosed, color: 'hsl(var(--border))' },
-      data: { label: rel.label, technology: rel.technology },
+      data: {
+        label: rel.label,
+        technology: rel.technology,
+        diffState: diffStateMap?.get(rel.id) ?? (isReviewMode ? 'unchanged' : undefined),
+      },
     }))
-  }, [visibleRelationships])
+  }, [visibleRelationships, diffStateMap, isReviewMode])
 
   const handleNodeClick: NodeMouseHandler = useCallback(
     (_event, node) => selectElement(node.id),

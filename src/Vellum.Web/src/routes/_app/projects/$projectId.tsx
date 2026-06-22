@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { TopBar } from '@/components/shell/top-bar'
 import { Navigator } from '@/components/shell/navigator'
 import { DetailPanel } from '@/components/shell/detail-panel'
 import { LensBar } from '@/components/shell/lens-bar'
+import { ReviewBar } from '@/components/review/review-bar'
 import { CanvasView } from '@/components/canvas/canvas-view'
 import { DocEditor } from '@/components/docs/doc-editor'
 import { CommandPalette } from '@/components/command-palette/command-palette'
@@ -15,8 +16,11 @@ import { useSpaces } from '@/hooks/use-spaces'
 import { useShellStore } from '@/stores/shell-store'
 import { useCanvasStore } from '@/stores/canvas-store'
 import { useDraftStore } from '@/stores/draft-store'
+import type { DiffState } from '@/stores/draft-store'
+import { useMergePreview } from '@/hooks/use-merge'
 import { computeLayout } from '@/lib/layout'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Button } from '@/components/ui/button'
 
 export const Route = createFileRoute('/_app/projects/$projectId')({
   component: ProjectWorkspace,
@@ -24,7 +28,7 @@ export const Route = createFileRoute('/_app/projects/$projectId')({
 
 function ProjectWorkspace() {
   const { projectId } = Route.useParams()
-  const { activeDraftStreamId } = useDraftStore()
+  const { activeDraftId, activeDraftStreamId, isReviewMode, reviewData, enterReviewMode } = useDraftStore()
   const { data: elements, isLoading: elementsLoading } = useElements(projectId, activeDraftStreamId ?? undefined)
   const { data: relationships, isLoading: relsLoading } = useRelationships(projectId, activeDraftStreamId ?? undefined)
   const { data: views } = useViews(projectId)
@@ -35,11 +39,32 @@ function ProjectWorkspace() {
   const updateElement = useUpdateElement(projectId)
   const updateRelationship = useUpdateRelationship(projectId)
   const { saveLayout } = useSaveLayout(projectId, activeViewId)
+  const mergePreview = useMergePreview(projectId)
 
   const fitViewRef = useRef<(() => void) | null>(null)
   const handleFitViewReady = useCallback((fn: () => void) => {
     fitViewRef.current = fn
   }, [])
+
+  const handleReview = async () => {
+    if (!activeDraftId) return
+    const data = await mergePreview.mutateAsync(activeDraftId)
+    enterReviewMode(data)
+  }
+
+  // Build a map from entityId -> DiffState for canvas diff colouring
+  const diffStateMap = useMemo<Map<string, DiffState>>(() => {
+    if (!isReviewMode || !reviewData) return new Map()
+    const map = new Map<string, DiffState>()
+    for (const change of reviewData.autoResolved) {
+      const kind = change.changeKind as DiffState
+      map.set(change.entityId, kind === 'added' || kind === 'removed' || kind === 'modified' ? kind : 'modified')
+    }
+    for (const conflict of reviewData.conflicts) {
+      map.set(conflict.entityId, 'conflict')
+    }
+    return map
+  }, [isReviewMode, reviewData])
 
   const handleTidy = async () => {
     if (!elements || !relationships) return
@@ -109,7 +134,19 @@ function ProjectWorkspace() {
           spaces={spaces ?? []}
           docs={(docs ?? []).map((d) => ({ id: d.id, title: d.title, spaceId: d.spaceId }))}
         />
-        <main className="flex-1">
+        <main className="relative flex-1">
+          {activeDraftId && !isReviewMode && !activeDocId && (
+            <div className="absolute right-3 top-3 z-10">
+              <Button
+                size="sm"
+                className="h-7 text-xs"
+                onClick={handleReview}
+                disabled={mergePreview.isPending}
+              >
+                {mergePreview.isPending ? 'Loading…' : 'Review'}
+              </Button>
+            </div>
+          )}
           {activeDocId ? (
             <DocEditor projectId={projectId} docId={activeDocId} />
           ) : (
@@ -117,6 +154,8 @@ function ProjectWorkspace() {
               elements={(elements ?? []).map((e) => ({ ...e, ownerId: e.ownerId ?? null }))}
               relationships={relationships ?? []}
               positions={positions}
+              diffStateMap={diffStateMap}
+              isReviewMode={isReviewMode}
               onFitViewReady={handleFitViewReady}
               onNodeDoubleClick={(elementId) => {
                 const el = elements?.find((e) => e.id === elementId)
@@ -140,7 +179,11 @@ function ProjectWorkspace() {
           onUpdateRelationship={(id, fields) => updateRelationship.mutate({ id, ...fields })}
         />
       </div>
-      <LensBar onTidy={handleTidy} />
+      {isReviewMode ? (
+        <ReviewBar projectId={projectId} />
+      ) : (
+        <LensBar onTidy={handleTidy} />
+      )}
       <CommandPalette
         elements={elements ?? []}
         onTidy={handleTidy}
