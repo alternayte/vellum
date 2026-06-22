@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Vellum.Kernel.Outbox;
+using Vellum.Kernel.Projections;
 
 namespace Vellum.Kernel.EventStore;
 
@@ -13,6 +14,7 @@ public class EventStoreDbContext : DbContext
     public DbSet<EventEntity> Events => Set<EventEntity>();
     public DbSet<OutboxMessageEntity> OutboxMessages => Set<OutboxMessageEntity>();
     public DbSet<DeadLetterEntity> DeadLetters => Set<DeadLetterEntity>();
+    public DbSet<CheckpointEntity> Checkpoints => Set<CheckpointEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -56,6 +58,13 @@ public class EventStoreDbContext : DbContext
             b.Property(d => d.Id).UseIdentityAlwaysColumn();
             b.Property(d => d.Payload).HasColumnType("jsonb");
             b.Property(d => d.FailedAt).HasDefaultValueSql("now()");
+        });
+
+        modelBuilder.Entity<CheckpointEntity>(b =>
+        {
+            b.ToTable("checkpoints");
+            b.HasKey(c => c.ProjectionName);
+            b.Property(c => c.UpdatedAt).HasDefaultValueSql("now()");
         });
     }
 }
