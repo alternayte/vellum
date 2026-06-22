@@ -1,5 +1,3 @@
-using System.Text.Json;
-
 namespace Vellum.Kernel.Projections;
 
 public interface IAsyncProjection

@@ -93,7 +93,6 @@ public class OutboxDispatcherTests : IAsyncLifetime
     {
         await SeedMessage(retryCount: 4); // Will become 5th failure
 
-        await using var db = CreateDb();
         var dispatcher = new OutboxDispatcher(
             new TestServiceScopeFactory(() => CreateDb()),
             NullLogger<OutboxDispatcher>.Instance);

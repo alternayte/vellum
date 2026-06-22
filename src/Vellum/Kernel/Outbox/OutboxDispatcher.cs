@@ -53,6 +53,7 @@ public sealed class OutboxDispatcher : BackgroundService
     {
         using var scope = _scopeFactory.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<EventStoreDbContext>();
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
 
         var now = DateTimeOffset.UtcNow;
         var messages = await db.OutboxMessages
@@ -102,5 +103,6 @@ public sealed class OutboxDispatcher : BackgroundService
         }
 
         await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
     }
 }

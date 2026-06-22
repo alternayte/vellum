@@ -103,8 +103,17 @@ public class TransactionBehaviorTests
         var behavior = new TransactionBehavior<IncrementCommand, CommandResult>(
             failingHandler, db, collector, []);
 
+        var streamId = Guid.NewGuid();
         await Assert.ThrowsAsync<InvalidOperationException>(
-            () => behavior.HandleAsync(new IncrementCommand(Guid.NewGuid())));
+            () => behavior.HandleAsync(new IncrementCommand(streamId)));
+
+        var verifyOptions = new DbContextOptionsBuilder<EventStoreDbContext>()
+            .UseNpgsql(_fixture.ConnectionString)
+            .UseSnakeCaseNamingConvention()
+            .Options;
+        await using var verifyDb = new EventStoreDbContext(verifyOptions);
+        var stream = await verifyDb.Streams.FindAsync(streamId);
+        Assert.Null(stream);
     }
 
     private sealed class FailingHandler : ICommandHandler<IncrementCommand, CommandResult>
