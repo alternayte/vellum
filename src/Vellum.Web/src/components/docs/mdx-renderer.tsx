@@ -15,12 +15,16 @@ export function MdxRenderer({ content, elements, views }: MdxRendererProps) {
   const [MdxContent, setMdxContent] = useState<React.ComponentType | null>(null)
   const [error, setError] = useState<string | null>(null)
 
+  const elementsKey = useMemo(() => elements.map(e => e.id).join(','), [elements])
+  const viewsKey = useMemo(() => views.map(v => v.id).join(','), [views])
+
   const components = useMemo(
     () => ({
       ElementLink: (props: { id: string }) => <ElementLink id={props.id} elements={elements} />,
       LiveView: (props: { id: string }) => <LiveViewCard id={props.id} views={views} />,
     }),
-    [elements, views],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [elementsKey, viewsKey],
   )
 
   useEffect(() => {

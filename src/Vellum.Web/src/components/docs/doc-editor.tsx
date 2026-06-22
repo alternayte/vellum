@@ -37,6 +37,9 @@ export function DocEditor({ projectId, docId }: DocEditorProps) {
     [docId, setPreservedContent, autoSave],
   )
 
+  const handleChangeRef = useRef(handleChange)
+  handleChangeRef.current = handleChange
+
   useEffect(() => {
     if (!editorRef.current || mode !== 'edit') return
 
@@ -58,7 +61,7 @@ export function DocEditor({ projectId, docId }: DocEditorProps) {
         }),
         EditorView.updateListener.of((update) => {
           if (update.docChanged) {
-            handleChange(update.state.doc.toString())
+            handleChangeRef.current(update.state.doc.toString())
           }
         }),
       ],
@@ -71,7 +74,8 @@ export function DocEditor({ projectId, docId }: DocEditorProps) {
       view.destroy()
       viewRef.current = null
     }
-  }, [docId, doc?.content, mode, getPreservedContent, handleChange])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [docId, doc?.content, mode, getPreservedContent])
 
   const displayContent = contentRef.current || doc?.content || ''
 
