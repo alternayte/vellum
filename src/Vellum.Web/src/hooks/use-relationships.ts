@@ -5,7 +5,6 @@ import {
   patchApiProjectsByProjectIdRelationshipsByRelationshipId,
   deleteApiProjectsByProjectIdRelationshipsByRelationshipId,
 } from '@/api/generated'
-import type { UpdateRelationshipRequest } from '@/api/generated/types.gen'
 import '@/api/client' // ensure client is configured
 
 export interface Relationship {
@@ -85,10 +84,15 @@ export function useUpdateRelationship(projectId: string) {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: async ({ id, ...fields }: { id: string } & UpdateRelationshipRequest) => {
+    mutationFn: async ({ id, ...fields }: { id: string } & Partial<Omit<Relationship, 'id' | 'fromId' | 'toId'>>) => {
       const result = await patchApiProjectsByProjectIdRelationshipsByRelationshipId({
         path: { projectId, relationshipId: id },
-        body: fields,
+        body: {
+          label: fields.label ?? null,
+          technology: fields.technology ?? null,
+          setLabel: 'label' in fields,
+          setTechnology: 'technology' in fields,
+        },
       })
       return result.data as Relationship
     },

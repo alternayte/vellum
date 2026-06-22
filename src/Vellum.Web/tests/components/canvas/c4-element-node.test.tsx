@@ -3,7 +3,9 @@ import { render, screen } from '@testing-library/react'
 import { ReactFlowProvider } from '@xyflow/react'
 import { C4ElementNode } from '../../../src/components/canvas/nodes/c4-element-node'
 
-const mockData = {
+import type { C4ElementData } from '../../../src/components/canvas/nodes/c4-element-node'
+
+const mockData: C4ElementData = {
   id: '1',
   kind: 'system',
   name: 'Orders',
@@ -25,6 +27,11 @@ function renderNode(data = mockData) {
         positionAbsoluteX={0}
         positionAbsoluteY={0}
         zIndex={0}
+        draggable={true}
+        dragging={false}
+        selectable={true}
+        deletable={true}
+        selected={false}
       />
     </ReactFlowProvider>,
   )

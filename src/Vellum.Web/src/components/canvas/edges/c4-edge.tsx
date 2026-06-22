@@ -2,14 +2,17 @@ import { memo } from 'react'
 import {
   getSmoothStepPath,
   EdgeLabelRenderer,
+  type Edge,
   type EdgeProps,
 } from '@xyflow/react'
 import { useCanvasStore } from '@/stores/canvas-store'
 
-export interface C4EdgeData {
+export interface C4EdgeData extends Record<string, unknown> {
   label: string | null
   technology: string | null
 }
+
+export type C4EdgeType = Edge<C4EdgeData, 'c4-edge'>
 
 export const C4Edge = memo(function C4Edge({
   id,
@@ -21,8 +24,8 @@ export const C4Edge = memo(function C4Edge({
   targetPosition,
   data,
   markerEnd,
-}: EdgeProps) {
-  const d = (data ?? {}) as C4EdgeData
+}: EdgeProps<C4EdgeType>) {
+  const d = data ?? { label: null, technology: null }
   const activeLens = useCanvasStore((s) => s.activeLens)
 
   const [edgePath, labelX, labelY] = getSmoothStepPath({

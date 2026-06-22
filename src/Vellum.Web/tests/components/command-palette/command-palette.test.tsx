@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import { CommandPalette } from '../../../src/components/command-palette/command-palette'
 import { useShellStore } from '../../../src/stores/shell-store'
@@ -9,7 +9,7 @@ class ResizeObserverMock {
   unobserve() {}
   disconnect() {}
 }
-global.ResizeObserver = ResizeObserverMock
+;(globalThis as Record<string, unknown>).ResizeObserver = ResizeObserverMock
 
 // jsdom doesn't implement scrollIntoView
 window.HTMLElement.prototype.scrollIntoView = function () {}

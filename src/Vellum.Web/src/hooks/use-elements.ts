@@ -5,7 +5,6 @@ import {
   patchApiProjectsByProjectIdElementsByElementId,
   deleteApiProjectsByProjectIdElementsByElementId,
 } from '@/api/generated'
-import type { UpdateElementRequest } from '@/api/generated/types.gen'
 import '@/api/client' // ensure client is configured
 
 export interface Element {
@@ -104,10 +103,22 @@ export function useUpdateElement(projectId: string) {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: async ({ id, ...fields }: { id: string } & UpdateElementRequest) => {
+    mutationFn: async ({ id, ...fields }: { id: string } & Partial<Omit<Element, 'id'>>) => {
       const result = await patchApiProjectsByProjectIdElementsByElementId({
         path: { projectId, elementId: id },
-        body: fields,
+        body: {
+          name: fields.name ?? null,
+          description: fields.description ?? null,
+          technology: fields.technology ?? null,
+          ownerId: fields.ownerId ?? null,
+          parentId: fields.parentId ?? null,
+          status: fields.status ?? null,
+          tags: fields.tags ?? null,
+          setDescription: 'description' in fields,
+          setTechnology: 'technology' in fields,
+          setOwnerId: 'ownerId' in fields,
+          setParentId: 'parentId' in fields,
+        },
       })
       return result.data as Element
     },

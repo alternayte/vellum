@@ -10,11 +10,16 @@ describe('C4LabelChipNode', () => {
         <C4LabelChipNode
           id="1"
           data={{ id: '1', kind: 'system', name: 'Orders', description: null, technology: null, status: 'current', tags: [], ownerId: null }}
-          type="c4-label-chip"
+          type="c4-element"
           isConnectable={true}
           positionAbsoluteX={0}
           positionAbsoluteY={0}
           zIndex={0}
+          draggable={true}
+          dragging={false}
+          selectable={true}
+          deletable={true}
+          selected={false}
         />
       </ReactFlowProvider>,
     )

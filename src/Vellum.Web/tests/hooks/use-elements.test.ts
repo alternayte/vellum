@@ -139,7 +139,7 @@ describe('useUpdateElement', () => {
     await waitFor(() => expect(elementsResult.current.isLoading).toBe(false))
 
     await act(async () => {
-      await updateResult.current.mutateAsync({ id: '1', name: 'Updated Customer', description: null, technology: null, ownerId: null, parentId: null, status: null, tags: null })
+      await updateResult.current.mutateAsync({ id: '1', name: 'Updated Customer', description: null, technology: null, ownerId: null, parentId: null, status: 'current', tags: [] })
     })
 
     expect(patchApiProjectsByProjectIdElementsByElementId).toHaveBeenCalledWith({
@@ -164,7 +164,7 @@ describe('useUpdateElement', () => {
 
     await act(async () => {
       try {
-        await updateResult.current.mutateAsync({ id: '1', name: 'Bad Name', description: null, technology: null, ownerId: null, parentId: null, status: null, tags: null })
+        await updateResult.current.mutateAsync({ id: '1', name: 'Bad Name', description: null, technology: null, ownerId: null, parentId: null, status: 'current', tags: [] })
       } catch {
         // expected
       }
