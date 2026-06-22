@@ -1,7 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createRouter } from '@tanstack/react-router'
-import { Toaster } from 'sonner'
-import { toast } from 'sonner'
+import { Toaster, toast } from 'sonner'
 import { routeTree } from './routeTree.gen'
 
 const queryClient = new QueryClient({

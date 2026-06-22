@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react'
+import { useCallback, useEffect, useMemo } from 'react'
 import {
   ReactFlow,
   MiniMap,
@@ -8,6 +8,7 @@ import {
   type Edge,
   type NodeMouseHandler,
   MarkerType,
+  useReactFlow,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { nodeTypes } from './nodes/node-types'
@@ -50,6 +51,7 @@ interface CanvasViewProps {
   positions: LayoutPosition[]
   onNodeDragStop?: (id: string, x: number, y: number) => void
   onNodeDoubleClick?: (elementId: string) => void
+  onFitViewReady?: (fitView: () => void) => void
 }
 
 export function CanvasView({
@@ -58,8 +60,15 @@ export function CanvasView({
   positions,
   onNodeDragStop,
   onNodeDoubleClick,
+  onFitViewReady,
 }: CanvasViewProps) {
   const { currentRootId, zoomLevel, setZoom } = useCanvasStore()
+  const { fitView } = useReactFlow()
+
+  useEffect(() => {
+    onFitViewReady?.(() => fitView())
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fitView])
   const { selectElement, selectRelationship } = useShellStore()
   const tier = useLod(zoomLevel)
 

@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { TopBar } from '@/components/shell/top-bar'
 import { Navigator } from '@/components/shell/navigator'
@@ -28,6 +28,11 @@ function ProjectWorkspace() {
   const updateElement = useUpdateElement(projectId)
   const updateRelationship = useUpdateRelationship(projectId)
   const { saveLayout } = useSaveLayout(projectId, activeViewId)
+
+  const fitViewRef = useRef<(() => void) | null>(null)
+  const handleFitViewReady = useCallback((fn: () => void) => {
+    fitViewRef.current = fn
+  }, [])
 
   const handleTidy = async () => {
     if (!elements || !relationships) return
@@ -88,6 +93,7 @@ function ProjectWorkspace() {
             elements={(elements ?? []).map((e) => ({ ...e, ownerId: e.ownerId ?? null }))}
             relationships={relationships ?? []}
             positions={positions}
+            onFitViewReady={handleFitViewReady}
             onNodeDoubleClick={(elementId) => {
               const el = elements?.find((e) => e.id === elementId)
               if (!el) return
@@ -110,7 +116,11 @@ function ProjectWorkspace() {
         />
       </div>
       <LensBar onTidy={handleTidy} />
-      <CommandPalette elements={elements ?? []} onTidy={handleTidy} />
+      <CommandPalette
+        elements={elements ?? []}
+        onTidy={handleTidy}
+        onZoomToFit={() => fitViewRef.current?.()}
+      />
     </div>
   )
 }
