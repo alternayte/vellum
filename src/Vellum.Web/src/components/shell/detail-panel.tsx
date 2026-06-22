@@ -7,6 +7,9 @@ import { Badge } from '@/components/ui/badge'
 import { kindColor } from '@/lib/kind-colors'
 import { DiffDetail } from '@/components/review/diff-detail'
 import { ConflictResolver } from '@/components/review/conflict-resolver'
+import { CommentList } from '@/components/comments/comment-list'
+import { CommentInput } from '@/components/comments/comment-input'
+import { useComments } from '@/hooks/use-draft-comments'
 
 interface ElementData {
   id: string
@@ -28,6 +31,7 @@ interface RelationshipData {
 }
 
 interface DetailPanelProps {
+  projectId: string
   elements: ElementData[]
   relationships: RelationshipData[]
   onUpdateElement?: (id: string, fields: Partial<ElementData>) => void
@@ -35,6 +39,7 @@ interface DetailPanelProps {
 }
 
 export function DetailPanel({
+  projectId,
   elements,
   relationships,
   onUpdateElement,
@@ -42,7 +47,10 @@ export function DetailPanel({
 }: DetailPanelProps) {
   const { detailPanelOpen, selectedElementId, selectedRelationshipId, selectElement, selectRelationship } =
     useShellStore()
-  const { isReviewMode, reviewData } = useDraftStore()
+  const { isReviewMode, reviewData, activeDraftId } = useDraftStore()
+
+  const { data: commentsData } = useComments(projectId, activeDraftId)
+  const comments = commentsData?.items ?? []
 
   const selectedElement = elements.find((e) => e.id === selectedElementId)
   const selectedRel = relationships.find((r) => r.id === selectedRelationshipId)
@@ -88,6 +96,23 @@ export function DetailPanel({
                 {selectedChange && !selectedConflict && <DiffDetail change={selectedChange} />}
                 {!selectedConflict && !selectedChange && (
                   <p className="mt-4 text-xs text-muted-foreground">No changes to this element.</p>
+                )}
+                {activeDraftId && (
+                  <div className="mt-4 space-y-2">
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Comments</p>
+                    <CommentList
+                      projectId={projectId}
+                      draftId={activeDraftId}
+                      comments={comments}
+                      entityId={selectedElement.id}
+                    />
+                    <CommentInput
+                      projectId={projectId}
+                      draftId={activeDraftId}
+                      entityId={selectedElement.id}
+                      entityType="element"
+                    />
+                  </div>
                 )}
               </>
             ) : (
@@ -156,6 +181,23 @@ export function DetailPanel({
                 {selectedChange && !selectedConflict && <DiffDetail change={selectedChange} />}
                 {!selectedConflict && !selectedChange && (
                   <p className="mt-4 text-xs text-muted-foreground">No changes to this relationship.</p>
+                )}
+                {activeDraftId && (
+                  <div className="mt-4 space-y-2">
+                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Comments</p>
+                    <CommentList
+                      projectId={projectId}
+                      draftId={activeDraftId}
+                      comments={comments}
+                      entityId={selectedRel.id}
+                    />
+                    <CommentInput
+                      projectId={projectId}
+                      draftId={activeDraftId}
+                      entityId={selectedRel.id}
+                      entityType="relationship"
+                    />
+                  </div>
                 )}
               </>
             ) : (

@@ -1,8 +1,12 @@
 import { useMemo, useState } from 'react'
 import { useShellStore } from '@/stores/shell-store'
 import { useCanvasStore } from '@/stores/canvas-store'
+import { useDraftStore } from '@/stores/draft-store'
 import { kindColor } from '@/lib/kind-colors'
 import { DraftList } from '@/components/draft/draft-list'
+import { Badge } from '@/components/ui/badge'
+import { useComments } from '@/hooks/use-draft-comments'
+import { useCreateDoc } from '@/hooks/use-docs'
 
 interface ElementItem {
   id: string
@@ -27,6 +31,7 @@ interface DocItem {
   id: string
   title: string
   spaceId: string | null
+  adrStatus?: string | null
 }
 
 interface NavigatorProps {
@@ -40,6 +45,7 @@ interface NavigatorProps {
 export function Navigator({ projectId, elements, views, spaces = [], docs = [] }: NavigatorProps) {
   const { navigatorOpen, selectElement } = useShellStore()
   const { drillInto } = useCanvasStore()
+  const { activeDraftId } = useDraftStore()
 
   const childrenMap = useMemo(() => {
     const map = new Map<string | null, ElementItem[]>()
@@ -78,6 +84,10 @@ export function Navigator({ projectId, elements, views, spaces = [], docs = [] }
 
       <DraftList projectId={projectId} />
 
+      {activeDraftId && (
+        <CommentsSection projectId={projectId} draftId={activeDraftId} />
+      )}
+
       <div className="border-t border-border">
         <div className="flex items-center justify-between px-3 py-2">
           <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
@@ -97,13 +107,64 @@ export function Navigator({ projectId, elements, views, spaces = [], docs = [] }
         </div>
       </div>
 
-      <DocsSection spaces={spaces} docs={docs} />
+      <DocsSection projectId={projectId} spaces={spaces} docs={docs} />
     </aside>
   )
 }
 
-function DocsSection({ spaces, docs }: { spaces: SpaceItem[]; docs: DocItem[] }) {
+const ADR_STATUS_COLORS: Record<string, string> = {
+  proposed: 'bg-blue-100 text-blue-700 border-blue-200',
+  accepted: 'bg-green-100 text-green-700 border-green-200',
+  superseded: 'bg-gray-100 text-gray-500 border-gray-200',
+  deprecated: 'bg-amber-100 text-amber-700 border-amber-200',
+}
+
+function AdrBadge({ status }: { status: string }) {
+  const cls = ADR_STATUS_COLORS[status] ?? 'bg-gray-100 text-gray-500 border-gray-200'
+  return (
+    <span className={`inline-flex items-center rounded border px-1 py-0 text-[10px] font-medium ${cls}`}>
+      {status}
+    </span>
+  )
+}
+
+function DocRow({ doc, indent = false }: { doc: DocItem; indent?: boolean }) {
+  const openDoc = (docId: string) => useShellStore.getState().openDoc(docId)
+  return (
+    <button
+      className={`flex w-full items-center gap-1.5 rounded px-2 py-1 text-left text-sm hover:bg-muted ${indent ? 'pl-7' : ''}`}
+      onClick={() => openDoc(doc.id)}
+    >
+      <span className="truncate flex-1">{doc.title}</span>
+      {doc.adrStatus && <AdrBadge status={doc.adrStatus} />}
+    </button>
+  )
+}
+
+function CommentsSection({ projectId, draftId }: { projectId: string; draftId: string }) {
+  const { data } = useComments(projectId, draftId)
+  const count = data?.items.length ?? 0
+
+  return (
+    <div className="border-t border-border">
+      <div className="flex items-center justify-between px-3 py-2">
+        <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+          Comments
+        </span>
+        {count > 0 && (
+          <Badge variant="secondary" className="text-xs h-4 px-1.5">
+            {count}
+          </Badge>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function DocsSection({ projectId, spaces, docs }: { projectId: string; spaces: SpaceItem[]; docs: DocItem[] }) {
   const [expandedSpaces, setExpandedSpaces] = useState<Set<string>>(new Set())
+  const { activeDraftId } = useDraftStore()
+  const createDoc = useCreateDoc(projectId)
 
   const toggleSpace = (spaceId: string) => {
     setExpandedSpaces((prev) => {
@@ -117,8 +178,14 @@ function DocsSection({ spaces, docs }: { spaces: SpaceItem[]; docs: DocItem[] })
     })
   }
 
-  const openDoc = (docId: string) => {
-    useShellStore.getState().openDoc(docId)
+  const handleNewAdr = () => {
+    const id = crypto.randomUUID()
+    createDoc.mutate({
+      id,
+      title: 'New ADR',
+      draftId: activeDraftId ?? undefined,
+      adrStatus: 'proposed',
+    })
   }
 
   const looseDocs = docs.filter((d) => d.spaceId === null)
@@ -129,6 +196,16 @@ function DocsSection({ spaces, docs }: { spaces: SpaceItem[]; docs: DocItem[] })
         <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
           Docs
         </span>
+        {activeDraftId && (
+          <button
+            className="text-xs text-primary hover:text-primary/80 disabled:opacity-50"
+            onClick={handleNewAdr}
+            disabled={createDoc.isPending}
+            title="New ADR"
+          >
+            ADR+
+          </button>
+        )}
       </div>
       <div className="px-2 pb-2">
         {spaces.map((space) => {
@@ -146,13 +223,7 @@ function DocsSection({ spaces, docs }: { spaces: SpaceItem[]; docs: DocItem[] })
               {isExpanded && (
                 <div>
                   {spaceDocs.map((doc) => (
-                    <button
-                      key={doc.id}
-                      className="w-full rounded px-2 py-1 pl-7 text-left text-sm hover:bg-muted"
-                      onClick={() => openDoc(doc.id)}
-                    >
-                      {doc.title}
-                    </button>
+                    <DocRow key={doc.id} doc={doc} indent />
                   ))}
                   {spaceDocs.length === 0 && (
                     <p className="px-7 py-1 text-xs text-muted-foreground">No docs</p>
@@ -169,13 +240,7 @@ function DocsSection({ spaces, docs }: { spaces: SpaceItem[]; docs: DocItem[] })
               <p className="px-2 py-1 text-xs text-muted-foreground">Unsorted</p>
             )}
             {looseDocs.map((doc) => (
-              <button
-                key={doc.id}
-                className="w-full rounded px-2 py-1 text-left text-sm hover:bg-muted"
-                onClick={() => openDoc(doc.id)}
-              >
-                {doc.title}
-              </button>
+              <DocRow key={doc.id} doc={doc} />
             ))}
           </div>
         )}

@@ -90,7 +90,7 @@ describe('useCreateDoc', () => {
 
     expect(postApiProjectsByProjectIdDocs).toHaveBeenCalledWith({
       path: { projectId: PROJECT_ID },
-      body: { id: DOC_ID, title: 'Test Doc', spaceId: null, elementId: null },
+      body: { id: DOC_ID, title: 'Test Doc', spaceId: null, elementId: null, draftId: null, adrStatus: null },
     })
   })
 })

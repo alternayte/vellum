@@ -10,6 +10,12 @@ vi.mock('../../../src/hooks/use-drafts', () => ({
   useCreateDraft: () => ({ mutateAsync: vi.fn(), isPending: false }),
   useAbandonDraft: () => ({ mutateAsync: vi.fn(), isPending: false }),
 }))
+vi.mock('../../../src/hooks/use-docs', () => ({
+  useCreateDoc: () => ({ mutate: vi.fn(), isPending: false }),
+}))
+vi.mock('../../../src/hooks/use-draft-comments', () => ({
+  useComments: () => ({ data: { items: [] } }),
+}))
 vi.mock('../../../src/api/client', () => ({}))
 
 const ELEMENTS = [
