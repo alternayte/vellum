@@ -5,7 +5,7 @@ using Vellum.Modules.Workspaces.Authorization;
 
 namespace Vellum.Modules.Docs;
 
-public sealed record CreateDocRequest(Guid Id, string Title, Guid? SpaceId = null, Guid? ElementId = null);
+public sealed record CreateDocRequest(Guid Id, string Title, Guid? SpaceId = null, Guid? ElementId = null, Guid? DraftId = null, string? AdrStatus = null);
 
 public static class CreateDoc
 {
@@ -31,7 +31,9 @@ public static class CreateDoc
             SpaceId = request.SpaceId,
             ElementId = request.ElementId,
             Title = request.Title,
-            CreatedBy = userId
+            CreatedBy = userId,
+            DraftId = request.DraftId,
+            AdrStatus = request.AdrStatus
         };
         db.Documents.Add(doc);
         await db.SaveChangesAsync(ct);
@@ -40,5 +42,5 @@ public static class CreateDoc
     }
 
     private static DocDto ToDto(DocumentEntity d) =>
-        new(d.Id, d.ProjectId, d.SpaceId, d.ElementId, d.Title, d.Content, d.CreatedBy, d.CreatedAt, d.UpdatedAt);
+        new(d.Id, d.ProjectId, d.SpaceId, d.ElementId, d.Title, d.Content, d.CreatedBy, d.CreatedAt, d.UpdatedAt, d.DraftId, d.AdrStatus);
 }
