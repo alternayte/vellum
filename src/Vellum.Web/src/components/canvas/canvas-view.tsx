@@ -141,6 +141,7 @@ export function CanvasView({
       edgeTypes={edgeTypes}
       onNodeClick={handleNodeClick}
       onNodeDoubleClick={handleNodeDoubleClick}
+      onNodeDragStop={onNodeDragStop ? (_event, node) => onNodeDragStop(node.id, node.position.x, node.position.y) : undefined}
       onEdgeClick={handleEdgeClick}
       onPaneClick={handlePaneClick}
       fitView
