@@ -25,6 +25,9 @@ migrate-modelling name:
 migrate-views name:
     dotnet ef migrations add {{name}} --project src/Vellum --context ViewsDbContext --output-dir Modules/Views/Migrations
 
+migrate-docs name:
+    dotnet ef migrations add {{name}} --project src/Vellum --context DocsDbContext --output-dir Modules/Docs/Migrations
+
 seed:
     dotnet run --project src/Vellum -- seed
 

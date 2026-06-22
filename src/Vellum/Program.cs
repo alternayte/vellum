@@ -11,6 +11,7 @@ using Vellum.Kernel.Projections;
 using Vellum.Modules.Identity;
 using Vellum.Modules.Modelling;
 using Vellum.Modules.Modelling.Model;
+using Vellum.Modules.Docs;
 using Vellum.Modules.Views;
 using Vellum.Modules.Workspaces;
 using Vellum.Modules.Workspaces.Entities;
@@ -45,6 +46,7 @@ builder.Services.AddIdentityModule(builder.Configuration);
 builder.Services.AddWorkspacesModule(builder.Configuration);
 builder.Services.AddModellingModule(builder.Configuration);
 builder.Services.AddViewsModule(builder.Configuration);
+builder.Services.AddDocsModule(builder.Configuration);
 
 // Command handlers (Scrutor scan + TransactionBehavior decoration)
 builder.Services.Scan(s => s.FromAssemblyOf<Program>()
@@ -88,6 +90,7 @@ if (app.Environment.IsDevelopment())
     await services.GetRequiredService<WorkspacesDbContext>().Database.MigrateAsync();
     await services.GetRequiredService<ModellingDbContext>().Database.MigrateAsync();
     await services.GetRequiredService<ViewsDbContext>().Database.MigrateAsync();
+    await services.GetRequiredService<DocsDbContext>().Database.MigrateAsync();
 
     // Seed dev data
     if (args.Contains("seed"))
