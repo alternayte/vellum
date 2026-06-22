@@ -20,6 +20,7 @@ builder.Services.AddScoped<AggregateStore>();
 builder.Services.AddSingleton<EventTypeRegistry>();
 builder.Services.AddSingleton<IEventTypeRegistry>(sp => sp.GetRequiredService<EventTypeRegistry>());
 builder.Services.AddHostedService<OutboxDispatcher>();
+builder.Services.AddHostedService<AsyncProjectionHost>();
 
 var app = builder.Build();
 

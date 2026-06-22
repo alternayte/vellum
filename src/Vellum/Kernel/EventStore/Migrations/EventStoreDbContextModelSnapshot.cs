@@ -193,6 +193,28 @@ namespace Vellum.Kernel.EventStore.Migrations
 
                     b.ToTable("outbox_messages", "es");
                 });
+
+            modelBuilder.Entity("Vellum.Kernel.Projections.CheckpointEntity", b =>
+                {
+                    b.Property<string>("ProjectionName")
+                        .HasColumnType("text")
+                        .HasColumnName("projection_name");
+
+                    b.Property<long>("LastProcessedPosition")
+                        .HasColumnType("bigint")
+                        .HasColumnName("last_processed_position");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.HasKey("ProjectionName")
+                        .HasName("pk_checkpoints");
+
+                    b.ToTable("checkpoints", "es");
+                });
 #pragma warning restore 612, 618
         }
     }
