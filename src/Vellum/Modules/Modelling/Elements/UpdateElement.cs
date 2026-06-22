@@ -8,7 +8,7 @@ namespace Vellum.Modules.Modelling.Elements;
 public sealed record UpdateElementRequest(
     string? Name, string? Description, string? Technology,
     Guid? OwnerId, Guid? ParentId, string? Status, string[]? Tags,
-    bool SetDescription = false, bool SetOwnerId = false, bool SetParentId = false);
+    bool SetDescription = false, bool SetTechnology = false, bool SetOwnerId = false, bool SetParentId = false);
 
 public sealed record UpdateElementCommandEnvelope(
     Guid ProjectId, Guid StreamId, Guid ElementId, string UserId, UpdateElementRequest Request);
@@ -40,7 +40,7 @@ public sealed class UpdateElementHandler : ICommandHandler<UpdateElementCommandE
             cmd.ElementId,
             Name: cmd.Request.Name, SetName: cmd.Request.Name is not null,
             Description: cmd.Request.Description, SetDescription: cmd.Request.SetDescription || cmd.Request.Description is not null,
-            Technology: cmd.Request.Technology, SetTechnology: cmd.Request.Technology is not null,
+            Technology: cmd.Request.Technology, SetTechnology: cmd.Request.SetTechnology || cmd.Request.Technology is not null,
             OwnerId: cmd.Request.OwnerId, SetOwnerId: cmd.Request.SetOwnerId,
             ParentId: cmd.Request.ParentId, SetParentId: cmd.Request.SetParentId,
             Status: status,
