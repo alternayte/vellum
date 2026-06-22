@@ -15,6 +15,8 @@ export interface Doc {
   projectId: string
   spaceId: string | null
   elementId: string | null
+  draftId: string | null
+  adrStatus: string | null
   title: string
   content: string
   createdBy: string
@@ -27,13 +29,22 @@ interface DocPage {
   cursor: string | null
 }
 
-export function useDocs(projectId: string, filters?: { spaceId?: string; elementId?: string }) {
+export function useDocs(
+  projectId: string,
+  filters?: { spaceId?: string; elementId?: string; draftId?: string; adrStatus?: string },
+) {
   return useQuery({
     queryKey: ['projects', projectId, 'docs', filters],
     queryFn: async () => {
       const result = await getApiProjectsByProjectIdDocs({
         path: { projectId },
-        query: { limit: 200, spaceId: filters?.spaceId, elementId: filters?.elementId },
+        query: {
+          limit: 200,
+          spaceId: filters?.spaceId,
+          elementId: filters?.elementId,
+          draftId: filters?.draftId,
+          adrStatus: filters?.adrStatus,
+        },
       })
       return (result.data as DocPage).items
     },
@@ -59,7 +70,14 @@ export function useCreateDoc(projectId: string) {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: async (doc: { id: string; title: string; spaceId?: string; elementId?: string }) => {
+    mutationFn: async (doc: {
+      id: string
+      title: string
+      spaceId?: string
+      elementId?: string
+      draftId?: string
+      adrStatus?: string
+    }) => {
       const result = await postApiProjectsByProjectIdDocs({
         path: { projectId },
         body: {
@@ -67,6 +85,8 @@ export function useCreateDoc(projectId: string) {
           title: doc.title,
           spaceId: doc.spaceId ?? null,
           elementId: doc.elementId ?? null,
+          draftId: doc.draftId ?? null,
+          adrStatus: doc.adrStatus ?? null,
         },
       })
       return result.data as Doc

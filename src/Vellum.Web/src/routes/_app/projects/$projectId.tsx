@@ -132,7 +132,7 @@ function ProjectWorkspace() {
           elements={elements ?? []}
           views={views ?? []}
           spaces={spaces ?? []}
-          docs={(docs ?? []).map((d) => ({ id: d.id, title: d.title, spaceId: d.spaceId }))}
+          docs={(docs ?? []).map((d) => ({ id: d.id, title: d.title, spaceId: d.spaceId, adrStatus: d.adrStatus ?? null }))}
         />
         <main className="relative flex-1">
           {activeDraftId && !isReviewMode && !activeDocId && (
@@ -173,6 +173,7 @@ function ProjectWorkspace() {
           )}
         </main>
         <DetailPanel
+          projectId={projectId}
           elements={elements ?? []}
           relationships={relationships ?? []}
           onUpdateElement={(id, fields) => updateElement.mutate({ id, ...fields })}
