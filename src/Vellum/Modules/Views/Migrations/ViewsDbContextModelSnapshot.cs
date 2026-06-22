@@ -139,6 +139,26 @@ namespace Vellum.Modules.Views.Migrations
 
                     b.ToTable("views", "views");
                 });
+
+            modelBuilder.Entity("Vellum.Modules.Views.Entities.LayoutEdgeEntity", b =>
+                {
+                    b.HasOne("Vellum.Modules.Views.Entities.ViewEntity", null)
+                        .WithMany()
+                        .HasForeignKey("ViewId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_layout_edges_views_view_id");
+                });
+
+            modelBuilder.Entity("Vellum.Modules.Views.Entities.LayoutPositionEntity", b =>
+                {
+                    b.HasOne("Vellum.Modules.Views.Entities.ViewEntity", null)
+                        .WithMany()
+                        .HasForeignKey("ViewId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_layout_positions_views_view_id");
+                });
 #pragma warning restore 612, 618
         }
     }
