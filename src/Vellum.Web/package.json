@@ -8,7 +8,9 @@
     "build": "tsc --noEmit && vite build",
     "generate": "openapi-ts",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@fontsource-variable/geist": "^5.2.9",
