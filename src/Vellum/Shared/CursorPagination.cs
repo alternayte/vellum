@@ -19,7 +19,7 @@ public static class CursorEncoder
         try
         {
             var json = Encoding.UTF8.GetString(Convert.FromBase64String(cursor));
-            var doc = JsonDocument.Parse(json);
+            using var doc = JsonDocument.Parse(json);
             var sortKey = doc.RootElement.GetProperty("s").GetString()!;
             var id = doc.RootElement.GetProperty("i").GetGuid();
             return (sortKey, id);
