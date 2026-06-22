@@ -6,7 +6,8 @@ namespace Vellum.Modules.Views;
 
 public sealed record UpdateViewRequest(
     string? Name, Guid? RootElementId, Guid[]? VisibleElementIds,
-    string? ActiveLens, DateTimeOffset? UpdatedAt);
+    string? ActiveLens, DateTimeOffset? UpdatedAt,
+    bool SetRootElementId = false, bool SetActiveLens = false);
 
 public static class UpdateView
 {
@@ -30,9 +31,9 @@ public static class UpdateView
             return Results.Conflict(new ErrorResponse("conflict", "View was modified by another user"));
 
         if (request.Name is not null) view.Name = request.Name;
-        if (request.RootElementId.HasValue) view.RootElementId = request.RootElementId;
+        if (request.SetRootElementId || request.RootElementId.HasValue) view.RootElementId = request.RootElementId;
         if (request.VisibleElementIds is not null) view.VisibleElementIds = request.VisibleElementIds;
-        if (request.ActiveLens is not null) view.ActiveLens = request.ActiveLens;
+        if (request.SetActiveLens || request.ActiveLens is not null) view.ActiveLens = request.ActiveLens;
         view.UpdatedAt = DateTimeOffset.UtcNow;
 
         await db.SaveChangesAsync(ct);

@@ -14,7 +14,7 @@ public static class ResultExtensions
 {
     public static IResult ToHttpResult(this CommandResult result) => result switch
     {
-        CommandResult.Success => Results.Ok(),
+        CommandResult.Success => Results.NoContent(),
         CommandResult.Invalid inv => Results.BadRequest(new ErrorResponse(
             "validation_error", "Validation failed", Errors: inv.Errors.Select(e => new FieldError(e.Field, e.Message)).ToList())),
         CommandResult.Conflict c => Results.Conflict(new ErrorResponse("conflict", c.Message)),

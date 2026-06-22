@@ -166,7 +166,7 @@ public class ViewEndpointTests
             new { id = viewId, name = "To Delete" });
 
         var deleteResponse = await client.DeleteAsync($"/api/projects/{projectId}/views/{viewId}");
-        Assert.Equal(HttpStatusCode.OK, deleteResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, deleteResponse.StatusCode);
 
         var getResponse = await client.GetAsync($"/api/projects/{projectId}/views/{viewId}");
         Assert.Equal(HttpStatusCode.NotFound, getResponse.StatusCode);
@@ -202,7 +202,7 @@ public class ViewEndpointTests
             });
 
         var deleteResponse = await client.DeleteAsync($"/api/projects/{projectId}/views/{viewId}");
-        Assert.Equal(HttpStatusCode.OK, deleteResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, deleteResponse.StatusCode);
 
         using var scope = factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<ViewsDbContext>();

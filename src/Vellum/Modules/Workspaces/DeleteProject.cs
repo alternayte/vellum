@@ -22,6 +22,6 @@ public static class DeleteProject
 
         db.Projects.Remove(project);
         await db.SaveChangesAsync(ct);
-        return Results.Ok();
+        return Results.NoContent();
     }
 }

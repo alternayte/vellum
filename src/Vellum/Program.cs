@@ -108,7 +108,10 @@ if (app.Environment.IsDevelopment())
                 Email = "dev@vellum.local",
                 DisplayName = "Dev User"
             };
-            await userManager.CreateAsync(devUser, "Dev123!");
+            var seedResult = await userManager.CreateAsync(devUser, "Dev123!");
+            if (!seedResult.Succeeded)
+                throw new InvalidOperationException(
+                    $"Failed to create dev user: {string.Join(", ", seedResult.Errors.Select(e => e.Description))}");
         }
 
         // Create workspace + project

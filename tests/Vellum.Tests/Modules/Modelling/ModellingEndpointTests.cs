@@ -129,7 +129,7 @@ public class ModellingEndpointTests
             new { id = relId, fromId = sysA, toId = sysB, label = "uses" });
 
         var deleteResponse = await client.DeleteAsync($"/api/projects/{projectId}/elements/{sysA}");
-        Assert.Equal(HttpStatusCode.OK, deleteResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, deleteResponse.StatusCode);
 
         var relResponse = await client.GetAsync($"/api/projects/{projectId}/relationships/{relId}");
         Assert.Equal(HttpStatusCode.NotFound, relResponse.StatusCode);
