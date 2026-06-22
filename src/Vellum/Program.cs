@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Scalar.AspNetCore;
 using Vellum.Kernel.Aggregates;
 using Vellum.Kernel.CommandHandling;
 using Vellum.Kernel.EventStore;
@@ -10,6 +11,10 @@ var builder = WebApplication.CreateBuilder(args);
 
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")!;
 
+// OpenAPI
+builder.Services.AddOpenApi();
+
+// Kernel
 builder.Services.AddDbContext<EventStoreDbContext>(options =>
     options.UseNpgsql(connectionString)
            .UseSnakeCaseNamingConvention());
@@ -24,6 +29,14 @@ builder.Services.AddHostedService<AsyncProjectionHost>();
 
 var app = builder.Build();
 
+if (app.Environment.IsDevelopment())
+{
+    app.MapOpenApi();
+    app.MapScalarApiReference();
+}
+
 app.MapGet("/health", () => Results.Ok());
 
 app.Run();
+
+public partial class Program;
