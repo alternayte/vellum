@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Vellum.Kernel.Outbox;
 
 namespace Vellum.Kernel.EventStore;
 
@@ -10,6 +11,8 @@ public class EventStoreDbContext : DbContext
 
     public DbSet<StreamEntity> Streams => Set<StreamEntity>();
     public DbSet<EventEntity> Events => Set<EventEntity>();
+    public DbSet<OutboxMessageEntity> OutboxMessages => Set<OutboxMessageEntity>();
+    public DbSet<DeadLetterEntity> DeadLetters => Set<DeadLetterEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -34,6 +37,25 @@ public class EventStoreDbContext : DbContext
             b.Property(e => e.Metadata).HasColumnType("jsonb");
             b.Property(e => e.OccurredAt).HasDefaultValueSql("now()");
             b.HasIndex(e => e.GlobalPosition).IsUnique();
+        });
+
+        modelBuilder.Entity<OutboxMessageEntity>(b =>
+        {
+            b.ToTable("outbox_messages");
+            b.HasKey(o => o.Id);
+            b.Property(o => o.Id).UseIdentityAlwaysColumn();
+            b.Property(o => o.Payload).HasColumnType("jsonb");
+            b.Property(o => o.CreatedAt).HasDefaultValueSql("now()");
+            b.HasIndex(o => new { o.ProcessedAt, o.NextRetryAt });
+        });
+
+        modelBuilder.Entity<DeadLetterEntity>(b =>
+        {
+            b.ToTable("dead_letters");
+            b.HasKey(d => d.Id);
+            b.Property(d => d.Id).UseIdentityAlwaysColumn();
+            b.Property(d => d.Payload).HasColumnType("jsonb");
+            b.Property(d => d.FailedAt).HasDefaultValueSql("now()");
         });
     }
 }
