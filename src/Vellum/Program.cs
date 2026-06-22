@@ -78,6 +78,7 @@ app.MapIdentityEndpoints();
 app.MapWorkspaceEndpoints();
 app.MapModellingEndpoints();
 app.MapViewEndpoints();
+app.MapSpaceEndpoints();
 
 if (app.Environment.IsDevelopment())
 {
