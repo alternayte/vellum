@@ -33,7 +33,14 @@ public sealed class OutboxDispatcher : BackgroundService
     {
         while (!stoppingToken.IsCancellationRequested)
         {
-            await ProcessBatchAsync(DefaultDispatch, stoppingToken);
+            try
+            {
+                await ProcessBatchAsync(DefaultDispatch, stoppingToken);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogError(ex, "Outbox dispatch batch failed");
+            }
             await Task.Delay(PollInterval, stoppingToken);
         }
     }
