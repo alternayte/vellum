@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Scalar.AspNetCore;
+using Scrutor;
 using Vellum.Kernel.Aggregates;
 using Vellum.Kernel.CommandHandling;
 using Vellum.Kernel.EventStore;
@@ -7,6 +8,7 @@ using Vellum.Kernel.EventTypes;
 using Vellum.Kernel.Outbox;
 using Vellum.Kernel.Projections;
 using Vellum.Modules.Identity;
+using Vellum.Modules.Modelling;
 using Vellum.Modules.Workspaces;
 using Vellum.Shared;
 
@@ -37,8 +39,20 @@ builder.Services.AddHostedService<AsyncProjectionHost>();
 // Modules
 builder.Services.AddIdentityModule(builder.Configuration);
 builder.Services.AddWorkspacesModule(builder.Configuration);
+builder.Services.AddModellingModule(builder.Configuration);
+
+// Command handlers (Scrutor scan + TransactionBehavior decoration)
+builder.Services.Scan(s => s.FromAssemblyOf<Program>()
+    .AddClasses(c => c.AssignableTo(typeof(ICommandHandler<,>)))
+    .AsImplementedInterfaces()
+    .WithScopedLifetime());
+builder.Services.Decorate(typeof(ICommandHandler<,>), typeof(TransactionBehavior<,>));
 
 var app = builder.Build();
+
+// Register modelling events
+var registry = app.Services.GetRequiredService<EventTypeRegistry>();
+ModellingModule.RegisterEvents(registry);
 
 if (app.Environment.IsDevelopment())
 {
@@ -55,6 +69,7 @@ app.MapGet("/health", () => Results.Ok());
 // Endpoints
 app.MapIdentityEndpoints();
 app.MapWorkspaceEndpoints();
+app.MapModellingEndpoints();
 
 app.Run();
 
