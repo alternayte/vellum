@@ -5,10 +5,13 @@ import { Navigator } from '@/components/shell/navigator'
 import { DetailPanel } from '@/components/shell/detail-panel'
 import { LensBar } from '@/components/shell/lens-bar'
 import { CanvasView } from '@/components/canvas/canvas-view'
+import { DocEditor } from '@/components/docs/doc-editor'
 import { CommandPalette } from '@/components/command-palette/command-palette'
 import { useElements, useUpdateElement } from '@/hooks/use-elements'
 import { useRelationships, useUpdateRelationship } from '@/hooks/use-relationships'
 import { useViews, useView, useSaveLayout } from '@/hooks/use-views'
+import { useDocs } from '@/hooks/use-docs'
+import { useSpaces } from '@/hooks/use-spaces'
 import { useShellStore } from '@/stores/shell-store'
 import { useCanvasStore } from '@/stores/canvas-store'
 import { computeLayout } from '@/lib/layout'
@@ -23,7 +26,9 @@ function ProjectWorkspace() {
   const { data: elements, isLoading: elementsLoading } = useElements(projectId)
   const { data: relationships, isLoading: relsLoading } = useRelationships(projectId)
   const { data: views } = useViews(projectId)
-  const { activeViewId } = useShellStore()
+  const { data: docs } = useDocs(projectId)
+  const { data: spaces } = useSpaces(projectId)
+  const { activeViewId, activeDocId } = useShellStore()
   const { data: activeView } = useView(projectId, activeViewId)
   const updateElement = useUpdateElement(projectId)
   const updateRelationship = useUpdateRelationship(projectId)
@@ -83,30 +88,47 @@ function ProjectWorkspace() {
 
   const positions = activeView?.positions ?? []
 
+  const activeDocData = activeDocId ? (docs ?? []).find((d) => d.id === activeDocId) : null
+  const activeDocSpaceName = activeDocData?.spaceId
+    ? (spaces ?? []).find((s) => s.id === activeDocData.spaceId)?.name ?? null
+    : null
+  const activeDocForBreadcrumb = activeDocData
+    ? { id: activeDocData.id, title: activeDocData.title, spaceName: activeDocSpaceName }
+    : null
+
   return (
     <div className="flex h-screen flex-col">
-      <TopBar />
+      <TopBar activeDoc={activeDocForBreadcrumb} />
       <div className="flex flex-1 overflow-hidden">
-        <Navigator elements={elements ?? []} views={views ?? []} />
+        <Navigator
+          elements={elements ?? []}
+          views={views ?? []}
+          spaces={spaces ?? []}
+          docs={(docs ?? []).map((d) => ({ id: d.id, title: d.title, spaceId: d.spaceId }))}
+        />
         <main className="flex-1">
-          <CanvasView
-            elements={(elements ?? []).map((e) => ({ ...e, ownerId: e.ownerId ?? null }))}
-            relationships={relationships ?? []}
-            positions={positions}
-            onFitViewReady={handleFitViewReady}
-            onNodeDoubleClick={(elementId) => {
-              const el = elements?.find((e) => e.id === elementId)
-              if (!el) return
-              const children = elements?.filter((e) => e.parentId === elementId)
-              if (children && children.length > 0) {
-                useCanvasStore.getState().drillInto({
-                  elementId: el.id,
-                  name: el.name,
-                  kind: el.kind,
-                })
-              }
-            }}
-          />
+          {activeDocId ? (
+            <DocEditor projectId={projectId} docId={activeDocId} />
+          ) : (
+            <CanvasView
+              elements={(elements ?? []).map((e) => ({ ...e, ownerId: e.ownerId ?? null }))}
+              relationships={relationships ?? []}
+              positions={positions}
+              onFitViewReady={handleFitViewReady}
+              onNodeDoubleClick={(elementId) => {
+                const el = elements?.find((e) => e.id === elementId)
+                if (!el) return
+                const children = elements?.filter((e) => e.parentId === elementId)
+                if (children && children.length > 0) {
+                  useCanvasStore.getState().drillInto({
+                    elementId: el.id,
+                    name: el.name,
+                    kind: el.kind,
+                  })
+                }
+              }}
+            />
+          )}
         </main>
         <DetailPanel
           elements={elements ?? []}

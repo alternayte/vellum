@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { Navigator } from '../../../src/components/shell/navigator'
 import { useShellStore } from '../../../src/stores/shell-store'
@@ -13,6 +13,15 @@ const ELEMENTS = [
 const VIEWS = [
   { id: 'v1', name: 'Context View' },
   { id: 'v2', name: 'Orders System' },
+]
+
+const SPACES = [
+  { id: 's1', name: 'Architecture' },
+]
+
+const DOCS = [
+  { id: 'd1', title: 'System Overview', spaceId: 's1' },
+  { id: 'd2', title: 'ADR-001', spaceId: null },
 ]
 
 beforeEach(() => {
@@ -69,5 +78,26 @@ describe('Navigator', () => {
   it('renders the + button for adding views', () => {
     render(<Navigator elements={ELEMENTS} views={VIEWS} />)
     expect(screen.getByText('+')).toBeTruthy()
+  })
+
+  it('renders the Docs section header', () => {
+    render(<Navigator elements={ELEMENTS} views={VIEWS} spaces={SPACES} docs={DOCS} />)
+    expect(screen.getByText('Docs')).toBeTruthy()
+  })
+
+  it('renders space names in docs section', () => {
+    render(<Navigator elements={ELEMENTS} views={VIEWS} spaces={SPACES} docs={DOCS} />)
+    expect(screen.getByText('Architecture')).toBeTruthy()
+  })
+
+  it('shows loose docs (spaceId null) directly in docs section', () => {
+    render(<Navigator elements={ELEMENTS} views={VIEWS} spaces={SPACES} docs={DOCS} />)
+    expect(screen.getByText('ADR-001')).toBeTruthy()
+  })
+
+  it('clicking a doc calls openDoc on shell store', () => {
+    render(<Navigator elements={ELEMENTS} views={VIEWS} spaces={[]} docs={[{ id: 'd2', title: 'ADR-001', spaceId: null }]} />)
+    fireEvent.click(screen.getByText('ADR-001'))
+    expect(useShellStore.getState().activeDocId).toBe('d2')
   })
 })

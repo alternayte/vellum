@@ -1,8 +1,36 @@
 import { useCanvasStore } from '@/stores/canvas-store'
+import { useShellStore } from '@/stores/shell-store'
 import { stratumLabel } from '@/lib/strata'
 
-export function StrataBreadcrumb() {
+interface BreadcrumbDoc {
+  id: string
+  title: string
+  spaceName?: string | null
+}
+
+interface StrataBreadcrumbProps {
+  activeDoc?: BreadcrumbDoc | null
+}
+
+export function StrataBreadcrumb({ activeDoc }: StrataBreadcrumbProps = {}) {
   const { drillPath, drillTo } = useCanvasStore()
+  const { activeDocId } = useShellStore()
+
+  if (activeDocId && activeDoc) {
+    return (
+      <nav className="flex items-center gap-1 text-sm">
+        {activeDoc.spaceName && (
+          <>
+            <span className="font-display font-medium text-muted-foreground">
+              {activeDoc.spaceName}
+            </span>
+            <span className="text-muted-foreground">›</span>
+          </>
+        )}
+        <span className="font-display font-medium text-foreground">{activeDoc.title}</span>
+      </nav>
+    )
+  }
 
   return (
     <nav className="flex items-center gap-1 text-sm">
