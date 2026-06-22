@@ -50,7 +50,6 @@ public class OutboxDispatcherTests : IAsyncLifetime
         await SeedMessage();
         var dispatched = new List<string>();
 
-        await using var db = CreateDb();
         var dispatcher = new OutboxDispatcher(
             new TestServiceScopeFactory(() => CreateDb()),
             NullLogger<OutboxDispatcher>.Instance);
@@ -73,7 +72,6 @@ public class OutboxDispatcherTests : IAsyncLifetime
     {
         await SeedMessage();
 
-        await using var db = CreateDb();
         var dispatcher = new OutboxDispatcher(
             new TestServiceScopeFactory(() => CreateDb()),
             NullLogger<OutboxDispatcher>.Instance);
