@@ -83,6 +83,7 @@ app.MapViewEndpoints();
 app.MapSpaceEndpoints();
 app.MapDocEndpoints();
 app.MapDraftEndpoints();
+app.MapMergeEndpoints();
 
 if (app.Environment.IsDevelopment())
 {
