@@ -214,7 +214,9 @@ export function CanvasView({
   )
 
   const handleNodeDoubleClick: NodeMouseHandler = useCallback(
-    (_event, node) => onNodeDoubleClick?.(node.id),
+    (_event, node) => {
+      if (!node.id.startsWith('msg-')) onNodeDoubleClick?.(node.id)
+    },
     [onNodeDoubleClick],
   )
 
