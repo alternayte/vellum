@@ -6,7 +6,7 @@ interface DrillSegment {
   kind: string
 }
 
-type Lens = 'none' | 'status' | 'metadata'
+type Lens = 'none' | 'status' | 'metadata' | 'messages'
 
 interface CanvasState {
   drillPath: DrillSegment[]
@@ -17,7 +17,7 @@ interface CanvasState {
   drillInto: (element: DrillSegment) => void
   drillTo: (index: number) => void
   setLens: (lens: Lens) => void
-  toggleLens: (lens: 'status' | 'metadata') => void
+  toggleLens: (lens: 'status' | 'metadata' | 'messages') => void
   setZoom: (zoom: number) => void
   reset: () => void
 }
