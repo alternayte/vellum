@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { TopBar } from '@/components/shell/top-bar'
 import { Navigator } from '@/components/shell/navigator'
@@ -8,8 +8,8 @@ import { ReviewBar } from '@/components/review/review-bar'
 import { CanvasView } from '@/components/canvas/canvas-view'
 import { DocEditor } from '@/components/docs/doc-editor'
 import { CommandPalette } from '@/components/command-palette/command-palette'
-import { useElements, useUpdateElement } from '@/hooks/use-elements'
-import { useRelationships, useUpdateRelationship } from '@/hooks/use-relationships'
+import { useElements, useAddElement, useUpdateElement } from '@/hooks/use-elements'
+import { useRelationships, useAddRelationship, useUpdateRelationship } from '@/hooks/use-relationships'
 import { useViews, useView, useSaveLayout } from '@/hooks/use-views'
 import { useDocs } from '@/hooks/use-docs'
 import { useSpaces } from '@/hooks/use-spaces'
@@ -23,6 +23,14 @@ import { useMergePreview } from '@/hooks/use-merge'
 import { computeLayout } from '@/lib/layout'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from '@/components/ui/dialog'
 
 export const Route = createFileRoute('/_app/projects/$projectId')({
   component: ProjectWorkspace,
@@ -40,10 +48,16 @@ function ProjectWorkspace() {
   const { data: spaces } = useSpaces(projectId)
   const { activeViewId, activeDocId } = useShellStore()
   const { data: activeView } = useView(projectId, activeViewId)
+  const addElement = useAddElement(projectId)
   const updateElement = useUpdateElement(projectId)
+  const addRelationship = useAddRelationship(projectId)
   const updateRelationship = useUpdateRelationship(projectId)
   const { saveLayout } = useSaveLayout(projectId, activeViewId)
   const mergePreview = useMergePreview(projectId)
+
+  const [showCreateElement, setShowCreateElement] = useState(false)
+  const [newElementName, setNewElementName] = useState('')
+  const [newElementKind, setNewElementKind] = useState('system')
 
   const fitViewRef = useRef<(() => void) | null>(null)
   const handleFitViewReady = useCallback((fn: () => void) => {
@@ -76,6 +90,39 @@ function ProjectWorkspace() {
     saveLayout(newPositions)
   }
 
+  const handleCreateElement = (name: string, kind: string) => {
+    const { currentRootId } = useCanvasStore.getState()
+    addElement.mutate({
+      id: crypto.randomUUID(),
+      kind,
+      name,
+      parentId: currentRootId ?? undefined,
+    })
+  }
+
+  const handleOpenCreateDialog = () => {
+    const { currentRootId } = useCanvasStore.getState()
+    setNewElementKind(currentRootId ? 'app' : 'system')
+    setNewElementName('')
+    setShowCreateElement(true)
+  }
+
+  const handleConnect = (source: string, target: string) => {
+    addRelationship.mutate({
+      id: crypto.randomUUID(),
+      fromId: source,
+      toId: target,
+    })
+  }
+
+  const handleNodeDragStop = (id: string, x: number, y: number) => {
+    const current = activeView?.positions ?? []
+    const updated = current.some((p) => p.elementId === id)
+      ? current.map((p) => (p.elementId === id ? { ...p, x, y } : p))
+      : [...current, { elementId: id, x, y }]
+    saveLayout(updated)
+  }
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       const meta = e.metaKey || e.ctrlKey
@@ -97,6 +144,9 @@ function ProjectWorkspace() {
       }
       if (e.key === 't' && !inInput) {
         handleTidy()
+      }
+      if (e.key === 'n' && !inInput) {
+        handleOpenCreateDialog()
       }
       if (e.key === 'Escape') {
         useShellStore.getState().closeCommandPalette()
@@ -165,6 +215,9 @@ function ProjectWorkspace() {
               isReviewMode={isReviewMode}
               messages={messages ?? []}
               onFitViewReady={handleFitViewReady}
+              onAddElement={handleOpenCreateDialog}
+              onConnect={handleConnect}
+              onNodeDragStop={handleNodeDragStop}
               onNodeDoubleClick={(elementId) => {
                 const el = elements?.find((e) => e.id === elementId)
                 if (!el) return
@@ -197,9 +250,55 @@ function ProjectWorkspace() {
       )}
       <CommandPalette
         elements={elements ?? []}
+        onAddElement={handleOpenCreateDialog}
         onTidy={handleTidy}
         onZoomToFit={() => fitViewRef.current?.()}
       />
+
+      <Dialog open={showCreateElement} onOpenChange={setShowCreateElement}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add Element</DialogTitle>
+          </DialogHeader>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault()
+              if (newElementName.trim()) {
+                handleCreateElement(newElementName.trim(), newElementKind)
+                setShowCreateElement(false)
+              }
+            }}
+          >
+            <div className="space-y-3">
+              <div>
+                <label className="mb-1 block text-xs font-medium text-muted-foreground">Kind</label>
+                <select
+                  value={newElementKind}
+                  onChange={(e) => setNewElementKind(e.target.value)}
+                  className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
+                >
+                  <option value="actor">Actor</option>
+                  <option value="system">System</option>
+                  <option value="app">App</option>
+                  <option value="store">Store</option>
+                  <option value="component">Component</option>
+                </select>
+              </div>
+              <Input
+                placeholder="Element name"
+                value={newElementName}
+                onChange={(e) => setNewElementName(e.target.value)}
+                autoFocus
+              />
+            </div>
+            <DialogFooter className="mt-4">
+              <Button type="submit" disabled={!newElementName.trim() || addElement.isPending}>
+                {addElement.isPending ? 'Adding...' : 'Add'}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
