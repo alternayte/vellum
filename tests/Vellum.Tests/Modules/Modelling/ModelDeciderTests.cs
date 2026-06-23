@@ -238,6 +238,130 @@ public class ModelDeciderTests
         Assert.Equal(relId, relationshipRemovals[0].RelationshipId);
     }
 
+    // --- AddMessage ---
+
+    [Fact]
+    public void AddMessage_valid()
+    {
+        var producerId = Guid.NewGuid();
+        var consumerId = Guid.NewGuid();
+        var state = StateWith(
+            new ModelEvent.ElementAdded(producerId, ElementKind.System, "Orders", null, null, null, ElementStatus.Current, null, []),
+            new ModelEvent.ElementAdded(consumerId, ElementKind.System, "Payments", null, null, null, ElementStatus.Current, null, []));
+        var result = ModelDecider.AddMessage(state,
+            new AddMessageCommand(Guid.NewGuid(), "OrderPlaced", "An order was placed", producerId, [consumerId], null, []));
+        var success = Assert.IsType<CommandResult<IReadOnlyList<ModelEvent>>.Success>(result);
+        var added = Assert.IsType<ModelEvent.MessageAdded>(Assert.Single(success.Value));
+        Assert.Equal("OrderPlaced", added.Name);
+        Assert.Equal(producerId, added.ProducerId);
+        Assert.Single(added.ConsumerIds);
+    }
+
+    [Fact]
+    public void AddMessage_empty_name_returns_invalid()
+    {
+        var producerId = Guid.NewGuid();
+        var state = StateWith(
+            new ModelEvent.ElementAdded(producerId, ElementKind.System, "Orders", null, null, null, ElementStatus.Current, null, []));
+        var result = ModelDecider.AddMessage(state,
+            new AddMessageCommand(Guid.NewGuid(), "", null, producerId, [], null, []));
+        Assert.IsType<CommandResult<IReadOnlyList<ModelEvent>>.Invalid>(result);
+    }
+
+    [Fact]
+    public void AddMessage_missing_producer_returns_invalid()
+    {
+        var result = ModelDecider.AddMessage(ModelState.Initial,
+            new AddMessageCommand(Guid.NewGuid(), "OrderPlaced", null, Guid.NewGuid(), [], null, []));
+        Assert.IsType<CommandResult<IReadOnlyList<ModelEvent>>.Invalid>(result);
+    }
+
+    [Fact]
+    public void AddMessage_missing_consumer_returns_invalid()
+    {
+        var producerId = Guid.NewGuid();
+        var state = StateWith(
+            new ModelEvent.ElementAdded(producerId, ElementKind.System, "Orders", null, null, null, ElementStatus.Current, null, []));
+        var result = ModelDecider.AddMessage(state,
+            new AddMessageCommand(Guid.NewGuid(), "OrderPlaced", null, producerId, [Guid.NewGuid()], null, []));
+        Assert.IsType<CommandResult<IReadOnlyList<ModelEvent>>.Invalid>(result);
+    }
+
+    [Fact]
+    public void AddMessage_duplicate_id_returns_conflict()
+    {
+        var id = Guid.NewGuid();
+        var producerId = Guid.NewGuid();
+        var state = StateWith(
+            new ModelEvent.ElementAdded(producerId, ElementKind.System, "Orders", null, null, null, ElementStatus.Current, null, []),
+            new ModelEvent.MessageAdded(id, "OrderPlaced", null, producerId, [], null, []));
+        var result = ModelDecider.AddMessage(state,
+            new AddMessageCommand(id, "Other", null, producerId, [], null, []));
+        Assert.IsType<CommandResult<IReadOnlyList<ModelEvent>>.Conflict>(result);
+    }
+
+    // --- UpdateMessage ---
+
+    [Fact]
+    public void UpdateMessage_rename_emits_only_renamed()
+    {
+        var id = Guid.NewGuid();
+        var producerId = Guid.NewGuid();
+        var state = StateWith(
+            new ModelEvent.ElementAdded(producerId, ElementKind.System, "Orders", null, null, null, ElementStatus.Current, null, []),
+            new ModelEvent.MessageAdded(id, "OrderPlaced", null, producerId, [], null, []));
+        var result = ModelDecider.UpdateMessage(state,
+            new UpdateMessageCommand(id, Name: "OrderCreated", SetName: true));
+        var success = Assert.IsType<CommandResult<IReadOnlyList<ModelEvent>>.Success>(result);
+        var updated = Assert.IsType<ModelEvent.MessageUpdated>(Assert.Single(success.Value));
+        Assert.Equal("OrderCreated", updated.Name);
+    }
+
+    [Fact]
+    public void UpdateMessage_nonexistent_returns_not_found()
+    {
+        var result = ModelDecider.UpdateMessage(ModelState.Initial,
+            new UpdateMessageCommand(Guid.NewGuid(), Name: "X", SetName: true));
+        Assert.IsType<CommandResult<IReadOnlyList<ModelEvent>>.NotFound>(result);
+    }
+
+    // --- RemoveMessage ---
+
+    [Fact]
+    public void RemoveMessage_valid()
+    {
+        var id = Guid.NewGuid();
+        var producerId = Guid.NewGuid();
+        var state = StateWith(
+            new ModelEvent.ElementAdded(producerId, ElementKind.System, "Orders", null, null, null, ElementStatus.Current, null, []),
+            new ModelEvent.MessageAdded(id, "OrderPlaced", null, producerId, [], null, []));
+        var result = ModelDecider.RemoveMessage(state, id);
+        var success = Assert.IsType<CommandResult<IReadOnlyList<ModelEvent>>.Success>(result);
+        Assert.IsType<ModelEvent.MessageRemoved>(Assert.Single(success.Value));
+    }
+
+    [Fact]
+    public void RemoveMessage_nonexistent_returns_not_found()
+    {
+        var result = ModelDecider.RemoveMessage(ModelState.Initial, Guid.NewGuid());
+        Assert.IsType<CommandResult<IReadOnlyList<ModelEvent>>.NotFound>(result);
+    }
+
+    [Fact]
+    public void RemoveElement_cascades_messages()
+    {
+        var producerId = Guid.NewGuid();
+        var consumerId = Guid.NewGuid();
+        var msgId = Guid.NewGuid();
+        var state = StateWith(
+            new ModelEvent.ElementAdded(producerId, ElementKind.System, "Orders", null, null, null, ElementStatus.Current, null, []),
+            new ModelEvent.ElementAdded(consumerId, ElementKind.System, "Payments", null, null, null, ElementStatus.Current, null, []),
+            new ModelEvent.MessageAdded(msgId, "OrderPlaced", null, producerId, [consumerId], null, []));
+        var result = ModelDecider.RemoveElement(state, producerId);
+        var success = Assert.IsType<CommandResult<IReadOnlyList<ModelEvent>>.Success>(result);
+        Assert.Contains(success.Value, e => e is ModelEvent.MessageRemoved mr && mr.MessageId == msgId);
+    }
+
     // --- AddRelationship ---
 
     [Fact]

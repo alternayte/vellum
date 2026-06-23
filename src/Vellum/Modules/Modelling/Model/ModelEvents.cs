@@ -29,5 +29,19 @@ public abstract record ModelEvent
     public sealed record RelationshipTechnologyChanged(Guid RelationshipId, string? Technology) : ModelEvent;
     public sealed record RelationshipRemoved(Guid RelationshipId) : ModelEvent;
 
+    // Message events
+    public sealed record MessageAdded(
+        Guid Id, string Name, string? Description,
+        Guid ProducerId, Guid[] ConsumerIds,
+        Guid? SchemaId, string[] Tags) : ModelEvent;
+
+    public sealed record MessageUpdated(
+        Guid MessageId,
+        string? Name, string? Description,
+        Guid? ProducerId, Guid[]? ConsumerIds,
+        Guid? SchemaId, bool SetSchemaId) : ModelEvent;
+
+    public sealed record MessageRemoved(Guid MessageId) : ModelEvent;
+
     private ModelEvent() { }
 }
