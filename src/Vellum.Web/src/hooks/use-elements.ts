@@ -38,8 +38,9 @@ export function useElements(projectId: string, branchId?: string) {
   })
 }
 
-export function useAddElement(projectId: string) {
+export function useAddElement(projectId: string, branchId?: string | null) {
   const queryClient = useQueryClient()
+  const cacheKey = ['projects', projectId, 'elements', { branchId: branchId ?? undefined }]
 
   return useMutation({
     mutationFn: async (element: {
@@ -65,14 +66,15 @@ export function useAddElement(projectId: string) {
           status: element.status ?? 'current',
           tags: element.tags ?? [],
         },
+        query: { branchId: branchId ?? undefined } as never,
       })
       return result.data as Element
     },
     onMutate: async (newElement) => {
-      await queryClient.cancelQueries({ queryKey: ['projects', projectId, 'elements'] })
-      const previous = queryClient.getQueryData<Element[]>(['projects', projectId, 'elements'])
+      await queryClient.cancelQueries({ queryKey: cacheKey })
+      const previous = queryClient.getQueryData<Element[]>(cacheKey)
       queryClient.setQueryData<Element[]>(
-        ['projects', projectId, 'elements'],
+        cacheKey,
         (old) => [
           ...(old ?? []),
           {
@@ -90,7 +92,7 @@ export function useAddElement(projectId: string) {
     },
     onError: (_err, _new, context) => {
       if (context?.previous) {
-        queryClient.setQueryData(['projects', projectId, 'elements'], context.previous)
+        queryClient.setQueryData(cacheKey, context.previous)
       }
     },
     onSettled: () => {
@@ -99,8 +101,9 @@ export function useAddElement(projectId: string) {
   })
 }
 
-export function useUpdateElement(projectId: string) {
+export function useUpdateElement(projectId: string, branchId?: string | null) {
   const queryClient = useQueryClient()
+  const cacheKey = ['projects', projectId, 'elements', { branchId: branchId ?? undefined }]
 
   return useMutation({
     mutationFn: async ({ id, ...fields }: { id: string } & Partial<Omit<Element, 'id'>>) => {
@@ -119,21 +122,22 @@ export function useUpdateElement(projectId: string) {
           setOwnerId: 'ownerId' in fields,
           setParentId: 'parentId' in fields,
         },
+        query: { branchId: branchId ?? undefined } as never,
       })
       return result.data as Element
     },
     onMutate: async ({ id, ...fields }) => {
-      await queryClient.cancelQueries({ queryKey: ['projects', projectId, 'elements'] })
-      const previous = queryClient.getQueryData<Element[]>(['projects', projectId, 'elements'])
+      await queryClient.cancelQueries({ queryKey: cacheKey })
+      const previous = queryClient.getQueryData<Element[]>(cacheKey)
       queryClient.setQueryData<Element[]>(
-        ['projects', projectId, 'elements'],
+        cacheKey,
         (old) => old?.map((el) => (el.id === id ? { ...el, ...fields } as Element : el)) ?? [],
       )
       return { previous }
     },
     onError: (_err, _vars, context) => {
       if (context?.previous) {
-        queryClient.setQueryData(['projects', projectId, 'elements'], context.previous)
+        queryClient.setQueryData(cacheKey, context.previous)
       }
     },
     onSettled: () => {
@@ -142,27 +146,29 @@ export function useUpdateElement(projectId: string) {
   })
 }
 
-export function useRemoveElement(projectId: string) {
+export function useRemoveElement(projectId: string, branchId?: string | null) {
   const queryClient = useQueryClient()
+  const cacheKey = ['projects', projectId, 'elements', { branchId: branchId ?? undefined }]
 
   return useMutation({
     mutationFn: async (id: string) => {
       await deleteApiProjectsByProjectIdElementsByElementId({
         path: { projectId, elementId: id },
+        query: { branchId: branchId ?? undefined } as never,
       })
     },
     onMutate: async (id) => {
-      await queryClient.cancelQueries({ queryKey: ['projects', projectId, 'elements'] })
-      const previous = queryClient.getQueryData<Element[]>(['projects', projectId, 'elements'])
+      await queryClient.cancelQueries({ queryKey: cacheKey })
+      const previous = queryClient.getQueryData<Element[]>(cacheKey)
       queryClient.setQueryData<Element[]>(
-        ['projects', projectId, 'elements'],
+        cacheKey,
         (old) => old?.filter((el) => el.id !== id) ?? [],
       )
       return { previous }
     },
     onError: (_err, _id, context) => {
       if (context?.previous) {
-        queryClient.setQueryData(['projects', projectId, 'elements'], context.previous)
+        queryClient.setQueryData(cacheKey, context.previous)
       }
     },
     onSettled: () => {

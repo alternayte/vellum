@@ -34,8 +34,9 @@ export function useRelationships(projectId: string, branchId?: string) {
   })
 }
 
-export function useAddRelationship(projectId: string) {
+export function useAddRelationship(projectId: string, branchId?: string | null) {
   const queryClient = useQueryClient()
+  const cacheKey = ['projects', projectId, 'relationships', { branchId: branchId ?? undefined }]
 
   return useMutation({
     mutationFn: async (rel: {
@@ -54,14 +55,15 @@ export function useAddRelationship(projectId: string) {
           label: rel.label ?? null,
           technology: rel.technology ?? null,
         },
+        query: { branchId: branchId ?? undefined } as never,
       })
       return result.data as Relationship
     },
     onMutate: async (newRel) => {
-      await queryClient.cancelQueries({ queryKey: ['projects', projectId, 'relationships'] })
-      const previous = queryClient.getQueryData<Relationship[]>(['projects', projectId, 'relationships'])
+      await queryClient.cancelQueries({ queryKey: cacheKey })
+      const previous = queryClient.getQueryData<Relationship[]>(cacheKey)
       queryClient.setQueryData<Relationship[]>(
-        ['projects', projectId, 'relationships'],
+        cacheKey,
         (old) => [
           ...(old ?? []),
           { ...newRel, label: newRel.label ?? null, technology: newRel.technology ?? null },
@@ -71,7 +73,7 @@ export function useAddRelationship(projectId: string) {
     },
     onError: (_err, _new, context) => {
       if (context?.previous) {
-        queryClient.setQueryData(['projects', projectId, 'relationships'], context.previous)
+        queryClient.setQueryData(cacheKey, context.previous)
       }
     },
     onSettled: () => {
@@ -80,7 +82,7 @@ export function useAddRelationship(projectId: string) {
   })
 }
 
-export function useUpdateRelationship(projectId: string) {
+export function useUpdateRelationship(projectId: string, branchId?: string | null) {
   const queryClient = useQueryClient()
 
   return useMutation({
@@ -93,6 +95,7 @@ export function useUpdateRelationship(projectId: string) {
           setLabel: 'label' in fields,
           setTechnology: 'technology' in fields,
         },
+        query: { branchId: branchId ?? undefined } as never,
       })
       return result.data as Relationship
     },
@@ -102,13 +105,14 @@ export function useUpdateRelationship(projectId: string) {
   })
 }
 
-export function useRemoveRelationship(projectId: string) {
+export function useRemoveRelationship(projectId: string, branchId?: string | null) {
   const queryClient = useQueryClient()
 
   return useMutation({
     mutationFn: async (id: string) => {
       await deleteApiProjectsByProjectIdRelationshipsByRelationshipId({
         path: { projectId, relationshipId: id },
+        query: { branchId: branchId ?? undefined } as never,
       })
     },
     onSettled: () => {

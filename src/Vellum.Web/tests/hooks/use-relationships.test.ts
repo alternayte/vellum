@@ -83,6 +83,7 @@ describe('useUpdateRelationship', () => {
     expect(patchApiProjectsByProjectIdRelationshipsByRelationshipId).toHaveBeenCalledWith({
       path: { projectId: PROJECT_ID, relationshipId: 'r1' },
       body: expect.objectContaining({ label: 'Submits orders' }),
+      query: { branchId: undefined },
     })
   })
 
