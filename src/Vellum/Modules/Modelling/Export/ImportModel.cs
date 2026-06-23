@@ -35,6 +35,7 @@ public static class ImportModel
         EventStoreDbContext eventStoreDb,
         IEnumerable<IInlineProjection> projections,
         ModelProjection modelProjection,
+        Guid actorId,
         CancellationToken ct)
     {
         var project = await workspacesDb.Projects.AsNoTracking()
@@ -162,7 +163,7 @@ public static class ImportModel
             // Save model events (EventStore.AppendAsync adds them to collector)
             if (events.Count > 0)
             {
-                var metadata = new EventMetadata { ActorId = Guid.Empty, CorrelationId = Guid.NewGuid() };
+                var metadata = new EventMetadata { ActorId = actorId, CorrelationId = Guid.NewGuid() };
                 modelProjection.SetContext(projectId, project.StreamId);
                 await store.SaveAsync(project.StreamId, "model", version, state, events, metadata, ct);
             }
@@ -182,7 +183,7 @@ public static class ImportModel
                     {
                         var newState = s.Value.Aggregate(schemaState, (st, e) => st.Evolve(e));
                         await store.SaveAsync(schema.Id, "schema", schemaVersion, newState, s.Value,
-                            new EventMetadata { ActorId = Guid.Empty, CorrelationId = Guid.NewGuid() }, ct);
+                            new EventMetadata { ActorId = actorId, CorrelationId = Guid.NewGuid() }, ct);
                     }
                 }
                 else
@@ -193,7 +194,7 @@ public static class ImportModel
                     {
                         var newState = s.Value.Aggregate(schemaState, (st, e) => st.Evolve(e));
                         await store.SaveAsync(schema.Id, "schema", schemaVersion, newState, s.Value,
-                            new EventMetadata { ActorId = Guid.Empty, CorrelationId = Guid.NewGuid() }, ct);
+                            new EventMetadata { ActorId = actorId, CorrelationId = Guid.NewGuid() }, ct);
                     }
                 }
             }

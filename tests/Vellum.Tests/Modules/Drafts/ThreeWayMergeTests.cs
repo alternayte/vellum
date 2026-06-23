@@ -222,8 +222,8 @@ public class ThreeWayMergeTests
         var baseState = StateWith(
             new ModelEvent.ElementAdded(producerId, ElementKind.System, "A", null, null, null, ElementStatus.Current, null, []),
             new ModelEvent.MessageAdded(msgId, "OrderPlaced", null, producerId, [], null, []));
-        var ours = baseState.Evolve(new ModelEvent.MessageUpdated(msgId, "OrderCreated", null, null, null, null, false));
-        var theirs = baseState.Evolve(new ModelEvent.MessageUpdated(msgId, "OrderSubmitted", null, null, null, null, false));
+        var ours = baseState.Evolve(new ModelEvent.MessageUpdated(msgId, "OrderCreated", null, null, null, null, false, null));
+        var theirs = baseState.Evolve(new ModelEvent.MessageUpdated(msgId, "OrderSubmitted", null, null, null, null, false, null));
 
         var result = ThreeWayMerge.Compute(baseState, ours, theirs);
         Assert.Single(result.Conflicts);

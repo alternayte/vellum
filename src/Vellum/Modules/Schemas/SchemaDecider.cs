@@ -45,6 +45,14 @@ public static class SchemaDecider
                 return new CommandResult<IReadOnlyList<SchemaEvent>>.Invalid([contentError]);
         }
 
+        var hasChanges =
+            (cmd.SetName && cmd.Name != state.Schema.Name) ||
+            (cmd.SetDescription && cmd.Description != state.Schema.Description) ||
+            (cmd.SetContent && cmd.Content != state.Schema.Content);
+
+        if (!hasChanges)
+            return new CommandResult<IReadOnlyList<SchemaEvent>>.Success([]);
+
         var newVersion = cmd.SetContent && cmd.Content != state.Schema.Content
             ? state.Schema.Version + 1
             : (int?)null;

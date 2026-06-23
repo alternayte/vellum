@@ -67,6 +67,7 @@ public sealed record ModelState(
             if (m.ProducerId is not null) updated = updated with { ProducerId = m.ProducerId.Value };
             if (m.ConsumerIds is not null) updated = updated with { ConsumerIds = m.ConsumerIds };
             if (m.SetSchemaId) updated = updated with { SchemaId = m.SchemaId };
+            if (m.Tags is not null) updated = updated with { Tags = m.Tags };
             return updated;
         }),
         ModelEvent.MessageRemoved m => this with { Messages = Messages.Remove(m.MessageId) },

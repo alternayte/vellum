@@ -218,7 +218,8 @@ public static class ModelDecider
                 cmd.SetProducerId ? cmd.ProducerId : null,
                 cmd.SetConsumerIds ? cmd.ConsumerIds : null,
                 cmd.SetSchemaId ? cmd.SchemaId : null,
-                cmd.SetSchemaId)]);
+                cmd.SetSchemaId,
+                cmd.Tags)]);
     }
 
     public static CommandResult<IReadOnlyList<ModelEvent>> RemoveMessage(ModelState state, Guid messageId)

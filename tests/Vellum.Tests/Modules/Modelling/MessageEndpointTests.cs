@@ -10,6 +10,7 @@ using Vellum.Modules.Drafts;
 using Vellum.Modules.Identity;
 using Vellum.Modules.Modelling;
 using Vellum.Modules.Modelling.Messages;
+using Vellum.Modules.Schemas;
 using Vellum.Modules.Views;
 using Vellum.Modules.Workspaces;
 
@@ -34,6 +35,7 @@ public class MessageEndpointTests
                     services.RemoveAll<DbContextOptions<AppIdentityDbContext>>();
                     services.RemoveAll<DbContextOptions<WorkspacesDbContext>>();
                     services.RemoveAll<DbContextOptions<ModellingDbContext>>();
+                    services.RemoveAll<DbContextOptions<SchemasDbContext>>();
                     services.RemoveAll<DbContextOptions<DraftsDbContext>>();
                     services.RemoveAll<DbContextOptions<ViewsDbContext>>();
                     services.RemoveAll<DbContextOptions<DocsDbContext>>();
@@ -44,6 +46,8 @@ public class MessageEndpointTests
                     services.AddDbContext<WorkspacesDbContext>(o =>
                         o.UseNpgsql(_fixture.ConnectionString).UseSnakeCaseNamingConvention());
                     services.AddDbContext<ModellingDbContext>(o =>
+                        o.UseNpgsql(_fixture.ConnectionString).UseSnakeCaseNamingConvention());
+                    services.AddDbContext<SchemasDbContext>(o =>
                         o.UseNpgsql(_fixture.ConnectionString).UseSnakeCaseNamingConvention());
                     services.AddDbContext<DraftsDbContext>(o =>
                         o.UseNpgsql(_fixture.ConnectionString).UseSnakeCaseNamingConvention());

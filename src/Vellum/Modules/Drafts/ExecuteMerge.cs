@@ -442,6 +442,7 @@ public static class ExecuteMerge
             current.ProducerId != target.ProducerId ? target.ProducerId : null,
             !current.ConsumerIds.SequenceEqual(target.ConsumerIds) ? target.ConsumerIds : null,
             current.SchemaId != target.SchemaId ? target.SchemaId : null,
-            current.SchemaId != target.SchemaId)];
+            current.SchemaId != target.SchemaId,
+            !current.Tags.SequenceEqual(target.Tags) ? target.Tags : null)];
     }
 }
