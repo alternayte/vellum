@@ -118,6 +118,38 @@ public sealed class ModelProjection : IInlineProjection
                     var relRemovedEntity = await _db.Relationships.FindAsync([relRemoved.RelationshipId], ct);
                     if (relRemovedEntity is not null) _db.Relationships.Remove(relRemovedEntity);
                     break;
+
+                case ModelEvent.MessageAdded msgAdded:
+                    _db.Messages.Add(new MessageEntity
+                    {
+                        Id = msgAdded.Id,
+                        ProjectId = _projectId,
+                        Branch = _branch,
+                        Name = msgAdded.Name,
+                        Description = msgAdded.Description,
+                        ProducerId = msgAdded.ProducerId,
+                        ConsumerIds = msgAdded.ConsumerIds,
+                        SchemaId = msgAdded.SchemaId,
+                        Tags = msgAdded.Tags
+                    });
+                    break;
+
+                case ModelEvent.MessageUpdated msgUpdated:
+                    var msgEntity = await _db.Messages.FindAsync([msgUpdated.MessageId], ct);
+                    if (msgEntity is not null)
+                    {
+                        if (msgUpdated.Name is not null) msgEntity.Name = msgUpdated.Name;
+                        if (msgUpdated.Description is not null) msgEntity.Description = msgUpdated.Description;
+                        if (msgUpdated.ProducerId is not null) msgEntity.ProducerId = msgUpdated.ProducerId.Value;
+                        if (msgUpdated.ConsumerIds is not null) msgEntity.ConsumerIds = msgUpdated.ConsumerIds;
+                        if (msgUpdated.SetSchemaId) msgEntity.SchemaId = msgUpdated.SchemaId;
+                    }
+                    break;
+
+                case ModelEvent.MessageRemoved msgRemoved:
+                    var msgRemovedEntity = await _db.Messages.FindAsync([msgRemoved.MessageId], ct);
+                    if (msgRemovedEntity is not null) _db.Messages.Remove(msgRemovedEntity);
+                    break;
             }
         }
 

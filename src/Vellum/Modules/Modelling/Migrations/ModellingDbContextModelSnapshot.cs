@@ -86,6 +86,60 @@ namespace Vellum.Modules.Modelling.Migrations
                     b.ToTable("elements", "modelling");
                 });
 
+            modelBuilder.Entity("Vellum.Modules.Modelling.Entities.MessageEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("Branch")
+                        .HasColumnType("uuid")
+                        .HasColumnName("branch");
+
+                    b.PrimitiveCollection<Guid[]>("ConsumerIds")
+                        .IsRequired()
+                        .HasColumnType("uuid[]")
+                        .HasColumnName("consumer_ids");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("text")
+                        .HasColumnName("description");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("name");
+
+                    b.Property<Guid>("ProducerId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("producer_id");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("project_id");
+
+                    b.Property<Guid?>("SchemaId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("schema_id");
+
+                    b.PrimitiveCollection<string[]>("Tags")
+                        .IsRequired()
+                        .HasColumnType("text[]")
+                        .HasColumnName("tags");
+
+                    b.HasKey("Id")
+                        .HasName("pk_messages");
+
+                    b.HasIndex("ProjectId", "Branch")
+                        .HasDatabaseName("ix_messages_project_id_branch");
+
+                    b.HasIndex("ProjectId", "Branch", "ProducerId")
+                        .HasDatabaseName("ix_messages_project_id_branch_producer_id");
+
+                    b.ToTable("messages", "modelling");
+                });
+
             modelBuilder.Entity("Vellum.Modules.Modelling.Entities.RelationshipEntity", b =>
                 {
                     b.Property<Guid>("Id")
