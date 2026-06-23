@@ -5,6 +5,7 @@ using Vellum.Modules.Identity;
 using Vellum.Modules.Modelling;
 using Vellum.Modules.Docs;
 using Vellum.Modules.Drafts;
+using Vellum.Modules.Schemas;
 using Vellum.Modules.Views;
 using Vellum.Modules.Workspaces;
 
@@ -28,6 +29,7 @@ public class IntegrationFixture : IAsyncLifetime
         await MigrateAsync<ViewsDbContext>();
         await MigrateAsync<DocsDbContext>();
         await MigrateAsync<DraftsDbContext>();
+        await MigrateAsync<SchemasDbContext>();
     }
 
     private async Task MigrateAsync<TContext>() where TContext : DbContext
