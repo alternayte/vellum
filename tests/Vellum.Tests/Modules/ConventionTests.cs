@@ -20,11 +20,11 @@ public class ConventionTests
     }
 
     [Fact]
-    public void All_command_handlers_are_in_modelling_module()
+    public void All_command_handlers_are_in_a_module()
     {
         var assembly = typeof(Program).Assembly;
         // Exclude kernel infrastructure types (e.g. TransactionBehavior decorator) —
-        // only application-level handlers (not in the Kernel namespace) must live under Modelling.
+        // only application-level handlers (not in the Kernel namespace) must live under Vellum.Modules.
         var handlerTypes = assembly.GetTypes()
             .Where(t => !t.IsAbstract
                 && t.Namespace?.StartsWith("Vellum.Kernel") != true
@@ -35,7 +35,7 @@ public class ConventionTests
         Assert.NotEmpty(handlerTypes);
         foreach (var handler in handlerTypes)
         {
-            Assert.Contains("Modelling", handler.Namespace!,
+            Assert.Contains("Vellum.Modules", handler.Namespace!,
                 StringComparison.Ordinal);
         }
     }

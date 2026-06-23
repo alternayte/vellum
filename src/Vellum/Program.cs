@@ -13,6 +13,7 @@ using Vellum.Modules.Modelling;
 using Vellum.Modules.Modelling.Model;
 using Vellum.Modules.Docs;
 using Vellum.Modules.Drafts;
+using Vellum.Modules.Schemas;
 using Vellum.Modules.Views;
 using Vellum.Modules.Workspaces;
 using Vellum.Modules.Workspaces.Entities;
@@ -49,6 +50,7 @@ builder.Services.AddModellingModule(builder.Configuration);
 builder.Services.AddViewsModule(builder.Configuration);
 builder.Services.AddDocsModule(builder.Configuration);
 builder.Services.AddDraftsModule(builder.Configuration);
+builder.Services.AddSchemasModule(builder.Configuration);
 
 // Command handlers (Scrutor scan + TransactionBehavior decoration)
 builder.Services.Scan(s => s.FromAssemblyOf<Program>()
@@ -62,6 +64,7 @@ var app = builder.Build();
 // Register modelling events
 var registry = app.Services.GetRequiredService<EventTypeRegistry>();
 ModellingModule.RegisterEvents(registry);
+SchemasModule.RegisterEvents(registry);
 
 if (app.Environment.IsDevelopment())
 {
@@ -85,6 +88,7 @@ app.MapDocEndpoints();
 app.MapDraftEndpoints();
 app.MapMergeEndpoints();
 app.MapCommentEndpoints();
+app.MapSchemaEndpoints();
 
 if (app.Environment.IsDevelopment())
 {
@@ -99,6 +103,7 @@ if (app.Environment.IsDevelopment())
     await services.GetRequiredService<ViewsDbContext>().Database.MigrateAsync();
     await services.GetRequiredService<DocsDbContext>().Database.MigrateAsync();
     await services.GetRequiredService<DraftsDbContext>().Database.MigrateAsync();
+    await services.GetRequiredService<SchemasDbContext>().Database.MigrateAsync();
 
     // Seed dev data
     if (args.Contains("seed"))
