@@ -27,6 +27,12 @@ export function DocEditor({ projectId, docId }: DocEditorProps) {
   const { autoSave } = useAutoSaveDoc(projectId, docId)
 
   const contentRef = useRef<string>('')
+  const currentDocIdRef = useRef<string>(docId)
+
+  if (currentDocIdRef.current !== docId) {
+    currentDocIdRef.current = docId
+    contentRef.current = ''
+  }
 
   const handleChange = useCallback(
     (content: string) => {
@@ -77,7 +83,7 @@ export function DocEditor({ projectId, docId }: DocEditorProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [docId, doc?.content, mode, getPreservedContent])
 
-  const displayContent = contentRef.current || doc?.content || ''
+  const displayContent = contentRef.current || getPreservedContent(docId) || doc?.content || ''
 
   return (
     <div className="flex h-full flex-col">
