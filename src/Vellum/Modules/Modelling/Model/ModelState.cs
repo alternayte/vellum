@@ -12,14 +12,21 @@ public sealed record RelationshipState(
     Guid Id, Guid FromId, Guid ToId, string? Label,
     string? Technology, Guid? MessageId);
 
+public sealed record MessageState(
+    Guid Id, string Name, string? Description,
+    Guid ProducerId, Guid[] ConsumerIds,
+    Guid? SchemaId, string[] Tags);
+
 public sealed record ModelState(
     ImmutableDictionary<Guid, ElementState> Elements,
-    ImmutableDictionary<Guid, RelationshipState> Relationships)
+    ImmutableDictionary<Guid, RelationshipState> Relationships,
+    ImmutableDictionary<Guid, MessageState> Messages)
     : IAggregateState<ModelState, ModelEvent>
 {
     public static ModelState Initial => new(
         ImmutableDictionary<Guid, ElementState>.Empty,
-        ImmutableDictionary<Guid, RelationshipState>.Empty);
+        ImmutableDictionary<Guid, RelationshipState>.Empty,
+        ImmutableDictionary<Guid, MessageState>.Empty);
 
     public ModelState Evolve(ModelEvent @event) => @event switch
     {
@@ -47,6 +54,23 @@ public sealed record ModelState(
         ModelEvent.RelationshipTechnologyChanged e => WithRelationship(e.RelationshipId, r => r with { Technology = e.Technology }),
         ModelEvent.RelationshipRemoved e => this with { Relationships = Relationships.Remove(e.RelationshipId) },
 
+        ModelEvent.MessageAdded m => this with
+        {
+            Messages = Messages.Add(m.Id, new MessageState(
+                m.Id, m.Name, m.Description, m.ProducerId, m.ConsumerIds, m.SchemaId, m.Tags))
+        },
+        ModelEvent.MessageUpdated m => WithMessage(m.MessageId, msg =>
+        {
+            var updated = msg;
+            if (m.Name is not null) updated = updated with { Name = m.Name };
+            if (m.Description is not null) updated = updated with { Description = m.Description };
+            if (m.ProducerId is not null) updated = updated with { ProducerId = m.ProducerId.Value };
+            if (m.ConsumerIds is not null) updated = updated with { ConsumerIds = m.ConsumerIds };
+            if (m.SetSchemaId) updated = updated with { SchemaId = m.SchemaId };
+            return updated;
+        }),
+        ModelEvent.MessageRemoved m => this with { Messages = Messages.Remove(m.MessageId) },
+
         _ => this
     };
 
@@ -55,4 +79,7 @@ public sealed record ModelState(
 
     private ModelState WithRelationship(Guid id, Func<RelationshipState, RelationshipState> update) =>
         this with { Relationships = Relationships.SetItem(id, update(Relationships[id])) };
+
+    private ModelState WithMessage(Guid id, Func<MessageState, MessageState> update) =>
+        this with { Messages = Messages.SetItem(id, update(Messages[id])) };
 }

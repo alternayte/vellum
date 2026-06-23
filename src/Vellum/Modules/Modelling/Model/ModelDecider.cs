@@ -25,6 +25,20 @@ public sealed record UpdateRelationshipCommand(
     string? Label = null, bool SetLabel = false,
     string? Technology = null, bool SetTechnology = false);
 
+public sealed record AddMessageCommand(
+    Guid Id, string Name, string? Description,
+    Guid ProducerId, Guid[] ConsumerIds,
+    Guid? SchemaId, string[] Tags);
+
+public sealed record UpdateMessageCommand(
+    Guid MessageId,
+    string? Name = null, bool SetName = false,
+    string? Description = null, bool SetDescription = false,
+    Guid? ProducerId = null, bool SetProducerId = false,
+    Guid[]? ConsumerIds = null, bool SetConsumerIds = false,
+    Guid? SchemaId = null, bool SetSchemaId = false,
+    string[]? Tags = null);
+
 public static class ModelDecider
 {
     private static readonly IReadOnlyDictionary<ElementKind, ElementKind?> ValidParentKinds = new Dictionary<ElementKind, ElementKind?>
@@ -143,6 +157,79 @@ public static class ModelDecider
             [new ModelEvent.RelationshipRemoved(relationshipId)]);
     }
 
+    public static CommandResult<IReadOnlyList<ModelEvent>> AddMessage(ModelState state, AddMessageCommand cmd)
+    {
+        if (string.IsNullOrWhiteSpace(cmd.Name))
+            return new CommandResult<IReadOnlyList<ModelEvent>>.Invalid([new ValidationError("name", "Name is required")]);
+
+        if (state.Messages.ContainsKey(cmd.Id))
+            return new CommandResult<IReadOnlyList<ModelEvent>>.Conflict("Message with this ID already exists");
+
+        if (!state.Elements.ContainsKey(cmd.ProducerId))
+            return new CommandResult<IReadOnlyList<ModelEvent>>.Invalid([new ValidationError("producerId", "Producer element not found")]);
+
+        foreach (var consumerId in cmd.ConsumerIds)
+        {
+            if (!state.Elements.ContainsKey(consumerId))
+                return new CommandResult<IReadOnlyList<ModelEvent>>.Invalid([new ValidationError("consumerIds", $"Consumer element {consumerId} not found")]);
+        }
+
+        return new CommandResult<IReadOnlyList<ModelEvent>>.Success(
+            [new ModelEvent.MessageAdded(cmd.Id, cmd.Name, cmd.Description,
+                cmd.ProducerId, cmd.ConsumerIds, cmd.SchemaId, cmd.Tags)]);
+    }
+
+    public static CommandResult<IReadOnlyList<ModelEvent>> UpdateMessage(ModelState state, UpdateMessageCommand cmd)
+    {
+        if (!state.Messages.TryGetValue(cmd.MessageId, out var msg))
+            return new CommandResult<IReadOnlyList<ModelEvent>>.NotFound("Message not found");
+
+        if (cmd.SetName && string.IsNullOrWhiteSpace(cmd.Name))
+            return new CommandResult<IReadOnlyList<ModelEvent>>.Invalid([new ValidationError("name", "Name is required")]);
+
+        if (cmd.SetProducerId && cmd.ProducerId.HasValue && !state.Elements.ContainsKey(cmd.ProducerId.Value))
+            return new CommandResult<IReadOnlyList<ModelEvent>>.Invalid([new ValidationError("producerId", "Producer element not found")]);
+
+        if (cmd.SetConsumerIds && cmd.ConsumerIds is not null)
+        {
+            foreach (var consumerId in cmd.ConsumerIds)
+            {
+                if (!state.Elements.ContainsKey(consumerId))
+                    return new CommandResult<IReadOnlyList<ModelEvent>>.Invalid([new ValidationError("consumerIds", $"Consumer element {consumerId} not found")]);
+            }
+        }
+
+        var hasChanges =
+            (cmd.SetName && cmd.Name != msg.Name) ||
+            (cmd.SetDescription && cmd.Description != msg.Description) ||
+            (cmd.SetProducerId && cmd.ProducerId != msg.ProducerId) ||
+            (cmd.SetConsumerIds && cmd.ConsumerIds is not null && !cmd.ConsumerIds.SequenceEqual(msg.ConsumerIds)) ||
+            (cmd.SetSchemaId && cmd.SchemaId != msg.SchemaId) ||
+            (cmd.Tags is not null && !cmd.Tags.SequenceEqual(msg.Tags));
+
+        if (!hasChanges)
+            return new CommandResult<IReadOnlyList<ModelEvent>>.Success([]);
+
+        return new CommandResult<IReadOnlyList<ModelEvent>>.Success(
+            [new ModelEvent.MessageUpdated(
+                cmd.MessageId,
+                cmd.SetName ? cmd.Name : null,
+                cmd.SetDescription ? cmd.Description : null,
+                cmd.SetProducerId ? cmd.ProducerId : null,
+                cmd.SetConsumerIds ? cmd.ConsumerIds : null,
+                cmd.SetSchemaId ? cmd.SchemaId : null,
+                cmd.SetSchemaId)]);
+    }
+
+    public static CommandResult<IReadOnlyList<ModelEvent>> RemoveMessage(ModelState state, Guid messageId)
+    {
+        if (!state.Messages.ContainsKey(messageId))
+            return new CommandResult<IReadOnlyList<ModelEvent>>.NotFound("Message not found");
+
+        return new CommandResult<IReadOnlyList<ModelEvent>>.Success(
+            [new ModelEvent.MessageRemoved(messageId)]);
+    }
+
     private static void CollectCascadeRemovals(ModelState state, Guid elementId, List<ModelEvent> events, HashSet<Guid> seenRelationships)
     {
         // Recursively remove children first
@@ -157,6 +244,15 @@ public static class ModelDecider
             {
                 if (seenRelationships.Add(rel.Id))
                     events.Add(new ModelEvent.RelationshipRemoved(rel.Id));
+            }
+        }
+
+        foreach (var msg in state.Messages.Values)
+        {
+            if (msg.ProducerId == elementId || msg.ConsumerIds.Contains(elementId))
+            {
+                if (seenRelationships.Add(msg.Id)) // reuse set for dedup
+                    events.Add(new ModelEvent.MessageRemoved(msg.Id));
             }
         }
 

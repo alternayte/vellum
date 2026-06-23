@@ -22,7 +22,7 @@ public class ThreeWayMergeTests
     {
         var elDict = (elements ?? []).ToImmutableDictionary(e => e.Id);
         var relDict = (rels ?? []).ToImmutableDictionary(r => r.Id);
-        return new ModelState(elDict, relDict);
+        return new ModelState(elDict, relDict, ImmutableDictionary<Guid, MessageState>.Empty);
     }
 
     [Fact]
