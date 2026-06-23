@@ -7,6 +7,8 @@ import { DraftList } from '@/components/draft/draft-list'
 import { Badge } from '@/components/ui/badge'
 import { useComments } from '@/hooks/use-draft-comments'
 import { useCreateDoc } from '@/hooks/use-docs'
+import { useCreateView } from '@/hooks/use-views'
+import { useCreateSpace } from '@/hooks/use-spaces'
 
 interface ElementItem {
   id: string
@@ -88,24 +90,7 @@ export function Navigator({ projectId, elements, views, spaces = [], docs = [] }
         <CommentsSection projectId={projectId} draftId={activeDraftId} />
       )}
 
-      <div className="border-t border-border">
-        <div className="flex items-center justify-between px-3 py-2">
-          <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-            Views
-          </span>
-          <button className="text-xs text-primary hover:text-primary/80">+</button>
-        </div>
-        <div className="px-2 pb-2">
-          {views.map((view) => (
-            <button
-              key={view.id}
-              className="w-full rounded px-2 py-1 text-left text-sm hover:bg-muted"
-            >
-              {view.name}
-            </button>
-          ))}
-        </div>
-      </div>
+      <ViewsSection projectId={projectId} views={views} />
 
       <DocsSection projectId={projectId} spaces={spaces} docs={docs} />
     </aside>
@@ -161,10 +146,53 @@ function CommentsSection({ projectId, draftId }: { projectId: string; draftId: s
   )
 }
 
+function ViewsSection({ projectId, views }: { projectId: string; views: ViewItem[] }) {
+  const { activeViewId, setActiveView } = useShellStore()
+  const createView = useCreateView(projectId)
+
+  const handleCreateView = () => {
+    const name = window.prompt('View name')
+    if (name?.trim()) {
+      const id = crypto.randomUUID()
+      createView.mutate({ id, name: name.trim() })
+    }
+  }
+
+  return (
+    <div className="border-t border-border">
+      <div className="flex items-center justify-between px-3 py-2">
+        <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+          Views
+        </span>
+        <button
+          className="text-xs text-primary hover:text-primary/80"
+          onClick={handleCreateView}
+        >
+          +
+        </button>
+      </div>
+      <div className="px-2 pb-2">
+        {views.map((view) => (
+          <button
+            key={view.id}
+            className={`w-full rounded px-2 py-1 text-left text-sm hover:bg-muted ${
+              activeViewId === view.id ? 'bg-accent text-accent-foreground' : ''
+            }`}
+            onClick={() => setActiveView(view.id)}
+          >
+            {view.name}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 function DocsSection({ projectId, spaces, docs }: { projectId: string; spaces: SpaceItem[]; docs: DocItem[] }) {
   const [expandedSpaces, setExpandedSpaces] = useState<Set<string>>(new Set())
   const { activeDraftId } = useDraftStore()
   const createDoc = useCreateDoc(projectId)
+  const createSpace = useCreateSpace(projectId)
 
   const toggleSpace = (spaceId: string) => {
     setExpandedSpaces((prev) => {
@@ -178,6 +206,23 @@ function DocsSection({ projectId, spaces, docs }: { projectId: string; spaces: S
     })
   }
 
+  const handleNewDoc = () => {
+    const title = window.prompt('Document title')
+    if (title?.trim()) {
+      const id = crypto.randomUUID()
+      createDoc.mutate({ id, title: title.trim() }, {
+        onSuccess: () => useShellStore.getState().openDoc(id),
+      })
+    }
+  }
+
+  const handleNewSpace = () => {
+    const name = window.prompt('Space name')
+    if (name?.trim()) {
+      createSpace.mutate({ id: crypto.randomUUID(), name: name.trim() })
+    }
+  }
+
   const handleNewAdr = () => {
     const id = crypto.randomUUID()
     createDoc.mutate({
@@ -185,6 +230,8 @@ function DocsSection({ projectId, spaces, docs }: { projectId: string; spaces: S
       title: 'New ADR',
       draftId: activeDraftId ?? undefined,
       adrStatus: 'proposed',
+    }, {
+      onSuccess: () => useShellStore.getState().openDoc(id),
     })
   }
 
@@ -196,16 +243,33 @@ function DocsSection({ projectId, spaces, docs }: { projectId: string; spaces: S
         <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
           Docs
         </span>
-        {activeDraftId && (
+        <div className="flex items-center gap-2">
+          <button
+            className="text-xs text-muted-foreground hover:text-foreground"
+            onClick={handleNewSpace}
+            title="New space"
+          >
+            Space+
+          </button>
+          {activeDraftId && (
+            <button
+              className="text-xs text-primary hover:text-primary/80 disabled:opacity-50"
+              onClick={handleNewAdr}
+              disabled={createDoc.isPending}
+              title="New ADR"
+            >
+              ADR+
+            </button>
+          )}
           <button
             className="text-xs text-primary hover:text-primary/80 disabled:opacity-50"
-            onClick={handleNewAdr}
+            onClick={handleNewDoc}
             disabled={createDoc.isPending}
-            title="New ADR"
+            title="New document"
           >
-            ADR+
+            +
           </button>
-        )}
+        </div>
       </div>
       <div className="px-2 pb-2">
         {spaces.map((space) => {
