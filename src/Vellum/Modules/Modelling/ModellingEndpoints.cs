@@ -1,11 +1,17 @@
 using System.Security.Claims;
 using Microsoft.EntityFrameworkCore;
+using Vellum.Kernel.Aggregates;
 using Vellum.Kernel.CommandHandling;
+using Vellum.Kernel.EventStore;
+using Vellum.Kernel.Projections;
 using Vellum.Kernel.Results;
 using Vellum.Modules.Drafts;
 using Vellum.Modules.Modelling.Elements;
+using Vellum.Modules.Modelling.Export;
 using Vellum.Modules.Modelling.Messages;
+using Vellum.Modules.Modelling.Model;
 using Vellum.Modules.Modelling.Relationships;
+using Vellum.Modules.Schemas;
 using Vellum.Modules.Workspaces;
 using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Shared;
@@ -316,6 +322,42 @@ public static class ModellingEndpoints
                 new RemoveMessageCommandEnvelope(projectId, streamId.Value, messageId, userId), ct))
                 .ToHttpResult();
         });
+
+        project.MapGet("/export", async (
+            Guid projectId,
+            string? format,
+            ClaimsPrincipal user,
+            WorkspaceAuthorizationService auth,
+            ModellingDbContext modellingDb,
+            SchemasDbContext schemasDb,
+            WorkspacesDbContext workspacesDb,
+            CancellationToken ct) =>
+        {
+            var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Viewer, ct);
+            return await ExportModel.Handle(projectId, format ?? "json", modellingDb, schemasDb, workspacesDb, ct);
+        }).WithTags("Export");
+
+        project.MapPost("/import", async (
+            Guid projectId,
+            HttpRequest request,
+            ClaimsPrincipal user,
+            WorkspaceAuthorizationService auth,
+            ModellingDbContext modellingDb,
+            SchemasDbContext schemasDb,
+            WorkspacesDbContext workspacesDb,
+            AggregateStore store,
+            EventCollector collector,
+            EventStoreDbContext eventStoreDb,
+            IEnumerable<IInlineProjection> projections,
+            ModelProjection modelProjection,
+            CancellationToken ct) =>
+        {
+            var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
+            return await ImportModel.Handle(projectId, request, modellingDb, schemasDb, workspacesDb,
+                store, collector, eventStoreDb, projections, modelProjection, ct);
+        }).WithTags("Export");
 
         return app;
     }

@@ -26,6 +26,7 @@
     <PackageReference Include="Scalar.AspNetCore" Version="2.16.4" />
     <PackageReference Include="Scrutor" Version="7.0.0" />
 <PackageReference Include="Thinktecture.Runtime.Extensions" Version="10.3.0" />
+<PackageReference Include="YamlDotNet" Version="18.0.0" />
   </ItemGroup>
 
 </Project>
