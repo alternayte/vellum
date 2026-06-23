@@ -85,6 +85,7 @@ describe('useAddElement', () => {
     expect(postApiProjectsByProjectIdElements).toHaveBeenCalledWith({
       path: { projectId: PROJECT_ID },
       body: expect.objectContaining({ id: '3', kind: 'store', name: 'DB', parentId: '2' }),
+      query: { branchId: undefined },
     })
   })
 })
@@ -114,6 +115,7 @@ describe('useRemoveElement', () => {
 
     expect(deleteApiProjectsByProjectIdElementsByElementId).toHaveBeenCalledWith({
       path: { projectId: PROJECT_ID, elementId: '1' },
+      query: { branchId: undefined },
     })
   })
 })
@@ -145,6 +147,7 @@ describe('useUpdateElement', () => {
     expect(patchApiProjectsByProjectIdElementsByElementId).toHaveBeenCalledWith({
       path: { projectId: PROJECT_ID, elementId: '1' },
       body: expect.objectContaining({ name: 'Updated Customer' }),
+      query: { branchId: undefined },
     })
   })
 
