@@ -357,7 +357,7 @@ public static class ModellingEndpoints
             await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
             return await ImportModel.Handle(projectId, request, modellingDb, schemasDb, workspacesDb,
                 store, collector, eventStoreDb, projections, modelProjection, ct);
-        }).WithTags("Export");
+        }).WithTags("Import");
 
         return app;
     }
