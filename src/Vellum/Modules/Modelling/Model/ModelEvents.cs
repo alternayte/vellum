@@ -39,7 +39,8 @@ public abstract record ModelEvent
         Guid MessageId,
         string? Name, string? Description,
         Guid? ProducerId, Guid[]? ConsumerIds,
-        Guid? SchemaId, bool SetSchemaId) : ModelEvent;
+        Guid? SchemaId, bool SetSchemaId,
+        string[]? Tags) : ModelEvent;
 
     public sealed record MessageRemoved(Guid MessageId) : ModelEvent;
 

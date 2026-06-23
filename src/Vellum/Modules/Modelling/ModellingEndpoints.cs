@@ -356,7 +356,7 @@ public static class ModellingEndpoints
             var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
             await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
             return await ImportModel.Handle(projectId, request, modellingDb, schemasDb, workspacesDb,
-                store, collector, eventStoreDb, projections, modelProjection, ct);
+                store, collector, eventStoreDb, projections, modelProjection, Guid.Parse(userId), ct);
         }).WithTags("Import");
 
         return app;

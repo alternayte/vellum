@@ -143,6 +143,7 @@ public sealed class ModelProjection : IInlineProjection
                         if (msgUpdated.ProducerId is not null) msgEntity.ProducerId = msgUpdated.ProducerId.Value;
                         if (msgUpdated.ConsumerIds is not null) msgEntity.ConsumerIds = msgUpdated.ConsumerIds;
                         if (msgUpdated.SetSchemaId) msgEntity.SchemaId = msgUpdated.SchemaId;
+                        if (msgUpdated.Tags is not null) msgEntity.Tags = msgUpdated.Tags;
                     }
                     break;
 
