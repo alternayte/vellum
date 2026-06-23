@@ -194,4 +194,55 @@ public class ThreeWayMergeTests
         Assert.Single(result.AutoResolved);
         Assert.Equal("relationship", result.AutoResolved[0].EntityType);
     }
+
+    private static ModelState StateWith(params ModelEvent[] events) =>
+        events.Aggregate(ModelState.Initial, (s, e) => s.Evolve(e));
+
+    [Fact]
+    public void Message_added_on_draft_is_auto_resolved()
+    {
+        var producerId = Guid.NewGuid();
+        var baseState = StateWith(
+            new ModelEvent.ElementAdded(producerId, ElementKind.System, "A", null, null, null, ElementStatus.Current, null, []));
+        var ours = baseState;
+        var msgId = Guid.NewGuid();
+        var theirs = baseState.Evolve(new ModelEvent.MessageAdded(msgId, "OrderPlaced", null, producerId, [], null, []));
+
+        var result = ThreeWayMerge.Compute(baseState, ours, theirs);
+        Assert.Single(result.AutoResolved);
+        Assert.Equal("message", result.AutoResolved[0].EntityType);
+        Assert.Equal("added", result.AutoResolved[0].ChangeKind);
+    }
+
+    [Fact]
+    public void Message_modified_on_both_branches_differently_is_conflict()
+    {
+        var producerId = Guid.NewGuid();
+        var msgId = Guid.NewGuid();
+        var baseState = StateWith(
+            new ModelEvent.ElementAdded(producerId, ElementKind.System, "A", null, null, null, ElementStatus.Current, null, []),
+            new ModelEvent.MessageAdded(msgId, "OrderPlaced", null, producerId, [], null, []));
+        var ours = baseState.Evolve(new ModelEvent.MessageUpdated(msgId, "OrderCreated", null, null, null, null, false));
+        var theirs = baseState.Evolve(new ModelEvent.MessageUpdated(msgId, "OrderSubmitted", null, null, null, null, false));
+
+        var result = ThreeWayMerge.Compute(baseState, ours, theirs);
+        Assert.Single(result.Conflicts);
+        Assert.Equal("message", result.Conflicts[0].EntityType);
+    }
+
+    [Fact]
+    public void Message_referencing_deleted_element_is_dangling_conflict()
+    {
+        var producerId = Guid.NewGuid();
+        var consumerId = Guid.NewGuid();
+        var msgId = Guid.NewGuid();
+        var baseState = StateWith(
+            new ModelEvent.ElementAdded(producerId, ElementKind.System, "A", null, null, null, ElementStatus.Current, null, []),
+            new ModelEvent.ElementAdded(consumerId, ElementKind.System, "B", null, null, null, ElementStatus.Current, null, []));
+        var ours = baseState.Evolve(new ModelEvent.ElementRemoved(consumerId));
+        var theirs = baseState.Evolve(new ModelEvent.MessageAdded(msgId, "OrderPlaced", null, producerId, [consumerId], null, []));
+
+        var result = ThreeWayMerge.Compute(baseState, ours, theirs);
+        Assert.Contains(result.Conflicts, c => c.EntityType == "message" && c.ConflictKind == "dangling_message");
+    }
 }

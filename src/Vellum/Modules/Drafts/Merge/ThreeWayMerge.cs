@@ -14,9 +14,12 @@ public static class ThreeWayMerge
             "element", changes, conflicts);
         MergeEntities(baseState.Relationships, ours.Relationships, theirs.Relationships,
             "relationship", changes, conflicts);
+        MergeEntities(baseState.Messages, ours.Messages, theirs.Messages,
+            "message", changes, conflicts);
 
         DetectOrphanedChildren(baseState, ours, theirs, conflicts);
         DetectDanglingRelationships(baseState, ours, theirs, changes, conflicts);
+        DetectDanglingMessages(baseState, ours, theirs, changes, conflicts);
 
         return new MergePreviewResult(changes, conflicts);
     }
@@ -174,6 +177,36 @@ public static class ThreeWayMerge
                         "dangling_relationship", baseRel,
                         ours.Relationships.GetValueOrDefault(change.EntityId),
                         theirs.Relationships.GetValueOrDefault(change.EntityId)));
+                }
+            }
+        }
+    }
+
+    private static void DetectDanglingMessages(
+        ModelState baseState, ModelState ours, ModelState theirs,
+        List<MergeChange> changes, List<MergeConflict> conflicts)
+    {
+        var resolvedElements = new HashSet<Guid>(ours.Elements.Keys);
+        foreach (var c in changes.Where(c => c.EntityType == "element"))
+        {
+            if (c.ChangeKind == "added") resolvedElements.Add(c.EntityId);
+            if (c.ChangeKind == "removed") resolvedElements.Remove(c.EntityId);
+        }
+
+        var allMsgChanges = changes.Where(c => c.EntityType == "message").ToList();
+        foreach (var change in allMsgChanges)
+        {
+            if (change.ResolvedValue is MessageState msg)
+            {
+                if (!resolvedElements.Contains(msg.ProducerId) ||
+                    msg.ConsumerIds.Any(cid => !resolvedElements.Contains(cid)))
+                {
+                    changes.Remove(change);
+                    baseState.Messages.TryGetValue(change.EntityId, out var baseMsg);
+                    conflicts.Add(new MergeConflict("message", change.EntityId,
+                        "dangling_message", baseMsg,
+                        ours.Messages.GetValueOrDefault(change.EntityId),
+                        theirs.Messages.GetValueOrDefault(change.EntityId)));
                 }
             }
         }
