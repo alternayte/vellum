@@ -57,6 +57,8 @@ interface DetailPanelProps {
   schemas?: SchemaData[]
   onUpdateElement?: (id: string, fields: Partial<ElementData>) => void
   onUpdateRelationship?: (id: string, fields: Partial<RelationshipData>) => void
+  onDeleteElement?: (id: string) => void
+  onDeleteRelationship?: (id: string) => void
 }
 
 export function DetailPanel({
@@ -67,6 +69,8 @@ export function DetailPanel({
   schemas,
   onUpdateElement,
   onUpdateRelationship,
+  onDeleteElement,
+  onDeleteRelationship,
 }: DetailPanelProps) {
   const { detailPanelOpen, selectedElementId, selectedRelationshipId, selectedMessageId, selectElement, selectRelationship, selectMessage } =
     useShellStore()
@@ -292,6 +296,21 @@ export function DetailPanel({
                     ))}
                   </div>
                 </div>
+                <div className="pt-2 border-t border-border">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-xs text-destructive hover:text-destructive"
+                    onClick={() => {
+                      if (window.confirm(`Delete "${selectedElement.name}"?`)) {
+                        onDeleteElement?.(selectedElement.id)
+                        handleClose()
+                      }
+                    }}
+                  >
+                    Delete element
+                  </Button>
+                </div>
               </div>
             )}
           </div>
@@ -330,6 +349,14 @@ export function DetailPanel({
             ) : (
               <div className="mt-4 space-y-4">
                 <div>
+                  <label className="mb-1 block text-xs text-muted-foreground">From</label>
+                  <p className="text-sm">{elements.find((e) => e.id === selectedRel.fromId)?.name ?? 'Unknown'}</p>
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs text-muted-foreground">To</label>
+                  <p className="text-sm">{elements.find((e) => e.id === selectedRel.toId)?.name ?? 'Unknown'}</p>
+                </div>
+                <div>
                   <label className="mb-1 block text-xs text-muted-foreground">Label</label>
                   <Input
                     defaultValue={selectedRel.label ?? ''}
@@ -346,6 +373,21 @@ export function DetailPanel({
                       onUpdateRelationship?.(selectedRel.id, { technology: e.target.value || null })
                     }
                   />
+                </div>
+                <div className="pt-2 border-t border-border">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-xs text-destructive hover:text-destructive"
+                    onClick={() => {
+                      if (window.confirm('Delete this relationship?')) {
+                        onDeleteRelationship?.(selectedRel.id)
+                        handleClose()
+                      }
+                    }}
+                  >
+                    Delete relationship
+                  </Button>
                 </div>
               </div>
             )}

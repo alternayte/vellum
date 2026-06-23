@@ -8,7 +8,7 @@ interface ReviewBarProps {
 }
 
 export function ReviewBar({ projectId, onMergeSuccess }: ReviewBarProps) {
-  const { activeDraftId, reviewData, resolutions, exitReviewMode } = useDraftStore()
+  const { activeDraftId, reviewData, resolutions, exitReviewMode, setActiveDraft } = useDraftStore()
   const executeMerge = useExecuteMerge(projectId)
 
   if (!reviewData) return null
@@ -30,6 +30,7 @@ export function ReviewBar({ projectId, onMergeSuccess }: ReviewBarProps) {
       expectedMainVersion: reviewData.mainVersion,
     })
     exitReviewMode()
+    setActiveDraft(null, null)
     onMergeSuccess?.()
   }
 

@@ -8,8 +8,8 @@ import { ReviewBar } from '@/components/review/review-bar'
 import { CanvasView } from '@/components/canvas/canvas-view'
 import { DocEditor } from '@/components/docs/doc-editor'
 import { CommandPalette } from '@/components/command-palette/command-palette'
-import { useElements, useAddElement, useUpdateElement } from '@/hooks/use-elements'
-import { useRelationships, useAddRelationship, useUpdateRelationship } from '@/hooks/use-relationships'
+import { useElements, useAddElement, useUpdateElement, useRemoveElement } from '@/hooks/use-elements'
+import { useRelationships, useAddRelationship, useUpdateRelationship, useRemoveRelationship } from '@/hooks/use-relationships'
 import { useViews, useView, useSaveLayout } from '@/hooks/use-views'
 import { useDocs } from '@/hooks/use-docs'
 import { useSpaces } from '@/hooks/use-spaces'
@@ -48,10 +48,12 @@ function ProjectWorkspace() {
   const { data: spaces } = useSpaces(projectId)
   const { activeViewId, activeDocId } = useShellStore()
   const { data: activeView } = useView(projectId, activeViewId)
-  const addElement = useAddElement(projectId)
-  const updateElement = useUpdateElement(projectId)
-  const addRelationship = useAddRelationship(projectId)
-  const updateRelationship = useUpdateRelationship(projectId)
+  const addElement = useAddElement(projectId, activeDraftStreamId)
+  const updateElement = useUpdateElement(projectId, activeDraftStreamId)
+  const removeElement = useRemoveElement(projectId, activeDraftStreamId)
+  const addRelationship = useAddRelationship(projectId, activeDraftStreamId)
+  const updateRelationship = useUpdateRelationship(projectId, activeDraftStreamId)
+  const removeRelationship = useRemoveRelationship(projectId, activeDraftStreamId)
   const { saveLayout } = useSaveLayout(projectId, activeViewId)
   const mergePreview = useMergePreview(projectId)
 
@@ -241,12 +243,14 @@ function ProjectWorkspace() {
           schemas={schemas ?? []}
           onUpdateElement={(id, fields) => updateElement.mutate({ id, ...fields })}
           onUpdateRelationship={(id, fields) => updateRelationship.mutate({ id, ...fields })}
+          onDeleteElement={(id) => removeElement.mutate(id)}
+          onDeleteRelationship={(id) => removeRelationship.mutate(id)}
         />
       </div>
       {isReviewMode ? (
         <ReviewBar projectId={projectId} />
       ) : (
-        <LensBar onTidy={handleTidy} />
+        <LensBar onTidy={handleTidy} onZoomToFit={() => fitViewRef.current?.()} />
       )}
       <CommandPalette
         elements={elements ?? []}

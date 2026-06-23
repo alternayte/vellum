@@ -13,6 +13,12 @@ vi.mock('../../../src/hooks/use-drafts', () => ({
 vi.mock('../../../src/hooks/use-docs', () => ({
   useCreateDoc: () => ({ mutate: vi.fn(), isPending: false }),
 }))
+vi.mock('../../../src/hooks/use-views', () => ({
+  useCreateView: () => ({ mutate: vi.fn(), isPending: false }),
+}))
+vi.mock('../../../src/hooks/use-spaces', () => ({
+  useCreateSpace: () => ({ mutate: vi.fn(), isPending: false }),
+}))
 vi.mock('../../../src/hooks/use-draft-comments', () => ({
   useComments: () => ({ data: { items: [] } }),
 }))
