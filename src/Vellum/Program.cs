@@ -9,6 +9,7 @@ using Vellum.Kernel.EventTypes;
 using Vellum.Kernel.Outbox;
 using Vellum.Kernel.Projections;
 using Vellum.Modules.Identity;
+using Vellum.Modules.Mcp;
 using Vellum.Modules.Modelling;
 using Vellum.Modules.Modelling.Model;
 using Vellum.Modules.Docs;
@@ -51,6 +52,7 @@ builder.Services.AddViewsModule(builder.Configuration);
 builder.Services.AddDocsModule(builder.Configuration);
 builder.Services.AddDraftsModule(builder.Configuration);
 builder.Services.AddSchemasModule(builder.Configuration);
+builder.Services.AddMcpModule();
 
 // Command handlers (Scrutor scan + TransactionBehavior decoration)
 builder.Services.Scan(s => s.FromAssemblyOf<Program>()
@@ -89,6 +91,7 @@ app.MapDraftEndpoints();
 app.MapMergeEndpoints();
 app.MapCommentEndpoints();
 app.MapSchemaEndpoints();
+app.MapMcpEndpoints();
 
 if (app.Environment.IsDevelopment())
 {
