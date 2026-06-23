@@ -4,6 +4,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sh
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 import { kindColor } from '@/lib/kind-colors'
 import { DiffDetail } from '@/components/review/diff-detail'
 import { ConflictResolver } from '@/components/review/conflict-resolver'
@@ -30,10 +31,30 @@ interface RelationshipData {
   technology: string | null
 }
 
+interface MessageData {
+  id: string
+  name: string
+  description: string | null
+  producerId: string
+  consumerIds: string[]
+  schemaId: string | null
+  tags: string[]
+}
+
+interface SchemaData {
+  id: string
+  name: string
+  description: string | null
+  content: string
+  version: number
+}
+
 interface DetailPanelProps {
   projectId: string
   elements: ElementData[]
   relationships: RelationshipData[]
+  messages?: MessageData[]
+  schemas?: SchemaData[]
   onUpdateElement?: (id: string, fields: Partial<ElementData>) => void
   onUpdateRelationship?: (id: string, fields: Partial<RelationshipData>) => void
 }
@@ -42,10 +63,12 @@ export function DetailPanel({
   projectId,
   elements,
   relationships,
+  messages,
+  schemas,
   onUpdateElement,
   onUpdateRelationship,
 }: DetailPanelProps) {
-  const { detailPanelOpen, selectedElementId, selectedRelationshipId, selectElement, selectRelationship } =
+  const { detailPanelOpen, selectedElementId, selectedRelationshipId, selectedMessageId, selectElement, selectRelationship, selectMessage } =
     useShellStore()
   const { isReviewMode, reviewData, activeDraftId } = useDraftStore()
 
@@ -54,6 +77,7 @@ export function DetailPanel({
 
   const selectedElement = elements.find((e) => e.id === selectedElementId)
   const selectedRel = relationships.find((r) => r.id === selectedRelationshipId)
+  const selectedMessage = messages?.find((m) => m.id === selectedMessageId)
 
   // Look up review info for the selected entity
   const selectedChange = isReviewMode && reviewData
@@ -70,11 +94,114 @@ export function DetailPanel({
   const handleClose = () => {
     selectElement(null)
     selectRelationship(null)
+    selectMessage(null)
   }
+
+  const producer = selectedMessage ? elements.find((e) => e.id === selectedMessage.producerId) : null
+  const consumers = selectedMessage
+    ? elements.filter((e) => selectedMessage.consumerIds.includes(e.id))
+    : []
+  const attachedSchema = selectedMessage?.schemaId
+    ? schemas?.find((s) => s.id === selectedMessage.schemaId)
+    : null
 
   return (
     <Sheet open={detailPanelOpen} onOpenChange={(open) => !open && handleClose()}>
       <SheetContent side="right" className="w-80 border-l border-border bg-card">
+        {selectedMessage && (
+          <div key={selectedMessage.id}>
+            <SheetHeader>
+              <SheetTitle className="flex items-center gap-2 font-display">
+                <span className="text-muted-foreground">✉</span>
+                {selectedMessage.name}
+              </SheetTitle>
+              <Badge variant="outline" className="w-fit font-mono text-xs">
+                message
+              </Badge>
+            </SheetHeader>
+
+            <div className="mt-4 space-y-4">
+              {selectedMessage.description && (
+                <div>
+                  <label className="mb-1 block text-xs text-muted-foreground">Description</label>
+                  <p className="text-sm text-foreground">{selectedMessage.description}</p>
+                </div>
+              )}
+
+              <div>
+                <label className="mb-1 block text-xs text-muted-foreground">Producer</label>
+                {producer ? (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-auto px-0 py-0 text-sm font-normal text-primary hover:text-primary"
+                    onClick={() => selectElement(producer.id)}
+                  >
+                    {producer.name}
+                  </Button>
+                ) : (
+                  <p className="text-xs text-muted-foreground">Unknown</p>
+                )}
+              </div>
+
+              {consumers.length > 0 && (
+                <div>
+                  <label className="mb-1 block text-xs text-muted-foreground">Consumers</label>
+                  <div className="flex flex-col gap-1">
+                    {consumers.map((c) => (
+                      <Button
+                        key={c.id}
+                        variant="ghost"
+                        size="sm"
+                        className="h-auto justify-start px-0 py-0 text-sm font-normal text-primary hover:text-primary"
+                        onClick={() => selectElement(c.id)}
+                      >
+                        {c.name}
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {attachedSchema && (
+                <div>
+                  <label className="mb-1 block text-xs text-muted-foreground">Schema</label>
+                  <div className="rounded border border-border bg-background p-2">
+                    <p className="font-mono text-xs font-medium text-foreground">
+                      {attachedSchema.name}
+                      <span className="ml-2 text-muted-foreground">v{attachedSchema.version}</span>
+                    </p>
+                    {attachedSchema.content && (
+                      <pre className="mt-2 overflow-auto text-[10px] text-muted-foreground">
+                        {(() => {
+                          try {
+                            return JSON.stringify(JSON.parse(attachedSchema.content), null, 2)
+                          } catch {
+                            return attachedSchema.content
+                          }
+                        })()}
+                      </pre>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {selectedMessage.tags.length > 0 && (
+                <div>
+                  <label className="mb-1 block text-xs text-muted-foreground">Tags</label>
+                  <div className="flex flex-wrap gap-1">
+                    {selectedMessage.tags.map((tag) => (
+                      <Badge key={tag} variant="secondary" className="text-xs">
+                        {tag}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
         {selectedElement && (
           <div key={selectedElement.id}>
             <SheetHeader>

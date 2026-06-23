@@ -27,6 +27,14 @@ export function LensBar({ onTidy, onZoomToFit }: LensBarProps) {
       >
         Metadata
       </Button>
+      <Button
+        variant={activeLens === 'messages' ? 'default' : 'ghost'}
+        size="sm"
+        className="h-7 text-xs"
+        onClick={() => toggleLens('messages')}
+      >
+        Messages
+      </Button>
 
       <div className="flex-1" />
 

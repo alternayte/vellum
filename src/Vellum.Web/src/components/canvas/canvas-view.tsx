@@ -46,12 +46,21 @@ interface LayoutPosition {
   y: number
 }
 
+interface MessageModel {
+  id: string
+  name: string
+  producerId: string
+  consumerIds: string[]
+  schemaId: string | null
+}
+
 interface CanvasViewProps {
   elements: ElementModel[]
   relationships: RelationshipModel[]
   positions: LayoutPosition[]
   diffStateMap?: Map<string, DiffState>
   isReviewMode?: boolean
+  messages?: MessageModel[]
   onNodeDragStop?: (id: string, x: number, y: number) => void
   onNodeDoubleClick?: (elementId: string) => void
   onFitViewReady?: (fitView: () => void) => void
@@ -63,18 +72,19 @@ export function CanvasView({
   positions,
   diffStateMap,
   isReviewMode,
+  messages,
   onNodeDragStop,
   onNodeDoubleClick,
   onFitViewReady,
 }: CanvasViewProps) {
-  const { currentRootId, zoomLevel, setZoom } = useCanvasStore()
+  const { currentRootId, zoomLevel, setZoom, activeLens } = useCanvasStore()
   const { fitView } = useReactFlow()
 
   useEffect(() => {
     onFitViewReady?.(() => fitView())
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fitView])
-  const { selectElement, selectRelationship } = useShellStore()
+  const { selectElement, selectRelationship, selectMessage } = useShellStore()
   const tier = useLod(zoomLevel)
 
   const visibleElements = useMemo(() => {
@@ -136,9 +146,71 @@ export function CanvasView({
     }))
   }, [visibleRelationships, diffStateMap, isReviewMode])
 
+  const messageNodes: Node[] = useMemo(() => {
+    if (activeLens !== 'messages' || !messages) return []
+    return messages
+      .filter((m) => visibleIds.has(m.producerId))
+      .map((msg) => {
+        const producerPos = positionMap.get(msg.producerId) ?? { x: 0, y: 0 }
+        const firstConsumerPos =
+          msg.consumerIds.length > 0
+            ? positionMap.get(msg.consumerIds[0]) ?? { x: producerPos.x + 400, y: producerPos.y }
+            : { x: producerPos.x + 400, y: producerPos.y }
+        return {
+          id: `msg-${msg.id}`,
+          type: 'message-pill' as const,
+          position: {
+            x: (producerPos.x + firstConsumerPos.x) / 2,
+            y: (producerPos.y + firstConsumerPos.y) / 2,
+          },
+          data: {
+            id: msg.id,
+            name: msg.name,
+            hasSchema: msg.schemaId !== null,
+          },
+        }
+      })
+  }, [activeLens, messages, visibleIds, positionMap])
+
+  const messageEdges: Edge[] = useMemo(() => {
+    if (activeLens !== 'messages' || !messages) return []
+    return messages
+      .filter((m) => visibleIds.has(m.producerId))
+      .flatMap((msg) => {
+        const producerEdge: Edge = {
+          id: `msg-edge-p-${msg.id}`,
+          source: msg.producerId,
+          target: `msg-${msg.id}`,
+          type: 'c4-edge',
+          markerEnd: { type: MarkerType.ArrowClosed, color: 'hsl(var(--border))' },
+          data: { label: null, technology: null },
+        }
+        const consumerEdges: Edge[] = msg.consumerIds
+          .filter((cid) => visibleIds.has(cid))
+          .map((cid) => ({
+            id: `msg-edge-c-${msg.id}-${cid}`,
+            source: `msg-${msg.id}`,
+            target: cid,
+            type: 'c4-edge',
+            markerEnd: { type: MarkerType.ArrowClosed, color: 'hsl(var(--border))' },
+            data: { label: null, technology: null },
+          }))
+        return [producerEdge, ...consumerEdges]
+      })
+  }, [activeLens, messages, visibleIds])
+
+  const allNodes = useMemo(() => [...nodes, ...messageNodes], [nodes, messageNodes])
+  const allEdges = useMemo(() => [...edges, ...messageEdges], [edges, messageEdges])
+
   const handleNodeClick: NodeMouseHandler = useCallback(
-    (_event, node) => selectElement(node.id),
-    [selectElement],
+    (_event, node) => {
+      if (node.id.startsWith('msg-')) {
+        selectMessage(node.id.replace('msg-', ''))
+      } else {
+        selectElement(node.id)
+      }
+    },
+    [selectElement, selectMessage],
   )
 
   const handleNodeDoubleClick: NodeMouseHandler = useCallback(
@@ -154,7 +226,8 @@ export function CanvasView({
   const handlePaneClick = useCallback(() => {
     selectElement(null)
     selectRelationship(null)
-  }, [selectElement, selectRelationship])
+    selectMessage(null)
+  }, [selectElement, selectRelationship, selectMessage])
 
   if (visibleElements.length === 0) {
     const isTopLevel = currentRootId === null
@@ -181,8 +254,8 @@ export function CanvasView({
 
   return (
     <ReactFlow
-      nodes={nodes}
-      edges={edges}
+      nodes={allNodes}
+      edges={allEdges}
       nodeTypes={nodeTypes}
       edgeTypes={edgeTypes}
       onNodeClick={handleNodeClick}

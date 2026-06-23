@@ -13,6 +13,8 @@ import { useRelationships, useUpdateRelationship } from '@/hooks/use-relationshi
 import { useViews, useView, useSaveLayout } from '@/hooks/use-views'
 import { useDocs } from '@/hooks/use-docs'
 import { useSpaces } from '@/hooks/use-spaces'
+import { useMessages } from '@/hooks/use-messages'
+import { useSchemas } from '@/hooks/use-schemas'
 import { useShellStore } from '@/stores/shell-store'
 import { useCanvasStore } from '@/stores/canvas-store'
 import { useDraftStore } from '@/stores/draft-store'
@@ -31,6 +33,8 @@ function ProjectWorkspace() {
   const { activeDraftId, activeDraftStreamId, isReviewMode, reviewData, enterReviewMode } = useDraftStore()
   const { data: elements, isLoading: elementsLoading } = useElements(projectId, activeDraftStreamId ?? undefined)
   const { data: relationships, isLoading: relsLoading } = useRelationships(projectId, activeDraftStreamId ?? undefined)
+  const { data: messages } = useMessages(projectId, activeDraftStreamId ?? undefined)
+  const { data: schemas } = useSchemas(projectId)
   const { data: views } = useViews(projectId)
   const { data: docs } = useDocs(projectId)
   const { data: spaces } = useSpaces(projectId)
@@ -87,6 +91,9 @@ function ProjectWorkspace() {
       }
       if (e.key === '2' && !inInput) {
         useCanvasStore.getState().toggleLens('metadata')
+      }
+      if (e.key === '3' && !inInput) {
+        useCanvasStore.getState().toggleLens('messages')
       }
       if (e.key === 't' && !inInput) {
         handleTidy()
@@ -156,6 +163,7 @@ function ProjectWorkspace() {
               positions={positions}
               diffStateMap={diffStateMap}
               isReviewMode={isReviewMode}
+              messages={messages ?? []}
               onFitViewReady={handleFitViewReady}
               onNodeDoubleClick={(elementId) => {
                 const el = elements?.find((e) => e.id === elementId)
@@ -176,6 +184,8 @@ function ProjectWorkspace() {
           projectId={projectId}
           elements={elements ?? []}
           relationships={relationships ?? []}
+          messages={messages ?? []}
+          schemas={schemas ?? []}
           onUpdateElement={(id, fields) => updateElement.mutate({ id, ...fields })}
           onUpdateRelationship={(id, fields) => updateRelationship.mutate({ id, ...fields })}
         />

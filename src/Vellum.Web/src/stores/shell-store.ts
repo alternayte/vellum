@@ -5,6 +5,7 @@ interface ShellState {
   detailPanelOpen: boolean
   selectedElementId: string | null
   selectedRelationshipId: string | null
+  selectedMessageId: string | null
   activeViewId: string | null
   activeDocId: string | null
   commandPaletteOpen: boolean
@@ -12,6 +13,7 @@ interface ShellState {
   toggleNavigator: () => void
   selectElement: (id: string | null) => void
   selectRelationship: (id: string | null) => void
+  selectMessage: (id: string | null) => void
   setActiveView: (id: string | null) => void
   openDoc: (id: string) => void
   closeDoc: () => void
@@ -25,6 +27,7 @@ export const useShellStore = create<ShellState>((set) => ({
   detailPanelOpen: false,
   selectedElementId: null,
   selectedRelationshipId: null,
+  selectedMessageId: null,
   activeViewId: null,
   activeDocId: null,
   commandPaletteOpen: false,
@@ -36,6 +39,7 @@ export const useShellStore = create<ShellState>((set) => ({
     set({
       selectedElementId: id,
       selectedRelationshipId: null,
+      selectedMessageId: null,
       detailPanelOpen: id !== null,
     }),
 
@@ -43,6 +47,15 @@ export const useShellStore = create<ShellState>((set) => ({
     set({
       selectedRelationshipId: id,
       selectedElementId: null,
+      selectedMessageId: null,
+      detailPanelOpen: id !== null,
+    }),
+
+  selectMessage: (id) =>
+    set({
+      selectedMessageId: id,
+      selectedElementId: null,
+      selectedRelationshipId: null,
       detailPanelOpen: id !== null,
     }),
 
@@ -62,6 +75,7 @@ export const useShellStore = create<ShellState>((set) => ({
       detailPanelOpen: false,
       selectedElementId: null,
       selectedRelationshipId: null,
+      selectedMessageId: null,
       activeViewId: null,
       activeDocId: null,
       commandPaletteOpen: false,
