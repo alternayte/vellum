@@ -241,6 +241,58 @@ public static class ExecuteMerge
                     if (rel is not null) db.Relationships.Remove(rel);
                     break;
                 }
+
+                case ModelEvent.MessageAdded msgAdded:
+                {
+                    var existing = await db.Messages.FindAsync([msgAdded.Id], ct);
+                    if (existing is not null)
+                    {
+                        existing.Branch = mainStreamId;
+                        existing.Name = msgAdded.Name;
+                        existing.Description = msgAdded.Description;
+                        existing.ProducerId = msgAdded.ProducerId;
+                        existing.ConsumerIds = msgAdded.ConsumerIds;
+                        existing.SchemaId = msgAdded.SchemaId;
+                        existing.Tags = msgAdded.Tags;
+                    }
+                    else
+                    {
+                        db.Messages.Add(new MessageEntity
+                        {
+                            Id = msgAdded.Id,
+                            ProjectId = projectId,
+                            Branch = mainStreamId,
+                            Name = msgAdded.Name,
+                            Description = msgAdded.Description,
+                            ProducerId = msgAdded.ProducerId,
+                            ConsumerIds = msgAdded.ConsumerIds,
+                            SchemaId = msgAdded.SchemaId,
+                            Tags = msgAdded.Tags,
+                        });
+                    }
+                    break;
+                }
+
+                case ModelEvent.MessageUpdated msgUpdated:
+                {
+                    var msg = await db.Messages.FindAsync([msgUpdated.MessageId], ct);
+                    if (msg is not null)
+                    {
+                        if (msgUpdated.Name is not null) msg.Name = msgUpdated.Name;
+                        if (msgUpdated.Description is not null) msg.Description = msgUpdated.Description;
+                        if (msgUpdated.ProducerId is not null) msg.ProducerId = msgUpdated.ProducerId.Value;
+                        if (msgUpdated.ConsumerIds is not null) msg.ConsumerIds = msgUpdated.ConsumerIds;
+                        if (msgUpdated.SetSchemaId) msg.SchemaId = msgUpdated.SchemaId;
+                    }
+                    break;
+                }
+
+                case ModelEvent.MessageRemoved msgRemoved:
+                {
+                    var msg = await db.Messages.FindAsync([msgRemoved.MessageId], ct);
+                    if (msg is not null) db.Messages.Remove(msg);
+                    break;
+                }
             }
         }
 
@@ -315,6 +367,21 @@ public static class ExecuteMerge
             };
         }
 
+        if (entityType == "message")
+        {
+            return changeKind switch
+            {
+                "added" when value is MessageState msg =>
+                    [new ModelEvent.MessageAdded(msg.Id, msg.Name, msg.Description,
+                        msg.ProducerId, msg.ConsumerIds, msg.SchemaId, msg.Tags)],
+                "modified" when value is MessageState msg =>
+                    BuildMessageUpdateEvents(entityId, msg, currentMain),
+                "removed" =>
+                    [new ModelEvent.MessageRemoved(entityId)],
+                _ => []
+            };
+        }
+
         return [];
     }
 
@@ -349,5 +416,32 @@ public static class ExecuteMerge
         if (current.Technology != target.Technology) events.Add(new ModelEvent.RelationshipTechnologyChanged(id, target.Technology));
 
         return events;
+    }
+
+    private static List<ModelEvent> BuildMessageUpdateEvents(
+        Guid id, MessageState target, ModelState currentMain)
+    {
+        if (!currentMain.Messages.TryGetValue(id, out var current))
+            return [new ModelEvent.MessageAdded(target.Id, target.Name, target.Description,
+                target.ProducerId, target.ConsumerIds, target.SchemaId, target.Tags)];
+
+        var hasChanges =
+            current.Name != target.Name ||
+            current.Description != target.Description ||
+            current.ProducerId != target.ProducerId ||
+            !current.ConsumerIds.SequenceEqual(target.ConsumerIds) ||
+            current.SchemaId != target.SchemaId ||
+            !current.Tags.SequenceEqual(target.Tags);
+
+        if (!hasChanges) return [];
+
+        return [new ModelEvent.MessageUpdated(
+            id,
+            current.Name != target.Name ? target.Name : null,
+            current.Description != target.Description ? target.Description : null,
+            current.ProducerId != target.ProducerId ? target.ProducerId : null,
+            !current.ConsumerIds.SequenceEqual(target.ConsumerIds) ? target.ConsumerIds : null,
+            current.SchemaId != target.SchemaId ? target.SchemaId : null,
+            current.SchemaId != target.SchemaId)];
     }
 }
