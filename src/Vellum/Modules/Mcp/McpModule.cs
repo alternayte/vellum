@@ -15,7 +15,7 @@ public static class McpModule
 
     public static WebApplication MapMcpEndpoints(this WebApplication app)
     {
-        app.MapMcp("/mcp");
+        app.MapMcp("/mcp").RequireAuthorization();
         return app;
     }
 }
