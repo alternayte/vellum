@@ -1,8 +1,16 @@
-import { describe, it, expect, beforeEach } from 'vitest'
+import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { TopBar } from '../../../src/components/shell/top-bar'
 import { useShellStore } from '../../../src/stores/shell-store'
 import { useCanvasStore } from '../../../src/stores/canvas-store'
+
+vi.mock('@tanstack/react-router', () => ({
+  useNavigate: () => vi.fn(),
+}))
+
+vi.mock('../../../src/hooks/use-auth', () => ({
+  useAuth: () => ({ logout: vi.fn() }),
+}))
 
 beforeEach(() => {
   useCanvasStore.getState().reset()
@@ -36,5 +44,10 @@ describe('TopBar', () => {
   it('renders the strata breadcrumb with Context link', () => {
     render(<TopBar />)
     expect(screen.getByText('Context')).toBeTruthy()
+  })
+
+  it('renders the logout button', () => {
+    render(<TopBar />)
+    expect(screen.getByText('Log out')).toBeTruthy()
   })
 })

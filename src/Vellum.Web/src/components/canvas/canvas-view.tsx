@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useMemo } from 'react'
 import {
   ReactFlow,
+  ReactFlowProvider,
   MiniMap,
   Background,
   BackgroundVariant,
   type Node,
   type Edge,
   type NodeMouseHandler,
+  type OnConnect,
   MarkerType,
   useReactFlow,
 } from '@xyflow/react'
@@ -64,9 +66,19 @@ interface CanvasViewProps {
   onNodeDragStop?: (id: string, x: number, y: number) => void
   onNodeDoubleClick?: (elementId: string) => void
   onFitViewReady?: (fitView: () => void) => void
+  onAddElement?: () => void
+  onConnect?: (source: string, target: string) => void
 }
 
-export function CanvasView({
+export function CanvasView(props: CanvasViewProps) {
+  return (
+    <ReactFlowProvider>
+      <CanvasViewInner {...props} />
+    </ReactFlowProvider>
+  )
+}
+
+function CanvasViewInner({
   elements,
   relationships,
   positions,
@@ -76,6 +88,8 @@ export function CanvasView({
   onNodeDragStop,
   onNodeDoubleClick,
   onFitViewReady,
+  onAddElement,
+  onConnect: onConnectProp,
 }: CanvasViewProps) {
   const { currentRootId, zoomLevel, setZoom, activeLens } = useCanvasStore()
   const { fitView } = useReactFlow()
@@ -110,7 +124,9 @@ export function CanvasView({
 
   const nodes: Node[] = useMemo(() => {
     return visibleElements.map((el, index) => {
-      const pos = positionMap.get(el.id) ?? { x: index * 320, y: index * 100 }
+      const col = index % 3
+      const row = Math.floor(index / 3)
+      const pos = positionMap.get(el.id) ?? { x: col * 340, y: row * 200 }
       const entityDiffState = diffStateMap?.get(el.id) ?? (isReviewMode ? 'unchanged' : undefined)
       return {
         id: el.id,
@@ -225,6 +241,15 @@ export function CanvasView({
     [selectRelationship],
   )
 
+  const handleConnect: OnConnect = useCallback(
+    (params) => {
+      if (params.source && params.target) {
+        onConnectProp?.(params.source, params.target)
+      }
+    },
+    [onConnectProp],
+  )
+
   const handlePaneClick = useCallback(() => {
     selectElement(null)
     selectRelationship(null)
@@ -245,7 +270,7 @@ export function CanvasView({
             variant="outline"
             size="sm"
             className="mt-3"
-            onClick={() => {/* open create dialog */}}
+            onClick={() => onAddElement?.()}
           >
             {isTopLevel ? 'Add System' : 'Add Element'}
           </Button>
@@ -263,6 +288,7 @@ export function CanvasView({
       onNodeClick={handleNodeClick}
       onNodeDoubleClick={handleNodeDoubleClick}
       onNodeDragStop={onNodeDragStop ? (_event, node) => onNodeDragStop(node.id, node.position.x, node.position.y) : undefined}
+      onConnect={handleConnect}
       onEdgeClick={handleEdgeClick}
       onPaneClick={handlePaneClick}
       onMoveEnd={(_event, viewport) => setZoom(viewport.zoom)}
