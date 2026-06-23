@@ -37,5 +37,9 @@ public static class ModellingModule
         registry.Register<ModelEvent.RelationshipLabelChanged>("modelling.relationship.label_changed.v1");
         registry.Register<ModelEvent.RelationshipTechnologyChanged>("modelling.relationship.technology_changed.v1");
         registry.Register<ModelEvent.RelationshipRemoved>("modelling.relationship.removed.v1");
+
+        registry.Register<ModelEvent.MessageAdded>("modelling.message.added.v1");
+        registry.Register<ModelEvent.MessageUpdated>("modelling.message.updated.v1");
+        registry.Register<ModelEvent.MessageRemoved>("modelling.message.removed.v1");
     }
 }

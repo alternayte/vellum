@@ -9,6 +9,7 @@ public class ModellingDbContext : DbContext
 
     public DbSet<ElementEntity> Elements => Set<ElementEntity>();
     public DbSet<RelationshipEntity> Relationships => Set<RelationshipEntity>();
+    public DbSet<MessageEntity> Messages => Set<MessageEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -25,6 +26,13 @@ public class ModellingDbContext : DbContext
         {
             b.HasKey(r => r.Id);
             b.HasIndex(r => new { r.ProjectId, r.Branch });
+        });
+
+        modelBuilder.Entity<MessageEntity>(b =>
+        {
+            b.HasKey(m => m.Id);
+            b.HasIndex(m => new { m.ProjectId, m.Branch });
+            b.HasIndex(m => new { m.ProjectId, m.Branch, m.ProducerId });
         });
     }
 }

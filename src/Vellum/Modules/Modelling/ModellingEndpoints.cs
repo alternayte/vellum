@@ -4,6 +4,7 @@ using Vellum.Kernel.CommandHandling;
 using Vellum.Kernel.Results;
 using Vellum.Modules.Drafts;
 using Vellum.Modules.Modelling.Elements;
+using Vellum.Modules.Modelling.Messages;
 using Vellum.Modules.Modelling.Relationships;
 using Vellum.Modules.Workspaces;
 using Vellum.Modules.Workspaces.Authorization;
@@ -229,6 +230,90 @@ public static class ModellingEndpoints
                 return Results.BadRequest(new ErrorResponse("invalid_branch", "Branch not found or not open for this project"));
             return (await handler.HandleAsync(
                 new RemoveRelationshipCommandEnvelope(projectId, streamId.Value, relationshipId, userId), ct))
+                .ToHttpResult();
+        });
+
+        var messages = project.MapGroup("/messages").WithTags("Messages");
+
+        messages.MapPost("/", async (
+            Guid projectId, Guid? branchId,
+            AddMessageRequest request,
+            ClaimsPrincipal user, WorkspacesDbContext workspacesDb,
+            DraftsDbContext draftsDb, WorkspaceAuthorizationService auth,
+            ICommandHandler<AddMessageCommandEnvelope, CommandResult<MessageDto>> handler,
+            CancellationToken ct) =>
+        {
+            var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
+            var proj = await workspacesDb.Projects.AsNoTracking().FirstAsync(p => p.Id == projectId, ct);
+            var streamId = await ResolveBranchStreamIdAsync(branchId, projectId, proj.StreamId, draftsDb, requireOpen: true, ct);
+            if (streamId is null)
+                return Results.BadRequest(new ErrorResponse("invalid_branch", "Branch not found or not open for this project"));
+            return (await handler.HandleAsync(
+                new AddMessageCommandEnvelope(projectId, streamId.Value, userId, request), ct))
+                .ToCreatedResult($"/api/projects/{projectId}/messages/{request.Id}");
+        });
+
+        messages.MapGet("/", async (
+            Guid projectId, Guid? branchId,
+            Guid? producerId, string? cursor, int? limit,
+            ClaimsPrincipal user, WorkspacesDbContext workspacesDb,
+            DraftsDbContext draftsDb, WorkspaceAuthorizationService auth,
+            ModellingDbContext db, CancellationToken ct) =>
+        {
+            var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Viewer, ct);
+            var proj = await workspacesDb.Projects.AsNoTracking().FirstAsync(p => p.Id == projectId, ct);
+            var streamId = await ResolveBranchStreamIdAsync(branchId, projectId, proj.StreamId, draftsDb, requireOpen: false, ct);
+            if (streamId is null)
+                return Results.BadRequest(new ErrorResponse("invalid_branch", "Branch not found for this project"));
+            return await ListMessages.Handle(projectId, streamId.Value, producerId, cursor, limit, db, ct);
+        });
+
+        messages.MapGet("/{messageId}", async (
+            Guid projectId, Guid messageId,
+            ClaimsPrincipal user, WorkspaceAuthorizationService auth,
+            ModellingDbContext db, CancellationToken ct) =>
+        {
+            var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Viewer, ct);
+            return await GetMessage.Handle(projectId, messageId, db, ct);
+        });
+
+        messages.MapPatch("/{messageId}", async (
+            Guid projectId, Guid messageId, Guid? branchId,
+            UpdateMessageRequest request,
+            ClaimsPrincipal user, WorkspacesDbContext workspacesDb,
+            DraftsDbContext draftsDb, WorkspaceAuthorizationService auth,
+            ICommandHandler<UpdateMessageCommandEnvelope, CommandResult<MessageDto>> handler,
+            CancellationToken ct) =>
+        {
+            var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
+            var proj = await workspacesDb.Projects.AsNoTracking().FirstAsync(p => p.Id == projectId, ct);
+            var streamId = await ResolveBranchStreamIdAsync(branchId, projectId, proj.StreamId, draftsDb, requireOpen: true, ct);
+            if (streamId is null)
+                return Results.BadRequest(new ErrorResponse("invalid_branch", "Branch not found or not open for this project"));
+            return (await handler.HandleAsync(
+                new UpdateMessageCommandEnvelope(projectId, streamId.Value, messageId, userId, request), ct))
+                .ToHttpResult();
+        });
+
+        messages.MapDelete("/{messageId}", async (
+            Guid projectId, Guid messageId, Guid? branchId,
+            ClaimsPrincipal user, WorkspacesDbContext workspacesDb,
+            DraftsDbContext draftsDb, WorkspaceAuthorizationService auth,
+            ICommandHandler<RemoveMessageCommandEnvelope, CommandResult> handler,
+            CancellationToken ct) =>
+        {
+            var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
+            var proj = await workspacesDb.Projects.AsNoTracking().FirstAsync(p => p.Id == projectId, ct);
+            var streamId = await ResolveBranchStreamIdAsync(branchId, projectId, proj.StreamId, draftsDb, requireOpen: true, ct);
+            if (streamId is null)
+                return Results.BadRequest(new ErrorResponse("invalid_branch", "Branch not found or not open for this project"));
+            return (await handler.HandleAsync(
+                new RemoveMessageCommandEnvelope(projectId, streamId.Value, messageId, userId), ct))
                 .ToHttpResult();
         });
 
