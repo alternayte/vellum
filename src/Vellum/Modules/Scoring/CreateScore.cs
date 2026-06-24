@@ -62,6 +62,9 @@ public static class CreateScore
         if (parsed is null)
             return Results.Problem("Failed to parse LLM response", statusCode: 502);
 
+        if (parsed.Criteria is null || parsed.Criteria.Count == 0)
+            return Results.Problem("LLM response missing criteria", statusCode: 502);
+
         var criteriaResults = parsed.Criteria.Select(c =>
         {
             var rubricCriterion = rubric.Criteria.FirstOrDefault(rc => rc.Key == c.Key);

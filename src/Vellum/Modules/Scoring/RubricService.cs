@@ -32,8 +32,6 @@ public class RubricService
     public Rubric? GetRubric(string docType) =>
         _rubrics.TryGetValue(docType, out var rubric) ? rubric : null;
 
-    public bool HasRubric(string docType) => _rubrics.ContainsKey(docType);
-
     private static Rubric? Parse(string raw, IDeserializer deserializer)
     {
         var parts = raw.Split("---", 3, StringSplitOptions.None);
