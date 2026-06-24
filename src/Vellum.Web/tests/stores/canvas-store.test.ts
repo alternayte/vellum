@@ -69,4 +69,17 @@ describe('canvas store', () => {
     expect(state.activeLens).toBe('none')
     expect(state.zoomLevel).toBe(1)
   })
+
+  it('toggleExpand adds and removes node IDs', () => {
+    useCanvasStore.getState().toggleExpand('s1')
+    expect(useCanvasStore.getState().expandedNodeIds.has('s1')).toBe(true)
+    useCanvasStore.getState().toggleExpand('s1')
+    expect(useCanvasStore.getState().expandedNodeIds.has('s1')).toBe(false)
+  })
+
+  it('reset clears expanded nodes', () => {
+    useCanvasStore.getState().toggleExpand('s1')
+    useCanvasStore.getState().reset()
+    expect(useCanvasStore.getState().expandedNodeIds.size).toBe(0)
+  })
 })
