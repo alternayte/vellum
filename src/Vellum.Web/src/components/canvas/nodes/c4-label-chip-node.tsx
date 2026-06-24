@@ -19,14 +19,16 @@ export const C4LabelChipNode = memo(function C4LabelChipNode({ data }: NodeProps
   return (
     <div
       className={cn(
-        'flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1 shadow-sm',
+        'group/chip flex items-center gap-1.5 rounded-full border border-border bg-card px-3 py-1 shadow-sm',
         diff === 'removed' && 'opacity-50',
         diff === 'unchanged' && 'opacity-60',
       )}
       style={diffOverrideBorder ? { borderColor: diffOverrideBorder } : undefined}
     >
-      <Handle type="target" position={Position.Left} className="!bg-primary" />
-      <Handle type="source" position={Position.Right} className="!bg-primary" />
+      <Handle type="target" position={Position.Top} className="!h-1.5 !w-1.5 !bg-primary opacity-0 transition-opacity group-hover/chip:opacity-100" />
+      <Handle type="source" position={Position.Right} className="!h-1.5 !w-1.5 !bg-primary opacity-0 transition-opacity group-hover/chip:opacity-100" />
+      <Handle type="target" position={Position.Bottom} className="!h-1.5 !w-1.5 !bg-primary opacity-0 transition-opacity group-hover/chip:opacity-100" />
+      <Handle type="source" position={Position.Left} className="!h-1.5 !w-1.5 !bg-primary opacity-0 transition-opacity group-hover/chip:opacity-100" />
       <span
         className="h-2 w-2 rounded-full"
         style={{ backgroundColor: kindColor(d.kind) }}
