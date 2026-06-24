@@ -1,12 +1,5 @@
 import { kindColor } from '@/lib/kind-colors'
-
-const CONTAINMENT_RULES: Record<string, string[]> = {
-  actor: [],
-  system: ['app', 'store'],
-  app: ['component'],
-  store: [],
-  component: [],
-}
+import { validKindsForContext } from '@/lib/containment-rules'
 
 interface CreatePopoverProps {
   open: boolean
@@ -19,10 +12,7 @@ interface CreatePopoverProps {
 export function CreatePopover({ open, sourceKind, position, onSelect, onClose }: CreatePopoverProps) {
   if (!open) return null
 
-  const isTopLevel = sourceKind === null
-  const validKinds = isTopLevel
-    ? ['actor', 'system']
-    : CONTAINMENT_RULES[sourceKind] ?? []
+  const validKinds = validKindsForContext(sourceKind)
 
   if (validKinds.length === 0) return null
 

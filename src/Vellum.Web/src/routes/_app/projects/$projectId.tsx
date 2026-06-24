@@ -122,6 +122,53 @@ function ProjectWorkspace() {
     ids.forEach((id) => removeElement.mutate(id))
   }
 
+  const handleDuplicateElement = (id: string) => {
+    const el = elements?.find((e) => e.id === id)
+    if (!el) return
+    addElement.mutate({
+      id: crypto.randomUUID(),
+      kind: el.kind,
+      name: `${el.name} (copy)`,
+      parentId: el.parentId ?? undefined,
+    })
+  }
+
+  const handleReverseRelationship = (id: string) => {
+    const rel = relationships?.find((r) => r.id === id)
+    if (!rel) return
+    removeRelationship.mutate(id)
+    addRelationship.mutate({
+      id: crypto.randomUUID(),
+      fromId: rel.toId,
+      toId: rel.fromId,
+      label: rel.label ?? undefined,
+      technology: rel.technology ?? undefined,
+    })
+  }
+
+  const handleDeleteRelationship = (id: string) => {
+    if (window.confirm('Delete this relationship?')) {
+      removeRelationship.mutate(id)
+    }
+  }
+
+  const handleDeleteElement = (id: string) => {
+    const el = elements?.find((e) => e.id === id)
+    if (el && window.confirm(`Delete "${el.name}"?`)) {
+      removeElement.mutate(id)
+    }
+  }
+
+  const handleAddElementAtPosition = (kind: string) => {
+    const { currentRootId } = useCanvasStore.getState()
+    addElement.mutate({
+      id: crypto.randomUUID(),
+      kind,
+      name: `New ${kind}`,
+      parentId: currentRootId ?? undefined,
+    })
+  }
+
   const handleNodeDragStop = (id: string, x: number, y: number) => {
     const current = activeView?.positions ?? []
     const updated = current.some((p) => p.elementId === id)
@@ -231,6 +278,12 @@ function ProjectWorkspace() {
               onConnect={handleConnect}
               onNodeDragStop={handleNodeDragStop}
               onBulkDelete={handleBulkDelete}
+              onDuplicateElement={handleDuplicateElement}
+              onDeleteElement={handleDeleteElement}
+              onReverseRelationship={handleReverseRelationship}
+              onDeleteRelationship={handleDeleteRelationship}
+              onAddElementAtPosition={handleAddElementAtPosition}
+              onTidy={handleTidy}
               onNodeDoubleClick={(elementId) => {
                 const el = elements?.find((e) => e.id === elementId)
                 if (!el) return

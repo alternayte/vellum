@@ -13,6 +13,9 @@ import {
   useReactFlow,
   SelectionMode,
 } from '@xyflow/react'
+import { NodeContextMenu } from './context-menus/node-context-menu'
+import { EdgeContextMenu } from './context-menus/edge-context-menu'
+import { CanvasContextMenu } from './context-menus/canvas-context-menu'
 import '@xyflow/react/dist/style.css'
 import { nodeTypes } from './nodes/node-types'
 import { edgeTypes } from './edges/edge-types'
@@ -72,6 +75,12 @@ interface CanvasViewProps {
   onAddElement?: () => void
   onConnect?: (source: string, target: string) => void
   onBulkDelete?: (ids: string[]) => void
+  onDuplicateElement?: (id: string) => void
+  onDeleteElement?: (id: string) => void
+  onReverseRelationship?: (id: string) => void
+  onDeleteRelationship?: (id: string) => void
+  onAddElementAtPosition?: (kind: string) => void
+  onTidy?: () => void
 }
 
 export function CanvasView(props: CanvasViewProps) {
@@ -81,6 +90,12 @@ export function CanvasView(props: CanvasViewProps) {
     </ReactFlowProvider>
   )
 }
+
+type ContextMenuState =
+  | { type: 'node'; nodeId: string; position: { x: number; y: number } }
+  | { type: 'edge'; edgeId: string; position: { x: number; y: number } }
+  | { type: 'canvas'; position: { x: number; y: number } }
+  | null
 
 function CanvasViewInner({
   elements,
@@ -95,10 +110,17 @@ function CanvasViewInner({
   onAddElement,
   onConnect: onConnectProp,
   onBulkDelete,
+  onDuplicateElement,
+  onDeleteElement,
+  onReverseRelationship,
+  onDeleteRelationship,
+  onAddElementAtPosition,
+  onTidy,
 }: CanvasViewProps) {
-  const { currentRootId, zoomLevel, setZoom, activeLens, expandedNodeIds } = useCanvasStore()
+  const { currentRootId, zoomLevel, setZoom, activeLens, expandedNodeIds, toggleExpand } = useCanvasStore()
   const { fitView } = useReactFlow()
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([])
+  const [contextMenu, setContextMenu] = useState<ContextMenuState>(null)
 
   useEffect(() => {
     onFitViewReady?.(() => fitView())
@@ -327,6 +349,30 @@ function CanvasViewInner({
     setSelectedNodeIds(nodes.map((n) => n.id).filter((id) => !id.startsWith('msg-')))
   }, [])
 
+  const handleNodeContextMenu = useCallback(
+    (event: React.MouseEvent, node: Node) => {
+      event.preventDefault()
+      setContextMenu({ type: 'node', nodeId: node.id, position: { x: event.clientX, y: event.clientY } })
+    },
+    [],
+  )
+
+  const handleEdgeContextMenu = useCallback(
+    (event: React.MouseEvent, edge: Edge) => {
+      event.preventDefault()
+      setContextMenu({ type: 'edge', edgeId: edge.id, position: { x: event.clientX, y: event.clientY } })
+    },
+    [],
+  )
+
+  const handlePaneContextMenu = useCallback(
+    (event: React.MouseEvent | MouseEvent) => {
+      event.preventDefault()
+      setContextMenu({ type: 'canvas', position: { x: (event as MouseEvent).clientX, y: (event as MouseEvent).clientY } })
+    },
+    [],
+  )
+
   if (visibleElements.length === 0) {
     const isTopLevel = currentRootId === null
     return (
@@ -351,39 +397,91 @@ function CanvasViewInner({
   }
 
   return (
-    <ReactFlow
-      nodes={allNodes}
-      edges={allEdges}
-      nodeTypes={nodeTypes}
-      edgeTypes={edgeTypes}
-      onNodeClick={handleNodeClick}
-      onNodeDoubleClick={handleNodeDoubleClick}
-      onNodeDragStop={onNodeDragStop ? (_event, node) => onNodeDragStop(node.id, node.position.x, node.position.y) : undefined}
-      onConnect={handleConnect}
-      onEdgeClick={handleEdgeClick}
-      onPaneClick={handlePaneClick}
-      onMoveEnd={(_event, viewport) => setZoom(viewport.zoom)}
-      onSelectionChange={handleSelectionChange}
-      selectionOnDrag
-      selectionMode={SelectionMode.Partial}
-      multiSelectionKeyCode="Shift"
-      panOnDrag={[1, 2]}
-      fitView
-      snapToGrid
-      snapGrid={[16, 16]}
-      minZoom={0.1}
-      maxZoom={3}
-    >
-      <Background variant={BackgroundVariant.Dots} gap={16} size={1} color="hsl(var(--border))" />
-      <MiniMap
-        nodeColor="hsl(var(--card))"
-        maskColor="hsl(var(--background) / 0.8)"
-        className="!bg-card !border-border"
-      />
-      <BulkActionsToolbar
-        selectedCount={selectedNodeIds.length}
-        onDelete={() => onBulkDelete?.(selectedNodeIds)}
-      />
-    </ReactFlow>
+    <>
+      <ReactFlow
+        nodes={allNodes}
+        edges={allEdges}
+        nodeTypes={nodeTypes}
+        edgeTypes={edgeTypes}
+        onNodeClick={handleNodeClick}
+        onNodeDoubleClick={handleNodeDoubleClick}
+        onNodeDragStop={onNodeDragStop ? (_event, node) => onNodeDragStop(node.id, node.position.x, node.position.y) : undefined}
+        onConnect={handleConnect}
+        onEdgeClick={handleEdgeClick}
+        onPaneClick={handlePaneClick}
+        onMoveEnd={(_event, viewport) => setZoom(viewport.zoom)}
+        onSelectionChange={handleSelectionChange}
+        onNodeContextMenu={handleNodeContextMenu}
+        onEdgeContextMenu={handleEdgeContextMenu}
+        onPaneContextMenu={handlePaneContextMenu}
+        selectionOnDrag
+        selectionMode={SelectionMode.Partial}
+        multiSelectionKeyCode="Shift"
+        panOnDrag={[1, 2]}
+        fitView
+        snapToGrid
+        snapGrid={[16, 16]}
+        minZoom={0.1}
+        maxZoom={3}
+      >
+        <Background variant={BackgroundVariant.Dots} gap={16} size={1} color="hsl(var(--border))" />
+        <MiniMap
+          nodeColor="hsl(var(--card))"
+          maskColor="hsl(var(--background) / 0.8)"
+          className="!bg-card !border-border"
+        />
+        <BulkActionsToolbar
+          selectedCount={selectedNodeIds.length}
+          onDelete={() => onBulkDelete?.(selectedNodeIds)}
+        />
+      </ReactFlow>
+
+      {contextMenu?.type === 'node' && (() => {
+        const nodeId = contextMenu.nodeId
+        const el = elements.find((e) => e.id === nodeId)
+        if (!el) return null
+        const children = elements.filter((e) => e.parentId === nodeId)
+        return (
+          <NodeContextMenu
+            open
+            position={contextMenu.position}
+            hasChildren={children.length > 0}
+            isExpanded={expandedNodeIds.has(nodeId)}
+            onClose={() => setContextMenu(null)}
+            onEditDetails={() => selectElement(nodeId)}
+            onExpand={() => toggleExpand(nodeId)}
+            onDrillInto={() => {
+              const { drillInto } = useCanvasStore.getState()
+              drillInto({ elementId: el.id, name: el.name, kind: el.kind })
+            }}
+            onDuplicate={() => onDuplicateElement?.(nodeId)}
+            onDelete={() => onDeleteElement?.(nodeId)}
+          />
+        )
+      })()}
+
+      {contextMenu?.type === 'edge' && (
+        <EdgeContextMenu
+          open
+          position={contextMenu.position}
+          onClose={() => setContextMenu(null)}
+          onEditDetails={() => selectRelationship(contextMenu.edgeId)}
+          onReverse={() => onReverseRelationship?.(contextMenu.edgeId)}
+          onDelete={() => onDeleteRelationship?.(contextMenu.edgeId)}
+        />
+      )}
+
+      {contextMenu?.type === 'canvas' && (
+        <CanvasContextMenu
+          open
+          position={contextMenu.position}
+          parentKind={currentRootId ? elements.find((e) => e.id === currentRootId)?.kind ?? null : null}
+          onClose={() => setContextMenu(null)}
+          onAddElement={(kind) => onAddElementAtPosition?.(kind)}
+          onTidy={() => onTidy?.()}
+          onZoomToFit={() => fitView()}
+        />
+      )}
+    </>
   )
 }
