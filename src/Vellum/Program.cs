@@ -15,6 +15,7 @@ using Vellum.Modules.Modelling.Model;
 using Vellum.Modules.Docs;
 using Vellum.Modules.Drafts;
 using Vellum.Modules.Schemas;
+using Vellum.Modules.Scoring;
 using Vellum.Modules.Views;
 using Vellum.Modules.Workspaces;
 using Vellum.Modules.Workspaces.Entities;
@@ -52,6 +53,7 @@ builder.Services.AddViewsModule(builder.Configuration);
 builder.Services.AddDocsModule(builder.Configuration);
 builder.Services.AddDraftsModule(builder.Configuration);
 builder.Services.AddSchemasModule(builder.Configuration);
+builder.Services.AddScoringModule(builder.Configuration);
 builder.Services.AddMcpModule();
 
 // Command handlers (Scrutor scan + TransactionBehavior decoration)
@@ -91,6 +93,7 @@ app.MapDraftEndpoints();
 app.MapMergeEndpoints();
 app.MapCommentEndpoints();
 app.MapSchemaEndpoints();
+app.MapScoreEndpoints();
 app.MapMcpEndpoints();
 
 if (app.Environment.IsDevelopment())
@@ -107,6 +110,7 @@ if (app.Environment.IsDevelopment())
     await services.GetRequiredService<DocsDbContext>().Database.MigrateAsync();
     await services.GetRequiredService<DraftsDbContext>().Database.MigrateAsync();
     await services.GetRequiredService<SchemasDbContext>().Database.MigrateAsync();
+    await services.GetRequiredService<ScoringDbContext>().Database.MigrateAsync();
 
     // Seed dev data
     if (args.Contains("seed"))
