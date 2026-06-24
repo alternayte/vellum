@@ -9,6 +9,8 @@ import { useComments } from '@/hooks/use-draft-comments'
 import { useCreateDoc } from '@/hooks/use-docs'
 import { useCreateView } from '@/hooks/use-views'
 import { useCreateSpace } from '@/hooks/use-spaces'
+import { TemplatePickerDialog } from '@/components/docs/template-picker-dialog'
+import { patchApiProjectsByProjectIdDocsByDocId } from '@/api/generated'
 
 interface ElementItem {
   id: string
@@ -190,6 +192,7 @@ function ViewsSection({ projectId, views }: { projectId: string; views: ViewItem
 
 function DocsSection({ projectId, spaces, docs }: { projectId: string; spaces: SpaceItem[]; docs: DocItem[] }) {
   const [expandedSpaces, setExpandedSpaces] = useState<Set<string>>(new Set())
+  const [showTemplatePicker, setShowTemplatePicker] = useState(false)
   const { activeDraftId } = useDraftStore()
   const createDoc = useCreateDoc(projectId)
   const createSpace = useCreateSpace(projectId)
@@ -207,13 +210,7 @@ function DocsSection({ projectId, spaces, docs }: { projectId: string; spaces: S
   }
 
   const handleNewDoc = () => {
-    const title = window.prompt('Document title')
-    if (title?.trim()) {
-      const id = crypto.randomUUID()
-      createDoc.mutate({ id, title: title.trim() }, {
-        onSuccess: () => useShellStore.getState().openDoc(id),
-      })
-    }
+    setShowTemplatePicker(true)
   }
 
   const handleNewSpace = () => {
@@ -223,16 +220,27 @@ function DocsSection({ projectId, spaces, docs }: { projectId: string; spaces: S
     }
   }
 
-  const handleNewAdr = () => {
+  const handleCreateFromTemplate = (title: string, content: string, adrStatus?: string) => {
     const id = crypto.randomUUID()
-    createDoc.mutate({
-      id,
-      title: 'New ADR',
-      draftId: activeDraftId ?? undefined,
-      adrStatus: 'proposed',
-    }, {
-      onSuccess: () => useShellStore.getState().openDoc(id),
-    })
+    createDoc.mutate(
+      {
+        id,
+        title,
+        draftId: activeDraftId ?? undefined,
+        adrStatus,
+      },
+      {
+        onSuccess: () => {
+          if (content) {
+            patchApiProjectsByProjectIdDocsByDocId({
+              path: { projectId, docId: id },
+              body: { title: null, content, spaceId: null, elementId: null, setSpaceId: false, setElementId: false },
+            })
+          }
+          useShellStore.getState().openDoc(id)
+        },
+      },
+    )
   }
 
   const looseDocs = docs.filter((d) => d.spaceId === null)
@@ -251,16 +259,6 @@ function DocsSection({ projectId, spaces, docs }: { projectId: string; spaces: S
           >
             Space+
           </button>
-          {activeDraftId && (
-            <button
-              className="text-xs text-primary hover:text-primary/80 disabled:opacity-50"
-              onClick={handleNewAdr}
-              disabled={createDoc.isPending}
-              title="New ADR"
-            >
-              ADR+
-            </button>
-          )}
           <button
             className="text-xs text-primary hover:text-primary/80 disabled:opacity-50"
             onClick={handleNewDoc}
@@ -313,6 +311,11 @@ function DocsSection({ projectId, spaces, docs }: { projectId: string; spaces: S
           <p className="px-2 py-1 text-xs text-muted-foreground">No docs yet</p>
         )}
       </div>
+      <TemplatePickerDialog
+        open={showTemplatePicker}
+        onOpenChange={setShowTemplatePicker}
+        onCreateDoc={handleCreateFromTemplate}
+      />
     </div>
   )
 }
