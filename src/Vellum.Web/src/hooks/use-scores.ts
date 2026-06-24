@@ -45,6 +45,7 @@ export function useScores(projectId: string, docId: string | null) {
     queryKey: ['projects', projectId, 'docs', docId, 'scores'],
     queryFn: async () => {
       const res = await fetch(`/api/projects/${projectId}/docs/${docId}/scores`)
+      if (!res.ok) throw new Error('Failed to load scores')
       return (await res.json()) as ScoreListItem[]
     },
     enabled: !!docId,
@@ -56,6 +57,7 @@ export function useScore(projectId: string, docId: string, scoreId: string | nul
     queryKey: ['projects', projectId, 'docs', docId, 'scores', scoreId],
     queryFn: async () => {
       const res = await fetch(`/api/projects/${projectId}/docs/${docId}/scores/${scoreId}`)
+      if (!res.ok) throw new Error('Failed to load score')
       return (await res.json()) as Score
     },
     enabled: !!scoreId,

@@ -1,3 +1,4 @@
+using System.Reflection;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
 
@@ -11,18 +12,21 @@ public class RubricService
 {
     private readonly Dictionary<string, Rubric> _rubrics = new(StringComparer.OrdinalIgnoreCase);
 
-    public RubricService(IWebHostEnvironment env)
+    public RubricService()
     {
-        var rubricDir = Path.Combine(env.ContentRootPath, "..", "Vellum.Web", "src", "rubrics");
-        if (!Directory.Exists(rubricDir)) return;
-
+        var assembly = typeof(RubricService).Assembly;
         var deserializer = new DeserializerBuilder()
             .WithNamingConvention(CamelCaseNamingConvention.Instance)
             .Build();
 
-        foreach (var file in Directory.GetFiles(rubricDir, "*.md"))
+        foreach (var resourceName in assembly.GetManifestResourceNames()
+            .Where(n => n.EndsWith(".md", StringComparison.OrdinalIgnoreCase)))
         {
-            var raw = File.ReadAllText(file);
+            using var stream = assembly.GetManifestResourceStream(resourceName);
+            if (stream is null) continue;
+
+            using var reader = new StreamReader(stream);
+            var raw = reader.ReadToEnd();
             var rubric = Parse(raw, deserializer);
             if (rubric is not null)
                 _rubrics[rubric.DocType] = rubric;
