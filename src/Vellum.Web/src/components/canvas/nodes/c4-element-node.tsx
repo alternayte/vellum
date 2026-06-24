@@ -26,6 +26,14 @@ const diffBorderColor: Record<string, string> = {
   conflict: '#B7791F',
 }
 
+const KIND_WIDTHS: Record<string, number> = {
+  actor: 240,
+  system: 320,
+  app: 280,
+  store: 280,
+  component: 240,
+}
+
 export const C4ElementNode = memo(function C4ElementNode({ data }: NodeProps<C4ElementNodeType>) {
   const d = data
   const activeLens = useCanvasStore((s) => s.activeLens)
@@ -42,11 +50,13 @@ export const C4ElementNode = memo(function C4ElementNode({ data }: NodeProps<C4E
   return (
     <div
       className={cn(
-        'group/node relative rounded-lg border border-border bg-card shadow-sm',
+        'group/node relative rounded-lg border border-border bg-card shadow-sm transition-shadow hover:shadow-md',
         diff === 'removed' && 'opacity-50',
         diff === 'unchanged' && 'opacity-60',
+        d.kind === 'actor' && 'rounded-2xl',
       )}
       style={{
+        width: `${KIND_WIDTHS[d.kind] ?? 280}px`,
         borderLeftWidth: '4px',
         borderLeftColor: diffOverrideBorder ?? kindColor(d.kind),
         borderLeftStyle: 'solid',
