@@ -18,6 +18,9 @@ interface DocToolbarProps {
   editorView: EditorView | null
   mode: 'edit' | 'read'
   onToggleMode: () => void
+  onScore?: () => void
+  isScoring?: boolean
+  canScore?: boolean
 }
 
 function wrapSelection(view: EditorView, before: string, after: string) {
@@ -58,7 +61,7 @@ function insertText(view: EditorView, text: string) {
   view.focus()
 }
 
-export function DocToolbar({ editorView, mode, onToggleMode }: DocToolbarProps) {
+export function DocToolbar({ editorView, mode, onToggleMode, onScore, isScoring, canScore }: DocToolbarProps) {
   const run = (fn: (view: EditorView) => void) => {
     if (editorView) fn(editorView)
   }
@@ -82,6 +85,19 @@ export function DocToolbar({ editorView, mode, onToggleMode }: DocToolbarProps) 
           <ToolbarButton label="Task list" icon={<ListChecks className="h-3.5 w-3.5" />} onClick={() => run((v) => prependLine(v, '- [ ] '))} />
           <Divider />
           <ToolbarButton label="Horizontal rule" icon={<Minus className="h-3.5 w-3.5" />} onClick={() => run((v) => insertText(v, '\n---\n'))} />
+        </>
+      )}
+      {canScore && (
+        <>
+          <div className="h-4 w-px bg-border" />
+          <button
+            className="rounded px-2 py-1 text-xs font-medium text-primary hover:bg-muted disabled:opacity-50"
+            onClick={onScore}
+            disabled={isScoring}
+            aria-label="Score document"
+          >
+            {isScoring ? 'Scoring...' : 'Score'}
+          </button>
         </>
       )}
       <div className="flex-1" />
