@@ -1,5 +1,5 @@
 // src/Vellum.Web/src/components/docs/doc-editor.tsx
-import { useEffect, useRef, useCallback } from 'react'
+import { useEffect, useRef, useCallback, useState } from 'react'
 import { EditorState } from '@codemirror/state'
 import { EditorView, keymap } from '@codemirror/view'
 import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
@@ -9,8 +9,11 @@ import { useDoc, useAutoSaveDoc } from '@/hooks/use-docs'
 import { useElements } from '@/hooks/use-elements'
 import { useViews } from '@/hooks/use-views'
 import { useDocEditorStore } from '@/stores/doc-editor-store'
+import { useScoringStatus, useScores, useScore, useCreateScore } from '@/hooks/use-scores'
+import { hasRubricForType } from '@/lib/doc-rubrics'
 import { MdxRenderer } from './mdx-renderer'
 import { DocToolbar } from './doc-toolbar'
+import { ScorePanel } from './score-panel'
 
 interface DocEditorProps {
   projectId: string
@@ -25,6 +28,32 @@ export function DocEditor({ projectId, docId }: DocEditorProps) {
   const { data: elements } = useElements(projectId)
   const { data: views } = useViews(projectId)
   const { autoSave } = useAutoSaveDoc(projectId, docId)
+
+  const { data: scoringStatus } = useScoringStatus()
+  const [canScore, setCanScore] = useState(false)
+  const [scorePanelOpen, setScorePanelOpen] = useState(false)
+  const [selectedScoreId, setSelectedScoreId] = useState<string | null>(null)
+
+  const createScore = useCreateScore(projectId, docId)
+  const { data: scoreHistory } = useScores(projectId, docId)
+  const { data: selectedScore } = useScore(projectId, docId, selectedScoreId)
+
+  useEffect(() => {
+    if (scoringStatus?.available && doc?.type) {
+      hasRubricForType(doc.type).then(setCanScore)
+    } else {
+      setCanScore(false)
+    }
+  }, [scoringStatus?.available, doc?.type])
+
+  const handleScore = () => {
+    createScore.mutate(undefined, {
+      onSuccess: (score) => {
+        setSelectedScoreId(score.id)
+        setScorePanelOpen(true)
+      },
+    })
+  }
 
   const contentRef = useRef<string>('')
   const currentDocIdRef = useRef<string>(docId)
@@ -90,7 +119,14 @@ export function DocEditor({ projectId, docId }: DocEditorProps) {
       <div className="flex items-center justify-between border-b border-border px-4 py-2">
         <h2 className="font-display text-sm font-medium">{doc?.title ?? 'Untitled'}</h2>
       </div>
-      <DocToolbar editorView={viewRef.current} mode={mode} onToggleMode={toggleMode} />
+      <DocToolbar
+        editorView={viewRef.current}
+        mode={mode}
+        onToggleMode={toggleMode}
+        onScore={handleScore}
+        isScoring={createScore.isPending}
+        canScore={canScore}
+      />
 
       {mode === 'edit' ? (
         <div ref={editorRef} className="flex-1 overflow-hidden" />
@@ -103,6 +139,16 @@ export function DocEditor({ projectId, docId }: DocEditorProps) {
           />
         </div>
       )}
+
+      <ScorePanel
+        open={scorePanelOpen}
+        onOpenChange={setScorePanelOpen}
+        score={selectedScore ?? null}
+        scoreHistory={scoreHistory ?? []}
+        onSelectScore={setSelectedScoreId}
+        onReviewSuggestions={() => {/* wired in Task 6 */}}
+        isLoading={createScore.isPending}
+      />
     </div>
   )
 }
