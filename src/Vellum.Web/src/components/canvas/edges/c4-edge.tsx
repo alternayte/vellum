@@ -1,4 +1,4 @@
-import { memo } from 'react'
+import { memo, useState } from 'react'
 import {
   getSmoothStepPath,
   EdgeLabelRenderer,
@@ -6,6 +6,7 @@ import {
   type EdgeProps,
 } from '@xyflow/react'
 import { useCanvasStore } from '@/stores/canvas-store'
+import { EdgeLabelCard } from './edge-label-card'
 import type { DiffState } from '@/stores/draft-store'
 
 export interface C4EdgeData extends Record<string, unknown> {
@@ -33,9 +34,11 @@ export const C4Edge = memo(function C4Edge({
   targetPosition,
   data,
   markerEnd,
+  selected,
 }: EdgeProps<C4EdgeType>) {
   const d = data ?? { label: null, technology: null }
   const activeLens = useCanvasStore((s) => s.activeLens)
+  const [hovered, setHovered] = useState(false)
 
   const [edgePath, labelX, labelY] = getSmoothStepPath({
     sourceX,
@@ -48,34 +51,47 @@ export const C4Edge = memo(function C4Edge({
   })
 
   const diff = d.diffState
-  const strokeColor = diff && diff !== 'unchanged' ? (diffEdgeColor[diff] ?? 'hsl(var(--border))') : 'hsl(var(--border))'
+  const baseColor = diff && diff !== 'unchanged'
+    ? (diffEdgeColor[diff] ?? 'hsl(var(--border))')
+    : 'hsl(var(--border))'
+  const strokeColor = selected ? 'hsl(var(--primary))' : hovered ? 'hsl(var(--foreground))' : baseColor
+  const strokeWidth = hovered || selected ? 2.5 : 1.5
   const strokeOpacity = diff === 'removed' ? 0.5 : diff === 'unchanged' ? 0.6 : 1
 
   return (
     <>
+      {/* Invisible wide path for easier hover/click target */}
+      <path
+        d={edgePath}
+        fill="none"
+        stroke="transparent"
+        strokeWidth={20}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+      />
       <path
         id={id}
         className="react-flow__edge-path"
         d={edgePath}
         markerEnd={markerEnd}
-        style={{ stroke: strokeColor, strokeWidth: 1.5, opacity: strokeOpacity }}
+        style={{
+          stroke: strokeColor,
+          strokeWidth,
+          opacity: strokeOpacity,
+          transition: 'stroke 0.15s, stroke-width 0.15s',
+        }}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
       />
-      {d.label && (
+      {(d.label || (activeLens === 'metadata' && d.technology)) && (
         <EdgeLabelRenderer>
-          <div
-            className="nodrag nopan absolute rounded border border-border bg-card px-2 py-0.5 text-xs"
-            style={{
-              transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
-              pointerEvents: 'all',
-            }}
-          >
-            <span className="text-foreground">{d.label}</span>
-            {activeLens === 'metadata' && d.technology && (
-              <span className="ml-1 font-mono text-[10px] text-muted-foreground">
-                {d.technology}
-              </span>
-            )}
-          </div>
+          <EdgeLabelCard
+            label={d.label}
+            technology={d.technology}
+            showTechnology={activeLens === 'metadata'}
+            x={labelX}
+            y={labelY}
+          />
         </EdgeLabelRenderer>
       )}
     </>
