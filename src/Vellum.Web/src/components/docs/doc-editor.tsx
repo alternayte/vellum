@@ -10,7 +10,7 @@ import { useElements } from '@/hooks/use-elements'
 import { useViews } from '@/hooks/use-views'
 import { useDocEditorStore } from '@/stores/doc-editor-store'
 import { MdxRenderer } from './mdx-renderer'
-import { Button } from '@/components/ui/button'
+import { DocToolbar } from './doc-toolbar'
 
 interface DocEditorProps {
   projectId: string
@@ -89,10 +89,8 @@ export function DocEditor({ projectId, docId }: DocEditorProps) {
     <div className="flex h-full flex-col">
       <div className="flex items-center justify-between border-b border-border px-4 py-2">
         <h2 className="font-display text-sm font-medium">{doc?.title ?? 'Untitled'}</h2>
-        <Button variant="outline" size="sm" onClick={toggleMode}>
-          {mode === 'edit' ? 'Read' : 'Edit'}
-        </Button>
       </div>
+      <DocToolbar editorView={viewRef.current} mode={mode} onToggleMode={toggleMode} />
 
       {mode === 'edit' ? (
         <div ref={editorRef} className="flex-1 overflow-hidden" />
