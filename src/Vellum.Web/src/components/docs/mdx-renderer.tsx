@@ -2,6 +2,8 @@
 import { useMemo, useState, useEffect, Fragment } from 'react'
 import { evaluate } from '@mdx-js/mdx'
 import { jsx, jsxs } from 'react/jsx-runtime'
+import remarkGfm from 'remark-gfm'
+import rehypePrettyCode from 'rehype-pretty-code'
 import { ElementLink } from './element-link'
 import { LiveViewCard } from './live-view-card'
 
@@ -53,7 +55,8 @@ export function MdxRenderer({ content, elements, views }: MdxRendererProps) {
           jsx,
           jsxs,
           Fragment,
-          remarkPlugins: [remarkStripExpressions],
+          remarkPlugins: [remarkStripExpressions, remarkGfm],
+          rehypePlugins: [[rehypePrettyCode, { theme: 'one-dark-pro' }]],
           useMDXComponents: () => components,
         })
         if (!cancelled) {
