@@ -16,7 +16,7 @@ export interface Doc {
   spaceId: string | null
   elementId: string | null
   draftId: string | null
-  adrStatus: string | null
+  type: string | null
   title: string
   content: string
   createdBy: string
@@ -31,7 +31,7 @@ interface DocPage {
 
 export function useDocs(
   projectId: string,
-  filters?: { spaceId?: string; elementId?: string; draftId?: string; adrStatus?: string },
+  filters?: { spaceId?: string; elementId?: string; draftId?: string; type?: string },
 ) {
   return useQuery({
     queryKey: ['projects', projectId, 'docs', filters],
@@ -43,7 +43,7 @@ export function useDocs(
           spaceId: filters?.spaceId,
           elementId: filters?.elementId,
           draftId: filters?.draftId,
-          adrStatus: filters?.adrStatus,
+          type: filters?.type,
         },
       })
       return (result.data as DocPage).items
@@ -76,7 +76,7 @@ export function useCreateDoc(projectId: string) {
       spaceId?: string
       elementId?: string
       draftId?: string
-      adrStatus?: string
+      type?: string
     }) => {
       const result = await postApiProjectsByProjectIdDocs({
         path: { projectId },
@@ -86,7 +86,7 @@ export function useCreateDoc(projectId: string) {
           spaceId: doc.spaceId ?? null,
           elementId: doc.elementId ?? null,
           draftId: doc.draftId ?? null,
-          adrStatus: doc.adrStatus ?? null,
+          type: doc.type ?? null,
         },
       })
       return result.data as Doc

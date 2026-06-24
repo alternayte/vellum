@@ -24,7 +24,7 @@ const ICON_MAP: Record<string, React.ComponentType<{ className?: string }>> = {
 interface TemplatePickerDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  onCreateDoc: (title: string, content: string, adrStatus?: string) => void
+  onCreateDoc: (title: string, content: string, type?: string) => void
 }
 
 export function TemplatePickerDialog({
@@ -46,9 +46,7 @@ export function TemplatePickerDialog({
 
   const handleCreate = () => {
     const docTitle = title.trim() || (selected ? `New ${selected.name}` : 'Untitled')
-    const content = selected?.content ?? ''
-    const adrStatus = selected?.id === 'adr' ? 'proposed' : undefined
-    onCreateDoc(docTitle, content, adrStatus)
+    onCreateDoc(docTitle, selected?.content ?? '', selected?.id)
     onOpenChange(false)
   }
 
