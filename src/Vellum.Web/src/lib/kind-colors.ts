@@ -1,11 +1,11 @@
 const KIND_COLORS: Record<string, string> = {
-  actor: 'hsl(var(--kind-actor))',
-  system: 'hsl(var(--kind-system))',
-  app: 'hsl(var(--kind-app))',
-  store: 'hsl(var(--kind-store))',
-  component: 'hsl(var(--kind-component))',
+  actor: 'var(--kind-actor)',
+  system: 'var(--kind-system)',
+  app: 'var(--kind-app)',
+  store: 'var(--kind-store)',
+  component: 'var(--kind-component)',
 }
 
 export function kindColor(kind: string): string {
-  return KIND_COLORS[kind.toLowerCase()] ?? 'hsl(var(--muted-foreground))'
+  return KIND_COLORS[kind.toLowerCase()] ?? 'var(--muted-foreground)'
 }
