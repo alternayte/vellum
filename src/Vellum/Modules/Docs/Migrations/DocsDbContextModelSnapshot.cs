@@ -30,10 +30,6 @@ namespace Vellum.Modules.Docs.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
-                    b.Property<string>("AdrStatus")
-                        .HasColumnType("text")
-                        .HasColumnName("adr_status");
-
                     b.Property<string>("Content")
                         .IsRequired()
                         .HasColumnType("text")
@@ -70,6 +66,10 @@ namespace Vellum.Modules.Docs.Migrations
                         .IsRequired()
                         .HasColumnType("text")
                         .HasColumnName("title");
+
+                    b.Property<string>("Type")
+                        .HasColumnType("text")
+                        .HasColumnName("type");
 
                     b.Property<DateTimeOffset>("UpdatedAt")
                         .ValueGeneratedOnAdd()

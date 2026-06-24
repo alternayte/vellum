@@ -8,8 +8,8 @@ namespace Vellum.Modules.Docs;
 public sealed record UpdateDocRequest(
     string? Title, string? Content, Guid? SpaceId, Guid? ElementId,
     bool SetSpaceId = false, bool SetElementId = false,
-    Guid? DraftId = null, string? AdrStatus = null,
-    bool SetDraftId = false, bool SetAdrStatus = false);
+    Guid? DraftId = null, string? Type = null,
+    bool SetDraftId = false, bool SetType = false);
 
 public static class UpdateDoc
 {
@@ -33,11 +33,11 @@ public static class UpdateDoc
         if (request.SetSpaceId || request.SpaceId.HasValue) doc.SpaceId = request.SpaceId;
         if (request.SetElementId || request.ElementId.HasValue) doc.ElementId = request.ElementId;
         if (request.SetDraftId || request.DraftId.HasValue) doc.DraftId = request.DraftId;
-        if (request.SetAdrStatus || request.AdrStatus is not null) doc.AdrStatus = request.AdrStatus;
+        if (request.SetType || request.Type is not null) doc.Type = request.Type;
         doc.UpdatedAt = DateTimeOffset.UtcNow;
 
         await db.SaveChangesAsync(ct);
         return Results.Ok(new DocDto(doc.Id, doc.ProjectId, doc.SpaceId, doc.ElementId,
-            doc.Title, doc.Content, doc.CreatedBy, doc.CreatedAt, doc.UpdatedAt, doc.DraftId, doc.AdrStatus));
+            doc.Title, doc.Content, doc.CreatedBy, doc.CreatedAt, doc.UpdatedAt, doc.DraftId, doc.Type));
     }
 }

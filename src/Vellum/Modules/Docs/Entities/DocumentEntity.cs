@@ -13,5 +13,5 @@ public class DocumentEntity
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
     public Guid? DraftId { get; set; }
-    public string? AdrStatus { get; set; }
+    public string? Type { get; set; }
 }
