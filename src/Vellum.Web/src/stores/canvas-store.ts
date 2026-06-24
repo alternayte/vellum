@@ -13,12 +13,14 @@ interface CanvasState {
   currentRootId: string | null
   activeLens: Lens
   zoomLevel: number
+  expandedNodeIds: Set<string>
 
   drillInto: (element: DrillSegment) => void
   drillTo: (index: number) => void
   setLens: (lens: Lens) => void
   toggleLens: (lens: 'status' | 'metadata' | 'messages') => void
   setZoom: (zoom: number) => void
+  toggleExpand: (id: string) => void
   reset: () => void
 }
 
@@ -27,6 +29,7 @@ export const useCanvasStore = create<CanvasState>((set) => ({
   currentRootId: null,
   activeLens: 'none',
   zoomLevel: 1,
+  expandedNodeIds: new Set(),
 
   drillInto: (element) =>
     set((state) => ({
@@ -53,11 +56,23 @@ export const useCanvasStore = create<CanvasState>((set) => ({
 
   setZoom: (zoom) => set({ zoomLevel: zoom }),
 
+  toggleExpand: (id) =>
+    set((state) => {
+      const next = new Set(state.expandedNodeIds)
+      if (next.has(id)) {
+        next.delete(id)
+      } else {
+        next.add(id)
+      }
+      return { expandedNodeIds: next }
+    }),
+
   reset: () =>
     set({
       drillPath: [],
       currentRootId: null,
       activeLens: 'none',
       zoomLevel: 1,
+      expandedNodeIds: new Set(),
     }),
 }))

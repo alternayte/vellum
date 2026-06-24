@@ -22,6 +22,7 @@ import { useShellStore } from '@/stores/shell-store'
 import { useLod } from '@/hooks/use-lod'
 import { Button } from '@/components/ui/button'
 import type { C4ElementData } from './nodes/c4-element-node'
+import type { C4ContainerData } from './nodes/c4-container-node'
 import type { DiffState } from '@/stores/draft-store'
 
 interface ElementModel {
@@ -95,7 +96,7 @@ function CanvasViewInner({
   onConnect: onConnectProp,
   onBulkDelete,
 }: CanvasViewProps) {
-  const { currentRootId, zoomLevel, setZoom, activeLens } = useCanvasStore()
+  const { currentRootId, zoomLevel, setZoom, activeLens, expandedNodeIds } = useCanvasStore()
   const { fitView } = useReactFlow()
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([])
 
@@ -113,7 +114,20 @@ function CanvasViewInner({
     return elements.filter((e) => e.parentId === currentRootId)
   }, [elements, currentRootId])
 
-  const visibleIds = useMemo(() => new Set(visibleElements.map((e) => e.id)), [visibleElements])
+  const visibleIds = useMemo(() => {
+    const ids = new Set(visibleElements.map((e) => e.id))
+    // Also include children of expanded nodes so edges between them are visible
+    for (const el of visibleElements) {
+      if (expandedNodeIds.has(el.id)) {
+        for (const child of elements) {
+          if (child.parentId === el.id) {
+            ids.add(child.id)
+          }
+        }
+      }
+    }
+    return ids
+  }, [visibleElements, elements, expandedNodeIds])
 
   const visibleRelationships = useMemo(() => {
     return relationships.filter(
@@ -128,29 +142,77 @@ function CanvasViewInner({
   }, [positions])
 
   const nodes: Node[] = useMemo(() => {
-    return visibleElements.map((el, index) => {
+    const result: Node[] = []
+
+    for (const el of visibleElements) {
+      const isExpanded = expandedNodeIds.has(el.id)
+      const index = visibleElements.indexOf(el)
       const col = index % 3
       const row = Math.floor(index / 3)
       const pos = positionMap.get(el.id) ?? { x: col * 340, y: row * 200 }
       const entityDiffState = diffStateMap?.get(el.id) ?? (isReviewMode ? 'unchanged' : undefined)
-      return {
-        id: el.id,
-        type: tier === 'full' ? 'c4-element' : 'c4-label-chip',
-        position: pos,
-        data: {
+
+      if (isExpanded) {
+        // Render as container boundary
+        result.push({
           id: el.id,
-          kind: el.kind,
-          name: el.name,
-          description: el.description,
-          technology: el.technology,
-          status: el.status,
-          tags: el.tags,
-          ownerId: el.ownerId,
-          diffState: entityDiffState,
-        } satisfies C4ElementData,
+          type: 'c4-container',
+          position: pos,
+          data: {
+            id: el.id,
+            kind: el.kind,
+            name: el.name,
+          } satisfies C4ContainerData,
+          style: { width: 'auto', height: 'auto' },
+        })
+
+        // Add children inside the container
+        const children = elements.filter((child) => child.parentId === el.id)
+        children.forEach((child, ci) => {
+          const childPos = positionMap.get(child.id) ?? { x: 40 + (ci % 3) * 300, y: 60 + Math.floor(ci / 3) * 180 }
+          const childDiffState = diffStateMap?.get(child.id) ?? (isReviewMode ? 'unchanged' : undefined)
+          result.push({
+            id: child.id,
+            type: tier === 'full' ? 'c4-element' : 'c4-label-chip',
+            position: childPos,
+            parentId: el.id,
+            extent: 'parent' as const,
+            data: {
+              id: child.id,
+              kind: child.kind,
+              name: child.name,
+              description: child.description,
+              technology: child.technology,
+              status: child.status,
+              tags: child.tags,
+              ownerId: child.ownerId,
+              diffState: childDiffState,
+            } satisfies C4ElementData,
+          })
+        })
+      } else {
+        // Render as normal element
+        result.push({
+          id: el.id,
+          type: tier === 'full' ? 'c4-element' : 'c4-label-chip',
+          position: pos,
+          data: {
+            id: el.id,
+            kind: el.kind,
+            name: el.name,
+            description: el.description,
+            technology: el.technology,
+            status: el.status,
+            tags: el.tags,
+            ownerId: el.ownerId,
+            diffState: entityDiffState,
+          } satisfies C4ElementData,
+        })
       }
-    })
-  }, [visibleElements, positionMap, tier, diffStateMap, isReviewMode])
+    }
+
+    return result
+  }, [visibleElements, elements, positionMap, tier, diffStateMap, isReviewMode, expandedNodeIds])
 
   const edges: Edge[] = useMemo(() => {
     return visibleRelationships.map((rel) => ({
