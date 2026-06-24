@@ -1,6 +1,7 @@
 // tests/Vellum.Tests/Modules/Docs/DocEndpointTests.cs
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
@@ -207,6 +208,24 @@ public class DocEndpointTests
         using var client = CreateClient(factory);
         var response = await client.GetAsync($"/api/projects/{Guid.NewGuid()}/docs");
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Create_doc_with_type_and_get_returns_type()
+    {
+        using var factory = CreateFactory();
+        using var client = await CreateAuthenticatedClientAsync(factory);
+        var projectId = await SetupProjectAsync(client);
+        var docId = Guid.NewGuid();
+
+        var createResponse = await client.PostAsJsonAsync(
+            $"/api/projects/{projectId}/docs",
+            new { id = docId, title = "My ADR", type = "adr" });
+        Assert.Equal(HttpStatusCode.Created, createResponse.StatusCode);
+
+        var getResponse = await client.GetAsync($"/api/projects/{projectId}/docs/{docId}");
+        var doc = await getResponse.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal("adr", doc.GetProperty("type").GetString());
     }
 }
 

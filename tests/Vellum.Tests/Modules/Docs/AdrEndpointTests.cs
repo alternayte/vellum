@@ -70,7 +70,7 @@ public class AdrEndpointTests
     }
 
     [Fact]
-    public async Task Create_doc_with_adr_status_and_filter()
+    public async Task Create_doc_with_type_and_filter()
     {
         using var factory = CreateFactory();
         using var client = await CreateAuthenticatedClientAsync(factory);
@@ -78,17 +78,17 @@ public class AdrEndpointTests
         var docId = Guid.NewGuid();
         var draftId = Guid.NewGuid();
 
-        // Create an ADR doc with adrStatus = "proposed" and a draftId
+        // Create an ADR doc with type = "adr" and a draftId
         var createResponse = await client.PostAsJsonAsync($"/api/projects/{projectId}/docs",
-            new { id = docId, title = "ADR-001", adrStatus = "proposed", draftId });
+            new { id = docId, title = "ADR-001", type = "adr", draftId });
         Assert.Equal(HttpStatusCode.Created, createResponse.StatusCode);
 
         var created = await createResponse.Content.ReadFromJsonAsync<DocDto>();
-        Assert.Equal("proposed", created!.AdrStatus);
+        Assert.Equal("adr", created!.Type);
         Assert.Equal(draftId, created.DraftId);
 
-        // List with ?adrStatus=proposed → returns it
-        var filtered = await (await client.GetAsync($"/api/projects/{projectId}/docs?adrStatus=proposed"))
+        // List with ?type=adr → returns it
+        var filtered = await (await client.GetAsync($"/api/projects/{projectId}/docs?type=adr"))
             .Content.ReadFromJsonAsync<AdrDocListDto>();
         Assert.Single(filtered!.Items);
         Assert.Equal("ADR-001", filtered.Items[0].Title);
@@ -98,17 +98,17 @@ public class AdrEndpointTests
             .Content.ReadFromJsonAsync<AdrDocListDto>();
         Assert.Contains(all!.Items, d => d.Id == docId);
 
-        // Update adrStatus to "accepted"
+        // Update type to "prd"
         var updateResponse = await client.PatchAsJsonAsync($"/api/projects/{projectId}/docs/{docId}",
-            new { adrStatus = "accepted", setAdrStatus = true });
+            new { type = "prd", setType = true });
         Assert.Equal(HttpStatusCode.OK, updateResponse.StatusCode);
         var updated = await updateResponse.Content.ReadFromJsonAsync<DocDto>();
-        Assert.Equal("accepted", updated!.AdrStatus);
+        Assert.Equal("prd", updated!.Type);
 
-        // List with ?adrStatus=proposed → empty (no longer matches)
-        var proposedAfterUpdate = await (await client.GetAsync($"/api/projects/{projectId}/docs?adrStatus=proposed"))
+        // List with ?type=adr → empty (no longer matches)
+        var adrAfterUpdate = await (await client.GetAsync($"/api/projects/{projectId}/docs?type=adr"))
             .Content.ReadFromJsonAsync<AdrDocListDto>();
-        Assert.Empty(proposedAfterUpdate!.Items);
+        Assert.Empty(adrAfterUpdate!.Items);
     }
 
     [Fact]
@@ -136,7 +136,7 @@ public class AdrEndpointTests
     }
 
     [Fact]
-    public async Task Update_doc_can_clear_adr_status()
+    public async Task Update_doc_can_clear_type()
     {
         using var factory = CreateFactory();
         using var client = await CreateAuthenticatedClientAsync(factory);
@@ -144,15 +144,15 @@ public class AdrEndpointTests
         var docId = Guid.NewGuid();
 
         await client.PostAsJsonAsync($"/api/projects/{projectId}/docs",
-            new { id = docId, title = "ADR-002", adrStatus = "proposed" });
+            new { id = docId, title = "ADR-002", type = "adr" });
 
-        // Clear adrStatus by sending setAdrStatus = true with no adrStatus value
+        // Clear type by sending setType = true with no type value
         await client.PatchAsJsonAsync($"/api/projects/{projectId}/docs/{docId}",
-            new { setAdrStatus = true });
+            new { setType = true });
 
         var doc = await (await client.GetAsync($"/api/projects/{projectId}/docs/{docId}"))
             .Content.ReadFromJsonAsync<DocDto>();
-        Assert.Null(doc!.AdrStatus);
+        Assert.Null(doc!.Type);
     }
 
     [Fact]
@@ -177,7 +177,7 @@ public class AdrEndpointTests
     }
 
     [Fact]
-    public async Task Regular_doc_has_null_adr_fields()
+    public async Task Regular_doc_has_null_type_and_draft_fields()
     {
         using var factory = CreateFactory();
         using var client = await CreateAuthenticatedClientAsync(factory);
@@ -190,7 +190,7 @@ public class AdrEndpointTests
         var doc = await (await client.GetAsync($"/api/projects/{projectId}/docs/{docId}"))
             .Content.ReadFromJsonAsync<DocDto>();
         Assert.Null(doc!.DraftId);
-        Assert.Null(doc.AdrStatus);
+        Assert.Null(doc.Type);
     }
 }
 
