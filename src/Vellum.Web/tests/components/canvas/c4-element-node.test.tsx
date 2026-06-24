@@ -59,4 +59,22 @@ describe('C4ElementNode', () => {
     const handles = container.querySelectorAll('.react-flow__handle')
     expect(handles).toHaveLength(4)
   })
+
+  it('renders system nodes at 320px width', () => {
+    const { container } = renderNode({ ...mockData, kind: 'system' })
+    const node = container.firstElementChild as HTMLElement
+    expect(node.style.width).toBe('320px')
+  })
+
+  it('renders component nodes at 240px width', () => {
+    const { container } = renderNode({ ...mockData, kind: 'component' })
+    const node = container.firstElementChild as HTMLElement
+    expect(node.style.width).toBe('240px')
+  })
+
+  it('renders actor nodes at 240px width', () => {
+    const { container } = renderNode({ ...mockData, kind: 'actor' })
+    const node = container.firstElementChild as HTMLElement
+    expect(node.style.width).toBe('240px')
+  })
 })
