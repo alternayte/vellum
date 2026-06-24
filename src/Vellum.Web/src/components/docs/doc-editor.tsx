@@ -14,6 +14,7 @@ import { hasRubricForType } from '@/lib/doc-rubrics'
 import { MdxRenderer } from './mdx-renderer'
 import { DocToolbar } from './doc-toolbar'
 import { ScorePanel } from './score-panel'
+import { DiffReview } from './diff-review'
 
 interface DocEditorProps {
   projectId: string
@@ -33,6 +34,7 @@ export function DocEditor({ projectId, docId }: DocEditorProps) {
   const [canScore, setCanScore] = useState(false)
   const [scorePanelOpen, setScorePanelOpen] = useState(false)
   const [selectedScoreId, setSelectedScoreId] = useState<string | null>(null)
+  const [diffMode, setDiffMode] = useState(false)
 
   const createScore = useCreateScore(projectId, docId)
   const { data: scoreHistory } = useScores(projectId, docId)
@@ -114,6 +116,15 @@ export function DocEditor({ projectId, docId }: DocEditorProps) {
 
   const displayContent = contentRef.current || getPreservedContent(docId) || doc?.content || ''
 
+  const handleApplyDiff = () => {
+    if (!selectedScore?.suggestedContent) return
+    const newContent = selectedScore.suggestedContent
+    setPreservedContent(docId, newContent)
+    autoSave(newContent)
+    contentRef.current = newContent
+    setDiffMode(false)
+  }
+
   return (
     <div className="flex h-full flex-col">
       <div className="flex items-center justify-between border-b border-border px-4 py-2">
@@ -128,7 +139,14 @@ export function DocEditor({ projectId, docId }: DocEditorProps) {
         canScore={canScore}
       />
 
-      {mode === 'edit' ? (
+      {diffMode && selectedScore?.suggestedContent ? (
+        <DiffReview
+          original={displayContent}
+          suggested={selectedScore.suggestedContent}
+          onApply={handleApplyDiff}
+          onDismiss={() => setDiffMode(false)}
+        />
+      ) : mode === 'edit' ? (
         <div ref={editorRef} className="flex-1 overflow-hidden" />
       ) : (
         <div className="flex-1 overflow-y-auto p-6">
@@ -146,7 +164,7 @@ export function DocEditor({ projectId, docId }: DocEditorProps) {
         score={selectedScore ?? null}
         scoreHistory={scoreHistory ?? []}
         onSelectScore={setSelectedScoreId}
-        onReviewSuggestions={() => {/* wired in Task 6 */}}
+        onReviewSuggestions={() => setDiffMode(true)}
         isLoading={createScore.isPending}
       />
     </div>
