@@ -33,9 +33,19 @@ function wrapSelection(view: EditorView, before: string, after: string) {
 function prependLine(view: EditorView, prefix: string) {
   const { from } = view.state.selection.main
   const line = view.state.doc.lineAt(from)
-  view.dispatch({
-    changes: { from: line.from, to: line.from, insert: prefix },
-  })
+  const lineText = line.text
+
+  if (lineText.startsWith(prefix)) {
+    // Remove the prefix (toggle off)
+    view.dispatch({
+      changes: { from: line.from, to: line.from + prefix.length, insert: '' },
+    })
+  } else {
+    // Add the prefix
+    view.dispatch({
+      changes: { from: line.from, insert: prefix },
+    })
+  }
   view.focus()
 }
 

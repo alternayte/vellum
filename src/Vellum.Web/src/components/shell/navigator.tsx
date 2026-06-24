@@ -236,8 +236,16 @@ function DocsSection({ projectId, spaces, docs }: { projectId: string; spaces: S
               path: { projectId, docId: id },
               body: { title: null, content, spaceId: null, elementId: null, setSpaceId: false, setElementId: false },
             })
+              .then(() => {
+                useShellStore.getState().openDoc(id)
+              })
+              .catch((err) => {
+                console.error('Failed to set template content:', err)
+                useShellStore.getState().openDoc(id) // still open the doc even if content fails
+              })
+          } else {
+            useShellStore.getState().openDoc(id)
           }
-          useShellStore.getState().openDoc(id)
         },
       },
     )
