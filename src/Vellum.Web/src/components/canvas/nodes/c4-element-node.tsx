@@ -42,7 +42,7 @@ export const C4ElementNode = memo(function C4ElementNode({ data }: NodeProps<C4E
   return (
     <div
       className={cn(
-        'relative w-[280px] rounded-lg border border-border bg-card shadow-sm',
+        'group/node relative rounded-lg border border-border bg-card shadow-sm',
         diff === 'removed' && 'opacity-50',
         diff === 'unchanged' && 'opacity-60',
       )}
@@ -59,8 +59,10 @@ export const C4ElementNode = memo(function C4ElementNode({ data }: NodeProps<C4E
         backgroundColor: diffBg,
       }}
     >
-      <Handle type="target" position={Position.Left} className="!bg-primary" />
-      <Handle type="source" position={Position.Right} className="!bg-primary" />
+      <Handle type="target" position={Position.Top} className="!h-2 !w-2 !bg-primary opacity-0 transition-opacity group-hover/node:opacity-100" />
+      <Handle type="source" position={Position.Right} className="!h-2 !w-2 !bg-primary opacity-0 transition-opacity group-hover/node:opacity-100" />
+      <Handle type="target" position={Position.Bottom} className="!h-2 !w-2 !bg-primary opacity-0 transition-opacity group-hover/node:opacity-100" />
+      <Handle type="source" position={Position.Left} className="!h-2 !w-2 !bg-primary opacity-0 transition-opacity group-hover/node:opacity-100" />
 
       <div className="p-3">
         <div className="flex items-center justify-between">

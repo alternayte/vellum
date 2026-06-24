@@ -53,4 +53,10 @@ describe('C4ElementNode', () => {
     renderNode({ ...mockData, description: null })
     expect(screen.getByText('Orders')).toBeTruthy()
   })
+
+  it('renders four connection handles', () => {
+    const { container } = renderNode()
+    const handles = container.querySelectorAll('.react-flow__handle')
+    expect(handles).toHaveLength(4)
+  })
 })
