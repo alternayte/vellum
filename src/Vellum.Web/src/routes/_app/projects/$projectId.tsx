@@ -136,13 +136,14 @@ function ProjectWorkspace() {
   const handleReverseRelationship = (id: string) => {
     const rel = relationships?.find((r) => r.id === id)
     if (!rel) return
-    removeRelationship.mutate(id)
-    addRelationship.mutate({
-      id: crypto.randomUUID(),
-      fromId: rel.toId,
-      toId: rel.fromId,
-      label: rel.label ?? undefined,
-      technology: rel.technology ?? undefined,
+    removeRelationship.mutate(id, {
+      onSuccess: () => addRelationship.mutate({
+        id: crypto.randomUUID(),
+        fromId: rel.toId,
+        toId: rel.fromId,
+        label: rel.label ?? undefined,
+        technology: rel.technology ?? undefined,
+      }),
     })
   }
 

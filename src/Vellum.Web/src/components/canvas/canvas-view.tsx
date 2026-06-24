@@ -166,9 +166,8 @@ function CanvasViewInner({
   const nodes: Node[] = useMemo(() => {
     const result: Node[] = []
 
-    for (const el of visibleElements) {
+    for (const [index, el] of visibleElements.entries()) {
       const isExpanded = expandedNodeIds.has(el.id)
-      const index = visibleElements.indexOf(el)
       const col = index % 3
       const row = Math.floor(index / 3)
       const pos = positionMap.get(el.id) ?? { x: col * 340, y: row * 200 }
@@ -242,7 +241,7 @@ function CanvasViewInner({
       source: rel.fromId,
       target: rel.toId,
       type: 'c4-edge',
-      markerEnd: { type: MarkerType.ArrowClosed, color: 'hsl(var(--border))' },
+      markerEnd: { type: MarkerType.ArrowClosed, color: 'var(--border)' },
       data: {
         label: rel.label,
         technology: rel.technology,
@@ -287,7 +286,7 @@ function CanvasViewInner({
           source: msg.producerId,
           target: `msg-${msg.id}`,
           type: 'c4-edge',
-          markerEnd: { type: MarkerType.ArrowClosed, color: 'hsl(var(--border))' },
+          markerEnd: { type: MarkerType.ArrowClosed, color: 'var(--border)' },
           data: { label: null, technology: null },
         }
         const consumerEdges: Edge[] = msg.consumerIds
@@ -297,7 +296,7 @@ function CanvasViewInner({
             source: `msg-${msg.id}`,
             target: cid,
             type: 'c4-edge',
-            markerEnd: { type: MarkerType.ArrowClosed, color: 'hsl(var(--border))' },
+            markerEnd: { type: MarkerType.ArrowClosed, color: 'var(--border)' },
             data: { label: null, technology: null },
           }))
         return [producerEdge, ...consumerEdges]
@@ -424,10 +423,10 @@ function CanvasViewInner({
         minZoom={0.1}
         maxZoom={3}
       >
-        <Background variant={BackgroundVariant.Dots} gap={16} size={1} color="hsl(var(--border))" />
+        <Background variant={BackgroundVariant.Dots} gap={16} size={1} color="var(--border)" />
         <MiniMap
-          nodeColor="hsl(var(--card))"
-          maskColor="hsl(var(--background) / 0.8)"
+          nodeColor="var(--card)"
+          maskColor="color-mix(in srgb, var(--background) 80%, transparent)"
           className="!bg-card !border-border"
         />
         <BulkActionsToolbar

@@ -41,7 +41,7 @@ export const C4ElementNode = memo(function C4ElementNode({ data }: NodeProps<C4E
   const showStatus = activeLens === 'status'
 
   const borderStyle = showStatus && d.status === 'planned' ? 'dashed' : 'solid'
-  const bgTint = showStatus && d.status === 'deprecated' ? 'hsl(var(--status-deprecated) / 0.1)' : undefined
+  const bgTint = showStatus && d.status === 'deprecated' ? 'color-mix(in srgb, var(--status-deprecated) 10%, transparent)' : undefined
 
   const diff = d.diffState
   const diffOverrideBorder = diff && diff !== 'unchanged' ? diffBorderColor[diff] : undefined
