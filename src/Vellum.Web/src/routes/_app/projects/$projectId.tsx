@@ -117,6 +117,11 @@ function ProjectWorkspace() {
     })
   }
 
+  const handleBulkDelete = (ids: string[]) => {
+    if (ids.length > 3 && !window.confirm(`Delete ${ids.length} elements?`)) return
+    ids.forEach((id) => removeElement.mutate(id))
+  }
+
   const handleNodeDragStop = (id: string, x: number, y: number) => {
     const current = activeView?.positions ?? []
     const updated = current.some((p) => p.elementId === id)
@@ -134,6 +139,11 @@ function ProjectWorkspace() {
       if (meta && e.key === 'k') {
         e.preventDefault()
         useShellStore.getState().toggleCommandPalette()
+      }
+      if (meta && e.key === 'a' && !inInput) {
+        e.preventDefault()
+        // React Flow handles select-all natively when selectionOnDrag is enabled
+        // We just need to prevent the browser's select-all
       }
       if (e.key === '1' && !inInput) {
         useCanvasStore.getState().toggleLens('status')
@@ -220,6 +230,7 @@ function ProjectWorkspace() {
               onAddElement={handleOpenCreateDialog}
               onConnect={handleConnect}
               onNodeDragStop={handleNodeDragStop}
+              onBulkDelete={handleBulkDelete}
               onNodeDoubleClick={(elementId) => {
                 const el = elements?.find((e) => e.id === elementId)
                 if (!el) return

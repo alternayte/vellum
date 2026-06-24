@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -11,10 +11,12 @@ import {
   type OnConnect,
   MarkerType,
   useReactFlow,
+  SelectionMode,
 } from '@xyflow/react'
 import '@xyflow/react/dist/style.css'
 import { nodeTypes } from './nodes/node-types'
 import { edgeTypes } from './edges/edge-types'
+import { BulkActionsToolbar } from './bulk-actions-toolbar'
 import { useCanvasStore } from '@/stores/canvas-store'
 import { useShellStore } from '@/stores/shell-store'
 import { useLod } from '@/hooks/use-lod'
@@ -68,6 +70,7 @@ interface CanvasViewProps {
   onFitViewReady?: (fitView: () => void) => void
   onAddElement?: () => void
   onConnect?: (source: string, target: string) => void
+  onBulkDelete?: (ids: string[]) => void
 }
 
 export function CanvasView(props: CanvasViewProps) {
@@ -90,9 +93,11 @@ function CanvasViewInner({
   onFitViewReady,
   onAddElement,
   onConnect: onConnectProp,
+  onBulkDelete,
 }: CanvasViewProps) {
   const { currentRootId, zoomLevel, setZoom, activeLens } = useCanvasStore()
   const { fitView } = useReactFlow()
+  const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([])
 
   useEffect(() => {
     onFitViewReady?.(() => fitView())
@@ -256,6 +261,10 @@ function CanvasViewInner({
     selectMessage(null)
   }, [selectElement, selectRelationship, selectMessage])
 
+  const handleSelectionChange = useCallback(({ nodes }: { nodes: Node[] }) => {
+    setSelectedNodeIds(nodes.map((n) => n.id).filter((id) => !id.startsWith('msg-')))
+  }, [])
+
   if (visibleElements.length === 0) {
     const isTopLevel = currentRootId === null
     return (
@@ -292,6 +301,11 @@ function CanvasViewInner({
       onEdgeClick={handleEdgeClick}
       onPaneClick={handlePaneClick}
       onMoveEnd={(_event, viewport) => setZoom(viewport.zoom)}
+      onSelectionChange={handleSelectionChange}
+      selectionOnDrag
+      selectionMode={SelectionMode.Partial}
+      multiSelectionKeyCode="Shift"
+      panOnDrag={[1, 2]}
       fitView
       snapToGrid
       snapGrid={[16, 16]}
@@ -303,6 +317,10 @@ function CanvasViewInner({
         nodeColor="hsl(var(--card))"
         maskColor="hsl(var(--background) / 0.8)"
         className="!bg-card !border-border"
+      />
+      <BulkActionsToolbar
+        selectedCount={selectedNodeIds.length}
+        onDelete={() => onBulkDelete?.(selectedNodeIds)}
       />
     </ReactFlow>
   )
