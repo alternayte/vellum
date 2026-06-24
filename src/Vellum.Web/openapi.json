@@ -1203,7 +1203,7 @@
             }
           },
           {
-            "name": "adrStatus",
+            "name": "type",
             "in": "query",
             "schema": {
               "type": "string"
@@ -1915,7 +1915,7 @@
             ],
             "format": "uuid"
           },
-          "adrStatus": {
+          "type": {
             "type": [
               "null",
               "string"
@@ -2248,7 +2248,7 @@
             ],
             "format": "uuid"
           },
-          "adrStatus": {
+          "type": {
             "type": [
               "null",
               "string"
@@ -2258,7 +2258,7 @@
             "type": "boolean",
             "default": false
           },
-          "setAdrStatus": {
+          "setType": {
             "type": "boolean",
             "default": false
           }

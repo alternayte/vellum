@@ -249,7 +249,7 @@ function ProjectWorkspace() {
           elements={elements ?? []}
           views={views ?? []}
           spaces={spaces ?? []}
-          docs={(docs ?? []).map((d) => ({ id: d.id, title: d.title, spaceId: d.spaceId, adrStatus: d.adrStatus ?? null }))}
+          docs={(docs ?? []).map((d) => ({ id: d.id, title: d.title, spaceId: d.spaceId, type: d.type ?? null }))}
         />
         <main className="relative flex-1">
           {activeDraftId && !isReviewMode && !activeDocId && (
