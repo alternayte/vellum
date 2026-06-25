@@ -197,7 +197,7 @@ function ProjectWorkspace() {
     })
   }
 
-  const handleSmartDuplicate = (ids: string[]) => {
+  const handleSmartDuplicate = useCallback((ids: string[]) => {
     if (!elements || !relationships) return
     const positions = activeView?.positions ?? []
     const dupSet = buildDuplicateSet(ids, elements, relationships, positions)
@@ -238,11 +238,11 @@ function ProjectWorkspace() {
         allNewElementIds.forEach((id) => removeElement.mutate(id))
       },
     })
-  }
+  }, [elements, relationships, activeView, addElement, addRelationship, removeElement, removeRelationship, saveLayout])
 
-  const handleDuplicateElement = (id: string) => {
+  const handleDuplicateElement = useCallback((id: string) => {
     handleSmartDuplicate([id])
-  }
+  }, [handleSmartDuplicate])
 
   const handleReverseRelationship = (id: string) => {
     const rel = relationships?.find((r) => r.id === id)
@@ -492,7 +492,7 @@ function ProjectWorkspace() {
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [elements, relationships, handleShortcutCreate])
+  }, [elements, relationships, handleShortcutCreate, handleSmartDuplicate])
 
   if (elementsLoading || relsLoading) {
     return (
