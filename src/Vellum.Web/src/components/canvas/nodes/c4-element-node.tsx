@@ -41,8 +41,11 @@ export const C4ElementNode = memo(function C4ElementNode({ data }: NodeProps<C4E
   const [isEditing, setIsEditing] = useState(false)
   const [editValue, setEditValue] = useState(d.name)
   const inputRef = useRef<HTMLInputElement>(null)
+  const committedRef = useRef(false)
 
   const commitEdit = useCallback(() => {
+    if (committedRef.current) return
+    committedRef.current = true
     const trimmed = editValue.trim()
     if (trimmed && trimmed !== d.name) {
       d.onRename?.(trimmed)
@@ -52,6 +55,7 @@ export const C4ElementNode = memo(function C4ElementNode({ data }: NodeProps<C4E
   }, [editValue, d])
 
   const cancelEdit = useCallback(() => {
+    committedRef.current = false
     setIsEditing(false)
     setEditValue(d.name)
   }, [d.name])
@@ -59,6 +63,7 @@ export const C4ElementNode = memo(function C4ElementNode({ data }: NodeProps<C4E
   const handleNameDoubleClick = useCallback((e: React.MouseEvent) => {
     e.stopPropagation()
     if (!d.onRename) return
+    committedRef.current = false
     setEditValue(d.name)
     setIsEditing(true)
     setTimeout(() => inputRef.current?.select(), 0)
@@ -125,7 +130,7 @@ export const C4ElementNode = memo(function C4ElementNode({ data }: NodeProps<C4E
             />
           ) : (
             <span
-              className="font-display text-sm font-medium text-foreground cursor-text"
+              className={cn("font-display text-sm font-medium text-foreground", d.onRename && "cursor-text")}
               onDoubleClick={handleNameDoubleClick}
             >
               {d.name}
