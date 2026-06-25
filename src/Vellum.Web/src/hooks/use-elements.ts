@@ -17,6 +17,7 @@ export interface Element {
   status: string
   parentId: string | null
   tags: string[]
+  icon: string | null
 }
 
 interface Page<T> {
@@ -85,6 +86,7 @@ export function useAddElement(projectId: string, branchId?: string | null) {
             parentId: newElement.parentId ?? null,
             status: newElement.status ?? 'current',
             tags: newElement.tags ?? [],
+            icon: null,
           },
         ],
       )
@@ -117,10 +119,12 @@ export function useUpdateElement(projectId: string, branchId?: string | null) {
           parentId: fields.parentId ?? null,
           status: fields.status ?? null,
           tags: fields.tags ?? null,
+          icon: fields.icon ?? null,
           setDescription: 'description' in fields,
           setTechnology: 'technology' in fields,
           setOwnerId: 'ownerId' in fields,
           setParentId: 'parentId' in fields,
+          setIcon: 'icon' in fields,
         },
         query: { branchId: branchId ?? undefined } as never,
       })
