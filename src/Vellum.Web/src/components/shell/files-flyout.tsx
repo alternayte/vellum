@@ -26,7 +26,11 @@ const TYPE_COLORS: Record<string, string> = {
 }
 
 export function FilesFlyout({ views, docs }: FilesFlyoutProps) {
-  const { activeViewId, activeDocId, setActiveView, openDoc, closeFlyout } = useShellStore()
+  const activeViewId = useShellStore((s) => s.activeViewId)
+  const activeDocId = useShellStore((s) => s.activeDocId)
+  const setActiveView = useShellStore((s) => s.setActiveView)
+  const openDoc = useShellStore((s) => s.openDoc)
+  const closeFlyout = useShellStore((s) => s.closeFlyout)
   const [filter, setFilter] = useState('')
 
   const q = filter.toLowerCase()
