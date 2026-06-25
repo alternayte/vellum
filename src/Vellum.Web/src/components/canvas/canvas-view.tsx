@@ -416,9 +416,9 @@ function CanvasViewInner({
 
   const handlePaneDoubleClick = useCallback(
     (event: React.MouseEvent) => {
-      // Ignore double-clicks that originated on a node or edge
+      // Only proceed when the click target is on the pane itself, excluding all overlays
       const target = event.target as HTMLElement
-      if (target.closest('.react-flow__node') || target.closest('.react-flow__edge')) return
+      if (!target.closest('.react-flow__pane')) return
 
       const flowPos = screenToFlowPosition({ x: event.clientX, y: event.clientY })
       setCreatePopover({
