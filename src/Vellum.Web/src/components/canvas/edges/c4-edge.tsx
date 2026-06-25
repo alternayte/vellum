@@ -1,18 +1,21 @@
 import { memo, useState } from 'react'
 import {
-  getSmoothStepPath,
+  getBezierPath,
   EdgeLabelRenderer,
   type Edge,
   type EdgeProps,
 } from '@xyflow/react'
 import { useCanvasStore } from '@/stores/canvas-store'
 import { EdgeLabelCard } from './edge-label-card'
+import { computeEdgeOffset, computeLabelOffset } from '@/lib/edge-utils'
 import type { DiffState } from '@/stores/draft-store'
 
 export interface C4EdgeData extends Record<string, unknown> {
   label: string | null
   technology: string | null
   diffState?: DiffState
+  edgeIndex?: number
+  totalParallel?: number
 }
 
 const diffEdgeColor: Record<string, string> = {
@@ -40,21 +43,29 @@ export const C4Edge = memo(function C4Edge({
   const activeLens = useCanvasStore((s) => s.activeLens)
   const [hovered, setHovered] = useState(false)
 
-  const [edgePath, labelX, labelY] = getSmoothStepPath({
-    sourceX,
+  const edgeIndex = d.edgeIndex ?? 0
+  const totalParallel = d.totalParallel ?? 1
+  const { sourceOffset, targetOffset } = computeEdgeOffset(edgeIndex, totalParallel)
+
+  const [edgePath, defaultLabelX, defaultLabelY] = getBezierPath({
+    sourceX: sourceX + sourceOffset,
     sourceY,
-    targetX,
+    targetX: targetX + targetOffset,
     targetY,
     sourcePosition,
     targetPosition,
-    borderRadius: 8,
   })
+
+  // Offset label position along the edge for parallel edges so labels don't stack
+  const labelT = computeLabelOffset(edgeIndex, totalParallel)
+  const labelX = defaultLabelX + (targetX - sourceX) * (labelT - 0.5) * 0.3
+  const labelY = defaultLabelY + (targetY - sourceY) * (labelT - 0.5) * 0.3
 
   const diff = d.diffState
   const baseColor = diff && diff !== 'unchanged'
-    ? (diffEdgeColor[diff] ?? 'var(--border)')
-    : 'var(--border)'
-  const strokeColor = selected ? 'var(--primary)' : hovered ? 'var(--foreground)' : baseColor
+    ? (diffEdgeColor[diff] ?? 'hsl(var(--muted-foreground))')
+    : 'hsl(var(--muted-foreground))'
+  const strokeColor = selected ? 'hsl(var(--primary))' : hovered ? 'hsl(var(--foreground))' : baseColor
   const strokeWidth = hovered || selected ? 2.5 : 1.5
   const strokeOpacity = diff === 'removed' ? 0.5 : diff === 'unchanged' ? 0.6 : 1
 

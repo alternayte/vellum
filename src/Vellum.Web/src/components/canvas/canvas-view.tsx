@@ -238,18 +238,35 @@ function CanvasViewInner({
   }, [visibleElements, elements, positionMap, tier, diffStateMap, isReviewMode, expandedNodeIds])
 
   const edges: Edge[] = useMemo(() => {
-    return visibleRelationships.map((rel) => ({
-      id: rel.id,
-      source: rel.fromId,
-      target: rel.toId,
-      type: 'c4-edge',
-      markerEnd: { type: MarkerType.ArrowClosed, color: 'hsl(var(--muted-foreground))' },
-      data: {
-        label: rel.label,
-        technology: rel.technology,
-        diffState: diffStateMap?.get(rel.id) ?? (isReviewMode ? 'unchanged' : undefined),
-      },
-    }))
+    // Count parallel edges between each pair of nodes (ignoring direction)
+    const pairCounts = new Map<string, number>()
+    const pairIndex = new Map<string, number>()
+    for (const rel of visibleRelationships) {
+      const pairKey = [rel.fromId, rel.toId].sort().join('|')
+      pairCounts.set(pairKey, (pairCounts.get(pairKey) ?? 0) + 1)
+    }
+
+    return visibleRelationships.map((rel) => {
+      const pairKey = [rel.fromId, rel.toId].sort().join('|')
+      const total = pairCounts.get(pairKey) ?? 1
+      const idx = pairIndex.get(pairKey) ?? 0
+      pairIndex.set(pairKey, idx + 1)
+
+      return {
+        id: rel.id,
+        source: rel.fromId,
+        target: rel.toId,
+        type: 'c4-edge',
+        markerEnd: { type: MarkerType.ArrowClosed, color: 'hsl(var(--muted-foreground))' },
+        data: {
+          label: rel.label,
+          technology: rel.technology,
+          diffState: diffStateMap?.get(rel.id) ?? (isReviewMode ? 'unchanged' : undefined),
+          edgeIndex: idx,
+          totalParallel: total,
+        },
+      }
+    })
   }, [visibleRelationships, diffStateMap, isReviewMode])
 
   const messageNodes: Node[] = useMemo(() => {
