@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Search, X } from 'lucide-react'
 
 interface NodeLike {
@@ -41,7 +41,7 @@ export function SearchOverlay({ nodes, onMatchChange, onClose, onFocusNode }: Se
     inputRef.current?.focus()
   }, [])
 
-  const matchIds = filterMatchingNodes(nodes, query)
+  const matchIds = useMemo(() => filterMatchingNodes(nodes, query), [nodes, query])
 
   useEffect(() => {
     onMatchChange(matchIds, currentIndex)

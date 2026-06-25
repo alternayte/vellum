@@ -31,7 +31,7 @@ public sealed class UpdateRelationshipHandler : ICommandHandler<UpdateRelationsh
             cmd.RelationshipId,
             Label: cmd.Request.Label, SetLabel: cmd.Request.SetLabel || cmd.Request.Label is not null,
             Technology: cmd.Request.Technology, SetTechnology: cmd.Request.SetTechnology || cmd.Request.Technology is not null,
-            LineShape: cmd.Request.LineShape, SetLineShape: cmd.Request.SetLineShape);
+            LineShape: cmd.Request.LineShape, SetLineShape: cmd.Request.SetLineShape || cmd.Request.LineShape is not null);
 
         var result = ModelDecider.UpdateRelationship(state, updateCmd);
         if (result is not CommandResult<IReadOnlyList<ModelEvent>>.Success success)
