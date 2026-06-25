@@ -10,7 +10,7 @@ import { DocEditor } from '@/components/docs/doc-editor'
 import { CommandPalette } from '@/components/command-palette/command-palette'
 import { useElements, useAddElement, useUpdateElement, useRemoveElement } from '@/hooks/use-elements'
 import { useRelationships, useAddRelationship, useUpdateRelationship, useRemoveRelationship } from '@/hooks/use-relationships'
-import { useViews, useView, useSaveLayout } from '@/hooks/use-views'
+import { useViews, useView, useCreateView, useSaveLayout } from '@/hooks/use-views'
 import { useDocs } from '@/hooks/use-docs'
 import { useSpaces } from '@/hooks/use-spaces'
 import { useMessages } from '@/hooks/use-messages'
@@ -22,6 +22,7 @@ import { useUndoStore } from '@/stores/undo-store'
 import type { DiffState } from '@/stores/draft-store'
 import { useMergePreview } from '@/hooks/use-merge'
 import { computeLayout } from '@/lib/layout'
+import { validKindsForContext } from '@/lib/containment-rules'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -56,7 +57,9 @@ function ProjectWorkspace() {
   const updateRelationship = useUpdateRelationship(projectId, activeDraftStreamId)
   const removeRelationship = useRemoveRelationship(projectId, activeDraftStreamId)
   const { saveLayout } = useSaveLayout(projectId, activeViewId)
+  const createView = useCreateView(projectId)
   const mergePreview = useMergePreview(projectId)
+  const autoViewRef = useRef(false)
 
   const [showCreateElement, setShowCreateElement] = useState(false)
   const [newElementName, setNewElementName] = useState('')
@@ -66,6 +69,26 @@ function ProjectWorkspace() {
   const handleFitViewReady = useCallback((fn: () => void) => {
     fitViewRef.current = fn
   }, [])
+
+  const viewportCenterRef = useRef<(() => { x: number; y: number }) | null>(null)
+  const handleViewportCenterReady = useCallback((fn: () => { x: number; y: number }) => {
+    viewportCenterRef.current = fn
+  }, [])
+
+  useEffect(() => {
+    if (activeViewId || autoViewRef.current) return
+    if (!views) return
+    if (views.length > 0) {
+      useShellStore.getState().setActiveView(views[0].id)
+    } else {
+      autoViewRef.current = true
+      const id = crypto.randomUUID()
+      createView.mutate({ id, name: 'Default' }, {
+        onSuccess: () => useShellStore.getState().setActiveView(id),
+      })
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeViewId, views])
 
   const handleReview = async () => {
     if (!activeDraftId) return
@@ -306,6 +329,33 @@ function ProjectWorkspace() {
     })
   }
 
+  const handleShortcutCreate = useCallback((kind: string) => {
+    const { currentRootId } = useCanvasStore.getState()
+    const parentKind = currentRootId
+      ? elements?.find((e) => e.id === currentRootId)?.kind ?? null
+      : null
+    const valid = validKindsForContext(parentKind)
+    if (!valid.includes(kind)) return
+
+    const id = crypto.randomUUID()
+    const position = viewportCenterRef.current?.() ?? { x: 0, y: 0 }
+
+    useUndoStore.getState().execute({
+      label: `Add ${kind}`,
+      execute: () => {
+        addElement.mutate({
+          id,
+          kind,
+          name: `New ${kind}`,
+          parentId: currentRootId ?? undefined,
+        })
+        const positions = activeView?.positions ?? []
+        saveLayout([...positions, { elementId: id, x: position.x, y: position.y }])
+      },
+      undo: () => removeElement.mutate(id),
+    })
+  }, [elements, activeView, addElement, removeElement, saveLayout])
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       const meta = e.metaKey || e.ctrlKey
@@ -346,6 +396,20 @@ function ProjectWorkspace() {
       if (e.key === 'n' && !inInput) {
         handleOpenCreateDialog()
       }
+      if (e.shiftKey && !meta && !inInput) {
+        const shortcutMap: Record<string, string> = {
+          S: 'system',
+          P: 'actor',
+          A: 'app',
+          D: 'store',
+          X: 'component',
+        }
+        const kind = shortcutMap[e.key]
+        if (kind) {
+          e.preventDefault()
+          handleShortcutCreate(kind)
+        }
+      }
       if (e.key === 'Escape') {
         useShellStore.getState().closeCommandPalette()
         useShellStore.getState().selectElement(null)
@@ -355,7 +419,7 @@ function ProjectWorkspace() {
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [elements, relationships])
+  }, [elements, relationships, handleShortcutCreate])
 
   if (elementsLoading || relsLoading) {
     return (
@@ -413,6 +477,7 @@ function ProjectWorkspace() {
               isReviewMode={isReviewMode}
               messages={messages ?? []}
               onFitViewReady={handleFitViewReady}
+              onViewportCenterReady={handleViewportCenterReady}
               onAddElement={handleOpenCreateDialog}
               onConnect={handleConnect}
               onNodeDragStop={handleNodeDragStop}
