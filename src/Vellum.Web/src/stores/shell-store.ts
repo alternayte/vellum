@@ -1,7 +1,9 @@
 import { create } from 'zustand'
 
+export type Flyout = 'files' | 'create' | 'catalog' | 'search'
+
 interface ShellState {
-  navigatorOpen: boolean
+  activeFlyout: Flyout | null
   detailPanelOpen: boolean
   selectedElementId: string | null
   selectedRelationshipId: string | null
@@ -11,7 +13,9 @@ interface ShellState {
   commandPaletteOpen: boolean
   focusElementId: string | null
 
-  toggleNavigator: () => void
+  openFlyout: (flyout: Flyout) => void
+  closeFlyout: () => void
+  toggleFlyout: (flyout: Flyout) => void
   selectElement: (id: string | null) => void
   selectRelationship: (id: string | null) => void
   selectMessage: (id: string | null) => void
@@ -26,7 +30,7 @@ interface ShellState {
 }
 
 export const useShellStore = create<ShellState>((set) => ({
-  navigatorOpen: true,
+  activeFlyout: null,
   detailPanelOpen: false,
   selectedElementId: null,
   selectedRelationshipId: null,
@@ -36,8 +40,12 @@ export const useShellStore = create<ShellState>((set) => ({
   commandPaletteOpen: false,
   focusElementId: null,
 
-  toggleNavigator: () =>
-    set((state) => ({ navigatorOpen: !state.navigatorOpen })),
+  openFlyout: (flyout) => set({ activeFlyout: flyout }),
+  closeFlyout: () => set({ activeFlyout: null }),
+  toggleFlyout: (flyout) =>
+    set((state) => ({
+      activeFlyout: state.activeFlyout === flyout ? null : flyout,
+    })),
 
   selectElement: (id) =>
     set({
@@ -78,7 +86,7 @@ export const useShellStore = create<ShellState>((set) => ({
 
   reset: () =>
     set({
-      navigatorOpen: true,
+      activeFlyout: null,
       detailPanelOpen: false,
       selectedElementId: null,
       selectedRelationshipId: null,

@@ -66,4 +66,40 @@ describe('shell store', () => {
     useShellStore.getState().reset()
     expect(useShellStore.getState().activeDocId).toBeNull()
   })
+
+  describe('flyout state', () => {
+    it('toggleFlyout opens a flyout', () => {
+      useShellStore.getState().toggleFlyout('files')
+      expect(useShellStore.getState().activeFlyout).toBe('files')
+    })
+
+    it('toggleFlyout closes same flyout', () => {
+      useShellStore.getState().toggleFlyout('files')
+      useShellStore.getState().toggleFlyout('files')
+      expect(useShellStore.getState().activeFlyout).toBeNull()
+    })
+
+    it('toggleFlyout switches to different flyout', () => {
+      useShellStore.getState().toggleFlyout('files')
+      useShellStore.getState().toggleFlyout('catalog')
+      expect(useShellStore.getState().activeFlyout).toBe('catalog')
+    })
+
+    it('openFlyout sets activeFlyout', () => {
+      useShellStore.getState().openFlyout('create')
+      expect(useShellStore.getState().activeFlyout).toBe('create')
+    })
+
+    it('closeFlyout clears activeFlyout', () => {
+      useShellStore.getState().openFlyout('files')
+      useShellStore.getState().closeFlyout()
+      expect(useShellStore.getState().activeFlyout).toBeNull()
+    })
+
+    it('reset clears activeFlyout', () => {
+      useShellStore.getState().openFlyout('files')
+      useShellStore.getState().reset()
+      expect(useShellStore.getState().activeFlyout).toBeNull()
+    })
+  })
 })
