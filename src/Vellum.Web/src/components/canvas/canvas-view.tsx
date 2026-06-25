@@ -16,6 +16,7 @@ import {
   useNodesState,
   useEdgesState,
 } from '@xyflow/react'
+import { SearchOverlay } from './search-overlay'
 import { NodeContextMenu } from './context-menus/node-context-menu'
 import { EdgeContextMenu } from './context-menus/edge-context-menu'
 import { CanvasContextMenu } from './context-menus/canvas-context-menu'
@@ -98,6 +99,8 @@ interface CanvasViewProps {
   onBulkStatusChange?: (ids: string[], status: string) => void
   onBulkAddTag?: (ids: string[], tag: string) => void
   onSelectionChange?: (ids: string[]) => void
+  searchOpen?: boolean
+  onSearchClose?: () => void
 }
 
 export function CanvasView(props: CanvasViewProps) {
@@ -142,6 +145,8 @@ function CanvasViewInner({
   onBulkStatusChange,
   onBulkAddTag,
   onSelectionChange,
+  searchOpen,
+  onSearchClose,
 }: CanvasViewProps) {
   const { currentRootId, zoomLevel, setZoom, activeLens, expandedNodeIds, toggleExpand } = useCanvasStore()
   const { fitView, screenToFlowPosition } = useReactFlow()
@@ -152,6 +157,7 @@ function CanvasViewInner({
     screenPosition: { x: number; y: number }
     sourceNodeId: string | null
   } | null>(null)
+  const [searchMatchIds, setSearchMatchIds] = useState<string[]>([])
 
   useEffect(() => {
     onFitViewReady?.(() => fitView())
@@ -408,6 +414,45 @@ function CanvasViewInner({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [derivedEdgeFingerprint, setRfEdges])
 
+  const handleSearchMatchChange = useCallback(
+    (matchIds: string[], _currentIndex: number) => {
+      setSearchMatchIds(matchIds)
+    },
+    [],
+  )
+
+  const handleSearchFocusNode = useCallback(
+    (nodeId: string) => {
+      fitView({ nodes: [{ id: nodeId }], duration: 300, padding: 0.5 })
+    },
+    [fitView],
+  )
+
+  useEffect(() => {
+    if (!searchOpen || searchMatchIds.length === 0) {
+      // Reset opacity when search closes or no matches
+      setRfNodes((nds) =>
+        nds.map((n) => ({
+          ...n,
+          style: { ...n.style, opacity: undefined },
+          className: n.className?.replace('ring-2 ring-primary', '').trim() || undefined,
+        })),
+      )
+      return
+    }
+    const matchSet = new Set(searchMatchIds)
+    setRfNodes((nds) =>
+      nds.map((n) => ({
+        ...n,
+        style: {
+          ...n.style,
+          opacity: matchSet.has(n.id) ? 1 : 0.3,
+        },
+        className: matchSet.has(n.id) ? 'ring-2 ring-primary' : undefined,
+      })),
+    )
+  }, [searchOpen, searchMatchIds, setRfNodes])
+
   const handleNodeClick: NodeMouseHandler = useCallback(
     (_event, node) => {
       if (node.id.startsWith('msg-')) {
@@ -615,6 +660,14 @@ function CanvasViewInner({
           onBulkStatusChange={onBulkStatusChange ? (status) => onBulkStatusChange(selectedNodeIds, status) : undefined}
           onBulkAddTag={onBulkAddTag ? (tag) => onBulkAddTag(selectedNodeIds, tag) : undefined}
         />
+        {searchOpen && (
+          <SearchOverlay
+            nodes={rfNodes}
+            onMatchChange={handleSearchMatchChange}
+            onClose={() => onSearchClose?.()}
+            onFocusNode={handleSearchFocusNode}
+          />
+        )}
       </ReactFlow>
 
       {contextMenu?.type === 'node' && (() => {

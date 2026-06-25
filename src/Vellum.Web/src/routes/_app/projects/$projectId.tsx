@@ -65,6 +65,7 @@ function ProjectWorkspace() {
   const [showCreateElement, setShowCreateElement] = useState(false)
   const [newElementName, setNewElementName] = useState('')
   const [newElementKind, setNewElementKind] = useState('system')
+  const [searchOpen, setSearchOpen] = useState(false)
 
   const fitViewRef = useRef<(() => void) | null>(null)
   const handleFitViewReady = useCallback((fn: () => void) => {
@@ -446,6 +447,10 @@ function ProjectWorkspace() {
         e.preventDefault()
         useShellStore.getState().toggleCommandPalette()
       }
+      if (meta && e.key === 'f') {
+        e.preventDefault()
+        setSearchOpen(true)
+      }
       if (meta && e.key === 'a' && !inInput) {
         e.preventDefault()
         // React Flow handles select-all natively when selectionOnDrag is enabled
@@ -589,6 +594,8 @@ function ProjectWorkspace() {
                   })
                 }
               }}
+              searchOpen={searchOpen}
+              onSearchClose={() => setSearchOpen(false)}
             />
           )}
         </main>
