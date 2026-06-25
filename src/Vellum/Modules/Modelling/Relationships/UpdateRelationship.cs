@@ -5,7 +5,9 @@ using Vellum.Modules.Modelling.Model;
 
 namespace Vellum.Modules.Modelling.Relationships;
 
-public sealed record UpdateRelationshipRequest(string? Label, string? Technology, bool SetLabel = false, bool SetTechnology = false);
+public sealed record UpdateRelationshipRequest(
+    string? Label, string? Technology, string? LineShape,
+    bool SetLabel = false, bool SetTechnology = false, bool SetLineShape = false);
 
 public sealed record UpdateRelationshipCommandEnvelope(
     Guid ProjectId, Guid StreamId, Guid RelationshipId, string UserId, UpdateRelationshipRequest Request);
@@ -28,7 +30,8 @@ public sealed class UpdateRelationshipHandler : ICommandHandler<UpdateRelationsh
         var updateCmd = new UpdateRelationshipCommand(
             cmd.RelationshipId,
             Label: cmd.Request.Label, SetLabel: cmd.Request.SetLabel || cmd.Request.Label is not null,
-            Technology: cmd.Request.Technology, SetTechnology: cmd.Request.SetTechnology || cmd.Request.Technology is not null);
+            Technology: cmd.Request.Technology, SetTechnology: cmd.Request.SetTechnology || cmd.Request.Technology is not null,
+            LineShape: cmd.Request.LineShape, SetLineShape: cmd.Request.SetLineShape);
 
         var result = ModelDecider.UpdateRelationship(state, updateCmd);
         if (result is not CommandResult<IReadOnlyList<ModelEvent>>.Success success)
@@ -51,6 +54,6 @@ public sealed class UpdateRelationshipHandler : ICommandHandler<UpdateRelationsh
 
         var rel = state.Relationships[cmd.RelationshipId];
         return new CommandResult<RelationshipDto>.Success(new RelationshipDto(
-            rel.Id, rel.FromId, rel.ToId, rel.Label, rel.Technology, rel.MessageId));
+            rel.Id, rel.FromId, rel.ToId, rel.Label, rel.Technology, rel.MessageId, rel.LineShape));
     }
 }

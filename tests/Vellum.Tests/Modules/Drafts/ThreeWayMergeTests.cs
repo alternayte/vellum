@@ -14,7 +14,7 @@ public class ThreeWayMergeTests
         new(id, ElementKind.System, name, null, tech, null, status, null, []);
 
     private static RelationshipState Rel(Guid id, Guid from, Guid to, string? label = null) =>
-        new(id, from, to, label, null, null);
+        new(id, from, to, label, null, null, null);
 
     private static ModelState State(
         IEnumerable<ElementState>? elements = null,

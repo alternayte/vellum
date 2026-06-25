@@ -23,7 +23,8 @@ public sealed record AddRelationshipCommand(
 public sealed record UpdateRelationshipCommand(
     Guid RelationshipId,
     string? Label = null, bool SetLabel = false,
-    string? Technology = null, bool SetTechnology = false);
+    string? Technology = null, bool SetTechnology = false,
+    string? LineShape = null, bool SetLineShape = false);
 
 public sealed record AddMessageCommand(
     Guid Id, string Name, string? Description,
@@ -144,6 +145,9 @@ public static class ModelDecider
 
         if (cmd.SetTechnology && cmd.Technology != rel.Technology)
             events.Add(new ModelEvent.RelationshipTechnologyChanged(cmd.RelationshipId, cmd.Technology));
+
+        if (cmd.SetLineShape && cmd.LineShape != rel.LineShape)
+            events.Add(new ModelEvent.RelationshipLineShapeChanged(cmd.RelationshipId, cmd.LineShape));
 
         return new CommandResult<IReadOnlyList<ModelEvent>>.Success(events);
     }

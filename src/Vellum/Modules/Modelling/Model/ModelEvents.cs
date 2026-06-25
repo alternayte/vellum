@@ -27,6 +27,7 @@ public abstract record ModelEvent
 
     public sealed record RelationshipLabelChanged(Guid RelationshipId, string? Label) : ModelEvent;
     public sealed record RelationshipTechnologyChanged(Guid RelationshipId, string? Technology) : ModelEvent;
+    public sealed record RelationshipLineShapeChanged(Guid RelationshipId, string? LineShape) : ModelEvent;
     public sealed record RelationshipRemoved(Guid RelationshipId) : ModelEvent;
 
     // Message events

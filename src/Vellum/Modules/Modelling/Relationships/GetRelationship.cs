@@ -16,6 +16,6 @@ public static class GetRelationship
 
         return Results.Ok(new RelationshipDto(
             entity.Id, entity.FromId, entity.ToId,
-            entity.Label, entity.Technology, entity.MessageId));
+            entity.Label, entity.Technology, entity.MessageId, entity.LineShape));
     }
 }

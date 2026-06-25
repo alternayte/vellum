@@ -61,6 +61,16 @@ public class ModelEvolveTests
     }
 
     [Fact]
+    public void RelationshipLineShapeChanged_updates_lineShape()
+    {
+        var relId = Guid.NewGuid();
+        var state = ModelState.Initial
+            .Evolve(new ModelEvent.RelationshipAdded(relId, Guid.NewGuid(), Guid.NewGuid(), null, null, null))
+            .Evolve(new ModelEvent.RelationshipLineShapeChanged(relId, "step"));
+        Assert.Equal("step", state.Relationships[relId].LineShape);
+    }
+
+    [Fact]
     public void All_element_update_events_fold_correctly()
     {
         var id = Guid.NewGuid();

@@ -159,6 +159,10 @@ namespace Vellum.Modules.Modelling.Migrations
                         .HasColumnType("text")
                         .HasColumnName("label");
 
+                    b.Property<string>("LineShape")
+                        .HasColumnType("text")
+                        .HasColumnName("line_shape");
+
                     b.Property<Guid?>("MessageId")
                         .HasColumnType("uuid")
                         .HasColumnName("message_id");

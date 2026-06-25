@@ -362,6 +362,39 @@ public class ModelDeciderTests
         Assert.Contains(success.Value, e => e is ModelEvent.MessageRemoved mr && mr.MessageId == msgId);
     }
 
+    // --- UpdateRelationship lineShape ---
+
+    [Fact]
+    public void UpdateRelationship_sets_lineShape()
+    {
+        var relId = Guid.NewGuid();
+        var state = StateWith(
+            new ModelEvent.ElementAdded(SystemId, ElementKind.System, "A", null, null, null, ElementStatus.Current, null, []),
+            new ModelEvent.ElementAdded(AppId, ElementKind.App, "B", null, null, null, ElementStatus.Current, SystemId, []),
+            new ModelEvent.RelationshipAdded(relId, SystemId, AppId, null, null, null));
+
+        var result = ModelDecider.UpdateRelationship(state,
+            new UpdateRelationshipCommand(relId, LineShape: "step", SetLineShape: true));
+        var success = Assert.IsType<CommandResult<IReadOnlyList<ModelEvent>>.Success>(result);
+        var changed = Assert.IsType<ModelEvent.RelationshipLineShapeChanged>(Assert.Single(success.Value));
+        Assert.Equal("step", changed.LineShape);
+    }
+
+    [Fact]
+    public void UpdateRelationship_lineShape_unchanged_emits_nothing()
+    {
+        var relId = Guid.NewGuid();
+        var state = StateWith(
+            new ModelEvent.ElementAdded(SystemId, ElementKind.System, "A", null, null, null, ElementStatus.Current, null, []),
+            new ModelEvent.ElementAdded(AppId, ElementKind.App, "B", null, null, null, ElementStatus.Current, SystemId, []),
+            new ModelEvent.RelationshipAdded(relId, SystemId, AppId, null, null, null));
+
+        var result = ModelDecider.UpdateRelationship(state,
+            new UpdateRelationshipCommand(relId, LineShape: null, SetLineShape: false));
+        var success = Assert.IsType<CommandResult<IReadOnlyList<ModelEvent>>.Success>(result);
+        Assert.Empty(success.Value);
+    }
+
     // --- AddRelationship ---
 
     [Fact]
