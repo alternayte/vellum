@@ -88,6 +88,7 @@ interface CanvasViewProps {
   onRenameElement?: (id: string, newName: string) => void
   onConnectToBlank?: (kind: string, position: { x: number; y: number }, sourceId: string) => void
   onAddElementAtFlowPosition?: (kind: string, position: { x: number; y: number }) => void
+  onViewportCenterReady?: (fn: () => { x: number; y: number }) => void
 }
 
 export function CanvasView(props: CanvasViewProps) {
@@ -126,6 +127,7 @@ function CanvasViewInner({
   onRenameElement,
   onConnectToBlank,
   onAddElementAtFlowPosition,
+  onViewportCenterReady,
 }: CanvasViewProps) {
   const { currentRootId, zoomLevel, setZoom, activeLens, expandedNodeIds, toggleExpand } = useCanvasStore()
   const { fitView, screenToFlowPosition } = useReactFlow()
@@ -141,6 +143,21 @@ function CanvasViewInner({
     onFitViewReady?.(() => fitView())
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fitView])
+
+  const getViewportCenter = useCallback(() => {
+    const pane = document.querySelector('.react-flow__renderer')
+    if (!pane) return { x: 0, y: 0 }
+    const rect = pane.getBoundingClientRect()
+    return screenToFlowPosition({
+      x: rect.left + rect.width / 2,
+      y: rect.top + rect.height / 2,
+    })
+  }, [screenToFlowPosition])
+
+  useEffect(() => {
+    onViewportCenterReady?.(getViewportCenter)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [getViewportCenter])
   const { selectElement, selectRelationship, selectMessage } = useShellStore()
   const tier = useLod(zoomLevel)
 
@@ -347,19 +364,26 @@ function CanvasViewInner({
   const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState(derivedEdges)
 
   // Sync derived data → local RF state when domain model changes.
-  // Use a stable fingerprint so drag-in-progress isn't interrupted by re-renders.
-  const derivedNodeIds = useMemo(() => derivedNodes.map((n) => n.id).join(','), [derivedNodes])
-  const derivedEdgeIds = useMemo(() => derivedEdges.map((e) => e.id).join(','), [derivedEdges])
+  // Fingerprint serializes content (dropping functions) so reference-only changes
+  // from parent re-renders don't cause the sync to overwrite mid-drag positions.
+  const derivedNodeFingerprint = useMemo(
+    () => JSON.stringify(derivedNodes, (_k, v) => typeof v === 'function' ? undefined : v),
+    [derivedNodes],
+  )
+  const derivedEdgeFingerprint = useMemo(
+    () => JSON.stringify(derivedEdges, (_k, v) => typeof v === 'function' ? undefined : v),
+    [derivedEdges],
+  )
 
   useEffect(() => {
     setRfNodes(derivedNodes)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [derivedNodeIds, derivedNodes, setRfNodes])
+  }, [derivedNodeFingerprint, setRfNodes])
 
   useEffect(() => {
     setRfEdges(derivedEdges)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [derivedEdgeIds, derivedEdges, setRfEdges])
+  }, [derivedEdgeFingerprint, setRfEdges])
 
   const handleNodeClick: NodeMouseHandler = useCallback(
     (_event, node) => {
