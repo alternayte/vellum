@@ -28,9 +28,10 @@ export async function computeLayout(
     id: 'root',
     layoutOptions: {
       'elk.algorithm': 'layered',
-      'elk.direction': 'RIGHT',
-      'elk.spacing.nodeNode': '60',
-      'elk.layered.spacing.nodeNodeBetweenLayers': '100',
+      'elk.direction': 'DOWN',
+      'elk.spacing.nodeNode': '100',
+      'elk.layered.spacing.nodeNodeBetweenLayers': '160',
+      'elk.edgeRouting': 'ORTHOGONAL',
     },
     children: elements.map((el) => ({
       id: el.id,
