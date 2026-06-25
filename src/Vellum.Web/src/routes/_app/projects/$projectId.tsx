@@ -380,13 +380,13 @@ function ProjectWorkspace() {
     })
   }
 
-  const handleNodeResize = (id: string, width: number, height: number) => {
+  const handleNodeResize = useCallback((id: string, width: number, height: number) => {
     const positions = activeView?.positions ?? []
-    const updated = positions.some((p) => p.elementId === id)
-      ? positions.map((p) => (p.elementId === id ? { ...p, width, height } : p))
-      : [...positions, { elementId: id, x: 0, y: 0, width, height }]
+    const existing = positions.find((p) => p.elementId === id)
+    if (!existing) return
+    const updated = positions.map((p) => (p.elementId === id ? { ...p, width, height } : p))
     saveLayout(updated)
-  }
+  }, [activeView, saveLayout])
 
   const handleRenameElement = (id: string, newName: string) => {
     const el = elements?.find((e) => e.id === id)
