@@ -322,12 +322,12 @@ function CanvasViewInner({
   useEffect(() => {
     setRfNodes(derivedNodes)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [derivedNodeIds, setRfNodes])
+  }, [derivedNodeIds, derivedNodes, setRfNodes])
 
   useEffect(() => {
     setRfEdges(derivedEdges)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [derivedEdgeIds, setRfEdges])
+  }, [derivedEdgeIds, derivedEdges, setRfEdges])
 
   const handleNodeClick: NodeMouseHandler = useCallback(
     (_event, node) => {
