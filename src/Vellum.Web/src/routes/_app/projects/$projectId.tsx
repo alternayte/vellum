@@ -166,6 +166,34 @@ function ProjectWorkspace() {
     })
   }
 
+  const handleBulkStatusChange = (ids: string[], status: string) => {
+    const snapshots = ids
+      .map((id) => elements?.find((e) => e.id === id))
+      .filter((el): el is NonNullable<typeof el> => el != null)
+
+    useUndoStore.getState().execute({
+      label: `Set ${ids.length} elements to ${status}`,
+      execute: () => ids.forEach((id) => updateElement.mutate({ id, status })),
+      undo: () => snapshots.forEach((el) => updateElement.mutate({ id: el.id, status: el.status })),
+    })
+  }
+
+  const handleBulkAddTag = (ids: string[], tag: string) => {
+    const snapshots = ids
+      .map((id) => elements?.find((e) => e.id === id))
+      .filter((el): el is NonNullable<typeof el> => el != null)
+
+    useUndoStore.getState().execute({
+      label: `Tag ${ids.length} elements "${tag}"`,
+      execute: () => snapshots.forEach((el) => {
+        if (!el.tags.includes(tag)) {
+          updateElement.mutate({ id: el.id, tags: [...el.tags, tag] })
+        }
+      }),
+      undo: () => snapshots.forEach((el) => updateElement.mutate({ id: el.id, tags: el.tags })),
+    })
+  }
+
   const handleDuplicateElement = (id: string) => {
     const el = elements?.find((e) => e.id === id)
     if (!el) return
@@ -482,6 +510,8 @@ function ProjectWorkspace() {
               onConnect={handleConnect}
               onNodeDragStop={handleNodeDragStop}
               onBulkDelete={handleBulkDelete}
+              onBulkStatusChange={handleBulkStatusChange}
+              onBulkAddTag={handleBulkAddTag}
               onDuplicateElement={handleDuplicateElement}
               onDeleteElement={handleDeleteElement}
               onReverseRelationship={handleReverseRelationship}
