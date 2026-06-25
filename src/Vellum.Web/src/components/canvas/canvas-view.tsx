@@ -388,6 +388,23 @@ function CanvasViewInner({
     setSelectedNodeIds(nodes.map((n) => n.id).filter((id) => !id.startsWith('msg-')))
   }, [])
 
+  const handleNodesDelete = useCallback(
+    (deleted: Node[]) => {
+      const ids = deleted.map((n) => n.id).filter((id) => !id.startsWith('msg-'))
+      if (ids.length > 0) onBulkDelete?.(ids)
+    },
+    [onBulkDelete],
+  )
+
+  const handleEdgesDelete = useCallback(
+    (deleted: Edge[]) => {
+      for (const edge of deleted) {
+        onDeleteRelationship?.(edge.id)
+      }
+    },
+    [onDeleteRelationship],
+  )
+
   const handleNodeContextMenu = useCallback(
     (event: React.MouseEvent, node: Node) => {
       event.preventDefault()
@@ -455,6 +472,9 @@ function CanvasViewInner({
         onNodeContextMenu={handleNodeContextMenu}
         onEdgeContextMenu={handleEdgeContextMenu}
         onPaneContextMenu={handlePaneContextMenu}
+        deleteKeyCode={['Delete', 'Backspace']}
+        onNodesDelete={handleNodesDelete}
+        onEdgesDelete={handleEdgesDelete}
         selectionMode={SelectionMode.Partial}
         selectionKeyCode="Shift"
         multiSelectionKeyCode="Shift"
