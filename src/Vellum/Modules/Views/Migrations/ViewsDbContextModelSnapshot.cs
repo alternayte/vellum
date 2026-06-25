@@ -64,9 +64,17 @@ namespace Vellum.Modules.Views.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("element_id");
 
+                    b.Property<double?>("Height")
+                        .HasColumnType("double precision")
+                        .HasColumnName("height");
+
                     b.Property<Guid>("ViewId")
                         .HasColumnType("uuid")
                         .HasColumnName("view_id");
+
+                    b.Property<double?>("Width")
+                        .HasColumnType("double precision")
+                        .HasColumnName("width");
 
                     b.Property<double>("X")
                         .HasColumnType("double precision")

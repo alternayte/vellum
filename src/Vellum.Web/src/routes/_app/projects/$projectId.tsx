@@ -380,6 +380,14 @@ function ProjectWorkspace() {
     })
   }
 
+  const handleNodeResize = (id: string, width: number, height: number) => {
+    const positions = activeView?.positions ?? []
+    const updated = positions.some((p) => p.elementId === id)
+      ? positions.map((p) => (p.elementId === id ? { ...p, width, height } : p))
+      : [...positions, { elementId: id, x: 0, y: 0, width, height }]
+    saveLayout(updated)
+  }
+
   const handleRenameElement = (id: string, newName: string) => {
     const el = elements?.find((e) => e.id === id)
     if (!el) return
@@ -554,6 +562,7 @@ function ProjectWorkspace() {
               onAddElement={handleOpenCreateDialog}
               onConnect={handleConnect}
               onNodeDragStop={handleNodeDragStop}
+              onNodeResize={handleNodeResize}
               onBulkDelete={handleBulkDelete}
               onBulkStatusChange={handleBulkStatusChange}
               onBulkAddTag={handleBulkAddTag}

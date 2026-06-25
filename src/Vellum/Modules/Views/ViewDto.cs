@@ -5,7 +5,7 @@ public sealed record ViewDto(
     Guid[] VisibleElementIds, string? ActiveLens, Guid? ActiveFlowId,
     DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
 
-public sealed record LayoutPositionDto(Guid ElementId, double X, double Y);
+public sealed record LayoutPositionDto(Guid ElementId, double X, double Y, double? Width = null, double? Height = null);
 public sealed record LayoutEdgeDto(Guid RelationshipId, object? RoutePoints);
 
 public sealed record ViewDetailDto(
