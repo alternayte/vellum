@@ -64,9 +64,9 @@ export const C4Edge = memo(function C4Edge({
 
   const diff = d.diffState
   const baseColor = diff && diff !== 'unchanged'
-    ? (diffEdgeColor[diff] ?? 'hsl(var(--muted-foreground))')
-    : 'hsl(var(--muted-foreground))'
-  const strokeColor = selected ? 'hsl(var(--primary))' : hovered ? 'hsl(var(--foreground))' : baseColor
+    ? (diffEdgeColor[diff] ?? 'var(--muted-foreground)')
+    : 'var(--muted-foreground)'
+  const strokeColor = selected ? 'var(--primary)' : hovered ? 'var(--foreground)' : baseColor
   const strokeWidth = hovered || selected ? 2.5 : 1.5
   const strokeOpacity = diff === 'removed' ? 0.5 : diff === 'unchanged' ? 0.6 : 1
 

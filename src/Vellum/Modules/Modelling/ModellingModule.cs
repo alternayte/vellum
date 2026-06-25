@@ -31,11 +31,13 @@ public static class ModellingModule
         registry.Register<ModelEvent.ElementReparented>("modelling.element.reparented.v1");
         registry.Register<ModelEvent.ElementStatusChanged>("modelling.element.status_changed.v1");
         registry.Register<ModelEvent.ElementRetagged>("modelling.element.retagged.v1");
+        registry.Register<ModelEvent.ElementIconChanged>("modelling.element.icon_changed.v1");
         registry.Register<ModelEvent.ElementRemoved>("modelling.element.removed.v1");
 
         registry.Register<ModelEvent.RelationshipAdded>("modelling.relationship.added.v1");
         registry.Register<ModelEvent.RelationshipLabelChanged>("modelling.relationship.label_changed.v1");
         registry.Register<ModelEvent.RelationshipTechnologyChanged>("modelling.relationship.technology_changed.v1");
+        registry.Register<ModelEvent.RelationshipLineShapeChanged>("modelling.relationship.line_shape_changed.v1");
         registry.Register<ModelEvent.RelationshipRemoved>("modelling.relationship.removed.v1");
 
         registry.Register<ModelEvent.MessageAdded>("modelling.message.added.v1");

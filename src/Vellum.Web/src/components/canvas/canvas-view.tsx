@@ -158,11 +158,19 @@ function CanvasViewInner({
     sourceNodeId: string | null
   } | null>(null)
   const [searchMatchIds, setSearchMatchIds] = useState<string[]>([])
+  const { selectElement, selectRelationship, selectMessage, focusElementId, clearFocusElement } = useShellStore()
 
   useEffect(() => {
     onFitViewReady?.(() => fitView())
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fitView])
+
+  useEffect(() => {
+    if (focusElementId) {
+      fitView({ nodes: [{ id: focusElementId }], duration: 300, padding: 0.5 })
+      clearFocusElement()
+    }
+  }, [focusElementId, fitView, clearFocusElement])
 
   const getViewportCenter = useCallback(() => {
     const pane = document.querySelector('.react-flow__renderer')
@@ -178,7 +186,6 @@ function CanvasViewInner({
     onViewportCenterReady?.(getViewportCenter)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [getViewportCenter])
-  const { selectElement, selectRelationship, selectMessage } = useShellStore()
   const tier = useLod(zoomLevel)
 
   const visibleElements = useMemo(() => {
@@ -317,7 +324,7 @@ function CanvasViewInner({
         source: rel.fromId,
         target: rel.toId,
         type: 'c4-edge',
-        markerEnd: { type: MarkerType.ArrowClosed, color: 'hsl(var(--muted-foreground))' },
+        markerEnd: { type: MarkerType.ArrowClosed, color: 'var(--muted-foreground)' },
         data: {
           label: rel.label,
           technology: rel.technology,
@@ -366,7 +373,7 @@ function CanvasViewInner({
           source: msg.producerId,
           target: `msg-${msg.id}`,
           type: 'c4-edge',
-          markerEnd: { type: MarkerType.ArrowClosed, color: 'hsl(var(--muted-foreground))' },
+          markerEnd: { type: MarkerType.ArrowClosed, color: 'var(--muted-foreground)' },
           data: { label: null, technology: null },
         }
         const consumerEdges: Edge[] = msg.consumerIds
@@ -376,7 +383,7 @@ function CanvasViewInner({
             source: `msg-${msg.id}`,
             target: cid,
             type: 'c4-edge',
-            markerEnd: { type: MarkerType.ArrowClosed, color: 'hsl(var(--muted-foreground))' },
+            markerEnd: { type: MarkerType.ArrowClosed, color: 'var(--muted-foreground)' },
             data: { label: null, technology: null },
           }))
         return [producerEdge, ...consumerEdges]
@@ -648,10 +655,10 @@ function CanvasViewInner({
         minZoom={0.1}
         maxZoom={3}
       >
-        <Background variant={BackgroundVariant.Dots} gap={16} size={1} color="hsl(var(--border))" />
+        <Background variant={BackgroundVariant.Dots} gap={16} size={1} color="var(--border)" />
         <MiniMap
-          nodeColor="hsl(var(--card))"
-          maskColor="hsl(var(--background) / 0.8)"
+          nodeColor="var(--card)"
+          maskColor="color-mix(in srgb, var(--background) 80%, transparent)"
           className="!bg-card !border-border"
         />
         <BulkActionsToolbar
