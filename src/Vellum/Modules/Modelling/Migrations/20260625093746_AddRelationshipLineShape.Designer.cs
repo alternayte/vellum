@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Vellum.Modules.Modelling;
@@ -11,9 +12,11 @@ using Vellum.Modules.Modelling;
 namespace Vellum.Modules.Modelling.Migrations
 {
     [DbContext(typeof(ModellingDbContext))]
-    partial class ModellingDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260625093746_AddRelationshipLineShape")]
+    partial class AddRelationshipLineShape
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder

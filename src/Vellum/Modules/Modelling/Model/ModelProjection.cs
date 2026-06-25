@@ -100,7 +100,8 @@ public sealed class ModelProjection : IInlineProjection
                         ToId = relAdded.ToId,
                         Label = relAdded.Label,
                         Technology = relAdded.Technology,
-                        MessageId = relAdded.MessageId
+                        MessageId = relAdded.MessageId,
+                        LineShape = null
                     });
                     break;
 
@@ -112,6 +113,11 @@ public sealed class ModelProjection : IInlineProjection
                 case ModelEvent.RelationshipTechnologyChanged relTechChanged:
                     var relTechEntity = await _db.Relationships.FindAsync([relTechChanged.RelationshipId], ct);
                     if (relTechEntity is not null) relTechEntity.Technology = relTechChanged.Technology;
+                    break;
+
+                case ModelEvent.RelationshipLineShapeChanged lineShapeChanged:
+                    var lineShapeEntity = await _db.Relationships.FindAsync([lineShapeChanged.RelationshipId], ct);
+                    if (lineShapeEntity is not null) lineShapeEntity.LineShape = lineShapeChanged.LineShape;
                     break;
 
                 case ModelEvent.RelationshipRemoved relRemoved:

@@ -10,4 +10,5 @@ public class RelationshipEntity
     public string? Label { get; set; }
     public string? Technology { get; set; }
     public Guid? MessageId { get; set; }
+    public string? LineShape { get; set; }
 }

@@ -10,7 +10,7 @@ public sealed record ElementState(
 
 public sealed record RelationshipState(
     Guid Id, Guid FromId, Guid ToId, string? Label,
-    string? Technology, Guid? MessageId);
+    string? Technology, Guid? MessageId, string? LineShape);
 
 public sealed record MessageState(
     Guid Id, string Name, string? Description,
@@ -48,10 +48,11 @@ public sealed record ModelState(
         ModelEvent.RelationshipAdded e => this with
         {
             Relationships = Relationships.Add(e.Id, new RelationshipState(
-                e.Id, e.FromId, e.ToId, e.Label, e.Technology, e.MessageId))
+                e.Id, e.FromId, e.ToId, e.Label, e.Technology, e.MessageId, null))
         },
         ModelEvent.RelationshipLabelChanged e => WithRelationship(e.RelationshipId, r => r with { Label = e.Label }),
         ModelEvent.RelationshipTechnologyChanged e => WithRelationship(e.RelationshipId, r => r with { Technology = e.Technology }),
+        ModelEvent.RelationshipLineShapeChanged e => WithRelationship(e.RelationshipId, r => r with { LineShape = e.LineShape }),
         ModelEvent.RelationshipRemoved e => this with { Relationships = Relationships.Remove(e.RelationshipId) },
 
         ModelEvent.MessageAdded m => this with

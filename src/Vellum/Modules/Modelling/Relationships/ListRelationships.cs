@@ -29,7 +29,7 @@ public static class ListRelationships
         var items = await query
             .OrderBy(r => r.Id)
             .Take(pageSize + 1)
-            .Select(r => new RelationshipDto(r.Id, r.FromId, r.ToId, r.Label, r.Technology, r.MessageId))
+            .Select(r => new RelationshipDto(r.Id, r.FromId, r.ToId, r.Label, r.Technology, r.MessageId, r.LineShape))
             .ToListAsync(ct);
 
         string? nextCursor = null;

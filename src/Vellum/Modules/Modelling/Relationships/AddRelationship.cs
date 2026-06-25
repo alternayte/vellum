@@ -45,6 +45,6 @@ public sealed class AddRelationshipHandler : ICommandHandler<AddRelationshipComm
 
         var rel = newState.Relationships[cmd.Request.Id];
         return new CommandResult<RelationshipDto>.Success(new RelationshipDto(
-            rel.Id, rel.FromId, rel.ToId, rel.Label, rel.Technology, rel.MessageId));
+            rel.Id, rel.FromId, rel.ToId, rel.Label, rel.Technology, rel.MessageId, rel.LineShape));
     }
 }
