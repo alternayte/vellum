@@ -113,8 +113,8 @@ export function DetailPanel({
     : null
 
   return (
-    <Sheet open={detailPanelOpen} onOpenChange={(open) => !open && handleClose()}>
-      <SheetContent side="right" className="w-80 border-l border-border bg-card">
+    <Sheet open={detailPanelOpen} modal={false} onOpenChange={(open) => !open && handleClose()}>
+      <SheetContent side="right" overlay={false} className="w-80 overflow-y-auto border-l border-border bg-card">
         {selectedMessage && (
           <div key={selectedMessage.id}>
             <SheetHeader>

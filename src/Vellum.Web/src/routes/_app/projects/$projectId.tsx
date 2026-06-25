@@ -80,7 +80,7 @@ function ProjectWorkspace() {
   }, [])
 
   useEffect(() => {
-    if (activeViewId || autoViewRef.current) return
+    if (activeViewId || activeDocId || autoViewRef.current) return
     if (!views) return
     if (views.length > 0) {
       useShellStore.getState().setActiveView(views[0].id)
@@ -92,7 +92,7 @@ function ProjectWorkspace() {
       })
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeViewId, views])
+  }, [activeViewId, activeDocId, views])
 
   const handleReview = async () => {
     if (!activeDraftId) return

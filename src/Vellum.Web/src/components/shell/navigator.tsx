@@ -47,7 +47,7 @@ interface NavigatorProps {
 }
 
 export function Navigator({ projectId, elements, views, spaces = [], docs = [] }: NavigatorProps) {
-  const { navigatorOpen, selectElement } = useShellStore()
+  const { navigatorOpen, selectElement, focusElement } = useShellStore()
   const { drillInto } = useCanvasStore()
   const { activeDraftId } = useDraftStore()
 
@@ -79,7 +79,7 @@ export function Navigator({ projectId, elements, views, spaces = [], docs = [] }
             key={element.id}
             element={element}
             childrenMap={childrenMap}
-            onSelect={selectElement}
+            onSelect={(id) => { selectElement(id); focusElement(id) }}
             onDrill={drillInto}
             depth={0}
           />

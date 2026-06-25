@@ -9,6 +9,7 @@ interface ShellState {
   activeViewId: string | null
   activeDocId: string | null
   commandPaletteOpen: boolean
+  focusElementId: string | null
 
   toggleNavigator: () => void
   selectElement: (id: string | null) => void
@@ -19,6 +20,8 @@ interface ShellState {
   closeDoc: () => void
   toggleCommandPalette: () => void
   closeCommandPalette: () => void
+  focusElement: (id: string) => void
+  clearFocusElement: () => void
   reset: () => void
 }
 
@@ -31,6 +34,7 @@ export const useShellStore = create<ShellState>((set) => ({
   activeViewId: null,
   activeDocId: null,
   commandPaletteOpen: false,
+  focusElementId: null,
 
   toggleNavigator: () =>
     set((state) => ({ navigatorOpen: !state.navigatorOpen })),
@@ -69,6 +73,9 @@ export const useShellStore = create<ShellState>((set) => ({
 
   closeCommandPalette: () => set({ commandPaletteOpen: false }),
 
+  focusElement: (id) => set({ focusElementId: id }),
+  clearFocusElement: () => set({ focusElementId: null }),
+
   reset: () =>
     set({
       navigatorOpen: true,
@@ -79,5 +86,6 @@ export const useShellStore = create<ShellState>((set) => ({
       activeViewId: null,
       activeDocId: null,
       commandPaletteOpen: false,
+      focusElementId: null,
     }),
 }))
