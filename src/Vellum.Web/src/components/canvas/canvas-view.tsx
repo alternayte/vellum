@@ -89,6 +89,8 @@ interface CanvasViewProps {
   onConnectToBlank?: (kind: string, position: { x: number; y: number }, sourceId: string) => void
   onAddElementAtFlowPosition?: (kind: string, position: { x: number; y: number }) => void
   onViewportCenterReady?: (fn: () => { x: number; y: number }) => void
+  onBulkStatusChange?: (ids: string[], status: string) => void
+  onBulkAddTag?: (ids: string[], tag: string) => void
 }
 
 export function CanvasView(props: CanvasViewProps) {
@@ -128,6 +130,8 @@ function CanvasViewInner({
   onConnectToBlank,
   onAddElementAtFlowPosition,
   onViewportCenterReady,
+  onBulkStatusChange,
+  onBulkAddTag,
 }: CanvasViewProps) {
   const { currentRootId, zoomLevel, setZoom, activeLens, expandedNodeIds, toggleExpand } = useCanvasStore()
   const { fitView, screenToFlowPosition } = useReactFlow()
@@ -587,6 +591,8 @@ function CanvasViewInner({
         <BulkActionsToolbar
           selectedCount={selectedNodeIds.length}
           onDelete={() => onBulkDelete?.(selectedNodeIds)}
+          onBulkStatusChange={onBulkStatusChange ? (status) => onBulkStatusChange(selectedNodeIds, status) : undefined}
+          onBulkAddTag={onBulkAddTag ? (tag) => onBulkAddTag(selectedNodeIds, tag) : undefined}
         />
       </ReactFlow>
 
