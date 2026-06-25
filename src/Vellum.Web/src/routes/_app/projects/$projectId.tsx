@@ -227,6 +227,53 @@ function ProjectWorkspace() {
     })
   }
 
+  const handleConnectToBlank = (kind: string, position: { x: number; y: number }, sourceId: string) => {
+    const { currentRootId } = useCanvasStore.getState()
+    const elementId = crypto.randomUUID()
+    const relationshipId = crypto.randomUUID()
+    useUndoStore.getState().execute({
+      label: `Add ${kind} with connection`,
+      execute: () => {
+        addElement.mutate({
+          id: elementId,
+          kind,
+          name: `New ${kind}`,
+          parentId: currentRootId ?? undefined,
+        })
+        addRelationship.mutate({
+          id: relationshipId,
+          fromId: sourceId,
+          toId: elementId,
+        })
+        const positions = activeView?.positions ?? []
+        saveLayout([...positions, { elementId, x: position.x, y: position.y }])
+      },
+      undo: () => {
+        removeRelationship.mutate(relationshipId)
+        removeElement.mutate(elementId)
+      },
+    })
+  }
+
+  const handleAddElementAtFlowPosition = (kind: string, position: { x: number; y: number }) => {
+    const { currentRootId } = useCanvasStore.getState()
+    const id = crypto.randomUUID()
+    useUndoStore.getState().execute({
+      label: `Add ${kind}`,
+      execute: () => {
+        addElement.mutate({
+          id,
+          kind,
+          name: `New ${kind}`,
+          parentId: currentRootId ?? undefined,
+        })
+        const positions = activeView?.positions ?? []
+        saveLayout([...positions, { elementId: id, x: position.x, y: position.y }])
+      },
+      undo: () => removeElement.mutate(id),
+    })
+  }
+
   const handleNodeDragStop = (id: string, x: number, y: number) => {
     const current = activeView?.positions ?? []
     const oldPos = current.find((p) => p.elementId === id)
@@ -377,6 +424,8 @@ function ProjectWorkspace() {
               onAddElementAtPosition={handleAddElementAtPosition}
               onTidy={handleTidy}
               onRenameElement={handleRenameElement}
+              onConnectToBlank={handleConnectToBlank}
+              onAddElementAtFlowPosition={handleAddElementAtFlowPosition}
               onNodeDoubleClick={(elementId) => {
                 const el = elements?.find((e) => e.id === elementId)
                 if (!el) return

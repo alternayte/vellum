@@ -9,6 +9,7 @@ import {
   type Edge,
   type NodeMouseHandler,
   type OnConnect,
+  type OnConnectEnd,
   MarkerType,
   useReactFlow,
   SelectionMode,
@@ -18,6 +19,7 @@ import {
 import { NodeContextMenu } from './context-menus/node-context-menu'
 import { EdgeContextMenu } from './context-menus/edge-context-menu'
 import { CanvasContextMenu } from './context-menus/canvas-context-menu'
+import { CreatePopover } from './create-popover'
 import '@xyflow/react/dist/style.css'
 import { nodeTypes } from './nodes/node-types'
 import { edgeTypes } from './edges/edge-types'
@@ -84,6 +86,8 @@ interface CanvasViewProps {
   onAddElementAtPosition?: (kind: string) => void
   onTidy?: () => void
   onRenameElement?: (id: string, newName: string) => void
+  onConnectToBlank?: (kind: string, position: { x: number; y: number }, sourceId: string) => void
+  onAddElementAtFlowPosition?: (kind: string, position: { x: number; y: number }) => void
 }
 
 export function CanvasView(props: CanvasViewProps) {
@@ -120,11 +124,18 @@ function CanvasViewInner({
   onAddElementAtPosition,
   onTidy,
   onRenameElement,
+  onConnectToBlank,
+  onAddElementAtFlowPosition,
 }: CanvasViewProps) {
   const { currentRootId, zoomLevel, setZoom, activeLens, expandedNodeIds, toggleExpand } = useCanvasStore()
-  const { fitView } = useReactFlow()
+  const { fitView, screenToFlowPosition } = useReactFlow()
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([])
   const [contextMenu, setContextMenu] = useState<ContextMenuState>(null)
+  const [createPopover, setCreatePopover] = useState<{
+    flowPosition: { x: number; y: number }
+    screenPosition: { x: number; y: number }
+    sourceNodeId: string | null
+  } | null>(null)
 
   useEffect(() => {
     onFitViewReady?.(() => fitView())
@@ -382,7 +393,58 @@ function CanvasViewInner({
     [onConnectProp],
   )
 
+  const handleConnectEnd: OnConnectEnd = useCallback(
+    (event, connectionState) => {
+      // Only open the popover when the connection was dropped on empty canvas (no target node)
+      if (connectionState.toNode !== null) return
+      // Must have had a source node to connect from
+      const sourceNodeId = connectionState.fromHandle?.nodeId ?? null
+      if (!sourceNodeId) return
+
+      const clientX = 'clientX' in event ? event.clientX : event.changedTouches[0].clientX
+      const clientY = 'clientY' in event ? event.clientY : event.changedTouches[0].clientY
+      const flowPos = screenToFlowPosition({ x: clientX, y: clientY })
+
+      setCreatePopover({
+        flowPosition: flowPos,
+        screenPosition: { x: clientX, y: clientY },
+        sourceNodeId,
+      })
+    },
+    [screenToFlowPosition],
+  )
+
+  const handlePaneDoubleClick = useCallback(
+    (event: React.MouseEvent) => {
+      // Ignore double-clicks that originated on a node or edge
+      const target = event.target as HTMLElement
+      if (target.closest('.react-flow__node') || target.closest('.react-flow__edge')) return
+
+      const flowPos = screenToFlowPosition({ x: event.clientX, y: event.clientY })
+      setCreatePopover({
+        flowPosition: flowPos,
+        screenPosition: { x: event.clientX, y: event.clientY },
+        sourceNodeId: null,
+      })
+    },
+    [screenToFlowPosition],
+  )
+
+  const handlePopoverSelect = useCallback(
+    (kind: string) => {
+      if (!createPopover) return
+      if (createPopover.sourceNodeId) {
+        onConnectToBlank?.(kind, createPopover.flowPosition, createPopover.sourceNodeId)
+      } else {
+        onAddElementAtFlowPosition?.(kind, createPopover.flowPosition)
+      }
+      setCreatePopover(null)
+    },
+    [createPopover, onConnectToBlank, onAddElementAtFlowPosition],
+  )
+
   const handlePaneClick = useCallback(() => {
+    setCreatePopover(null)
     selectElement(null)
     selectRelationship(null)
     selectMessage(null)
@@ -457,7 +519,9 @@ function CanvasViewInner({
   }
 
   return (
-    <>
+    // Wrapper div captures double-click for canvas creation; pointer-events:none not needed
+    // as the div fills the parent and React Flow handles its own pointer events internally
+    <div className="h-full w-full" onDoubleClick={handlePaneDoubleClick}>
       <ReactFlow
         nodes={rfNodes}
         edges={rfEdges}
@@ -469,6 +533,7 @@ function CanvasViewInner({
         onNodeDoubleClick={handleNodeDoubleClick}
         onNodeDragStop={onNodeDragStop ? (_event, node) => onNodeDragStop(node.id, node.position.x, node.position.y) : undefined}
         onConnect={handleConnect}
+        onConnectEnd={handleConnectEnd}
         onEdgeClick={handleEdgeClick}
         onPaneClick={handlePaneClick}
         onMoveEnd={(_event, viewport) => setZoom(viewport.zoom)}
@@ -547,6 +612,20 @@ function CanvasViewInner({
           onZoomToFit={() => fitView()}
         />
       )}
-    </>
+
+      {createPopover && (
+        <CreatePopover
+          open
+          sourceKind={
+            currentRootId
+              ? elements.find((e) => e.id === currentRootId)?.kind ?? null
+              : null
+          }
+          position={createPopover.screenPosition}
+          onSelect={handlePopoverSelect}
+          onClose={() => setCreatePopover(null)}
+        />
+      )}
+    </div>
   )
 }
