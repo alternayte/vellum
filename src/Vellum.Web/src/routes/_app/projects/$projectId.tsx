@@ -558,7 +558,6 @@ function ProjectWorkspace() {
               onBulkStatusChange={handleBulkStatusChange}
               onBulkAddTag={handleBulkAddTag}
               onDuplicateElement={handleDuplicateElement}
-              onSmartDuplicate={handleSmartDuplicate}
               onSelectionChange={(ids) => { selectedNodeIdsRef.current = ids }}
               onDeleteElement={handleDeleteElement}
               onReverseRelationship={handleReverseRelationship}

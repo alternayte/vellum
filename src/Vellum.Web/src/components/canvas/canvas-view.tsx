@@ -91,7 +91,6 @@ interface CanvasViewProps {
   onViewportCenterReady?: (fn: () => { x: number; y: number }) => void
   onBulkStatusChange?: (ids: string[], status: string) => void
   onBulkAddTag?: (ids: string[], tag: string) => void
-  onSmartDuplicate?: (ids: string[]) => void
   onSelectionChange?: (ids: string[]) => void
 }
 
