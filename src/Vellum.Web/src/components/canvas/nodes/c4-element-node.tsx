@@ -1,6 +1,7 @@
 import { memo, useCallback, useRef, useState } from 'react'
 import { Handle, Position, type Node, type NodeProps } from '@xyflow/react'
 import { kindColor } from '@/lib/kind-colors'
+import { defaultIconForKind, getIconComponent } from '@/lib/default-icons'
 import { useCanvasStore } from '@/stores/canvas-store'
 import { cn } from '@/lib/utils'
 import type { DiffState } from '@/stores/draft-store'
@@ -14,6 +15,7 @@ export interface C4ElementData extends Record<string, unknown> {
   status: string
   tags: string[]
   ownerId: string | null
+  icon?: string | null
   diffState?: DiffState
   onRename?: (newName: string) => void
 }
@@ -79,6 +81,9 @@ export const C4ElementNode = memo(function C4ElementNode({ data }: NodeProps<C4E
     }
   }, [commitEdit, cancelEdit])
 
+  const iconName = d.icon || defaultIconForKind(d.kind)
+  const IconComponent = getIconComponent(iconName)
+
   const showMetadata = activeLens === 'metadata'
   const showStatus = activeLens === 'status'
 
@@ -118,24 +123,27 @@ export const C4ElementNode = memo(function C4ElementNode({ data }: NodeProps<C4E
 
       <div className="p-3">
         <div className="flex items-center justify-between">
-          {isEditing ? (
-            <input
-              ref={inputRef}
-              className="font-display w-full min-w-0 bg-transparent text-sm font-medium text-foreground outline-none ring-1 ring-primary rounded px-1 -mx-1"
-              value={editValue}
-              onChange={(e) => setEditValue(e.target.value)}
-              onKeyDown={handleKeyDown}
-              onBlur={commitEdit}
-              autoFocus
-            />
-          ) : (
-            <span
-              className={cn("font-display text-sm font-medium text-foreground", d.onRename && "cursor-text")}
-              onDoubleClick={handleNameDoubleClick}
-            >
-              {d.name}
-            </span>
-          )}
+          <div className="flex items-center gap-1.5">
+            {IconComponent && <IconComponent className="h-4 w-4 text-muted-foreground shrink-0" />}
+            {isEditing ? (
+              <input
+                ref={inputRef}
+                className="font-display w-full min-w-0 bg-transparent text-sm font-medium text-foreground outline-none ring-1 ring-primary rounded px-1 -mx-1"
+                value={editValue}
+                onChange={(e) => setEditValue(e.target.value)}
+                onKeyDown={handleKeyDown}
+                onBlur={commitEdit}
+                autoFocus
+              />
+            ) : (
+              <span
+                className={cn("font-display text-sm font-medium text-foreground", d.onRename && "cursor-text")}
+                onDoubleClick={handleNameDoubleClick}
+              >
+                {d.name}
+              </span>
+            )}
+          </div>
           <div className="flex items-center gap-1">
             {diff === 'conflict' && (
               <span className="text-[12px]" title="Conflict">⚠</span>

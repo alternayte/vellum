@@ -42,6 +42,7 @@ interface ElementModel {
   tags: string[]
   ownerId: string | null
   parentId: string | null
+  icon: string | null
 }
 
 interface RelationshipModel {
@@ -258,6 +259,7 @@ function CanvasViewInner({
               status: child.status,
               tags: child.tags,
               ownerId: child.ownerId,
+              icon: child.icon,
               diffState: childDiffState,
               onRename: onRenameElement ? (newName: string) => onRenameElement(child.id, newName) : undefined,
             } satisfies C4ElementData,
@@ -278,6 +280,7 @@ function CanvasViewInner({
             status: el.status,
             tags: el.tags,
             ownerId: el.ownerId,
+            icon: el.icon,
             diffState: entityDiffState,
             onRename: onRenameElement ? (newName: string) => onRenameElement(el.id, newName) : undefined,
           } satisfies C4ElementData,

@@ -24,6 +24,7 @@ const ELEMENTS = [
     status: 'current',
     tags: ['core', 'backend'],
     parentId: null,
+    icon: null,
   },
 ]
 
@@ -34,6 +35,7 @@ const RELATIONSHIPS = [
     toId: 'e2',
     label: 'Places orders',
     technology: 'HTTPS',
+    lineShape: null,
   },
 ]
 

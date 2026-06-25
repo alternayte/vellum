@@ -6,6 +6,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { kindColor } from '@/lib/kind-colors'
+import { ARCHITECTURE_ICONS, defaultIconForKind } from '@/lib/default-icons'
 import { DiffDetail } from '@/components/review/diff-detail'
 import { ConflictResolver } from '@/components/review/conflict-resolver'
 import { CommentList } from '@/components/comments/comment-list'
@@ -21,6 +22,7 @@ interface ElementData {
   status: string
   tags: string[]
   parentId: string | null
+  icon: string | null
 }
 
 interface RelationshipData {
@@ -286,6 +288,27 @@ export function DetailPanel({
                     <option value="planned">Planned</option>
                     <option value="deprecated">Deprecated</option>
                   </select>
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs text-muted-foreground">Icon</label>
+                  <div className="grid grid-cols-6 gap-1">
+                    {ARCHITECTURE_ICONS.map((entry) => {
+                      const Icon = entry.icon
+                      const isActive = (selectedElement.icon ?? defaultIconForKind(selectedElement.kind)) === entry.name
+                      return (
+                        <button
+                          key={entry.name}
+                          className={`flex h-8 w-8 items-center justify-center rounded border text-muted-foreground hover:bg-accent ${
+                            isActive ? 'border-primary bg-accent text-foreground' : 'border-transparent'
+                          }`}
+                          title={entry.name}
+                          onClick={() => onUpdateElement?.(selectedElement.id, { icon: entry.name })}
+                        >
+                          <Icon className="h-4 w-4" />
+                        </button>
+                      )
+                    })}
+                  </div>
                 </div>
                 <div>
                   <label className="mb-1 block text-xs text-muted-foreground">Tags</label>
