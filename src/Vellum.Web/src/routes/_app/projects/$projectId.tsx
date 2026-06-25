@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createFileRoute } from '@tanstack/react-router'
 import { TopBar } from '@/components/shell/top-bar'
-import { Navigator } from '@/components/shell/navigator'
 import { DetailPanel } from '@/components/shell/detail-panel'
-import { LensBar } from '@/components/shell/lens-bar'
+import { LeftToolbar } from '@/components/shell/left-toolbar'
+import { StatusBar } from '@/components/shell/status-bar'
+import { FilesFlyout } from '@/components/shell/files-flyout'
+import { CatalogFlyout } from '@/components/shell/catalog-flyout'
+import { CreateFlyout } from '@/components/shell/create-flyout'
 import { ReviewBar } from '@/components/review/review-bar'
 import { CanvasView } from '@/components/canvas/canvas-view'
 import { DocEditor } from '@/components/docs/doc-editor'
@@ -11,7 +14,8 @@ import { CommandPalette } from '@/components/command-palette/command-palette'
 import { useElements, useAddElement, useUpdateElement, useRemoveElement } from '@/hooks/use-elements'
 import { useRelationships, useAddRelationship, useUpdateRelationship, useRemoveRelationship } from '@/hooks/use-relationships'
 import { useViews, useView, useCreateView, useSaveLayout } from '@/hooks/use-views'
-import { useDocs } from '@/hooks/use-docs'
+import { useDocs, useCreateDoc } from '@/hooks/use-docs'
+import { patchApiProjectsByProjectIdDocsByDocId } from '@/api/generated'
 import { useSpaces } from '@/hooks/use-spaces'
 import { useMessages } from '@/hooks/use-messages'
 import { useSchemas } from '@/hooks/use-schemas'
@@ -48,6 +52,8 @@ function ProjectWorkspace() {
   const { data: schemas } = useSchemas(projectId)
   const { data: views } = useViews(projectId)
   const { data: docs } = useDocs(projectId)
+  const projectName = 'Project'
+  const createDoc = useCreateDoc(projectId)
   const { data: spaces } = useSpaces(projectId)
   const { activeViewId, activeDocId } = useShellStore()
   const { data: activeView } = useView(projectId, activeViewId)
@@ -427,6 +433,35 @@ function ProjectWorkspace() {
     })
   }, [elements, activeView, addElement, removeElement, saveLayout])
 
+  const handleCreateDiagram = useCallback((name: string) => {
+    const id = crypto.randomUUID()
+    createView.mutate({ id, name }, {
+      onSuccess: () => useShellStore.getState().setActiveView(id),
+    })
+  }, [createView])
+
+  const handleCreateDoc = useCallback((title: string, content: string, type?: string) => {
+    const id = crypto.randomUUID()
+    const draftId = useDraftStore.getState().activeDraftId
+    createDoc.mutate(
+      { id, title, draftId: draftId ?? undefined, type },
+      {
+        onSuccess: () => {
+          if (content) {
+            patchApiProjectsByProjectIdDocsByDocId({
+              path: { projectId, docId: id },
+              body: { title: null, content, spaceId: null, elementId: null, setSpaceId: false, setElementId: false },
+            }).finally(() => {
+              useShellStore.getState().openDoc(id)
+            })
+          } else {
+            useShellStore.getState().openDoc(id)
+          }
+        },
+      },
+    )
+  }, [projectId, createDoc])
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       const meta = e.metaKey || e.ctrlKey
@@ -507,6 +542,15 @@ function ProjectWorkspace() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [elements, relationships, handleShortcutCreate, handleSmartDuplicate])
 
+  const activeFlyout = useShellStore((s) => s.activeFlyout)
+
+  useEffect(() => {
+    if (activeFlyout === 'search') {
+      useShellStore.getState().closeFlyout()
+      useShellStore.getState().toggleCommandPalette()
+    }
+  }, [activeFlyout])
+
   if (elementsLoading || relsLoading) {
     return (
       <div className="flex h-screen flex-col">
@@ -530,15 +574,29 @@ function ProjectWorkspace() {
 
   return (
     <div className="flex h-screen flex-col">
-      <TopBar projectId={projectId} activeDoc={activeDocForBreadcrumb} />
+      <TopBar projectId={projectId} projectName={projectName} activeDoc={activeDocForBreadcrumb} />
       <div className="flex flex-1 overflow-hidden">
-        <Navigator
-          projectId={projectId}
-          elements={elements ?? []}
-          views={views ?? []}
-          spaces={spaces ?? []}
-          docs={(docs ?? []).map((d) => ({ id: d.id, title: d.title, spaceId: d.spaceId, type: d.type ?? null }))}
-        />
+        <LeftToolbar>
+          {activeFlyout === 'files' && (
+            <FilesFlyout
+              views={views ?? []}
+              docs={(docs ?? []).map((d) => ({ id: d.id, title: d.title, type: d.type ?? null }))}
+            />
+          )}
+          {activeFlyout === 'catalog' && (
+            <CatalogFlyout
+              elements={(elements ?? []).map((e) => ({ id: e.id, kind: e.kind }))}
+              onAddElement={handleAddElementAtPosition}
+            />
+          )}
+          {activeFlyout === 'create' && (
+            <CreateFlyout
+              onCreateDiagram={handleCreateDiagram}
+              onCreateDoc={handleCreateDoc}
+            />
+          )}
+          {activeFlyout === 'search' && null /* ⌘K handles search for now */}
+        </LeftToolbar>
         <main className="relative flex-1">
           {activeDraftId && !isReviewMode && !activeDocId && (
             <div className="absolute right-3 top-3 z-10">
@@ -611,10 +669,12 @@ function ProjectWorkspace() {
           onDeleteRelationship={(id) => removeRelationship.mutate(id)}
         />
       </div>
-      {isReviewMode ? (
-        <ReviewBar projectId={projectId} />
-      ) : (
-        <LensBar onTidy={handleTidy} onZoomToFit={() => fitViewRef.current?.()} />
+      {activeDocId ? null : (
+        isReviewMode ? (
+          <ReviewBar projectId={projectId} />
+        ) : (
+          <StatusBar onTidy={handleTidy} onZoomToFit={() => fitViewRef.current?.()} />
+        )
       )}
       <CommandPalette
         elements={elements ?? []}

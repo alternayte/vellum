@@ -9,7 +9,7 @@ vi.mock('@tanstack/react-router', () => ({
 }))
 
 vi.mock('../../../src/hooks/use-auth', () => ({
-  useAuth: () => ({ logout: vi.fn() }),
+  useAuth: () => ({ logout: vi.fn(), user: null }),
 }))
 
 beforeEach(() => {
@@ -18,15 +18,14 @@ beforeEach(() => {
 })
 
 describe('TopBar', () => {
-  it('renders the Vellum logo text', () => {
+  it('renders the home/hamburger button', () => {
     render(<TopBar />)
-    expect(screen.getByText('Vellum')).toBeTruthy()
+    expect(screen.getByLabelText('Home')).toBeTruthy()
   })
 
-  it('renders workspace and project selectors', () => {
-    render(<TopBar />)
-    expect(screen.getByText(/Workspace/)).toBeTruthy()
-    expect(screen.getByText(/Project/)).toBeTruthy()
+  it('renders project name when provided', () => {
+    render(<TopBar projectName="My Project" />)
+    expect(screen.getByText('My Project')).toBeTruthy()
   })
 
   it('renders the search button with keyboard shortcut', () => {
@@ -46,8 +45,8 @@ describe('TopBar', () => {
     expect(screen.getByText('Context')).toBeTruthy()
   })
 
-  it('renders the logout button', () => {
+  it('renders the avatar/logout button', () => {
     render(<TopBar />)
-    expect(screen.getByText('Log out')).toBeTruthy()
+    expect(screen.getByTitle('Log out')).toBeTruthy()
   })
 })
