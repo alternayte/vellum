@@ -1,4 +1,4 @@
-import { memo } from 'react'
+import { memo, useCallback, useRef, useState } from 'react'
 import { Handle, Position, type Node, type NodeProps } from '@xyflow/react'
 import { kindColor } from '@/lib/kind-colors'
 import { useCanvasStore } from '@/stores/canvas-store'
@@ -15,6 +15,7 @@ export interface C4ElementData extends Record<string, unknown> {
   tags: string[]
   ownerId: string | null
   diffState?: DiffState
+  onRename?: (newName: string) => void
 }
 
 export type C4ElementNodeType = Node<C4ElementData, 'c4-element'>
@@ -37,6 +38,42 @@ const KIND_WIDTHS: Record<string, number> = {
 export const C4ElementNode = memo(function C4ElementNode({ data }: NodeProps<C4ElementNodeType>) {
   const d = data
   const activeLens = useCanvasStore((s) => s.activeLens)
+  const [isEditing, setIsEditing] = useState(false)
+  const [editValue, setEditValue] = useState(d.name)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  const commitEdit = useCallback(() => {
+    const trimmed = editValue.trim()
+    if (trimmed && trimmed !== d.name) {
+      d.onRename?.(trimmed)
+    }
+    setIsEditing(false)
+    setEditValue(d.name)
+  }, [editValue, d])
+
+  const cancelEdit = useCallback(() => {
+    setIsEditing(false)
+    setEditValue(d.name)
+  }, [d.name])
+
+  const handleNameDoubleClick = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (!d.onRename) return
+    setEditValue(d.name)
+    setIsEditing(true)
+    setTimeout(() => inputRef.current?.select(), 0)
+  }, [d.name, d.onRename])
+
+  const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      e.preventDefault()
+      commitEdit()
+    } else if (e.key === 'Escape') {
+      e.preventDefault()
+      cancelEdit()
+    }
+  }, [commitEdit, cancelEdit])
+
   const showMetadata = activeLens === 'metadata'
   const showStatus = activeLens === 'status'
 
@@ -76,9 +113,24 @@ export const C4ElementNode = memo(function C4ElementNode({ data }: NodeProps<C4E
 
       <div className="p-3">
         <div className="flex items-center justify-between">
-          <span className="font-display text-sm font-medium text-foreground">
-            {d.name}
-          </span>
+          {isEditing ? (
+            <input
+              ref={inputRef}
+              className="font-display w-full min-w-0 bg-transparent text-sm font-medium text-foreground outline-none ring-1 ring-primary rounded px-1 -mx-1"
+              value={editValue}
+              onChange={(e) => setEditValue(e.target.value)}
+              onKeyDown={handleKeyDown}
+              onBlur={commitEdit}
+              autoFocus
+            />
+          ) : (
+            <span
+              className="font-display text-sm font-medium text-foreground cursor-text"
+              onDoubleClick={handleNameDoubleClick}
+            >
+              {d.name}
+            </span>
+          )}
           <div className="flex items-center gap-1">
             {diff === 'conflict' && (
               <span className="text-[12px]" title="Conflict">⚠</span>
