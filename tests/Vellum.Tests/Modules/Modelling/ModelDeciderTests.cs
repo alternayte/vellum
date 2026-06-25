@@ -395,6 +395,29 @@ public class ModelDeciderTests
         Assert.Empty(success.Value);
     }
 
+    // --- UpdateElement icon ---
+
+    [Fact]
+    public void UpdateElement_sets_icon()
+    {
+        var state = StateWithSystemAndApp();
+        var result = ModelDecider.UpdateElement(state,
+            new UpdateElementCommand(SystemId, Icon: "server", SetIcon: true));
+        var success = Assert.IsType<CommandResult<IReadOnlyList<ModelEvent>>.Success>(result);
+        var changed = Assert.IsType<ModelEvent.ElementIconChanged>(Assert.Single(success.Value));
+        Assert.Equal("server", changed.Icon);
+    }
+
+    [Fact]
+    public void UpdateElement_icon_unchanged_emits_nothing()
+    {
+        var state = StateWithSystemAndApp();
+        var result = ModelDecider.UpdateElement(state,
+            new UpdateElementCommand(SystemId, Icon: null, SetIcon: false));
+        var success = Assert.IsType<CommandResult<IReadOnlyList<ModelEvent>>.Success>(result);
+        Assert.Empty(success.Value);
+    }
+
     // --- AddRelationship ---
 
     [Fact]

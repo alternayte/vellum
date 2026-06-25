@@ -400,6 +400,7 @@ public static class ExecuteMerge
         if (current.Status != target.Status) events.Add(new ModelEvent.ElementStatusChanged(id, target.Status));
         if (current.ParentId != target.ParentId) events.Add(new ModelEvent.ElementReparented(id, target.ParentId));
         if (!current.Tags.SequenceEqual(target.Tags)) events.Add(new ModelEvent.ElementRetagged(id, target.Tags));
+        if (current.Icon != target.Icon) events.Add(new ModelEvent.ElementIconChanged(id, target.Icon));
 
         return events;
     }

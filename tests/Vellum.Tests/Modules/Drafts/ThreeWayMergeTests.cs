@@ -11,7 +11,7 @@ public class ThreeWayMergeTests
     private static readonly Guid Id3 = Guid.Parse("00000000-0000-0000-0000-000000000003");
 
     private static ElementState El(Guid id, string name, string? tech = null, ElementStatus status = ElementStatus.Current) =>
-        new(id, ElementKind.System, name, null, tech, null, status, null, []);
+        new(id, ElementKind.System, name, null, tech, null, status, null, [], Icon: null);
 
     private static RelationshipState Rel(Guid id, Guid from, Guid to, string? label = null) =>
         new(id, from, to, label, null, null, null);
@@ -152,7 +152,7 @@ public class ThreeWayMergeTests
     {
         var parent = El(Id1, "Parent");
         var child = new ElementState(Id2, ElementKind.App, "Child", null, null, null,
-            ElementStatus.Current, Id1, []);
+            ElementStatus.Current, Id1, [], Icon: null);
         var baseState = State([parent, child]);
         var ours = State([child]); // parent deleted on ours
         var theirs = State([parent, child with { Name = "Updated Child" }]); // child modified on theirs

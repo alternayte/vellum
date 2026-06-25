@@ -67,6 +67,6 @@ public sealed class AddElementHandler : ICommandHandler<AddElementCommandEnvelop
         return new CommandResult<ElementDto>.Success(new ElementDto(
             element.Id, element.Kind.ToString().ToLowerInvariant(), element.Name,
             element.Description, element.Technology, element.OwnerId,
-            element.Status.ToString().ToLowerInvariant(), element.ParentId, element.Tags));
+            element.Status.ToString().ToLowerInvariant(), element.ParentId, element.Tags, element.Icon));
     }
 }

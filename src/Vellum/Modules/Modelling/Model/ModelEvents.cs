@@ -18,6 +18,7 @@ public abstract record ModelEvent
     public sealed record ElementReparented(Guid ElementId, Guid? ParentId) : ModelEvent;
     public sealed record ElementStatusChanged(Guid ElementId, ElementStatus Status) : ModelEvent;
     public sealed record ElementRetagged(Guid ElementId, string[] Tags) : ModelEvent;
+    public sealed record ElementIconChanged(Guid ElementId, string? Icon) : ModelEvent;
     public sealed record ElementRemoved(Guid ElementId) : ModelEvent;
 
     // Relationship events
