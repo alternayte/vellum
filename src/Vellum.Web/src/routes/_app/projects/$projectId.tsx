@@ -18,6 +18,7 @@ import { useSchemas } from '@/hooks/use-schemas'
 import { useShellStore } from '@/stores/shell-store'
 import { useCanvasStore } from '@/stores/canvas-store'
 import { useDraftStore } from '@/stores/draft-store'
+import { useUndoStore } from '@/stores/undo-store'
 import type { DiffState } from '@/stores/draft-store'
 import { useMergePreview } from '@/hooks/use-merge'
 import { computeLayout } from '@/lib/layout'
@@ -94,11 +95,11 @@ function ProjectWorkspace() {
 
   const handleCreateElement = (name: string, kind: string) => {
     const { currentRootId } = useCanvasStore.getState()
-    addElement.mutate({
-      id: crypto.randomUUID(),
-      kind,
-      name,
-      parentId: currentRootId ?? undefined,
+    const id = crypto.randomUUID()
+    useUndoStore.getState().execute({
+      label: `Add ${kind}`,
+      execute: () => addElement.mutate({ id, kind, name, parentId: currentRootId ?? undefined }),
+      undo: () => removeElement.mutate(id),
     })
   }
 
@@ -110,26 +111,51 @@ function ProjectWorkspace() {
   }
 
   const handleConnect = (source: string, target: string) => {
-    addRelationship.mutate({
-      id: crypto.randomUUID(),
-      fromId: source,
-      toId: target,
+    const id = crypto.randomUUID()
+    useUndoStore.getState().execute({
+      label: 'Add relationship',
+      execute: () => addRelationship.mutate({ id, fromId: source, toId: target }),
+      undo: () => removeRelationship.mutate(id),
     })
   }
 
   const handleBulkDelete = (ids: string[]) => {
     if (ids.length > 3 && !window.confirm(`Delete ${ids.length} elements?`)) return
-    ids.forEach((id) => removeElement.mutate(id))
+    const snapshots = ids
+      .map((id) => elements?.find((e) => e.id === id))
+      .filter((el): el is NonNullable<typeof el> => el != null)
+
+    useUndoStore.getState().execute({
+      label: `Delete ${ids.length} elements`,
+      execute: () => ids.forEach((id) => removeElement.mutate(id)),
+      undo: () => snapshots.forEach((el) =>
+        addElement.mutate({
+          id: el.id,
+          kind: el.kind,
+          name: el.name,
+          description: el.description ?? undefined,
+          technology: el.technology ?? undefined,
+          parentId: el.parentId ?? undefined,
+          status: el.status,
+          tags: el.tags,
+        }),
+      ),
+    })
   }
 
   const handleDuplicateElement = (id: string) => {
     const el = elements?.find((e) => e.id === id)
     if (!el) return
-    addElement.mutate({
-      id: crypto.randomUUID(),
-      kind: el.kind,
-      name: `${el.name} (copy)`,
-      parentId: el.parentId ?? undefined,
+    const newId = crypto.randomUUID()
+    useUndoStore.getState().execute({
+      label: `Duplicate ${el.name}`,
+      execute: () => addElement.mutate({
+        id: newId,
+        kind: el.kind,
+        name: `${el.name} (copy)`,
+        parentId: el.parentId ?? undefined,
+      }),
+      undo: () => removeElement.mutate(newId),
     })
   }
 
@@ -148,34 +174,78 @@ function ProjectWorkspace() {
   }
 
   const handleDeleteRelationship = (id: string) => {
-    if (window.confirm('Delete this relationship?')) {
-      removeRelationship.mutate(id)
-    }
+    const rel = relationships?.find((r) => r.id === id)
+    if (!rel) return
+    if (!window.confirm('Delete this relationship?')) return
+
+    useUndoStore.getState().execute({
+      label: 'Delete relationship',
+      execute: () => removeRelationship.mutate(id),
+      undo: () => addRelationship.mutate({
+        id: rel.id,
+        fromId: rel.fromId,
+        toId: rel.toId,
+        label: rel.label ?? undefined,
+        technology: rel.technology ?? undefined,
+      }),
+    })
   }
 
   const handleDeleteElement = (id: string) => {
     const el = elements?.find((e) => e.id === id)
-    if (el && window.confirm(`Delete "${el.name}"?`)) {
-      removeElement.mutate(id)
-    }
+    if (!el) return
+    if (!window.confirm(`Delete "${el.name}"?`)) return
+
+    useUndoStore.getState().execute({
+      label: `Delete ${el.name}`,
+      execute: () => removeElement.mutate(id),
+      undo: () => addElement.mutate({
+        id: el.id,
+        kind: el.kind,
+        name: el.name,
+        description: el.description ?? undefined,
+        technology: el.technology ?? undefined,
+        parentId: el.parentId ?? undefined,
+        status: el.status,
+        tags: el.tags,
+      }),
+    })
   }
 
   const handleAddElementAtPosition = (kind: string) => {
     const { currentRootId } = useCanvasStore.getState()
-    addElement.mutate({
-      id: crypto.randomUUID(),
-      kind,
-      name: `New ${kind}`,
-      parentId: currentRootId ?? undefined,
+    const id = crypto.randomUUID()
+    useUndoStore.getState().execute({
+      label: `Add ${kind}`,
+      execute: () => addElement.mutate({
+        id,
+        kind,
+        name: `New ${kind}`,
+        parentId: currentRootId ?? undefined,
+      }),
+      undo: () => removeElement.mutate(id),
     })
   }
 
   const handleNodeDragStop = (id: string, x: number, y: number) => {
     const current = activeView?.positions ?? []
-    const updated = current.some((p) => p.elementId === id)
-      ? current.map((p) => (p.elementId === id ? { ...p, x, y } : p))
-      : [...current, { elementId: id, x, y }]
-    saveLayout(updated)
+    const oldPos = current.find((p) => p.elementId === id)
+    const oldX = oldPos?.x ?? 0
+    const oldY = oldPos?.y ?? 0
+
+    const applyPosition = (px: number, py: number) => {
+      const positions = activeView?.positions ?? []
+      const updated = positions.some((p) => p.elementId === id)
+        ? positions.map((p) => (p.elementId === id ? { ...p, x: px, y: py } : p))
+        : [...positions, { elementId: id, x: px, y: py }]
+      saveLayout(updated)
+    }
+
+    useUndoStore.getState().execute({
+      label: 'Move element',
+      execute: () => applyPosition(x, y),
+      undo: () => applyPosition(oldX, oldY),
+    })
   }
 
   useEffect(() => {
@@ -184,6 +254,16 @@ function ProjectWorkspace() {
       const target = e.target as HTMLElement | null
       const inInput = target?.closest?.('input, textarea, select, [contenteditable="true"]')
 
+      if (meta && e.key === 'z' && !e.shiftKey && !inInput) {
+        e.preventDefault()
+        useUndoStore.getState().undo()
+        return
+      }
+      if (meta && e.key === 'z' && e.shiftKey && !inInput) {
+        e.preventDefault()
+        useUndoStore.getState().redo()
+        return
+      }
       if (meta && e.key === 'k') {
         e.preventDefault()
         useShellStore.getState().toggleCommandPalette()
