@@ -248,6 +248,17 @@ function ProjectWorkspace() {
     })
   }
 
+  const handleRenameElement = (id: string, newName: string) => {
+    const el = elements?.find((e) => e.id === id)
+    if (!el) return
+    const oldName = el.name
+    useUndoStore.getState().execute({
+      label: `Rename to "${newName}"`,
+      execute: () => updateElement.mutate({ id, name: newName }),
+      undo: () => updateElement.mutate({ id, name: oldName }),
+    })
+  }
+
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       const meta = e.metaKey || e.ctrlKey
@@ -365,6 +376,7 @@ function ProjectWorkspace() {
               onDeleteRelationship={handleDeleteRelationship}
               onAddElementAtPosition={handleAddElementAtPosition}
               onTidy={handleTidy}
+              onRenameElement={handleRenameElement}
               onNodeDoubleClick={(elementId) => {
                 const el = elements?.find((e) => e.id === elementId)
                 if (!el) return

@@ -83,6 +83,7 @@ interface CanvasViewProps {
   onDeleteRelationship?: (id: string) => void
   onAddElementAtPosition?: (kind: string) => void
   onTidy?: () => void
+  onRenameElement?: (id: string, newName: string) => void
 }
 
 export function CanvasView(props: CanvasViewProps) {
@@ -118,6 +119,7 @@ function CanvasViewInner({
   onDeleteRelationship,
   onAddElementAtPosition,
   onTidy,
+  onRenameElement,
 }: CanvasViewProps) {
   const { currentRootId, zoomLevel, setZoom, activeLens, expandedNodeIds, toggleExpand } = useCanvasStore()
   const { fitView } = useReactFlow()
@@ -210,6 +212,7 @@ function CanvasViewInner({
               tags: child.tags,
               ownerId: child.ownerId,
               diffState: childDiffState,
+              onRename: onRenameElement ? (newName: string) => onRenameElement(child.id, newName) : undefined,
             } satisfies C4ElementData,
           })
         })
@@ -229,13 +232,14 @@ function CanvasViewInner({
             tags: el.tags,
             ownerId: el.ownerId,
             diffState: entityDiffState,
+            onRename: onRenameElement ? (newName: string) => onRenameElement(el.id, newName) : undefined,
           } satisfies C4ElementData,
         })
       }
     }
 
     return result
-  }, [visibleElements, elements, positionMap, tier, diffStateMap, isReviewMode, expandedNodeIds])
+  }, [visibleElements, elements, positionMap, tier, diffStateMap, isReviewMode, expandedNodeIds, onRenameElement])
 
   const edges: Edge[] = useMemo(() => {
     // Count parallel edges between each pair of nodes (ignoring direction)
