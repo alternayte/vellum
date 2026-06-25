@@ -8,7 +8,9 @@ namespace Vellum.Modules.Modelling.Elements;
 public sealed record UpdateElementRequest(
     string? Name, string? Description, string? Technology,
     Guid? OwnerId, Guid? ParentId, string? Status, string[]? Tags,
-    bool SetDescription = false, bool SetTechnology = false, bool SetOwnerId = false, bool SetParentId = false);
+    string? Icon,
+    bool SetDescription = false, bool SetTechnology = false,
+    bool SetOwnerId = false, bool SetParentId = false, bool SetIcon = false);
 
 public sealed record UpdateElementCommandEnvelope(
     Guid ProjectId, Guid StreamId, Guid ElementId, string UserId, UpdateElementRequest Request);
@@ -44,7 +46,8 @@ public sealed class UpdateElementHandler : ICommandHandler<UpdateElementCommandE
             OwnerId: cmd.Request.OwnerId, SetOwnerId: cmd.Request.SetOwnerId,
             ParentId: cmd.Request.ParentId, SetParentId: cmd.Request.SetParentId,
             Status: status,
-            Tags: cmd.Request.Tags);
+            Tags: cmd.Request.Tags,
+            Icon: cmd.Request.Icon, SetIcon: cmd.Request.SetIcon || cmd.Request.Icon is not null);
 
         var result = ModelDecider.UpdateElement(state, updateCmd);
         if (result is not CommandResult<IReadOnlyList<ModelEvent>>.Success success)
@@ -70,6 +73,6 @@ public sealed class UpdateElementHandler : ICommandHandler<UpdateElementCommandE
         return new CommandResult<ElementDto>.Success(new ElementDto(
             element.Id, element.Kind.ToString().ToLowerInvariant(), element.Name,
             element.Description, element.Technology, element.OwnerId,
-            element.Status.ToString().ToLowerInvariant(), element.ParentId, element.Tags));
+            element.Status.ToString().ToLowerInvariant(), element.ParentId, element.Tags, element.Icon));
     }
 }

@@ -13,4 +13,5 @@ public class ElementEntity
     public string Status { get; set; } = "current";
     public Guid? ParentId { get; set; }
     public string[] Tags { get; set; } = [];
+    public string? Icon { get; set; }
 }

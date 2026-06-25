@@ -38,6 +38,10 @@ namespace Vellum.Modules.Modelling.Migrations
                         .HasColumnType("text")
                         .HasColumnName("description");
 
+                    b.Property<string>("Icon")
+                        .HasColumnType("text")
+                        .HasColumnName("icon");
+
                     b.Property<string>("Kind")
                         .IsRequired()
                         .HasColumnType("text")

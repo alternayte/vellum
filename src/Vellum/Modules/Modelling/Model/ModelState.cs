@@ -6,7 +6,7 @@ namespace Vellum.Modules.Modelling.Model;
 public sealed record ElementState(
     Guid Id, ElementKind Kind, string Name, string? Description,
     string? Technology, Guid? OwnerId, ElementStatus Status,
-    Guid? ParentId, string[] Tags);
+    Guid? ParentId, string[] Tags, string? Icon);
 
 public sealed record RelationshipState(
     Guid Id, Guid FromId, Guid ToId, string? Label,
@@ -34,7 +34,7 @@ public sealed record ModelState(
         {
             Elements = Elements.Add(e.Id, new ElementState(
                 e.Id, e.Kind, e.Name, e.Description, e.Technology,
-                e.OwnerId, e.Status, e.ParentId, e.Tags))
+                e.OwnerId, e.Status, e.ParentId, e.Tags, Icon: null))
         },
         ModelEvent.ElementRenamed e => WithElement(e.ElementId, el => el with { Name = e.Name }),
         ModelEvent.ElementDescriptionChanged e => WithElement(e.ElementId, el => el with { Description = e.Description }),
@@ -43,6 +43,7 @@ public sealed record ModelState(
         ModelEvent.ElementReparented e => WithElement(e.ElementId, el => el with { ParentId = e.ParentId }),
         ModelEvent.ElementStatusChanged e => WithElement(e.ElementId, el => el with { Status = e.Status }),
         ModelEvent.ElementRetagged e => WithElement(e.ElementId, el => el with { Tags = e.Tags }),
+        ModelEvent.ElementIconChanged e => WithElement(e.ElementId, el => el with { Icon = e.Icon }),
         ModelEvent.ElementRemoved e => this with { Elements = Elements.Remove(e.ElementId) },
 
         ModelEvent.RelationshipAdded e => this with

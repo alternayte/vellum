@@ -15,7 +15,8 @@ public sealed record UpdateElementCommand(
     Guid? OwnerId = null, bool SetOwnerId = false,
     Guid? ParentId = null, bool SetParentId = false,
     ElementStatus? Status = null,
-    string[]? Tags = null);
+    string[]? Tags = null,
+    string? Icon = null, bool SetIcon = false);
 
 public sealed record AddRelationshipCommand(
     Guid Id, Guid FromId, Guid ToId, string? Label, string? Technology);
@@ -104,6 +105,9 @@ public static class ModelDecider
 
         if (cmd.Tags is not null && !cmd.Tags.SequenceEqual(element.Tags))
             events.Add(new ModelEvent.ElementRetagged(cmd.ElementId, cmd.Tags));
+
+        if (cmd.SetIcon && cmd.Icon != element.Icon)
+            events.Add(new ModelEvent.ElementIconChanged(cmd.ElementId, cmd.Icon));
 
         return new CommandResult<IReadOnlyList<ModelEvent>>.Success(events);
     }

@@ -46,7 +46,8 @@ public sealed class ModelProjection : IInlineProjection
                         OwnerId = added.OwnerId,
                         Status = added.Status.ToString().ToLowerInvariant(),
                         ParentId = added.ParentId,
-                        Tags = added.Tags
+                        Tags = added.Tags,
+                        Icon = null
                     });
                     break;
 
@@ -83,6 +84,11 @@ public sealed class ModelProjection : IInlineProjection
                 case ModelEvent.ElementRetagged retagged:
                     var retaggedEntity = await _db.Elements.FindAsync([retagged.ElementId], ct);
                     if (retaggedEntity is not null) retaggedEntity.Tags = retagged.Tags;
+                    break;
+
+                case ModelEvent.ElementIconChanged iconChanged:
+                    var iconEntity = await _db.Elements.FindAsync([iconChanged.ElementId], ct);
+                    if (iconEntity is not null) iconEntity.Icon = iconChanged.Icon;
                     break;
 
                 case ModelEvent.ElementRemoved removed:

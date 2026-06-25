@@ -32,7 +32,7 @@ public static class ListElements
             .OrderBy(e => e.Name).ThenBy(e => e.Id)
             .Take(pageSize + 1)
             .Select(e => new ElementDto(e.Id, e.Kind, e.Name, e.Description,
-                e.Technology, e.OwnerId, e.Status, e.ParentId, e.Tags))
+                e.Technology, e.OwnerId, e.Status, e.ParentId, e.Tags, e.Icon))
             .ToListAsync(ct);
 
         string? nextCursor = null;

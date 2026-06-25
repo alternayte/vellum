@@ -17,6 +17,6 @@ public static class GetElement
         return Results.Ok(new ElementDto(
             entity.Id, entity.Kind, entity.Name, entity.Description,
             entity.Technology, entity.OwnerId, entity.Status,
-            entity.ParentId, entity.Tags));
+            entity.ParentId, entity.Tags, entity.Icon));
     }
 }
