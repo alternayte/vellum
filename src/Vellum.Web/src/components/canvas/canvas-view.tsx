@@ -12,6 +12,8 @@ import {
   MarkerType,
   useReactFlow,
   SelectionMode,
+  useNodesState,
+  useEdgesState,
 } from '@xyflow/react'
 import { NodeContextMenu } from './context-menus/node-context-menu'
 import { EdgeContextMenu } from './context-menus/edge-context-menu'
@@ -241,7 +243,7 @@ function CanvasViewInner({
       source: rel.fromId,
       target: rel.toId,
       type: 'c4-edge',
-      markerEnd: { type: MarkerType.ArrowClosed, color: 'var(--border)' },
+      markerEnd: { type: MarkerType.ArrowClosed, color: 'hsl(var(--muted-foreground))' },
       data: {
         label: rel.label,
         technology: rel.technology,
@@ -286,7 +288,7 @@ function CanvasViewInner({
           source: msg.producerId,
           target: `msg-${msg.id}`,
           type: 'c4-edge',
-          markerEnd: { type: MarkerType.ArrowClosed, color: 'var(--border)' },
+          markerEnd: { type: MarkerType.ArrowClosed, color: 'hsl(var(--muted-foreground))' },
           data: { label: null, technology: null },
         }
         const consumerEdges: Edge[] = msg.consumerIds
@@ -296,15 +298,36 @@ function CanvasViewInner({
             source: `msg-${msg.id}`,
             target: cid,
             type: 'c4-edge',
-            markerEnd: { type: MarkerType.ArrowClosed, color: 'var(--border)' },
+            markerEnd: { type: MarkerType.ArrowClosed, color: 'hsl(var(--muted-foreground))' },
             data: { label: null, technology: null },
           }))
         return [producerEdge, ...consumerEdges]
       })
   }, [activeLens, messages, visibleIds])
 
-  const allNodes = useMemo(() => [...nodes, ...messageNodes], [nodes, messageNodes])
-  const allEdges = useMemo(() => [...edges, ...messageEdges], [edges, messageEdges])
+  // Derive the combined node/edge arrays from domain data (same as before)
+  const derivedNodes = useMemo(() => [...nodes, ...messageNodes], [nodes, messageNodes])
+  const derivedEdges = useMemo(() => [...edges, ...messageEdges], [edges, messageEdges])
+
+  // Local state that React Flow controls — synced from derived data,
+  // but RF can update positions during drag without waiting for server round-trip
+  const [rfNodes, setRfNodes, onNodesChange] = useNodesState(derivedNodes)
+  const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState(derivedEdges)
+
+  // Sync derived data → local RF state when domain model changes.
+  // Use a stable fingerprint so drag-in-progress isn't interrupted by re-renders.
+  const derivedNodeIds = useMemo(() => derivedNodes.map((n) => n.id).join(','), [derivedNodes])
+  const derivedEdgeIds = useMemo(() => derivedEdges.map((e) => e.id).join(','), [derivedEdges])
+
+  useEffect(() => {
+    setRfNodes(derivedNodes)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [derivedNodeIds, setRfNodes])
+
+  useEffect(() => {
+    setRfEdges(derivedEdges)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [derivedEdgeIds, setRfEdges])
 
   const handleNodeClick: NodeMouseHandler = useCallback(
     (_event, node) => {
@@ -398,8 +421,10 @@ function CanvasViewInner({
   return (
     <>
       <ReactFlow
-        nodes={allNodes}
-        edges={allEdges}
+        nodes={rfNodes}
+        edges={rfEdges}
+        onNodesChange={onNodesChange}
+        onEdgesChange={onEdgesChange}
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         onNodeClick={handleNodeClick}
@@ -413,20 +438,20 @@ function CanvasViewInner({
         onNodeContextMenu={handleNodeContextMenu}
         onEdgeContextMenu={handleEdgeContextMenu}
         onPaneContextMenu={handlePaneContextMenu}
-        selectionOnDrag
         selectionMode={SelectionMode.Partial}
+        selectionKeyCode="Shift"
         multiSelectionKeyCode="Shift"
-        panOnDrag={[1, 2]}
+        panOnDrag
         fitView
         snapToGrid
         snapGrid={[16, 16]}
         minZoom={0.1}
         maxZoom={3}
       >
-        <Background variant={BackgroundVariant.Dots} gap={16} size={1} color="var(--border)" />
+        <Background variant={BackgroundVariant.Dots} gap={16} size={1} color="hsl(var(--border))" />
         <MiniMap
-          nodeColor="var(--card)"
-          maskColor="color-mix(in srgb, var(--background) 80%, transparent)"
+          nodeColor="hsl(var(--card))"
+          maskColor="hsl(var(--background) / 0.8)"
           className="!bg-card !border-border"
         />
         <BulkActionsToolbar
