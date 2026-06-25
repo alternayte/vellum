@@ -13,6 +13,7 @@ export interface Relationship {
   toId: string
   label: string | null
   technology: string | null
+  lineShape: string | null
 }
 
 interface Page<T> {
@@ -66,7 +67,7 @@ export function useAddRelationship(projectId: string, branchId?: string | null) 
         cacheKey,
         (old) => [
           ...(old ?? []),
-          { ...newRel, label: newRel.label ?? null, technology: newRel.technology ?? null },
+          { ...newRel, label: newRel.label ?? null, technology: newRel.technology ?? null, lineShape: null },
         ],
       )
       return { previous }
@@ -92,8 +93,10 @@ export function useUpdateRelationship(projectId: string, branchId?: string | nul
         body: {
           label: fields.label ?? null,
           technology: fields.technology ?? null,
+          lineShape: fields.lineShape ?? null,
           setLabel: 'label' in fields,
           setTechnology: 'technology' in fields,
+          setLineShape: 'lineShape' in fields,
         },
         query: { branchId: branchId ?? undefined } as never,
       })

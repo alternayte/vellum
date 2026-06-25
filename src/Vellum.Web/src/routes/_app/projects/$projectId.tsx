@@ -562,6 +562,7 @@ function ProjectWorkspace() {
               onDeleteElement={handleDeleteElement}
               onReverseRelationship={handleReverseRelationship}
               onDeleteRelationship={handleDeleteRelationship}
+              onUpdateRelationship={(id, fields) => updateRelationship.mutate({ id, ...fields })}
               onAddElementAtPosition={handleAddElementAtPosition}
               onTidy={handleTidy}
               onRenameElement={handleRenameElement}

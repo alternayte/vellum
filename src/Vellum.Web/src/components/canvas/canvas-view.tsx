@@ -50,6 +50,7 @@ interface RelationshipModel {
   toId: string
   label: string | null
   technology: string | null
+  lineShape: string | null
 }
 
 interface LayoutPosition {
@@ -83,6 +84,7 @@ interface CanvasViewProps {
   onDeleteElement?: (id: string) => void
   onReverseRelationship?: (id: string) => void
   onDeleteRelationship?: (id: string) => void
+  onUpdateRelationship?: (id: string, fields: Record<string, unknown>) => void
   onAddElementAtPosition?: (kind: string) => void
   onTidy?: () => void
   onRenameElement?: (id: string, newName: string) => void
@@ -125,6 +127,7 @@ function CanvasViewInner({
   onDeleteElement,
   onReverseRelationship,
   onDeleteRelationship,
+  onUpdateRelationship,
   onAddElementAtPosition,
   onTidy,
   onRenameElement,
@@ -299,6 +302,7 @@ function CanvasViewInner({
         data: {
           label: rel.label,
           technology: rel.technology,
+          lineShape: rel.lineShape,
           diffState: diffStateMap?.get(rel.id) ?? (isReviewMode ? 'unchanged' : undefined),
           edgeIndex: idx,
           totalParallel: total,
@@ -628,10 +632,12 @@ function CanvasViewInner({
         <EdgeContextMenu
           open
           position={contextMenu.position}
+          currentLineShape={relationships.find((r) => r.id === contextMenu.edgeId)?.lineShape}
           onClose={() => setContextMenu(null)}
           onEditDetails={() => selectRelationship(contextMenu.edgeId)}
           onReverse={() => onReverseRelationship?.(contextMenu.edgeId)}
           onDelete={() => onDeleteRelationship?.(contextMenu.edgeId)}
+          onLineShapeChange={(shape) => onUpdateRelationship?.(contextMenu.edgeId, { lineShape: shape })}
         />
       )}
 
