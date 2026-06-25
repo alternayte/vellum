@@ -23,6 +23,7 @@ import type { DiffState } from '@/stores/draft-store'
 import { useMergePreview } from '@/hooks/use-merge'
 import { computeLayout } from '@/lib/layout'
 import { validKindsForContext } from '@/lib/containment-rules'
+import { buildDuplicateSet } from '@/lib/duplicate'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -69,6 +70,8 @@ function ProjectWorkspace() {
   const handleFitViewReady = useCallback((fn: () => void) => {
     fitViewRef.current = fn
   }, [])
+
+  const selectedNodeIdsRef = useRef<string[]>([])
 
   const viewportCenterRef = useRef<(() => { x: number; y: number }) | null>(null)
   const handleViewportCenterReady = useCallback((fn: () => { x: number; y: number }) => {
@@ -194,20 +197,51 @@ function ProjectWorkspace() {
     })
   }
 
-  const handleDuplicateElement = (id: string) => {
-    const el = elements?.find((e) => e.id === id)
-    if (!el) return
-    const newId = crypto.randomUUID()
+  const handleSmartDuplicate = (ids: string[]) => {
+    if (!elements || !relationships) return
+    const positions = activeView?.positions ?? []
+    const dupSet = buildDuplicateSet(ids, elements, relationships, positions)
+    if (dupSet.elements.length === 0) return
+
+    const allNewElementIds = dupSet.elements.map((e) => e.newId)
+    const allNewRelIds = dupSet.relationships.map((r) => r.newId)
+
     useUndoStore.getState().execute({
-      label: `Duplicate ${el.name}`,
-      execute: () => addElement.mutate({
-        id: newId,
-        kind: el.kind,
-        name: `${el.name} (copy)`,
-        parentId: el.parentId ?? undefined,
-      }),
-      undo: () => removeElement.mutate(newId),
+      label: `Duplicate ${dupSet.elements.length} element${dupSet.elements.length > 1 ? 's' : ''}`,
+      execute: () => {
+        for (const el of dupSet.elements) {
+          addElement.mutate({
+            id: el.newId,
+            kind: el.kind,
+            name: el.name,
+            description: el.description ?? undefined,
+            technology: el.technology ?? undefined,
+            parentId: el.parentId ?? undefined,
+            status: el.status,
+            tags: el.tags,
+          })
+        }
+        for (const rel of dupSet.relationships) {
+          addRelationship.mutate({
+            id: rel.newId,
+            fromId: rel.fromId,
+            toId: rel.toId,
+            label: rel.label ?? undefined,
+            technology: rel.technology ?? undefined,
+          })
+        }
+        const currentPositions = activeView?.positions ?? []
+        saveLayout([...currentPositions, ...dupSet.positions])
+      },
+      undo: () => {
+        allNewRelIds.forEach((id) => removeRelationship.mutate(id))
+        allNewElementIds.forEach((id) => removeElement.mutate(id))
+      },
     })
+  }
+
+  const handleDuplicateElement = (id: string) => {
+    handleSmartDuplicate([id])
   }
 
   const handleReverseRelationship = (id: string) => {
@@ -409,6 +443,17 @@ function ProjectWorkspace() {
         // React Flow handles select-all natively when selectionOnDrag is enabled
         // We just need to prevent the browser's select-all
       }
+      if (meta && e.key === 'd' && !inInput) {
+        e.preventDefault()
+        const ids = selectedNodeIdsRef.current.length > 0
+          ? selectedNodeIdsRef.current
+          : useShellStore.getState().selectedElementId
+            ? [useShellStore.getState().selectedElementId!]
+            : []
+        if (ids.length > 0) {
+          handleSmartDuplicate(ids)
+        }
+      }
       if (e.key === '1' && !inInput) {
         useCanvasStore.getState().toggleLens('status')
       }
@@ -513,6 +558,8 @@ function ProjectWorkspace() {
               onBulkStatusChange={handleBulkStatusChange}
               onBulkAddTag={handleBulkAddTag}
               onDuplicateElement={handleDuplicateElement}
+              onSmartDuplicate={handleSmartDuplicate}
+              onSelectionChange={(ids) => { selectedNodeIdsRef.current = ids }}
               onDeleteElement={handleDeleteElement}
               onReverseRelationship={handleReverseRelationship}
               onDeleteRelationship={handleDeleteRelationship}

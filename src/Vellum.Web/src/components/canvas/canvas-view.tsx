@@ -91,6 +91,8 @@ interface CanvasViewProps {
   onViewportCenterReady?: (fn: () => { x: number; y: number }) => void
   onBulkStatusChange?: (ids: string[], status: string) => void
   onBulkAddTag?: (ids: string[], tag: string) => void
+  onSmartDuplicate?: (ids: string[]) => void
+  onSelectionChange?: (ids: string[]) => void
 }
 
 export function CanvasView(props: CanvasViewProps) {
@@ -132,6 +134,7 @@ function CanvasViewInner({
   onViewportCenterReady,
   onBulkStatusChange,
   onBulkAddTag,
+  onSelectionChange,
 }: CanvasViewProps) {
   const { currentRootId, zoomLevel, setZoom, activeLens, expandedNodeIds, toggleExpand } = useCanvasStore()
   const { fitView, screenToFlowPosition } = useReactFlow()
@@ -479,8 +482,10 @@ function CanvasViewInner({
   }, [selectElement, selectRelationship, selectMessage])
 
   const handleSelectionChange = useCallback(({ nodes }: { nodes: Node[] }) => {
-    setSelectedNodeIds(nodes.map((n) => n.id).filter((id) => !id.startsWith('msg-')))
-  }, [])
+    const ids = nodes.map((n) => n.id).filter((id) => !id.startsWith('msg-'))
+    setSelectedNodeIds(ids)
+    onSelectionChange?.(ids)
+  }, [onSelectionChange])
 
   const handleNodesDelete = useCallback(
     (deleted: Node[]) => {
