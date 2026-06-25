@@ -1,18 +1,18 @@
 import { memo, useState } from 'react'
 import {
-  getBezierPath,
   EdgeLabelRenderer,
   type Edge,
   type EdgeProps,
 } from '@xyflow/react'
 import { useCanvasStore } from '@/stores/canvas-store'
 import { EdgeLabelCard } from './edge-label-card'
-import { computeEdgeOffset, computeLabelOffset } from '@/lib/edge-utils'
+import { computeEdgeOffset, computeLabelOffset, getEdgePathFn } from '@/lib/edge-utils'
 import type { DiffState } from '@/stores/draft-store'
 
 export interface C4EdgeData extends Record<string, unknown> {
   label: string | null
   technology: string | null
+  lineShape?: string | null
   diffState?: DiffState
   edgeIndex?: number
   totalParallel?: number
@@ -47,7 +47,8 @@ export const C4Edge = memo(function C4Edge({
   const totalParallel = d.totalParallel ?? 1
   const { sourceOffset, targetOffset } = computeEdgeOffset(edgeIndex, totalParallel)
 
-  const [edgePath, defaultLabelX, defaultLabelY] = getBezierPath({
+  const pathFn = getEdgePathFn(d.lineShape)
+  const [edgePath, defaultLabelX, defaultLabelY] = pathFn({
     sourceX: sourceX + sourceOffset,
     sourceY,
     targetX: targetX + targetOffset,

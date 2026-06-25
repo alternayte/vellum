@@ -29,6 +29,7 @@ interface RelationshipData {
   toId: string
   label: string | null
   technology: string | null
+  lineShape: string | null
 }
 
 interface MessageData {
@@ -373,6 +374,18 @@ export function DetailPanel({
                       onUpdateRelationship?.(selectedRel.id, { technology: e.target.value || null })
                     }
                   />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs text-muted-foreground">Line Style</label>
+                  <select
+                    defaultValue={selectedRel.lineShape ?? 'bezier'}
+                    onChange={(e) => onUpdateRelationship?.(selectedRel.id, { lineShape: e.target.value })}
+                    className="w-full rounded border border-input bg-background px-3 py-2 text-sm"
+                  >
+                    <option value="bezier">Curved (Bezier)</option>
+                    <option value="straight">Straight</option>
+                    <option value="step">Right-angle (Step)</option>
+                  </select>
                 </div>
                 <div className="pt-2 border-t border-border">
                   <Button

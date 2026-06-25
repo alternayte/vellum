@@ -1,5 +1,32 @@
 import { describe, it, expect } from 'vitest'
-import { computeEdgeOffset, computeLabelOffset } from '../../src/lib/edge-utils'
+import { getBezierPath, getStraightPath, getSmoothStepPath } from '@xyflow/react'
+import { computeEdgeOffset, computeLabelOffset, getEdgePathFn } from '../../src/lib/edge-utils'
+
+describe('getEdgePathFn', () => {
+  it('returns getBezierPath for null lineShape', () => {
+    expect(getEdgePathFn(null)).toBe(getBezierPath)
+  })
+
+  it('returns getBezierPath for undefined lineShape', () => {
+    expect(getEdgePathFn(undefined)).toBe(getBezierPath)
+  })
+
+  it('returns getBezierPath for "bezier"', () => {
+    expect(getEdgePathFn('bezier')).toBe(getBezierPath)
+  })
+
+  it('returns getStraightPath for "straight"', () => {
+    expect(getEdgePathFn('straight')).toBe(getStraightPath)
+  })
+
+  it('returns getSmoothStepPath for "step"', () => {
+    expect(getEdgePathFn('step')).toBe(getSmoothStepPath)
+  })
+
+  it('defaults to getBezierPath for unknown shape', () => {
+    expect(getEdgePathFn('unknown')).toBe(getBezierPath)
+  })
+})
 
 describe('computeEdgeOffset', () => {
   it('returns zero offset for a single edge', () => {

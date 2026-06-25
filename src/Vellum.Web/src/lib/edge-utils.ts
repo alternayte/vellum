@@ -1,3 +1,15 @@
+import { getBezierPath, getStraightPath, getSmoothStepPath } from '@xyflow/react'
+
+type PathFn = typeof getBezierPath
+
+export function getEdgePathFn(lineShape: string | null | undefined): PathFn {
+  switch (lineShape) {
+    case 'straight': return getStraightPath as unknown as PathFn
+    case 'step': return getSmoothStepPath as unknown as PathFn
+    default: return getBezierPath
+  }
+}
+
 const OFFSET_PX = 30
 
 export function computeEdgeOffset(
