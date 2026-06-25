@@ -342,8 +342,7 @@ public static class ExecuteMerge
             return changeKind switch
             {
                 "added" when value is ElementState el =>
-                    [new ModelEvent.ElementAdded(el.Id, el.Kind, el.Name, el.Description,
-                        el.Technology, el.OwnerId, el.Status, el.ParentId, el.Tags)],
+                    BuildElementAddEvents(el),
                 "modified" when value is ElementState el =>
                     BuildElementUpdateEvents(entityId, el, currentMain),
                 "removed" =>
@@ -357,8 +356,7 @@ public static class ExecuteMerge
             return changeKind switch
             {
                 "added" when value is RelationshipState rel =>
-                    [new ModelEvent.RelationshipAdded(rel.Id, rel.FromId, rel.ToId,
-                        rel.Label, rel.Technology, rel.MessageId)],
+                    BuildRelationshipAddEvents(rel),
                 "modified" when value is RelationshipState rel =>
                     BuildRelationshipUpdateEvents(entityId, rel, currentMain),
                 "removed" =>
@@ -385,13 +383,42 @@ public static class ExecuteMerge
         return [];
     }
 
+    private static List<ModelEvent> BuildElementAddEvents(ElementState el)
+    {
+        var events = new List<ModelEvent>
+        {
+            new ModelEvent.ElementAdded(el.Id, el.Kind, el.Name, el.Description,
+                el.Technology, el.OwnerId, el.Status, el.ParentId, el.Tags)
+        };
+        if (el.Icon is not null) events.Add(new ModelEvent.ElementIconChanged(el.Id, el.Icon));
+        return events;
+    }
+
+    private static List<ModelEvent> BuildRelationshipAddEvents(RelationshipState rel)
+    {
+        var events = new List<ModelEvent>
+        {
+            new ModelEvent.RelationshipAdded(rel.Id, rel.FromId, rel.ToId,
+                rel.Label, rel.Technology, rel.MessageId)
+        };
+        if (rel.LineShape is not null) events.Add(new ModelEvent.RelationshipLineShapeChanged(rel.Id, rel.LineShape));
+        return events;
+    }
+
     private static List<ModelEvent> BuildElementUpdateEvents(
         Guid id, ElementState target, ModelState currentMain)
     {
         var events = new List<ModelEvent>();
         if (!currentMain.Elements.TryGetValue(id, out var current))
-            return [new ModelEvent.ElementAdded(target.Id, target.Kind, target.Name, target.Description,
-                target.Technology, target.OwnerId, target.Status, target.ParentId, target.Tags)];
+        {
+            var addEvents = new List<ModelEvent>
+            {
+                new ModelEvent.ElementAdded(target.Id, target.Kind, target.Name, target.Description,
+                    target.Technology, target.OwnerId, target.Status, target.ParentId, target.Tags)
+            };
+            if (target.Icon is not null) addEvents.Add(new ModelEvent.ElementIconChanged(target.Id, target.Icon));
+            return addEvents;
+        }
 
         if (current.Name != target.Name) events.Add(new ModelEvent.ElementRenamed(id, target.Name));
         if (current.Description != target.Description) events.Add(new ModelEvent.ElementDescriptionChanged(id, target.Description));
@@ -410,8 +437,15 @@ public static class ExecuteMerge
     {
         var events = new List<ModelEvent>();
         if (!currentMain.Relationships.TryGetValue(id, out var current))
-            return [new ModelEvent.RelationshipAdded(target.Id, target.FromId, target.ToId,
-                target.Label, target.Technology, target.MessageId)];
+        {
+            var addEvents = new List<ModelEvent>
+            {
+                new ModelEvent.RelationshipAdded(target.Id, target.FromId, target.ToId,
+                    target.Label, target.Technology, target.MessageId)
+            };
+            if (target.LineShape is not null) addEvents.Add(new ModelEvent.RelationshipLineShapeChanged(target.Id, target.LineShape));
+            return addEvents;
+        }
 
         if (current.Label != target.Label) events.Add(new ModelEvent.RelationshipLabelChanged(id, target.Label));
         if (current.Technology != target.Technology) events.Add(new ModelEvent.RelationshipTechnologyChanged(id, target.Technology));

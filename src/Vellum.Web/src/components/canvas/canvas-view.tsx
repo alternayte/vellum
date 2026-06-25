@@ -295,7 +295,7 @@ function CanvasViewInner({
     }
 
     return result
-  }, [visibleElements, elements, positionMap, tier, diffStateMap, isReviewMode, expandedNodeIds, onRenameElement])
+  }, [visibleElements, elements, positionMap, tier, diffStateMap, isReviewMode, expandedNodeIds, onRenameElement, onNodeResize])
 
   const edges: Edge[] = useMemo(() => {
     // Count parallel edges between each pair of nodes (ignoring direction)
