@@ -24,7 +24,7 @@ public static class GetView
 
         var positions = await db.LayoutPositions.AsNoTracking()
             .Where(p => p.ViewId == viewId)
-            .Select(p => new LayoutPositionDto(p.ElementId, p.X, p.Y))
+            .Select(p => new LayoutPositionDto(p.ElementId, p.X, p.Y, p.Width, p.Height))
             .ToListAsync(ct);
 
         var rawEdges = await db.LayoutEdges.AsNoTracking()

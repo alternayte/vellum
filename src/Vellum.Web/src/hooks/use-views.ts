@@ -21,7 +21,7 @@ export interface View {
 }
 
 export interface ViewDetail extends View {
-  positions: { elementId: string; x: number; y: number }[]
+  positions: { elementId: string; x: number; y: number; width?: number; height?: number }[]
   edges: { relationshipId: string; routePoints: unknown }[]
 }
 
@@ -72,7 +72,7 @@ export function useSaveLayout(projectId: string, viewId: string | null) {
   const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
   const saveFn = useCallback(
-    async (positions: { elementId: string; x: number; y: number }[]) => {
+    async (positions: { elementId: string; x: number; y: number; width?: number; height?: number }[]) => {
       if (!viewId) return
       await putApiProjectsByProjectIdViewsByViewIdLayout({
         path: { projectId, viewId },
@@ -83,7 +83,7 @@ export function useSaveLayout(projectId: string, viewId: string | null) {
   )
 
   const debouncedSave = useCallback(
-    (positions: { elementId: string; x: number; y: number }[]) => {
+    (positions: { elementId: string; x: number; y: number; width?: number; height?: number }[]) => {
       if (viewId) {
         queryClient.setQueryData<ViewDetail>(
           ['projects', projectId, 'views', viewId],

@@ -7,7 +7,7 @@ using Vellum.Shared;
 
 namespace Vellum.Modules.Views;
 
-public sealed record SaveLayoutPosition(Guid ElementId, double X, double Y);
+public sealed record SaveLayoutPosition(Guid ElementId, double X, double Y, double? Width = null, double? Height = null);
 public sealed record SaveLayoutEdge(Guid RelationshipId, JsonDocument? RoutePoints);
 public sealed record SaveLayoutRequest(
     IReadOnlyList<SaveLayoutPosition> Positions,
@@ -41,7 +41,9 @@ public static class SaveLayout
             ViewId = viewId,
             ElementId = p.ElementId,
             X = p.X,
-            Y = p.Y
+            Y = p.Y,
+            Width = p.Width,
+            Height = p.Height
         }));
 
         // Replace all edges if provided

@@ -57,6 +57,8 @@ interface LayoutPosition {
   elementId: string
   x: number
   y: number
+  width?: number
+  height?: number
 }
 
 interface MessageModel {
@@ -75,6 +77,7 @@ interface CanvasViewProps {
   isReviewMode?: boolean
   messages?: MessageModel[]
   onNodeDragStop?: (id: string, x: number, y: number) => void
+  onNodeResize?: (id: string, width: number, height: number) => void
   onNodeDoubleClick?: (elementId: string) => void
   onFitViewReady?: (fitView: () => void) => void
   onAddElement?: () => void
@@ -118,6 +121,7 @@ function CanvasViewInner({
   isReviewMode,
   messages,
   onNodeDragStop,
+  onNodeResize,
   onNodeDoubleClick,
   onFitViewReady,
   onAddElement,
@@ -199,8 +203,8 @@ function CanvasViewInner({
   }, [relationships, visibleIds])
 
   const positionMap = useMemo(() => {
-    const map = new Map<string, { x: number; y: number }>()
-    for (const p of positions) map.set(p.elementId, { x: p.x, y: p.y })
+    const map = new Map<string, LayoutPosition>()
+    for (const p of positions) map.set(p.elementId, p)
     return map
   }, [positions])
 
@@ -211,7 +215,8 @@ function CanvasViewInner({
       const isExpanded = expandedNodeIds.has(el.id)
       const col = index % 3
       const row = Math.floor(index / 3)
-      const pos = positionMap.get(el.id) ?? { x: col * 340, y: row * 200 }
+      const savedPos = positionMap.get(el.id)
+      const position = savedPos ? { x: savedPos.x, y: savedPos.y } : { x: col * 340, y: row * 200 }
       const entityDiffState = diffStateMap?.get(el.id) ?? (isReviewMode ? 'unchanged' : undefined)
 
       if (isExpanded) {
@@ -219,19 +224,24 @@ function CanvasViewInner({
         result.push({
           id: el.id,
           type: 'c4-container',
-          position: pos,
+          position,
           data: {
             id: el.id,
             kind: el.kind,
             name: el.name,
+            onResize: onNodeResize ? (width: number, height: number) => onNodeResize(el.id, width, height) : undefined,
           } satisfies C4ContainerData,
-          style: { width: 'auto', height: 'auto' },
+          style: {
+            width: savedPos?.width ?? undefined,
+            height: savedPos?.height ?? undefined,
+          },
         })
 
         // Add children inside the container
         const children = elements.filter((child) => child.parentId === el.id)
         children.forEach((child, ci) => {
-          const childPos = positionMap.get(child.id) ?? { x: 40 + (ci % 3) * 300, y: 60 + Math.floor(ci / 3) * 180 }
+          const savedChildPos = positionMap.get(child.id)
+          const childPos = savedChildPos ? { x: savedChildPos.x, y: savedChildPos.y } : { x: 40 + (ci % 3) * 300, y: 60 + Math.floor(ci / 3) * 180 }
           const childDiffState = diffStateMap?.get(child.id) ?? (isReviewMode ? 'unchanged' : undefined)
           result.push({
             id: child.id,
@@ -258,7 +268,7 @@ function CanvasViewInner({
         result.push({
           id: el.id,
           type: tier === 'full' ? 'c4-element' : 'c4-label-chip',
-          position: pos,
+          position,
           data: {
             id: el.id,
             kind: el.kind,
