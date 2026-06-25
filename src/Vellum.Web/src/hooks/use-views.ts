@@ -68,6 +68,7 @@ export function useCreateView(projectId: string) {
 }
 
 export function useSaveLayout(projectId: string, viewId: string | null) {
+  const queryClient = useQueryClient()
   const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
   const saveFn = useCallback(
@@ -83,10 +84,16 @@ export function useSaveLayout(projectId: string, viewId: string | null) {
 
   const debouncedSave = useCallback(
     (positions: { elementId: string; x: number; y: number }[]) => {
+      if (viewId) {
+        queryClient.setQueryData<ViewDetail>(
+          ['projects', projectId, 'views', viewId],
+          (old) => old ? { ...old, positions } : old,
+        )
+      }
       if (timerRef.current) clearTimeout(timerRef.current)
       timerRef.current = setTimeout(() => saveFn(positions), 300)
     },
-    [saveFn],
+    [saveFn, viewId, projectId, queryClient],
   )
 
   useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current) }, [])
