@@ -13,9 +13,9 @@ interface CreateFlyoutProps {
 type Mode = 'menu' | 'diagram' | 'doc-templates' | 'doc-title'
 
 const FALLBACK_TEMPLATES = [
-  { id: 'sdd', name: 'SDD', type: 'sdd' },
-  { id: 'adr', name: 'ADR', type: 'adr' },
-  { id: 'prd', name: 'PRD', type: 'prd' },
+  { id: 'sdd', name: 'SDD', type: 'sdd', content: '' },
+  { id: 'adr', name: 'ADR', type: 'adr', content: '' },
+  { id: 'prd', name: 'PRD', type: 'prd', content: '' },
 ]
 
 export function CreateFlyout({ onCreateDiagram, onCreateDoc }: CreateFlyoutProps) {
@@ -106,7 +106,7 @@ export function CreateFlyout({ onCreateDiagram, onCreateDoc }: CreateFlyoutProps
               <button
                 key={t.id}
                 className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm hover:bg-muted"
-                onClick={() => handleSelectTemplate('content' in t ? t as DocTemplate : null)}
+                onClick={() => handleSelectTemplate(t as DocTemplate)}
               >
                 {t.name.toUpperCase()}
               </button>
