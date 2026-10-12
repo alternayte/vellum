@@ -103,17 +103,32 @@ export function TraceDock() {
 
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 max-sm:order-last max-sm:w-full">
           {run.assertions.length > 0 && (
-            <p
-              className={cn(
-                'flex items-center gap-1.5 text-xs',
-                failedAssertions > 0 ? 'text-[var(--trace-failure)]' : 'text-[var(--trace-request)]',
-              )}
-            >
-              {failedAssertions > 0 ? <CircleX className="h-3.5 w-3.5" /> : <CircleCheck className="h-3.5 w-3.5" />}
-              {failedAssertions > 0
-                ? `${failedAssertions} of ${run.assertions.length} expectations fail`
-                : `${run.assertions.length} expectations hold`}
-            </p>
+            <details className="relative">
+              <summary
+                className={cn(
+                  'flex cursor-pointer list-none items-center gap-1.5 rounded text-xs underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-primary',
+                  failedAssertions > 0 ? 'text-[var(--trace-failure)]' : 'text-[var(--trace-request)]',
+                )}
+              >
+                {failedAssertions > 0 ? <CircleX className="h-3.5 w-3.5" /> : <CircleCheck className="h-3.5 w-3.5" />}
+                {failedAssertions > 0
+                  ? `${failedAssertions} of ${run.assertions.length} expectations fail`
+                  : `${run.assertions.length} expectations hold`}
+              </summary>
+              <ul className="absolute bottom-full right-0 z-20 mb-2 w-80 max-w-[calc(100vw-2rem)] space-y-1.5 rounded-lg border border-border bg-popover p-3 text-xs shadow-xl max-sm:left-0 max-sm:right-auto">
+                {run.assertions.map((assertion) => (
+                  <li key={assertion.id} className="flex gap-2">
+                    {assertion.passed
+                      ? <CircleCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[var(--trace-request)]" aria-label="Holds" />
+                      : <CircleX className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[var(--trace-failure)]" aria-label="Fails" />}
+                    <span className="min-w-0">
+                      <span className="font-mono text-foreground">{assertion.id}</span>
+                      <span className="block text-muted-foreground">{assertion.detail}</span>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </details>
           )}
           <p className="text-[11px] text-muted-foreground" title="A trace replays the declared contracts. It does not run or observe your system.">
             Declared behaviour, not a measurement
@@ -167,6 +182,16 @@ export function TraceDock() {
                 step {event.stepId}
                 {event.detail && event.kind !== 'DataWritten' && event.kind !== 'BranchTaken' ? ` · ${event.detail}` : ''}
               </p>
+              {event.headers && (
+                <dl className="mt-1.5 flex flex-wrap gap-1.5 pl-4" aria-label="Headers">
+                  {Object.entries(event.headers).map(([header, value]) => (
+                    <div key={header} className="flex rounded border border-border font-mono text-[10px]">
+                      <dt className="border-r border-border px-1.5 py-0.5 text-muted-foreground">{header}</dt>
+                      <dd className="px-1.5 py-0.5 text-foreground">{value}</dd>
+                    </div>
+                  ))}
+                </dl>
+              )}
             </>
           ) : (
             <p className="text-sm text-muted-foreground">

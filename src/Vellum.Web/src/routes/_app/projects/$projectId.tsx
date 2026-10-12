@@ -12,6 +12,10 @@ import { CanvasView } from '@/components/canvas/canvas-view'
 import { DocEditor } from '@/components/docs/doc-editor'
 import { CommandPalette } from '@/components/command-palette/command-palette'
 import { TraceDock } from '@/components/trace/trace-dock'
+import { ContractsFlyout } from '@/components/trace/contracts-flyout'
+import { ScenariosFlyout } from '@/components/trace/scenarios-flyout'
+import type { ScenarioReference } from '@/components/trace/scenario-editor'
+import { useChannels, useOperations, useSubscriptions } from '@/hooks/use-contracts'
 import { useElements, useAddElement, useUpdateElement, useRemoveElement } from '@/hooks/use-elements'
 import { useRelationships, useAddRelationship, useUpdateRelationship, useRemoveRelationship } from '@/hooks/use-relationships'
 import { useViews, useView, useCreateView, useSaveLayout } from '@/hooks/use-views'
@@ -50,6 +54,21 @@ function ProjectWorkspace() {
   const { data: elements, isLoading: elementsLoading } = useElements(projectId, activeDraftStreamId ?? undefined)
   const { data: relationships, isLoading: relsLoading } = useRelationships(projectId, activeDraftStreamId ?? undefined)
   const { data: messages } = useMessages(projectId, activeDraftStreamId ?? undefined)
+  const contractBranchId = activeDraftStreamId ?? undefined
+  const { data: operations } = useOperations(projectId, contractBranchId)
+  const { data: channels } = useChannels(projectId, contractBranchId)
+  const { data: subscriptions } = useSubscriptions(projectId, contractBranchId)
+  const scenarioReferences = useMemo<ScenarioReference[]>(() => {
+    const elementName = (id: string) => elements?.find((e) => e.id === id)?.name ?? 'Unknown element'
+    const channelName = (id: string) => channels?.find((c) => c.id === id)?.name ?? 'Unknown channel'
+    return [
+      ...(elements ?? []).map((e) => ({ group: 'Elements' as const, id: e.id, label: e.name })),
+      ...(operations ?? []).map((o) => ({ group: 'Operations' as const, id: o.id, label: `${o.name} · ${elementName(o.ownerId)}` })),
+      ...(channels ?? []).map((c) => ({ group: 'Channels' as const, id: c.id, label: c.name })),
+      ...(subscriptions ?? []).map((x) => ({ group: 'Subscriptions' as const, id: x.id, label: `${elementName(x.consumerId)} on ${channelName(x.channelId)}` })),
+      ...(messages ?? []).map((m) => ({ group: 'Messages' as const, id: m.id, label: m.name })),
+    ]
+  }, [elements, operations, channels, subscriptions, messages])
   const { data: schemas } = useSchemas(projectId)
   const { data: views } = useViews(projectId)
   const { data: docs } = useDocs(projectId)
@@ -598,6 +617,12 @@ function ProjectWorkspace() {
               onCreateDiagram={handleCreateDiagram}
               onCreateDoc={handleCreateDoc}
             />
+          )}
+          {activeFlyout === 'contracts' && (
+            <ContractsFlyout projectId={projectId} branchId={contractBranchId} elements={elements ?? []} />
+          )}
+          {activeFlyout === 'scenarios' && (
+            <ScenariosFlyout projectId={projectId} branchId={contractBranchId} references={scenarioReferences} />
           )}
           {activeFlyout === 'search' && null /* ⌘K handles search for now */}
         </LeftToolbar>

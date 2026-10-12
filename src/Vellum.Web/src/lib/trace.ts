@@ -95,6 +95,7 @@ export function describeEvent(event: TraceEvent, labels: Record<string, string>)
   const to = name(event.to)
   const target = name(event.target)
   const attempt = event.attempt > 1 ? ` (attempt ${event.attempt})` : ''
+  const message = event.message ? (labels[event.message] ?? 'the message') : 'the message'
 
   switch (event.kind) {
     case 'RequestSent':
@@ -108,17 +109,17 @@ export function describeEvent(event: TraceEvent, labels: Record<string, string>)
     case 'RetryScheduled':
       return `Retry ${event.attempt} of ${target} is scheduled`
     case 'Published':
-      return `${from} publishes to ${target}`
+      return `${from} publishes ${message === 'the message' ? 'a message' : message} to ${target}`
     case 'PublishFailed':
-      return `${from} cannot publish to ${target}`
+      return `${from} cannot publish ${message === 'the message' ? 'a message' : message} to ${target}`
     case 'Delivered':
-      return `${to} receives the message${attempt}`
+      return `${to} receives ${message}${attempt}`
     case 'DeliveryFailed':
-      return `${to} fails to handle the message${attempt}`
+      return `${to} fails to handle ${message}${attempt}`
     case 'DeadLettered':
-      return `The message for ${from} moves to ${target}`
+      return `${message === 'the message' ? 'The message' : message} for ${from} moves to ${target}`
     case 'Dropped':
-      return `The message for ${from} is lost`
+      return `${message === 'the message' ? 'The message' : message} for ${from} is lost`
     case 'DataWritten':
       return `${from} writes ${event.detail ?? 'data'} in ${to}`
     case 'DataWriteFailed':

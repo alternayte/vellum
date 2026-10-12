@@ -1,6 +1,6 @@
 import { type ReactNode, useEffect } from 'react'
 import { useShellStore, type Flyout } from '@/stores/shell-store'
-import { FileText, Plus, LayoutGrid, Search } from 'lucide-react'
+import { FileText, Plus, LayoutGrid, Search, Cable, Route } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface LeftToolbarProps {
@@ -11,6 +11,8 @@ const toolbarItems: { flyout: Flyout; label: string; icon: typeof FileText }[] =
   { flyout: 'files', label: 'Project files', icon: FileText },
   { flyout: 'create', label: 'Create new', icon: Plus },
   { flyout: 'catalog', label: 'Element catalog', icon: LayoutGrid },
+  { flyout: 'contracts', label: 'Contracts', icon: Cable },
+  { flyout: 'scenarios', label: 'Scenarios', icon: Route },
   { flyout: 'search', label: 'Search', icon: Search },
 ]
 
@@ -34,6 +36,7 @@ export function LeftToolbar({ children }: LeftToolbarProps) {
           <button
             key={flyout}
             aria-label={label}
+            title={label}
             className={cn(
               'flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground',
               activeFlyout === flyout && 'bg-accent text-accent-foreground'
