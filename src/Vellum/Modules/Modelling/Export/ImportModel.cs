@@ -1,14 +1,10 @@
 using System.Text.Json;
+using Deedbox;
 using Microsoft.EntityFrameworkCore;
-using Vellum.Kernel.Aggregates;
-using Vellum.Kernel.CommandHandling;
-using Vellum.Kernel.EventStore;
-using Vellum.Kernel.Projections;
-using Vellum.Kernel.Results;
+using Vellum.Shared;
 using Vellum.Modules.Modelling.Model;
 using Vellum.Modules.Schemas;
 using Vellum.Modules.Workspaces;
-using Vellum.Shared;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
 
@@ -28,15 +24,7 @@ public static class ImportModel
     public static async Task<IResult> Handle(
         Guid projectId,
         HttpRequest request,
-        ModellingDbContext modellingDb,
-        SchemasDbContext schemasDb,
         WorkspacesDbContext workspacesDb,
-        AggregateStore store,
-        EventCollector collector,
-        EventStoreDbContext eventStoreDb,
-        IEnumerable<IInlineProjection> projections,
-        ModelProjection modelProjection,
-        Guid actorId,
         CancellationToken ct)
     {
         var project = await workspacesDb.Projects.AsNoTracking()
@@ -73,283 +61,277 @@ public static class ImportModel
             Schemas = doc.Schemas ?? [],
         };
 
-        collector.Clear();
+        // The import appends to the model stream and to one stream per schema. A transaction
+        // with several appends can lose a lock cycle against a concurrent append, so the whole
+        // import runs again when the database aborts it.
+        return await SharedTransaction.RunAsync(request.HttpContext.RequestServices,
+            services => ImportAsync(services, projectId, project.StreamId, doc, ct), ct);
+    }
+
+    private static async Task<IResult> ImportAsync(
+        IServiceProvider services, Guid projectId, Guid modelStreamId, ModelExportDocument doc, CancellationToken ct)
+    {
+        var modellingDb = services.GetRequiredService<ModellingDbContext>();
+        var schemasDb = services.GetRequiredService<SchemasDbContext>();
 
         var documentSchemaIds = doc.Schemas.Select(s => s.Id).ToHashSet();
 
-        await using var transaction = await eventStoreDb.Database.BeginTransactionAsync(ct);
-        try
+        // Every load, append and read-model write below runs in this transaction. A return
+        // before the commit rolls all of it back.
+        await using var transaction = await modellingDb.Database.BeginTransactionAsync(ct);
+        var store = services.GetRequiredService<IEventStore>().UseDbContext(modellingDb);
+
+        // Load current model state
+        var (state, version) = await store.Load<ModelState>(StreamId.From(modelStreamId), ct);
+        var events = new List<object>();
+
+        // Import elements
+        foreach (var el in doc.Elements)
         {
-            // Load current model state
-            var (state, version) = await store.LoadAsync<ModelState, ModelEvent>(project.StreamId, ct);
-            var events = new List<ModelEvent>();
+            if (!TryReadFacts(el.FactStatus, el.Provenance, out var factStatus, out var provenance, out var factError))
+                return Results.BadRequest(new ErrorResponse("invalid_export", $"Element {el.Id}: {factError}"));
 
-            // Import elements
-            foreach (var el in doc.Elements)
+            if (!ModelEnum.TryParseDefined(el.Status, out ElementStatus status))
+                return Results.BadRequest(new ErrorResponse("invalid_export",
+                    $"Element {el.Id}: invalid status '{el.Status}'"));
+
+            if (!ModelEnum.TryParseDefined(el.Kind, out ElementKind kind))
+                return Results.BadRequest(new ErrorResponse("invalid_export",
+                    $"Element {el.Id}: invalid kind '{el.Kind}'"));
+
+            if (state.Elements.TryGetValue(el.Id, out var existingElement))
             {
-                if (!TryReadFacts(el.FactStatus, el.Provenance, out var factStatus, out var provenance, out var factError))
-                    return Results.BadRequest(new ErrorResponse("invalid_export", $"Element {el.Id}: {factError}"));
-
-                if (!ModelEnum.TryParseDefined(el.Status, out ElementStatus status))
+                if (existingElement.Kind != kind)
                     return Results.BadRequest(new ErrorResponse("invalid_export",
-                        $"Element {el.Id}: invalid status '{el.Status}'"));
+                        $"Element {el.Id}: kind change from '{existingElement.Kind}' to '{kind}' is not supported"));
 
-                if (!ModelEnum.TryParseDefined(el.Kind, out ElementKind kind))
+                var updateCmd = new UpdateElementCommand(el.Id,
+                    Name: el.Name, SetName: true,
+                    Description: el.Description, SetDescription: true,
+                    Technology: el.Technology, SetTechnology: true,
+                    ParentId: el.ParentId, SetParentId: true,
+                    Status: status, Tags: el.Tags,
+                    Icon: el.Icon, SetIcon: true);
+                var result = ModelDecider.UpdateElement(state, updateCmd);
+                if (result is not CommandResult<IReadOnlyList<object>>.Success updateSuccess)
                     return Results.BadRequest(new ErrorResponse("invalid_export",
-                        $"Element {el.Id}: invalid kind '{el.Kind}'"));
+                        $"Element {el.Id}: {DeciderFailure(result)}"));
 
-                if (state.Elements.TryGetValue(el.Id, out var existingElement))
+                events.AddRange(updateSuccess.Value);
+                state = updateSuccess.Value.Aggregate(state, ModelState.Evolve);
+
+                if (existingElement.FactStatus != factStatus ||
+                    !ProvenanceEquivalent(existingElement.Provenance, provenance))
                 {
-                    if (existingElement.Kind != kind)
+                    var provenanceResult = ModelDecider.RecordElementProvenance(state, el.Id, factStatus, provenance);
+                    if (provenanceResult is not CommandResult<IReadOnlyList<object>>.Success provenanceSuccess)
                         return Results.BadRequest(new ErrorResponse("invalid_export",
-                            $"Element {el.Id}: kind change from '{existingElement.Kind}' to '{kind}' is not supported"));
+                            $"Element {el.Id}: {DeciderFailure(provenanceResult)}"));
 
-                    var updateCmd = new UpdateElementCommand(el.Id,
-                        Name: el.Name, SetName: true,
-                        Description: el.Description, SetDescription: true,
-                        Technology: el.Technology, SetTechnology: true,
-                        ParentId: el.ParentId, SetParentId: true,
-                        Status: status, Tags: el.Tags,
-                        Icon: el.Icon, SetIcon: true);
-                    var result = ModelDecider.UpdateElement(state, updateCmd);
-                    if (result is not CommandResult<IReadOnlyList<ModelEvent>>.Success updateSuccess)
-                        return Results.BadRequest(new ErrorResponse("invalid_export",
-                            $"Element {el.Id}: {DeciderFailure(result)}"));
-
-                    events.AddRange(updateSuccess.Value);
-                    state = updateSuccess.Value.Aggregate(state, (st, e) => st.Evolve(e));
-
-                    if (existingElement.FactStatus != factStatus ||
-                        !ProvenanceEquivalent(existingElement.Provenance, provenance))
-                    {
-                        var provenanceResult = ModelDecider.RecordElementProvenance(state, el.Id, factStatus, provenance);
-                        if (provenanceResult is not CommandResult<IReadOnlyList<ModelEvent>>.Success provenanceSuccess)
-                            return Results.BadRequest(new ErrorResponse("invalid_export",
-                                $"Element {el.Id}: {DeciderFailure(provenanceResult)}"));
-
-                        events.AddRange(provenanceSuccess.Value);
-                        state = provenanceSuccess.Value.Aggregate(state, (st, e) => st.Evolve(e));
-                    }
-                }
-                else
-                {
-                    var addCmd = new AddElementCommand(el.Id, kind, el.Name, el.Description,
-                        el.Technology, null, status, el.ParentId, el.Tags);
-                    var result = ModelDecider.AddElement(state, addCmd);
-                    if (result is not CommandResult<IReadOnlyList<ModelEvent>>.Success added)
-                        return Results.BadRequest(new ErrorResponse("invalid_export",
-                            $"Element {el.Id}: {DeciderFailure(result)}"));
-
-                    events.AddRange(added.Value);
-                    state = added.Value.Aggregate(state, (st, e) => st.Evolve(e));
-
-                    if (el.Icon is not null)
-                    {
-                        events.Add(new ModelEvent.ElementIconChanged(el.Id, el.Icon));
-                        state = state.Evolve(events[^1]);
-                    }
-
-                    if (factStatus != FactStatus.Declared || provenance is not null)
-                    {
-                        events.Add(new ModelEvent.ElementProvenanceRecorded(el.Id, factStatus, provenance));
-                        state = state.Evolve(events[^1]);
-                    }
+                    events.AddRange(provenanceSuccess.Value);
+                    state = provenanceSuccess.Value.Aggregate(state, ModelState.Evolve);
                 }
             }
-
-            // Import relationships
-            foreach (var rel in doc.Relationships)
+            else
             {
-                if (!TryReadFacts(rel.FactStatus, rel.Provenance, out var factStatus, out var provenance, out var factError))
-                    return Results.BadRequest(new ErrorResponse("invalid_export", $"Relationship {rel.Id}: {factError}"));
-
-                var kind = RelationshipKind.Structural;
-                if (!string.IsNullOrEmpty(rel.Kind) && !ModelEnum.TryParseDefined(rel.Kind, out kind))
-                {
+                var addCmd = new AddElementCommand(el.Id, kind, el.Name, el.Description,
+                    el.Technology, null, status, el.ParentId, el.Tags);
+                var result = ModelDecider.AddElement(state, addCmd);
+                if (result is not CommandResult<IReadOnlyList<object>>.Success added)
                     return Results.BadRequest(new ErrorResponse("invalid_export",
-                        $"Relationship {rel.Id}: invalid kind '{rel.Kind}'"));
+                        $"Element {el.Id}: {DeciderFailure(result)}"));
+
+                events.AddRange(added.Value);
+                state = added.Value.Aggregate(state, ModelState.Evolve);
+
+                if (el.Icon is not null)
+                {
+                    events.Add(new ModelEvent.ElementIconChanged(el.Id, el.Icon));
+                    state = ModelState.Evolve(state, events[^1]);
                 }
 
-                if (state.Relationships.TryGetValue(rel.Id, out var existingRelationship))
+                if (factStatus != FactStatus.Declared || provenance is not null)
                 {
-                    var updateCmd = new UpdateRelationshipCommand(rel.Id,
-                        Label: rel.Label, SetLabel: true,
-                        Technology: rel.Technology, SetTechnology: true,
-                        LineShape: rel.LineShape, SetLineShape: true,
-                        Kind: kind, SetKind: true);
-                    var result = ModelDecider.UpdateRelationship(state, updateCmd);
-                    if (result is not CommandResult<IReadOnlyList<ModelEvent>>.Success updateSuccess)
-                        return Results.BadRequest(new ErrorResponse("invalid_export",
-                            $"Relationship {rel.Id}: {DeciderFailure(result)}"));
-
-                    events.AddRange(updateSuccess.Value);
-                    state = updateSuccess.Value.Aggregate(state, (st, e) => st.Evolve(e));
-
-                    if (existingRelationship.FactStatus != factStatus ||
-                        !ProvenanceEquivalent(existingRelationship.Provenance, provenance))
-                    {
-                        var provenanceResult = ModelDecider.RecordRelationshipProvenance(state, rel.Id, factStatus, provenance);
-                        if (provenanceResult is not CommandResult<IReadOnlyList<ModelEvent>>.Success provenanceSuccess)
-                            return Results.BadRequest(new ErrorResponse("invalid_export",
-                                $"Relationship {rel.Id}: {DeciderFailure(provenanceResult)}"));
-
-                        events.AddRange(provenanceSuccess.Value);
-                        state = provenanceSuccess.Value.Aggregate(state, (st, e) => st.Evolve(e));
-                    }
-                }
-                else
-                {
-                    var addCmd = new AddRelationshipCommand(rel.Id, rel.FromId, rel.ToId, rel.Label, rel.Technology, kind);
-                    var result = ModelDecider.AddRelationship(state, addCmd);
-                    if (result is not CommandResult<IReadOnlyList<ModelEvent>>.Success added)
-                        return Results.BadRequest(new ErrorResponse("invalid_export",
-                            $"Relationship {rel.Id}: {DeciderFailure(result)}"));
-
-                    events.AddRange(added.Value);
-                    state = added.Value.Aggregate(state, (st, e) => st.Evolve(e));
-
-                    if (rel.LineShape is not null)
-                    {
-                        events.Add(new ModelEvent.RelationshipLineShapeChanged(rel.Id, rel.LineShape));
-                        state = state.Evolve(events[^1]);
-                    }
-
-                    if (factStatus != FactStatus.Declared || provenance is not null)
-                    {
-                        events.Add(new ModelEvent.RelationshipProvenanceRecorded(rel.Id, factStatus, provenance));
-                        state = state.Evolve(events[^1]);
-                    }
+                    events.Add(new ModelEvent.ElementProvenanceRecorded(el.Id, factStatus, provenance));
+                    state = ModelState.Evolve(state, events[^1]);
                 }
             }
-
-            // Import messages
-            foreach (var msg in doc.Messages)
-            {
-                if (!TryReadFacts(msg.FactStatus, msg.Provenance, out var factStatus, out var provenance, out var factError))
-                    return Results.BadRequest(new ErrorResponse("invalid_export", $"Message {msg.Id}: {factError}"));
-
-                if (msg.SchemaId is { } schemaId &&
-                    !await SchemaExistsAsync(projectId, schemaId, documentSchemaIds, schemasDb, ct))
-                {
-                    return Results.BadRequest(new ErrorResponse("invalid_export",
-                        $"Message {msg.Id}: schema {schemaId} not found in this project or the document"));
-                }
-
-                if (state.Messages.TryGetValue(msg.Id, out var existingMessage))
-                {
-                    var updateCmd = new UpdateMessageCommand(msg.Id,
-                        Name: msg.Name, SetName: true,
-                        Description: msg.Description, SetDescription: true,
-                        ProducerId: msg.ProducerId, SetProducerId: true,
-                        ConsumerIds: msg.ConsumerIds.ToElementIds(), SetConsumerIds: true,
-                        SchemaId: msg.SchemaId, SetSchemaId: true,
-                        Tags: msg.Tags);
-                    var result = ModelDecider.UpdateMessage(state, updateCmd);
-                    if (result is not CommandResult<IReadOnlyList<ModelEvent>>.Success updateSuccess)
-                        return Results.BadRequest(new ErrorResponse("invalid_export",
-                            $"Message {msg.Id}: {DeciderFailure(result)}"));
-
-                    events.AddRange(updateSuccess.Value);
-                    state = updateSuccess.Value.Aggregate(state, (st, e) => st.Evolve(e));
-
-                    if (existingMessage.FactStatus != factStatus ||
-                        !ProvenanceEquivalent(existingMessage.Provenance, provenance))
-                    {
-                        var provenanceResult = ModelDecider.RecordMessageProvenance(state, msg.Id, factStatus, provenance);
-                        if (provenanceResult is not CommandResult<IReadOnlyList<ModelEvent>>.Success provenanceSuccess)
-                            return Results.BadRequest(new ErrorResponse("invalid_export",
-                                $"Message {msg.Id}: {DeciderFailure(provenanceResult)}"));
-
-                        events.AddRange(provenanceSuccess.Value);
-                        state = provenanceSuccess.Value.Aggregate(state, (st, e) => st.Evolve(e));
-                    }
-                }
-                else
-                {
-                    var addCmd = new AddMessageCommand(msg.Id, msg.Name, msg.Description,
-                        msg.ProducerId, msg.ConsumerIds.ToElementIds(), msg.SchemaId, msg.Tags);
-                    var result = ModelDecider.AddMessage(state, addCmd);
-                    if (result is not CommandResult<IReadOnlyList<ModelEvent>>.Success added)
-                        return Results.BadRequest(new ErrorResponse("invalid_export",
-                            $"Message {msg.Id}: {DeciderFailure(result)}"));
-
-                    events.AddRange(added.Value);
-                    state = added.Value.Aggregate(state, (st, e) => st.Evolve(e));
-
-                    if (factStatus != FactStatus.Declared || provenance is not null)
-                    {
-                        events.Add(new ModelEvent.MessageProvenanceRecorded(msg.Id, factStatus, provenance));
-                        state = state.Evolve(events[^1]);
-                    }
-                }
-            }
-
-            // Save model events (EventStore.AppendAsync adds them to collector)
-            if (events.Count > 0)
-            {
-                var metadata = new EventMetadata { ActorId = actorId, CorrelationId = Guid.NewGuid() };
-                modelProjection.SetContext(projectId, project.StreamId);
-                await store.SaveAsync(project.StreamId, "model", version, state, events, metadata, ct);
-            }
-
-            // Import schemas (each is its own aggregate)
-            foreach (var schema in doc.Schemas)
-            {
-                var (schemaState, schemaVersion) = await store.LoadAsync<SchemaState, SchemaEvent>(schema.Id, ct);
-                if (schemaState.Schema is not null)
-                {
-                    if (schemaState.Schema.ProjectId != projectId)
-                    {
-                        return Results.BadRequest(new ErrorResponse("invalid_export",
-                            $"Schema {schema.Id} belongs to another project"));
-                    }
-
-                    var updateCmd = new UpdateSchemaCommand(schema.Id,
-                        Name: schema.Name, SetName: true,
-                        Description: schema.Description, SetDescription: true,
-                        Content: schema.Content, SetContent: true);
-                    var result = SchemaDecider.Update(schemaState, updateCmd);
-                    if (result is not CommandResult<IReadOnlyList<SchemaEvent>>.Success updateSuccess)
-                        return Results.BadRequest(new ErrorResponse("invalid_export",
-                            $"Schema {schema.Id}: {DeciderFailure(result)}"));
-
-                    if (updateSuccess.Value.Count > 0)
-                    {
-                        var newState = updateSuccess.Value.Aggregate(schemaState, (st, e) => st.Evolve(e));
-                        await store.SaveAsync(schema.Id, "schema", schemaVersion, newState, updateSuccess.Value,
-                            new EventMetadata { ActorId = actorId, CorrelationId = Guid.NewGuid() }, ct);
-                    }
-                }
-                else
-                {
-                    var createCmd = new CreateSchemaCommand(schema.Id, schema.Name, schema.Description, schema.Content, projectId);
-                    var result = SchemaDecider.Create(schemaState, createCmd);
-                    if (result is not CommandResult<IReadOnlyList<SchemaEvent>>.Success created)
-                        return Results.BadRequest(new ErrorResponse("invalid_export",
-                            $"Schema {schema.Id}: {DeciderFailure(result)}"));
-
-                    var newState = created.Value.Aggregate(schemaState, (st, e) => st.Evolve(e));
-                    await store.SaveAsync(schema.Id, "schema", schemaVersion, newState, created.Value,
-                        new EventMetadata { ActorId = actorId, CorrelationId = Guid.NewGuid() }, ct);
-                }
-            }
-
-            // Fire inline projections (ModelProjection + SchemaProjection) for all collected events
-            var collectedEvents = collector.Events;
-            foreach (var projection in projections)
-                await projection.ProjectAsync(collectedEvents, ct);
-
-            await transaction.CommitAsync(ct);
-
-            if (collectedEvents.Count > 0)
-                await eventStoreDb.Database.ExecuteSqlRawAsync("NOTIFY new_events", ct);
-        }
-        catch
-        {
-            await transaction.RollbackAsync(ct);
-            throw;
         }
 
+        // Import relationships
+        foreach (var rel in doc.Relationships)
+        {
+            if (!TryReadFacts(rel.FactStatus, rel.Provenance, out var factStatus, out var provenance, out var factError))
+                return Results.BadRequest(new ErrorResponse("invalid_export", $"Relationship {rel.Id}: {factError}"));
+
+            var kind = RelationshipKind.Structural;
+            if (!string.IsNullOrEmpty(rel.Kind) && !ModelEnum.TryParseDefined(rel.Kind, out kind))
+            {
+                return Results.BadRequest(new ErrorResponse("invalid_export",
+                    $"Relationship {rel.Id}: invalid kind '{rel.Kind}'"));
+            }
+
+            if (state.Relationships.TryGetValue(rel.Id, out var existingRelationship))
+            {
+                var updateCmd = new UpdateRelationshipCommand(rel.Id,
+                    Label: rel.Label, SetLabel: true,
+                    Technology: rel.Technology, SetTechnology: true,
+                    LineShape: rel.LineShape, SetLineShape: true,
+                    Kind: kind, SetKind: true);
+                var result = ModelDecider.UpdateRelationship(state, updateCmd);
+                if (result is not CommandResult<IReadOnlyList<object>>.Success updateSuccess)
+                    return Results.BadRequest(new ErrorResponse("invalid_export",
+                        $"Relationship {rel.Id}: {DeciderFailure(result)}"));
+
+                events.AddRange(updateSuccess.Value);
+                state = updateSuccess.Value.Aggregate(state, ModelState.Evolve);
+
+                if (existingRelationship.FactStatus != factStatus ||
+                    !ProvenanceEquivalent(existingRelationship.Provenance, provenance))
+                {
+                    var provenanceResult = ModelDecider.RecordRelationshipProvenance(state, rel.Id, factStatus, provenance);
+                    if (provenanceResult is not CommandResult<IReadOnlyList<object>>.Success provenanceSuccess)
+                        return Results.BadRequest(new ErrorResponse("invalid_export",
+                            $"Relationship {rel.Id}: {DeciderFailure(provenanceResult)}"));
+
+                    events.AddRange(provenanceSuccess.Value);
+                    state = provenanceSuccess.Value.Aggregate(state, ModelState.Evolve);
+                }
+            }
+            else
+            {
+                var addCmd = new AddRelationshipCommand(rel.Id, rel.FromId, rel.ToId, rel.Label, rel.Technology, kind);
+                var result = ModelDecider.AddRelationship(state, addCmd);
+                if (result is not CommandResult<IReadOnlyList<object>>.Success added)
+                    return Results.BadRequest(new ErrorResponse("invalid_export",
+                        $"Relationship {rel.Id}: {DeciderFailure(result)}"));
+
+                events.AddRange(added.Value);
+                state = added.Value.Aggregate(state, ModelState.Evolve);
+
+                if (rel.LineShape is not null)
+                {
+                    events.Add(new ModelEvent.RelationshipLineShapeChanged(rel.Id, rel.LineShape));
+                    state = ModelState.Evolve(state, events[^1]);
+                }
+
+                if (factStatus != FactStatus.Declared || provenance is not null)
+                {
+                    events.Add(new ModelEvent.RelationshipProvenanceRecorded(rel.Id, factStatus, provenance));
+                    state = ModelState.Evolve(state, events[^1]);
+                }
+            }
+        }
+
+        // Import messages
+        foreach (var msg in doc.Messages)
+        {
+            if (!TryReadFacts(msg.FactStatus, msg.Provenance, out var factStatus, out var provenance, out var factError))
+                return Results.BadRequest(new ErrorResponse("invalid_export", $"Message {msg.Id}: {factError}"));
+
+            if (msg.SchemaId is { } schemaId &&
+                !await SchemaExistsAsync(projectId, schemaId, documentSchemaIds, schemasDb, ct))
+            {
+                return Results.BadRequest(new ErrorResponse("invalid_export",
+                    $"Message {msg.Id}: schema {schemaId} not found in this project or the document"));
+            }
+
+            if (state.Messages.TryGetValue(msg.Id, out var existingMessage))
+            {
+                var updateCmd = new UpdateMessageCommand(msg.Id,
+                    Name: msg.Name, SetName: true,
+                    Description: msg.Description, SetDescription: true,
+                    ProducerId: msg.ProducerId, SetProducerId: true,
+                    ConsumerIds: msg.ConsumerIds.ToElementIds(), SetConsumerIds: true,
+                    SchemaId: msg.SchemaId, SetSchemaId: true,
+                    Tags: msg.Tags);
+                var result = ModelDecider.UpdateMessage(state, updateCmd);
+                if (result is not CommandResult<IReadOnlyList<object>>.Success updateSuccess)
+                    return Results.BadRequest(new ErrorResponse("invalid_export",
+                        $"Message {msg.Id}: {DeciderFailure(result)}"));
+
+                events.AddRange(updateSuccess.Value);
+                state = updateSuccess.Value.Aggregate(state, ModelState.Evolve);
+
+                if (existingMessage.FactStatus != factStatus ||
+                    !ProvenanceEquivalent(existingMessage.Provenance, provenance))
+                {
+                    var provenanceResult = ModelDecider.RecordMessageProvenance(state, msg.Id, factStatus, provenance);
+                    if (provenanceResult is not CommandResult<IReadOnlyList<object>>.Success provenanceSuccess)
+                        return Results.BadRequest(new ErrorResponse("invalid_export",
+                            $"Message {msg.Id}: {DeciderFailure(provenanceResult)}"));
+
+                    events.AddRange(provenanceSuccess.Value);
+                    state = provenanceSuccess.Value.Aggregate(state, ModelState.Evolve);
+                }
+            }
+            else
+            {
+                var addCmd = new AddMessageCommand(msg.Id, msg.Name, msg.Description,
+                    msg.ProducerId, msg.ConsumerIds.ToElementIds(), msg.SchemaId, msg.Tags);
+                var result = ModelDecider.AddMessage(state, addCmd);
+                if (result is not CommandResult<IReadOnlyList<object>>.Success added)
+                    return Results.BadRequest(new ErrorResponse("invalid_export",
+                        $"Message {msg.Id}: {DeciderFailure(result)}"));
+
+                events.AddRange(added.Value);
+                state = added.Value.Aggregate(state, ModelState.Evolve);
+
+                if (factStatus != FactStatus.Declared || provenance is not null)
+                {
+                    events.Add(new ModelEvent.MessageProvenanceRecorded(msg.Id, factStatus, provenance));
+                    state = ModelState.Evolve(state, events[^1]);
+                }
+            }
+        }
+
+        if (events.Count > 0)
+        {
+            await store.ForProject(projectId).Append(
+                StreamId.From(modelStreamId), ExpectedVersion.Exact(version), events, ct);
+        }
+
+        // Import schemas (each is its own aggregate)
+        foreach (var schema in doc.Schemas)
+        {
+            var (schemaState, schemaVersion) = await store.Load<SchemaState>(StreamId.From(schema.Id), ct);
+            if (schemaState.Schema is not null)
+            {
+                if (schemaState.Schema.ProjectId != projectId)
+                {
+                    return Results.BadRequest(new ErrorResponse("invalid_export",
+                        $"Schema {schema.Id} belongs to another project"));
+                }
+
+                var updateCmd = new UpdateSchemaCommand(schema.Id,
+                    Name: schema.Name, SetName: true,
+                    Description: schema.Description, SetDescription: true,
+                    Content: schema.Content, SetContent: true);
+                var result = SchemaDecider.Update(schemaState, updateCmd);
+                if (result is not CommandResult<IReadOnlyList<object>>.Success updateSuccess)
+                    return Results.BadRequest(new ErrorResponse("invalid_export",
+                        $"Schema {schema.Id}: {DeciderFailure(result)}"));
+
+                if (updateSuccess.Value.Count > 0)
+                {
+                    await store.Append(
+                        StreamId.From(schema.Id), ExpectedVersion.Exact(schemaVersion), updateSuccess.Value, ct);
+                }
+            }
+            else
+            {
+                var createCmd = new CreateSchemaCommand(schema.Id, schema.Name, schema.Description, schema.Content, projectId);
+                var result = SchemaDecider.Create(schemaState, createCmd);
+                if (result is not CommandResult<IReadOnlyList<object>>.Success created)
+                    return Results.BadRequest(new ErrorResponse("invalid_export",
+                        $"Schema {schema.Id}: {DeciderFailure(result)}"));
+
+                await store.Append(
+                    StreamId.From(schema.Id), ExpectedVersion.Exact(schemaVersion), created.Value, ct);
+            }
+        }
+
+        await transaction.CommitAsync(ct);
         return Results.Ok();
     }
 
@@ -360,16 +342,12 @@ public static class ImportModel
         await schemasDb.Schemas.AsNoTracking()
             .AnyAsync(s => s.Id == schemaId && s.ProjectId == projectId, ct);
 
-    private static string DeciderFailure(object result) => result switch
+    private static string DeciderFailure(CommandResult<IReadOnlyList<object>> result) => result switch
     {
-        CommandResult<IReadOnlyList<ModelEvent>>.Invalid invalid =>
+        CommandResult<IReadOnlyList<object>>.Invalid invalid =>
             string.Join("; ", invalid.Errors.Select(e => $"{e.Field}: {e.Message}")),
-        CommandResult<IReadOnlyList<ModelEvent>>.Conflict conflict => conflict.Message,
-        CommandResult<IReadOnlyList<ModelEvent>>.NotFound notFound => notFound.Message,
-        CommandResult<IReadOnlyList<SchemaEvent>>.Invalid invalid =>
-            string.Join("; ", invalid.Errors.Select(e => $"{e.Field}: {e.Message}")),
-        CommandResult<IReadOnlyList<SchemaEvent>>.Conflict conflict => conflict.Message,
-        CommandResult<IReadOnlyList<SchemaEvent>>.NotFound notFound => notFound.Message,
+        CommandResult<IReadOnlyList<object>>.Conflict conflict => conflict.Message,
+        CommandResult<IReadOnlyList<object>>.NotFound notFound => notFound.Message,
         _ => "invalid value",
     };
 

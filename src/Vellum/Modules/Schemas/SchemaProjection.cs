@@ -1,61 +1,49 @@
-using Vellum.Kernel.CommandHandling;
-using Vellum.Kernel.EventTypes;
-using Vellum.Kernel.Projections;
+using Deedbox;
+using Microsoft.EntityFrameworkCore;
 using Vellum.Modules.Schemas.Entities;
 
 namespace Vellum.Modules.Schemas;
 
-public sealed class SchemaProjection : IInlineProjection
+/// <summary>
+/// The schema read model. It runs inline: the rows commit in the same transaction as the
+/// events, so a read after a command sees the command's effect.
+/// </summary>
+public sealed class SchemaProjection : Projection<SchemasDbContext>
 {
-    private readonly SchemasDbContext _db;
-    private readonly IEventTypeRegistry _registry;
-
-    public SchemaProjection(SchemasDbContext db, IEventTypeRegistry registry)
+    public SchemaProjection()
     {
-        _db = db;
-        _registry = registry;
-    }
-
-    public async Task ProjectAsync(IReadOnlyList<CollectedEvent> events, CancellationToken ct = default)
-    {
-        foreach (var e in events)
+        On<SchemaEvent.SchemaCreated>((created, ctx) =>
         {
-            var deserialized = _registry.DeserializeEvent(e.EventType, e.Payload);
-            if (deserialized is not SchemaEvent schemaEvent) continue;
-
-            switch (schemaEvent)
+            ctx.Db.Schemas.Add(new SchemaEntity
             {
-                case SchemaEvent.SchemaCreated created:
-                    _db.Schemas.Add(new SchemaEntity
-                    {
-                        Id = created.Id,
-                        ProjectId = created.ProjectId,
-                        Name = created.Name,
-                        Description = created.Description,
-                        Content = created.Content,
-                        Version = created.Version
-                    });
-                    break;
+                Id = created.Id,
+                ProjectId = created.ProjectId,
+                Name = created.Name,
+                Description = created.Description,
+                Content = created.Content,
+                Version = created.Version
+            });
+            return Task.CompletedTask;
+        });
 
-                case SchemaEvent.SchemaUpdated updated:
-                    var entity = await _db.Schemas.FindAsync([updated.SchemaId], ct);
-                    if (entity is not null)
-                    {
-                        if (updated.Name is not null) entity.Name = updated.Name;
-                        if (updated.Description is not null) entity.Description = updated.Description;
-                        if (updated.Content is not null) entity.Content = updated.Content;
-                        if (updated.Version is not null) entity.Version = updated.Version.Value;
-                    }
-                    break;
+        On<SchemaEvent.SchemaUpdated>(async (updated, ctx) =>
+        {
+            var entity = await ctx.Db.Schemas.FindAsync([updated.SchemaId], ctx.CancellationToken);
+            if (entity is null) return;
 
-                case SchemaEvent.SchemaDeleted deleted:
-                    var toDelete = await _db.Schemas.FindAsync([deleted.SchemaId], ct);
-                    if (toDelete is not null) _db.Schemas.Remove(toDelete);
-                    break;
-            }
-        }
+            if (updated.Name is not null) entity.Name = updated.Name;
+            if (updated.Description is not null) entity.Description = updated.Description;
+            if (updated.Content is not null) entity.Content = updated.Content;
+            if (updated.Version is not null) entity.Version = updated.Version.Value;
+        });
 
-        if (events.Count > 0)
-            await _db.SaveChangesAsync(ct);
+        On<SchemaEvent.SchemaDeleted>(async (deleted, ctx) =>
+        {
+            var entity = await ctx.Db.Schemas.FindAsync([deleted.SchemaId], ctx.CancellationToken);
+            if (entity is not null) ctx.Db.Schemas.Remove(entity);
+        });
     }
+
+    protected override Task ResetAsync(WriteContext<SchemasDbContext> context) =>
+        context.Db.Schemas.ExecuteDeleteAsync(context.CancellationToken);
 }

@@ -4,7 +4,6 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
-using Vellum.Kernel.EventStore;
 using Vellum.Modules.Docs;
 using Vellum.Modules.Drafts;
 using Vellum.Modules.Identity;
@@ -32,9 +31,9 @@ public class RevisionVariantEndpointTests
             .WithWebHostBuilder(builder =>
             {
                 builder.UseEnvironment("Testing");
+                builder.UseSetting("ConnectionStrings:DefaultConnection", _fixture.ConnectionString);
                 builder.ConfigureServices(services =>
                 {
-                    services.RemoveAll<DbContextOptions<EventStoreDbContext>>();
                     services.RemoveAll<DbContextOptions<AppIdentityDbContext>>();
                     services.RemoveAll<DbContextOptions<WorkspacesDbContext>>();
                     services.RemoveAll<DbContextOptions<ModellingDbContext>>();
@@ -42,8 +41,6 @@ public class RevisionVariantEndpointTests
                     services.RemoveAll<DbContextOptions<ViewsDbContext>>();
                     services.RemoveAll<DbContextOptions<DocsDbContext>>();
                     services.RemoveAll<DbContextOptions<SchemasDbContext>>();
-                    services.AddDbContext<EventStoreDbContext>(o =>
-                        o.UseNpgsql(_fixture.ConnectionString).UseSnakeCaseNamingConvention());
                     services.AddDbContext<AppIdentityDbContext>(o =>
                         o.UseNpgsql(_fixture.ConnectionString).UseSnakeCaseNamingConvention());
                     services.AddDbContext<WorkspacesDbContext>(o =>

@@ -1,6 +1,5 @@
+using Deedbox;
 using Microsoft.EntityFrameworkCore;
-using Vellum.Kernel.EventTypes;
-using Vellum.Kernel.Projections;
 
 namespace Vellum.Modules.Schemas;
 
@@ -14,16 +13,11 @@ public static class SchemasModule
             options.UseNpgsql(connectionString)
                    .UseSnakeCaseNamingConvention());
 
-        services.AddScoped<SchemaProjection>();
-        services.AddScoped<IInlineProjection>(sp => sp.GetRequiredService<SchemaProjection>());
-
         return services;
     }
 
-    public static void RegisterEvents(EventTypeRegistry registry)
-    {
-        registry.Register<SchemaEvent.SchemaCreated>("schemas.created.v1");
-        registry.Register<SchemaEvent.SchemaUpdated>("schemas.updated.v1");
-        registry.Register<SchemaEvent.SchemaDeleted>("schemas.deleted.v1");
-    }
+    /// <summary>One stream per schema, keyed by the schema ID.</summary>
+    public static DeedboxBuilder AddSchemaStreams(this DeedboxBuilder deedbox) => deedbox
+        .Stream<SchemaState>("schema", stream => stream.EventsNestedIn(typeof(SchemaEvent)))
+        .Projection<SchemaProjection>("schema_read_model", Run.Inline);
 }

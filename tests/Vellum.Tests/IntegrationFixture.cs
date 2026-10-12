@@ -1,6 +1,5 @@
 using Microsoft.EntityFrameworkCore;
 using Testcontainers.PostgreSql;
-using Vellum.Kernel.EventStore;
 using Vellum.Modules.Identity;
 using Vellum.Modules.Modelling;
 using Vellum.Modules.Docs;
@@ -23,7 +22,6 @@ public class IntegrationFixture : IAsyncLifetime
     {
         await _postgres.StartAsync();
 
-        await MigrateAsync<EventStoreDbContext>();
         await MigrateAsync<AppIdentityDbContext>();
         await MigrateAsync<WorkspacesDbContext>();
         await MigrateAsync<ModellingDbContext>();

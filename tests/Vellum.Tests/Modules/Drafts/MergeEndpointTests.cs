@@ -5,7 +5,6 @@ using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
-using Vellum.Kernel.EventStore;
 using Vellum.Modules.Docs;
 using Vellum.Modules.Drafts;
 using Vellum.Modules.Identity;
@@ -32,9 +31,9 @@ public class MergeEndpointTests
             .WithWebHostBuilder(builder =>
             {
                 builder.UseEnvironment("Testing");
+                builder.UseSetting("ConnectionStrings:DefaultConnection", _fixture.ConnectionString);
                 builder.ConfigureServices(services =>
                 {
-                    services.RemoveAll<DbContextOptions<EventStoreDbContext>>();
                     services.RemoveAll<DbContextOptions<AppIdentityDbContext>>();
                     services.RemoveAll<DbContextOptions<WorkspacesDbContext>>();
                     services.RemoveAll<DbContextOptions<ModellingDbContext>>();
@@ -43,7 +42,6 @@ public class MergeEndpointTests
                     services.RemoveAll<DbContextOptions<DraftsDbContext>>();
                     services.RemoveAll<DbContextOptions<SchemasDbContext>>();
                     var cs = _fixture.ConnectionString;
-                    services.AddDbContext<EventStoreDbContext>(o => o.UseNpgsql(cs).UseSnakeCaseNamingConvention());
                     services.AddDbContext<AppIdentityDbContext>(o => o.UseNpgsql(cs).UseSnakeCaseNamingConvention());
                     services.AddDbContext<WorkspacesDbContext>(o => o.UseNpgsql(cs).UseSnakeCaseNamingConvention());
                     services.AddDbContext<ModellingDbContext>(o => o.UseNpgsql(cs).UseSnakeCaseNamingConvention());

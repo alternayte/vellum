@@ -1,7 +1,6 @@
-using Vellum.Kernel.Aggregates;
-using Vellum.Kernel.CommandHandling;
-using Vellum.Kernel.Results;
+using Deedbox;
 using Vellum.Modules.Modelling.Model;
+using Vellum.Shared;
 
 namespace Vellum.Modules.Modelling.Elements;
 
@@ -10,24 +9,16 @@ public sealed record AddElementRequest(
     string? Technology, Guid? OwnerId, string? Status,
     Guid? ParentId, string[]? Tags);
 
-public sealed record AddElementCommandEnvelope(
-    Guid ProjectId, Guid StreamId, string UserId, AddElementRequest Request);
+public sealed record AddElementCommandEnvelope(Guid ProjectId, Guid StreamId, AddElementRequest Request);
 
 public sealed class AddElementHandler : ICommandHandler<AddElementCommandEnvelope, CommandResult<ElementDto>>
 {
-    private readonly AggregateStore _store;
-    private readonly ModelProjection _projection;
+    private readonly IEventStore _store;
 
-    public AddElementHandler(AggregateStore store, ModelProjection projection)
-    {
-        _store = store;
-        _projection = projection;
-    }
+    public AddElementHandler(IEventStore store) => _store = store;
 
     public async Task<CommandResult<ElementDto>> HandleAsync(AddElementCommandEnvelope cmd, CancellationToken ct = default)
     {
-        var (state, version) = await _store.LoadAsync<ModelState, ModelEvent>(cmd.StreamId, ct);
-
         if (!ModelEnum.TryParseDefined(cmd.Request.Kind, out ElementKind kind))
             return new CommandResult<ElementDto>.Invalid([new ValidationError("kind", "Invalid element kind")]);
 
@@ -40,30 +31,11 @@ public sealed class AddElementHandler : ICommandHandler<AddElementCommandEnvelop
             cmd.Request.Technology, cmd.Request.OwnerId, status,
             cmd.Request.ParentId, cmd.Request.Tags ?? []);
 
-        var result = ModelDecider.AddElement(state, addCmd);
-        if (result is not CommandResult<IReadOnlyList<ModelEvent>>.Success success)
-        {
-            return result switch
-            {
-                CommandResult<IReadOnlyList<ModelEvent>>.Invalid inv =>
-                    new CommandResult<ElementDto>.Invalid(inv.Errors),
-                CommandResult<IReadOnlyList<ModelEvent>>.Conflict c =>
-                    new CommandResult<ElementDto>.Conflict(c.Message),
-                _ => new CommandResult<ElementDto>.Conflict("Unexpected error")
-            };
-        }
-
-        var metadata = new EventMetadata
-        {
-            ActorId = Guid.Parse(cmd.UserId),
-            CorrelationId = Guid.NewGuid()
-        };
-
-        _projection.SetContext(cmd.ProjectId, cmd.StreamId);
-        var newState = success.Value.Aggregate(state, (s, e) => s.Evolve(e));
-        await _store.SaveAsync(cmd.StreamId, "model", version, newState, success.Value, metadata, ct);
-
-        return new CommandResult<ElementDto>.Success(ToDto(newState.Elements[cmd.Request.Id]));
+        return await _store.ForProject(cmd.ProjectId).Decide<ModelState, ElementDto>(
+            cmd.StreamId,
+            state => ModelDecider.AddElement(state, addCmd),
+            state => ToDto(state.Elements[cmd.Request.Id]),
+            ct);
     }
 
     internal static ElementDto ToDto(ElementState element) => new(

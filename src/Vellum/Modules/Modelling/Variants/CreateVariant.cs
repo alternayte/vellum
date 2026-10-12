@@ -1,8 +1,7 @@
 using System.Security.Claims;
 using System.Text.Json;
+using Deedbox;
 using Microsoft.EntityFrameworkCore;
-using Vellum.Kernel.Aggregates;
-using Vellum.Kernel.EventStore;
 using Vellum.Modules.Modelling.Entities;
 using Vellum.Modules.Modelling.Model;
 using Vellum.Modules.Workspaces;
@@ -29,10 +28,7 @@ public static class CreateVariant
         Guid projectId,
         CreateVariantRequest request,
         ClaimsPrincipal user,
-        WorkspacesDbContext workspacesDb,
-        ModellingDbContext modellingDb,
-        AggregateStore store,
-        IEventStore eventStore,
+        HttpContext http,
         WorkspaceAuthorizationService auth,
         CancellationToken ct)
     {
@@ -42,73 +38,78 @@ public static class CreateVariant
         if (string.IsNullOrWhiteSpace(request.Name))
             return Results.BadRequest(new ErrorResponse("validation_error", "Variant name is required"));
 
-        var project = await workspacesDb.Projects.AsNoTracking()
-            .FirstOrDefaultAsync(p => p.Id == projectId, ct);
-        if (project is null) return Results.NotFound(new ErrorResponse("not_found", "Project not found"));
-
-        var existingById = await modellingDb.Variants.AsNoTracking()
-            .FirstOrDefaultAsync(v => v.Id == request.Id, ct);
-        if (existingById is not null)
+        // The variant row, the fork event and the branch read-model rows commit together.
+        return await SharedTransaction.RunAsync(http.RequestServices, async services =>
         {
-            return existingById.ProjectId == projectId
-                ? Results.Ok(ToDto(existingById))
-                : Results.Conflict(new ErrorResponse("conflict", "Variant id is already in use"));
-        }
+            var workspacesDb = services.GetRequiredService<WorkspacesDbContext>();
+            var modellingDb = services.GetRequiredService<ModellingDbContext>();
+            var store = services.GetRequiredService<IEventStore>();
 
-        if (await modellingDb.Variants.AnyAsync(
-                v => v.ProjectId == projectId && v.Name == request.Name, ct))
-        {
-            return Results.Conflict(new ErrorResponse("conflict", "A variant with this name already exists"));
-        }
+            var project = await workspacesDb.Projects.AsNoTracking()
+                .FirstOrDefaultAsync(p => p.Id == projectId, ct);
+            if (project is null) return Results.NotFound(new ErrorResponse("not_found", "Project not found"));
 
-        ModelState sourceState;
-        Guid baseStreamId;
-        int forkVersion;
+            var existingById = await modellingDb.Variants.AsNoTracking()
+                .FirstOrDefaultAsync(v => v.Id == request.Id, ct);
+            if (existingById is not null)
+            {
+                return existingById.ProjectId == projectId
+                    ? Results.Ok(ToDto(existingById))
+                    : Results.Conflict(new ErrorResponse("conflict", "Variant id is already in use"));
+            }
 
-        if (request.BaseRevisionId is { } revisionId)
-        {
-            var revision = await modellingDb.Revisions.AsNoTracking()
-                .FirstOrDefaultAsync(r => r.Id == revisionId && r.ProjectId == projectId, ct);
-            if (revision is null)
-                return Results.NotFound(new ErrorResponse("not_found", "Base revision not found"));
+            if (await modellingDb.Variants.AnyAsync(
+                    v => v.ProjectId == projectId && v.Name == request.Name, ct))
+            {
+                return Results.Conflict(new ErrorResponse("conflict", "A variant with this name already exists"));
+            }
 
-            sourceState = JsonSerializer.Deserialize<ModelState>(revision.State, JsonOpts)!;
-            baseStreamId = revision.StreamId;
-            forkVersion = revision.Version;
-        }
-        else
-        {
-            (sourceState, forkVersion) = await store.LoadAsync<ModelState, ModelEvent>(project.StreamId, ct);
-            baseStreamId = project.StreamId;
-        }
+            ModelState sourceState;
+            Guid baseStreamId;
+            long forkVersion;
 
-        var variantStreamId = Guid.NewGuid();
-        await eventStore.AppendAsync(
-            variantStreamId, "model", 0,
-            JsonSerializer.SerializeToDocument(sourceState, JsonOpts), [], ct);
+            if (request.BaseRevisionId is { } revisionId)
+            {
+                var revision = await modellingDb.Revisions.AsNoTracking()
+                    .FirstOrDefaultAsync(r => r.Id == revisionId && r.ProjectId == projectId, ct);
+                if (revision is null)
+                    return Results.NotFound(new ErrorResponse("not_found", "Base revision not found"));
 
-        BranchRows.Write(projectId, variantStreamId, sourceState, modellingDb);
+                sourceState = JsonSerializer.Deserialize<ModelState>(revision.State, JsonOpts)!;
+                baseStreamId = revision.StreamId;
+                forkVersion = revision.Version;
+            }
+            else
+            {
+                (sourceState, forkVersion) = await store.Load<ModelState>(StreamId.From(project.StreamId), ct);
+                baseStreamId = project.StreamId;
+            }
 
-        var variant = new VariantEntity
-        {
-            Id = request.Id,
-            ProjectId = projectId,
-            Name = request.Name,
-            StreamId = variantStreamId,
-            BaseStreamId = baseStreamId,
-            BaseRevisionId = request.BaseRevisionId,
-            ForkVersion = forkVersion,
-            Status = "open",
-            CreatedBy = userId,
-            CreatedAt = DateTimeOffset.UtcNow,
-        };
+            var variant = new VariantEntity
+            {
+                Id = request.Id,
+                ProjectId = projectId,
+                Name = request.Name,
+                StreamId = Guid.NewGuid(),
+                BaseStreamId = baseStreamId,
+                BaseRevisionId = request.BaseRevisionId,
+                ForkVersion = checked((int)forkVersion),
+                Status = "open",
+                CreatedBy = userId,
+                CreatedAt = DateTimeOffset.UtcNow,
+            };
+            modellingDb.Variants.Add(variant);
 
-        modellingDb.Variants.Add(variant);
-        await modellingDb.SaveChangesAsync(ct);
+            // One append in a transaction that Deedbox opens on the DbContext and commits. Deedbox
+            // saves the variant row, and the inline projection writes the branch rows, in it.
+            await store.ForProject(projectId).UseDbContext(modellingDb).Append(
+                StreamId.From(variant.StreamId), ExpectedVersion.NoStream,
+                [ModelStore.Fork(sourceState, baseStreamId, forkVersion)], ct);
 
-        return Results.Created(
-            $"/api/projects/{projectId}/variants/{variant.Id}",
-            ToDto(variant));
+            return Results.Created(
+                $"/api/projects/{projectId}/variants/{variant.Id}",
+                ToDto(variant));
+        }, ct);
     }
 
     internal static VariantDto ToDto(VariantEntity variant) => new(

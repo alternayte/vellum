@@ -1,4 +1,4 @@
-namespace Vellum.Kernel.Results;
+namespace Vellum.Shared;
 
 public abstract record CommandResult
 {

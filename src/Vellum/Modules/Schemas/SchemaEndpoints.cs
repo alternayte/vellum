@@ -1,8 +1,6 @@
 using System.Security.Claims;
-using Vellum.Kernel.CommandHandling;
-using Vellum.Kernel.Results;
-using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Shared;
+using Vellum.Modules.Workspaces.Authorization;
 
 namespace Vellum.Modules.Schemas;
 
@@ -25,7 +23,7 @@ public static class SchemaEndpoints
             var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
             await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
             return (await handler.HandleAsync(
-                new CreateSchemaCommandEnvelope(projectId, userId, request), ct))
+                new CreateSchemaCommandEnvelope(projectId, request), ct))
                 .ToCreatedResult($"/api/projects/{projectId}/schemas/{request.Id}");
         });
 
@@ -63,7 +61,7 @@ public static class SchemaEndpoints
             var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
             await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
             return (await handler.HandleAsync(
-                new UpdateSchemaCommandEnvelope(projectId, schemaId, userId, request), ct))
+                new UpdateSchemaCommandEnvelope(projectId, schemaId, request), ct))
                 .ToHttpResult();
         });
 
@@ -77,7 +75,7 @@ public static class SchemaEndpoints
             var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
             await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
             return (await handler.HandleAsync(
-                new DeleteSchemaCommandEnvelope(projectId, schemaId, userId), ct))
+                new DeleteSchemaCommandEnvelope(projectId, schemaId), ct))
                 .ToHttpResult();
         });
 

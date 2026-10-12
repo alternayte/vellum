@@ -1,12 +1,13 @@
-using Vellum.Kernel.Results;
+using Vellum.Shared;
+using Deedbox.Testing;
 using Vellum.Modules.Modelling.Model;
 
 namespace Vellum.Tests.Modules.Modelling;
 
 public class ModelDeciderTests
 {
-    private static ModelState StateWith(params ModelEvent[] events) =>
-        events.Aggregate(ModelState.Initial, (s, e) => s.Evolve(e));
+    private static ModelState StateWith(params object[] events) =>
+        Decider.Given<ModelState>(events).State;
 
     private static readonly Guid SystemId = Guid.NewGuid();
     private static readonly Guid AppId = Guid.NewGuid();
@@ -25,7 +26,7 @@ public class ModelDeciderTests
     {
         var result = ModelDecider.AddElement(ModelState.Initial,
             new AddElementCommand(Guid.NewGuid(), ElementKind.System, "Orders", null, null, null, ElementStatus.Current, null, []));
-        var success = Assert.IsType<CommandResult<IReadOnlyList<ModelEvent>>.Success>(result);
+        var success = Assert.IsType<CommandResult<IReadOnlyList<object>>.Success>(result);
         var added = Assert.IsType<ModelEvent.ElementAdded>(Assert.Single(success.Value));
         Assert.Equal("Orders", added.Name);
     }
@@ -37,7 +38,7 @@ public class ModelDeciderTests
             new ModelEvent.ElementAdded(SystemId, ElementKind.System, "Orders", null, null, null, ElementStatus.Current, null, []));
         var result = ModelDecider.AddElement(state,
             new AddElementCommand(Guid.NewGuid(), ElementKind.App, "API", null, null, null, ElementStatus.Current, SystemId, []));
-        Assert.IsType<CommandResult<IReadOnlyList<ModelEvent>>.Success>(result);
+        Assert.IsType<CommandResult<IReadOnlyList<object>>.Success>(result);
     }
 
     [Fact]
@@ -45,7 +46,7 @@ public class ModelDeciderTests
     {
         var result = ModelDecider.AddElement(ModelState.Initial,
             new AddElementCommand(Guid.NewGuid(), ElementKind.App, "API", null, null, null, ElementStatus.Current, null, []));
-        Assert.IsType<CommandResult<IReadOnlyList<ModelEvent>>.Invalid>(result);
+        Assert.IsType<CommandResult<IReadOnlyList<object>>.Invalid>(result);
     }
 
     [Fact]
@@ -55,7 +56,7 @@ public class ModelDeciderTests
             new ModelEvent.ElementAdded(SystemId, ElementKind.System, "Orders", null, null, null, ElementStatus.Current, null, []));
         var result = ModelDecider.AddElement(state,
             new AddElementCommand(Guid.NewGuid(), ElementKind.System, "Payments", null, null, null, ElementStatus.Current, SystemId, []));
-        Assert.IsType<CommandResult<IReadOnlyList<ModelEvent>>.Invalid>(result);
+        Assert.IsType<CommandResult<IReadOnlyList<object>>.Invalid>(result);
     }
 
     [Fact]
@@ -64,7 +65,7 @@ public class ModelDeciderTests
         var state = StateWithSystemAndApp();
         var result = ModelDecider.AddElement(state,
             new AddElementCommand(Guid.NewGuid(), ElementKind.Component, "Handler", null, null, null, ElementStatus.Current, AppId, []));
-        Assert.IsType<CommandResult<IReadOnlyList<ModelEvent>>.Success>(result);
+        Assert.IsType<CommandResult<IReadOnlyList<object>>.Success>(result);
     }
 
     [Fact]
@@ -73,7 +74,7 @@ public class ModelDeciderTests
         var state = StateWithSystemAndApp();
         var result = ModelDecider.AddElement(state,
             new AddElementCommand(Guid.NewGuid(), ElementKind.Component, "Handler", null, null, null, ElementStatus.Current, SystemId, []));
-        Assert.IsType<CommandResult<IReadOnlyList<ModelEvent>>.Invalid>(result);
+        Assert.IsType<CommandResult<IReadOnlyList<object>>.Invalid>(result);
     }
 
     [Fact]
@@ -84,7 +85,7 @@ public class ModelDeciderTests
             new ModelEvent.ElementAdded(id, ElementKind.System, "Orders", null, null, null, ElementStatus.Current, null, []));
         var result = ModelDecider.AddElement(state,
             new AddElementCommand(id, ElementKind.System, "Payments", null, null, null, ElementStatus.Current, null, []));
-        Assert.IsType<CommandResult<IReadOnlyList<ModelEvent>>.Conflict>(result);
+        Assert.IsType<CommandResult<IReadOnlyList<object>>.Conflict>(result);
     }
 
     [Fact]
@@ -92,7 +93,7 @@ public class ModelDeciderTests
     {
         var result = ModelDecider.AddElement(ModelState.Initial,
             new AddElementCommand(Guid.NewGuid(), ElementKind.System, "", null, null, null, ElementStatus.Current, null, []));
-        Assert.IsType<CommandResult<IReadOnlyList<ModelEvent>>.Invalid>(result);
+        Assert.IsType<CommandResult<IReadOnlyList<object>>.Invalid>(result);
     }
 
     [Fact]
@@ -100,7 +101,7 @@ public class ModelDeciderTests
     {
         var result = ModelDecider.AddElement(ModelState.Initial,
             new AddElementCommand(Guid.NewGuid(), ElementKind.App, "API", null, null, null, ElementStatus.Current, Guid.NewGuid(), []));
-        Assert.IsType<CommandResult<IReadOnlyList<ModelEvent>>.Invalid>(result);
+        Assert.IsType<CommandResult<IReadOnlyList<object>>.Invalid>(result);
     }
 
     // --- UpdateElement ---
@@ -113,7 +114,7 @@ public class ModelDeciderTests
             new ModelEvent.ElementAdded(id, ElementKind.System, "Orders", null, null, null, ElementStatus.Current, null, []));
         var result = ModelDecider.UpdateElement(state,
             new UpdateElementCommand(id, Name: "Payments", SetName: true));
-        var success = Assert.IsType<CommandResult<IReadOnlyList<ModelEvent>>.Success>(result);
+        var success = Assert.IsType<CommandResult<IReadOnlyList<object>>.Success>(result);
         var renamed = Assert.IsType<ModelEvent.ElementRenamed>(Assert.Single(success.Value));
         Assert.Equal("Payments", renamed.Name);
     }
@@ -126,7 +127,7 @@ public class ModelDeciderTests
             new ModelEvent.ElementAdded(id, ElementKind.System, "Orders", null, null, null, ElementStatus.Current, null, []));
         var result = ModelDecider.UpdateElement(state,
             new UpdateElementCommand(id, Name: "Orders", SetName: true));
-        var success = Assert.IsType<CommandResult<IReadOnlyList<ModelEvent>>.Success>(result);
+        var success = Assert.IsType<CommandResult<IReadOnlyList<object>>.Success>(result);
         Assert.Empty(success.Value);
     }
 
@@ -138,7 +139,7 @@ public class ModelDeciderTests
             new ModelEvent.ElementAdded(id, ElementKind.System, "Orders", null, null, null, ElementStatus.Current, null, []));
         var result = ModelDecider.UpdateElement(state,
             new UpdateElementCommand(id, Name: "Payments", SetName: true, Status: ElementStatus.Planned));
-        var success = Assert.IsType<CommandResult<IReadOnlyList<ModelEvent>>.Success>(result);
+        var success = Assert.IsType<CommandResult<IReadOnlyList<object>>.Success>(result);
         Assert.Equal(2, success.Value.Count);
         Assert.IsType<ModelEvent.ElementRenamed>(success.Value[0]);
         Assert.IsType<ModelEvent.ElementStatusChanged>(success.Value[1]);
@@ -150,7 +151,7 @@ public class ModelDeciderTests
         var state = StateWithSystemAndApp();
         var result = ModelDecider.UpdateElement(state,
             new UpdateElementCommand(AppId, ParentId: null, SetParentId: true));
-        Assert.IsType<CommandResult<IReadOnlyList<ModelEvent>>.Invalid>(result);
+        Assert.IsType<CommandResult<IReadOnlyList<object>>.Invalid>(result);
     }
 
     [Fact]
@@ -158,7 +159,7 @@ public class ModelDeciderTests
     {
         var result = ModelDecider.UpdateElement(ModelState.Initial,
             new UpdateElementCommand(Guid.NewGuid(), Name: "X", SetName: true));
-        Assert.IsType<CommandResult<IReadOnlyList<ModelEvent>>.NotFound>(result);
+        Assert.IsType<CommandResult<IReadOnlyList<object>>.NotFound>(result);
     }
 
     // --- RemoveElement ---
@@ -175,7 +176,7 @@ public class ModelDeciderTests
             new ModelEvent.RelationshipAdded(relId, sysId, otherId, "uses", null, null));
 
         var result = ModelDecider.RemoveElement(state, sysId);
-        var success = Assert.IsType<CommandResult<IReadOnlyList<ModelEvent>>.Success>(result);
+        var success = Assert.IsType<CommandResult<IReadOnlyList<object>>.Success>(result);
         Assert.Equal(2, success.Value.Count);
         Assert.IsType<ModelEvent.RelationshipRemoved>(success.Value[0]);
         Assert.IsType<ModelEvent.ElementRemoved>(success.Value[1]);
@@ -193,7 +194,7 @@ public class ModelDeciderTests
             new ModelEvent.ElementAdded(compId, ElementKind.Component, "Handler", null, null, null, ElementStatus.Current, appId, []));
 
         var result = ModelDecider.RemoveElement(state, sysId);
-        var success = Assert.IsType<CommandResult<IReadOnlyList<ModelEvent>>.Success>(result);
+        var success = Assert.IsType<CommandResult<IReadOnlyList<object>>.Success>(result);
         // Component removed, then App removed, then System removed
         Assert.Equal(3, success.Value.Count);
         var removals = success.Value.Cast<ModelEvent.ElementRemoved>().Select(r => r.ElementId).ToList();
@@ -209,7 +210,7 @@ public class ModelDeciderTests
     public void RemoveElement_nonexistent_returns_not_found()
     {
         var result = ModelDecider.RemoveElement(ModelState.Initial, Guid.NewGuid());
-        Assert.IsType<CommandResult<IReadOnlyList<ModelEvent>>.NotFound>(result);
+        Assert.IsType<CommandResult<IReadOnlyList<object>>.NotFound>(result);
     }
 
     [Fact]
@@ -231,7 +232,7 @@ public class ModelDeciderTests
             new ModelEvent.RelationshipAdded(relId, appAId, appBId, "calls", null, null));
 
         var result = ModelDecider.RemoveElement(state, sysId);
-        var success = Assert.IsType<CommandResult<IReadOnlyList<ModelEvent>>.Success>(result);
+        var success = Assert.IsType<CommandResult<IReadOnlyList<object>>.Success>(result);
 
         var relationshipRemovals = success.Value.OfType<ModelEvent.RelationshipRemoved>().ToList();
         Assert.Single(relationshipRemovals);
@@ -250,7 +251,7 @@ public class ModelDeciderTests
             new ModelEvent.ElementAdded(consumerId, ElementKind.System, "Payments", null, null, null, ElementStatus.Current, null, []));
         var result = ModelDecider.AddMessage(state,
             new AddMessageCommand(Guid.NewGuid(), "OrderPlaced", "An order was placed", producerId, [consumerId], null, []));
-        var success = Assert.IsType<CommandResult<IReadOnlyList<ModelEvent>>.Success>(result);
+        var success = Assert.IsType<CommandResult<IReadOnlyList<object>>.Success>(result);
         var added = Assert.IsType<ModelEvent.MessageAdded>(Assert.Single(success.Value));
         Assert.Equal("OrderPlaced", added.Name);
         Assert.Equal(producerId, added.ProducerId.Value);
@@ -265,7 +266,7 @@ public class ModelDeciderTests
             new ModelEvent.ElementAdded(producerId, ElementKind.System, "Orders", null, null, null, ElementStatus.Current, null, []));
         var result = ModelDecider.AddMessage(state,
             new AddMessageCommand(Guid.NewGuid(), "", null, producerId, [], null, []));
-        Assert.IsType<CommandResult<IReadOnlyList<ModelEvent>>.Invalid>(result);
+        Assert.IsType<CommandResult<IReadOnlyList<object>>.Invalid>(result);
     }
 
     [Fact]
@@ -273,7 +274,7 @@ public class ModelDeciderTests
     {
         var result = ModelDecider.AddMessage(ModelState.Initial,
             new AddMessageCommand(Guid.NewGuid(), "OrderPlaced", null, Guid.NewGuid(), [], null, []));
-        Assert.IsType<CommandResult<IReadOnlyList<ModelEvent>>.Invalid>(result);
+        Assert.IsType<CommandResult<IReadOnlyList<object>>.Invalid>(result);
     }
 
     [Fact]
@@ -284,7 +285,7 @@ public class ModelDeciderTests
             new ModelEvent.ElementAdded(producerId, ElementKind.System, "Orders", null, null, null, ElementStatus.Current, null, []));
         var result = ModelDecider.AddMessage(state,
             new AddMessageCommand(Guid.NewGuid(), "OrderPlaced", null, producerId, [Guid.NewGuid()], null, []));
-        Assert.IsType<CommandResult<IReadOnlyList<ModelEvent>>.Invalid>(result);
+        Assert.IsType<CommandResult<IReadOnlyList<object>>.Invalid>(result);
     }
 
     [Fact]
@@ -297,7 +298,7 @@ public class ModelDeciderTests
             new ModelEvent.MessageAdded(id, "OrderPlaced", null, producerId, [], null, []));
         var result = ModelDecider.AddMessage(state,
             new AddMessageCommand(id, "Other", null, producerId, [], null, []));
-        Assert.IsType<CommandResult<IReadOnlyList<ModelEvent>>.Conflict>(result);
+        Assert.IsType<CommandResult<IReadOnlyList<object>>.Conflict>(result);
     }
 
     // --- UpdateMessage ---
@@ -312,7 +313,7 @@ public class ModelDeciderTests
             new ModelEvent.MessageAdded(id, "OrderPlaced", null, producerId, [], null, []));
         var result = ModelDecider.UpdateMessage(state,
             new UpdateMessageCommand(id, Name: "OrderCreated", SetName: true));
-        var success = Assert.IsType<CommandResult<IReadOnlyList<ModelEvent>>.Success>(result);
+        var success = Assert.IsType<CommandResult<IReadOnlyList<object>>.Success>(result);
         var updated = Assert.IsType<ModelEvent.MessageUpdated>(Assert.Single(success.Value));
         Assert.Equal("OrderCreated", updated.Name);
     }
@@ -322,7 +323,7 @@ public class ModelDeciderTests
     {
         var result = ModelDecider.UpdateMessage(ModelState.Initial,
             new UpdateMessageCommand(Guid.NewGuid(), Name: "X", SetName: true));
-        Assert.IsType<CommandResult<IReadOnlyList<ModelEvent>>.NotFound>(result);
+        Assert.IsType<CommandResult<IReadOnlyList<object>>.NotFound>(result);
     }
 
     // --- RemoveMessage ---
@@ -336,7 +337,7 @@ public class ModelDeciderTests
             new ModelEvent.ElementAdded(producerId, ElementKind.System, "Orders", null, null, null, ElementStatus.Current, null, []),
             new ModelEvent.MessageAdded(id, "OrderPlaced", null, producerId, [], null, []));
         var result = ModelDecider.RemoveMessage(state, id);
-        var success = Assert.IsType<CommandResult<IReadOnlyList<ModelEvent>>.Success>(result);
+        var success = Assert.IsType<CommandResult<IReadOnlyList<object>>.Success>(result);
         Assert.IsType<ModelEvent.MessageRemoved>(Assert.Single(success.Value));
     }
 
@@ -344,7 +345,7 @@ public class ModelDeciderTests
     public void RemoveMessage_nonexistent_returns_not_found()
     {
         var result = ModelDecider.RemoveMessage(ModelState.Initial, Guid.NewGuid());
-        Assert.IsType<CommandResult<IReadOnlyList<ModelEvent>>.NotFound>(result);
+        Assert.IsType<CommandResult<IReadOnlyList<object>>.NotFound>(result);
     }
 
     [Fact]
@@ -358,7 +359,7 @@ public class ModelDeciderTests
             new ModelEvent.ElementAdded(consumerId, ElementKind.System, "Payments", null, null, null, ElementStatus.Current, null, []),
             new ModelEvent.MessageAdded(msgId, "OrderPlaced", null, producerId, [consumerId], null, []));
         var result = ModelDecider.RemoveElement(state, producerId);
-        var success = Assert.IsType<CommandResult<IReadOnlyList<ModelEvent>>.Success>(result);
+        var success = Assert.IsType<CommandResult<IReadOnlyList<object>>.Success>(result);
         Assert.Contains(success.Value, e => e is ModelEvent.MessageRemoved mr && mr.MessageId.Value == msgId);
     }
 
@@ -375,7 +376,7 @@ public class ModelDeciderTests
 
         var result = ModelDecider.UpdateRelationship(state,
             new UpdateRelationshipCommand(relId, LineShape: "step", SetLineShape: true));
-        var success = Assert.IsType<CommandResult<IReadOnlyList<ModelEvent>>.Success>(result);
+        var success = Assert.IsType<CommandResult<IReadOnlyList<object>>.Success>(result);
         var changed = Assert.IsType<ModelEvent.RelationshipLineShapeChanged>(Assert.Single(success.Value));
         Assert.Equal("step", changed.LineShape);
     }
@@ -391,7 +392,7 @@ public class ModelDeciderTests
 
         var result = ModelDecider.UpdateRelationship(state,
             new UpdateRelationshipCommand(relId, LineShape: null, SetLineShape: false));
-        var success = Assert.IsType<CommandResult<IReadOnlyList<ModelEvent>>.Success>(result);
+        var success = Assert.IsType<CommandResult<IReadOnlyList<object>>.Success>(result);
         Assert.Empty(success.Value);
     }
 
@@ -403,7 +404,7 @@ public class ModelDeciderTests
         var state = StateWithSystemAndApp();
         var result = ModelDecider.UpdateElement(state,
             new UpdateElementCommand(SystemId, Icon: "server", SetIcon: true));
-        var success = Assert.IsType<CommandResult<IReadOnlyList<ModelEvent>>.Success>(result);
+        var success = Assert.IsType<CommandResult<IReadOnlyList<object>>.Success>(result);
         var changed = Assert.IsType<ModelEvent.ElementIconChanged>(Assert.Single(success.Value));
         Assert.Equal("server", changed.Icon);
     }
@@ -414,7 +415,7 @@ public class ModelDeciderTests
         var state = StateWithSystemAndApp();
         var result = ModelDecider.UpdateElement(state,
             new UpdateElementCommand(SystemId, Icon: null, SetIcon: false));
-        var success = Assert.IsType<CommandResult<IReadOnlyList<ModelEvent>>.Success>(result);
+        var success = Assert.IsType<CommandResult<IReadOnlyList<object>>.Success>(result);
         Assert.Empty(success.Value);
     }
 
@@ -430,7 +431,7 @@ public class ModelDeciderTests
             new ModelEvent.ElementAdded(b, ElementKind.System, "B", null, null, null, ElementStatus.Current, null, []));
         var result = ModelDecider.AddRelationship(state,
             new AddRelationshipCommand(Guid.NewGuid(), a, b, "uses", null));
-        Assert.IsType<CommandResult<IReadOnlyList<ModelEvent>>.Success>(result);
+        Assert.IsType<CommandResult<IReadOnlyList<object>>.Success>(result);
     }
 
     [Fact]
@@ -441,7 +442,7 @@ public class ModelDeciderTests
             new ModelEvent.ElementAdded(b, ElementKind.System, "B", null, null, null, ElementStatus.Current, null, []));
         var result = ModelDecider.AddRelationship(state,
             new AddRelationshipCommand(Guid.NewGuid(), Guid.NewGuid(), b, "uses", null));
-        Assert.IsType<CommandResult<IReadOnlyList<ModelEvent>>.Invalid>(result);
+        Assert.IsType<CommandResult<IReadOnlyList<object>>.Invalid>(result);
     }
 
     // --- RemoveRelationship ---
@@ -450,7 +451,7 @@ public class ModelDeciderTests
     public void RemoveRelationship_nonexistent_returns_not_found()
     {
         var result = ModelDecider.RemoveRelationship(ModelState.Initial, Guid.NewGuid());
-        Assert.IsType<CommandResult<IReadOnlyList<ModelEvent>>.NotFound>(result);
+        Assert.IsType<CommandResult<IReadOnlyList<object>>.NotFound>(result);
     }
 
     // --- Relationship kind ---
@@ -461,7 +462,7 @@ public class ModelDeciderTests
         var state = StateWithSystemAndApp();
         var result = ModelDecider.AddRelationship(state,
             new AddRelationshipCommand(Guid.NewGuid(), SystemId, AppId, "uses", "HTTP"));
-        var success = Assert.IsType<CommandResult<IReadOnlyList<ModelEvent>>.Success>(result);
+        var success = Assert.IsType<CommandResult<IReadOnlyList<object>>.Success>(result);
         var added = Assert.IsType<ModelEvent.RelationshipAdded>(Assert.Single(success.Value));
         Assert.Equal(RelationshipKind.Structural, added.Kind);
     }
@@ -472,7 +473,7 @@ public class ModelDeciderTests
         var state = StateWithSystemAndApp();
         var result = ModelDecider.AddRelationship(state,
             new AddRelationshipCommand(Guid.NewGuid(), SystemId, AppId, "calls", "HTTP", RelationshipKind.Behavioural));
-        var success = Assert.IsType<CommandResult<IReadOnlyList<ModelEvent>>.Success>(result);
+        var success = Assert.IsType<CommandResult<IReadOnlyList<object>>.Success>(result);
         var added = Assert.IsType<ModelEvent.RelationshipAdded>(Assert.Single(success.Value));
         Assert.Equal(RelationshipKind.Behavioural, added.Kind);
     }
@@ -488,7 +489,7 @@ public class ModelDeciderTests
 
         var result = ModelDecider.UpdateRelationship(state,
             new UpdateRelationshipCommand(relId, Kind: RelationshipKind.Behavioural, SetKind: true));
-        var success = Assert.IsType<CommandResult<IReadOnlyList<ModelEvent>>.Success>(result);
+        var success = Assert.IsType<CommandResult<IReadOnlyList<object>>.Success>(result);
         var changed = Assert.IsType<ModelEvent.RelationshipKindChanged>(Assert.Single(success.Value));
         Assert.Equal(RelationshipKind.Behavioural, changed.Kind);
     }
@@ -504,7 +505,7 @@ public class ModelDeciderTests
 
         var result = ModelDecider.UpdateRelationship(state,
             new UpdateRelationshipCommand(relId, Kind: RelationshipKind.Structural, SetKind: true));
-        var success = Assert.IsType<CommandResult<IReadOnlyList<ModelEvent>>.Success>(result);
+        var success = Assert.IsType<CommandResult<IReadOnlyList<object>>.Success>(result);
         Assert.Empty(success.Value);
     }
 
@@ -516,12 +517,11 @@ public class ModelDeciderTests
     [Fact]
     public void RecordElementProvenance_declared_without_evidence_clears_evidence()
     {
-        var state = StateWithElement()
-            .Evolve(new ModelEvent.ElementProvenanceRecorded(SystemId, FactStatus.ObservedInSource,
+        var state = ModelState.Evolve(StateWithElement(), new ModelEvent.ElementProvenanceRecorded(SystemId, FactStatus.ObservedInSource,
                 new Provenance("github.com/acme/orders@abc:src/Orders.cs:1-10", "abc", null)));
 
         var result = ModelDecider.RecordElementProvenance(state, SystemId, FactStatus.Declared, null);
-        var success = Assert.IsType<CommandResult<IReadOnlyList<ModelEvent>>.Success>(result);
+        var success = Assert.IsType<CommandResult<IReadOnlyList<object>>.Success>(result);
         var recorded = Assert.IsType<ModelEvent.ElementProvenanceRecorded>(Assert.Single(success.Value));
         Assert.Equal(FactStatus.Declared, recorded.Status);
         Assert.Null(recorded.Provenance);
@@ -532,7 +532,7 @@ public class ModelDeciderTests
     {
         var state = StateWithElement();
         var result = ModelDecider.RecordElementProvenance(state, SystemId, FactStatus.ObservedInSource, null);
-        Assert.IsType<CommandResult<IReadOnlyList<ModelEvent>>.Invalid>(result);
+        Assert.IsType<CommandResult<IReadOnlyList<object>>.Invalid>(result);
     }
 
     [Fact]
@@ -541,7 +541,7 @@ public class ModelDeciderTests
         var state = StateWithElement();
         var provenance = new Provenance("github.com/acme/orders@abc:src/Orders.cs:1-10", "abc", null);
         var result = ModelDecider.RecordElementProvenance(state, SystemId, FactStatus.Inferred, provenance);
-        Assert.IsType<CommandResult<IReadOnlyList<ModelEvent>>.Invalid>(result);
+        Assert.IsType<CommandResult<IReadOnlyList<object>>.Invalid>(result);
     }
 
     [Fact]
@@ -549,7 +549,7 @@ public class ModelDeciderTests
     {
         var state = StateWithElement();
         var result = ModelDecider.RecordElementProvenance(state, SystemId, FactStatus.Measured, null);
-        Assert.IsType<CommandResult<IReadOnlyList<ModelEvent>>.Invalid>(result);
+        Assert.IsType<CommandResult<IReadOnlyList<object>>.Invalid>(result);
     }
 
     [Fact]
@@ -558,7 +558,7 @@ public class ModelDeciderTests
         var state = StateWithElement();
         var provenance = new Provenance("github.com/acme/orders@abc:src/Orders.cs:1-10", "abc", 1.5);
         var result = ModelDecider.RecordElementProvenance(state, SystemId, FactStatus.Inferred, provenance);
-        Assert.IsType<CommandResult<IReadOnlyList<ModelEvent>>.Invalid>(result);
+        Assert.IsType<CommandResult<IReadOnlyList<object>>.Invalid>(result);
     }
 
     [Fact]
@@ -567,7 +567,7 @@ public class ModelDeciderTests
         var state = StateWithElement();
         var provenance = new Provenance("github.com/acme/orders@abc:src/Orders.cs:1-10", "abc", 0.6);
         var result = ModelDecider.RecordElementProvenance(state, SystemId, FactStatus.Inferred, provenance);
-        var success = Assert.IsType<CommandResult<IReadOnlyList<ModelEvent>>.Success>(result);
+        var success = Assert.IsType<CommandResult<IReadOnlyList<object>>.Success>(result);
         var recorded = Assert.IsType<ModelEvent.ElementProvenanceRecorded>(Assert.Single(success.Value));
         Assert.Equal(FactStatus.Inferred, recorded.Status);
         Assert.Equal(0.6, recorded.Provenance!.Confidence);
@@ -577,11 +577,10 @@ public class ModelDeciderTests
     public void RecordElementProvenance_unchanged_emits_no_events()
     {
         var provenance = new Provenance("github.com/acme/orders@abc:src/Orders.cs:1-10", "abc", 0.6);
-        var state = StateWithElement()
-            .Evolve(new ModelEvent.ElementProvenanceRecorded(SystemId, FactStatus.Inferred, provenance));
+        var state = ModelState.Evolve(StateWithElement(), new ModelEvent.ElementProvenanceRecorded(SystemId, FactStatus.Inferred, provenance));
 
         var result = ModelDecider.RecordElementProvenance(state, SystemId, FactStatus.Inferred, provenance with { AcceptedAt = DateTimeOffset.UtcNow });
-        var success = Assert.IsType<CommandResult<IReadOnlyList<ModelEvent>>.Success>(result);
+        var success = Assert.IsType<CommandResult<IReadOnlyList<object>>.Success>(result);
         Assert.Empty(success.Value);
     }
 
@@ -589,7 +588,7 @@ public class ModelDeciderTests
     public void RecordElementProvenance_missing_element_returns_not_found()
     {
         var result = ModelDecider.RecordElementProvenance(ModelState.Initial, Guid.NewGuid(), FactStatus.Declared, null);
-        Assert.IsType<CommandResult<IReadOnlyList<ModelEvent>>.NotFound>(result);
+        Assert.IsType<CommandResult<IReadOnlyList<object>>.NotFound>(result);
     }
 
     [Fact]
@@ -602,7 +601,7 @@ public class ModelDeciderTests
 
         var result = ModelDecider.RecordRelationshipProvenance(state, relId, FactStatus.Inferred,
             new Provenance(null, null, 0.5));
-        Assert.IsType<CommandResult<IReadOnlyList<ModelEvent>>.Invalid>(result);
+        Assert.IsType<CommandResult<IReadOnlyList<object>>.Invalid>(result);
     }
 
     [Fact]
@@ -615,7 +614,7 @@ public class ModelDeciderTests
 
         var result = ModelDecider.RecordMessageProvenance(state, msgId, FactStatus.ObservedInSource,
             new Provenance("github.com/acme/orders@abc:src/Events.cs:4-8", "abc", null));
-        var success = Assert.IsType<CommandResult<IReadOnlyList<ModelEvent>>.Success>(result);
+        var success = Assert.IsType<CommandResult<IReadOnlyList<object>>.Success>(result);
         var recorded = Assert.IsType<ModelEvent.MessageProvenanceRecorded>(Assert.Single(success.Value));
         Assert.Equal(FactStatus.ObservedInSource, recorded.Status);
     }
