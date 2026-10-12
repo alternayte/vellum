@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { getBezierPath, getStraightPath, getSmoothStepPath } from '@xyflow/react'
-import { computeEdgeOffset, computeLabelOffset, getEdgePathFn } from '../../src/lib/edge-utils'
+import { computeEdgeOffset, computeLabelOffset, getEdgePathFn, facingEndpoints } from '../../src/lib/edge-utils'
 
 describe('getEdgePathFn', () => {
   it('returns getBezierPath for null lineShape', () => {
@@ -71,5 +71,24 @@ describe('computeLabelOffset', () => {
       expect(p).toBeGreaterThanOrEqual(0.2)
       expect(p).toBeLessThanOrEqual(0.8)
     }
+  })
+})
+
+describe('facingEndpoints', () => {
+  const box = (x: number, y: number) => ({ x, y, width: 200, height: 60 })
+
+  it('joins side-by-side nodes through their facing left and right sides', () => {
+    const ends = facingEndpoints(box(0, 0), box(400, 20))
+    expect(ends).toMatchObject({ sourceX: 200, sourceY: 30, sourcePosition: 'right', targetX: 400, targetY: 50, targetPosition: 'left' })
+  })
+
+  it('joins stacked nodes through their facing bottom and top sides', () => {
+    const ends = facingEndpoints(box(0, 300), box(40, 0))
+    expect(ends).toMatchObject({ sourcePosition: 'top', sourceY: 300, targetPosition: 'bottom', targetY: 60 })
+  })
+
+  it('slides both ends along the side for parallel edges', () => {
+    const ends = facingEndpoints(box(0, 0), box(400, 0), 15)
+    expect([ends.sourceY, ends.targetY]).toEqual([45, 45])
   })
 })

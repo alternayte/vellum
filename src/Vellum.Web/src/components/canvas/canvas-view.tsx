@@ -34,6 +34,7 @@ import type { C4ElementData } from './nodes/c4-element-node'
 import type { C4ContainerData } from './nodes/c4-container-node'
 import type { DiffState } from '@/stores/draft-store'
 import type { Provenance } from '@/lib/fact-status'
+import { kindColor } from '@/lib/kind-colors'
 
 interface ElementModel {
   id: string
@@ -108,6 +109,11 @@ interface CanvasViewProps {
   onSelectionChange?: (ids: string[]) => void
   searchOpen?: boolean
   onSearchClose?: () => void
+}
+
+function minimapNodeColor(node: Node): string {
+  const kind = (node.data as { kind?: string }).kind
+  return kind ? kindColor(kind) : 'var(--muted-foreground)'
 }
 
 export function CanvasView(props: CanvasViewProps) {
@@ -688,7 +694,12 @@ function CanvasViewInner({
           />
         )}
         <MiniMap
-          nodeColor="var(--card)"
+          nodeColor={minimapNodeColor}
+          nodeStrokeColor="var(--border)"
+          nodeBorderRadius={4}
+          ariaLabel="Canvas minimap"
+          pannable
+          zoomable
           bgColor="var(--card)"
           maskColor="color-mix(in srgb, var(--background) 80%, transparent)"
           className="border-border!"
