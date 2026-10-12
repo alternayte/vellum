@@ -80,7 +80,8 @@ public class SpaceEndpointTests
 
         var listResponse = await client.GetAsync($"/api/projects/{projectId}/spaces");
         var spaces = await listResponse.Content.ReadFromJsonAsync<List<SpaceDto>>();
-        Assert.Single(spaces!);
+        Assert.NotNull(spaces);
+        Assert.Single(spaces);
         Assert.Equal("ADRs", spaces[0].Name);
     }
 
