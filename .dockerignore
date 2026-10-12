@@ -1,0 +1,12 @@
+**/bin
+**/obj
+**/node_modules
+**/dist
+src/Vellum/wwwroot
+.git
+.worktrees
+.docker-test
+.superpowers
+.claude
+docs
+tests
