@@ -11,6 +11,7 @@ import { ReviewBar } from '@/components/review/review-bar'
 import { CanvasView } from '@/components/canvas/canvas-view'
 import { DocEditor } from '@/components/docs/doc-editor'
 import { CommandPalette } from '@/components/command-palette/command-palette'
+import { TraceDock } from '@/components/trace/trace-dock'
 import { useElements, useAddElement, useUpdateElement, useRemoveElement } from '@/hooks/use-elements'
 import { useRelationships, useAddRelationship, useUpdateRelationship, useRemoveRelationship } from '@/hooks/use-relationships'
 import { useViews, useView, useCreateView, useSaveLayout } from '@/hooks/use-views'
@@ -672,6 +673,7 @@ function ProjectWorkspace() {
           onDeleteRelationship={(id) => removeRelationship.mutate(id)}
         />
       </div>
+      {!activeDocId && <TraceDock />}
       {activeDocId ? null : (
         isReviewMode ? (
           <ReviewBar projectId={projectId} />

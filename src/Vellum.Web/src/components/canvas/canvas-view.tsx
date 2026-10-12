@@ -35,6 +35,9 @@ import type { C4ContainerData } from './nodes/c4-container-node'
 import type { DiffState } from '@/stores/draft-store'
 import type { Provenance } from '@/lib/fact-status'
 import { kindColor } from '@/lib/kind-colors'
+import { traceEdgeLabel, traceFamily } from '@/lib/trace'
+import { currentTraceEvent, useTraceStore } from '@/stores/trace-store'
+import { TraceEdgeMarkers } from './edges/trace-edge'
 
 interface ElementModel {
   id: string
@@ -414,9 +417,55 @@ function CanvasViewInner({
       })
   }, [activeLens, messages, visibleIds])
 
+  // The event a trace playback is on. Its parts may sit inside a collapsed parent or on
+  // another level, so each end resolves to the nearest ancestor that is on the canvas.
+  const traceEvent = useTraceStore(currentTraceEvent)
+  const traceLabels = useTraceStore((s) => s.run?.labels)
+  const traceSpeed = useTraceStore((s) => s.speed)
+  const traceOverlay = useMemo(() => {
+    if (!traceEvent || !traceLabels) return null
+    const byId = new Map(elements.map((e) => [e.id, e]))
+    const onCanvas = (id: string | null): string | null => {
+      for (let current = id ? byId.get(id) : undefined; current; current = current.parentId ? byId.get(current.parentId) : undefined) {
+        if (visibleIds.has(current.id)) return current.id
+      }
+      return null
+    }
+    const from = onCanvas(traceEvent.from)
+    const to = onCanvas(traceEvent.to)
+    const family = traceFamily(traceEvent.kind)
+    return {
+      family,
+      nodeIds: new Set([from, to].filter((id): id is string => id !== null)),
+      edge: from && to && from !== to
+        ? {
+            id: `trace-${traceEvent.sequence}`,
+            source: from,
+            target: to,
+            type: 'trace-edge',
+            selectable: false,
+            focusable: false,
+            zIndex: 1000,
+            data: { family, label: traceEdgeLabel(traceEvent, traceLabels), travelSeconds: 1.1 / traceSpeed },
+          }
+        : null,
+    }
+  }, [traceEvent, traceLabels, traceSpeed, elements, visibleIds])
+
   // Derive the combined node/edge arrays from domain data (same as before)
-  const derivedNodes = useMemo(() => [...nodes, ...messageNodes], [nodes, messageNodes])
-  const derivedEdges = useMemo(() => [...edges, ...messageEdges], [edges, messageEdges])
+  const derivedNodes = useMemo(() => {
+    const all = [...nodes, ...messageNodes]
+    if (!traceOverlay) return all
+    return all.map((n) =>
+      traceOverlay.nodeIds.has(n.id)
+        ? { ...n, className: 'vellum-trace-node', style: { ...n.style, '--vellum-trace': `var(--trace-${traceOverlay.family})` } }
+        : n,
+    )
+  }, [nodes, messageNodes, traceOverlay])
+  const derivedEdges = useMemo(
+    () => (traceOverlay?.edge ? [...edges, ...messageEdges, traceOverlay.edge] : [...edges, ...messageEdges]),
+    [edges, messageEdges, traceOverlay],
+  )
 
   // Local state that React Flow controls — synced from derived data,
   // but RF can update positions during drag without waiting for server round-trip
@@ -693,6 +742,7 @@ function CanvasViewInner({
             onClose={() => setLens('none')}
           />
         )}
+        <TraceEdgeMarkers />
         <MiniMap
           nodeColor={minimapNodeColor}
           nodeStrokeColor="var(--border)"
@@ -702,7 +752,7 @@ function CanvasViewInner({
           zoomable
           bgColor="var(--card)"
           maskColor="color-mix(in srgb, var(--background) 80%, transparent)"
-          className="border-border!"
+          className="border-border! max-sm:hidden"
         />
         <BulkActionsToolbar
           selectedCount={selectedNodeIds.length}

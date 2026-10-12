@@ -93,6 +93,14 @@
     --kind-store: hsl(38 92% 50%);
     --kind-component: hsl(258 90% 66%);
 
+    /* Trace semantics (SDD §3): teal requests, violet events, cyan data, amber retries, red failures. */
+    --trace-request: hsl(172 66% 50%);
+    --trace-event: hsl(258 90% 72%);
+    --trace-data: hsl(190 90% 55%);
+    --trace-retry: hsl(38 92% 55%);
+    --trace-failure: hsl(0 84% 64%);
+    --trace-control: hsl(210 17% 60%);
+
     --sidebar: hsl(212 17% 14%);
     --sidebar-foreground: hsl(180 4% 96%);
     --sidebar-primary: hsl(217 91% 60%);
@@ -131,6 +139,13 @@
     --kind-app: hsl(160 84% 39%);
     --kind-store: hsl(38 92% 50%);
     --kind-component: hsl(258 90% 66%);
+
+    --trace-request: hsl(172 80% 30%);
+    --trace-event: hsl(258 70% 52%);
+    --trace-data: hsl(195 90% 34%);
+    --trace-retry: hsl(32 90% 38%);
+    --trace-failure: hsl(0 72% 46%);
+    --trace-control: hsl(215 16% 47%);
 
     --sidebar: hsl(0 0% 100%);
     --sidebar-foreground: hsl(222 47% 11%);
@@ -185,4 +200,23 @@
 .react-flow__edge:focus-visible .react-flow__edge-path {
   stroke: var(--primary) !important;
   stroke-width: 2.5px !important;
+}
+
+/* Trace playback: the nodes taking part in the current event. The dock states the event in
+   words, so the ring adds position, not meaning. */
+.react-flow__node.vellum-trace-node {
+  outline: 2px solid var(--vellum-trace);
+  outline-offset: 3px;
+  border-radius: 0.6rem;
+  box-shadow: 0 0 0 6px color-mix(in srgb, var(--vellum-trace) 16%, transparent);
+  transition: outline-color 0.2s, box-shadow 0.2s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vellum-trace-particle {
+    display: none;
+  }
+  .react-flow__node.vellum-trace-node {
+    transition: none;
+  }
 }
