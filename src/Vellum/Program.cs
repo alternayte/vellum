@@ -1,13 +1,10 @@
+using System.Reflection;
+using System.Security.Claims;
+using Deedbox;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Scalar.AspNetCore;
-using Scrutor;
-using Vellum.Kernel.Aggregates;
-using Vellum.Kernel.CommandHandling;
-using Vellum.Kernel.EventStore;
-using Vellum.Kernel.EventTypes;
-using Vellum.Kernel.Outbox;
-using Vellum.Kernel.Projections;
+using Vellum.Shared;
 using Vellum.Modules.Identity;
 using Vellum.Modules.Mcp;
 using Vellum.Modules.Modelling;
@@ -21,11 +18,8 @@ using Vellum.Modules.Scoring;
 using Vellum.Modules.Views;
 using Vellum.Modules.Workspaces;
 using Vellum.Modules.Workspaces.Entities;
-using Vellum.Shared;
 
 var builder = WebApplication.CreateBuilder(args);
-
-var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")!;
 
 // OpenAPI
 builder.Services.AddOpenApi();
@@ -33,19 +27,26 @@ builder.Services.AddOpenApi();
 // Exception handling
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<UnauthorizedExceptionHandler>();
+builder.Services.AddExceptionHandler<ConcurrencyExceptionHandler>();
 
-// Kernel
-builder.Services.AddDbContext<EventStoreDbContext>(options =>
-    options.UseNpgsql(connectionString)
-           .UseSnakeCaseNamingConvention());
+// Event store. Each module registers its own streams and projections. The connection
+// string is read when the host starts, so configuration that a test host overrides applies.
+var servicesBeforeDeedbox = builder.Services.Count;
+builder.Services.AddDeedbox(deedbox => deedbox
+    .UsePostgres(services => services.GetRequiredService<IConfiguration>().GetConnectionString("DefaultConnection")!)
+    .AddModelStreams()
+    .AddSchemaStreams());
 
-builder.Services.AddScoped<IEventStore, EventStore>();
-builder.Services.AddScoped<EventCollector>();
-builder.Services.AddScoped<AggregateStore>();
-builder.Services.AddSingleton<EventTypeRegistry>();
-builder.Services.AddSingleton<IEventTypeRegistry>(sp => sp.GetRequiredService<EventTypeRegistry>());
-builder.Services.AddHostedService<OutboxDispatcher>();
-builder.Services.AddHostedService<AsyncProjectionHost>();
+// Build-time OpenAPI generation starts the host with no database. Deedbox checks its
+// schema when the host starts, so its hosted services do not run in that process.
+if (Assembly.GetEntryAssembly()?.GetName().Name == "GetDocument.Insider")
+{
+    for (var i = builder.Services.Count - 1; i >= servicesBeforeDeedbox; i--)
+    {
+        if (builder.Services[i].ServiceType == typeof(IHostedService))
+            builder.Services.RemoveAt(i);
+    }
+}
 
 // Modules
 builder.Services.AddIdentityModule(builder.Configuration);
@@ -58,19 +59,13 @@ builder.Services.AddSchemasModule(builder.Configuration);
 builder.Services.AddScoringModule(builder.Configuration);
 builder.Services.AddMcpModule();
 
-// Command handlers (Scrutor scan + TransactionBehavior decoration)
+// Command handlers (Scrutor scan)
 builder.Services.Scan(s => s.FromAssemblyOf<Program>()
     .AddClasses(c => c.AssignableTo(typeof(ICommandHandler<,>)))
     .AsImplementedInterfaces()
     .WithScopedLifetime());
-builder.Services.Decorate(typeof(ICommandHandler<,>), typeof(TransactionBehavior<,>));
 
 var app = builder.Build();
-
-// Register modelling events
-var registry = app.Services.GetRequiredService<EventTypeRegistry>();
-ModellingModule.RegisterEvents(registry);
-SchemasModule.RegisterEvents(registry);
 
 if (app.Environment.IsDevelopment())
 {
@@ -81,6 +76,18 @@ if (app.Environment.IsDevelopment())
 app.UseExceptionHandler();
 app.UseAuthentication();
 app.UseAuthorization();
+
+// Every event a request appends records who caused it and which request it belongs to.
+app.Use(async (http, next) =>
+{
+    var userId = http.User.FindFirstValue(ClaimTypes.NameIdentifier);
+    http.RequestServices.GetRequiredService<DeedboxContext>().Metadata = new EventMetadata
+    {
+        CorrelationId = http.TraceIdentifier,
+        Actor = userId is null ? null : $"user:{userId}",
+    };
+    await next(http);
+});
 
 app.MapGet("/health", () => Results.Ok());
 
@@ -105,8 +112,7 @@ if (app.Environment.IsDevelopment())
     using var scope = app.Services.CreateScope();
     var services = scope.ServiceProvider;
 
-    // Apply all migrations
-    await services.GetRequiredService<EventStoreDbContext>().Database.MigrateAsync();
+    // Apply all migrations. The modelling migrations also create the Deedbox tables.
     await services.GetRequiredService<AppIdentityDbContext>().Database.MigrateAsync();
     await services.GetRequiredService<WorkspacesDbContext>().Database.MigrateAsync();
     await services.GetRequiredService<ModellingDbContext>().Database.MigrateAsync();
@@ -121,9 +127,7 @@ if (app.Environment.IsDevelopment())
     {
         var userManager = services.GetRequiredService<UserManager<ApplicationUser>>();
         var workspacesDb = services.GetRequiredService<WorkspacesDbContext>();
-        var aggregateStore = services.GetRequiredService<AggregateStore>();
-        var eventRegistry = services.GetRequiredService<EventTypeRegistry>();
-        var projection = services.GetRequiredService<ModelProjection>();
+        var store = services.GetRequiredService<IEventStore>();
 
         // Create dev user
         var devUser = await userManager.FindByEmailAsync("dev@vellum.local");
@@ -151,11 +155,6 @@ if (app.Environment.IsDevelopment())
             workspacesDb.Workspaces.Add(new WorkspaceEntity { Id = workspaceId, Name = "Dev Workspace", CreatedBy = devUser.Id });
             workspacesDb.Memberships.Add(new MembershipEntity { Id = Guid.NewGuid(), WorkspaceId = workspaceId, UserId = devUser.Id, Role = "Owner" });
             workspacesDb.Projects.Add(new ProjectEntity { Id = projectId, WorkspaceId = workspaceId, Name = "Sample Architecture", StreamId = streamId });
-            await workspacesDb.SaveChangesAsync();
-
-            // Seed model elements via the aggregate
-            var metadata = new EventMetadata { ActorId = Guid.Parse(devUser.Id), CorrelationId = Guid.NewGuid() };
-            projection.SetContext(projectId, streamId);
 
             var userId = Guid.NewGuid();
             var webAppId = Guid.NewGuid();
@@ -166,7 +165,7 @@ if (app.Environment.IsDevelopment())
             var dbStoreId = Guid.NewGuid();
             var handlerCompId = Guid.NewGuid();
 
-            var seedEvents = new ModelEvent[]
+            var seedEvents = new object[]
             {
                 new ModelEvent.ElementAdded(userId, ElementKind.Actor, "Customer", "End user of the platform", null, null, ElementStatus.Current, null, ["external"]),
                 new ModelEvent.ElementAdded(webAppId, ElementKind.System, "Web Application", "Customer-facing web app", "React", null, ElementStatus.Current, null, ["frontend"]),
@@ -184,8 +183,12 @@ if (app.Environment.IsDevelopment())
                 new ModelEvent.RelationshipAdded(Guid.NewGuid(), apiAppId, workerAppId, "Enqueues jobs", "Redis", null),
             };
 
-            var state = seedEvents.Aggregate(ModelState.Initial, (s, e) => s.Evolve(e));
-            await aggregateStore.SaveAsync(streamId, "model", 0, state, seedEvents, metadata);
+            // One transaction: the workspace rows, the model events and the read-model rows.
+            await store
+                .ForProject(projectId)
+                .WithMetadata(metadata => metadata with { Actor = $"user:{devUser.Id}" })
+                .UseDbContext(workspacesDb)
+                .Append(StreamId.From(streamId), ExpectedVersion.NoStream, seedEvents);
         }
 
         Console.WriteLine("Dev seed complete.");

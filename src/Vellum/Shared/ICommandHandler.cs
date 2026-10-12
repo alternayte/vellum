@@ -1,4 +1,4 @@
-namespace Vellum.Kernel.CommandHandling;
+namespace Vellum.Shared;
 
 public interface ICommandHandler<in TCommand, TResult>
 {

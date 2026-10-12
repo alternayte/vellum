@@ -1,4 +1,4 @@
-using Vellum.Kernel.Results;
+using Vellum.Shared;
 
 namespace Vellum.Modules.Modelling.Model;
 

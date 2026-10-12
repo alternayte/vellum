@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using Vellum.Modules.Drafts.Merge;
+using Deedbox.Testing;
 using Vellum.Modules.Modelling.Model;
 
 namespace Vellum.Tests.Modules.Drafts;
@@ -195,8 +196,8 @@ public class ThreeWayMergeTests
         Assert.Equal("relationship", result.AutoResolved[0].EntityType);
     }
 
-    private static ModelState StateWith(params ModelEvent[] events) =>
-        events.Aggregate(ModelState.Initial, (s, e) => s.Evolve(e));
+    private static ModelState StateWith(params object[] events) =>
+        Decider.Given<ModelState>(events).State;
 
     [Fact]
     public void Message_added_on_draft_is_auto_resolved()
@@ -206,7 +207,7 @@ public class ThreeWayMergeTests
             new ModelEvent.ElementAdded(producerId, ElementKind.System, "A", null, null, null, ElementStatus.Current, null, []));
         var ours = baseState;
         var msgId = Guid.NewGuid();
-        var theirs = baseState.Evolve(new ModelEvent.MessageAdded(msgId, "OrderPlaced", null, producerId, [], null, []));
+        var theirs = ModelState.Evolve(baseState, new ModelEvent.MessageAdded(msgId, "OrderPlaced", null, producerId, [], null, []));
 
         var result = ThreeWayMerge.Compute(baseState, ours, theirs);
         Assert.Single(result.AutoResolved);
@@ -222,8 +223,8 @@ public class ThreeWayMergeTests
         var baseState = StateWith(
             new ModelEvent.ElementAdded(producerId, ElementKind.System, "A", null, null, null, ElementStatus.Current, null, []),
             new ModelEvent.MessageAdded(msgId, "OrderPlaced", null, producerId, [], null, []));
-        var ours = baseState.Evolve(new ModelEvent.MessageUpdated(msgId, "OrderCreated", null, null, null, null, false, null));
-        var theirs = baseState.Evolve(new ModelEvent.MessageUpdated(msgId, "OrderSubmitted", null, null, null, null, false, null));
+        var ours = ModelState.Evolve(baseState, new ModelEvent.MessageUpdated(msgId, "OrderCreated", null, null, null, null, false, null));
+        var theirs = ModelState.Evolve(baseState, new ModelEvent.MessageUpdated(msgId, "OrderSubmitted", null, null, null, null, false, null));
 
         var result = ThreeWayMerge.Compute(baseState, ours, theirs);
         Assert.Single(result.Conflicts);
@@ -239,8 +240,8 @@ public class ThreeWayMergeTests
         var baseState = StateWith(
             new ModelEvent.ElementAdded(producerId, ElementKind.System, "A", null, null, null, ElementStatus.Current, null, []),
             new ModelEvent.ElementAdded(consumerId, ElementKind.System, "B", null, null, null, ElementStatus.Current, null, []));
-        var ours = baseState.Evolve(new ModelEvent.ElementRemoved(consumerId));
-        var theirs = baseState.Evolve(new ModelEvent.MessageAdded(msgId, "OrderPlaced", null, producerId, [consumerId], null, []));
+        var ours = ModelState.Evolve(baseState, new ModelEvent.ElementRemoved(consumerId));
+        var theirs = ModelState.Evolve(baseState, new ModelEvent.MessageAdded(msgId, "OrderPlaced", null, producerId, [consumerId], null, []));
 
         var result = ThreeWayMerge.Compute(baseState, ours, theirs);
         Assert.Contains(result.Conflicts, c => c.EntityType == "message" && c.ConflictKind == "dangling_message");

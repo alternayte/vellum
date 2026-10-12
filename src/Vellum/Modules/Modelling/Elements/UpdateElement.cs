@@ -1,7 +1,6 @@
-using Vellum.Kernel.Aggregates;
-using Vellum.Kernel.CommandHandling;
-using Vellum.Kernel.Results;
+using Deedbox;
 using Vellum.Modules.Modelling.Model;
+using Vellum.Shared;
 
 namespace Vellum.Modules.Modelling.Elements;
 
@@ -18,25 +17,26 @@ public sealed record UpdateElementCommandEnvelope(
 
 public sealed class UpdateElementHandler : ICommandHandler<UpdateElementCommandEnvelope, CommandResult<ElementDto>>
 {
-    private readonly AggregateStore _store;
-    private readonly ModelProjection _projection;
+    private readonly IEventStore _store;
 
-    public UpdateElementHandler(AggregateStore store, ModelProjection projection)
-    {
-        _store = store;
-        _projection = projection;
-    }
+    public UpdateElementHandler(IEventStore store) => _store = store;
 
     public async Task<CommandResult<ElementDto>> HandleAsync(UpdateElementCommandEnvelope cmd, CancellationToken ct = default)
     {
-        var (state, version) = await _store.LoadAsync<ModelState, ModelEvent>(cmd.StreamId, ct);
-
         ElementStatus? status = null;
         if (cmd.Request.Status is not null)
         {
             if (!ModelEnum.TryParseDefined(cmd.Request.Status, out ElementStatus parsed))
                 return new CommandResult<ElementDto>.Invalid([new ValidationError("status", "Invalid status")]);
             status = parsed;
+        }
+
+        FactStatus? requestedStatus = null;
+        if (cmd.Request.FactStatus is not null)
+        {
+            if (!FactStatusFormat.TryParseApiString(cmd.Request.FactStatus, out var parsedStatus))
+                return new CommandResult<ElementDto>.Invalid([new ValidationError("factStatus", "Invalid fact status")]);
+            requestedStatus = parsedStatus;
         }
 
         var updateCmd = new UpdateElementCommand(
@@ -50,59 +50,38 @@ public sealed class UpdateElementHandler : ICommandHandler<UpdateElementCommandE
             Tags: cmd.Request.Tags,
             Icon: cmd.Request.Icon, SetIcon: cmd.Request.SetIcon || cmd.Request.Icon is not null);
 
-        var result = ModelDecider.UpdateElement(state, updateCmd);
-        if (result is not CommandResult<IReadOnlyList<ModelEvent>>.Success success)
-        {
-            return result switch
-            {
-                CommandResult<IReadOnlyList<ModelEvent>>.Invalid inv => new CommandResult<ElementDto>.Invalid(inv.Errors),
-                CommandResult<IReadOnlyList<ModelEvent>>.NotFound n => new CommandResult<ElementDto>.NotFound(n.Message),
-                _ => new CommandResult<ElementDto>.Conflict("Unexpected error")
-            };
-        }
+        // The acceptance stamp is taken once, so the decision stays a pure function of the state.
+        var suppliedProvenance = cmd.Request.SetProvenance
+            ? ProvenanceMapper.ToDomain(cmd.Request.Provenance, Guid.Parse(cmd.UserId))
+            : null;
 
-        var events = new List<ModelEvent>(success.Value);
-        var stateAfter = events.Aggregate(state, (s, e) => s.Evolve(e));
+        return await _store.ForProject(cmd.ProjectId).Decide<ModelState, ElementDto>(
+            cmd.StreamId,
+            Decide,
+            state => AddElementHandler.ToDto(state.Elements[cmd.ElementId]),
+            ct);
 
-        FactStatus? requestedStatus = null;
-        if (cmd.Request.FactStatus is not null)
+        CommandResult<IReadOnlyList<object>> Decide(ModelState state)
         {
-            if (!FactStatusFormat.TryParseApiString(cmd.Request.FactStatus, out var parsedStatus))
-                return new CommandResult<ElementDto>.Invalid([new ValidationError("factStatus", "Invalid fact status")]);
-            requestedStatus = parsedStatus;
-        }
+            var result = ModelDecider.UpdateElement(state, updateCmd);
+            if (result is not CommandResult<IReadOnlyList<object>>.Success success)
+                return result;
+            if (requestedStatus is null && !cmd.Request.SetProvenance)
+                return result;
 
-        if (requestedStatus is not null || cmd.Request.SetProvenance)
-        {
+            var events = new List<object>(success.Value);
+            var stateAfter = events.Aggregate(state, ModelState.Evolve);
             var current = stateAfter.Elements[cmd.ElementId];
-            var factStatus = requestedStatus ?? current.FactStatus;
-            var provenance = cmd.Request.SetProvenance
-                ? ProvenanceMapper.ToDomain(cmd.Request.Provenance, Guid.Parse(cmd.UserId))
-                : current.Provenance;
 
-            var provenanceResult = ModelDecider.RecordElementProvenance(stateAfter, cmd.ElementId, factStatus, provenance);
-            if (provenanceResult is not CommandResult<IReadOnlyList<ModelEvent>>.Success provenanceSuccess)
-            {
-                return provenanceResult switch
-                {
-                    CommandResult<IReadOnlyList<ModelEvent>>.Invalid inv => new CommandResult<ElementDto>.Invalid(inv.Errors),
-                    CommandResult<IReadOnlyList<ModelEvent>>.NotFound n => new CommandResult<ElementDto>.NotFound(n.Message),
-                    _ => new CommandResult<ElementDto>.Conflict("Unexpected error")
-                };
-            }
+            var provenanceResult = ModelDecider.RecordElementProvenance(
+                stateAfter, cmd.ElementId,
+                requestedStatus ?? current.FactStatus,
+                cmd.Request.SetProvenance ? suppliedProvenance : current.Provenance);
+            if (provenanceResult is not CommandResult<IReadOnlyList<object>>.Success provenanceSuccess)
+                return provenanceResult;
 
             events.AddRange(provenanceSuccess.Value);
-            stateAfter = provenanceSuccess.Value.Aggregate(stateAfter, (s, e) => s.Evolve(e));
+            return new CommandResult<IReadOnlyList<object>>.Success(events);
         }
-
-        if (events.Count > 0)
-        {
-            var metadata = new EventMetadata { ActorId = Guid.Parse(cmd.UserId), CorrelationId = Guid.NewGuid() };
-            _projection.SetContext(cmd.ProjectId, cmd.StreamId);
-            await _store.SaveAsync(cmd.StreamId, "model", version, stateAfter, events, metadata, ct);
-            state = stateAfter;
-        }
-
-        return new CommandResult<ElementDto>.Success(AddElementHandler.ToDto(state.Elements[cmd.ElementId]));
     }
 }

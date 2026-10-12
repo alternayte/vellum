@@ -1,8 +1,8 @@
 // src/Vellum/Modules/Drafts/PreviewMerge.cs
 using System.Security.Claims;
 using System.Text.Json;
+using Deedbox;
 using Microsoft.EntityFrameworkCore;
-using Vellum.Kernel.Aggregates;
 using Vellum.Modules.Drafts.Merge;
 using Vellum.Modules.Modelling.Model;
 using Vellum.Modules.Workspaces.Authorization;
@@ -26,7 +26,7 @@ public static class PreviewMerge
         Guid projectId, Guid draftId,
         ClaimsPrincipal user,
         DraftsDbContext draftsDb,
-        AggregateStore store,
+        IEventStore store,
         WorkspaceAuthorizationService auth,
         CancellationToken ct)
     {
@@ -41,11 +41,11 @@ public static class PreviewMerge
             return Results.Conflict(new ErrorResponse("conflict", $"Draft is {draft.Status}"));
 
         var baseState = JsonSerializer.Deserialize<ModelState>(draft.BaseSnapshot, JsonOpts)!;
-        var (oursState, mainVersion) = await store.LoadAsync<ModelState, ModelEvent>(draft.BaseStreamId, ct);
-        var (theirsState, _) = await store.LoadAsync<ModelState, ModelEvent>(draft.StreamId, ct);
+        var (oursState, mainVersion) = await store.Load<ModelState>(StreamId.From(draft.BaseStreamId), ct);
+        var (theirsState, _) = await store.Load<ModelState>(StreamId.From(draft.StreamId), ct);
 
         var result = ThreeWayMerge.Compute(baseState, oursState, theirsState);
 
-        return Results.Ok(new MergePreviewResponse(result.AutoResolved, result.Conflicts, mainVersion));
+        return Results.Ok(new MergePreviewResponse(result.AutoResolved, result.Conflicts, checked((int)mainVersion)));
     }
 }

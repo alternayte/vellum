@@ -1,10 +1,6 @@
 using System.Security.Claims;
 using Microsoft.EntityFrameworkCore;
-using Vellum.Kernel.Aggregates;
-using Vellum.Kernel.CommandHandling;
-using Vellum.Kernel.EventStore;
-using Vellum.Kernel.Projections;
-using Vellum.Kernel.Results;
+using Vellum.Shared;
 using Vellum.Modules.Drafts;
 using Vellum.Modules.Modelling.Elements;
 using Vellum.Modules.Modelling.Export;
@@ -14,7 +10,6 @@ using Vellum.Modules.Modelling.Relationships;
 using Vellum.Modules.Schemas;
 using Vellum.Modules.Workspaces;
 using Vellum.Modules.Workspaces.Authorization;
-using Vellum.Shared;
 
 namespace Vellum.Modules.Modelling;
 
@@ -86,7 +81,7 @@ public static class ModellingEndpoints
             if (streamId is null)
                 return Results.BadRequest(new ErrorResponse("invalid_branch", "Branch not found or not open for this project"));
             return (await handler.HandleAsync(
-                new AddElementCommandEnvelope(projectId, streamId.Value, userId, request), ct))
+                new AddElementCommandEnvelope(projectId, streamId.Value, request), ct))
                 .ToCreatedResult($"/api/projects/{projectId}/elements/{request.Id}");
         });
 
@@ -163,7 +158,7 @@ public static class ModellingEndpoints
             if (streamId is null)
                 return Results.BadRequest(new ErrorResponse("invalid_branch", "Branch not found or not open for this project"));
             return (await handler.HandleAsync(
-                new RemoveElementCommandEnvelope(projectId, streamId.Value, elementId, userId), ct))
+                new RemoveElementCommandEnvelope(projectId, streamId.Value, elementId), ct))
                 .ToHttpResult();
         });
 
@@ -187,7 +182,7 @@ public static class ModellingEndpoints
             if (streamId is null)
                 return Results.BadRequest(new ErrorResponse("invalid_branch", "Branch not found or not open for this project"));
             return (await handler.HandleAsync(
-                new AddRelationshipCommandEnvelope(projectId, streamId.Value, userId, request), ct))
+                new AddRelationshipCommandEnvelope(projectId, streamId.Value, request), ct))
                 .ToCreatedResult($"/api/projects/{projectId}/relationships/{request.Id}");
         });
 
@@ -264,7 +259,7 @@ public static class ModellingEndpoints
             if (streamId is null)
                 return Results.BadRequest(new ErrorResponse("invalid_branch", "Branch not found or not open for this project"));
             return (await handler.HandleAsync(
-                new RemoveRelationshipCommandEnvelope(projectId, streamId.Value, relationshipId, userId), ct))
+                new RemoveRelationshipCommandEnvelope(projectId, streamId.Value, relationshipId), ct))
                 .ToHttpResult();
         });
 
@@ -285,7 +280,7 @@ public static class ModellingEndpoints
             if (streamId is null)
                 return Results.BadRequest(new ErrorResponse("invalid_branch", "Branch not found or not open for this project"));
             return (await handler.HandleAsync(
-                new AddMessageCommandEnvelope(projectId, streamId.Value, userId, request), ct))
+                new AddMessageCommandEnvelope(projectId, streamId.Value, request), ct))
                 .ToCreatedResult($"/api/projects/{projectId}/messages/{request.Id}");
         });
 
@@ -353,7 +348,7 @@ public static class ModellingEndpoints
             if (streamId is null)
                 return Results.BadRequest(new ErrorResponse("invalid_branch", "Branch not found or not open for this project"));
             return (await handler.HandleAsync(
-                new RemoveMessageCommandEnvelope(projectId, streamId.Value, messageId, userId), ct))
+                new RemoveMessageCommandEnvelope(projectId, streamId.Value, messageId), ct))
                 .ToHttpResult();
         });
 
@@ -377,20 +372,12 @@ public static class ModellingEndpoints
             HttpRequest request,
             ClaimsPrincipal user,
             WorkspaceAuthorizationService auth,
-            ModellingDbContext modellingDb,
-            SchemasDbContext schemasDb,
             WorkspacesDbContext workspacesDb,
-            AggregateStore store,
-            EventCollector collector,
-            EventStoreDbContext eventStoreDb,
-            IEnumerable<IInlineProjection> projections,
-            ModelProjection modelProjection,
             CancellationToken ct) =>
         {
             var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
             await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
-            return await ImportModel.Handle(projectId, request, modellingDb, schemasDb, workspacesDb,
-                store, collector, eventStoreDb, projections, modelProjection, Guid.Parse(userId), ct);
+            return await ImportModel.Handle(projectId, request, workspacesDb, ct);
         }).WithTags("Import");
 
         return app;

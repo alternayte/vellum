@@ -1,11 +1,9 @@
 // src/Vellum/Modules/Drafts/CreateDraft.cs
 using System.Security.Claims;
 using System.Text.Json;
+using Deedbox;
 using Microsoft.EntityFrameworkCore;
-using Vellum.Kernel.Aggregates;
-using Vellum.Kernel.EventStore;
 using Vellum.Modules.Drafts.Entities;
-using Vellum.Modules.Modelling;
 using Vellum.Modules.Modelling.Model;
 using Vellum.Modules.Workspaces;
 using Vellum.Modules.Workspaces.Authorization;
@@ -26,53 +24,53 @@ public static class CreateDraft
         Guid projectId,
         CreateDraftRequest request,
         ClaimsPrincipal user,
-        DraftsDbContext draftsDb,
-        WorkspacesDbContext workspacesDb,
+        HttpContext http,
         WorkspaceAuthorizationService auth,
-        AggregateStore store,
-        IEventStore eventStore,
-        ModellingDbContext modellingDb,
         CancellationToken ct)
     {
         var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
 
-        var existing = await draftsDb.Drafts.FindAsync([request.Id], ct);
-        if (existing is not null)
-            return Results.Ok(ToDto(existing));
-
-        var proj = await workspacesDb.Projects.AsNoTracking()
-            .FirstAsync(p => p.Id == projectId, ct);
-
-        var (mainState, mainVersion) = await store.LoadAsync<ModelState, ModelEvent>(proj.StreamId, ct);
-
-        var draftStreamId = Guid.NewGuid();
-        var stateJson = JsonSerializer.SerializeToDocument(mainState, JsonOpts);
-        await eventStore.AppendAsync(draftStreamId, "model", 0, stateJson, [], ct);
-
-        // The draft branch reads as a full model, not just the changes made on it.
-        BranchRows.Write(projectId, draftStreamId, mainState, modellingDb);
-        await modellingDb.SaveChangesAsync(ct);
-
-        var baseSnapshotJson = JsonSerializer.Serialize(mainState, JsonOpts);
-
-        var draft = new DraftEntity
+        // The draft row, the fork event and the branch read-model rows commit together.
+        return await SharedTransaction.RunAsync(http.RequestServices, async services =>
         {
-            Id = request.Id,
-            ProjectId = projectId,
-            Name = request.Name,
-            StreamId = draftStreamId,
-            BaseStreamId = proj.StreamId,
-            ForkVersion = mainVersion,
-            CreatedBy = userId,
-            BaseSnapshot = baseSnapshotJson,
-        };
-        draftsDb.Drafts.Add(draft);
-        await draftsDb.SaveChangesAsync(ct);
+            var draftsDb = services.GetRequiredService<DraftsDbContext>();
+            var workspacesDb = services.GetRequiredService<WorkspacesDbContext>();
+            var store = services.GetRequiredService<IEventStore>();
 
-        return Results.Created(
-            $"/api/projects/{projectId}/drafts/{draft.Id}",
-            ToDto(draft));
+            var existing = await draftsDb.Drafts.FindAsync([request.Id], ct);
+            if (existing is not null)
+                return Results.Ok(ToDto(existing));
+
+            var proj = await workspacesDb.Projects.AsNoTracking()
+                .FirstAsync(p => p.Id == projectId, ct);
+
+            var (mainState, mainVersion) = await store.Load<ModelState>(StreamId.From(proj.StreamId), ct);
+
+            var draft = new DraftEntity
+            {
+                Id = request.Id,
+                ProjectId = projectId,
+                Name = request.Name,
+                StreamId = Guid.NewGuid(),
+                BaseStreamId = proj.StreamId,
+                ForkVersion = checked((int)mainVersion),
+                CreatedBy = userId,
+                BaseSnapshot = JsonSerializer.Serialize(mainState, JsonOpts),
+            };
+            draftsDb.Drafts.Add(draft);
+
+            // One append in a transaction that Deedbox opens on the DbContext and commits. Deedbox
+            // saves the draft row in it. The inline projection writes the branch rows in it, so
+            // the draft reads as a full model, not just the changes made on it.
+            await store.ForProject(projectId).UseDbContext(draftsDb).Append(
+                StreamId.From(draft.StreamId), ExpectedVersion.NoStream,
+                [ModelStore.Fork(mainState, proj.StreamId, mainVersion)], ct);
+
+            return Results.Created(
+                $"/api/projects/{projectId}/drafts/{draft.Id}",
+                ToDto(draft));
+        }, ct);
     }
 
     internal static DraftDto ToDto(DraftEntity d) =>

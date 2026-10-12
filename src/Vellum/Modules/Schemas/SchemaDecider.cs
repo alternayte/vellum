@@ -1,5 +1,5 @@
 using System.Text.Json;
-using Vellum.Kernel.Results;
+using Vellum.Shared;
 
 namespace Vellum.Modules.Schemas;
 
@@ -14,35 +14,35 @@ public sealed record UpdateSchemaCommand(
 
 public static class SchemaDecider
 {
-    public static CommandResult<IReadOnlyList<SchemaEvent>> Create(SchemaState state, CreateSchemaCommand cmd)
+    public static CommandResult<IReadOnlyList<object>> Create(SchemaState state, CreateSchemaCommand cmd)
     {
         if (string.IsNullOrWhiteSpace(cmd.Name))
-            return new CommandResult<IReadOnlyList<SchemaEvent>>.Invalid([new ValidationError("name", "Name is required")]);
+            return new CommandResult<IReadOnlyList<object>>.Invalid([new ValidationError("name", "Name is required")]);
 
         if (state.Schema is not null)
-            return new CommandResult<IReadOnlyList<SchemaEvent>>.Conflict("Schema already exists in this stream");
+            return new CommandResult<IReadOnlyList<object>>.Conflict("Schema already exists in this stream");
 
         var contentError = ValidateJsonSchema(cmd.Content);
         if (contentError is not null)
-            return new CommandResult<IReadOnlyList<SchemaEvent>>.Invalid([contentError]);
+            return new CommandResult<IReadOnlyList<object>>.Invalid([contentError]);
 
-        return new CommandResult<IReadOnlyList<SchemaEvent>>.Success(
+        return new CommandResult<IReadOnlyList<object>>.Success(
             [new SchemaEvent.SchemaCreated(cmd.Id, cmd.Name, cmd.Description, cmd.Content, 1, cmd.ProjectId)]);
     }
 
-    public static CommandResult<IReadOnlyList<SchemaEvent>> Update(SchemaState state, UpdateSchemaCommand cmd)
+    public static CommandResult<IReadOnlyList<object>> Update(SchemaState state, UpdateSchemaCommand cmd)
     {
         if (state.Schema is null || state.Deleted)
-            return new CommandResult<IReadOnlyList<SchemaEvent>>.NotFound("Schema not found");
+            return new CommandResult<IReadOnlyList<object>>.NotFound("Schema not found");
 
         if (cmd.SetName && string.IsNullOrWhiteSpace(cmd.Name))
-            return new CommandResult<IReadOnlyList<SchemaEvent>>.Invalid([new ValidationError("name", "Name is required")]);
+            return new CommandResult<IReadOnlyList<object>>.Invalid([new ValidationError("name", "Name is required")]);
 
         if (cmd.SetContent && cmd.Content is not null)
         {
             var contentError = ValidateJsonSchema(cmd.Content);
             if (contentError is not null)
-                return new CommandResult<IReadOnlyList<SchemaEvent>>.Invalid([contentError]);
+                return new CommandResult<IReadOnlyList<object>>.Invalid([contentError]);
         }
 
         var hasChanges =
@@ -51,13 +51,13 @@ public static class SchemaDecider
             (cmd.SetContent && cmd.Content != state.Schema.Content);
 
         if (!hasChanges)
-            return new CommandResult<IReadOnlyList<SchemaEvent>>.Success([]);
+            return new CommandResult<IReadOnlyList<object>>.Success([]);
 
         var newVersion = cmd.SetContent && cmd.Content != state.Schema.Content
             ? state.Schema.Version + 1
             : (int?)null;
 
-        return new CommandResult<IReadOnlyList<SchemaEvent>>.Success(
+        return new CommandResult<IReadOnlyList<object>>.Success(
             [new SchemaEvent.SchemaUpdated(
                 cmd.SchemaId,
                 cmd.SetName ? cmd.Name : null,
@@ -66,12 +66,12 @@ public static class SchemaDecider
                 newVersion)]);
     }
 
-    public static CommandResult<IReadOnlyList<SchemaEvent>> Delete(SchemaState state, Guid schemaId)
+    public static CommandResult<IReadOnlyList<object>> Delete(SchemaState state, Guid schemaId)
     {
         if (state.Schema is null || state.Deleted)
-            return new CommandResult<IReadOnlyList<SchemaEvent>>.NotFound("Schema not found");
+            return new CommandResult<IReadOnlyList<object>>.NotFound("Schema not found");
 
-        return new CommandResult<IReadOnlyList<SchemaEvent>>.Success(
+        return new CommandResult<IReadOnlyList<object>>.Success(
             [new SchemaEvent.SchemaDeleted(schemaId)]);
     }
 

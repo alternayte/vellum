@@ -1,253 +1,307 @@
+using Deedbox;
 using Microsoft.EntityFrameworkCore;
-using Vellum.Kernel.CommandHandling;
-using Vellum.Kernel.EventTypes;
-using Vellum.Kernel.Projections;
 using Vellum.Modules.Modelling.Entities;
 
 namespace Vellum.Modules.Modelling.Model;
 
-public sealed class ModelProjection : IInlineProjection
+/// <summary>
+/// The model read model: one row per element, relationship and message on each branch.
+/// It runs inline, so the rows commit in the same transaction as the events.
+/// <para>
+/// A row needs two facts that a model event does not carry. The branch is the stream ID.
+/// The project travels as the <see cref="ModelStore.ProjectHeader"/> metadata header, which
+/// Deedbox stores with the event, so a rebuild reads it back.
+/// </para>
+/// </summary>
+public sealed class ModelProjection : Projection<ModellingDbContext>
 {
-    private readonly ModellingDbContext _db;
-    private readonly IEventTypeRegistry _registry;
-    private Guid _projectId;
-    private Guid _branch;
-
-    public ModelProjection(ModellingDbContext db, IEventTypeRegistry registry)
+    public ModelProjection()
     {
-        _db = db;
-        _registry = registry;
+        On<ModelEvent.BranchForked>((forked, ctx) =>
+        {
+            WriteBranch(ProjectOf(ctx), BranchOf(ctx), forked, ctx.Db);
+            return Task.CompletedTask;
+        });
+
+        On<ModelEvent.ElementAdded>((added, ctx) =>
+        {
+            ctx.Db.Elements.Add(new ElementEntity
+            {
+                Id = added.Id,
+                ProjectId = ProjectOf(ctx),
+                Branch = BranchOf(ctx),
+                Kind = added.Kind.ToString().ToLowerInvariant(),
+                Name = added.Name,
+                Description = added.Description,
+                Technology = added.Technology,
+                OwnerId = added.OwnerId,
+                Status = added.Status.ToString().ToLowerInvariant(),
+                ParentId = added.ParentId,
+                Tags = added.Tags,
+                Icon = null
+            });
+            return Task.CompletedTask;
+        });
+
+        OnElement<ModelEvent.ElementRenamed>(e => e.ElementId, (e, row) => row.Name = e.Name);
+        OnElement<ModelEvent.ElementDescriptionChanged>(e => e.ElementId, (e, row) => row.Description = e.Description);
+        OnElement<ModelEvent.ElementTechnologyChanged>(e => e.ElementId, (e, row) => row.Technology = e.Technology);
+        OnElement<ModelEvent.ElementOwnerChanged>(e => e.ElementId, (e, row) => row.OwnerId = e.OwnerId);
+        OnElement<ModelEvent.ElementReparented>(e => e.ElementId, (e, row) => row.ParentId = e.ParentId);
+        OnElement<ModelEvent.ElementStatusChanged>(e => e.ElementId, (e, row) => row.Status = e.Status.ToString().ToLowerInvariant());
+        OnElement<ModelEvent.ElementRetagged>(e => e.ElementId, (e, row) => row.Tags = e.Tags);
+        OnElement<ModelEvent.ElementIconChanged>(e => e.ElementId, (e, row) => row.Icon = e.Icon);
+        OnElement<ModelEvent.ElementProvenanceRecorded>(e => e.ElementId, (e, row) =>
+        {
+            row.FactStatus = e.Status.ToApiString();
+            row.ProvenanceSource = e.Provenance?.Source;
+            row.ProvenanceRevision = e.Provenance?.Revision;
+            row.ProvenanceConfidence = e.Provenance?.Confidence;
+            row.ProvenanceAcceptedBy = e.Provenance?.AcceptedBy;
+            row.ProvenanceAcceptedAt = e.Provenance?.AcceptedAt;
+        });
+        On<ModelEvent.ElementRemoved>(async (removed, ctx) =>
+        {
+            var row = await FindElementAsync(ctx, removed.ElementId);
+            if (row is not null) ctx.Db.Elements.Remove(row);
+        });
+
+        On<ModelEvent.RelationshipAdded>((added, ctx) =>
+        {
+            ctx.Db.Relationships.Add(new RelationshipEntity
+            {
+                Id = added.Id,
+                ProjectId = ProjectOf(ctx),
+                Branch = BranchOf(ctx),
+                FromId = added.FromId,
+                ToId = added.ToId,
+                Label = added.Label,
+                Technology = added.Technology,
+                MessageId = added.MessageId,
+                LineShape = null,
+                Kind = added.Kind.ToString().ToLowerInvariant()
+            });
+            return Task.CompletedTask;
+        });
+
+        OnRelationship<ModelEvent.RelationshipLabelChanged>(e => e.RelationshipId, (e, row) => row.Label = e.Label);
+        OnRelationship<ModelEvent.RelationshipTechnologyChanged>(e => e.RelationshipId, (e, row) => row.Technology = e.Technology);
+        OnRelationship<ModelEvent.RelationshipLineShapeChanged>(e => e.RelationshipId, (e, row) => row.LineShape = e.LineShape);
+        OnRelationship<ModelEvent.RelationshipKindChanged>(e => e.RelationshipId, (e, row) => row.Kind = e.Kind.ToString().ToLowerInvariant());
+        OnRelationship<ModelEvent.RelationshipProvenanceRecorded>(e => e.RelationshipId, (e, row) =>
+        {
+            row.FactStatus = e.Status.ToApiString();
+            row.ProvenanceSource = e.Provenance?.Source;
+            row.ProvenanceRevision = e.Provenance?.Revision;
+            row.ProvenanceConfidence = e.Provenance?.Confidence;
+            row.ProvenanceAcceptedBy = e.Provenance?.AcceptedBy;
+            row.ProvenanceAcceptedAt = e.Provenance?.AcceptedAt;
+        });
+        On<ModelEvent.RelationshipRemoved>(async (removed, ctx) =>
+        {
+            var row = await FindRelationshipAsync(ctx, removed.RelationshipId);
+            if (row is not null) ctx.Db.Relationships.Remove(row);
+        });
+
+        On<ModelEvent.MessageAdded>((added, ctx) =>
+        {
+            ctx.Db.Messages.Add(new MessageEntity
+            {
+                Id = added.Id,
+                ProjectId = ProjectOf(ctx),
+                Branch = BranchOf(ctx),
+                Name = added.Name,
+                Description = added.Description,
+                ProducerId = added.ProducerId,
+                ConsumerIds = added.ConsumerIds.ToGuids(),
+                SchemaId = added.SchemaId,
+                Tags = added.Tags
+            });
+            return Task.CompletedTask;
+        });
+
+        OnMessage<ModelEvent.MessageUpdated>(e => e.MessageId, (e, row) =>
+        {
+            if (e.Name is not null) row.Name = e.Name;
+            if (e.Description is not null) row.Description = e.Description;
+            if (e.ProducerId is not null) row.ProducerId = e.ProducerId.Value;
+            if (e.ConsumerIds is not null) row.ConsumerIds = e.ConsumerIds.ToGuids();
+            if (e.SetSchemaId) row.SchemaId = e.SchemaId;
+            if (e.Tags is not null) row.Tags = e.Tags;
+        });
+        OnMessage<ModelEvent.MessageProvenanceRecorded>(e => e.MessageId, (e, row) =>
+        {
+            row.FactStatus = e.Status.ToApiString();
+            row.ProvenanceSource = e.Provenance?.Source;
+            row.ProvenanceRevision = e.Provenance?.Revision;
+            row.ProvenanceConfidence = e.Provenance?.Confidence;
+            row.ProvenanceAcceptedBy = e.Provenance?.AcceptedBy;
+            row.ProvenanceAcceptedAt = e.Provenance?.AcceptedAt;
+        });
+        On<ModelEvent.MessageRemoved>(async (removed, ctx) =>
+        {
+            var row = await FindMessageAsync(ctx, removed.MessageId);
+            if (row is not null) ctx.Db.Messages.Remove(row);
+        });
     }
 
-    public void SetContext(Guid projectId, Guid branch)
+    /// <summary>Revisions and variants are not projected from events, so a rebuild keeps them.</summary>
+    protected override async Task ResetAsync(WriteContext<ModellingDbContext> context)
     {
-        _projectId = projectId;
-        _branch = branch;
+        await context.Db.Elements.ExecuteDeleteAsync(context.CancellationToken);
+        await context.Db.Relationships.ExecuteDeleteAsync(context.CancellationToken);
+        await context.Db.Messages.ExecuteDeleteAsync(context.CancellationToken);
     }
+
+    private void OnElement<TEvent>(Func<TEvent, ElementId> id, Action<TEvent, ElementEntity> apply) where TEvent : notnull =>
+        On<TEvent>(async (e, ctx) =>
+        {
+            var row = await FindElementAsync(ctx, id(e));
+            if (row is not null) apply(e, row);
+        });
+
+    private void OnRelationship<TEvent>(Func<TEvent, RelationshipId> id, Action<TEvent, RelationshipEntity> apply) where TEvent : notnull =>
+        On<TEvent>(async (e, ctx) =>
+        {
+            var row = await FindRelationshipAsync(ctx, id(e));
+            if (row is not null) apply(e, row);
+        });
+
+    private void OnMessage<TEvent>(Func<TEvent, MessageId> id, Action<TEvent, MessageEntity> apply) where TEvent : notnull =>
+        On<TEvent>(async (e, ctx) =>
+        {
+            var row = await FindMessageAsync(ctx, id(e));
+            if (row is not null) apply(e, row);
+        });
+
+    private static Guid BranchOf(ProjectionContext ctx) => Guid.Parse(ctx.StreamId);
+
+    private static Guid ProjectOf(ProjectionContext ctx) =>
+        ctx.Metadata.Headers.TryGetValue(ModelStore.ProjectHeader, out var value) && Guid.TryParse(value, out var projectId)
+            ? projectId
+            : throw new InvalidOperationException(
+                $"Model event {ctx.EventId} on stream {ctx.StreamId} has no '{ModelStore.ProjectHeader}' header. " +
+                "Append model events through IEventStore.ForProject.");
 
     /// <summary>
     /// Branch-scoped lookups: the same architecture ID can exist on the main branch, a
-    /// draft and a variant, so reads and writes must name the branch. Rows added earlier
-    /// in the same batch are found through the change tracker before the database.
+    /// draft and a variant, so reads and writes must name the branch. Deedbox saves once per
+    /// append, so rows added by an earlier event of the same append are found through the
+    /// change tracker before the database.
     /// </summary>
-    private async Task<ElementEntity?> FindElementAsync(ElementId id, CancellationToken ct)
+    private static async Task<ElementEntity?> FindElementAsync(ProjectionContext<ModellingDbContext> ctx, ElementId id)
     {
-        var local = _db.Elements.Local.FirstOrDefault(e => e.Id == id.Value && e.Branch == _branch);
-        if (local is not null) return local;
-        return await _db.Elements.FirstOrDefaultAsync(e => e.Id == id.Value && e.Branch == _branch, ct);
+        var branch = BranchOf(ctx);
+        return ctx.Db.Elements.Local.FirstOrDefault(e => e.Id == id.Value && e.Branch == branch)
+            ?? await ctx.Db.Elements.FirstOrDefaultAsync(e => e.Id == id.Value && e.Branch == branch, ctx.CancellationToken);
     }
 
-    private async Task<RelationshipEntity?> FindRelationshipAsync(RelationshipId id, CancellationToken ct)
+    private static async Task<RelationshipEntity?> FindRelationshipAsync(ProjectionContext<ModellingDbContext> ctx, RelationshipId id)
     {
-        var local = _db.Relationships.Local.FirstOrDefault(r => r.Id == id.Value && r.Branch == _branch);
-        if (local is not null) return local;
-        return await _db.Relationships.FirstOrDefaultAsync(r => r.Id == id.Value && r.Branch == _branch, ct);
+        var branch = BranchOf(ctx);
+        return ctx.Db.Relationships.Local.FirstOrDefault(r => r.Id == id.Value && r.Branch == branch)
+            ?? await ctx.Db.Relationships.FirstOrDefaultAsync(r => r.Id == id.Value && r.Branch == branch, ctx.CancellationToken);
     }
 
-    private async Task<MessageEntity?> FindMessageAsync(MessageId id, CancellationToken ct)
+    private static async Task<MessageEntity?> FindMessageAsync(ProjectionContext<ModellingDbContext> ctx, MessageId id)
     {
-        var local = _db.Messages.Local.FirstOrDefault(m => m.Id == id.Value && m.Branch == _branch);
-        if (local is not null) return local;
-        return await _db.Messages.FirstOrDefaultAsync(m => m.Id == id.Value && m.Branch == _branch, ct);
+        var branch = BranchOf(ctx);
+        return ctx.Db.Messages.Local.FirstOrDefault(m => m.Id == id.Value && m.Branch == branch)
+            ?? await ctx.Db.Messages.FirstOrDefaultAsync(m => m.Id == id.Value && m.Branch == branch, ctx.CancellationToken);
     }
 
-    public async Task ProjectAsync(IReadOnlyList<CollectedEvent> events, CancellationToken ct = default)
+    /// <summary>
+    /// Writes complete rows for a forked branch so a draft or variant reads as a full model,
+    /// not just the changes made on it. The synthetic row ID is assigned automatically.
+    /// </summary>
+    private static void WriteBranch(Guid projectId, Guid branch, ModelEvent.BranchForked forked, ModellingDbContext db)
     {
-        foreach (var e in events)
+        foreach (var element in forked.Elements)
         {
-            var deserialized = _registry.DeserializeEvent(e.EventType, e.Payload);
-            if (deserialized is not ModelEvent modelEvent) continue;
-
-            switch (modelEvent)
+            db.Elements.Add(new ElementEntity
             {
-                case ModelEvent.ElementAdded added:
-                    _db.Elements.Add(new ElementEntity
-                    {
-                        Id = added.Id,
-                        ProjectId = _projectId,
-                        Branch = _branch,
-                        Kind = added.Kind.ToString().ToLowerInvariant(),
-                        Name = added.Name,
-                        Description = added.Description,
-                        Technology = added.Technology,
-                        OwnerId = added.OwnerId,
-                        Status = added.Status.ToString().ToLowerInvariant(),
-                        ParentId = added.ParentId,
-                        Tags = added.Tags,
-                        Icon = null
-                    });
-                    break;
-
-                case ModelEvent.ElementRenamed renamed:
-                    var renamedEntity = await FindElementAsync(renamed.ElementId, ct);
-                    if (renamedEntity is not null) renamedEntity.Name = renamed.Name;
-                    break;
-
-                case ModelEvent.ElementDescriptionChanged descChanged:
-                    var descEntity = await FindElementAsync(descChanged.ElementId, ct);
-                    if (descEntity is not null) descEntity.Description = descChanged.Description;
-                    break;
-
-                case ModelEvent.ElementTechnologyChanged techChanged:
-                    var techEntity = await FindElementAsync(techChanged.ElementId, ct);
-                    if (techEntity is not null) techEntity.Technology = techChanged.Technology;
-                    break;
-
-                case ModelEvent.ElementOwnerChanged ownerChanged:
-                    var ownerEntity = await FindElementAsync(ownerChanged.ElementId, ct);
-                    if (ownerEntity is not null) ownerEntity.OwnerId = ownerChanged.OwnerId;
-                    break;
-
-                case ModelEvent.ElementReparented reparented:
-                    var reparentedEntity = await FindElementAsync(reparented.ElementId, ct);
-                    if (reparentedEntity is not null) reparentedEntity.ParentId = reparented.ParentId;
-                    break;
-
-                case ModelEvent.ElementStatusChanged statusChanged:
-                    var statusEntity = await FindElementAsync(statusChanged.ElementId, ct);
-                    if (statusEntity is not null) statusEntity.Status = statusChanged.Status.ToString().ToLowerInvariant();
-                    break;
-
-                case ModelEvent.ElementRetagged retagged:
-                    var retaggedEntity = await FindElementAsync(retagged.ElementId, ct);
-                    if (retaggedEntity is not null) retaggedEntity.Tags = retagged.Tags;
-                    break;
-
-                case ModelEvent.ElementIconChanged iconChanged:
-                    var iconEntity = await FindElementAsync(iconChanged.ElementId, ct);
-                    if (iconEntity is not null) iconEntity.Icon = iconChanged.Icon;
-                    break;
-
-                case ModelEvent.ElementRemoved removed:
-                    var removedEntity = await FindElementAsync(removed.ElementId, ct);
-                    if (removedEntity is not null) _db.Elements.Remove(removedEntity);
-                    break;
-
-                case ModelEvent.ElementProvenanceRecorded elementProvenance:
-                    var provenanceEntity = await FindElementAsync(elementProvenance.ElementId, ct);
-                    if (provenanceEntity is not null)
-                        ApplyProvenance(provenanceEntity, elementProvenance.Status, elementProvenance.Provenance);
-                    break;
-
-                case ModelEvent.RelationshipAdded relAdded:
-                    _db.Relationships.Add(new RelationshipEntity
-                    {
-                        Id = relAdded.Id,
-                        ProjectId = _projectId,
-                        Branch = _branch,
-                        FromId = relAdded.FromId,
-                        ToId = relAdded.ToId,
-                        Label = relAdded.Label,
-                        Technology = relAdded.Technology,
-                        MessageId = relAdded.MessageId,
-                        LineShape = null,
-                        Kind = relAdded.Kind.ToString().ToLowerInvariant()
-                    });
-                    break;
-
-                case ModelEvent.RelationshipLabelChanged labelChanged:
-                    var labelEntity = await FindRelationshipAsync(labelChanged.RelationshipId, ct);
-                    if (labelEntity is not null) labelEntity.Label = labelChanged.Label;
-                    break;
-
-                case ModelEvent.RelationshipTechnologyChanged relTechChanged:
-                    var relTechEntity = await FindRelationshipAsync(relTechChanged.RelationshipId, ct);
-                    if (relTechEntity is not null) relTechEntity.Technology = relTechChanged.Technology;
-                    break;
-
-                case ModelEvent.RelationshipLineShapeChanged lineShapeChanged:
-                    var lineShapeEntity = await FindRelationshipAsync(lineShapeChanged.RelationshipId, ct);
-                    if (lineShapeEntity is not null) lineShapeEntity.LineShape = lineShapeChanged.LineShape;
-                    break;
-
-                case ModelEvent.RelationshipKindChanged kindChanged:
-                    var kindEntity = await FindRelationshipAsync(kindChanged.RelationshipId, ct);
-                    if (kindEntity is not null) kindEntity.Kind = kindChanged.Kind.ToString().ToLowerInvariant();
-                    break;
-
-                case ModelEvent.RelationshipProvenanceRecorded relationshipProvenance:
-                    var relProvenanceEntity = await FindRelationshipAsync(relationshipProvenance.RelationshipId, ct);
-                    if (relProvenanceEntity is not null)
-                        ApplyProvenance(relProvenanceEntity, relationshipProvenance.Status, relationshipProvenance.Provenance);
-                    break;
-
-                case ModelEvent.RelationshipRemoved relRemoved:
-                    var relRemovedEntity = await FindRelationshipAsync(relRemoved.RelationshipId, ct);
-                    if (relRemovedEntity is not null) _db.Relationships.Remove(relRemovedEntity);
-                    break;
-
-                case ModelEvent.MessageAdded msgAdded:
-                    _db.Messages.Add(new MessageEntity
-                    {
-                        Id = msgAdded.Id,
-                        ProjectId = _projectId,
-                        Branch = _branch,
-                        Name = msgAdded.Name,
-                        Description = msgAdded.Description,
-                        ProducerId = msgAdded.ProducerId,
-                        ConsumerIds = msgAdded.ConsumerIds.ToGuids(),
-                        SchemaId = msgAdded.SchemaId,
-                        Tags = msgAdded.Tags
-                    });
-                    break;
-
-                case ModelEvent.MessageUpdated msgUpdated:
-                    var msgEntity = await FindMessageAsync(msgUpdated.MessageId, ct);
-                    if (msgEntity is not null)
-                    {
-                        if (msgUpdated.Name is not null) msgEntity.Name = msgUpdated.Name;
-                        if (msgUpdated.Description is not null) msgEntity.Description = msgUpdated.Description;
-                        if (msgUpdated.ProducerId is not null) msgEntity.ProducerId = msgUpdated.ProducerId.Value;
-                        if (msgUpdated.ConsumerIds is not null) msgEntity.ConsumerIds = msgUpdated.ConsumerIds.ToGuids();
-                        if (msgUpdated.SetSchemaId) msgEntity.SchemaId = msgUpdated.SchemaId;
-                        if (msgUpdated.Tags is not null) msgEntity.Tags = msgUpdated.Tags;
-                    }
-                    break;
-
-                case ModelEvent.MessageRemoved msgRemoved:
-                    var msgRemovedEntity = await FindMessageAsync(msgRemoved.MessageId, ct);
-                    if (msgRemovedEntity is not null) _db.Messages.Remove(msgRemovedEntity);
-                    break;
-
-                case ModelEvent.MessageProvenanceRecorded messageProvenance:
-                    var msgProvenanceEntity = await FindMessageAsync(messageProvenance.MessageId, ct);
-                    if (msgProvenanceEntity is not null)
-                        ApplyProvenance(msgProvenanceEntity, messageProvenance.Status, messageProvenance.Provenance);
-                    break;
-            }
+                Id = element.Id,
+                ProjectId = projectId,
+                Branch = branch,
+                Kind = element.Kind.ToString().ToLowerInvariant(),
+                Name = element.Name,
+                Description = element.Description,
+                Technology = element.Technology,
+                OwnerId = element.OwnerId,
+                Status = element.Status.ToString().ToLowerInvariant(),
+                ParentId = element.ParentId,
+                Tags = element.Tags,
+                Icon = element.Icon,
+                FactStatus = element.FactStatus.ToApiString(),
+                ProvenanceSource = element.Provenance?.Source,
+                ProvenanceRevision = element.Provenance?.Revision,
+                ProvenanceConfidence = element.Provenance?.Confidence,
+                ProvenanceAcceptedBy = element.Provenance?.AcceptedBy,
+                ProvenanceAcceptedAt = element.Provenance?.AcceptedAt,
+            });
         }
 
-        if (events.Count > 0)
-            await _db.SaveChangesAsync(ct);
-    }
+        foreach (var relationship in forked.Relationships)
+        {
+            db.Relationships.Add(new RelationshipEntity
+            {
+                Id = relationship.Id,
+                ProjectId = projectId,
+                Branch = branch,
+                FromId = relationship.FromId,
+                ToId = relationship.ToId,
+                Label = relationship.Label,
+                Technology = relationship.Technology,
+                MessageId = relationship.MessageId,
+                LineShape = relationship.LineShape,
+                Kind = relationship.Kind.ToString().ToLowerInvariant(),
+                FactStatus = relationship.FactStatus.ToApiString(),
+                ProvenanceSource = relationship.Provenance?.Source,
+                ProvenanceRevision = relationship.Provenance?.Revision,
+                ProvenanceConfidence = relationship.Provenance?.Confidence,
+                ProvenanceAcceptedBy = relationship.Provenance?.AcceptedBy,
+                ProvenanceAcceptedAt = relationship.Provenance?.AcceptedAt,
+            });
+        }
 
-    private static void ApplyProvenance(ElementEntity entity, FactStatus status, Provenance? provenance)
-    {
-        entity.FactStatus = status.ToApiString();
-        entity.ProvenanceSource = provenance?.Source;
-        entity.ProvenanceRevision = provenance?.Revision;
-        entity.ProvenanceConfidence = provenance?.Confidence;
-        entity.ProvenanceAcceptedBy = provenance?.AcceptedBy;
-        entity.ProvenanceAcceptedAt = provenance?.AcceptedAt;
+        foreach (var message in forked.Messages)
+        {
+            db.Messages.Add(new MessageEntity
+            {
+                Id = message.Id,
+                ProjectId = projectId,
+                Branch = branch,
+                Name = message.Name,
+                Description = message.Description,
+                ProducerId = message.ProducerId,
+                ConsumerIds = message.ConsumerIds.ToGuids(),
+                SchemaId = message.SchemaId,
+                Tags = message.Tags,
+                FactStatus = message.FactStatus.ToApiString(),
+                ProvenanceSource = message.Provenance?.Source,
+                ProvenanceRevision = message.Provenance?.Revision,
+                ProvenanceConfidence = message.Provenance?.Confidence,
+                ProvenanceAcceptedBy = message.Provenance?.AcceptedBy,
+                ProvenanceAcceptedAt = message.Provenance?.AcceptedAt,
+            });
+        }
     }
+}
 
-    private static void ApplyProvenance(RelationshipEntity entity, FactStatus status, Provenance? provenance)
-    {
-        entity.FactStatus = status.ToApiString();
-        entity.ProvenanceSource = provenance?.Source;
-        entity.ProvenanceRevision = provenance?.Revision;
-        entity.ProvenanceConfidence = provenance?.Confidence;
-        entity.ProvenanceAcceptedBy = provenance?.AcceptedBy;
-        entity.ProvenanceAcceptedAt = provenance?.AcceptedAt;
-    }
+/// <summary>Model streams as the rest of the app writes them.</summary>
+public static class ModelStore
+{
+    public const string ProjectHeader = "project-id";
 
-    private static void ApplyProvenance(MessageEntity entity, FactStatus status, Provenance? provenance)
-    {
-        entity.FactStatus = status.ToApiString();
-        entity.ProvenanceSource = provenance?.Source;
-        entity.ProvenanceRevision = provenance?.Revision;
-        entity.ProvenanceConfidence = provenance?.Confidence;
-        entity.ProvenanceAcceptedBy = provenance?.AcceptedBy;
-        entity.ProvenanceAcceptedAt = provenance?.AcceptedAt;
-    }
+    /// <summary>A store whose appends carry the project that the model read model files rows under.</summary>
+    public static IEventStore ForProject(this IEventStore store, Guid projectId) =>
+        store.WithMetadata(metadata => metadata with
+        {
+            Headers = new Dictionary<string, string>(metadata.Headers) { [ProjectHeader] = projectId.ToString() },
+        });
+
+    /// <summary>The fork event that starts a draft or variant stream from a pinned state.</summary>
+    public static ModelEvent.BranchForked Fork(ModelState source, Guid sourceStreamId, long sourceVersion) => new(
+        sourceStreamId, sourceVersion,
+        [.. source.Elements.Values], [.. source.Relationships.Values], [.. source.Messages.Values]);
 }

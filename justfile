@@ -10,9 +10,6 @@ run:
 test:
     DOCKER_CONFIG={{justfile_directory()}}/.docker-test dotnet test
 
-migrate-es name:
-    dotnet ef migrations add {{name}} --project src/Vellum --context EventStoreDbContext --output-dir Kernel/EventStore/Migrations
-
 migrate-identity name:
     dotnet ef migrations add {{name}} --project src/Vellum --context AppIdentityDbContext --output-dir Modules/Identity/Migrations
 

@@ -93,11 +93,11 @@ public class ScoreEndpointTests
             .WithWebHostBuilder(builder =>
             {
                 builder.UseEnvironment("Testing");
+                builder.UseSetting("ConnectionStrings:DefaultConnection", _fixture.ConnectionString);
                 builder.ConfigureServices(services =>
                 {
                     var cs = _fixture.ConnectionString;
 
-                    services.RemoveAll<DbContextOptions<Vellum.Kernel.EventStore.EventStoreDbContext>>();
                     services.RemoveAll<DbContextOptions<AppIdentityDbContext>>();
                     services.RemoveAll<DbContextOptions<WorkspacesDbContext>>();
                     services.RemoveAll<DbContextOptions<ModellingDbContext>>();
@@ -107,7 +107,6 @@ public class ScoreEndpointTests
                     services.RemoveAll<DbContextOptions<SchemasDbContext>>();
                     services.RemoveAll<DbContextOptions<ScoringDbContext>>();
 
-                    services.AddDbContext<Vellum.Kernel.EventStore.EventStoreDbContext>(o => o.UseNpgsql(cs).UseSnakeCaseNamingConvention());
                     services.AddDbContext<AppIdentityDbContext>(o => o.UseNpgsql(cs).UseSnakeCaseNamingConvention());
                     services.AddDbContext<WorkspacesDbContext>(o => o.UseNpgsql(cs).UseSnakeCaseNamingConvention());
                     services.AddDbContext<ModellingDbContext>(o => o.UseNpgsql(cs).UseSnakeCaseNamingConvention());

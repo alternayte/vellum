@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Deedbox.Testing;
 using Vellum.Modules.Modelling.Model;
 
 namespace Vellum.Tests.Modules.Modelling;
@@ -47,15 +48,15 @@ public class ModelSerializationTests
         var messageId = Guid.NewGuid();
         var schemaId = Guid.NewGuid();
 
-        var state = ModelState.Initial
-            .Evolve(new ModelEvent.ElementAdded(elementId, ElementKind.System, "Orders",
-                null, null, null, ElementStatus.Current, null, []))
-            .Evolve(new ModelEvent.ElementProvenanceRecorded(elementId, FactStatus.Inferred,
-                new Provenance("github.com/acme/orders@abc:src/Orders.cs:1-10", "abc", 0.75, Guid.NewGuid(), DateTimeOffset.UtcNow)))
-            .Evolve(new ModelEvent.RelationshipAdded(relationshipId, elementId, elementId,
-                "publishes", "AMQP", null, RelationshipKind.Behavioural))
-            .Evolve(new ModelEvent.MessageAdded(messageId, "OrderPlaced", null,
-                elementId, [elementId], schemaId, []));
+        var state = Decider.Given<ModelState>(
+            new ModelEvent.ElementAdded(elementId, ElementKind.System, "Orders",
+                null, null, null, ElementStatus.Current, null, []),
+            new ModelEvent.ElementProvenanceRecorded(elementId, FactStatus.Inferred,
+                new Provenance("github.com/acme/orders@abc:src/Orders.cs:1-10", "abc", 0.75, Guid.NewGuid(), DateTimeOffset.UtcNow)),
+            new ModelEvent.RelationshipAdded(relationshipId, elementId, elementId,
+                "publishes", "AMQP", null, RelationshipKind.Behavioural),
+            new ModelEvent.MessageAdded(messageId, "OrderPlaced", null,
+                elementId, [elementId], schemaId, [])).State;
 
         var json = JsonSerializer.Serialize(state, JsonOpts);
         var roundTripped = JsonSerializer.Deserialize<ModelState>(json, JsonOpts)!;
@@ -71,9 +72,9 @@ public class ModelSerializationTests
     public void Dictionary_keys_round_trip_through_typed_ids()
     {
         var id = Guid.NewGuid();
-        var state = ModelState.Initial
-            .Evolve(new ModelEvent.ElementAdded(id, ElementKind.System, "Orders",
-                null, null, null, ElementStatus.Current, null, []));
+        var state = Decider.Given<ModelState>(
+            new ModelEvent.ElementAdded(id, ElementKind.System, "Orders",
+                null, null, null, ElementStatus.Current, null, [])).State;
 
         var json = JsonSerializer.Serialize(state, JsonOpts);
         Assert.Contains(id.ToString(), json);

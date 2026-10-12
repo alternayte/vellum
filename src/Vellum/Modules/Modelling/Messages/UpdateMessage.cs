@@ -1,9 +1,8 @@
+using Deedbox;
 using Microsoft.EntityFrameworkCore;
-using Vellum.Kernel.Aggregates;
-using Vellum.Kernel.CommandHandling;
-using Vellum.Kernel.Results;
 using Vellum.Modules.Modelling.Model;
 using Vellum.Modules.Schemas;
+using Vellum.Shared;
 
 namespace Vellum.Modules.Modelling.Messages;
 
@@ -20,14 +19,12 @@ public sealed record UpdateMessageCommandEnvelope(
 
 public sealed class UpdateMessageHandler : ICommandHandler<UpdateMessageCommandEnvelope, CommandResult<MessageDto>>
 {
-    private readonly AggregateStore _store;
-    private readonly ModelProjection _projection;
+    private readonly IEventStore _store;
     private readonly SchemasDbContext _schemasDb;
 
-    public UpdateMessageHandler(AggregateStore store, ModelProjection projection, SchemasDbContext schemasDb)
+    public UpdateMessageHandler(IEventStore store, SchemasDbContext schemasDb)
     {
         _store = store;
-        _projection = projection;
         _schemasDb = schemasDb;
     }
 
@@ -41,7 +38,13 @@ public sealed class UpdateMessageHandler : ICommandHandler<UpdateMessageCommandE
                 [new ValidationError("schemaId", "Schema not found in this project")]);
         }
 
-        var (state, version) = await _store.LoadAsync<ModelState, ModelEvent>(cmd.StreamId, ct);
+        FactStatus? requestedStatus = null;
+        if (cmd.Request.FactStatus is not null)
+        {
+            if (!FactStatusFormat.TryParseApiString(cmd.Request.FactStatus, out var parsedStatus))
+                return new CommandResult<MessageDto>.Invalid([new ValidationError("factStatus", "Invalid fact status")]);
+            requestedStatus = parsedStatus;
+        }
 
         var updateCmd = new UpdateMessageCommand(
             cmd.MessageId,
@@ -52,59 +55,38 @@ public sealed class UpdateMessageHandler : ICommandHandler<UpdateMessageCommandE
             SchemaId: cmd.Request.SchemaId, SetSchemaId: cmd.Request.SetSchemaId,
             Tags: cmd.Request.Tags);
 
-        var result = ModelDecider.UpdateMessage(state, updateCmd);
-        if (result is not CommandResult<IReadOnlyList<ModelEvent>>.Success success)
-        {
-            return result switch
-            {
-                CommandResult<IReadOnlyList<ModelEvent>>.Invalid inv => new CommandResult<MessageDto>.Invalid(inv.Errors),
-                CommandResult<IReadOnlyList<ModelEvent>>.NotFound n => new CommandResult<MessageDto>.NotFound(n.Message),
-                _ => new CommandResult<MessageDto>.Conflict("Unexpected error")
-            };
-        }
+        // The acceptance stamp is taken once, so the decision stays a pure function of the state.
+        var suppliedProvenance = cmd.Request.SetProvenance
+            ? ProvenanceMapper.ToDomain(cmd.Request.Provenance, Guid.Parse(cmd.UserId))
+            : null;
 
-        var events = new List<ModelEvent>(success.Value);
-        var stateAfter = events.Aggregate(state, (s, e) => s.Evolve(e));
+        return await _store.ForProject(cmd.ProjectId).Decide<ModelState, MessageDto>(
+            cmd.StreamId,
+            Decide,
+            state => AddMessageHandler.ToDto(state.Messages[cmd.MessageId]),
+            ct);
 
-        FactStatus? requestedStatus = null;
-        if (cmd.Request.FactStatus is not null)
+        CommandResult<IReadOnlyList<object>> Decide(ModelState state)
         {
-            if (!FactStatusFormat.TryParseApiString(cmd.Request.FactStatus, out var parsedStatus))
-                return new CommandResult<MessageDto>.Invalid([new ValidationError("factStatus", "Invalid fact status")]);
-            requestedStatus = parsedStatus;
-        }
+            var result = ModelDecider.UpdateMessage(state, updateCmd);
+            if (result is not CommandResult<IReadOnlyList<object>>.Success success)
+                return result;
+            if (requestedStatus is null && !cmd.Request.SetProvenance)
+                return result;
 
-        if (requestedStatus is not null || cmd.Request.SetProvenance)
-        {
+            var events = new List<object>(success.Value);
+            var stateAfter = events.Aggregate(state, ModelState.Evolve);
             var current = stateAfter.Messages[cmd.MessageId];
-            var factStatus = requestedStatus ?? current.FactStatus;
-            var provenance = cmd.Request.SetProvenance
-                ? ProvenanceMapper.ToDomain(cmd.Request.Provenance, Guid.Parse(cmd.UserId))
-                : current.Provenance;
 
-            var provenanceResult = ModelDecider.RecordMessageProvenance(stateAfter, cmd.MessageId, factStatus, provenance);
-            if (provenanceResult is not CommandResult<IReadOnlyList<ModelEvent>>.Success provenanceSuccess)
-            {
-                return provenanceResult switch
-                {
-                    CommandResult<IReadOnlyList<ModelEvent>>.Invalid inv => new CommandResult<MessageDto>.Invalid(inv.Errors),
-                    CommandResult<IReadOnlyList<ModelEvent>>.NotFound n => new CommandResult<MessageDto>.NotFound(n.Message),
-                    _ => new CommandResult<MessageDto>.Conflict("Unexpected error")
-                };
-            }
+            var provenanceResult = ModelDecider.RecordMessageProvenance(
+                stateAfter, cmd.MessageId,
+                requestedStatus ?? current.FactStatus,
+                cmd.Request.SetProvenance ? suppliedProvenance : current.Provenance);
+            if (provenanceResult is not CommandResult<IReadOnlyList<object>>.Success provenanceSuccess)
+                return provenanceResult;
 
             events.AddRange(provenanceSuccess.Value);
-            stateAfter = provenanceSuccess.Value.Aggregate(stateAfter, (s, e) => s.Evolve(e));
+            return new CommandResult<IReadOnlyList<object>>.Success(events);
         }
-
-        if (events.Count > 0)
-        {
-            var metadata = new EventMetadata { ActorId = Guid.Parse(cmd.UserId), CorrelationId = Guid.NewGuid() };
-            _projection.SetContext(cmd.ProjectId, cmd.StreamId);
-            await _store.SaveAsync(cmd.StreamId, "model", version, stateAfter, events, metadata, ct);
-            state = stateAfter;
-        }
-
-        return new CommandResult<MessageDto>.Success(AddMessageHandler.ToDto(state.Messages[cmd.MessageId]));
     }
 }

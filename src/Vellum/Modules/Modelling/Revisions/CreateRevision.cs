@@ -1,7 +1,7 @@
 using System.Security.Claims;
 using System.Text.Json;
+using Deedbox;
 using Microsoft.EntityFrameworkCore;
-using Vellum.Kernel.Aggregates;
 using Vellum.Modules.Modelling.Entities;
 using Vellum.Modules.Modelling.Model;
 using Vellum.Modules.Workspaces;
@@ -29,7 +29,7 @@ public static class CreateRevision
         ClaimsPrincipal user,
         WorkspacesDbContext workspacesDb,
         ModellingDbContext modellingDb,
-        AggregateStore store,
+        IEventStore store,
         WorkspaceAuthorizationService auth,
         CancellationToken ct)
     {
@@ -58,7 +58,7 @@ public static class CreateRevision
             return Results.Conflict(new ErrorResponse("conflict", "A revision with this name already exists"));
         }
 
-        var (state, version) = await store.LoadAsync<ModelState, ModelEvent>(project.StreamId, ct);
+        var (state, version) = await store.Load<ModelState>(StreamId.From(project.StreamId), ct);
 
         var revision = new RevisionEntity
         {
@@ -67,7 +67,7 @@ public static class CreateRevision
             Name = request.Name,
             Note = request.Note,
             StreamId = project.StreamId,
-            Version = version,
+            Version = checked((int)version),
             State = JsonSerializer.Serialize(state, JsonOpts),
             CreatedBy = userId,
             CreatedAt = DateTimeOffset.UtcNow,

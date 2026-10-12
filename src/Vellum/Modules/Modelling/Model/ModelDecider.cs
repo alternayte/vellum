@@ -1,4 +1,4 @@
-using Vellum.Kernel.Results;
+using Vellum.Shared;
 
 namespace Vellum.Modules.Modelling.Model;
 
@@ -54,34 +54,34 @@ public static class ModelDecider
         [ElementKind.Component] = ElementKind.App,
     };
 
-    public static CommandResult<IReadOnlyList<ModelEvent>> AddElement(ModelState state, AddElementCommand cmd)
+    public static CommandResult<IReadOnlyList<object>> AddElement(ModelState state, AddElementCommand cmd)
     {
         if (string.IsNullOrWhiteSpace(cmd.Name))
-            return new CommandResult<IReadOnlyList<ModelEvent>>.Invalid([new ValidationError("name", "Name is required")]);
+            return new CommandResult<IReadOnlyList<object>>.Invalid([new ValidationError("name", "Name is required")]);
 
         if (state.Elements.ContainsKey(cmd.Id))
-            return new CommandResult<IReadOnlyList<ModelEvent>>.Conflict("Element with this ID already exists");
+            return new CommandResult<IReadOnlyList<object>>.Conflict("Element with this ID already exists");
 
         var parentError = ValidateContainment(state, cmd.Kind, cmd.ParentId);
         if (parentError is not null)
-            return new CommandResult<IReadOnlyList<ModelEvent>>.Invalid([parentError]);
+            return new CommandResult<IReadOnlyList<object>>.Invalid([parentError]);
 
-        return new CommandResult<IReadOnlyList<ModelEvent>>.Success(
+        return new CommandResult<IReadOnlyList<object>>.Success(
             [new ModelEvent.ElementAdded(cmd.Id, cmd.Kind, cmd.Name, cmd.Description,
                 cmd.Technology, cmd.OwnerId, cmd.Status, cmd.ParentId, cmd.Tags)]);
     }
 
-    public static CommandResult<IReadOnlyList<ModelEvent>> UpdateElement(ModelState state, UpdateElementCommand cmd)
+    public static CommandResult<IReadOnlyList<object>> UpdateElement(ModelState state, UpdateElementCommand cmd)
     {
         if (!state.Elements.TryGetValue(cmd.ElementId, out var element))
-            return new CommandResult<IReadOnlyList<ModelEvent>>.NotFound("Element not found");
+            return new CommandResult<IReadOnlyList<object>>.NotFound("Element not found");
 
-        var events = new List<ModelEvent>();
+        var events = new List<object>();
 
         if (cmd.SetName && cmd.Name != element.Name)
         {
             if (string.IsNullOrWhiteSpace(cmd.Name))
-                return new CommandResult<IReadOnlyList<ModelEvent>>.Invalid([new ValidationError("name", "Name is required")]);
+                return new CommandResult<IReadOnlyList<object>>.Invalid([new ValidationError("name", "Name is required")]);
             events.Add(new ModelEvent.ElementRenamed(cmd.ElementId, cmd.Name!));
         }
 
@@ -98,7 +98,7 @@ public static class ModelDecider
         {
             var parentError = ValidateContainment(state, element.Kind, cmd.ParentId);
             if (parentError is not null)
-                return new CommandResult<IReadOnlyList<ModelEvent>>.Invalid([parentError]);
+                return new CommandResult<IReadOnlyList<object>>.Invalid([parentError]);
             events.Add(new ModelEvent.ElementReparented(cmd.ElementId, cmd.ParentId));
         }
 
@@ -111,40 +111,40 @@ public static class ModelDecider
         if (cmd.SetIcon && cmd.Icon != element.Icon)
             events.Add(new ModelEvent.ElementIconChanged(cmd.ElementId, cmd.Icon));
 
-        return new CommandResult<IReadOnlyList<ModelEvent>>.Success(events);
+        return new CommandResult<IReadOnlyList<object>>.Success(events);
     }
 
-    public static CommandResult<IReadOnlyList<ModelEvent>> RemoveElement(ModelState state, ElementId elementId)
+    public static CommandResult<IReadOnlyList<object>> RemoveElement(ModelState state, ElementId elementId)
     {
         if (!state.Elements.ContainsKey(elementId))
-            return new CommandResult<IReadOnlyList<ModelEvent>>.NotFound("Element not found");
+            return new CommandResult<IReadOnlyList<object>>.NotFound("Element not found");
 
-        var events = new List<ModelEvent>();
+        var events = new List<object>();
         CollectCascadeRemovals(state, elementId, events, new HashSet<Guid>());
-        return new CommandResult<IReadOnlyList<ModelEvent>>.Success(events);
+        return new CommandResult<IReadOnlyList<object>>.Success(events);
     }
 
-    public static CommandResult<IReadOnlyList<ModelEvent>> AddRelationship(ModelState state, AddRelationshipCommand cmd)
+    public static CommandResult<IReadOnlyList<object>> AddRelationship(ModelState state, AddRelationshipCommand cmd)
     {
         if (state.Relationships.ContainsKey(cmd.Id))
-            return new CommandResult<IReadOnlyList<ModelEvent>>.Conflict("Relationship with this ID already exists");
+            return new CommandResult<IReadOnlyList<object>>.Conflict("Relationship with this ID already exists");
 
         if (!state.Elements.ContainsKey(cmd.FromId))
-            return new CommandResult<IReadOnlyList<ModelEvent>>.Invalid([new ValidationError("fromId", "Source element not found")]);
+            return new CommandResult<IReadOnlyList<object>>.Invalid([new ValidationError("fromId", "Source element not found")]);
 
         if (!state.Elements.ContainsKey(cmd.ToId))
-            return new CommandResult<IReadOnlyList<ModelEvent>>.Invalid([new ValidationError("toId", "Target element not found")]);
+            return new CommandResult<IReadOnlyList<object>>.Invalid([new ValidationError("toId", "Target element not found")]);
 
-        return new CommandResult<IReadOnlyList<ModelEvent>>.Success(
+        return new CommandResult<IReadOnlyList<object>>.Success(
             [new ModelEvent.RelationshipAdded(cmd.Id, cmd.FromId, cmd.ToId, cmd.Label, cmd.Technology, null, cmd.Kind)]);
     }
 
-    public static CommandResult<IReadOnlyList<ModelEvent>> UpdateRelationship(ModelState state, UpdateRelationshipCommand cmd)
+    public static CommandResult<IReadOnlyList<object>> UpdateRelationship(ModelState state, UpdateRelationshipCommand cmd)
     {
         if (!state.Relationships.TryGetValue(cmd.RelationshipId, out var rel))
-            return new CommandResult<IReadOnlyList<ModelEvent>>.NotFound("Relationship not found");
+            return new CommandResult<IReadOnlyList<object>>.NotFound("Relationship not found");
 
-        var events = new List<ModelEvent>();
+        var events = new List<object>();
 
         if (cmd.SetLabel && cmd.Label != rel.Label)
             events.Add(new ModelEvent.RelationshipLabelChanged(cmd.RelationshipId, cmd.Label));
@@ -158,57 +158,57 @@ public static class ModelDecider
         if (cmd.SetKind && cmd.Kind.HasValue && cmd.Kind.Value != rel.Kind)
             events.Add(new ModelEvent.RelationshipKindChanged(cmd.RelationshipId, cmd.Kind.Value));
 
-        return new CommandResult<IReadOnlyList<ModelEvent>>.Success(events);
+        return new CommandResult<IReadOnlyList<object>>.Success(events);
     }
 
-    public static CommandResult<IReadOnlyList<ModelEvent>> RemoveRelationship(ModelState state, RelationshipId relationshipId)
+    public static CommandResult<IReadOnlyList<object>> RemoveRelationship(ModelState state, RelationshipId relationshipId)
     {
         if (!state.Relationships.ContainsKey(relationshipId))
-            return new CommandResult<IReadOnlyList<ModelEvent>>.NotFound("Relationship not found");
+            return new CommandResult<IReadOnlyList<object>>.NotFound("Relationship not found");
 
-        return new CommandResult<IReadOnlyList<ModelEvent>>.Success(
+        return new CommandResult<IReadOnlyList<object>>.Success(
             [new ModelEvent.RelationshipRemoved(relationshipId)]);
     }
 
-    public static CommandResult<IReadOnlyList<ModelEvent>> AddMessage(ModelState state, AddMessageCommand cmd)
+    public static CommandResult<IReadOnlyList<object>> AddMessage(ModelState state, AddMessageCommand cmd)
     {
         if (string.IsNullOrWhiteSpace(cmd.Name))
-            return new CommandResult<IReadOnlyList<ModelEvent>>.Invalid([new ValidationError("name", "Name is required")]);
+            return new CommandResult<IReadOnlyList<object>>.Invalid([new ValidationError("name", "Name is required")]);
 
         if (state.Messages.ContainsKey(cmd.Id))
-            return new CommandResult<IReadOnlyList<ModelEvent>>.Conflict("Message with this ID already exists");
+            return new CommandResult<IReadOnlyList<object>>.Conflict("Message with this ID already exists");
 
         if (!state.Elements.ContainsKey(cmd.ProducerId))
-            return new CommandResult<IReadOnlyList<ModelEvent>>.Invalid([new ValidationError("producerId", "Producer element not found")]);
+            return new CommandResult<IReadOnlyList<object>>.Invalid([new ValidationError("producerId", "Producer element not found")]);
 
         foreach (var consumerId in cmd.ConsumerIds)
         {
             if (!state.Elements.ContainsKey(consumerId))
-                return new CommandResult<IReadOnlyList<ModelEvent>>.Invalid([new ValidationError("consumerIds", $"Consumer element {consumerId} not found")]);
+                return new CommandResult<IReadOnlyList<object>>.Invalid([new ValidationError("consumerIds", $"Consumer element {consumerId} not found")]);
         }
 
-        return new CommandResult<IReadOnlyList<ModelEvent>>.Success(
+        return new CommandResult<IReadOnlyList<object>>.Success(
             [new ModelEvent.MessageAdded(cmd.Id, cmd.Name, cmd.Description,
                 cmd.ProducerId, cmd.ConsumerIds, cmd.SchemaId, cmd.Tags)]);
     }
 
-    public static CommandResult<IReadOnlyList<ModelEvent>> UpdateMessage(ModelState state, UpdateMessageCommand cmd)
+    public static CommandResult<IReadOnlyList<object>> UpdateMessage(ModelState state, UpdateMessageCommand cmd)
     {
         if (!state.Messages.TryGetValue(cmd.MessageId, out var msg))
-            return new CommandResult<IReadOnlyList<ModelEvent>>.NotFound("Message not found");
+            return new CommandResult<IReadOnlyList<object>>.NotFound("Message not found");
 
         if (cmd.SetName && string.IsNullOrWhiteSpace(cmd.Name))
-            return new CommandResult<IReadOnlyList<ModelEvent>>.Invalid([new ValidationError("name", "Name is required")]);
+            return new CommandResult<IReadOnlyList<object>>.Invalid([new ValidationError("name", "Name is required")]);
 
         if (cmd.SetProducerId && cmd.ProducerId.HasValue && !state.Elements.ContainsKey(cmd.ProducerId.Value))
-            return new CommandResult<IReadOnlyList<ModelEvent>>.Invalid([new ValidationError("producerId", "Producer element not found")]);
+            return new CommandResult<IReadOnlyList<object>>.Invalid([new ValidationError("producerId", "Producer element not found")]);
 
         if (cmd.SetConsumerIds && cmd.ConsumerIds is not null)
         {
             foreach (var consumerId in cmd.ConsumerIds)
             {
                 if (!state.Elements.ContainsKey(consumerId))
-                    return new CommandResult<IReadOnlyList<ModelEvent>>.Invalid([new ValidationError("consumerIds", $"Consumer element {consumerId} not found")]);
+                    return new CommandResult<IReadOnlyList<object>>.Invalid([new ValidationError("consumerIds", $"Consumer element {consumerId} not found")]);
             }
         }
 
@@ -221,9 +221,9 @@ public static class ModelDecider
             (cmd.Tags is not null && !cmd.Tags.SequenceEqual(msg.Tags));
 
         if (!hasChanges)
-            return new CommandResult<IReadOnlyList<ModelEvent>>.Success([]);
+            return new CommandResult<IReadOnlyList<object>>.Success([]);
 
-        return new CommandResult<IReadOnlyList<ModelEvent>>.Success(
+        return new CommandResult<IReadOnlyList<object>>.Success(
             [new ModelEvent.MessageUpdated(
                 cmd.MessageId,
                 cmd.SetName ? cmd.Name : null,
@@ -235,63 +235,63 @@ public static class ModelDecider
                 cmd.Tags)]);
     }
 
-    public static CommandResult<IReadOnlyList<ModelEvent>> RemoveMessage(ModelState state, MessageId messageId)
+    public static CommandResult<IReadOnlyList<object>> RemoveMessage(ModelState state, MessageId messageId)
     {
         if (!state.Messages.ContainsKey(messageId))
-            return new CommandResult<IReadOnlyList<ModelEvent>>.NotFound("Message not found");
+            return new CommandResult<IReadOnlyList<object>>.NotFound("Message not found");
 
-        return new CommandResult<IReadOnlyList<ModelEvent>>.Success(
+        return new CommandResult<IReadOnlyList<object>>.Success(
             [new ModelEvent.MessageRemoved(messageId)]);
     }
 
-    public static CommandResult<IReadOnlyList<ModelEvent>> RecordElementProvenance(
+    public static CommandResult<IReadOnlyList<object>> RecordElementProvenance(
         ModelState state, ElementId elementId, FactStatus status, Provenance? provenance)
     {
         if (!state.Elements.TryGetValue(elementId, out var element))
-            return new CommandResult<IReadOnlyList<ModelEvent>>.NotFound("Element not found");
+            return new CommandResult<IReadOnlyList<object>>.NotFound("Element not found");
 
         var validationError = FactRules.Validate(status, provenance);
         if (validationError is not null)
-            return new CommandResult<IReadOnlyList<ModelEvent>>.Invalid([validationError]);
+            return new CommandResult<IReadOnlyList<object>>.Invalid([validationError]);
 
         if (element.FactStatus == status && ProvenanceEquivalent(element.Provenance, provenance))
-            return new CommandResult<IReadOnlyList<ModelEvent>>.Success([]);
+            return new CommandResult<IReadOnlyList<object>>.Success([]);
 
-        return new CommandResult<IReadOnlyList<ModelEvent>>.Success(
+        return new CommandResult<IReadOnlyList<object>>.Success(
             [new ModelEvent.ElementProvenanceRecorded(elementId, status, provenance)]);
     }
 
-    public static CommandResult<IReadOnlyList<ModelEvent>> RecordRelationshipProvenance(
+    public static CommandResult<IReadOnlyList<object>> RecordRelationshipProvenance(
         ModelState state, RelationshipId relationshipId, FactStatus status, Provenance? provenance)
     {
         if (!state.Relationships.TryGetValue(relationshipId, out var relationship))
-            return new CommandResult<IReadOnlyList<ModelEvent>>.NotFound("Relationship not found");
+            return new CommandResult<IReadOnlyList<object>>.NotFound("Relationship not found");
 
         var validationError = FactRules.Validate(status, provenance);
         if (validationError is not null)
-            return new CommandResult<IReadOnlyList<ModelEvent>>.Invalid([validationError]);
+            return new CommandResult<IReadOnlyList<object>>.Invalid([validationError]);
 
         if (relationship.FactStatus == status && ProvenanceEquivalent(relationship.Provenance, provenance))
-            return new CommandResult<IReadOnlyList<ModelEvent>>.Success([]);
+            return new CommandResult<IReadOnlyList<object>>.Success([]);
 
-        return new CommandResult<IReadOnlyList<ModelEvent>>.Success(
+        return new CommandResult<IReadOnlyList<object>>.Success(
             [new ModelEvent.RelationshipProvenanceRecorded(relationshipId, status, provenance)]);
     }
 
-    public static CommandResult<IReadOnlyList<ModelEvent>> RecordMessageProvenance(
+    public static CommandResult<IReadOnlyList<object>> RecordMessageProvenance(
         ModelState state, MessageId messageId, FactStatus status, Provenance? provenance)
     {
         if (!state.Messages.TryGetValue(messageId, out var message))
-            return new CommandResult<IReadOnlyList<ModelEvent>>.NotFound("Message not found");
+            return new CommandResult<IReadOnlyList<object>>.NotFound("Message not found");
 
         var validationError = FactRules.Validate(status, provenance);
         if (validationError is not null)
-            return new CommandResult<IReadOnlyList<ModelEvent>>.Invalid([validationError]);
+            return new CommandResult<IReadOnlyList<object>>.Invalid([validationError]);
 
         if (message.FactStatus == status && ProvenanceEquivalent(message.Provenance, provenance))
-            return new CommandResult<IReadOnlyList<ModelEvent>>.Success([]);
+            return new CommandResult<IReadOnlyList<object>>.Success([]);
 
-        return new CommandResult<IReadOnlyList<ModelEvent>>.Success(
+        return new CommandResult<IReadOnlyList<object>>.Success(
             [new ModelEvent.MessageProvenanceRecorded(messageId, status, provenance)]);
     }
 
@@ -302,7 +302,7 @@ public static class ModelDecider
     private static bool ProvenanceEquivalent(Provenance? a, Provenance? b) =>
         a?.Source == b?.Source && a?.Revision == b?.Revision && a?.Confidence == b?.Confidence;
 
-    private static void CollectCascadeRemovals(ModelState state, ElementId elementId, List<ModelEvent> events, HashSet<Guid> seenRelationships)
+    private static void CollectCascadeRemovals(ModelState state, ElementId elementId, List<object> events, HashSet<Guid> seenRelationships)
     {
         // Recursively remove children first
         var children = state.Elements.Values.Where(e => e.ParentId == elementId).ToList();
