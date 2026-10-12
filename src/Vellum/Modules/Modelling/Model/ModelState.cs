@@ -9,7 +9,19 @@ public sealed record ElementState(
     string? Technology, Guid? OwnerId, ElementStatus Status,
     ElementId? ParentId, string[] Tags, string? Icon,
     FactStatus FactStatus = FactStatus.Declared,
-    Provenance? Provenance = null);
+    Provenance? Provenance = null)
+{
+    // The generated equality compares an array by reference. Two copies of one element that
+    // were each read from stored JSON would then differ, and a merge would call that a change.
+    public bool Equals(ElementState? other) =>
+        other is not null
+        && Id == other.Id && Kind == other.Kind && Name == other.Name && Description == other.Description
+        && Technology == other.Technology && OwnerId == other.OwnerId && Status == other.Status
+        && ParentId == other.ParentId && Tags.AsSpan().SequenceEqual(other.Tags) && Icon == other.Icon
+        && FactStatus == other.FactStatus && Provenance == other.Provenance;
+
+    public override int GetHashCode() => HashCode.Combine(Id, Kind, Name, Status, ParentId);
+}
 
 public sealed record RelationshipState(
     RelationshipId Id, ElementId FromId, ElementId ToId, string? Label,
@@ -23,7 +35,18 @@ public sealed record MessageState(
     ElementId ProducerId, ElementId[] ConsumerIds,
     SchemaId? SchemaId, string[] Tags,
     FactStatus FactStatus = FactStatus.Declared,
-    Provenance? Provenance = null);
+    Provenance? Provenance = null)
+{
+    // By value for the two arrays, for the reason given on ElementState.
+    public bool Equals(MessageState? other) =>
+        other is not null
+        && Id == other.Id && Name == other.Name && Description == other.Description
+        && ProducerId == other.ProducerId && ConsumerIds.AsSpan().SequenceEqual(other.ConsumerIds)
+        && SchemaId == other.SchemaId && Tags.AsSpan().SequenceEqual(other.Tags)
+        && FactStatus == other.FactStatus && Provenance == other.Provenance;
+
+    public override int GetHashCode() => HashCode.Combine(Id, Name, ProducerId, SchemaId);
+}
 
 /// <summary>An invocable contract that an element serves. A timeout of 0 declares none.</summary>
 public sealed record OperationState(

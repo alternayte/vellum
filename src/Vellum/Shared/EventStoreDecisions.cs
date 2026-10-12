@@ -53,9 +53,10 @@ public static class EventStoreDecisions
         CancellationToken ct)
         where TState : IState<TState>
     {
-        // A transaction that appends to several streams (an import, a merge) can lock this
-        // stream and the position counter in the other order. Postgres then aborts one side,
-        // usually this one. Nothing was written, so the decision runs again.
+        // A unit with several streams locks them all before its first append (see
+        // SharedTransaction), so it does not deadlock with this write. The cases that remain are
+        // rare: an import that waits behind a Deedbox cut-over, or the first use of an event
+        // type. Postgres then aborts one side. Nothing was written, so the decision runs again.
         for (var attempt = 1; ; attempt++)
         {
             try

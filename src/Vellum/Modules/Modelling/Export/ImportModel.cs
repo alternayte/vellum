@@ -22,6 +22,17 @@ public static class ImportModel
         .WithNamingConvention(CamelCaseNamingConvention.Instance)
         .Build();
 
+    // Any Editor can post an import, and one import is one transaction that keeps its streams
+    // locked. The limits bound the memory, the lock time and the number of schema appends.
+    public const int MaxBytes = 16 * 1024 * 1024;
+    public const int MaxElements = 5_000;
+    public const int MaxRelationships = 10_000;
+    public const int MaxMessages = 5_000;
+    public const int MaxSchemas = 200;
+    public const int MaxOperations = 5_000;
+    public const int MaxChannels = 5_000;
+    public const int MaxSubscriptions = 5_000;
+
     public static async Task<IResult> Handle(
         Guid projectId,
         HttpRequest request,
@@ -32,7 +43,14 @@ public static class ImportModel
             .FirstOrDefaultAsync(p => p.Id == projectId, ct);
         if (project is null) return Results.NotFound();
 
-        var body = await new StreamReader(request.Body).ReadToEndAsync(ct);
+        var body = request.ContentLength > MaxBytes ? null : await ReadBodyAsync(request.Body, ct);
+        if (body is null)
+        {
+            return Results.Json(
+                new ErrorResponse("import_too_large", $"An import document holds at most {MaxBytes} bytes."),
+                statusCode: StatusCodes.Status413PayloadTooLarge);
+        }
+
         ModelExportDocument? doc;
 
         var contentType = request.ContentType ?? "application/json";
@@ -66,9 +84,36 @@ public static class ImportModel
             Subscriptions = doc.Subscriptions ?? [],
         };
 
-        // The import appends to the model stream and to one stream per schema. A transaction
-        // with several appends can lose a lock cycle against a concurrent append, so the whole
-        // import runs again when the database aborts it.
+        (string Name, int Count, int Max)[] sizes =
+        [
+            ("elements", doc.Elements.Count, MaxElements),
+            ("relationships", doc.Relationships.Count, MaxRelationships),
+            ("messages", doc.Messages.Count, MaxMessages),
+            ("schemas", doc.Schemas.Count, MaxSchemas),
+            ("operations", doc.Operations.Count, MaxOperations),
+            ("channels", doc.Channels.Count, MaxChannels),
+            ("subscriptions", doc.Subscriptions.Count, MaxSubscriptions),
+        ];
+        foreach (var (name, count, max) in sizes)
+        {
+            if (count > max)
+            {
+                return Results.BadRequest(new ErrorResponse("import_too_large",
+                    $"An import document holds at most {max} {name}. This one has {count}."));
+            }
+        }
+
+        // Each schema is locked, decided and appended once.
+        var repeated = doc.Schemas.GroupBy(s => s.Id).FirstOrDefault(g => g.Count() > 1);
+        if (repeated is not null)
+            return Results.BadRequest(new ErrorResponse("invalid_export", $"Schema {repeated.Key} appears more than once"));
+
+        // A schema stream must not take the ID of the project's model stream.
+        if (doc.Schemas.Any(s => s.Id == project.StreamId))
+            return Results.BadRequest(new ErrorResponse("invalid_export", $"Schema {project.StreamId}: this ID is already in use"));
+
+        // The whole import is one unit. A unit that fails with DBX038 or a deadlock wrote
+        // nothing and runs again.
         return await SharedTransaction.RunAsync(request.HttpContext.RequestServices,
             services => ImportAsync(services, projectId, project.StreamId, doc, ct), ct);
     }
@@ -79,15 +124,43 @@ public static class ImportModel
         var modellingDb = services.GetRequiredService<ModellingDbContext>();
         var schemasDb = services.GetRequiredService<SchemasDbContext>();
 
-        var documentSchemaIds = doc.Schemas.Select(s => s.Id).ToHashSet();
-
-        // Every load, append and read-model write below runs in this transaction. A return
-        // before the commit rolls all of it back.
+        // Every lock, append and read-model write below runs in this transaction. A return
+        // before the commit rolls all of it back, so a reader sees the whole import or none of it.
         await using var transaction = await modellingDb.Database.BeginTransactionAsync(ct);
         var store = services.GetRequiredService<IEventStore>().UseDbContext(modellingDb);
 
-        // Load current model state
-        var (state, version) = await store.Load<ModelState>(StreamId.From(modelStreamId), ct);
+        // Step 1: lock every stream the import can write, in stream-ID order, before the first
+        // append. An append takes its stream lock and then the store-wide position counter,
+        // and the counter stays held until the commit. A transaction that asks for another
+        // stream lock while it holds the counter can wait for a writer that waits for the
+        // counter. Here no stream lock is asked for after the first append, so that cycle
+        // cannot form, and two imports (or an import and a merge) ask in the same order.
+        // Execute with no events locks the stream and returns its state.
+        var state = ModelState.Initial;
+        long version = 0;
+        var schemaStreams = new Dictionary<Guid, (SchemaState State, long Version)>();
+        foreach (var streamId in doc.Schemas.Select(s => s.Id).Append(modelStreamId).Order())
+        {
+            if (streamId == modelStreamId)
+            {
+                var model = await store.Execute<ModelState>(StreamId.From(streamId), _ => [], ct);
+                (state, version) = (model.State, model.Version);
+            }
+            else
+            {
+                var schema = await store.Execute<SchemaState>(StreamId.From(streamId), _ => [], ct);
+                schemaStreams[streamId] = (schema.State, schema.Version);
+            }
+        }
+
+        // Step 2: decide everything against the locked states. Nothing is appended until the
+        // whole document is accepted.
+        var knownSchemaIds = await schemasDb.Schemas.AsNoTracking()
+            .Where(s => s.ProjectId == projectId)
+            .Select(s => s.Id)
+            .ToHashSetAsync(ct);
+        knownSchemaIds.UnionWith(doc.Schemas.Select(s => s.Id));
+
         var events = new List<object>();
 
         // Import elements
@@ -234,8 +307,7 @@ public static class ImportModel
             if (!TryReadFacts(msg.FactStatus, msg.Provenance, out var factStatus, out var provenance, out var factError))
                 return Results.BadRequest(new ErrorResponse("invalid_export", $"Message {msg.Id}: {factError}"));
 
-            if (msg.SchemaId is { } schemaId &&
-                !await SchemaExistsAsync(projectId, schemaId, documentSchemaIds, schemasDb, ct))
+            if (msg.SchemaId is { } schemaId && !knownSchemaIds.Contains(schemaId))
             {
                 return Results.BadRequest(new ErrorResponse("invalid_export",
                     $"Message {msg.Id}: schema {schemaId} not found in this project or the document"));
@@ -321,8 +393,7 @@ public static class ImportModel
 
             foreach (var schemaId in new[] { operation.RequestSchemaId, operation.ResponseSchemaId })
             {
-                if (schemaId is { } referenced &&
-                    !await SchemaExistsAsync(projectId, referenced, documentSchemaIds, schemasDb, ct))
+                if (schemaId is { } referenced && !knownSchemaIds.Contains(referenced))
                 {
                     return Results.BadRequest(new ErrorResponse("invalid_export",
                         $"{label}: schema {referenced} not found in this project or the document"));
@@ -375,16 +446,12 @@ public static class ImportModel
             return null;
         }
 
-        if (events.Count > 0)
+        // Schemas: each is its own stream.
+        var schemaAppends = new List<(Guid Id, long Version, IReadOnlyList<object> Events)>();
+        foreach (var schema in doc.Schemas.OrderBy(s => s.Id))
         {
-            await store.ForProject(projectId).Append(
-                StreamId.From(modelStreamId), ExpectedVersion.Exact(version), events, ct);
-        }
-
-        // Import schemas (each is its own aggregate)
-        foreach (var schema in doc.Schemas)
-        {
-            var (schemaState, schemaVersion) = await store.Load<SchemaState>(StreamId.From(schema.Id), ct);
+            var (schemaState, schemaVersion) = schemaStreams[schema.Id];
+            CommandResult<IReadOnlyList<object>> decision;
             if (schemaState.Schema is not null)
             {
                 if (schemaState.Schema.ProjectId != projectId)
@@ -393,44 +460,62 @@ public static class ImportModel
                         $"Schema {schema.Id} belongs to another project"));
                 }
 
-                var updateCmd = new UpdateSchemaCommand(schema.Id,
+                decision = SchemaDecider.Update(schemaState, new UpdateSchemaCommand(schema.Id,
                     Name: schema.Name, SetName: true,
                     Description: schema.Description, SetDescription: true,
-                    Content: schema.Content, SetContent: true);
-                var result = SchemaDecider.Update(schemaState, updateCmd);
-                if (result is not CommandResult<IReadOnlyList<object>>.Success updateSuccess)
-                    return Results.BadRequest(new ErrorResponse("invalid_export",
-                        $"Schema {schema.Id}: {DeciderFailure(result)}"));
-
-                if (updateSuccess.Value.Count > 0)
-                {
-                    await store.Append(
-                        StreamId.From(schema.Id), ExpectedVersion.Exact(schemaVersion), updateSuccess.Value, ct);
-                }
+                    Content: schema.Content, SetContent: true));
             }
             else
             {
-                var createCmd = new CreateSchemaCommand(schema.Id, schema.Name, schema.Description, schema.Content, projectId);
-                var result = SchemaDecider.Create(schemaState, createCmd);
-                if (result is not CommandResult<IReadOnlyList<object>>.Success created)
-                    return Results.BadRequest(new ErrorResponse("invalid_export",
-                        $"Schema {schema.Id}: {DeciderFailure(result)}"));
-
-                await store.Append(
-                    StreamId.From(schema.Id), ExpectedVersion.Exact(schemaVersion), created.Value, ct);
+                decision = SchemaDecider.Create(schemaState,
+                    new CreateSchemaCommand(schema.Id, schema.Name, schema.Description, schema.Content, projectId));
             }
+
+            if (decision is not CommandResult<IReadOnlyList<object>>.Success decided)
+            {
+                return Results.BadRequest(new ErrorResponse("invalid_export",
+                    $"Schema {schema.Id}: {DeciderFailure(decision)}"));
+            }
+
+            if (decided.Value.Count > 0)
+                schemaAppends.Add((schema.Id, schemaVersion, decided.Value));
         }
+
+        // Step 3: append. Deedbox has no append to several streams, so one transaction makes one
+        // append per changed stream, and the counter is held from the first to the commit.
+        // The model append goes first: its read-model work, the large part, runs before the
+        // counter is taken. The appends that follow hold the counter; each writes one schema
+        // row, takes no new stream lock and waits for no other writer. MaxSchemas bounds them.
+        if (events.Count > 0)
+        {
+            await store.ForProject(projectId).Append(
+                StreamId.From(modelStreamId), ExpectedVersion.Exact(version), events, ct);
+        }
+
+        foreach (var (schemaId, schemaVersion, schemaEvents) in schemaAppends)
+            await store.Append(StreamId.From(schemaId), ExpectedVersion.Exact(schemaVersion), schemaEvents, ct);
 
         await transaction.CommitAsync(ct);
         return Results.Ok();
     }
 
-    private static async Task<bool> SchemaExistsAsync(
-        Guid projectId, Guid schemaId, HashSet<Guid> documentSchemaIds,
-        SchemasDbContext schemasDb, CancellationToken ct) =>
-        documentSchemaIds.Contains(schemaId) ||
-        await schemasDb.Schemas.AsNoTracking()
-            .AnyAsync(s => s.Id == schemaId && s.ProjectId == projectId, ct);
+    /// <summary>The body as text, or null when it holds more than <see cref="MaxBytes"/> bytes.</summary>
+    private static async Task<string?> ReadBodyAsync(Stream body, CancellationToken ct)
+    {
+        using var buffer = new MemoryStream();
+        var chunk = new byte[81920];
+        int read;
+        while ((read = await body.ReadAsync(chunk, ct)) > 0)
+        {
+            if (buffer.Length + read > MaxBytes)
+                return null;
+            buffer.Write(chunk, 0, read);
+        }
+
+        buffer.Position = 0;
+        using var reader = new StreamReader(buffer);
+        return await reader.ReadToEndAsync(ct);
+    }
 
     private static string DeciderFailure(CommandResult<IReadOnlyList<object>> result) => result switch
     {

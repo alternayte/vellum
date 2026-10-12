@@ -13,7 +13,6 @@ public static class ModelBranches
     /// <summary>
     /// Authorizes the caller for <paramref name="role"/>, resolves <c>?branchId=</c> to a
     /// model stream and runs <paramref name="run"/> with the stream ID and the user ID.
-    /// A write needs an open branch; a read accepts any branch of the project.
     /// </summary>
     public static async Task<IResult> RunAsync(
         HttpContext http, Guid projectId, Guid? branchId, WorkspaceRole role,
@@ -27,20 +26,51 @@ public static class ModelBranches
         var project = await services.GetRequiredService<WorkspacesDbContext>().Projects.AsNoTracking()
             .FirstAsync(p => p.Id == projectId, ct);
 
-        var isWrite = role >= WorkspaceRole.Editor;
-        var streamId = await ModellingEndpoints.ResolveBranchStreamIdAsync(
+        var (streamId, refusal) = await ResolveAsync(
             branchId, projectId, project.StreamId,
             services.GetRequiredService<DraftsDbContext>(),
             services.GetRequiredService<ModellingDbContext>(),
-            requireOpen: isWrite, ct);
-        if (streamId is null)
+            forWrite: role >= WorkspaceRole.Editor, ct);
+
+        return refusal ?? await run(streamId, userId);
+    }
+
+    /// <summary>
+    /// Resolves <c>?branchId=</c> to a model stream of the project: the main stream when there
+    /// is none, else the stream of a draft or a variant. Only an open branch resolves. A merged
+    /// or abandoned draft is history and has no read-model rows, so a read of it finds nothing
+    /// (404) and a write to it is refused (400), as is any branch the project does not have.
+    /// </summary>
+    public static async Task<(Guid StreamId, IResult? Refusal)> ResolveAsync(
+        Guid? branchId, Guid projectId, Guid mainStreamId,
+        DraftsDbContext draftsDb, ModellingDbContext modellingDb,
+        bool forWrite, CancellationToken ct)
+    {
+        if (branchId is null)
+            return (mainStreamId, null);
+
+        var status = await draftsDb.Drafts.AsNoTracking()
+            .Where(d => d.StreamId == branchId.Value && d.ProjectId == projectId)
+            .Select(d => d.Status)
+            .FirstOrDefaultAsync(ct);
+
+        status ??= await modellingDb.Variants.AsNoTracking()
+            .Where(v => v.StreamId == branchId.Value && v.ProjectId == projectId)
+            .Select(v => v.Status)
+            .FirstOrDefaultAsync(ct);
+
+        if (status == "open")
+            return (branchId.Value, null);
+
+        if (forWrite)
         {
-            return Results.BadRequest(new ErrorResponse("invalid_branch", isWrite
-                ? "Branch not found or not open for this project"
-                : "Branch not found for this project"));
+            return (default, Results.BadRequest(
+                new ErrorResponse("invalid_branch", "Branch not found or not open for this project")));
         }
 
-        return await run(streamId.Value, userId);
+        return (default, status is null
+            ? Results.BadRequest(new ErrorResponse("invalid_branch", "Branch not found for this project"))
+            : Results.NotFound(new ErrorResponse("not_found", $"Branch is {status}")));
     }
 
     /// <summary>

@@ -26,6 +26,14 @@ public static class ModelEvent
         ElementState[] Elements, RelationshipState[] Relationships, MessageState[] Messages,
         OperationState[]? Operations = null, ChannelState[]? Channels = null, SubscriptionState[]? Subscriptions = null);
 
+    /// <summary>
+    /// The branch <paramref name="BranchId"/> stopped being a live model: its draft was merged
+    /// or abandoned. A merge appends it to the main stream with the merged changes; an abandon,
+    /// or a merge that changes nothing, appends it to the draft's own stream. It changes no
+    /// model state. The read model drops the branch's rows on it, so a rebuild does too.
+    /// </summary>
+    public sealed record BranchClosed(Guid BranchId);
+
     // Element events
     public sealed record ElementAdded(
         ElementId Id, ElementKind Kind, string Name, string? Description,

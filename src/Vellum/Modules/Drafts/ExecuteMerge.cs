@@ -32,20 +32,41 @@ public static class ExecuteMerge
         var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
 
-        // The merge events, the main-branch read-model rows and the draft status commit together.
+        // The merge events, the read-model rows and the draft status commit together. A unit that
+        // fails with DBX038 or a deadlock wrote nothing and runs again.
         return await SharedTransaction.RunAsync(http.RequestServices, async services =>
         {
             var draftsDb = services.GetRequiredService<DraftsDbContext>();
-            var store = services.GetRequiredService<IEventStore>();
 
-            var draft = await draftsDb.Drafts
-                .FirstOrDefaultAsync(d => d.Id == draftId && d.ProjectId == projectId, ct);
-            if (draft is null)
+            var streams = await draftsDb.Drafts.AsNoTracking()
+                .Where(d => d.Id == draftId && d.ProjectId == projectId)
+                .Select(d => new { d.StreamId, d.BaseStreamId })
+                .FirstOrDefaultAsync(ct);
+            if (streams is null)
                 return Results.NotFound(new ErrorResponse("not_found", "Draft not found"));
+
+            // A return before the commit rolls everything back.
+            await using var transaction = await draftsDb.Database.BeginTransactionAsync(ct);
+            var store = services.GetRequiredService<IEventStore>().ForProject(projectId).UseDbContext(draftsDb);
+
+            // Both streams stay locked until the commit, so neither model moves under the
+            // merge, and a second merge or an abandon of this draft waits its turn. Streams are
+            // locked in ID order, the order every transaction with several streams uses.
+            ModelState oursState = ModelState.Initial, theirsState = ModelState.Initial;
+            long mainVersion = 0;
+            foreach (var streamId in new[] { streams.StreamId, streams.BaseStreamId }.Order())
+            {
+                var locked = await store.Execute<ModelState>(StreamId.From(streamId), _ => [], ct);
+                if (streamId == streams.StreamId)
+                    theirsState = locked.State;
+                else
+                    (oursState, mainVersion) = (locked.State, locked.Version);
+            }
+
+            // Read under the draft's lock: the status is the one the last writer committed.
+            var draft = await draftsDb.Drafts.FirstAsync(d => d.Id == draftId, ct);
             if (draft.Status != "open")
                 return Results.Conflict(new ErrorResponse("conflict", $"Draft is {draft.Status}"));
-
-            var (oursState, mainVersion) = await store.Load<ModelState>(StreamId.From(draft.BaseStreamId), ct);
 
             if (mainVersion != request.ExpectedMainVersion)
                 return MainChanged();
@@ -58,8 +79,6 @@ public static class ExecuteMerge
                     $"Duplicate resolution for entity {duplicateResolution.Key}"));
 
             var baseState = JsonSerializer.Deserialize<ModelState>(draft.BaseSnapshot, JsonOpts)!;
-            var (theirsState, _) = await store.Load<ModelState>(StreamId.From(draft.StreamId), ct);
-
             var preview = ThreeWayMerge.Compute(baseState, oursState, theirsState);
 
             if (preview.Conflicts.Count > 0)
@@ -73,42 +92,29 @@ public static class ExecuteMerge
 
             var events = BuildMergeEvents(preview, request.Resolutions, oursState);
 
-            // A resolution can still choose a side that leaves a contract pointing at nothing.
-            // The merged model is checked whole, and such a merge writes nothing.
-            var merged = events.Aggregate(oursState, ModelState.Evolve);
-            var dangling = ContractDecider.DanglingReferences(merged)
-                .Except(ContractDecider.DanglingReferences(oursState))
-                .ToList();
-            if (dangling.Count > 0)
-            {
-                return Results.Conflict(new ErrorResponse("conflict",
-                    $"The merge would leave a dangling reference: {string.Join("; ", dangling)}. " +
-                    "Change the resolutions or the draft."));
-            }
+            // No decider produced these events. An event that does not fit main, or a result
+            // that points at nothing, refuses the merge before anything is written.
+            if (MergedModel.Refusal(oursState, events) is { } refusal)
+                return Results.Conflict(new ErrorResponse("conflict", refusal));
 
             draft.Status = "merged";
             draft.MergedAt = DateTimeOffset.UtcNow;
 
+            // One append. Deedbox saves the draft status in the transaction, and the inline
+            // projection applies the changes to the main rows and drops the draft's rows.
+            // A merge that changes nothing leaves main at its version.
+            var closed = new ModelEvent.BranchClosed(draft.StreamId);
             if (events.Count == 0)
             {
-                await draftsDb.SaveChangesAsync(ct);
-                return Results.Ok(CreateDraft.ToDto(draft));
+                await store.Append(StreamId.From(draft.StreamId), ExpectedVersion.Any, [closed], ct);
+            }
+            else
+            {
+                await store.Append(
+                    StreamId.From(draft.BaseStreamId), ExpectedVersion.Exact(mainVersion), [.. events, closed], ct);
             }
 
-            try
-            {
-                // One append in a transaction that Deedbox opens on the DbContext and commits.
-                // Deedbox saves the draft status in it, and the inline projection applies the
-                // events to the main branch rows in it.
-                await store.ForProject(projectId).UseDbContext(draftsDb).Append(
-                    StreamId.From(draft.BaseStreamId), ExpectedVersion.Exact(mainVersion), events, ct);
-            }
-            catch (ConcurrencyException)
-            {
-                // Main moved between the load and the append. Nothing was written.
-                return MainChanged();
-            }
-
+            await transaction.CommitAsync(ct);
             return Results.Ok(CreateDraft.ToDto(draft));
         }, ct);
     }

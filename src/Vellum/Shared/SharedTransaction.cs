@@ -9,9 +9,24 @@ namespace Vellum.Shared;
 /// runs the whole unit again in two cases:
 /// <list type="bullet">
 /// <item>DBX038: Deedbox did not count this instance as live and wrote nothing.</item>
-/// <item>A deadlock: a transaction with more than one append can lose a lock cycle against a
-/// concurrent append. The database aborts it and nothing is written.</item>
+/// <item>A deadlock: the database aborts the transaction and nothing is written.</item>
 /// </list>
+/// <para>
+/// The lock rule for a unit. Deedbox takes the lock of a stream, then the gate of each inline
+/// projection, then the store-wide position counter, and holds the counter until the commit.
+/// A unit that needs several streams locks all of them first, in ascending stream-ID order,
+/// with <c>Execute</c> and no events, and only then appends. After the first append it asks
+/// for no stream lock, so it cannot wait for a writer that waits for the counter, and two
+/// such units cannot wait for each other. A unit makes one append where one stream holds the
+/// change; an import, which writes the model stream and one stream per schema, is the only
+/// unit with more.
+/// </para>
+/// <para>
+/// A deadlock stays possible in three rare cases, which is why the rerun stays: a second
+/// append takes the gate of another projection while a Deedbox cut-over or join holds that
+/// gate and waits for the counter; two writers record a new event type for the first time;
+/// two stream IDs share one 32-bit lock key.
+/// </para>
 /// Each attempt gets a new service scope. A DbContext counts its changes as saved after a
 /// failed attempt, so an attempt must not reuse the DbContexts of the one before it.
 /// </summary>
