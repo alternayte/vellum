@@ -1,3 +1,5 @@
+using Vellum.Modules.Trace.Engine;
+
 namespace Vellum.Modules.Modelling.Model;
 
 public enum ElementKind { Actor, System, App, Store, Component }
@@ -16,10 +18,13 @@ public static class ModelEvent
     /// <summary>
     /// The first event of a draft or variant stream: the complete model the branch starts
     /// from, read from <paramref name="SourceStreamId"/> at <paramref name="SourceVersion"/>.
+    /// The contract collections were added later as nullable members, which keeps the event at
+    /// shape version 1: a fork stored without them reads as null and means no contracts.
     /// </summary>
     public sealed record BranchForked(
         Guid SourceStreamId, long SourceVersion,
-        ElementState[] Elements, RelationshipState[] Relationships, MessageState[] Messages);
+        ElementState[] Elements, RelationshipState[] Relationships, MessageState[] Messages,
+        OperationState[]? Operations = null, ChannelState[]? Channels = null, SubscriptionState[]? Subscriptions = null);
 
     // Element events
     public sealed record ElementAdded(
@@ -66,4 +71,36 @@ public static class ModelEvent
 
     public sealed record MessageRemoved(MessageId MessageId);
     public sealed record MessageProvenanceRecorded(MessageId MessageId, FactStatus Status, Provenance? Provenance);
+
+    // Operation events. A change carries the whole contract, so a nullable schema ID is unambiguous.
+    public sealed record OperationAdded(
+        OperationId Id, ElementId OwnerId, string Name, Transport Transport,
+        SchemaId? RequestSchemaId, SchemaId? ResponseSchemaId,
+        int TimeoutMs, RetryPolicy Retry);
+
+    public sealed record OperationChanged(
+        OperationId OperationId, ElementId OwnerId, string Name, Transport Transport,
+        SchemaId? RequestSchemaId, SchemaId? ResponseSchemaId,
+        int TimeoutMs, RetryPolicy Retry);
+
+    public sealed record OperationRemoved(OperationId OperationId);
+    public sealed record OperationProvenanceRecorded(OperationId OperationId, FactStatus Status, Provenance? Provenance);
+
+    // Channel events
+    public sealed record ChannelAdded(ChannelId Id, string Name, ChannelKind Kind);
+    public sealed record ChannelChanged(ChannelId ChannelId, string Name, ChannelKind Kind);
+    public sealed record ChannelRemoved(ChannelId ChannelId);
+    public sealed record ChannelProvenanceRecorded(ChannelId ChannelId, FactStatus Status, Provenance? Provenance);
+
+    // Subscription events
+    public sealed record SubscriptionAdded(
+        SubscriptionId Id, ChannelId ChannelId, ElementId ConsumerId,
+        RetryPolicy Retry, ChannelId? DeadLetterChannelId);
+
+    public sealed record SubscriptionChanged(
+        SubscriptionId SubscriptionId, ChannelId ChannelId, ElementId ConsumerId,
+        RetryPolicy Retry, ChannelId? DeadLetterChannelId);
+
+    public sealed record SubscriptionRemoved(SubscriptionId SubscriptionId);
+    public sealed record SubscriptionProvenanceRecorded(SubscriptionId SubscriptionId, FactStatus Status, Provenance? Provenance);
 }

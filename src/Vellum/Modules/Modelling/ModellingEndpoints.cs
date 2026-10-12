@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using Deedbox;
 using Microsoft.EntityFrameworkCore;
 using Vellum.Shared;
 using Vellum.Modules.Drafts;
@@ -21,7 +22,7 @@ public static class ModellingEndpoints
     /// For read operations, any draft belonging to the project is allowed.
     /// Returns null if the branchId is invalid (not found or wrong project/status).
     /// </summary>
-    private static async Task<Guid?> ResolveBranchStreamIdAsync(
+    internal static async Task<Guid?> ResolveBranchStreamIdAsync(
         Guid? branchId, Guid projectId, Guid fallbackStreamId,
         DraftsDbContext draftsDb, ModellingDbContext modellingDb,
         bool requireOpen, CancellationToken ct)
@@ -360,11 +361,12 @@ public static class ModellingEndpoints
             ModellingDbContext modellingDb,
             SchemasDbContext schemasDb,
             WorkspacesDbContext workspacesDb,
+            IEventStore store,
             CancellationToken ct) =>
         {
             var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
             await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Viewer, ct);
-            return await ExportModel.Handle(projectId, format ?? "json", modellingDb, schemasDb, workspacesDb, ct);
+            return await ExportModel.Handle(projectId, format ?? "json", modellingDb, schemasDb, workspacesDb, store, ct);
         }).WithTags("Export");
 
         project.MapPost("/import", async (

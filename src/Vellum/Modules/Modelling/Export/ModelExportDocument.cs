@@ -8,7 +8,10 @@ public sealed record ModelExportDocument(
     IReadOnlyList<ElementExport> Elements,
     IReadOnlyList<RelationshipExport> Relationships,
     IReadOnlyList<MessageExport> Messages,
-    IReadOnlyList<SchemaExport> Schemas);
+    IReadOnlyList<SchemaExport> Schemas,
+    IReadOnlyList<OperationExport> Operations,
+    IReadOnlyList<ChannelExport> Channels,
+    IReadOnlyList<SubscriptionExport> Subscriptions);
 
 public sealed record ProjectInfo(string Name);
 
@@ -50,3 +53,20 @@ public sealed record MessageExport(
 
 public sealed record SchemaExport(
     Guid Id, string Name, string? Description, string Content, int Version);
+
+public sealed record RetryExport(int MaxAttempts, int BackoffMs);
+
+public sealed record OperationExport(
+    Guid Id, Guid OwnerId, string Name, string Transport,
+    Guid? RequestSchemaId, Guid? ResponseSchemaId,
+    int TimeoutMs, RetryExport? Retry,
+    string FactStatus = "declared", ProvenanceExport? Provenance = null);
+
+public sealed record ChannelExport(
+    Guid Id, string Name, string Kind,
+    string FactStatus = "declared", ProvenanceExport? Provenance = null);
+
+public sealed record SubscriptionExport(
+    Guid Id, Guid ChannelId, Guid ConsumerId,
+    RetryExport? Retry, Guid? DeadLetterChannelId,
+    string FactStatus = "declared", ProvenanceExport? Provenance = null);

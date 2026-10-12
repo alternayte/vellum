@@ -22,6 +22,9 @@ public static class ModellingModule
     /// ID is the branch ID.
     /// </summary>
     public static DeedboxBuilder AddModelStreams(this DeedboxBuilder deedbox) => deedbox
-        .Stream<ModelState>("model", stream => stream.EventsNestedIn(typeof(ModelEvent)))
+        .Stream<ModelState>("model", stream => stream
+            .EventsNestedIn(typeof(ModelEvent))
+            // Version 2 of the state added operations, channels and subscriptions.
+            .StateVersion(2))
         .Projection<ModelProjection>("model_read_model", Run.Inline);
 }

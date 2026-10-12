@@ -28,6 +28,12 @@ migrate-docs name:
 migrate-drafts name:
     dotnet ef migrations add {{name}} --project src/Vellum --context DraftsDbContext --output-dir Modules/Drafts/Migrations
 
+migrate-schemas name:
+    dotnet ef migrations add {{name}} --project src/Vellum --context SchemasDbContext --output-dir Modules/Schemas/Migrations
+
+migrate-scenarios name:
+    dotnet ef migrations add {{name}} --project src/Vellum --context ScenariosDbContext --output-dir Modules/Trace/Scenarios/Migrations
+
 seed:
     dotnet run --project src/Vellum -- seed
 

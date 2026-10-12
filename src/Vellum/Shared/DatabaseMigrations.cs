@@ -6,6 +6,7 @@ using Vellum.Modules.Identity;
 using Vellum.Modules.Modelling;
 using Vellum.Modules.Schemas;
 using Vellum.Modules.Scoring;
+using Vellum.Modules.Trace.Scenarios;
 using Vellum.Modules.Views;
 using Vellum.Modules.Workspaces;
 
@@ -47,6 +48,7 @@ public static class DatabaseMigrations
             await provider.GetRequiredService<DraftsDbContext>().Database.MigrateAsync(ct);
             await provider.GetRequiredService<SchemasDbContext>().Database.MigrateAsync(ct);
             await provider.GetRequiredService<ScoringDbContext>().Database.MigrateAsync(ct);
+            await provider.GetRequiredService<ScenariosDbContext>().Database.MigrateAsync(ct);
         }
         finally
         {

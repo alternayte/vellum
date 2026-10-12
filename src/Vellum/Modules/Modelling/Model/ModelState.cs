@@ -1,5 +1,6 @@
 using System.Collections.Immutable;
 using Deedbox;
+using Vellum.Modules.Trace.Engine;
 
 namespace Vellum.Modules.Modelling.Model;
 
@@ -24,12 +25,43 @@ public sealed record MessageState(
     FactStatus FactStatus = FactStatus.Declared,
     Provenance? Provenance = null);
 
+/// <summary>An invocable contract that an element serves. A timeout of 0 declares none.</summary>
+public sealed record OperationState(
+    OperationId Id, ElementId OwnerId, string Name, Transport Transport,
+    SchemaId? RequestSchemaId, SchemaId? ResponseSchemaId,
+    int TimeoutMs, RetryPolicy Retry,
+    FactStatus FactStatus = FactStatus.Declared,
+    Provenance? Provenance = null);
+
+public sealed record ChannelState(
+    ChannelId Id, string Name, ChannelKind Kind,
+    FactStatus FactStatus = FactStatus.Declared,
+    Provenance? Provenance = null);
+
+public sealed record SubscriptionState(
+    SubscriptionId Id, ChannelId ChannelId, ElementId ConsumerId,
+    RetryPolicy Retry, ChannelId? DeadLetterChannelId,
+    FactStatus FactStatus = FactStatus.Declared,
+    Provenance? Provenance = null);
+
 public sealed record ModelState(
     ImmutableDictionary<ElementId, ElementState> Elements,
     ImmutableDictionary<RelationshipId, RelationshipState> Relationships,
     ImmutableDictionary<MessageId, MessageState> Messages)
     : IState<ModelState>
 {
+    // Contracts live on the model stream, so drafts, variants and revisions carry them.
+    // They are init properties with empty defaults: a serialized state written before
+    // contracts existed (a revision or a draft base snapshot) reads back with none.
+    public ImmutableDictionary<OperationId, OperationState> Operations { get; init; } =
+        ImmutableDictionary<OperationId, OperationState>.Empty;
+
+    public ImmutableDictionary<ChannelId, ChannelState> Channels { get; init; } =
+        ImmutableDictionary<ChannelId, ChannelState>.Empty;
+
+    public ImmutableDictionary<SubscriptionId, SubscriptionState> Subscriptions { get; init; } =
+        ImmutableDictionary<SubscriptionId, SubscriptionState>.Empty;
+
     public static ModelState Initial => new(
         ImmutableDictionary<ElementId, ElementState>.Empty,
         ImmutableDictionary<RelationshipId, RelationshipState>.Empty,
@@ -40,7 +72,12 @@ public sealed record ModelState(
         ModelEvent.BranchForked e => new ModelState(
             e.Elements.ToImmutableDictionary(el => el.Id),
             e.Relationships.ToImmutableDictionary(r => r.Id),
-            e.Messages.ToImmutableDictionary(m => m.Id)),
+            e.Messages.ToImmutableDictionary(m => m.Id))
+        {
+            Operations = (e.Operations ?? []).ToImmutableDictionary(o => o.Id),
+            Channels = (e.Channels ?? []).ToImmutableDictionary(c => c.Id),
+            Subscriptions = (e.Subscriptions ?? []).ToImmutableDictionary(s => s.Id),
+        },
 
         ModelEvent.ElementAdded e => state with
         {
@@ -93,8 +130,61 @@ public sealed record ModelState(
         ModelEvent.MessageProvenanceRecorded m => state.WithMessage(m.MessageId,
             msg => msg with { FactStatus = m.Status, Provenance = m.Provenance }),
 
+        ModelEvent.OperationAdded e => state with
+        {
+            Operations = state.Operations.SetItem(e.Id, new OperationState(
+                e.Id, e.OwnerId, e.Name, e.Transport, e.RequestSchemaId, e.ResponseSchemaId, e.TimeoutMs, e.Retry))
+        },
+        ModelEvent.OperationChanged e => state.WithOperation(e.OperationId, o => o with
+        {
+            OwnerId = e.OwnerId, Name = e.Name, Transport = e.Transport,
+            RequestSchemaId = e.RequestSchemaId, ResponseSchemaId = e.ResponseSchemaId,
+            TimeoutMs = e.TimeoutMs, Retry = e.Retry,
+        }),
+        ModelEvent.OperationRemoved e => state with { Operations = state.Operations.Remove(e.OperationId) },
+        ModelEvent.OperationProvenanceRecorded e => state.WithOperation(e.OperationId,
+            o => o with { FactStatus = e.Status, Provenance = e.Provenance }),
+
+        ModelEvent.ChannelAdded e => state with
+        {
+            Channels = state.Channels.SetItem(e.Id, new ChannelState(e.Id, e.Name, e.Kind))
+        },
+        ModelEvent.ChannelChanged e => state.WithChannel(e.ChannelId, c => c with { Name = e.Name, Kind = e.Kind }),
+        ModelEvent.ChannelRemoved e => state with { Channels = state.Channels.Remove(e.ChannelId) },
+        ModelEvent.ChannelProvenanceRecorded e => state.WithChannel(e.ChannelId,
+            c => c with { FactStatus = e.Status, Provenance = e.Provenance }),
+
+        ModelEvent.SubscriptionAdded e => state with
+        {
+            Subscriptions = state.Subscriptions.SetItem(e.Id, new SubscriptionState(
+                e.Id, e.ChannelId, e.ConsumerId, e.Retry, e.DeadLetterChannelId))
+        },
+        ModelEvent.SubscriptionChanged e => state.WithSubscription(e.SubscriptionId, s => s with
+        {
+            ChannelId = e.ChannelId, ConsumerId = e.ConsumerId,
+            Retry = e.Retry, DeadLetterChannelId = e.DeadLetterChannelId,
+        }),
+        ModelEvent.SubscriptionRemoved e => state with { Subscriptions = state.Subscriptions.Remove(e.SubscriptionId) },
+        ModelEvent.SubscriptionProvenanceRecorded e => state.WithSubscription(e.SubscriptionId,
+            s => s with { FactStatus = e.Status, Provenance = e.Provenance }),
+
         _ => state
     };
+
+    private ModelState WithOperation(OperationId id, Func<OperationState, OperationState> update) =>
+        Operations.TryGetValue(id, out var operation)
+            ? this with { Operations = Operations.SetItem(id, update(operation)) }
+            : this;
+
+    private ModelState WithChannel(ChannelId id, Func<ChannelState, ChannelState> update) =>
+        Channels.TryGetValue(id, out var channel)
+            ? this with { Channels = Channels.SetItem(id, update(channel)) }
+            : this;
+
+    private ModelState WithSubscription(SubscriptionId id, Func<SubscriptionState, SubscriptionState> update) =>
+        Subscriptions.TryGetValue(id, out var subscription)
+            ? this with { Subscriptions = Subscriptions.SetItem(id, update(subscription)) }
+            : this;
 
     private ModelState WithElement(ElementId id, Func<ElementState, ElementState> update) =>
         Elements.TryGetValue(id, out var element)
