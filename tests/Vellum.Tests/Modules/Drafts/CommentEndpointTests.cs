@@ -268,6 +268,40 @@ public class CommentEndpointTests
         Assert.NotNull(page);
         Assert.Contains(page!.Items, c => c.Id == commentId);
     }
+
+    [Fact]
+    public async Task A_comment_of_another_project_is_never_returned_or_revealed()
+    {
+        using var factory = TestHost.Create(_fixture);
+        using var owner = await TestHost.SignInAsync(factory);
+        var (_, ownerProject) = await TestHost.CreateProjectAsync(owner);
+        var ownerDraft = Guid.NewGuid();
+        await TestHost.Created(owner.PostAsJsonAsync($"/api/projects/{ownerProject}/drafts", new { id = ownerDraft, name = "Owner draft" }));
+        var commentId = Guid.NewGuid();
+        await TestHost.Created(owner.PostAsJsonAsync($"/api/projects/{ownerProject}/drafts/{ownerDraft}/comments",
+            new { id = commentId, body = "Secret plan" }));
+
+        // A user of another workspace, with a project and a draft of their own.
+        using var stranger = await TestHost.SignInAsync(factory);
+        var (_, strangerProject) = await TestHost.CreateProjectAsync(stranger);
+        var strangerDraft = Guid.NewGuid();
+        await TestHost.Created(stranger.PostAsJsonAsync($"/api/projects/{strangerProject}/drafts", new { id = strangerDraft, name = "Stranger draft" }));
+
+        // Create with the owner's comment ID.
+        var create = await stranger.PostAsJsonAsync($"/api/projects/{strangerProject}/drafts/{strangerDraft}/comments",
+            new { id = commentId, body = "Mine" });
+        Assert.Equal(HttpStatusCode.Conflict, create.StatusCode);
+        Assert.DoesNotContain("Secret plan", await create.Content.ReadAsStringAsync());
+
+        // Update and delete through the stranger's own project, naming the owner's draft.
+        var update = await stranger.PatchAsJsonAsync($"/api/projects/{strangerProject}/drafts/{ownerDraft}/comments/{commentId}", new { body = "Overwritten" });
+        Assert.Equal(HttpStatusCode.NotFound, update.StatusCode);
+        var delete = await stranger.DeleteAsync($"/api/projects/{strangerProject}/drafts/{ownerDraft}/comments/{commentId}");
+        Assert.Equal(HttpStatusCode.NotFound, delete.StatusCode);
+
+        var page = await owner.GetFromJsonAsync<CommentPageDto>($"/api/projects/{ownerProject}/drafts/{ownerDraft}/comments");
+        Assert.Equal("Secret plan", Assert.Single(page!.Items).Body);
+    }
 }
 
 file sealed record CommentPageDto(IReadOnlyList<CommentDto> Items, string? Cursor);

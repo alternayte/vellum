@@ -5,7 +5,7 @@ using Vellum.Modules.Modelling.Entities;
 namespace Vellum.Modules.Modelling.Model;
 
 /// <summary>
-/// The model read model: one row per element, relationship and message on each branch.
+/// The model read model: one row per element, relationship and message on each open branch.
 /// It runs inline, so the rows commit in the same transaction as the events.
 /// <para>
 /// A row needs two facts that a model event does not carry. The branch is the stream ID.
@@ -21,6 +21,29 @@ public sealed class ModelProjection : Projection<ModellingDbContext>
         {
             WriteBranch(ProjectOf(ctx), BranchOf(ctx), forked, ctx.Db);
             return Task.CompletedTask;
+        });
+
+        On<ModelEvent.BranchClosed>(async (closed, ctx) =>
+        {
+            // Deedbox saves once per append, and once per batch in a rebuild. Rows of the
+            // branch that an earlier event of the same batch added are not in the database
+            // yet, so they leave the change tracker here; the stored rows are deleted.
+            foreach (var entry in ctx.Db.ChangeTracker.Entries().ToList())
+            {
+                var branch = entry.Entity switch
+                {
+                    ElementEntity element => element.Branch,
+                    RelationshipEntity relationship => relationship.Branch,
+                    MessageEntity message => message.Branch,
+                    _ => (Guid?)null,
+                };
+                if (branch == closed.BranchId)
+                    entry.State = EntityState.Detached;
+            }
+
+            await ctx.Db.Elements.Where(e => e.Branch == closed.BranchId).ExecuteDeleteAsync(ctx.CancellationToken);
+            await ctx.Db.Relationships.Where(r => r.Branch == closed.BranchId).ExecuteDeleteAsync(ctx.CancellationToken);
+            await ctx.Db.Messages.Where(m => m.Branch == closed.BranchId).ExecuteDeleteAsync(ctx.CancellationToken);
         });
 
         On<ModelEvent.ElementAdded>((added, ctx) =>

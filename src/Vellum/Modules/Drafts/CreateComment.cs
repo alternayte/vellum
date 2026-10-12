@@ -27,9 +27,15 @@ public static class CreateComment
         if (draft is null)
             return Results.NotFound(new ErrorResponse("not_found", "Draft not found"));
 
+        // The ID makes a repeated create idempotent inside one draft. It never reads a comment
+        // of another draft, which can belong to another project.
         var existing = await db.Comments.FindAsync([request.Id], ct);
         if (existing is not null)
-            return Results.Ok(ToDto(existing));
+        {
+            return existing.DraftId == draftId
+                ? Results.Ok(ToDto(existing))
+                : Results.Conflict(new ErrorResponse("conflict", "A comment with this ID already exists."));
+        }
 
         var comment = new CommentEntity
         {
