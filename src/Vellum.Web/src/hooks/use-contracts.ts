@@ -49,12 +49,12 @@ interface Page<T> {
   items: T[]
 }
 
-/** The server's message for a refused write, so the form can say why. */
+/** The server's reason for a refused write (the shared error envelope), so the UI can say why. */
 export function apiErrorMessage(error: unknown, fallback: string): string {
   if (error && typeof error === 'object') {
-    const e = error as { message?: unknown; errors?: { message?: string }[] }
+    const e = error as { title?: unknown; detail?: unknown; errors?: { message?: string }[] | null }
     if (Array.isArray(e.errors) && e.errors[0]?.message) return e.errors[0].message
-    if (typeof e.message === 'string' && e.message) return e.message
+    if (typeof e.title === 'string' && e.title) return typeof e.detail === 'string' && e.detail ? `${e.title} ${e.detail}` : e.title
   }
   return fallback
 }
