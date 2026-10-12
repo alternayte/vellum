@@ -25,6 +25,7 @@ import '@xyflow/react/dist/style.css'
 import { nodeTypes } from './nodes/node-types'
 import { edgeTypes } from './edges/edge-types'
 import { BulkActionsToolbar } from './bulk-actions-toolbar'
+import { TruthLegend } from './truth-legend'
 import { useCanvasStore } from '@/stores/canvas-store'
 import { useShellStore } from '@/stores/shell-store'
 import { useLod } from '@/hooks/use-lod'
@@ -154,7 +155,7 @@ function CanvasViewInner({
   searchOpen,
   onSearchClose,
 }: CanvasViewProps) {
-  const { currentRootId, zoomLevel, setZoom, activeLens, expandedNodeIds, toggleExpand } = useCanvasStore()
+  const { currentRootId, zoomLevel, setZoom, activeLens, setLens, expandedNodeIds, toggleExpand } = useCanvasStore()
   const { fitView, screenToFlowPosition } = useReactFlow()
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([])
   const [contextMenu, setContextMenu] = useState<ContextMenuState>(null)
@@ -265,7 +266,7 @@ function CanvasViewInner({
           const childDiffState = diffStateMap?.get(child.id) ?? (isReviewMode ? 'unchanged' : undefined)
           result.push({
             id: child.id,
-            type: tier === 'full' ? 'c4-element' : 'c4-label-chip',
+            type: tier === 'chip' ? 'c4-label-chip' : 'c4-element',
             position: childPos,
             parentId: el.id,
             extent: 'parent' as const,
@@ -281,6 +282,7 @@ function CanvasViewInner({
               icon: child.icon,
               factStatus: child.factStatus ?? null,
               provenance: child.provenance ?? null,
+              lod: tier,
               diffState: childDiffState,
               onRename: onRenameElement ? (newName: string) => onRenameElement(child.id, newName) : undefined,
             } satisfies C4ElementData,
@@ -290,7 +292,7 @@ function CanvasViewInner({
         // Render as normal element
         result.push({
           id: el.id,
-          type: tier === 'full' ? 'c4-element' : 'c4-label-chip',
+          type: tier === 'chip' ? 'c4-label-chip' : 'c4-element',
           position,
           data: {
             id: el.id,
@@ -304,6 +306,7 @@ function CanvasViewInner({
             icon: el.icon,
             factStatus: el.factStatus ?? null,
             provenance: el.provenance ?? null,
+            lod: tier,
             diffState: entityDiffState,
             onRename: onRenameElement ? (newName: string) => onRenameElement(el.id, newName) : undefined,
           } satisfies C4ElementData,
@@ -666,12 +669,20 @@ function CanvasViewInner({
         panOnDrag
         fitView
         colorMode="dark"
+        onlyRenderVisibleElements
         snapToGrid
         snapGrid={[16, 16]}
         minZoom={0.1}
         maxZoom={3}
       >
         <Background variant={BackgroundVariant.Dots} gap={16} size={1} color="var(--border)" />
+        {activeLens === 'facts' && (
+          <TruthLegend
+            factStatuses={visibleElements.map((e) => e.factStatus ?? 'declared')}
+            relationshipKinds={visibleRelationships.map((r) => r.kind ?? 'structural')}
+            onClose={() => setLens('none')}
+          />
+        )}
         <MiniMap
           nodeColor="var(--card)"
           bgColor="var(--card)"

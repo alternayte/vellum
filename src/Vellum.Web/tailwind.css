@@ -167,3 +167,22 @@
     animation: vellum-edge-flow 0.9s linear infinite;
   }
 }
+
+/* Keyboard focus for canvas content. React Flow's wrapper nodes and edges are focusable
+   but carry no visible ring, so keyboard users lose their position. */
+.react-flow__node:focus-visible {
+  outline-style: solid !important;
+  outline-width: 2px !important;
+  outline-color: var(--primary) !important;
+  outline-offset: 2px;
+  border-radius: 0.5rem;
+}
+
+.react-flow__edge:focus-visible {
+  outline: none;
+}
+
+.react-flow__edge:focus-visible .react-flow__edge-path {
+  stroke: var(--primary) !important;
+  stroke-width: 2.5px !important;
+}

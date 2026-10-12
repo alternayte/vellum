@@ -199,4 +199,10 @@ describe('C4ElementNode', () => {
     renderNode({ ...mockData, factStatus: 'declared' })
     expect(screen.queryByRole('img')).toBeNull()
   })
+
+  it('hides description and technology at compact detail', () => {
+    renderNode({ ...mockData, lod: 'compact' })
+    expect(screen.getByText('Orders')).toBeTruthy()
+    expect(screen.queryByText('Handles order lifecycle')).toBeNull()
+  })
 })

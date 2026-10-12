@@ -19,6 +19,7 @@ export interface C4ElementData extends Record<string, unknown> {
   icon?: string | null
   factStatus?: string | null
   provenance?: Provenance | null
+  lod?: 'full' | 'compact' | 'chip'
   diffState?: DiffState
   onRename?: (newName: string) => void
 }
@@ -89,6 +90,7 @@ export const C4ElementNode = memo(function C4ElementNode({ data }: NodeProps<C4E
 
   const showMetadata = activeLens === 'metadata'
   const showStatus = activeLens === 'status'
+  const compact = d.lod === 'compact'
 
   const borderStyle = showStatus && d.status === 'planned' ? 'dashed' : 'solid'
   const bgTint = showStatus && d.status === 'deprecated' ? 'color-mix(in srgb, var(--status-deprecated) 10%, transparent)' : undefined
@@ -168,13 +170,13 @@ export const C4ElementNode = memo(function C4ElementNode({ data }: NodeProps<C4E
           </div>
         </div>
 
-        {d.description && (
+        {d.description && !compact && (
           <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
             {d.description}
           </p>
         )}
 
-        {showMetadata && d.technology && (
+        {showMetadata && d.technology && !compact && (
           <div className="mt-2 flex flex-wrap gap-1">
             {d.technology.split(',').map((tech) => (
               <span

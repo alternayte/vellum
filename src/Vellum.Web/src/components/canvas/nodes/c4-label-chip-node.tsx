@@ -2,6 +2,7 @@ import { memo } from 'react'
 import { Handle, Position, type NodeProps } from '@xyflow/react'
 import { kindColor } from '@/lib/kind-colors'
 import { cn } from '@/lib/utils'
+import { factStatusColor, factStatusLabel, provenanceSummary } from '@/lib/fact-status'
 import type { C4ElementNodeType } from './c4-element-node'
 
 const diffBorderColor: Record<string, string> = {
@@ -33,6 +34,17 @@ export const C4LabelChipNode = memo(function C4LabelChipNode({ data }: NodeProps
         className="h-2 w-2 rounded-full"
         style={{ backgroundColor: kindColor(d.kind) }}
       />
+      {d.factStatus && d.factStatus !== 'declared' && (
+        <span
+          role="img"
+          aria-label={factStatusLabel(d.factStatus)}
+          className="h-1.5 w-1.5 shrink-0 rounded-full"
+          style={{ backgroundColor: factStatusColor(d.factStatus) }}
+          title={[factStatusLabel(d.factStatus), provenanceSummary(d.provenance)]
+            .filter(Boolean)
+            .join(' · ')}
+        />
+      )}
       <span className="text-xs font-medium text-foreground">{d.name}</span>
       {diff === 'conflict' && <span className="text-[10px]" title="Conflict">⚠</span>}
     </div>

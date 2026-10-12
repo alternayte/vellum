@@ -511,6 +511,9 @@ function ProjectWorkspace() {
       if (e.key === '3' && !inInput) {
         useCanvasStore.getState().toggleLens('messages')
       }
+      if (e.key === '4' && !inInput) {
+        useCanvasStore.getState().toggleLens('facts')
+      }
       if (e.key === 't' && !inInput) {
         handleTidy()
       }
