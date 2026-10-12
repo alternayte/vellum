@@ -2,11 +2,14 @@ import { Command } from 'cmdk'
 import { useShellStore } from '@/stores/shell-store'
 import { useCanvasStore } from '@/stores/canvas-store'
 import { kindColor } from '@/lib/kind-colors'
+import { factStatusColor, factStatusLabel } from '@/lib/fact-status'
 
 interface Element {
   id: string
   kind: string
   name: string
+  technology?: string | null
+  factStatus?: string | null
 }
 
 interface CommandPaletteProps {
@@ -23,9 +26,10 @@ export function CommandPalette({ elements, onAddElement, onTidy, onZoomToFit }: 
   if (!commandPaletteOpen) return null
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center pt-[20vh]">
+    <div role="dialog" aria-modal="true" aria-label="Command palette" className="fixed inset-0 z-50 flex items-start justify-center px-4 pt-[20vh]">
       <div className="fixed inset-0 bg-background/80" onClick={closeCommandPalette} />
       <Command
+        label="Command palette"
         className="relative w-full max-w-lg rounded-lg border border-border bg-card shadow-2xl"
         onKeyDown={(e) => {
           if (e.key === 'Escape') closeCommandPalette()
@@ -46,6 +50,11 @@ export function CommandPalette({ elements, onAddElement, onTidy, onZoomToFit }: 
               <Command.Item
                 key={el.id}
                 value={el.name}
+                keywords={[
+                  el.kind,
+                  el.technology ?? '',
+                  factStatusLabel(el.factStatus ?? 'declared'),
+                ]}
                 onSelect={() => {
                   selectElement(el.id)
                   closeCommandPalette()
@@ -57,6 +66,14 @@ export function CommandPalette({ elements, onAddElement, onTidy, onZoomToFit }: 
                   style={{ backgroundColor: kindColor(el.kind) }}
                 />
                 {el.name}
+                {el.factStatus && el.factStatus !== 'declared' && (
+                  <span
+                    className="rounded-full border px-1.5 text-[10px] leading-4"
+                    style={{ borderColor: factStatusColor(el.factStatus), color: factStatusColor(el.factStatus) }}
+                  >
+                    {factStatusLabel(el.factStatus)}
+                  </span>
+                )}
                 <span className="ml-auto font-mono text-[10px] text-muted-foreground">
                   {el.kind}
                 </span>
@@ -87,6 +104,20 @@ export function CommandPalette({ elements, onAddElement, onTidy, onZoomToFit }: 
             >
               Toggle metadata lens
               <kbd className="ml-auto rounded border border-border bg-muted px-1 font-mono text-[10px]">2</kbd>
+            </Command.Item>
+            <Command.Item
+              onSelect={() => { toggleLens('messages'); closeCommandPalette() }}
+              className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm aria-selected:bg-muted"
+            >
+              Toggle messages lens
+              <kbd className="ml-auto rounded border border-border bg-muted px-1 font-mono text-[10px]">3</kbd>
+            </Command.Item>
+            <Command.Item
+              onSelect={() => { toggleLens('facts'); closeCommandPalette() }}
+              className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm aria-selected:bg-muted"
+            >
+              Toggle truth labels
+              <kbd className="ml-auto rounded border border-border bg-muted px-1 font-mono text-[10px]">4</kbd>
             </Command.Item>
             <Command.Item
               onSelect={() => { onTidy?.(); closeCommandPalette() }}

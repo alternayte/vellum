@@ -441,7 +441,11 @@ function CanvasViewInner({
 
   const handleSearchMatchChange = useCallback(
     (matchIds: string[], _currentIndex: number) => {
-      setSearchMatchIds(matchIds)
+      // Highlighting rewrites the nodes the overlay searches, which reports the same matches
+      // again. Keep the previous array when nothing changed, or the two effects feed each other.
+      setSearchMatchIds((prev) =>
+        prev.length === matchIds.length && prev.every((id, i) => id === matchIds[i]) ? prev : matchIds,
+      )
     },
     [],
   )

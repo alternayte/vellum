@@ -1,9 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Search, X } from 'lucide-react'
+import { factStatusLabel } from '@/lib/fact-status'
 
 interface NodeLike {
   id: string
-  data: { name?: string; description?: string | null }
+  data: {
+    name?: string
+    description?: string | null
+    kind?: string | null
+    technology?: string | null
+    factStatus?: string | null
+  }
 }
 
 function matchesQuery(text: string, q: string): boolean {
@@ -18,9 +25,16 @@ export function filterMatchingNodes(nodes: NodeLike[], query: string): string[] 
   return nodes
     .filter((n) => !n.id.startsWith('msg-'))
     .filter((n) => {
-      const name = n.data.name ?? ''
-      const desc = n.data.description ?? ''
-      return matchesQuery(name, q) || matchesQuery(desc, q)
+      // Truth labels are searchable by their visible name ("inferred", "observed in source"),
+      // so a reviewer can jump between every fact that is not yet declared.
+      const fields = [
+        n.data.name,
+        n.data.description,
+        n.data.kind,
+        n.data.technology,
+        n.data.factStatus ? factStatusLabel(n.data.factStatus) : null,
+      ]
+      return fields.some((field) => field != null && matchesQuery(field, q))
     })
     .map((n) => n.id)
 }
@@ -64,26 +78,32 @@ export function SearchOverlay({ nodes, onMatchChange, onClose, onFocusNode }: Se
   )
 
   return (
-    <div className="absolute left-1/2 top-3 z-50 -translate-x-1/2">
+    <div role="search" className="absolute left-1/2 top-3 z-50 -translate-x-1/2">
       <div className="flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-1.5 shadow-lg">
         <Search className="h-4 w-4 text-muted-foreground" />
         <input
           ref={inputRef}
-          className="w-64 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
-          placeholder="Search nodes..."
+          className="w-72 bg-transparent text-sm text-foreground outline-none placeholder:text-muted-foreground"
+          placeholder="Search name, kind, technology, truth label..."
+          aria-label="Search the canvas"
           value={query}
           onChange={(e) => { setQuery(e.target.value); setCurrentIndex(0) }}
           onKeyDown={handleKeyDown}
         />
         {matchIds.length > 0 && (
-          <span className="text-xs text-muted-foreground whitespace-nowrap">
+          <span aria-live="polite" className="text-xs text-muted-foreground whitespace-nowrap">
             {currentIndex + 1}/{matchIds.length}
           </span>
         )}
         {query && matchIds.length === 0 && (
-          <span className="text-xs text-muted-foreground">No matches</span>
+          <span aria-live="polite" className="text-xs text-muted-foreground">No matches</span>
         )}
-        <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Close search"
+          className="rounded text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-primary"
+        >
           <X className="h-3.5 w-3.5" />
         </button>
       </div>

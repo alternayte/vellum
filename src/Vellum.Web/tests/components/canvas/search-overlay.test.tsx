@@ -33,3 +33,21 @@ describe('filterMatchingNodes', () => {
     expect(filterMatchingNodes(nodes, 'api')).toEqual(['1'])
   })
 })
+
+describe('filterMatchingNodes on kinds and truth labels', () => {
+  const model = [
+    { id: 'a', data: { name: 'Orders', kind: 'service', technology: '.NET 10', factStatus: 'declared' } },
+    { id: 'b', data: { name: 'Ledger', kind: 'datastore', technology: 'PostgreSQL', factStatus: 'inferred' } },
+    { id: 'c', data: { name: 'Billing', kind: 'service', technology: 'Go', factStatus: 'observed-in-source' } },
+  ]
+
+  it('matches kind and technology', () => {
+    expect(filterMatchingNodes(model, 'datastore')).toEqual(['b'])
+    expect(filterMatchingNodes(model, 'go')).toEqual(['c'])
+  })
+
+  it('matches the visible truth label, not the raw status token', () => {
+    expect(filterMatchingNodes(model, 'inferred')).toEqual(['b'])
+    expect(filterMatchingNodes(model, 'observed')).toEqual(['c'])
+  })
+})
