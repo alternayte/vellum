@@ -4,6 +4,7 @@ import { kindColor } from '@/lib/kind-colors'
 import { defaultIconForKind, getIconComponent } from '@/lib/default-icons'
 import { useCanvasStore } from '@/stores/canvas-store'
 import { cn } from '@/lib/utils'
+import { factStatusColor, factStatusLabel, provenanceSummary, type Provenance } from '@/lib/fact-status'
 import type { DiffState } from '@/stores/draft-store'
 
 export interface C4ElementData extends Record<string, unknown> {
@@ -16,6 +17,8 @@ export interface C4ElementData extends Record<string, unknown> {
   tags: string[]
   ownerId: string | null
   icon?: string | null
+  factStatus?: string | null
+  provenance?: Provenance | null
   diffState?: DiffState
   onRename?: (newName: string) => void
 }
@@ -116,10 +119,10 @@ export const C4ElementNode = memo(function C4ElementNode({ data }: NodeProps<C4E
         backgroundColor: diffBg,
       }}
     >
-      <Handle type="target" position={Position.Top} className="!h-2 !w-2 !bg-primary opacity-0 transition-opacity group-hover/node:opacity-100" />
-      <Handle type="source" position={Position.Right} className="!h-2 !w-2 !bg-primary opacity-0 transition-opacity group-hover/node:opacity-100" />
-      <Handle type="target" position={Position.Bottom} className="!h-2 !w-2 !bg-primary opacity-0 transition-opacity group-hover/node:opacity-100" />
-      <Handle type="source" position={Position.Left} className="!h-2 !w-2 !bg-primary opacity-0 transition-opacity group-hover/node:opacity-100" />
+      <Handle type="target" position={Position.Top} className="h-2! w-2! bg-primary! opacity-0 transition-opacity group-hover/node:opacity-100" />
+      <Handle type="source" position={Position.Right} className="h-2! w-2! bg-primary! opacity-0 transition-opacity group-hover/node:opacity-100" />
+      <Handle type="target" position={Position.Bottom} className="h-2! w-2! bg-primary! opacity-0 transition-opacity group-hover/node:opacity-100" />
+      <Handle type="source" position={Position.Left} className="h-2! w-2! bg-primary! opacity-0 transition-opacity group-hover/node:opacity-100" />
 
       <div className="p-3">
         <div className="flex items-center justify-between">
@@ -147,6 +150,17 @@ export const C4ElementNode = memo(function C4ElementNode({ data }: NodeProps<C4E
           <div className="flex items-center gap-1">
             {diff === 'conflict' && (
               <span className="text-[12px]" title="Conflict">⚠</span>
+            )}
+            {d.factStatus && d.factStatus !== 'declared' && (
+              <span
+                role="img"
+                aria-label={factStatusLabel(d.factStatus)}
+                className="inline-block h-2 w-2 shrink-0 rounded-full"
+                style={{ backgroundColor: factStatusColor(d.factStatus) }}
+                title={[factStatusLabel(d.factStatus), provenanceSummary(d.provenance)]
+                  .filter(Boolean)
+                  .join(' · ')}
+              />
             )}
             <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
               {d.kind}

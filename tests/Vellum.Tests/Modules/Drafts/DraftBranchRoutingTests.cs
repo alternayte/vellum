@@ -99,6 +99,28 @@ public class DraftBranchRoutingTests
         Assert.Contains(draftElements!.Items, e => e.Id == elementId);
     }
 
+    [Fact]
+    public async Task Draft_branch_reads_the_full_model()
+    {
+        using var factory = CreateFactory();
+        using var client = await CreateAuthenticatedClientAsync(factory);
+        var projectId = await SetupProjectAsync(client);
+
+        var elementId = Guid.NewGuid();
+        await client.PostAsJsonAsync($"/api/projects/{projectId}/elements",
+            new { id = elementId, kind = "system", name = "Orders" });
+
+        var draftId = Guid.NewGuid();
+        var createDraftResp = await client.PostAsJsonAsync(
+            $"/api/projects/{projectId}/drafts",
+            new { id = draftId, name = "Feature branch" });
+        var draft = await createDraftResp.Content.ReadFromJsonAsync<DraftDto>();
+
+        var draftElements = await client.GetFromJsonAsync<Page<ElementDto>>(
+            $"/api/projects/{projectId}/elements?branchId={draft!.StreamId}");
+        Assert.Contains(draftElements!.Items, e => e.Id == elementId);
+    }
+
     private sealed record Page<T>(IReadOnlyList<T> Items, string? Cursor);
 }
 

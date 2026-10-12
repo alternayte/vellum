@@ -149,3 +149,21 @@
     @apply bg-background text-foreground font-body;
   }
 }
+
+/* Behavioural edges flow; structural edges stay static. The rhythm (not only the
+   animation) distinguishes them, and reduced-motion users get the static accent. */
+@keyframes vellum-edge-flow {
+  to {
+    stroke-dashoffset: -12;
+  }
+}
+
+.vellum-edge-flow {
+  stroke-dasharray: 6 6;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .vellum-edge-flow {
+    animation: vellum-edge-flow 0.9s linear infinite;
+  }
+}

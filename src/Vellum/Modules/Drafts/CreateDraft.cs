@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Vellum.Kernel.Aggregates;
 using Vellum.Kernel.EventStore;
 using Vellum.Modules.Drafts.Entities;
+using Vellum.Modules.Modelling;
 using Vellum.Modules.Modelling.Model;
 using Vellum.Modules.Workspaces;
 using Vellum.Modules.Workspaces.Authorization;
@@ -30,6 +31,7 @@ public static class CreateDraft
         WorkspaceAuthorizationService auth,
         AggregateStore store,
         IEventStore eventStore,
+        ModellingDbContext modellingDb,
         CancellationToken ct)
     {
         var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
@@ -47,6 +49,10 @@ public static class CreateDraft
         var draftStreamId = Guid.NewGuid();
         var stateJson = JsonSerializer.SerializeToDocument(mainState, JsonOpts);
         await eventStore.AppendAsync(draftStreamId, "model", 0, stateJson, [], ct);
+
+        // The draft branch reads as a full model, not just the changes made on it.
+        BranchRows.Write(projectId, draftStreamId, mainState, modellingDb);
+        await modellingDb.SaveChangesAsync(ct);
 
         var baseSnapshotJson = JsonSerializer.Serialize(mainState, JsonOpts);
 

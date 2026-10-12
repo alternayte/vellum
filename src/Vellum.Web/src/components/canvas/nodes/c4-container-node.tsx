@@ -34,16 +34,16 @@ export const C4ContainerNode = memo(function C4ContainerNode({
         minWidth={400}
         minHeight={200}
         isVisible={!!selected}
-        lineClassName="!border-primary"
-        handleClassName="!h-2 !w-2 !rounded-sm !border-primary !bg-background"
+        lineClassName="border-primary!"
+        handleClassName="h-2! w-2! rounded-sm! border-primary! bg-background!"
         onResizeEnd={(_event, params) => {
           data.onResize?.(params.width, params.height)
         }}
       />
-      <Handle type="target" position={Position.Top} className="!h-2 !w-2 !bg-primary opacity-0" />
-      <Handle type="source" position={Position.Right} className="!h-2 !w-2 !bg-primary opacity-0" />
-      <Handle type="target" position={Position.Bottom} className="!h-2 !w-2 !bg-primary opacity-0" />
-      <Handle type="source" position={Position.Left} className="!h-2 !w-2 !bg-primary opacity-0" />
+      <Handle type="target" position={Position.Top} className="h-2! w-2! bg-primary! opacity-0" />
+      <Handle type="source" position={Position.Right} className="h-2! w-2! bg-primary! opacity-0" />
+      <Handle type="target" position={Position.Bottom} className="h-2! w-2! bg-primary! opacity-0" />
+      <Handle type="source" position={Position.Left} className="h-2! w-2! bg-primary! opacity-0" />
 
       <div className="mb-2 flex items-center gap-1.5">
         <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">

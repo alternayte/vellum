@@ -32,6 +32,7 @@ import { Button } from '@/components/ui/button'
 import type { C4ElementData } from './nodes/c4-element-node'
 import type { C4ContainerData } from './nodes/c4-container-node'
 import type { DiffState } from '@/stores/draft-store'
+import type { Provenance } from '@/lib/fact-status'
 
 interface ElementModel {
   id: string
@@ -44,6 +45,8 @@ interface ElementModel {
   ownerId: string | null
   parentId: string | null
   icon: string | null
+  factStatus?: string | null
+  provenance?: Provenance | null
 }
 
 interface RelationshipModel {
@@ -53,6 +56,9 @@ interface RelationshipModel {
   label: string | null
   technology: string | null
   lineShape: string | null
+  kind?: string | null
+  factStatus?: string | null
+  provenance?: Provenance | null
 }
 
 interface LayoutPosition {
@@ -273,6 +279,8 @@ function CanvasViewInner({
               tags: child.tags,
               ownerId: child.ownerId,
               icon: child.icon,
+              factStatus: child.factStatus ?? null,
+              provenance: child.provenance ?? null,
               diffState: childDiffState,
               onRename: onRenameElement ? (newName: string) => onRenameElement(child.id, newName) : undefined,
             } satisfies C4ElementData,
@@ -294,6 +302,8 @@ function CanvasViewInner({
             tags: el.tags,
             ownerId: el.ownerId,
             icon: el.icon,
+            factStatus: el.factStatus ?? null,
+            provenance: el.provenance ?? null,
             diffState: entityDiffState,
             onRename: onRenameElement ? (newName: string) => onRenameElement(el.id, newName) : undefined,
           } satisfies C4ElementData,
@@ -324,11 +334,16 @@ function CanvasViewInner({
         source: rel.fromId,
         target: rel.toId,
         type: 'c4-edge',
-        markerEnd: { type: MarkerType.ArrowClosed, color: 'var(--muted-foreground)' },
+        markerEnd: {
+          type: MarkerType.ArrowClosed,
+          color: rel.kind === 'behavioural' ? '#2dd4bf' : 'var(--muted-foreground)',
+        },
         data: {
           label: rel.label,
           technology: rel.technology,
           lineShape: rel.lineShape,
+          relationshipKind: rel.kind ?? 'structural',
+          factStatus: rel.factStatus ?? null,
           diffState: diffStateMap?.get(rel.id) ?? (isReviewMode ? 'unchanged' : undefined),
           edgeIndex: idx,
           totalParallel: total,
@@ -650,6 +665,7 @@ function CanvasViewInner({
         multiSelectionKeyCode="Shift"
         panOnDrag
         fitView
+        colorMode="dark"
         snapToGrid
         snapGrid={[16, 16]}
         minZoom={0.1}
@@ -658,8 +674,9 @@ function CanvasViewInner({
         <Background variant={BackgroundVariant.Dots} gap={16} size={1} color="var(--border)" />
         <MiniMap
           nodeColor="var(--card)"
+          bgColor="var(--card)"
           maskColor="color-mix(in srgb, var(--background) 80%, transparent)"
-          className="!bg-card !border-border"
+          className="border-border!"
         />
         <BulkActionsToolbar
           selectedCount={selectedNodeIds.length}

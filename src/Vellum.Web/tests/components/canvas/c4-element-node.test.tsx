@@ -175,4 +175,28 @@ describe('C4ElementNode', () => {
     fireEvent.keyDown(input, { key: 'Enter' })
     expect(onRename).not.toHaveBeenCalled()
   })
+
+  it('marks non-declared facts with a labelled indicator', () => {
+    renderNode({
+      ...mockData,
+      factStatus: 'inferred',
+      provenance: {
+        source: 'github.com/acme/orders@abc123:src/Orders.cs:1-10',
+        revision: 'abc123',
+        confidence: 0.6,
+        acceptedBy: null,
+        acceptedAt: null,
+      },
+    })
+
+    const marker = screen.getByRole('img', { name: 'Inferred' })
+    expect(marker).toBeTruthy()
+    expect(marker.getAttribute('title')).toContain('github.com/acme/orders@abc123:src/Orders.cs:1-10')
+    expect(marker.getAttribute('title')).toContain('60% confidence')
+  })
+
+  it('keeps declared facts visually quiet', () => {
+    renderNode({ ...mockData, factStatus: 'declared' })
+    expect(screen.queryByRole('img')).toBeNull()
+  })
 })

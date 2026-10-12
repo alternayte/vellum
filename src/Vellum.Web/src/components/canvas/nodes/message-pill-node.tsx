@@ -20,10 +20,10 @@ export const MessagePillNode = memo(function MessagePillNode({
         'min-w-[80px] max-w-[200px]',
       )}
     >
-      <Handle type="target" position={Position.Top} className="!h-1.5 !w-1.5 !bg-primary opacity-0 transition-opacity group-hover/pill:opacity-100" />
-      <Handle type="source" position={Position.Right} className="!h-1.5 !w-1.5 !bg-primary opacity-0 transition-opacity group-hover/pill:opacity-100" />
-      <Handle type="target" position={Position.Bottom} className="!h-1.5 !w-1.5 !bg-primary opacity-0 transition-opacity group-hover/pill:opacity-100" />
-      <Handle type="source" position={Position.Left} className="!h-1.5 !w-1.5 !bg-primary opacity-0 transition-opacity group-hover/pill:opacity-100" />
+      <Handle type="target" position={Position.Top} className="h-1.5! w-1.5! bg-primary! opacity-0 transition-opacity group-hover/pill:opacity-100" />
+      <Handle type="source" position={Position.Right} className="h-1.5! w-1.5! bg-primary! opacity-0 transition-opacity group-hover/pill:opacity-100" />
+      <Handle type="target" position={Position.Bottom} className="h-1.5! w-1.5! bg-primary! opacity-0 transition-opacity group-hover/pill:opacity-100" />
+      <Handle type="source" position={Position.Left} className="h-1.5! w-1.5! bg-primary! opacity-0 transition-opacity group-hover/pill:opacity-100" />
 
       <span className="text-[10px] text-muted-foreground">✉</span>
       <span className="truncate font-mono text-xs text-foreground">{data.name}</span>

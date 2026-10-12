@@ -5,6 +5,7 @@ import {
   type EdgeProps,
 } from '@xyflow/react'
 import { useCanvasStore } from '@/stores/canvas-store'
+import { cn } from '@/lib/utils'
 import { EdgeLabelCard } from './edge-label-card'
 import { computeEdgeOffset, computeLabelOffset, getEdgePathFn } from '@/lib/edge-utils'
 import type { DiffState } from '@/stores/draft-store'
@@ -13,6 +14,8 @@ export interface C4EdgeData extends Record<string, unknown> {
   label: string | null
   technology: string | null
   lineShape?: string | null
+  relationshipKind?: string | null
+  factStatus?: string | null
   diffState?: DiffState
   edgeIndex?: number
   totalParallel?: number
@@ -63,11 +66,14 @@ export const C4Edge = memo(function C4Edge({
   const labelY = defaultLabelY + (targetY - sourceY) * (labelT - 0.5) * 0.3
 
   const diff = d.diffState
+  const isBehavioural = d.relationshipKind === 'behavioural'
   const baseColor = diff && diff !== 'unchanged'
     ? (diffEdgeColor[diff] ?? 'var(--muted-foreground)')
-    : 'var(--muted-foreground)'
+    : isBehavioural
+      ? '#2dd4bf'
+      : 'var(--muted-foreground)'
   const strokeColor = selected ? 'var(--primary)' : hovered ? 'var(--foreground)' : baseColor
-  const strokeWidth = hovered || selected ? 2.5 : 1.5
+  const strokeWidth = hovered || selected ? 2.8 : isBehavioural ? 2 : 1.5
   const strokeOpacity = diff === 'removed' ? 0.5 : diff === 'unchanged' ? 0.6 : 1
 
   return (
@@ -83,7 +89,10 @@ export const C4Edge = memo(function C4Edge({
       />
       <path
         id={id}
-        className="react-flow__edge-path"
+        className={cn(
+          'react-flow__edge-path',
+          isBehavioural && 'vellum-edge-flow',
+        )}
         d={edgePath}
         markerEnd={markerEnd}
         style={{
