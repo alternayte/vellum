@@ -3,11 +3,13 @@ using System.Security.Claims;
 using Deedbox;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.OpenApi;
 using Scalar.AspNetCore;
 using Vellum.Shared;
 using Vellum.Modules.Identity;
 using Vellum.Modules.Mcp;
 using Vellum.Modules.Modelling;
+using Vellum.Modules.Modelling.Contracts;
 using Vellum.Modules.Modelling.Model;
 using Vellum.Modules.Modelling.Revisions;
 using Vellum.Modules.Modelling.Variants;
@@ -15,6 +17,7 @@ using Vellum.Modules.Docs;
 using Vellum.Modules.Drafts;
 using Vellum.Modules.Schemas;
 using Vellum.Modules.Scoring;
+using Vellum.Modules.Trace.Scenarios;
 using Vellum.Modules.Views;
 using Vellum.Modules.Workspaces;
 using Vellum.Modules.Workspaces.Entities;
@@ -22,7 +25,18 @@ using Vellum.Modules.Workspaces.Entities;
 var builder = WebApplication.CreateBuilder(args);
 
 // OpenAPI
-builder.Services.AddOpenApi();
+builder.Services.AddOpenApi(options => options.AddSchemaTransformer((schema, context, _) =>
+{
+    // A typed architecture ID is a GUID string on the wire; its converter hides that from
+    // the schema generator.
+    if (typeof(IArchitectureId).IsAssignableFrom(context.JsonTypeInfo.Type))
+    {
+        schema.Type = JsonSchemaType.String;
+        schema.Format = "uuid";
+    }
+
+    return Task.CompletedTask;
+}));
 
 // Exception handling
 builder.Services.AddProblemDetails();
@@ -35,7 +49,8 @@ var servicesBeforeDeedbox = builder.Services.Count;
 builder.Services.AddDeedbox(deedbox => deedbox
     .UsePostgres(services => services.GetRequiredService<IConfiguration>().GetConnectionString("DefaultConnection")!)
     .AddModelStreams()
-    .AddSchemaStreams());
+    .AddSchemaStreams()
+    .AddScenarioStreams());
 
 // Build-time OpenAPI generation starts the host with no database. Deedbox checks its
 // schema when the host starts, so its hosted services do not run in that process.
@@ -57,6 +72,7 @@ builder.Services.AddDocsModule(builder.Configuration);
 builder.Services.AddDraftsModule(builder.Configuration);
 builder.Services.AddSchemasModule(builder.Configuration);
 builder.Services.AddScoringModule(builder.Configuration);
+builder.Services.AddScenariosModule();
 builder.Services.AddMcpModule();
 
 // Command handlers (Scrutor scan)
@@ -95,6 +111,7 @@ app.MapGet("/health", () => Results.Ok());
 app.MapIdentityEndpoints();
 app.MapWorkspaceEndpoints();
 app.MapModellingEndpoints();
+app.MapContractEndpoints();
 app.MapRevisionEndpoints();
 app.MapVariantEndpoints();
 app.MapViewEndpoints();
@@ -104,6 +121,7 @@ app.MapDraftEndpoints();
 app.MapMergeEndpoints();
 app.MapCommentEndpoints();
 app.MapSchemaEndpoints();
+app.MapScenarioEndpoints();
 app.MapScoreEndpoints();
 app.MapMcpEndpoints();
 
@@ -121,6 +139,7 @@ if (app.Environment.IsDevelopment())
     await services.GetRequiredService<DraftsDbContext>().Database.MigrateAsync();
     await services.GetRequiredService<SchemasDbContext>().Database.MigrateAsync();
     await services.GetRequiredService<ScoringDbContext>().Database.MigrateAsync();
+    await services.GetRequiredService<ScenariosDbContext>().Database.MigrateAsync();
 
     // Seed dev data
     if (args.Contains("seed"))

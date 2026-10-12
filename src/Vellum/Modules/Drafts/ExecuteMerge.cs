@@ -73,6 +73,19 @@ public static class ExecuteMerge
 
             var events = BuildMergeEvents(preview, request.Resolutions, oursState);
 
+            // A resolution can still choose a side that leaves a contract pointing at nothing.
+            // The merged model is checked whole, and such a merge writes nothing.
+            var merged = events.Aggregate(oursState, ModelState.Evolve);
+            var dangling = ContractDecider.DanglingReferences(merged)
+                .Except(ContractDecider.DanglingReferences(oursState))
+                .ToList();
+            if (dangling.Count > 0)
+            {
+                return Results.Conflict(new ErrorResponse("conflict",
+                    $"The merge would leave a dangling reference: {string.Join("; ", dangling)}. " +
+                    "Change the resolutions or the draft."));
+            }
+
             draft.Status = "merged";
             draft.MergedAt = DateTimeOffset.UtcNow;
 
@@ -183,8 +196,106 @@ public static class ExecuteMerge
             };
         }
 
+        if (entityType == "operation")
+        {
+            return changeKind switch
+            {
+                "added" or "modified" when value is OperationState operation =>
+                    BuildOperationEvents(operation, currentMain),
+                "removed" => [new ModelEvent.OperationRemoved(entityId)],
+                _ => []
+            };
+        }
+
+        if (entityType == "channel")
+        {
+            return changeKind switch
+            {
+                "added" or "modified" when value is ChannelState channel =>
+                    BuildChannelEvents(channel, currentMain),
+                "removed" => [new ModelEvent.ChannelRemoved(entityId)],
+                _ => []
+            };
+        }
+
+        if (entityType == "subscription")
+        {
+            return changeKind switch
+            {
+                "added" or "modified" when value is SubscriptionState subscription =>
+                    BuildSubscriptionEvents(subscription, currentMain),
+                "removed" => [new ModelEvent.SubscriptionRemoved(entityId)],
+                _ => []
+            };
+        }
+
         return [];
     }
+
+    /// <summary>The events that make main hold <paramref name="target"/>, whether main has the operation or not.</summary>
+    private static List<object> BuildOperationEvents(OperationState target, ModelState currentMain)
+    {
+        var events = new List<object>();
+        var current = currentMain.Operations.GetValueOrDefault(target.Id);
+        if (current is null)
+        {
+            events.Add(new ModelEvent.OperationAdded(
+                target.Id, target.OwnerId, target.Name, target.Transport,
+                target.RequestSchemaId, target.ResponseSchemaId, target.TimeoutMs, target.Retry));
+        }
+        else if (current with { FactStatus = target.FactStatus, Provenance = target.Provenance } != target)
+        {
+            events.Add(new ModelEvent.OperationChanged(
+                target.Id, target.OwnerId, target.Name, target.Transport,
+                target.RequestSchemaId, target.ResponseSchemaId, target.TimeoutMs, target.Retry));
+        }
+
+        if (FactChanged(current?.FactStatus, current?.Provenance, target.FactStatus, target.Provenance))
+            events.Add(new ModelEvent.OperationProvenanceRecorded(target.Id, target.FactStatus, target.Provenance));
+        return events;
+    }
+
+    private static List<object> BuildChannelEvents(ChannelState target, ModelState currentMain)
+    {
+        var events = new List<object>();
+        var current = currentMain.Channels.GetValueOrDefault(target.Id);
+        if (current is null)
+            events.Add(new ModelEvent.ChannelAdded(target.Id, target.Name, target.Kind));
+        else if (current.Name != target.Name || current.Kind != target.Kind)
+            events.Add(new ModelEvent.ChannelChanged(target.Id, target.Name, target.Kind));
+
+        if (FactChanged(current?.FactStatus, current?.Provenance, target.FactStatus, target.Provenance))
+            events.Add(new ModelEvent.ChannelProvenanceRecorded(target.Id, target.FactStatus, target.Provenance));
+        return events;
+    }
+
+    private static List<object> BuildSubscriptionEvents(SubscriptionState target, ModelState currentMain)
+    {
+        var events = new List<object>();
+        var current = currentMain.Subscriptions.GetValueOrDefault(target.Id);
+        if (current is null)
+        {
+            events.Add(new ModelEvent.SubscriptionAdded(
+                target.Id, target.ChannelId, target.ConsumerId, target.Retry, target.DeadLetterChannelId));
+        }
+        else if (current with { FactStatus = target.FactStatus, Provenance = target.Provenance } != target)
+        {
+            events.Add(new ModelEvent.SubscriptionChanged(
+                target.Id, target.ChannelId, target.ConsumerId, target.Retry, target.DeadLetterChannelId));
+        }
+
+        if (FactChanged(current?.FactStatus, current?.Provenance, target.FactStatus, target.Provenance))
+            events.Add(new ModelEvent.SubscriptionProvenanceRecorded(target.Id, target.FactStatus, target.Provenance));
+        return events;
+    }
+
+    /// <summary>A fact that main does not have yet starts as declared with no provenance.</summary>
+    private static bool FactChanged(
+        FactStatus? currentStatus, Provenance? currentProvenance, FactStatus targetStatus, Provenance? targetProvenance) =>
+        (currentStatus ?? FactStatus.Declared) != targetStatus ||
+        currentProvenance?.Source != targetProvenance?.Source ||
+        currentProvenance?.Revision != targetProvenance?.Revision ||
+        currentProvenance?.Confidence != targetProvenance?.Confidence;
 
     private static List<object> BuildElementAddEvents(ElementState el)
     {

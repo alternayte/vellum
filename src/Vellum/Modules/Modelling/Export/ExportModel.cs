@@ -1,5 +1,7 @@
 using System.Text.Json;
+using Deedbox;
 using Microsoft.EntityFrameworkCore;
+using Vellum.Modules.Modelling.Model;
 using Vellum.Modules.Schemas;
 using Vellum.Modules.Workspaces;
 using YamlDotNet.Serialization;
@@ -24,6 +26,7 @@ public static class ExportModel
         ModellingDbContext modellingDb,
         SchemasDbContext schemasDb,
         WorkspacesDbContext workspacesDb,
+        IEventStore store,
         CancellationToken ct)
     {
         var project = await workspacesDb.Projects.AsNoTracking()
@@ -65,8 +68,37 @@ public static class ExportModel
             .Select(s => new SchemaExport(s.Id, s.Name, s.Description, s.Content, s.Version))
             .ToListAsync(ct);
 
+        // Contracts have no read-model rows; they come from the stored state of the main
+        // stream. Every list is ordered by ID, so the same model exports the same document.
+        var (state, _) = await store.Load<ModelState>(StreamId.From(project.StreamId), ct);
+
+        var operations = state.Operations.Values
+            .OrderBy(o => o.Id.Value)
+            .Select(o => new OperationExport(
+                o.Id, o.OwnerId, o.Name, o.Transport.ToString().ToLowerInvariant(),
+                o.RequestSchemaId, o.ResponseSchemaId, o.TimeoutMs,
+                new RetryExport(o.Retry.MaxAttempts, o.Retry.BackoffMs),
+                o.FactStatus.ToApiString(), ProvenanceExport.From(o.Provenance)))
+            .ToList();
+
+        var channels = state.Channels.Values
+            .OrderBy(c => c.Id.Value)
+            .Select(c => new ChannelExport(
+                c.Id, c.Name, c.Kind.ToString().ToLowerInvariant(),
+                c.FactStatus.ToApiString(), ProvenanceExport.From(c.Provenance)))
+            .ToList();
+
+        var subscriptions = state.Subscriptions.Values
+            .OrderBy(s => s.Id.Value)
+            .Select(s => new SubscriptionExport(
+                s.Id, s.ChannelId, s.ConsumerId,
+                new RetryExport(s.Retry.MaxAttempts, s.Retry.BackoffMs), s.DeadLetterChannelId,
+                s.FactStatus.ToApiString(), ProvenanceExport.From(s.Provenance)))
+            .ToList();
+
         var doc = new ModelExportDocument("1.0",
-            new ProjectInfo(project.Name), elements, relationships, messages, schemas);
+            new ProjectInfo(project.Name), elements, relationships, messages, schemas,
+            operations, channels, subscriptions);
 
         if (format.Equals("yaml", StringComparison.OrdinalIgnoreCase))
         {

@@ -303,5 +303,6 @@ public static class ModelStore
     /// <summary>The fork event that starts a draft or variant stream from a pinned state.</summary>
     public static ModelEvent.BranchForked Fork(ModelState source, Guid sourceStreamId, long sourceVersion) => new(
         sourceStreamId, sourceVersion,
-        [.. source.Elements.Values], [.. source.Relationships.Values], [.. source.Messages.Values]);
+        [.. source.Elements.Values], [.. source.Relationships.Values], [.. source.Messages.Values],
+        [.. source.Operations.Values], [.. source.Channels.Values], [.. source.Subscriptions.Values]);
 }

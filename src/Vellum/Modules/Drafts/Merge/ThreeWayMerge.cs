@@ -16,10 +16,17 @@ public static class ThreeWayMerge
             "relationship", changes, conflicts);
         MergeEntities(baseState.Messages, ours.Messages, theirs.Messages,
             "message", changes, conflicts);
+        MergeEntities(baseState.Operations, ours.Operations, theirs.Operations,
+            "operation", changes, conflicts);
+        MergeEntities(baseState.Channels, ours.Channels, theirs.Channels,
+            "channel", changes, conflicts);
+        MergeEntities(baseState.Subscriptions, ours.Subscriptions, theirs.Subscriptions,
+            "subscription", changes, conflicts);
 
         DetectOrphanedChildren(baseState, ours, theirs, conflicts);
         DetectDanglingRelationships(baseState, ours, theirs, changes, conflicts);
         DetectDanglingMessages(baseState, ours, theirs, changes, conflicts);
+        DetectDanglingContracts(baseState, ours, theirs, changes, conflicts);
 
         return new MergePreviewResult(changes, conflicts);
     }
@@ -211,6 +218,95 @@ public static class ThreeWayMerge
                         theirs.Messages.TryGetValue(change.EntityId, out var theirMsg) ? theirMsg : null));
                 }
             }
+        }
+    }
+
+    /// <summary>
+    /// A contract never points at something the merged model lacks. Two cases turn an
+    /// automatic change into a conflict the user must resolve:
+    /// a contract from the draft whose element or channel main no longer has, and a removal
+    /// from the draft of an element or channel that a contract on main now uses.
+    /// </summary>
+    private static void DetectDanglingContracts(
+        ModelState baseState, ModelState ours, ModelState theirs,
+        List<MergeChange> changes, List<MergeConflict> conflicts)
+    {
+        var elements = new HashSet<ElementId>(ours.Elements.Keys);
+        var channels = new HashSet<ChannelId>(ours.Channels.Keys);
+        foreach (var change in changes)
+        {
+            if (change.EntityType == "element" && change.ChangeKind == "added") elements.Add(change.EntityId);
+            if (change.EntityType == "element" && change.ChangeKind == "removed") elements.Remove(change.EntityId);
+            if (change.EntityType == "channel" && change.ChangeKind == "added") channels.Add(change.EntityId);
+            if (change.EntityType == "channel" && change.ChangeKind == "removed") channels.Remove(change.EntityId);
+        }
+
+        var operations = ours.Operations.ToDictionary(o => o.Key, o => o.Value);
+        var subscriptions = ours.Subscriptions.ToDictionary(s => s.Key, s => s.Value);
+
+        foreach (var change in changes.Where(c => c.EntityType == "operation").ToList())
+        {
+            if (change.ResolvedValue is not OperationState operation)
+            {
+                operations.Remove(change.EntityId);
+            }
+            else if (elements.Contains(operation.OwnerId))
+            {
+                operations[operation.Id] = operation;
+            }
+            else
+            {
+                changes.Remove(change);
+                conflicts.Add(new MergeConflict("operation", change.EntityId, "dangling_operation",
+                    baseState.Operations.GetValueOrDefault(change.EntityId),
+                    ours.Operations.GetValueOrDefault(change.EntityId),
+                    theirs.Operations.GetValueOrDefault(change.EntityId)));
+            }
+        }
+
+        foreach (var change in changes.Where(c => c.EntityType == "subscription").ToList())
+        {
+            if (change.ResolvedValue is not SubscriptionState subscription)
+            {
+                subscriptions.Remove(change.EntityId);
+            }
+            else if (channels.Contains(subscription.ChannelId)
+                && elements.Contains(subscription.ConsumerId)
+                && (subscription.DeadLetterChannelId is not { } deadLetter || channels.Contains(deadLetter)))
+            {
+                subscriptions[subscription.Id] = subscription;
+            }
+            else
+            {
+                changes.Remove(change);
+                conflicts.Add(new MergeConflict("subscription", change.EntityId, "dangling_subscription",
+                    baseState.Subscriptions.GetValueOrDefault(change.EntityId),
+                    ours.Subscriptions.GetValueOrDefault(change.EntityId),
+                    theirs.Subscriptions.GetValueOrDefault(change.EntityId)));
+            }
+        }
+
+        foreach (var change in changes.Where(c => c.ChangeKind == "removed").ToList())
+        {
+            var referenced = change.EntityType switch
+            {
+                "element" => operations.Values.Any(o => o.OwnerId.Value == change.EntityId)
+                    || subscriptions.Values.Any(s => s.ConsumerId.Value == change.EntityId),
+                "channel" => subscriptions.Values.Any(s =>
+                    s.ChannelId.Value == change.EntityId || s.DeadLetterChannelId?.Value == change.EntityId),
+                _ => false,
+            };
+            if (!referenced)
+                continue;
+
+            changes.Remove(change);
+            conflicts.Add(change.EntityType == "element"
+                ? new MergeConflict("element", change.EntityId, "referenced_by_contract",
+                    baseState.Elements.GetValueOrDefault(change.EntityId),
+                    ours.Elements.GetValueOrDefault(change.EntityId), null)
+                : new MergeConflict("channel", change.EntityId, "referenced_by_contract",
+                    baseState.Channels.GetValueOrDefault(change.EntityId),
+                    ours.Channels.GetValueOrDefault(change.EntityId), null));
         }
     }
 }

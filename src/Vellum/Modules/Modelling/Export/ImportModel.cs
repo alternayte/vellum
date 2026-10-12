@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Vellum.Shared;
 using Vellum.Modules.Modelling.Model;
 using Vellum.Modules.Schemas;
+using Vellum.Modules.Trace.Engine;
 using Vellum.Modules.Workspaces;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
@@ -59,6 +60,10 @@ public static class ImportModel
             Relationships = doc.Relationships ?? [],
             Messages = doc.Messages ?? [],
             Schemas = doc.Schemas ?? [],
+            // A document written before contracts existed has none.
+            Operations = doc.Operations ?? [],
+            Channels = doc.Channels ?? [],
+            Subscriptions = doc.Subscriptions ?? [],
         };
 
         // The import appends to the model stream and to one stream per schema. A transaction
@@ -283,6 +288,91 @@ public static class ImportModel
                     state = ModelState.Evolve(state, events[^1]);
                 }
             }
+        }
+
+        // Import contracts. Channels come first: a subscription names its channels, and both
+        // operations and subscriptions name elements that are already in the state.
+        foreach (var channel in doc.Channels)
+        {
+            var label = $"Channel {channel.Id}";
+            if (!TryReadFacts(channel.FactStatus, channel.Provenance, out var factStatus, out var provenance, out var factError))
+                return Results.BadRequest(new ErrorResponse("invalid_export", $"{label}: {factError}"));
+
+            if (channel.Kind is null || !ModelEnum.TryParseDefined(channel.Kind, out ChannelKind kind))
+                return Results.BadRequest(new ErrorResponse("invalid_export", $"{label}: invalid kind '{channel.Kind}'"));
+
+            ChannelId id = channel.Id;
+            var decision = state.Channels.ContainsKey(id)
+                ? ContractDecider.UpdateChannel(state, new UpdateChannelCommand(id, channel.Name, kind))
+                : ContractDecider.AddChannel(state, new AddChannelCommand(id, channel.Name, kind));
+            if (Apply(label, decision.Then(state, after =>
+                    ContractDecider.RecordChannelProvenance(after, id, factStatus, provenance))) is { } failure)
+                return failure;
+        }
+
+        foreach (var operation in doc.Operations)
+        {
+            var label = $"Operation {operation.Id}";
+            if (!TryReadFacts(operation.FactStatus, operation.Provenance, out var factStatus, out var provenance, out var factError))
+                return Results.BadRequest(new ErrorResponse("invalid_export", $"{label}: {factError}"));
+
+            if (operation.Transport is null || !ModelEnum.TryParseDefined(operation.Transport, out Transport transport))
+                return Results.BadRequest(new ErrorResponse("invalid_export", $"{label}: invalid transport '{operation.Transport}'"));
+
+            foreach (var schemaId in new[] { operation.RequestSchemaId, operation.ResponseSchemaId })
+            {
+                if (schemaId is { } referenced &&
+                    !await SchemaExistsAsync(projectId, referenced, documentSchemaIds, schemasDb, ct))
+                {
+                    return Results.BadRequest(new ErrorResponse("invalid_export",
+                        $"{label}: schema {referenced} not found in this project or the document"));
+                }
+            }
+
+            OperationId id = operation.Id;
+            var retry = operation.Retry is { } r ? new RetryPolicy(r.MaxAttempts, r.BackoffMs) : RetryPolicy.None;
+            var decision = state.Operations.ContainsKey(id)
+                ? ContractDecider.UpdateOperation(state, new UpdateOperationCommand(
+                    id, operation.Name, new ElementId(operation.OwnerId), transport,
+                    operation.RequestSchemaId, true, operation.ResponseSchemaId, true,
+                    operation.TimeoutMs, retry))
+                : ContractDecider.AddOperation(state, new AddOperationCommand(
+                    id, operation.OwnerId, operation.Name, transport,
+                    operation.RequestSchemaId, operation.ResponseSchemaId, operation.TimeoutMs, retry));
+            if (Apply(label, decision.Then(state, after =>
+                    ContractDecider.RecordOperationProvenance(after, id, factStatus, provenance))) is { } failure)
+                return failure;
+        }
+
+        foreach (var subscription in doc.Subscriptions)
+        {
+            var label = $"Subscription {subscription.Id}";
+            if (!TryReadFacts(subscription.FactStatus, subscription.Provenance, out var factStatus, out var provenance, out var factError))
+                return Results.BadRequest(new ErrorResponse("invalid_export", $"{label}: {factError}"));
+
+            SubscriptionId id = subscription.Id;
+            var retry = subscription.Retry is { } r ? new RetryPolicy(r.MaxAttempts, r.BackoffMs) : RetryPolicy.None;
+            ChannelId? deadLetter = subscription.DeadLetterChannelId is { } d ? new ChannelId(d) : null;
+            var decision = state.Subscriptions.ContainsKey(id)
+                ? ContractDecider.UpdateSubscription(state, new UpdateSubscriptionCommand(
+                    id, new ChannelId(subscription.ChannelId), new ElementId(subscription.ConsumerId), retry,
+                    deadLetter, SetDeadLetterChannelId: true))
+                : ContractDecider.AddSubscription(state, new AddSubscriptionCommand(
+                    id, subscription.ChannelId, subscription.ConsumerId, retry, deadLetter));
+            if (Apply(label, decision.Then(state, after =>
+                    ContractDecider.RecordSubscriptionProvenance(after, id, factStatus, provenance))) is { } failure)
+                return failure;
+        }
+
+        // Adds a decision's events to the import, or reports why the document is refused.
+        IResult? Apply(string label, CommandResult<IReadOnlyList<object>> decision)
+        {
+            if (decision is not CommandResult<IReadOnlyList<object>>.Success success)
+                return Results.BadRequest(new ErrorResponse("invalid_export", $"{label}: {DeciderFailure(decision)}"));
+
+            events.AddRange(success.Value);
+            state = success.Value.Aggregate(state, ModelState.Evolve);
+            return null;
         }
 
         if (events.Count > 0)

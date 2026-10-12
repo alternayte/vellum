@@ -119,9 +119,29 @@ public static class ModelDecider
         if (!state.Elements.ContainsKey(elementId))
             return new CommandResult<IReadOnlyList<object>>.NotFound("Element not found");
 
+        // Relationships and messages go with the element. A contract does not: a scenario
+        // plays against it, so its owner must be removed or reassigned on purpose.
+        var subtree = new HashSet<ElementId>();
+        CollectSubtree(state, elementId, subtree);
+        var references = ContractDecider.ReferencesToElements(state, subtree);
+        if (references.Count > 0)
+        {
+            return new CommandResult<IReadOnlyList<object>>.Conflict(
+                $"Element '{state.Elements[elementId].Name}' cannot be removed. It, or an element inside it, " +
+                $"is referenced by {string.Join(", ", references)}. Remove or reassign them first.");
+        }
+
         var events = new List<object>();
         CollectCascadeRemovals(state, elementId, events, new HashSet<Guid>());
         return new CommandResult<IReadOnlyList<object>>.Success(events);
+    }
+
+    private static void CollectSubtree(ModelState state, ElementId elementId, HashSet<ElementId> subtree)
+    {
+        if (!subtree.Add(elementId))
+            return;
+        foreach (var child in state.Elements.Values.Where(e => e.ParentId == elementId))
+            CollectSubtree(state, child.Id, subtree);
     }
 
     public static CommandResult<IReadOnlyList<object>> AddRelationship(ModelState state, AddRelationshipCommand cmd)
