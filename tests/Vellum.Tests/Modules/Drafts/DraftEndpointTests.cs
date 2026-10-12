@@ -103,6 +103,39 @@ public class DraftEndpointTests
     }
 
     [Fact]
+    public async Task A_draft_id_from_another_workspace_is_refused_and_reveals_nothing()
+    {
+        using var factory = CreateFactory();
+        using var owner = await CreateAuthenticatedClientAsync(factory);
+        var ownerProject = await SetupProjectAsync(owner);
+        var draftId = Guid.NewGuid();
+        await owner.PostAsJsonAsync($"/api/projects/{ownerProject}/drafts", new { id = draftId, name = "Secret plan" });
+
+        using var other = await CreateAuthenticatedClientAsync(factory);
+        var otherProject = await SetupProjectAsync(other);
+        var response = await other.PostAsJsonAsync($"/api/projects/{otherProject}/drafts", new { id = draftId, name = "Mine" });
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+        Assert.DoesNotContain("Secret plan", await response.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public async Task A_schema_id_that_is_already_a_model_stream_gives_a_conflict()
+    {
+        using var factory = CreateFactory();
+        using var client = await CreateAuthenticatedClientAsync(factory);
+        var projectId = await SetupProjectAsync(client);
+        var draftId = Guid.NewGuid();
+        var draft = await (await client.PostAsJsonAsync($"/api/projects/{projectId}/drafts", new { id = draftId, name = "D" }))
+            .Content.ReadFromJsonAsync<DraftDto>();
+
+        var response = await client.PostAsJsonAsync($"/api/projects/{projectId}/schemas",
+            new { id = draft!.StreamId, name = "Order", content = "{}" });
+
+        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+    }
+
+    [Fact]
     public async Task List_drafts_filters_by_status()
     {
         using var factory = CreateFactory();

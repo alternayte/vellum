@@ -43,6 +43,9 @@ public static class SharedTransaction
             }
             catch (Exception ex) when (attempt < MaxAttempts && WroteNothing(ex))
             {
+                // After DBX038 Deedbox rejoins in the background, and a deadlock needs the
+                // other transaction to finish. An immediate rerun would fail the same way.
+                await Task.Delay(TimeSpan.FromMilliseconds(50 * (1 << attempt)), ct);
             }
         }
     }

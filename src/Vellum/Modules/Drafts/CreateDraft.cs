@@ -39,8 +39,14 @@ public static class CreateDraft
             var store = services.GetRequiredService<IEventStore>();
 
             var existing = await draftsDb.Drafts.FindAsync([request.Id], ct);
+            // The ID makes a repeated create idempotent inside one project. It never reads a
+            // draft of another project.
             if (existing is not null)
-                return Results.Ok(ToDto(existing));
+            {
+                return existing.ProjectId == projectId
+                    ? Results.Ok(ToDto(existing))
+                    : Results.Conflict(new ErrorResponse("conflict", "A draft with this ID already exists."));
+            }
 
             var proj = await workspacesDb.Projects.AsNoTracking()
                 .FirstAsync(p => p.Id == projectId, ct);

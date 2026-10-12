@@ -53,14 +53,29 @@ public static class EventStoreDecisions
         CancellationToken ct)
         where TState : IState<TState>
     {
-        // Execute runs the decision again after a stream-creation race, so the last run wins.
-        CommandResult<IReadOnlyList<object>> outcome = null!;
-        var executed = await store.Execute<TState>(StreamId.From(streamId), state =>
+        // A transaction that appends to several streams (an import, a merge) can lock this
+        // stream and the position counter in the other order. Postgres then aborts one side,
+        // usually this one. Nothing was written, so the decision runs again.
+        for (var attempt = 1; ; attempt++)
         {
-            outcome = decide(state);
-            return outcome is CommandResult<IReadOnlyList<object>>.Success success ? success.Value : [];
-        }, ct);
+            try
+            {
+                // Execute runs the decision again after a stream-creation race, so the last run wins.
+                CommandResult<IReadOnlyList<object>> outcome = null!;
+                var executed = await store.Execute<TState>(StreamId.From(streamId), state =>
+                {
+                    outcome = decide(state);
+                    return outcome is CommandResult<IReadOnlyList<object>>.Success success ? success.Value : [];
+                }, ct);
 
-        return (outcome, executed.State);
+                return (outcome, executed.State);
+            }
+            catch (Exception ex) when (attempt < MaxAttempts && ConcurrencyExceptionHandler.IsDeadlock(ex))
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(25 * (1 << attempt)), ct);
+            }
+        }
     }
+
+    private const int MaxAttempts = 5;
 }
