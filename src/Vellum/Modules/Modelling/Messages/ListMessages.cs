@@ -25,20 +25,39 @@ public static class ListMessages
                 || (m.Name == sortKey && m.Id.CompareTo(afterId) > 0));
         }
 
-        var items = await query
+        var rows = await query
             .OrderBy(m => m.Name).ThenBy(m => m.Id)
             .Take(pageSize + 1)
-            .Select(m => new MessageDto(m.Id, m.Name, m.Description,
-                m.ProducerId, m.ConsumerIds, m.SchemaId, m.Tags))
+            .Select(m => new
+            {
+                m.Id,
+                m.Name,
+                m.Description,
+                m.ProducerId,
+                m.ConsumerIds,
+                m.SchemaId,
+                m.Tags,
+                m.FactStatus,
+                m.ProvenanceSource,
+                m.ProvenanceRevision,
+                m.ProvenanceConfidence,
+                m.ProvenanceAcceptedBy,
+                m.ProvenanceAcceptedAt,
+            })
             .ToListAsync(ct);
 
         string? nextCursor = null;
-        if (items.Count > pageSize)
+        if (rows.Count > pageSize)
         {
-            items = items[..pageSize];
-            var last = items[^1];
+            rows = rows[..pageSize];
+            var last = rows[^1];
             nextCursor = CursorEncoder.Encode(last.Name, last.Id);
         }
+
+        var items = rows.Select(m => new MessageDto(
+            m.Id, m.Name, m.Description, m.ProducerId, m.ConsumerIds, m.SchemaId, m.Tags, m.FactStatus,
+            Model.ProvenanceMapper.ToDto(m.ProvenanceSource, m.ProvenanceRevision, m.ProvenanceConfidence,
+                m.ProvenanceAcceptedBy, m.ProvenanceAcceptedAt))).ToList();
 
         return Results.Ok(new Page<MessageDto>(items, nextCursor));
     }

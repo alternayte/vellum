@@ -5,7 +5,9 @@ using Vellum.Modules.Modelling.Model;
 
 namespace Vellum.Modules.Modelling.Relationships;
 
-public sealed record AddRelationshipRequest(Guid Id, Guid FromId, Guid ToId, string? Label, string? Technology);
+public sealed record AddRelationshipRequest(
+    Guid Id, Guid FromId, Guid ToId, string? Label, string? Technology,
+    string? Kind = null);
 
 public sealed record AddRelationshipCommandEnvelope(
     Guid ProjectId, Guid StreamId, string UserId, AddRelationshipRequest Request);
@@ -25,7 +27,15 @@ public sealed class AddRelationshipHandler : ICommandHandler<AddRelationshipComm
     {
         var (state, version) = await _store.LoadAsync<ModelState, ModelEvent>(cmd.StreamId, ct);
 
-        var addCmd = new AddRelationshipCommand(cmd.Request.Id, cmd.Request.FromId, cmd.Request.ToId, cmd.Request.Label, cmd.Request.Technology);
+        var kind = RelationshipKind.Structural;
+        if (cmd.Request.Kind is not null && !ModelEnum.TryParseDefined(cmd.Request.Kind, out kind))
+        {
+            return new CommandResult<RelationshipDto>.Invalid([new ValidationError("kind", "Invalid relationship kind")]);
+        }
+
+        var addCmd = new AddRelationshipCommand(
+            cmd.Request.Id, cmd.Request.FromId, cmd.Request.ToId,
+            cmd.Request.Label, cmd.Request.Technology, kind);
         var result = ModelDecider.AddRelationship(state, addCmd);
 
         if (result is not CommandResult<IReadOnlyList<ModelEvent>>.Success success)
@@ -43,8 +53,12 @@ public sealed class AddRelationshipHandler : ICommandHandler<AddRelationshipComm
         var newState = success.Value.Aggregate(state, (s, e) => s.Evolve(e));
         await _store.SaveAsync(cmd.StreamId, "model", version, newState, success.Value, metadata, ct);
 
-        var rel = newState.Relationships[cmd.Request.Id];
-        return new CommandResult<RelationshipDto>.Success(new RelationshipDto(
-            rel.Id, rel.FromId, rel.ToId, rel.Label, rel.Technology, rel.MessageId, rel.LineShape));
+        return new CommandResult<RelationshipDto>.Success(ToDto(newState.Relationships[cmd.Request.Id]));
     }
+
+    internal static RelationshipDto ToDto(RelationshipState relationship) => new(
+        relationship.Id, relationship.FromId, relationship.ToId, relationship.Label,
+        relationship.Technology, relationship.MessageId, relationship.LineShape,
+        relationship.Kind.ToString().ToLowerInvariant(),
+        relationship.FactStatus.ToApiString(), ProvenanceMapper.ToDto(relationship.Provenance));
 }

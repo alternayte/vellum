@@ -174,6 +174,94 @@ public class MessageEndpointTests
         var get = await client.GetAsync($"/api/projects/{projectId}/messages/{id}");
         Assert.Equal(HttpStatusCode.NotFound, get.StatusCode);
     }
+
+    [Fact]
+    public async Task Add_message_with_unknown_schema_returns_400()
+    {
+        using var factory = CreateFactory();
+        using var client = await CreateAuthenticatedClientAsync(factory);
+        var projectId = await SetupProjectAsync(client);
+
+        var producerId = Guid.NewGuid();
+        await client.PostAsJsonAsync($"/api/projects/{projectId}/elements",
+            new { id = producerId, kind = "system", name = "Orders" });
+
+        var response = await client.PostAsJsonAsync($"/api/projects/{projectId}/messages", new
+        {
+            id = Guid.NewGuid(),
+            name = "OrderPlaced",
+            producerId,
+            consumerIds = Array.Empty<Guid>(),
+            schemaId = Guid.NewGuid(),
+            tags = Array.Empty<string>(),
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Update_message_with_unknown_schema_returns_400()
+    {
+        using var factory = CreateFactory();
+        using var client = await CreateAuthenticatedClientAsync(factory);
+        var projectId = await SetupProjectAsync(client);
+
+        var producerId = Guid.NewGuid();
+        await client.PostAsJsonAsync($"/api/projects/{projectId}/elements",
+            new { id = producerId, kind = "system", name = "Orders" });
+
+        var messageId = Guid.NewGuid();
+        var created = await client.PostAsJsonAsync($"/api/projects/{projectId}/messages", new
+        {
+            id = messageId,
+            name = "OrderPlaced",
+            producerId,
+            consumerIds = Array.Empty<Guid>(),
+            tags = Array.Empty<string>(),
+        });
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+
+        var patch = await client.PatchAsJsonAsync($"/api/projects/{projectId}/messages/{messageId}", new
+        {
+            schemaId = Guid.NewGuid(),
+            setSchemaId = true,
+        });
+
+        Assert.Equal(HttpStatusCode.BadRequest, patch.StatusCode);
+    }
+
+    [Fact]
+    public async Task Add_message_with_existing_schema_succeeds()
+    {
+        using var factory = CreateFactory();
+        using var client = await CreateAuthenticatedClientAsync(factory);
+        var projectId = await SetupProjectAsync(client);
+
+        var producerId = Guid.NewGuid();
+        await client.PostAsJsonAsync($"/api/projects/{projectId}/elements",
+            new { id = producerId, kind = "system", name = "Orders" });
+
+        var schemaId = Guid.NewGuid();
+        var schemaResponse = await client.PostAsJsonAsync($"/api/projects/{projectId}/schemas", new
+        {
+            id = schemaId,
+            name = "OrderPlaced",
+            content = "{\"type\":\"object\"}",
+        });
+        Assert.Equal(HttpStatusCode.Created, schemaResponse.StatusCode);
+
+        var response = await client.PostAsJsonAsync($"/api/projects/{projectId}/messages", new
+        {
+            id = Guid.NewGuid(),
+            name = "OrderPlaced",
+            producerId,
+            consumerIds = Array.Empty<Guid>(),
+            schemaId,
+            tags = Array.Empty<string>(),
+        });
+
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+    }
 }
 
 file static class MessageTestServiceCollectionExtensions

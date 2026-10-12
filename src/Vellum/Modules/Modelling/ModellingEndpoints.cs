@@ -28,7 +28,8 @@ public static class ModellingEndpoints
     /// </summary>
     private static async Task<Guid?> ResolveBranchStreamIdAsync(
         Guid? branchId, Guid projectId, Guid fallbackStreamId,
-        DraftsDbContext draftsDb, bool requireOpen, CancellationToken ct)
+        DraftsDbContext draftsDb, ModellingDbContext modellingDb,
+        bool requireOpen, CancellationToken ct)
     {
         if (branchId is null)
             return fallbackStreamId;
@@ -38,13 +39,25 @@ public static class ModellingEndpoints
             .Select(d => new { d.StreamId, d.Status })
             .FirstOrDefaultAsync(ct);
 
-        if (draft is null)
+        if (draft is not null)
+        {
+            if (requireOpen && draft.Status != "open")
+                return null;
+            return draft.StreamId;
+        }
+
+        var variant = await modellingDb.Variants.AsNoTracking()
+            .Where(v => v.StreamId == branchId.Value && v.ProjectId == projectId)
+            .Select(v => new { v.StreamId, v.Status })
+            .FirstOrDefaultAsync(ct);
+
+        if (variant is null)
             return null;
 
-        if (requireOpen && draft.Status != "open")
+        if (requireOpen && variant.Status != "open")
             return null;
 
-        return draft.StreamId;
+        return variant.StreamId;
     }
 
     public static WebApplication MapModellingEndpoints(this WebApplication app)
@@ -61,6 +74,7 @@ public static class ModellingEndpoints
             ClaimsPrincipal user,
             WorkspacesDbContext workspacesDb,
             DraftsDbContext draftsDb,
+            ModellingDbContext modellingDb,
             WorkspaceAuthorizationService auth,
             ICommandHandler<AddElementCommandEnvelope, CommandResult<ElementDto>> handler,
             CancellationToken ct) =>
@@ -68,7 +82,7 @@ public static class ModellingEndpoints
             var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
             await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
             var proj = await workspacesDb.Projects.AsNoTracking().FirstAsync(p => p.Id == projectId, ct);
-            var streamId = await ResolveBranchStreamIdAsync(branchId, projectId, proj.StreamId, draftsDb, requireOpen: true, ct);
+            var streamId = await ResolveBranchStreamIdAsync(branchId, projectId, proj.StreamId, draftsDb, modellingDb, requireOpen: true, ct);
             if (streamId is null)
                 return Results.BadRequest(new ErrorResponse("invalid_branch", "Branch not found or not open for this project"));
             return (await handler.HandleAsync(
@@ -88,21 +102,26 @@ public static class ModellingEndpoints
             var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
             await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Viewer, ct);
             var proj = await workspacesDb.Projects.AsNoTracking().FirstAsync(p => p.Id == projectId, ct);
-            var streamId = await ResolveBranchStreamIdAsync(branchId, projectId, proj.StreamId, draftsDb, requireOpen: false, ct);
+            var streamId = await ResolveBranchStreamIdAsync(branchId, projectId, proj.StreamId, draftsDb, db, requireOpen: false, ct);
             if (streamId is null)
                 return Results.BadRequest(new ErrorResponse("invalid_branch", "Branch not found for this project"));
             return await ListElements.Handle(projectId, streamId.Value, kind, status, parentId, cursor, limit, db, ct);
         });
 
         elements.MapGet("/{elementId}", async (
-            Guid projectId, Guid elementId,
-            ClaimsPrincipal user,
+            Guid projectId, Guid elementId, Guid? branchId,
+            ClaimsPrincipal user, WorkspacesDbContext workspacesDb,
+            DraftsDbContext draftsDb,
             WorkspaceAuthorizationService auth,
             ModellingDbContext db, CancellationToken ct) =>
         {
             var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
             await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Viewer, ct);
-            return await GetElement.Handle(projectId, elementId, db, ct);
+            var proj = await workspacesDb.Projects.AsNoTracking().FirstAsync(p => p.Id == projectId, ct);
+            var streamId = await ResolveBranchStreamIdAsync(branchId, projectId, proj.StreamId, draftsDb, db, requireOpen: false, ct);
+            if (streamId is null)
+                return Results.BadRequest(new ErrorResponse("invalid_branch", "Branch not found for this project"));
+            return await GetElement.Handle(projectId, streamId.Value, elementId, db, ct);
         });
 
         elements.MapPatch("/{elementId}", async (
@@ -111,6 +130,7 @@ public static class ModellingEndpoints
             UpdateElementRequest request,
             ClaimsPrincipal user, WorkspacesDbContext workspacesDb,
             DraftsDbContext draftsDb,
+            ModellingDbContext modellingDb,
             WorkspaceAuthorizationService auth,
             ICommandHandler<UpdateElementCommandEnvelope, CommandResult<ElementDto>> handler,
             CancellationToken ct) =>
@@ -118,7 +138,7 @@ public static class ModellingEndpoints
             var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
             await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
             var proj = await workspacesDb.Projects.AsNoTracking().FirstAsync(p => p.Id == projectId, ct);
-            var streamId = await ResolveBranchStreamIdAsync(branchId, projectId, proj.StreamId, draftsDb, requireOpen: true, ct);
+            var streamId = await ResolveBranchStreamIdAsync(branchId, projectId, proj.StreamId, draftsDb, modellingDb, requireOpen: true, ct);
             if (streamId is null)
                 return Results.BadRequest(new ErrorResponse("invalid_branch", "Branch not found or not open for this project"));
             return (await handler.HandleAsync(
@@ -131,6 +151,7 @@ public static class ModellingEndpoints
             Guid? branchId,
             ClaimsPrincipal user, WorkspacesDbContext workspacesDb,
             DraftsDbContext draftsDb,
+            ModellingDbContext modellingDb,
             WorkspaceAuthorizationService auth,
             ICommandHandler<RemoveElementCommandEnvelope, CommandResult> handler,
             CancellationToken ct) =>
@@ -138,7 +159,7 @@ public static class ModellingEndpoints
             var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
             await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
             var proj = await workspacesDb.Projects.AsNoTracking().FirstAsync(p => p.Id == projectId, ct);
-            var streamId = await ResolveBranchStreamIdAsync(branchId, projectId, proj.StreamId, draftsDb, requireOpen: true, ct);
+            var streamId = await ResolveBranchStreamIdAsync(branchId, projectId, proj.StreamId, draftsDb, modellingDb, requireOpen: true, ct);
             if (streamId is null)
                 return Results.BadRequest(new ErrorResponse("invalid_branch", "Branch not found or not open for this project"));
             return (await handler.HandleAsync(
@@ -154,6 +175,7 @@ public static class ModellingEndpoints
             AddRelationshipRequest request,
             ClaimsPrincipal user, WorkspacesDbContext workspacesDb,
             DraftsDbContext draftsDb,
+            ModellingDbContext modellingDb,
             WorkspaceAuthorizationService auth,
             ICommandHandler<AddRelationshipCommandEnvelope, CommandResult<RelationshipDto>> handler,
             CancellationToken ct) =>
@@ -161,7 +183,7 @@ public static class ModellingEndpoints
             var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
             await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
             var proj = await workspacesDb.Projects.AsNoTracking().FirstAsync(p => p.Id == projectId, ct);
-            var streamId = await ResolveBranchStreamIdAsync(branchId, projectId, proj.StreamId, draftsDb, requireOpen: true, ct);
+            var streamId = await ResolveBranchStreamIdAsync(branchId, projectId, proj.StreamId, draftsDb, modellingDb, requireOpen: true, ct);
             if (streamId is null)
                 return Results.BadRequest(new ErrorResponse("invalid_branch", "Branch not found or not open for this project"));
             return (await handler.HandleAsync(
@@ -181,21 +203,26 @@ public static class ModellingEndpoints
             var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
             await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Viewer, ct);
             var proj = await workspacesDb.Projects.AsNoTracking().FirstAsync(p => p.Id == projectId, ct);
-            var streamId = await ResolveBranchStreamIdAsync(branchId, projectId, proj.StreamId, draftsDb, requireOpen: false, ct);
+            var streamId = await ResolveBranchStreamIdAsync(branchId, projectId, proj.StreamId, draftsDb, db, requireOpen: false, ct);
             if (streamId is null)
                 return Results.BadRequest(new ErrorResponse("invalid_branch", "Branch not found for this project"));
             return await ListRelationships.Handle(projectId, streamId.Value, fromId, toId, cursor, limit, db, ct);
         });
 
         relationships.MapGet("/{relationshipId}", async (
-            Guid projectId, Guid relationshipId,
-            ClaimsPrincipal user,
+            Guid projectId, Guid relationshipId, Guid? branchId,
+            ClaimsPrincipal user, WorkspacesDbContext workspacesDb,
+            DraftsDbContext draftsDb,
             WorkspaceAuthorizationService auth,
             ModellingDbContext db, CancellationToken ct) =>
         {
             var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
             await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Viewer, ct);
-            return await GetRelationship.Handle(projectId, relationshipId, db, ct);
+            var proj = await workspacesDb.Projects.AsNoTracking().FirstAsync(p => p.Id == projectId, ct);
+            var streamId = await ResolveBranchStreamIdAsync(branchId, projectId, proj.StreamId, draftsDb, db, requireOpen: false, ct);
+            if (streamId is null)
+                return Results.BadRequest(new ErrorResponse("invalid_branch", "Branch not found for this project"));
+            return await GetRelationship.Handle(projectId, streamId.Value, relationshipId, db, ct);
         });
 
         relationships.MapPatch("/{relationshipId}", async (
@@ -204,6 +231,7 @@ public static class ModellingEndpoints
             UpdateRelationshipRequest request,
             ClaimsPrincipal user, WorkspacesDbContext workspacesDb,
             DraftsDbContext draftsDb,
+            ModellingDbContext modellingDb,
             WorkspaceAuthorizationService auth,
             ICommandHandler<UpdateRelationshipCommandEnvelope, CommandResult<RelationshipDto>> handler,
             CancellationToken ct) =>
@@ -211,7 +239,7 @@ public static class ModellingEndpoints
             var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
             await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
             var proj = await workspacesDb.Projects.AsNoTracking().FirstAsync(p => p.Id == projectId, ct);
-            var streamId = await ResolveBranchStreamIdAsync(branchId, projectId, proj.StreamId, draftsDb, requireOpen: true, ct);
+            var streamId = await ResolveBranchStreamIdAsync(branchId, projectId, proj.StreamId, draftsDb, modellingDb, requireOpen: true, ct);
             if (streamId is null)
                 return Results.BadRequest(new ErrorResponse("invalid_branch", "Branch not found or not open for this project"));
             return (await handler.HandleAsync(
@@ -224,6 +252,7 @@ public static class ModellingEndpoints
             Guid? branchId,
             ClaimsPrincipal user, WorkspacesDbContext workspacesDb,
             DraftsDbContext draftsDb,
+            ModellingDbContext modellingDb,
             WorkspaceAuthorizationService auth,
             ICommandHandler<RemoveRelationshipCommandEnvelope, CommandResult> handler,
             CancellationToken ct) =>
@@ -231,7 +260,7 @@ public static class ModellingEndpoints
             var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
             await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
             var proj = await workspacesDb.Projects.AsNoTracking().FirstAsync(p => p.Id == projectId, ct);
-            var streamId = await ResolveBranchStreamIdAsync(branchId, projectId, proj.StreamId, draftsDb, requireOpen: true, ct);
+            var streamId = await ResolveBranchStreamIdAsync(branchId, projectId, proj.StreamId, draftsDb, modellingDb, requireOpen: true, ct);
             if (streamId is null)
                 return Results.BadRequest(new ErrorResponse("invalid_branch", "Branch not found or not open for this project"));
             return (await handler.HandleAsync(
@@ -245,14 +274,14 @@ public static class ModellingEndpoints
             Guid projectId, Guid? branchId,
             AddMessageRequest request,
             ClaimsPrincipal user, WorkspacesDbContext workspacesDb,
-            DraftsDbContext draftsDb, WorkspaceAuthorizationService auth,
+            DraftsDbContext draftsDb, ModellingDbContext modellingDb, WorkspaceAuthorizationService auth,
             ICommandHandler<AddMessageCommandEnvelope, CommandResult<MessageDto>> handler,
             CancellationToken ct) =>
         {
             var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
             await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
             var proj = await workspacesDb.Projects.AsNoTracking().FirstAsync(p => p.Id == projectId, ct);
-            var streamId = await ResolveBranchStreamIdAsync(branchId, projectId, proj.StreamId, draftsDb, requireOpen: true, ct);
+            var streamId = await ResolveBranchStreamIdAsync(branchId, projectId, proj.StreamId, draftsDb, modellingDb, requireOpen: true, ct);
             if (streamId is null)
                 return Results.BadRequest(new ErrorResponse("invalid_branch", "Branch not found or not open for this project"));
             return (await handler.HandleAsync(
@@ -270,34 +299,39 @@ public static class ModellingEndpoints
             var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
             await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Viewer, ct);
             var proj = await workspacesDb.Projects.AsNoTracking().FirstAsync(p => p.Id == projectId, ct);
-            var streamId = await ResolveBranchStreamIdAsync(branchId, projectId, proj.StreamId, draftsDb, requireOpen: false, ct);
+            var streamId = await ResolveBranchStreamIdAsync(branchId, projectId, proj.StreamId, draftsDb, db, requireOpen: false, ct);
             if (streamId is null)
                 return Results.BadRequest(new ErrorResponse("invalid_branch", "Branch not found for this project"));
             return await ListMessages.Handle(projectId, streamId.Value, producerId, cursor, limit, db, ct);
         });
 
         messages.MapGet("/{messageId}", async (
-            Guid projectId, Guid messageId,
-            ClaimsPrincipal user, WorkspaceAuthorizationService auth,
+            Guid projectId, Guid messageId, Guid? branchId,
+            ClaimsPrincipal user, WorkspacesDbContext workspacesDb,
+            DraftsDbContext draftsDb, WorkspaceAuthorizationService auth,
             ModellingDbContext db, CancellationToken ct) =>
         {
             var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
             await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Viewer, ct);
-            return await GetMessage.Handle(projectId, messageId, db, ct);
+            var proj = await workspacesDb.Projects.AsNoTracking().FirstAsync(p => p.Id == projectId, ct);
+            var streamId = await ResolveBranchStreamIdAsync(branchId, projectId, proj.StreamId, draftsDb, db, requireOpen: false, ct);
+            if (streamId is null)
+                return Results.BadRequest(new ErrorResponse("invalid_branch", "Branch not found for this project"));
+            return await GetMessage.Handle(projectId, streamId.Value, messageId, db, ct);
         });
 
         messages.MapPatch("/{messageId}", async (
             Guid projectId, Guid messageId, Guid? branchId,
             UpdateMessageRequest request,
             ClaimsPrincipal user, WorkspacesDbContext workspacesDb,
-            DraftsDbContext draftsDb, WorkspaceAuthorizationService auth,
+            DraftsDbContext draftsDb, ModellingDbContext modellingDb, WorkspaceAuthorizationService auth,
             ICommandHandler<UpdateMessageCommandEnvelope, CommandResult<MessageDto>> handler,
             CancellationToken ct) =>
         {
             var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
             await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
             var proj = await workspacesDb.Projects.AsNoTracking().FirstAsync(p => p.Id == projectId, ct);
-            var streamId = await ResolveBranchStreamIdAsync(branchId, projectId, proj.StreamId, draftsDb, requireOpen: true, ct);
+            var streamId = await ResolveBranchStreamIdAsync(branchId, projectId, proj.StreamId, draftsDb, modellingDb, requireOpen: true, ct);
             if (streamId is null)
                 return Results.BadRequest(new ErrorResponse("invalid_branch", "Branch not found or not open for this project"));
             return (await handler.HandleAsync(
@@ -308,14 +342,14 @@ public static class ModellingEndpoints
         messages.MapDelete("/{messageId}", async (
             Guid projectId, Guid messageId, Guid? branchId,
             ClaimsPrincipal user, WorkspacesDbContext workspacesDb,
-            DraftsDbContext draftsDb, WorkspaceAuthorizationService auth,
+            DraftsDbContext draftsDb, ModellingDbContext modellingDb, WorkspaceAuthorizationService auth,
             ICommandHandler<RemoveMessageCommandEnvelope, CommandResult> handler,
             CancellationToken ct) =>
         {
             var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
             await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
             var proj = await workspacesDb.Projects.AsNoTracking().FirstAsync(p => p.Id == projectId, ct);
-            var streamId = await ResolveBranchStreamIdAsync(branchId, projectId, proj.StreamId, draftsDb, requireOpen: true, ct);
+            var streamId = await ResolveBranchStreamIdAsync(branchId, projectId, proj.StreamId, draftsDb, modellingDb, requireOpen: true, ct);
             if (streamId is null)
                 return Results.BadRequest(new ErrorResponse("invalid_branch", "Branch not found or not open for this project"));
             return (await handler.HandleAsync(

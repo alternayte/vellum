@@ -28,20 +28,43 @@ public static class ListElements
                 || (e.Name == sortKey && e.Id.CompareTo(afterId) > 0));
         }
 
-        var items = await query
+        var rows = await query
             .OrderBy(e => e.Name).ThenBy(e => e.Id)
             .Take(pageSize + 1)
-            .Select(e => new ElementDto(e.Id, e.Kind, e.Name, e.Description,
-                e.Technology, e.OwnerId, e.Status, e.ParentId, e.Tags, e.Icon))
+            .Select(e => new
+            {
+                e.Id,
+                e.Kind,
+                e.Name,
+                e.Description,
+                e.Technology,
+                e.OwnerId,
+                e.Status,
+                e.ParentId,
+                e.Tags,
+                e.Icon,
+                e.FactStatus,
+                e.ProvenanceSource,
+                e.ProvenanceRevision,
+                e.ProvenanceConfidence,
+                e.ProvenanceAcceptedBy,
+                e.ProvenanceAcceptedAt,
+            })
             .ToListAsync(ct);
 
         string? nextCursor = null;
-        if (items.Count > pageSize)
+        if (rows.Count > pageSize)
         {
-            items = items[..pageSize];
-            var last = items[^1];
+            rows = rows[..pageSize];
+            var last = rows[^1];
             nextCursor = CursorEncoder.Encode(last.Name, last.Id);
         }
+
+        var items = rows.Select(e => new ElementDto(
+            e.Id, e.Kind, e.Name, e.Description, e.Technology, e.OwnerId, e.Status,
+            e.ParentId, e.Tags, e.Icon, e.FactStatus,
+            Model.ProvenanceMapper.ToDto(e.ProvenanceSource, e.ProvenanceRevision, e.ProvenanceConfidence,
+                e.ProvenanceAcceptedBy, e.ProvenanceAcceptedAt))).ToList();
 
         return Results.Ok(new Page<ElementDto>(items, nextCursor));
     }

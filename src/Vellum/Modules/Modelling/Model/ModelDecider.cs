@@ -3,42 +3,44 @@ using Vellum.Kernel.Results;
 namespace Vellum.Modules.Modelling.Model;
 
 public sealed record AddElementCommand(
-    Guid Id, ElementKind Kind, string Name, string? Description,
+    ElementId Id, ElementKind Kind, string Name, string? Description,
     string? Technology, Guid? OwnerId, ElementStatus Status,
-    Guid? ParentId, string[] Tags);
+    ElementId? ParentId, string[] Tags);
 
 public sealed record UpdateElementCommand(
-    Guid ElementId,
+    ElementId ElementId,
     string? Name = null, bool SetName = false,
     string? Description = null, bool SetDescription = false,
     string? Technology = null, bool SetTechnology = false,
     Guid? OwnerId = null, bool SetOwnerId = false,
-    Guid? ParentId = null, bool SetParentId = false,
+    ElementId? ParentId = null, bool SetParentId = false,
     ElementStatus? Status = null,
     string[]? Tags = null,
     string? Icon = null, bool SetIcon = false);
 
 public sealed record AddRelationshipCommand(
-    Guid Id, Guid FromId, Guid ToId, string? Label, string? Technology);
+    RelationshipId Id, ElementId FromId, ElementId ToId, string? Label, string? Technology,
+    RelationshipKind Kind = RelationshipKind.Structural);
 
 public sealed record UpdateRelationshipCommand(
-    Guid RelationshipId,
+    RelationshipId RelationshipId,
     string? Label = null, bool SetLabel = false,
     string? Technology = null, bool SetTechnology = false,
-    string? LineShape = null, bool SetLineShape = false);
+    string? LineShape = null, bool SetLineShape = false,
+    RelationshipKind? Kind = null, bool SetKind = false);
 
 public sealed record AddMessageCommand(
-    Guid Id, string Name, string? Description,
-    Guid ProducerId, Guid[] ConsumerIds,
-    Guid? SchemaId, string[] Tags);
+    MessageId Id, string Name, string? Description,
+    ElementId ProducerId, ElementId[] ConsumerIds,
+    SchemaId? SchemaId, string[] Tags);
 
 public sealed record UpdateMessageCommand(
-    Guid MessageId,
+    MessageId MessageId,
     string? Name = null, bool SetName = false,
     string? Description = null, bool SetDescription = false,
-    Guid? ProducerId = null, bool SetProducerId = false,
-    Guid[]? ConsumerIds = null, bool SetConsumerIds = false,
-    Guid? SchemaId = null, bool SetSchemaId = false,
+    ElementId? ProducerId = null, bool SetProducerId = false,
+    ElementId[]? ConsumerIds = null, bool SetConsumerIds = false,
+    SchemaId? SchemaId = null, bool SetSchemaId = false,
     string[]? Tags = null);
 
 public static class ModelDecider
@@ -112,7 +114,7 @@ public static class ModelDecider
         return new CommandResult<IReadOnlyList<ModelEvent>>.Success(events);
     }
 
-    public static CommandResult<IReadOnlyList<ModelEvent>> RemoveElement(ModelState state, Guid elementId)
+    public static CommandResult<IReadOnlyList<ModelEvent>> RemoveElement(ModelState state, ElementId elementId)
     {
         if (!state.Elements.ContainsKey(elementId))
             return new CommandResult<IReadOnlyList<ModelEvent>>.NotFound("Element not found");
@@ -134,7 +136,7 @@ public static class ModelDecider
             return new CommandResult<IReadOnlyList<ModelEvent>>.Invalid([new ValidationError("toId", "Target element not found")]);
 
         return new CommandResult<IReadOnlyList<ModelEvent>>.Success(
-            [new ModelEvent.RelationshipAdded(cmd.Id, cmd.FromId, cmd.ToId, cmd.Label, cmd.Technology, null)]);
+            [new ModelEvent.RelationshipAdded(cmd.Id, cmd.FromId, cmd.ToId, cmd.Label, cmd.Technology, null, cmd.Kind)]);
     }
 
     public static CommandResult<IReadOnlyList<ModelEvent>> UpdateRelationship(ModelState state, UpdateRelationshipCommand cmd)
@@ -153,10 +155,13 @@ public static class ModelDecider
         if (cmd.SetLineShape && cmd.LineShape != rel.LineShape)
             events.Add(new ModelEvent.RelationshipLineShapeChanged(cmd.RelationshipId, cmd.LineShape));
 
+        if (cmd.SetKind && cmd.Kind.HasValue && cmd.Kind.Value != rel.Kind)
+            events.Add(new ModelEvent.RelationshipKindChanged(cmd.RelationshipId, cmd.Kind.Value));
+
         return new CommandResult<IReadOnlyList<ModelEvent>>.Success(events);
     }
 
-    public static CommandResult<IReadOnlyList<ModelEvent>> RemoveRelationship(ModelState state, Guid relationshipId)
+    public static CommandResult<IReadOnlyList<ModelEvent>> RemoveRelationship(ModelState state, RelationshipId relationshipId)
     {
         if (!state.Relationships.ContainsKey(relationshipId))
             return new CommandResult<IReadOnlyList<ModelEvent>>.NotFound("Relationship not found");
@@ -230,7 +235,7 @@ public static class ModelDecider
                 cmd.Tags)]);
     }
 
-    public static CommandResult<IReadOnlyList<ModelEvent>> RemoveMessage(ModelState state, Guid messageId)
+    public static CommandResult<IReadOnlyList<ModelEvent>> RemoveMessage(ModelState state, MessageId messageId)
     {
         if (!state.Messages.ContainsKey(messageId))
             return new CommandResult<IReadOnlyList<ModelEvent>>.NotFound("Message not found");
@@ -239,7 +244,65 @@ public static class ModelDecider
             [new ModelEvent.MessageRemoved(messageId)]);
     }
 
-    private static void CollectCascadeRemovals(ModelState state, Guid elementId, List<ModelEvent> events, HashSet<Guid> seenRelationships)
+    public static CommandResult<IReadOnlyList<ModelEvent>> RecordElementProvenance(
+        ModelState state, ElementId elementId, FactStatus status, Provenance? provenance)
+    {
+        if (!state.Elements.TryGetValue(elementId, out var element))
+            return new CommandResult<IReadOnlyList<ModelEvent>>.NotFound("Element not found");
+
+        var validationError = FactRules.Validate(status, provenance);
+        if (validationError is not null)
+            return new CommandResult<IReadOnlyList<ModelEvent>>.Invalid([validationError]);
+
+        if (element.FactStatus == status && ProvenanceEquivalent(element.Provenance, provenance))
+            return new CommandResult<IReadOnlyList<ModelEvent>>.Success([]);
+
+        return new CommandResult<IReadOnlyList<ModelEvent>>.Success(
+            [new ModelEvent.ElementProvenanceRecorded(elementId, status, provenance)]);
+    }
+
+    public static CommandResult<IReadOnlyList<ModelEvent>> RecordRelationshipProvenance(
+        ModelState state, RelationshipId relationshipId, FactStatus status, Provenance? provenance)
+    {
+        if (!state.Relationships.TryGetValue(relationshipId, out var relationship))
+            return new CommandResult<IReadOnlyList<ModelEvent>>.NotFound("Relationship not found");
+
+        var validationError = FactRules.Validate(status, provenance);
+        if (validationError is not null)
+            return new CommandResult<IReadOnlyList<ModelEvent>>.Invalid([validationError]);
+
+        if (relationship.FactStatus == status && ProvenanceEquivalent(relationship.Provenance, provenance))
+            return new CommandResult<IReadOnlyList<ModelEvent>>.Success([]);
+
+        return new CommandResult<IReadOnlyList<ModelEvent>>.Success(
+            [new ModelEvent.RelationshipProvenanceRecorded(relationshipId, status, provenance)]);
+    }
+
+    public static CommandResult<IReadOnlyList<ModelEvent>> RecordMessageProvenance(
+        ModelState state, MessageId messageId, FactStatus status, Provenance? provenance)
+    {
+        if (!state.Messages.TryGetValue(messageId, out var message))
+            return new CommandResult<IReadOnlyList<ModelEvent>>.NotFound("Message not found");
+
+        var validationError = FactRules.Validate(status, provenance);
+        if (validationError is not null)
+            return new CommandResult<IReadOnlyList<ModelEvent>>.Invalid([validationError]);
+
+        if (message.FactStatus == status && ProvenanceEquivalent(message.Provenance, provenance))
+            return new CommandResult<IReadOnlyList<ModelEvent>>.Success([]);
+
+        return new CommandResult<IReadOnlyList<ModelEvent>>.Success(
+            [new ModelEvent.MessageProvenanceRecorded(messageId, status, provenance)]);
+    }
+
+    /// <summary>
+    /// Compares the claim-bearing fields only. Acceptance stamps change on every call and
+    /// must not by themselves produce a new event.
+    /// </summary>
+    private static bool ProvenanceEquivalent(Provenance? a, Provenance? b) =>
+        a?.Source == b?.Source && a?.Revision == b?.Revision && a?.Confidence == b?.Confidence;
+
+    private static void CollectCascadeRemovals(ModelState state, ElementId elementId, List<ModelEvent> events, HashSet<Guid> seenRelationships)
     {
         // Recursively remove children first
         var children = state.Elements.Values.Where(e => e.ParentId == elementId).ToList();
@@ -268,7 +331,7 @@ public static class ModelDecider
         events.Add(new ModelEvent.ElementRemoved(elementId));
     }
 
-    private static ValidationError? ValidateContainment(ModelState state, ElementKind kind, Guid? parentId)
+    private static ValidationError? ValidateContainment(ModelState state, ElementKind kind, ElementId? parentId)
     {
         var requiredParentKind = ValidParentKinds[kind];
 

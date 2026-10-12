@@ -30,25 +30,38 @@ public static class ExportModel
             .FirstOrDefaultAsync(p => p.Id == projectId, ct);
         if (project is null) return Results.NotFound();
 
-        var elements = await modellingDb.Elements.AsNoTracking()
+        var elementEntities = await modellingDb.Elements.AsNoTracking()
             .Where(e => e.ProjectId == projectId && e.Branch == project.StreamId)
-            .Select(e => new ElementExport(e.Id, e.Kind, e.Name, e.Description,
-                e.Technology, e.Status, e.ParentId, e.Tags))
+            .OrderBy(e => e.Id)
             .ToListAsync(ct);
+        var elements = elementEntities.Select(e => new ElementExport(
+            e.Id, e.Kind, e.Name, e.Description, e.Technology, e.Status, e.ParentId, e.Tags,
+            e.Icon, e.FactStatus,
+            ProvenanceExport.From(e.ProvenanceSource, e.ProvenanceRevision, e.ProvenanceConfidence,
+                e.ProvenanceAcceptedBy, e.ProvenanceAcceptedAt))).ToList();
 
-        var relationships = await modellingDb.Relationships.AsNoTracking()
+        var relationshipEntities = await modellingDb.Relationships.AsNoTracking()
             .Where(r => r.ProjectId == projectId && r.Branch == project.StreamId)
-            .Select(r => new RelationshipExport(r.Id, r.FromId, r.ToId, r.Label, r.Technology))
+            .OrderBy(r => r.Id)
             .ToListAsync(ct);
+        var relationships = relationshipEntities.Select(r => new RelationshipExport(
+            r.Id, r.FromId, r.ToId, r.Label, r.Technology, r.Kind, r.LineShape, r.FactStatus,
+            ProvenanceExport.From(r.ProvenanceSource, r.ProvenanceRevision, r.ProvenanceConfidence,
+                r.ProvenanceAcceptedBy, r.ProvenanceAcceptedAt))).ToList();
 
-        var messages = await modellingDb.Messages.AsNoTracking()
+        var messageEntities = await modellingDb.Messages.AsNoTracking()
             .Where(m => m.ProjectId == projectId && m.Branch == project.StreamId)
-            .Select(m => new MessageExport(m.Id, m.Name, m.Description,
-                m.ProducerId, m.ConsumerIds, m.SchemaId, m.Tags))
+            .OrderBy(m => m.Id)
             .ToListAsync(ct);
+        var messages = messageEntities.Select(m => new MessageExport(
+            m.Id, m.Name, m.Description, m.ProducerId, m.ConsumerIds, m.SchemaId, m.Tags,
+            m.FactStatus,
+            ProvenanceExport.From(m.ProvenanceSource, m.ProvenanceRevision, m.ProvenanceConfidence,
+                m.ProvenanceAcceptedBy, m.ProvenanceAcceptedAt))).ToList();
 
         var schemas = await schemasDb.Schemas.AsNoTracking()
             .Where(s => s.ProjectId == projectId)
+            .OrderBy(s => s.Id)
             .Select(s => new SchemaExport(s.Id, s.Name, s.Description, s.Content, s.Version))
             .ToListAsync(ct);
 

@@ -49,6 +49,13 @@ public static class ExecuteMerge
             return Results.Conflict(new ErrorResponse("conflict",
                 "Main has changed since preview. Please re-preview."));
 
+        var duplicateResolution = request.Resolutions
+            .GroupBy(r => r.EntityId)
+            .FirstOrDefault(g => g.Count() > 1);
+        if (duplicateResolution is not null)
+            return Results.BadRequest(new ErrorResponse("validation_error",
+                $"Duplicate resolution for entity {duplicateResolution.Key}"));
+
         var baseState = JsonSerializer.Deserialize<ModelState>(draft.BaseSnapshot, JsonOpts)!;
         var (theirsState, _) = await store.LoadAsync<ModelState, ModelEvent>(draft.StreamId, ct);
 
@@ -105,7 +112,7 @@ public static class ExecuteMerge
                 case ModelEvent.ElementAdded added:
                 {
                     // Element may already exist on the draft branch — upsert to main
-                    var existing = await db.Elements.FindAsync([added.Id], ct);
+                    var existing = await FindElementAsync(db, added.Id, mainStreamId, draftStreamId, ct);
                     if (existing is not null)
                     {
                         existing.Branch = mainStreamId;
@@ -140,69 +147,84 @@ public static class ExecuteMerge
 
                 case ModelEvent.ElementRenamed renamed:
                 {
-                    var el = await db.Elements.FindAsync([renamed.ElementId], ct);
+                    var el = await FindElementAsync(db, renamed.ElementId, mainStreamId, draftStreamId, ct);
                     if (el is not null) el.Name = renamed.Name;
                     break;
                 }
 
                 case ModelEvent.ElementDescriptionChanged descChanged:
                 {
-                    var el = await db.Elements.FindAsync([descChanged.ElementId], ct);
+                    var el = await FindElementAsync(db, descChanged.ElementId, mainStreamId, draftStreamId, ct);
                     if (el is not null) el.Description = descChanged.Description;
                     break;
                 }
 
                 case ModelEvent.ElementTechnologyChanged techChanged:
                 {
-                    var el = await db.Elements.FindAsync([techChanged.ElementId], ct);
+                    var el = await FindElementAsync(db, techChanged.ElementId, mainStreamId, draftStreamId, ct);
                     if (el is not null) el.Technology = techChanged.Technology;
                     break;
                 }
 
                 case ModelEvent.ElementOwnerChanged ownerChanged:
                 {
-                    var el = await db.Elements.FindAsync([ownerChanged.ElementId], ct);
+                    var el = await FindElementAsync(db, ownerChanged.ElementId, mainStreamId, draftStreamId, ct);
                     if (el is not null) el.OwnerId = ownerChanged.OwnerId;
                     break;
                 }
 
                 case ModelEvent.ElementReparented reparented:
                 {
-                    var el = await db.Elements.FindAsync([reparented.ElementId], ct);
+                    var el = await FindElementAsync(db, reparented.ElementId, mainStreamId, draftStreamId, ct);
                     if (el is not null) el.ParentId = reparented.ParentId;
                     break;
                 }
 
                 case ModelEvent.ElementStatusChanged statusChanged:
                 {
-                    var el = await db.Elements.FindAsync([statusChanged.ElementId], ct);
+                    var el = await FindElementAsync(db, statusChanged.ElementId, mainStreamId, draftStreamId, ct);
                     if (el is not null) el.Status = statusChanged.Status.ToString().ToLowerInvariant();
                     break;
                 }
 
                 case ModelEvent.ElementRetagged retagged:
                 {
-                    var el = await db.Elements.FindAsync([retagged.ElementId], ct);
+                    var el = await FindElementAsync(db, retagged.ElementId, mainStreamId, draftStreamId, ct);
                     if (el is not null) el.Tags = retagged.Tags;
                     break;
                 }
 
                 case ModelEvent.ElementRemoved removed:
                 {
-                    var el = await db.Elements.FindAsync([removed.ElementId], ct);
+                    var el = await FindElementAsync(db, removed.ElementId, mainStreamId, draftStreamId, ct);
                     if (el is not null) db.Elements.Remove(el);
+                    break;
+                }
+
+                case ModelEvent.ElementProvenanceRecorded elementProvenance:
+                {
+                    var el = await FindElementAsync(db, elementProvenance.ElementId, mainStreamId, draftStreamId, ct);
+                    if (el is not null) ApplyProvenance(el, elementProvenance.Status, elementProvenance.Provenance);
+                    break;
+                }
+
+                case ModelEvent.ElementIconChanged iconChanged:
+                {
+                    var el = await FindElementAsync(db, iconChanged.ElementId, mainStreamId, draftStreamId, ct);
+                    if (el is not null) el.Icon = iconChanged.Icon;
                     break;
                 }
 
                 case ModelEvent.RelationshipAdded relAdded:
                 {
-                    var existing = await db.Relationships.FindAsync([relAdded.Id], ct);
+                    var existing = await FindRelationshipAsync(db, relAdded.Id, mainStreamId, draftStreamId, ct);
                     if (existing is not null)
                     {
                         existing.Branch = mainStreamId;
                         existing.Label = relAdded.Label;
                         existing.Technology = relAdded.Technology;
                         existing.MessageId = relAdded.MessageId;
+                        existing.Kind = relAdded.Kind.ToString().ToLowerInvariant();
                     }
                     else
                     {
@@ -216,6 +238,7 @@ public static class ExecuteMerge
                             Label = relAdded.Label,
                             Technology = relAdded.Technology,
                             MessageId = relAdded.MessageId,
+                            Kind = relAdded.Kind.ToString().ToLowerInvariant(),
                         });
                     }
                     break;
@@ -223,35 +246,56 @@ public static class ExecuteMerge
 
                 case ModelEvent.RelationshipLabelChanged labelChanged:
                 {
-                    var rel = await db.Relationships.FindAsync([labelChanged.RelationshipId], ct);
+                    var rel = await FindRelationshipAsync(db, labelChanged.RelationshipId, mainStreamId, draftStreamId, ct);
                     if (rel is not null) rel.Label = labelChanged.Label;
                     break;
                 }
 
                 case ModelEvent.RelationshipTechnologyChanged relTechChanged:
                 {
-                    var rel = await db.Relationships.FindAsync([relTechChanged.RelationshipId], ct);
+                    var rel = await FindRelationshipAsync(db, relTechChanged.RelationshipId, mainStreamId, draftStreamId, ct);
                     if (rel is not null) rel.Technology = relTechChanged.Technology;
                     break;
                 }
 
                 case ModelEvent.RelationshipRemoved relRemoved:
                 {
-                    var rel = await db.Relationships.FindAsync([relRemoved.RelationshipId], ct);
+                    var rel = await FindRelationshipAsync(db, relRemoved.RelationshipId, mainStreamId, draftStreamId, ct);
                     if (rel is not null) db.Relationships.Remove(rel);
+                    break;
+                }
+
+                case ModelEvent.RelationshipKindChanged kindChanged:
+                {
+                    var rel = await FindRelationshipAsync(db, kindChanged.RelationshipId, mainStreamId, draftStreamId, ct);
+                    if (rel is not null) rel.Kind = kindChanged.Kind.ToString().ToLowerInvariant();
+                    break;
+                }
+
+                case ModelEvent.RelationshipLineShapeChanged lineShapeChanged:
+                {
+                    var rel = await FindRelationshipAsync(db, lineShapeChanged.RelationshipId, mainStreamId, draftStreamId, ct);
+                    if (rel is not null) rel.LineShape = lineShapeChanged.LineShape;
+                    break;
+                }
+
+                case ModelEvent.RelationshipProvenanceRecorded relationshipProvenance:
+                {
+                    var rel = await FindRelationshipAsync(db, relationshipProvenance.RelationshipId, mainStreamId, draftStreamId, ct);
+                    if (rel is not null) ApplyProvenance(rel, relationshipProvenance.Status, relationshipProvenance.Provenance);
                     break;
                 }
 
                 case ModelEvent.MessageAdded msgAdded:
                 {
-                    var existing = await db.Messages.FindAsync([msgAdded.Id], ct);
+                    var existing = await FindMessageAsync(db, msgAdded.Id, mainStreamId, draftStreamId, ct);
                     if (existing is not null)
                     {
                         existing.Branch = mainStreamId;
                         existing.Name = msgAdded.Name;
                         existing.Description = msgAdded.Description;
                         existing.ProducerId = msgAdded.ProducerId;
-                        existing.ConsumerIds = msgAdded.ConsumerIds;
+                        existing.ConsumerIds = msgAdded.ConsumerIds.ToGuids();
                         existing.SchemaId = msgAdded.SchemaId;
                         existing.Tags = msgAdded.Tags;
                     }
@@ -265,7 +309,7 @@ public static class ExecuteMerge
                             Name = msgAdded.Name,
                             Description = msgAdded.Description,
                             ProducerId = msgAdded.ProducerId,
-                            ConsumerIds = msgAdded.ConsumerIds,
+                            ConsumerIds = msgAdded.ConsumerIds.ToGuids(),
                             SchemaId = msgAdded.SchemaId,
                             Tags = msgAdded.Tags,
                         });
@@ -275,28 +319,111 @@ public static class ExecuteMerge
 
                 case ModelEvent.MessageUpdated msgUpdated:
                 {
-                    var msg = await db.Messages.FindAsync([msgUpdated.MessageId], ct);
+                    var msg = await FindMessageAsync(db, msgUpdated.MessageId, mainStreamId, draftStreamId, ct);
                     if (msg is not null)
                     {
                         if (msgUpdated.Name is not null) msg.Name = msgUpdated.Name;
                         if (msgUpdated.Description is not null) msg.Description = msgUpdated.Description;
                         if (msgUpdated.ProducerId is not null) msg.ProducerId = msgUpdated.ProducerId.Value;
-                        if (msgUpdated.ConsumerIds is not null) msg.ConsumerIds = msgUpdated.ConsumerIds;
+                        if (msgUpdated.ConsumerIds is not null) msg.ConsumerIds = msgUpdated.ConsumerIds.ToGuids();
                         if (msgUpdated.SetSchemaId) msg.SchemaId = msgUpdated.SchemaId;
+                        if (msgUpdated.Tags is not null) msg.Tags = msgUpdated.Tags;
                     }
                     break;
                 }
 
                 case ModelEvent.MessageRemoved msgRemoved:
                 {
-                    var msg = await db.Messages.FindAsync([msgRemoved.MessageId], ct);
+                    var msg = await FindMessageAsync(db, msgRemoved.MessageId, mainStreamId, draftStreamId, ct);
                     if (msg is not null) db.Messages.Remove(msg);
+                    break;
+                }
+
+                case ModelEvent.MessageProvenanceRecorded messageProvenance:
+                {
+                    var msg = await FindMessageAsync(db, messageProvenance.MessageId, mainStreamId, draftStreamId, ct);
+                    if (msg is not null) ApplyProvenance(msg, messageProvenance.Status, messageProvenance.Provenance);
                     break;
                 }
             }
         }
 
         await db.SaveChangesAsync(ct);
+    }
+
+    private static void ApplyProvenance(ElementEntity entity, FactStatus status, Provenance? provenance)
+    {
+        entity.FactStatus = status.ToApiString();
+        entity.ProvenanceSource = provenance?.Source;
+        entity.ProvenanceRevision = provenance?.Revision;
+        entity.ProvenanceConfidence = provenance?.Confidence;
+        entity.ProvenanceAcceptedBy = provenance?.AcceptedBy;
+        entity.ProvenanceAcceptedAt = provenance?.AcceptedAt;
+    }
+
+    private static void ApplyProvenance(RelationshipEntity entity, FactStatus status, Provenance? provenance)
+    {
+        entity.FactStatus = status.ToApiString();
+        entity.ProvenanceSource = provenance?.Source;
+        entity.ProvenanceRevision = provenance?.Revision;
+        entity.ProvenanceConfidence = provenance?.Confidence;
+        entity.ProvenanceAcceptedBy = provenance?.AcceptedBy;
+        entity.ProvenanceAcceptedAt = provenance?.AcceptedAt;
+    }
+
+    private static void ApplyProvenance(MessageEntity entity, FactStatus status, Provenance? provenance)
+    {
+        entity.FactStatus = status.ToApiString();
+        entity.ProvenanceSource = provenance?.Source;
+        entity.ProvenanceRevision = provenance?.Revision;
+        entity.ProvenanceConfidence = provenance?.Confidence;
+        entity.ProvenanceAcceptedBy = provenance?.AcceptedBy;
+        entity.ProvenanceAcceptedAt = provenance?.AcceptedAt;
+    }
+
+    /// <summary>
+    /// Finds a row by architecture ID on the main branch, falling back to the draft
+    /// branch. Merge events target the main branch; rows created on the draft are moved
+    /// over only when main has no row with that ID. Rows added earlier in the same batch
+    /// are found through the change tracker before the database.
+    /// </summary>
+    private static async Task<ElementEntity?> FindElementAsync(
+        ModellingDbContext db, ElementId id, Guid mainStreamId, Guid draftStreamId, CancellationToken ct)
+    {
+        var local = db.Elements.Local
+            .Where(e => e.Id == id.Value && (e.Branch == mainStreamId || e.Branch == draftStreamId))
+            .OrderBy(e => e.Branch == mainStreamId ? 0 : 1)
+            .FirstOrDefault();
+        if (local is not null) return local;
+
+        return await db.Elements.FirstOrDefaultAsync(e => e.Id == id.Value && e.Branch == mainStreamId, ct)
+            ?? await db.Elements.FirstOrDefaultAsync(e => e.Id == id.Value && e.Branch == draftStreamId, ct);
+    }
+
+    private static async Task<RelationshipEntity?> FindRelationshipAsync(
+        ModellingDbContext db, RelationshipId id, Guid mainStreamId, Guid draftStreamId, CancellationToken ct)
+    {
+        var local = db.Relationships.Local
+            .Where(r => r.Id == id.Value && (r.Branch == mainStreamId || r.Branch == draftStreamId))
+            .OrderBy(r => r.Branch == mainStreamId ? 0 : 1)
+            .FirstOrDefault();
+        if (local is not null) return local;
+
+        return await db.Relationships.FirstOrDefaultAsync(r => r.Id == id.Value && r.Branch == mainStreamId, ct)
+            ?? await db.Relationships.FirstOrDefaultAsync(r => r.Id == id.Value && r.Branch == draftStreamId, ct);
+    }
+
+    private static async Task<MessageEntity?> FindMessageAsync(
+        ModellingDbContext db, MessageId id, Guid mainStreamId, Guid draftStreamId, CancellationToken ct)
+    {
+        var local = db.Messages.Local
+            .Where(m => m.Id == id.Value && (m.Branch == mainStreamId || m.Branch == draftStreamId))
+            .OrderBy(m => m.Branch == mainStreamId ? 0 : 1)
+            .FirstOrDefault();
+        if (local is not null) return local;
+
+        return await db.Messages.FirstOrDefaultAsync(m => m.Id == id.Value && m.Branch == mainStreamId, ct)
+            ?? await db.Messages.FirstOrDefaultAsync(m => m.Id == id.Value && m.Branch == draftStreamId, ct);
     }
 
     private static List<ModelEvent> BuildMergeEvents(
@@ -370,8 +497,7 @@ public static class ExecuteMerge
             return changeKind switch
             {
                 "added" when value is MessageState msg =>
-                    [new ModelEvent.MessageAdded(msg.Id, msg.Name, msg.Description,
-                        msg.ProducerId, msg.ConsumerIds, msg.SchemaId, msg.Tags)],
+                    BuildMessageAddEvents(msg),
                 "modified" when value is MessageState msg =>
                     BuildMessageUpdateEvents(entityId, msg, currentMain),
                 "removed" =>
@@ -391,6 +517,8 @@ public static class ExecuteMerge
                 el.Technology, el.OwnerId, el.Status, el.ParentId, el.Tags)
         };
         if (el.Icon is not null) events.Add(new ModelEvent.ElementIconChanged(el.Id, el.Icon));
+        if (el.FactStatus != FactStatus.Declared || el.Provenance is not null)
+            events.Add(new ModelEvent.ElementProvenanceRecorded(el.Id, el.FactStatus, el.Provenance));
         return events;
     }
 
@@ -399,9 +527,11 @@ public static class ExecuteMerge
         var events = new List<ModelEvent>
         {
             new ModelEvent.RelationshipAdded(rel.Id, rel.FromId, rel.ToId,
-                rel.Label, rel.Technology, rel.MessageId)
+                rel.Label, rel.Technology, rel.MessageId, rel.Kind)
         };
         if (rel.LineShape is not null) events.Add(new ModelEvent.RelationshipLineShapeChanged(rel.Id, rel.LineShape));
+        if (rel.FactStatus != FactStatus.Declared || rel.Provenance is not null)
+            events.Add(new ModelEvent.RelationshipProvenanceRecorded(rel.Id, rel.FactStatus, rel.Provenance));
         return events;
     }
 
@@ -417,6 +547,8 @@ public static class ExecuteMerge
                     target.Technology, target.OwnerId, target.Status, target.ParentId, target.Tags)
             };
             if (target.Icon is not null) addEvents.Add(new ModelEvent.ElementIconChanged(target.Id, target.Icon));
+            if (target.FactStatus != FactStatus.Declared || target.Provenance is not null)
+                addEvents.Add(new ModelEvent.ElementProvenanceRecorded(target.Id, target.FactStatus, target.Provenance));
             return addEvents;
         }
 
@@ -428,6 +560,8 @@ public static class ExecuteMerge
         if (current.ParentId != target.ParentId) events.Add(new ModelEvent.ElementReparented(id, target.ParentId));
         if (!current.Tags.SequenceEqual(target.Tags)) events.Add(new ModelEvent.ElementRetagged(id, target.Tags));
         if (current.Icon != target.Icon) events.Add(new ModelEvent.ElementIconChanged(id, target.Icon));
+        if (ProvenanceChanged(current, target))
+            events.Add(new ModelEvent.ElementProvenanceRecorded(id, target.FactStatus, target.Provenance));
 
         return events;
     }
@@ -441,16 +575,33 @@ public static class ExecuteMerge
             var addEvents = new List<ModelEvent>
             {
                 new ModelEvent.RelationshipAdded(target.Id, target.FromId, target.ToId,
-                    target.Label, target.Technology, target.MessageId)
+                    target.Label, target.Technology, target.MessageId, target.Kind)
             };
             if (target.LineShape is not null) addEvents.Add(new ModelEvent.RelationshipLineShapeChanged(target.Id, target.LineShape));
+            if (target.FactStatus != FactStatus.Declared || target.Provenance is not null)
+                addEvents.Add(new ModelEvent.RelationshipProvenanceRecorded(target.Id, target.FactStatus, target.Provenance));
             return addEvents;
         }
 
         if (current.Label != target.Label) events.Add(new ModelEvent.RelationshipLabelChanged(id, target.Label));
         if (current.Technology != target.Technology) events.Add(new ModelEvent.RelationshipTechnologyChanged(id, target.Technology));
         if (current.LineShape != target.LineShape) events.Add(new ModelEvent.RelationshipLineShapeChanged(id, target.LineShape));
+        if (current.Kind != target.Kind) events.Add(new ModelEvent.RelationshipKindChanged(id, target.Kind));
+        if (ProvenanceChanged(current, target))
+            events.Add(new ModelEvent.RelationshipProvenanceRecorded(id, target.FactStatus, target.Provenance));
 
+        return events;
+    }
+
+    private static List<ModelEvent> BuildMessageAddEvents(MessageState msg)
+    {
+        var events = new List<ModelEvent>
+        {
+            new ModelEvent.MessageAdded(msg.Id, msg.Name, msg.Description,
+                msg.ProducerId, msg.ConsumerIds, msg.SchemaId, msg.Tags)
+        };
+        if (msg.FactStatus != FactStatus.Declared || msg.Provenance is not null)
+            events.Add(new ModelEvent.MessageProvenanceRecorded(msg.Id, msg.FactStatus, msg.Provenance));
         return events;
     }
 
@@ -458,8 +609,16 @@ public static class ExecuteMerge
         Guid id, MessageState target, ModelState currentMain)
     {
         if (!currentMain.Messages.TryGetValue(id, out var current))
-            return [new ModelEvent.MessageAdded(target.Id, target.Name, target.Description,
-                target.ProducerId, target.ConsumerIds, target.SchemaId, target.Tags)];
+        {
+            var addEvents = new List<ModelEvent>
+            {
+                new ModelEvent.MessageAdded(target.Id, target.Name, target.Description,
+                    target.ProducerId, target.ConsumerIds, target.SchemaId, target.Tags)
+            };
+            if (target.FactStatus != FactStatus.Declared || target.Provenance is not null)
+                addEvents.Add(new ModelEvent.MessageProvenanceRecorded(target.Id, target.FactStatus, target.Provenance));
+            return addEvents;
+        }
 
         var hasChanges =
             current.Name != target.Name ||
@@ -469,16 +628,41 @@ public static class ExecuteMerge
             current.SchemaId != target.SchemaId ||
             !current.Tags.SequenceEqual(target.Tags);
 
-        if (!hasChanges) return [];
+        var events = new List<ModelEvent>();
+        if (hasChanges)
+        {
+            events.Add(new ModelEvent.MessageUpdated(
+                id,
+                current.Name != target.Name ? target.Name : null,
+                current.Description != target.Description ? target.Description : null,
+                current.ProducerId != target.ProducerId ? target.ProducerId : null,
+                !current.ConsumerIds.SequenceEqual(target.ConsumerIds) ? target.ConsumerIds : null,
+                current.SchemaId != target.SchemaId ? target.SchemaId : null,
+                current.SchemaId != target.SchemaId,
+                !current.Tags.SequenceEqual(target.Tags) ? target.Tags : null));
+        }
 
-        return [new ModelEvent.MessageUpdated(
-            id,
-            current.Name != target.Name ? target.Name : null,
-            current.Description != target.Description ? target.Description : null,
-            current.ProducerId != target.ProducerId ? target.ProducerId : null,
-            !current.ConsumerIds.SequenceEqual(target.ConsumerIds) ? target.ConsumerIds : null,
-            current.SchemaId != target.SchemaId ? target.SchemaId : null,
-            current.SchemaId != target.SchemaId,
-            !current.Tags.SequenceEqual(target.Tags) ? target.Tags : null)];
+        if (ProvenanceChanged(current, target))
+            events.Add(new ModelEvent.MessageProvenanceRecorded(id, target.FactStatus, target.Provenance));
+
+        return events;
     }
+
+    private static bool ProvenanceChanged(ElementState current, ElementState target) =>
+        current.FactStatus != target.FactStatus ||
+        current.Provenance?.Source != target.Provenance?.Source ||
+        current.Provenance?.Revision != target.Provenance?.Revision ||
+        current.Provenance?.Confidence != target.Provenance?.Confidence;
+
+    private static bool ProvenanceChanged(RelationshipState current, RelationshipState target) =>
+        current.FactStatus != target.FactStatus ||
+        current.Provenance?.Source != target.Provenance?.Source ||
+        current.Provenance?.Revision != target.Provenance?.Revision ||
+        current.Provenance?.Confidence != target.Provenance?.Confidence;
+
+    private static bool ProvenanceChanged(MessageState current, MessageState target) =>
+        current.FactStatus != target.FactStatus ||
+        current.Provenance?.Source != target.Provenance?.Source ||
+        current.Provenance?.Revision != target.Provenance?.Revision ||
+        current.Provenance?.Confidence != target.Provenance?.Confidence;
 }

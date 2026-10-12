@@ -11,6 +11,9 @@ using Vellum.Modules.Drafts;
 using Vellum.Modules.Identity;
 using Vellum.Modules.Modelling;
 using Vellum.Modules.Modelling.Elements;
+using Vellum.Modules.Modelling.Messages;
+using Vellum.Modules.Modelling.Relationships;
+using Vellum.Modules.Schemas;
 using Vellum.Modules.Views;
 using Vellum.Modules.Workspaces;
 
@@ -38,6 +41,7 @@ public class MergeEndpointTests
                     services.RemoveAll<DbContextOptions<ViewsDbContext>>();
                     services.RemoveAll<DbContextOptions<DocsDbContext>>();
                     services.RemoveAll<DbContextOptions<DraftsDbContext>>();
+                    services.RemoveAll<DbContextOptions<SchemasDbContext>>();
                     var cs = _fixture.ConnectionString;
                     services.AddDbContext<EventStoreDbContext>(o => o.UseNpgsql(cs).UseSnakeCaseNamingConvention());
                     services.AddDbContext<AppIdentityDbContext>(o => o.UseNpgsql(cs).UseSnakeCaseNamingConvention());
@@ -46,6 +50,7 @@ public class MergeEndpointTests
                     services.AddDbContext<ViewsDbContext>(o => o.UseNpgsql(cs).UseSnakeCaseNamingConvention());
                     services.AddDbContext<DocsDbContext>(o => o.UseNpgsql(cs).UseSnakeCaseNamingConvention());
                     services.AddDbContext<DraftsDbContext>(o => o.UseNpgsql(cs).UseSnakeCaseNamingConvention());
+                    services.AddDbContext<SchemasDbContext>(o => o.UseNpgsql(cs).UseSnakeCaseNamingConvention());
                 });
             });
     }
@@ -195,34 +200,172 @@ public class MergeEndpointTests
             $"/api/projects/{projectId}/elements/{elId}?branchId={draft!.StreamId}",
             new { name = "Renamed on Draft" });
 
-        // Preview to get current version before advancing main
-        var previewResp = await client.PostAsync(
-            $"/api/projects/{projectId}/drafts/{draftId}/merge/preview", null);
-        var preview = await previewResp.Content.ReadFromJsonAsync<MergePreviewResponse>();
-
         // Now rename element on main too (to create a conflict)
         await client.PatchAsJsonAsync(
             $"/api/projects/{projectId}/elements/{elId}",
             new { name = "Renamed on Main" });
 
-        // Re-preview to get updated version
+        // Preview to get updated version
         var previewResp2 = await client.PostAsync(
             $"/api/projects/{projectId}/drafts/{draftId}/merge/preview", null);
         var preview2 = await previewResp2.Content.ReadFromJsonAsync<MergePreviewResponse>();
 
-        if (preview2!.Conflicts.Count > 0)
-        {
-            // Execute without resolutions — should 400
-            var execResp = await client.PostAsJsonAsync(
-                $"/api/projects/{projectId}/drafts/{draftId}/merge/execute",
-                new { resolutions = Array.Empty<object>(), expectedMainVersion = preview2.MainVersion });
-            Assert.Equal(HttpStatusCode.BadRequest, execResp.StatusCode);
-        }
-        else
-        {
-            // If no conflict was detected (same field same value scenario), skip
-            Assert.True(true);
-        }
+        Assert.NotEmpty(preview2!.Conflicts);
+
+        // Execute without resolutions — should 400
+        var execResp = await client.PostAsJsonAsync(
+            $"/api/projects/{projectId}/drafts/{draftId}/merge/execute",
+            new { resolutions = Array.Empty<object>(), expectedMainVersion = preview2.MainVersion });
+        Assert.Equal(HttpStatusCode.BadRequest, execResp.StatusCode);
+    }
+
+    [Fact]
+    public async Task Merge_preserves_message_fact_status_and_provenance()
+    {
+        using var factory = CreateFactory();
+        using var client = await CreateAuthenticatedClientAsync(factory);
+        var projectId = await SetupProjectAsync(client);
+
+        var producerId = Guid.NewGuid();
+        var producer = await client.PostAsJsonAsync($"/api/projects/{projectId}/elements",
+            new { id = producerId, kind = "system", name = "Orders" });
+        Assert.Equal(HttpStatusCode.Created, producer.StatusCode);
+
+        var draftId = Guid.NewGuid();
+        var draftResp = await client.PostAsJsonAsync($"/api/projects/{projectId}/drafts",
+            new { id = draftId, name = "Message draft" });
+        var draft = await draftResp.Content.ReadFromJsonAsync<DraftDto>();
+
+        var messageId = Guid.NewGuid();
+        var addMessage = await client.PostAsJsonAsync(
+            $"/api/projects/{projectId}/messages?branchId={draft!.StreamId}",
+            new
+            {
+                id = messageId,
+                name = "OrderPlaced",
+                producerId,
+                consumerIds = Array.Empty<Guid>(),
+                tags = Array.Empty<string>(),
+            });
+        Assert.Equal(HttpStatusCode.Created, addMessage.StatusCode);
+
+        var patch = await client.PatchAsJsonAsync(
+            $"/api/projects/{projectId}/messages/{messageId}?branchId={draft.StreamId}",
+            new
+            {
+                factStatus = "observed-in-source",
+                provenance = new { source = "github.com/acme/orders@abc:src/Events.cs:3-9", revision = "abc" },
+                setProvenance = true,
+            });
+        Assert.Equal(HttpStatusCode.OK, patch.StatusCode);
+
+        var previewResp = await client.PostAsync(
+            $"/api/projects/{projectId}/drafts/{draftId}/merge/preview", null);
+        var preview = await previewResp.Content.ReadFromJsonAsync<MergePreviewResponse>();
+        Assert.NotNull(preview);
+
+        var exec = await client.PostAsJsonAsync(
+            $"/api/projects/{projectId}/drafts/{draftId}/merge/execute",
+            new { resolutions = Array.Empty<object>(), expectedMainVersion = preview.MainVersion });
+        Assert.Equal(HttpStatusCode.OK, exec.StatusCode);
+
+        var messages = await client.GetFromJsonAsync<Page<MessageDto>>(
+            $"/api/projects/{projectId}/messages");
+        var merged = Assert.Single(messages!.Items, m => m.Id == messageId);
+        Assert.Equal("observed-in-source", merged.FactStatus);
+        Assert.Equal("github.com/acme/orders@abc:src/Events.cs:3-9", merged.Provenance!.Source);
+        Assert.Equal("abc", merged.Provenance.Revision);
+    }
+
+    [Fact]
+    public async Task Execute_rejects_duplicate_resolutions()
+    {
+        using var factory = CreateFactory();
+        using var client = await CreateAuthenticatedClientAsync(factory);
+        var projectId = await SetupProjectAsync(client);
+
+        var elId = Guid.NewGuid();
+        await client.PostAsJsonAsync($"/api/projects/{projectId}/elements",
+            new { id = elId, kind = "system", name = "Orders" });
+
+        var draftId = Guid.NewGuid();
+        var draftResp = await client.PostAsJsonAsync($"/api/projects/{projectId}/drafts",
+            new { id = draftId, name = "Conflicting draft" });
+        var draft = await draftResp.Content.ReadFromJsonAsync<DraftDto>();
+
+        await client.PatchAsJsonAsync(
+            $"/api/projects/{projectId}/elements/{elId}?branchId={draft!.StreamId}",
+            new { name = "Renamed on Draft" });
+        await client.PatchAsJsonAsync(
+            $"/api/projects/{projectId}/elements/{elId}",
+            new { name = "Renamed on Main" });
+
+        var previewResp = await client.PostAsync(
+            $"/api/projects/{projectId}/drafts/{draftId}/merge/preview", null);
+        var preview = await previewResp.Content.ReadFromJsonAsync<MergePreviewResponse>();
+        Assert.NotNull(preview);
+        var conflict = Assert.Single(preview.Conflicts);
+
+        var exec = await client.PostAsJsonAsync(
+            $"/api/projects/{projectId}/drafts/{draftId}/merge/execute",
+            new
+            {
+                resolutions = new[]
+                {
+                    new { entityId = conflict.EntityId, resolution = "take_theirs" },
+                    new { entityId = conflict.EntityId, resolution = "take_ours" },
+                },
+                expectedMainVersion = preview.MainVersion,
+            });
+        Assert.Equal(HttpStatusCode.BadRequest, exec.StatusCode);
+    }
+
+    [Fact]
+    public async Task Merge_projects_icon_and_line_shape_changes()
+    {
+        using var factory = CreateFactory();
+        using var client = await CreateAuthenticatedClientAsync(factory);
+        var projectId = await SetupProjectAsync(client);
+
+        var ordersId = Guid.NewGuid();
+        await client.PostAsJsonAsync($"/api/projects/{projectId}/elements",
+            new { id = ordersId, kind = "system", name = "Orders" });
+        var paymentsId = Guid.NewGuid();
+        await client.PostAsJsonAsync($"/api/projects/{projectId}/elements",
+            new { id = paymentsId, kind = "system", name = "Payments" });
+
+        var relationshipId = Guid.NewGuid();
+        await client.PostAsJsonAsync($"/api/projects/{projectId}/relationships",
+            new { id = relationshipId, fromId = ordersId, toId = paymentsId, label = "calls" });
+
+        var draftId = Guid.NewGuid();
+        var draftResp = await client.PostAsJsonAsync($"/api/projects/{projectId}/drafts",
+            new { id = draftId, name = "Style draft" });
+        var draft = await draftResp.Content.ReadFromJsonAsync<DraftDto>();
+
+        await client.PatchAsJsonAsync(
+            $"/api/projects/{projectId}/elements/{ordersId}?branchId={draft!.StreamId}",
+            new { icon = "database", setIcon = true });
+        await client.PatchAsJsonAsync(
+            $"/api/projects/{projectId}/relationships/{relationshipId}?branchId={draft.StreamId}",
+            new { lineShape = "smoothstep", setLineShape = true });
+
+        var previewResp = await client.PostAsync(
+            $"/api/projects/{projectId}/drafts/{draftId}/merge/preview", null);
+        var preview = await previewResp.Content.ReadFromJsonAsync<MergePreviewResponse>();
+        Assert.NotNull(preview);
+
+        var exec = await client.PostAsJsonAsync(
+            $"/api/projects/{projectId}/drafts/{draftId}/merge/execute",
+            new { resolutions = Array.Empty<object>(), expectedMainVersion = preview.MainVersion });
+        Assert.Equal(HttpStatusCode.OK, exec.StatusCode);
+
+        var elements = await client.GetFromJsonAsync<Page<ElementDto>>($"/api/projects/{projectId}/elements");
+        Assert.Equal("database", Assert.Single(elements!.Items, e => e.Id == ordersId).Icon);
+
+        var relationships = await client.GetFromJsonAsync<Page<RelationshipDto>>(
+            $"/api/projects/{projectId}/relationships");
+        Assert.Equal("smoothstep", Assert.Single(relationships!.Items, r => r.Id == relationshipId).LineShape);
     }
 
     private sealed record Page<T>(IReadOnlyList<T> Items, string? Cursor);

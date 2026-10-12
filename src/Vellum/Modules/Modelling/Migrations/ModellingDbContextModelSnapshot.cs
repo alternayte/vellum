@@ -25,10 +25,10 @@ namespace Vellum.Modules.Modelling.Migrations
 
             modelBuilder.Entity("Vellum.Modules.Modelling.Entities.ElementEntity", b =>
                 {
-                    b.Property<Guid>("Id")
+                    b.Property<Guid>("RowId")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid")
-                        .HasColumnName("id");
+                        .HasColumnName("row_id");
 
                     b.Property<Guid>("Branch")
                         .HasColumnType("uuid")
@@ -38,9 +38,18 @@ namespace Vellum.Modules.Modelling.Migrations
                         .HasColumnType("text")
                         .HasColumnName("description");
 
+                    b.Property<string>("FactStatus")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("fact_status");
+
                     b.Property<string>("Icon")
                         .HasColumnType("text")
                         .HasColumnName("icon");
+
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
 
                     b.Property<string>("Kind")
                         .IsRequired()
@@ -64,6 +73,26 @@ namespace Vellum.Modules.Modelling.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("project_id");
 
+                    b.Property<DateTimeOffset?>("ProvenanceAcceptedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("provenance_accepted_at");
+
+                    b.Property<Guid?>("ProvenanceAcceptedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("provenance_accepted_by");
+
+                    b.Property<double?>("ProvenanceConfidence")
+                        .HasColumnType("double precision")
+                        .HasColumnName("provenance_confidence");
+
+                    b.Property<string>("ProvenanceRevision")
+                        .HasColumnType("text")
+                        .HasColumnName("provenance_revision");
+
+                    b.Property<string>("ProvenanceSource")
+                        .HasColumnType("text")
+                        .HasColumnName("provenance_source");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasColumnType("text")
@@ -78,11 +107,12 @@ namespace Vellum.Modules.Modelling.Migrations
                         .HasColumnType("text")
                         .HasColumnName("technology");
 
-                    b.HasKey("Id")
+                    b.HasKey("RowId")
                         .HasName("pk_elements");
 
-                    b.HasIndex("ProjectId", "Branch")
-                        .HasDatabaseName("ix_elements_project_id_branch");
+                    b.HasIndex("ProjectId", "Branch", "Id")
+                        .IsUnique()
+                        .HasDatabaseName("ix_elements_project_id_branch_id");
 
                     b.HasIndex("ProjectId", "Branch", "ParentId")
                         .HasDatabaseName("ix_elements_project_id_branch_parent_id");
@@ -92,10 +122,10 @@ namespace Vellum.Modules.Modelling.Migrations
 
             modelBuilder.Entity("Vellum.Modules.Modelling.Entities.MessageEntity", b =>
                 {
-                    b.Property<Guid>("Id")
+                    b.Property<Guid>("RowId")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid")
-                        .HasColumnName("id");
+                        .HasColumnName("row_id");
 
                     b.Property<Guid>("Branch")
                         .HasColumnType("uuid")
@@ -110,6 +140,15 @@ namespace Vellum.Modules.Modelling.Migrations
                         .HasColumnType("text")
                         .HasColumnName("description");
 
+                    b.Property<string>("FactStatus")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("fact_status");
+
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasColumnType("text")
@@ -123,6 +162,26 @@ namespace Vellum.Modules.Modelling.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("project_id");
 
+                    b.Property<DateTimeOffset?>("ProvenanceAcceptedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("provenance_accepted_at");
+
+                    b.Property<Guid?>("ProvenanceAcceptedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("provenance_accepted_by");
+
+                    b.Property<double?>("ProvenanceConfidence")
+                        .HasColumnType("double precision")
+                        .HasColumnName("provenance_confidence");
+
+                    b.Property<string>("ProvenanceRevision")
+                        .HasColumnType("text")
+                        .HasColumnName("provenance_revision");
+
+                    b.Property<string>("ProvenanceSource")
+                        .HasColumnType("text")
+                        .HasColumnName("provenance_source");
+
                     b.Property<Guid?>("SchemaId")
                         .HasColumnType("uuid")
                         .HasColumnName("schema_id");
@@ -132,11 +191,12 @@ namespace Vellum.Modules.Modelling.Migrations
                         .HasColumnType("text[]")
                         .HasColumnName("tags");
 
-                    b.HasKey("Id")
+                    b.HasKey("RowId")
                         .HasName("pk_messages");
 
-                    b.HasIndex("ProjectId", "Branch")
-                        .HasDatabaseName("ix_messages_project_id_branch");
+                    b.HasIndex("ProjectId", "Branch", "Id")
+                        .IsUnique()
+                        .HasDatabaseName("ix_messages_project_id_branch_id");
 
                     b.HasIndex("ProjectId", "Branch", "ProducerId")
                         .HasDatabaseName("ix_messages_project_id_branch_producer_id");
@@ -146,18 +206,32 @@ namespace Vellum.Modules.Modelling.Migrations
 
             modelBuilder.Entity("Vellum.Modules.Modelling.Entities.RelationshipEntity", b =>
                 {
-                    b.Property<Guid>("Id")
+                    b.Property<Guid>("RowId")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid")
-                        .HasColumnName("id");
+                        .HasColumnName("row_id");
 
                     b.Property<Guid>("Branch")
                         .HasColumnType("uuid")
                         .HasColumnName("branch");
 
+                    b.Property<string>("FactStatus")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("fact_status");
+
                     b.Property<Guid>("FromId")
                         .HasColumnType("uuid")
                         .HasColumnName("from_id");
+
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("kind");
 
                     b.Property<string>("Label")
                         .HasColumnType("text")
@@ -175,6 +249,26 @@ namespace Vellum.Modules.Modelling.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("project_id");
 
+                    b.Property<DateTimeOffset?>("ProvenanceAcceptedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("provenance_accepted_at");
+
+                    b.Property<Guid?>("ProvenanceAcceptedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("provenance_accepted_by");
+
+                    b.Property<double?>("ProvenanceConfidence")
+                        .HasColumnType("double precision")
+                        .HasColumnName("provenance_confidence");
+
+                    b.Property<string>("ProvenanceRevision")
+                        .HasColumnType("text")
+                        .HasColumnName("provenance_revision");
+
+                    b.Property<string>("ProvenanceSource")
+                        .HasColumnType("text")
+                        .HasColumnName("provenance_source");
+
                     b.Property<string>("Technology")
                         .HasColumnType("text")
                         .HasColumnName("technology");
@@ -183,13 +277,126 @@ namespace Vellum.Modules.Modelling.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("to_id");
 
-                    b.HasKey("Id")
+                    b.HasKey("RowId")
                         .HasName("pk_relationships");
 
-                    b.HasIndex("ProjectId", "Branch")
-                        .HasDatabaseName("ix_relationships_project_id_branch");
+                    b.HasIndex("ProjectId", "Branch", "Id")
+                        .IsUnique()
+                        .HasDatabaseName("ix_relationships_project_id_branch_id");
 
                     b.ToTable("relationships", "modelling");
+                });
+
+            modelBuilder.Entity("Vellum.Modules.Modelling.Entities.RevisionEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("created_by");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("name");
+
+                    b.Property<string>("Note")
+                        .HasColumnType("text")
+                        .HasColumnName("note");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("project_id");
+
+                    b.Property<string>("State")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("state");
+
+                    b.Property<Guid>("StreamId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("stream_id");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("integer")
+                        .HasColumnName("version");
+
+                    b.HasKey("Id")
+                        .HasName("pk_revisions");
+
+                    b.HasIndex("ProjectId", "Name")
+                        .IsUnique()
+                        .HasDatabaseName("ix_revisions_project_id_name");
+
+                    b.ToTable("revisions", "modelling");
+                });
+
+            modelBuilder.Entity("Vellum.Modules.Modelling.Entities.VariantEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid?>("BaseRevisionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("base_revision_id");
+
+                    b.Property<Guid>("BaseStreamId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("base_stream_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("created_by");
+
+                    b.Property<int>("ForkVersion")
+                        .HasColumnType("integer")
+                        .HasColumnName("fork_version");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("name");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("project_id");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("status");
+
+                    b.Property<Guid>("StreamId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("stream_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_variants");
+
+                    b.HasIndex("StreamId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_variants_stream_id");
+
+                    b.HasIndex("ProjectId", "Name")
+                        .IsUnique()
+                        .HasDatabaseName("ix_variants_project_id_name");
+
+                    b.ToTable("variants", "modelling");
                 });
 #pragma warning restore 612, 618
         }

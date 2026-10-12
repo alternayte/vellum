@@ -26,19 +26,40 @@ public static class ListRelationships
             query = query.Where(r => r.Id.CompareTo(afterId) > 0);
         }
 
-        var items = await query
+        var rows = await query
             .OrderBy(r => r.Id)
             .Take(pageSize + 1)
-            .Select(r => new RelationshipDto(r.Id, r.FromId, r.ToId, r.Label, r.Technology, r.MessageId, r.LineShape))
+            .Select(r => new
+            {
+                r.Id,
+                r.FromId,
+                r.ToId,
+                r.Label,
+                r.Technology,
+                r.MessageId,
+                r.LineShape,
+                r.Kind,
+                r.FactStatus,
+                r.ProvenanceSource,
+                r.ProvenanceRevision,
+                r.ProvenanceConfidence,
+                r.ProvenanceAcceptedBy,
+                r.ProvenanceAcceptedAt,
+            })
             .ToListAsync(ct);
 
         string? nextCursor = null;
-        if (items.Count > pageSize)
+        if (rows.Count > pageSize)
         {
-            items = items[..pageSize];
-            var last = items[^1];
+            rows = rows[..pageSize];
+            var last = rows[^1];
             nextCursor = CursorEncoder.Encode(last.Id.ToString(), last.Id);
         }
+
+        var items = rows.Select(r => new RelationshipDto(
+            r.Id, r.FromId, r.ToId, r.Label, r.Technology, r.MessageId, r.LineShape, r.Kind, r.FactStatus,
+            Model.ProvenanceMapper.ToDto(r.ProvenanceSource, r.ProvenanceRevision, r.ProvenanceConfidence,
+                r.ProvenanceAcceptedBy, r.ProvenanceAcceptedAt))).ToList();
 
         return Results.Ok(new Page<RelationshipDto>(items, nextCursor));
     }

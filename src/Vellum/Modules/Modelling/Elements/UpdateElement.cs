@@ -10,7 +10,8 @@ public sealed record UpdateElementRequest(
     Guid? OwnerId, Guid? ParentId, string? Status, string[]? Tags,
     string? Icon,
     bool SetDescription = false, bool SetTechnology = false,
-    bool SetOwnerId = false, bool SetParentId = false, bool SetIcon = false);
+    bool SetOwnerId = false, bool SetParentId = false, bool SetIcon = false,
+    string? FactStatus = null, ProvenanceInput? Provenance = null, bool SetProvenance = false);
 
 public sealed record UpdateElementCommandEnvelope(
     Guid ProjectId, Guid StreamId, Guid ElementId, string UserId, UpdateElementRequest Request);
@@ -33,7 +34,7 @@ public sealed class UpdateElementHandler : ICommandHandler<UpdateElementCommandE
         ElementStatus? status = null;
         if (cmd.Request.Status is not null)
         {
-            if (!Enum.TryParse<ElementStatus>(cmd.Request.Status, ignoreCase: true, out var parsed))
+            if (!ModelEnum.TryParseDefined(cmd.Request.Status, out ElementStatus parsed))
                 return new CommandResult<ElementDto>.Invalid([new ValidationError("status", "Invalid status")]);
             status = parsed;
         }
@@ -60,19 +61,48 @@ public sealed class UpdateElementHandler : ICommandHandler<UpdateElementCommandE
             };
         }
 
-        if (success.Value.Count > 0)
+        var events = new List<ModelEvent>(success.Value);
+        var stateAfter = events.Aggregate(state, (s, e) => s.Evolve(e));
+
+        FactStatus? requestedStatus = null;
+        if (cmd.Request.FactStatus is not null)
+        {
+            if (!FactStatusFormat.TryParseApiString(cmd.Request.FactStatus, out var parsedStatus))
+                return new CommandResult<ElementDto>.Invalid([new ValidationError("factStatus", "Invalid fact status")]);
+            requestedStatus = parsedStatus;
+        }
+
+        if (requestedStatus is not null || cmd.Request.SetProvenance)
+        {
+            var current = stateAfter.Elements[cmd.ElementId];
+            var factStatus = requestedStatus ?? current.FactStatus;
+            var provenance = cmd.Request.SetProvenance
+                ? ProvenanceMapper.ToDomain(cmd.Request.Provenance, Guid.Parse(cmd.UserId))
+                : current.Provenance;
+
+            var provenanceResult = ModelDecider.RecordElementProvenance(stateAfter, cmd.ElementId, factStatus, provenance);
+            if (provenanceResult is not CommandResult<IReadOnlyList<ModelEvent>>.Success provenanceSuccess)
+            {
+                return provenanceResult switch
+                {
+                    CommandResult<IReadOnlyList<ModelEvent>>.Invalid inv => new CommandResult<ElementDto>.Invalid(inv.Errors),
+                    CommandResult<IReadOnlyList<ModelEvent>>.NotFound n => new CommandResult<ElementDto>.NotFound(n.Message),
+                    _ => new CommandResult<ElementDto>.Conflict("Unexpected error")
+                };
+            }
+
+            events.AddRange(provenanceSuccess.Value);
+            stateAfter = provenanceSuccess.Value.Aggregate(stateAfter, (s, e) => s.Evolve(e));
+        }
+
+        if (events.Count > 0)
         {
             var metadata = new EventMetadata { ActorId = Guid.Parse(cmd.UserId), CorrelationId = Guid.NewGuid() };
             _projection.SetContext(cmd.ProjectId, cmd.StreamId);
-            var newState = success.Value.Aggregate(state, (s, e) => s.Evolve(e));
-            await _store.SaveAsync(cmd.StreamId, "model", version, newState, success.Value, metadata, ct);
-            state = newState;
+            await _store.SaveAsync(cmd.StreamId, "model", version, stateAfter, events, metadata, ct);
+            state = stateAfter;
         }
 
-        var element = state.Elements[cmd.ElementId];
-        return new CommandResult<ElementDto>.Success(new ElementDto(
-            element.Id, element.Kind.ToString().ToLowerInvariant(), element.Name,
-            element.Description, element.Technology, element.OwnerId,
-            element.Status.ToString().ToLowerInvariant(), element.ParentId, element.Tags, element.Icon));
+        return new CommandResult<ElementDto>.Success(AddElementHandler.ToDto(state.Elements[cmd.ElementId]));
     }
 }

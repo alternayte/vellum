@@ -24,13 +24,14 @@ public static class ThreeWayMerge
         return new MergePreviewResult(changes, conflicts);
     }
 
-    private static void MergeEntities<T>(
-        IReadOnlyDictionary<Guid, T> baseEntities,
-        IReadOnlyDictionary<Guid, T> oursEntities,
-        IReadOnlyDictionary<Guid, T> theirsEntities,
+    private static void MergeEntities<TKey, T>(
+        IReadOnlyDictionary<TKey, T> baseEntities,
+        IReadOnlyDictionary<TKey, T> oursEntities,
+        IReadOnlyDictionary<TKey, T> theirsEntities,
         string entityType,
         List<MergeChange> changes,
         List<MergeConflict> conflicts)
+        where TKey : notnull, IArchitectureId
         where T : notnull
     {
         var allIds = baseEntities.Keys
@@ -40,13 +41,14 @@ public static class ThreeWayMerge
 
         foreach (var id in allIds)
         {
+            var entityId = id.Value;
             var inBase = baseEntities.TryGetValue(id, out var baseVal);
             var inOurs = oursEntities.TryGetValue(id, out var oursVal);
             var inTheirs = theirsEntities.TryGetValue(id, out var theirsVal);
 
             if (!inBase && !inOurs && inTheirs)
             {
-                changes.Add(new MergeChange(entityType, id, "added", theirsVal));
+                changes.Add(new MergeChange(entityType, entityId, "added", theirsVal));
                 continue;
             }
 
@@ -58,7 +60,7 @@ public static class ThreeWayMerge
             if (!inBase && inOurs && inTheirs)
             {
                 if (!oursVal!.Equals(theirsVal))
-                    conflicts.Add(new MergeConflict(entityType, id, "both_modified", null, oursVal, theirsVal));
+                    conflicts.Add(new MergeConflict(entityType, entityId, "both_modified", null, oursVal, theirsVal));
                 continue;
             }
 
@@ -71,9 +73,9 @@ public static class ThreeWayMerge
             {
                 var oursChanged = !baseVal!.Equals(oursVal);
                 if (oursChanged)
-                    conflicts.Add(new MergeConflict(entityType, id, "delete_modify", baseVal, oursVal, null));
+                    conflicts.Add(new MergeConflict(entityType, entityId, "delete_modify", baseVal, oursVal, null));
                 else
-                    changes.Add(new MergeChange(entityType, id, "removed", null));
+                    changes.Add(new MergeChange(entityType, entityId, "removed", null));
                 continue;
             }
 
@@ -81,7 +83,7 @@ public static class ThreeWayMerge
             {
                 var theirsChanged = !baseVal!.Equals(theirsVal);
                 if (theirsChanged)
-                    conflicts.Add(new MergeConflict(entityType, id, "delete_modify", baseVal, null, theirsVal));
+                    conflicts.Add(new MergeConflict(entityType, entityId, "delete_modify", baseVal, null, theirsVal));
                 continue;
             }
 
@@ -91,9 +93,9 @@ public static class ThreeWayMerge
                 var theirsChanged = !baseVal.Equals(theirsVal);
 
                 if (!oursChanged && theirsChanged)
-                    changes.Add(new MergeChange(entityType, id, "modified", theirsVal));
+                    changes.Add(new MergeChange(entityType, entityId, "modified", theirsVal));
                 else if (oursChanged && theirsChanged && !oursVal!.Equals(theirsVal))
-                    conflicts.Add(new MergeConflict(entityType, id, "both_modified", baseVal, oursVal, theirsVal));
+                    conflicts.Add(new MergeConflict(entityType, entityId, "both_modified", baseVal, oursVal, theirsVal));
             }
         }
     }
@@ -120,7 +122,7 @@ public static class ThreeWayMerge
 
                 foreach (var child in childrenModifiedOnTheirs)
                 {
-                    if (!conflicts.Any(c => c.EntityId == child.Id))
+                    if (!conflicts.Any(c => c.EntityId == child.Id.Value))
                     {
                         baseState.Elements.TryGetValue(child.Id, out var baseChild);
                         conflicts.Add(new MergeConflict("element", child.Id, "orphaned_child",
@@ -142,7 +144,7 @@ public static class ThreeWayMerge
 
                 foreach (var child in childrenModifiedOnOurs)
                 {
-                    if (!conflicts.Any(c => c.EntityId == child.Id))
+                    if (!conflicts.Any(c => c.EntityId == child.Id.Value))
                     {
                         baseState.Elements.TryGetValue(child.Id, out var baseChild);
                         conflicts.Add(new MergeConflict("element", child.Id, "orphaned_child",
@@ -157,7 +159,7 @@ public static class ThreeWayMerge
         ModelState baseState, ModelState ours, ModelState theirs,
         List<MergeChange> changes, List<MergeConflict> conflicts)
     {
-        var resolvedElements = new HashSet<Guid>(ours.Elements.Keys);
+        var resolvedElements = new HashSet<ElementId>(ours.Elements.Keys);
         foreach (var c in changes.Where(c => c.EntityType == "element"))
         {
             if (c.ChangeKind == "added") resolvedElements.Add(c.EntityId);
@@ -175,8 +177,8 @@ public static class ThreeWayMerge
                     baseState.Relationships.TryGetValue(change.EntityId, out var baseRel);
                     conflicts.Add(new MergeConflict("relationship", change.EntityId,
                         "dangling_relationship", baseRel,
-                        ours.Relationships.GetValueOrDefault(change.EntityId),
-                        theirs.Relationships.GetValueOrDefault(change.EntityId)));
+                        ours.Relationships.TryGetValue(change.EntityId, out var ourRel) ? ourRel : null,
+                        theirs.Relationships.TryGetValue(change.EntityId, out var theirRel) ? theirRel : null));
                 }
             }
         }
@@ -186,7 +188,7 @@ public static class ThreeWayMerge
         ModelState baseState, ModelState ours, ModelState theirs,
         List<MergeChange> changes, List<MergeConflict> conflicts)
     {
-        var resolvedElements = new HashSet<Guid>(ours.Elements.Keys);
+        var resolvedElements = new HashSet<ElementId>(ours.Elements.Keys);
         foreach (var c in changes.Where(c => c.EntityType == "element"))
         {
             if (c.ChangeKind == "added") resolvedElements.Add(c.EntityId);
@@ -205,8 +207,8 @@ public static class ThreeWayMerge
                     baseState.Messages.TryGetValue(change.EntityId, out var baseMsg);
                     conflicts.Add(new MergeConflict("message", change.EntityId,
                         "dangling_message", baseMsg,
-                        ours.Messages.GetValueOrDefault(change.EntityId),
-                        theirs.Messages.GetValueOrDefault(change.EntityId)));
+                        ours.Messages.TryGetValue(change.EntityId, out var ourMsg) ? ourMsg : null,
+                        theirs.Messages.TryGetValue(change.EntityId, out var theirMsg) ? theirMsg : null));
                 }
             }
         }

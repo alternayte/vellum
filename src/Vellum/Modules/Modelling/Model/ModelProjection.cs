@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using Vellum.Kernel.CommandHandling;
 using Vellum.Kernel.EventTypes;
 using Vellum.Kernel.Projections;
@@ -22,6 +23,32 @@ public sealed class ModelProjection : IInlineProjection
     {
         _projectId = projectId;
         _branch = branch;
+    }
+
+    /// <summary>
+    /// Branch-scoped lookups: the same architecture ID can exist on the main branch, a
+    /// draft and a variant, so reads and writes must name the branch. Rows added earlier
+    /// in the same batch are found through the change tracker before the database.
+    /// </summary>
+    private async Task<ElementEntity?> FindElementAsync(ElementId id, CancellationToken ct)
+    {
+        var local = _db.Elements.Local.FirstOrDefault(e => e.Id == id.Value && e.Branch == _branch);
+        if (local is not null) return local;
+        return await _db.Elements.FirstOrDefaultAsync(e => e.Id == id.Value && e.Branch == _branch, ct);
+    }
+
+    private async Task<RelationshipEntity?> FindRelationshipAsync(RelationshipId id, CancellationToken ct)
+    {
+        var local = _db.Relationships.Local.FirstOrDefault(r => r.Id == id.Value && r.Branch == _branch);
+        if (local is not null) return local;
+        return await _db.Relationships.FirstOrDefaultAsync(r => r.Id == id.Value && r.Branch == _branch, ct);
+    }
+
+    private async Task<MessageEntity?> FindMessageAsync(MessageId id, CancellationToken ct)
+    {
+        var local = _db.Messages.Local.FirstOrDefault(m => m.Id == id.Value && m.Branch == _branch);
+        if (local is not null) return local;
+        return await _db.Messages.FirstOrDefaultAsync(m => m.Id == id.Value && m.Branch == _branch, ct);
     }
 
     public async Task ProjectAsync(IReadOnlyList<CollectedEvent> events, CancellationToken ct = default)
@@ -52,48 +79,54 @@ public sealed class ModelProjection : IInlineProjection
                     break;
 
                 case ModelEvent.ElementRenamed renamed:
-                    var renamedEntity = await _db.Elements.FindAsync([renamed.ElementId], ct);
+                    var renamedEntity = await FindElementAsync(renamed.ElementId, ct);
                     if (renamedEntity is not null) renamedEntity.Name = renamed.Name;
                     break;
 
                 case ModelEvent.ElementDescriptionChanged descChanged:
-                    var descEntity = await _db.Elements.FindAsync([descChanged.ElementId], ct);
+                    var descEntity = await FindElementAsync(descChanged.ElementId, ct);
                     if (descEntity is not null) descEntity.Description = descChanged.Description;
                     break;
 
                 case ModelEvent.ElementTechnologyChanged techChanged:
-                    var techEntity = await _db.Elements.FindAsync([techChanged.ElementId], ct);
+                    var techEntity = await FindElementAsync(techChanged.ElementId, ct);
                     if (techEntity is not null) techEntity.Technology = techChanged.Technology;
                     break;
 
                 case ModelEvent.ElementOwnerChanged ownerChanged:
-                    var ownerEntity = await _db.Elements.FindAsync([ownerChanged.ElementId], ct);
+                    var ownerEntity = await FindElementAsync(ownerChanged.ElementId, ct);
                     if (ownerEntity is not null) ownerEntity.OwnerId = ownerChanged.OwnerId;
                     break;
 
                 case ModelEvent.ElementReparented reparented:
-                    var reparentedEntity = await _db.Elements.FindAsync([reparented.ElementId], ct);
+                    var reparentedEntity = await FindElementAsync(reparented.ElementId, ct);
                     if (reparentedEntity is not null) reparentedEntity.ParentId = reparented.ParentId;
                     break;
 
                 case ModelEvent.ElementStatusChanged statusChanged:
-                    var statusEntity = await _db.Elements.FindAsync([statusChanged.ElementId], ct);
+                    var statusEntity = await FindElementAsync(statusChanged.ElementId, ct);
                     if (statusEntity is not null) statusEntity.Status = statusChanged.Status.ToString().ToLowerInvariant();
                     break;
 
                 case ModelEvent.ElementRetagged retagged:
-                    var retaggedEntity = await _db.Elements.FindAsync([retagged.ElementId], ct);
+                    var retaggedEntity = await FindElementAsync(retagged.ElementId, ct);
                     if (retaggedEntity is not null) retaggedEntity.Tags = retagged.Tags;
                     break;
 
                 case ModelEvent.ElementIconChanged iconChanged:
-                    var iconEntity = await _db.Elements.FindAsync([iconChanged.ElementId], ct);
+                    var iconEntity = await FindElementAsync(iconChanged.ElementId, ct);
                     if (iconEntity is not null) iconEntity.Icon = iconChanged.Icon;
                     break;
 
                 case ModelEvent.ElementRemoved removed:
-                    var removedEntity = await _db.Elements.FindAsync([removed.ElementId], ct);
+                    var removedEntity = await FindElementAsync(removed.ElementId, ct);
                     if (removedEntity is not null) _db.Elements.Remove(removedEntity);
+                    break;
+
+                case ModelEvent.ElementProvenanceRecorded elementProvenance:
+                    var provenanceEntity = await FindElementAsync(elementProvenance.ElementId, ct);
+                    if (provenanceEntity is not null)
+                        ApplyProvenance(provenanceEntity, elementProvenance.Status, elementProvenance.Provenance);
                     break;
 
                 case ModelEvent.RelationshipAdded relAdded:
@@ -107,27 +140,39 @@ public sealed class ModelProjection : IInlineProjection
                         Label = relAdded.Label,
                         Technology = relAdded.Technology,
                         MessageId = relAdded.MessageId,
-                        LineShape = null
+                        LineShape = null,
+                        Kind = relAdded.Kind.ToString().ToLowerInvariant()
                     });
                     break;
 
                 case ModelEvent.RelationshipLabelChanged labelChanged:
-                    var labelEntity = await _db.Relationships.FindAsync([labelChanged.RelationshipId], ct);
+                    var labelEntity = await FindRelationshipAsync(labelChanged.RelationshipId, ct);
                     if (labelEntity is not null) labelEntity.Label = labelChanged.Label;
                     break;
 
                 case ModelEvent.RelationshipTechnologyChanged relTechChanged:
-                    var relTechEntity = await _db.Relationships.FindAsync([relTechChanged.RelationshipId], ct);
+                    var relTechEntity = await FindRelationshipAsync(relTechChanged.RelationshipId, ct);
                     if (relTechEntity is not null) relTechEntity.Technology = relTechChanged.Technology;
                     break;
 
                 case ModelEvent.RelationshipLineShapeChanged lineShapeChanged:
-                    var lineShapeEntity = await _db.Relationships.FindAsync([lineShapeChanged.RelationshipId], ct);
+                    var lineShapeEntity = await FindRelationshipAsync(lineShapeChanged.RelationshipId, ct);
                     if (lineShapeEntity is not null) lineShapeEntity.LineShape = lineShapeChanged.LineShape;
                     break;
 
+                case ModelEvent.RelationshipKindChanged kindChanged:
+                    var kindEntity = await FindRelationshipAsync(kindChanged.RelationshipId, ct);
+                    if (kindEntity is not null) kindEntity.Kind = kindChanged.Kind.ToString().ToLowerInvariant();
+                    break;
+
+                case ModelEvent.RelationshipProvenanceRecorded relationshipProvenance:
+                    var relProvenanceEntity = await FindRelationshipAsync(relationshipProvenance.RelationshipId, ct);
+                    if (relProvenanceEntity is not null)
+                        ApplyProvenance(relProvenanceEntity, relationshipProvenance.Status, relationshipProvenance.Provenance);
+                    break;
+
                 case ModelEvent.RelationshipRemoved relRemoved:
-                    var relRemovedEntity = await _db.Relationships.FindAsync([relRemoved.RelationshipId], ct);
+                    var relRemovedEntity = await FindRelationshipAsync(relRemoved.RelationshipId, ct);
                     if (relRemovedEntity is not null) _db.Relationships.Remove(relRemovedEntity);
                     break;
 
@@ -140,33 +185,69 @@ public sealed class ModelProjection : IInlineProjection
                         Name = msgAdded.Name,
                         Description = msgAdded.Description,
                         ProducerId = msgAdded.ProducerId,
-                        ConsumerIds = msgAdded.ConsumerIds,
+                        ConsumerIds = msgAdded.ConsumerIds.ToGuids(),
                         SchemaId = msgAdded.SchemaId,
                         Tags = msgAdded.Tags
                     });
                     break;
 
                 case ModelEvent.MessageUpdated msgUpdated:
-                    var msgEntity = await _db.Messages.FindAsync([msgUpdated.MessageId], ct);
+                    var msgEntity = await FindMessageAsync(msgUpdated.MessageId, ct);
                     if (msgEntity is not null)
                     {
                         if (msgUpdated.Name is not null) msgEntity.Name = msgUpdated.Name;
                         if (msgUpdated.Description is not null) msgEntity.Description = msgUpdated.Description;
                         if (msgUpdated.ProducerId is not null) msgEntity.ProducerId = msgUpdated.ProducerId.Value;
-                        if (msgUpdated.ConsumerIds is not null) msgEntity.ConsumerIds = msgUpdated.ConsumerIds;
+                        if (msgUpdated.ConsumerIds is not null) msgEntity.ConsumerIds = msgUpdated.ConsumerIds.ToGuids();
                         if (msgUpdated.SetSchemaId) msgEntity.SchemaId = msgUpdated.SchemaId;
                         if (msgUpdated.Tags is not null) msgEntity.Tags = msgUpdated.Tags;
                     }
                     break;
 
                 case ModelEvent.MessageRemoved msgRemoved:
-                    var msgRemovedEntity = await _db.Messages.FindAsync([msgRemoved.MessageId], ct);
+                    var msgRemovedEntity = await FindMessageAsync(msgRemoved.MessageId, ct);
                     if (msgRemovedEntity is not null) _db.Messages.Remove(msgRemovedEntity);
+                    break;
+
+                case ModelEvent.MessageProvenanceRecorded messageProvenance:
+                    var msgProvenanceEntity = await FindMessageAsync(messageProvenance.MessageId, ct);
+                    if (msgProvenanceEntity is not null)
+                        ApplyProvenance(msgProvenanceEntity, messageProvenance.Status, messageProvenance.Provenance);
                     break;
             }
         }
 
         if (events.Count > 0)
             await _db.SaveChangesAsync(ct);
+    }
+
+    private static void ApplyProvenance(ElementEntity entity, FactStatus status, Provenance? provenance)
+    {
+        entity.FactStatus = status.ToApiString();
+        entity.ProvenanceSource = provenance?.Source;
+        entity.ProvenanceRevision = provenance?.Revision;
+        entity.ProvenanceConfidence = provenance?.Confidence;
+        entity.ProvenanceAcceptedBy = provenance?.AcceptedBy;
+        entity.ProvenanceAcceptedAt = provenance?.AcceptedAt;
+    }
+
+    private static void ApplyProvenance(RelationshipEntity entity, FactStatus status, Provenance? provenance)
+    {
+        entity.FactStatus = status.ToApiString();
+        entity.ProvenanceSource = provenance?.Source;
+        entity.ProvenanceRevision = provenance?.Revision;
+        entity.ProvenanceConfidence = provenance?.Confidence;
+        entity.ProvenanceAcceptedBy = provenance?.AcceptedBy;
+        entity.ProvenanceAcceptedAt = provenance?.AcceptedAt;
+    }
+
+    private static void ApplyProvenance(MessageEntity entity, FactStatus status, Provenance? provenance)
+    {
+        entity.FactStatus = status.ToApiString();
+        entity.ProvenanceSource = provenance?.Source;
+        entity.ProvenanceRevision = provenance?.Revision;
+        entity.ProvenanceConfidence = provenance?.Confidence;
+        entity.ProvenanceAcceptedBy = provenance?.AcceptedBy;
+        entity.ProvenanceAcceptedAt = provenance?.AcceptedAt;
     }
 }

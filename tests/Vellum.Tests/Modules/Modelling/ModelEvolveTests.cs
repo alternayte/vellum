@@ -90,4 +90,43 @@ public class ModelEvolveTests
         Assert.Equal(ElementStatus.Planned, el.Status);
         Assert.Equal(["a", "b"], el.Tags);
     }
+
+    [Fact]
+    public void ElementProvenanceRecorded_updates_status_and_provenance()
+    {
+        var id = Guid.NewGuid();
+        var acceptedBy = Guid.NewGuid();
+        var state = ModelState.Initial
+            .Evolve(new ModelEvent.ElementAdded(id, ElementKind.System, "Orders", null, null, null, ElementStatus.Current, null, []))
+            .Evolve(new ModelEvent.ElementProvenanceRecorded(id, FactStatus.Inferred,
+                new Provenance("github.com/acme/orders@abc:src/Orders.cs:1-10", "abc", 0.5, acceptedBy, DateTimeOffset.UtcNow)));
+
+        var el = state.Elements[id];
+        Assert.Equal(FactStatus.Inferred, el.FactStatus);
+        Assert.Equal("abc", el.Provenance!.Revision);
+        Assert.Equal(acceptedBy, el.Provenance.AcceptedBy);
+    }
+
+    [Fact]
+    public void RelationshipKindChanged_updates_state()
+    {
+        var relId = Guid.NewGuid();
+        var state = ModelState.Initial
+            .Evolve(new ModelEvent.RelationshipAdded(relId, Guid.NewGuid(), Guid.NewGuid(), "calls", null, null))
+            .Evolve(new ModelEvent.RelationshipKindChanged(relId, RelationshipKind.Behavioural));
+
+        Assert.Equal(RelationshipKind.Behavioural, state.Relationships[relId].Kind);
+    }
+
+    [Fact]
+    public void MessageProvenanceRecorded_updates_state()
+    {
+        var msgId = Guid.NewGuid();
+        var state = ModelState.Initial
+            .Evolve(new ModelEvent.MessageAdded(msgId, "OrderPlaced", null, Guid.NewGuid(), [], null, []))
+            .Evolve(new ModelEvent.MessageProvenanceRecorded(msgId, FactStatus.Unknown, null));
+
+        Assert.Equal(FactStatus.Unknown, state.Messages[msgId].FactStatus);
+        Assert.Null(state.Messages[msgId].Provenance);
+    }
 }

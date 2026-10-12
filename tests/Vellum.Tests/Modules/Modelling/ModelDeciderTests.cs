@@ -235,7 +235,7 @@ public class ModelDeciderTests
 
         var relationshipRemovals = success.Value.OfType<ModelEvent.RelationshipRemoved>().ToList();
         Assert.Single(relationshipRemovals);
-        Assert.Equal(relId, relationshipRemovals[0].RelationshipId);
+        Assert.Equal(relId, relationshipRemovals[0].RelationshipId.Value);
     }
 
     // --- AddMessage ---
@@ -253,7 +253,7 @@ public class ModelDeciderTests
         var success = Assert.IsType<CommandResult<IReadOnlyList<ModelEvent>>.Success>(result);
         var added = Assert.IsType<ModelEvent.MessageAdded>(Assert.Single(success.Value));
         Assert.Equal("OrderPlaced", added.Name);
-        Assert.Equal(producerId, added.ProducerId);
+        Assert.Equal(producerId, added.ProducerId.Value);
         Assert.Single(added.ConsumerIds);
     }
 
@@ -359,7 +359,7 @@ public class ModelDeciderTests
             new ModelEvent.MessageAdded(msgId, "OrderPlaced", null, producerId, [consumerId], null, []));
         var result = ModelDecider.RemoveElement(state, producerId);
         var success = Assert.IsType<CommandResult<IReadOnlyList<ModelEvent>>.Success>(result);
-        Assert.Contains(success.Value, e => e is ModelEvent.MessageRemoved mr && mr.MessageId == msgId);
+        Assert.Contains(success.Value, e => e is ModelEvent.MessageRemoved mr && mr.MessageId.Value == msgId);
     }
 
     // --- UpdateRelationship lineShape ---
@@ -451,5 +451,172 @@ public class ModelDeciderTests
     {
         var result = ModelDecider.RemoveRelationship(ModelState.Initial, Guid.NewGuid());
         Assert.IsType<CommandResult<IReadOnlyList<ModelEvent>>.NotFound>(result);
+    }
+
+    // --- Relationship kind ---
+
+    [Fact]
+    public void AddRelationship_defaults_to_structural()
+    {
+        var state = StateWithSystemAndApp();
+        var result = ModelDecider.AddRelationship(state,
+            new AddRelationshipCommand(Guid.NewGuid(), SystemId, AppId, "uses", "HTTP"));
+        var success = Assert.IsType<CommandResult<IReadOnlyList<ModelEvent>>.Success>(result);
+        var added = Assert.IsType<ModelEvent.RelationshipAdded>(Assert.Single(success.Value));
+        Assert.Equal(RelationshipKind.Structural, added.Kind);
+    }
+
+    [Fact]
+    public void AddRelationship_accepts_behavioural_kind()
+    {
+        var state = StateWithSystemAndApp();
+        var result = ModelDecider.AddRelationship(state,
+            new AddRelationshipCommand(Guid.NewGuid(), SystemId, AppId, "calls", "HTTP", RelationshipKind.Behavioural));
+        var success = Assert.IsType<CommandResult<IReadOnlyList<ModelEvent>>.Success>(result);
+        var added = Assert.IsType<ModelEvent.RelationshipAdded>(Assert.Single(success.Value));
+        Assert.Equal(RelationshipKind.Behavioural, added.Kind);
+    }
+
+    [Fact]
+    public void UpdateRelationship_can_set_behavioural_kind()
+    {
+        var relId = Guid.NewGuid();
+        var state = StateWith(
+            new ModelEvent.ElementAdded(SystemId, ElementKind.System, "Orders", null, null, null, ElementStatus.Current, null, []),
+            new ModelEvent.ElementAdded(AppId, ElementKind.App, "API", null, null, null, ElementStatus.Current, SystemId, []),
+            new ModelEvent.RelationshipAdded(relId, SystemId, AppId, "uses", null, null));
+
+        var result = ModelDecider.UpdateRelationship(state,
+            new UpdateRelationshipCommand(relId, Kind: RelationshipKind.Behavioural, SetKind: true));
+        var success = Assert.IsType<CommandResult<IReadOnlyList<ModelEvent>>.Success>(result);
+        var changed = Assert.IsType<ModelEvent.RelationshipKindChanged>(Assert.Single(success.Value));
+        Assert.Equal(RelationshipKind.Behavioural, changed.Kind);
+    }
+
+    [Fact]
+    public void UpdateRelationship_same_kind_emits_no_events()
+    {
+        var relId = Guid.NewGuid();
+        var state = StateWith(
+            new ModelEvent.ElementAdded(SystemId, ElementKind.System, "Orders", null, null, null, ElementStatus.Current, null, []),
+            new ModelEvent.ElementAdded(AppId, ElementKind.App, "API", null, null, null, ElementStatus.Current, SystemId, []),
+            new ModelEvent.RelationshipAdded(relId, SystemId, AppId, "uses", null, null));
+
+        var result = ModelDecider.UpdateRelationship(state,
+            new UpdateRelationshipCommand(relId, Kind: RelationshipKind.Structural, SetKind: true));
+        var success = Assert.IsType<CommandResult<IReadOnlyList<ModelEvent>>.Success>(result);
+        Assert.Empty(success.Value);
+    }
+
+    // --- Fact provenance ---
+
+    private static ModelState StateWithElement() => StateWith(
+        new ModelEvent.ElementAdded(SystemId, ElementKind.System, "Orders", null, null, null, ElementStatus.Current, null, []));
+
+    [Fact]
+    public void RecordElementProvenance_declared_without_evidence_clears_evidence()
+    {
+        var state = StateWithElement()
+            .Evolve(new ModelEvent.ElementProvenanceRecorded(SystemId, FactStatus.ObservedInSource,
+                new Provenance("github.com/acme/orders@abc:src/Orders.cs:1-10", "abc", null)));
+
+        var result = ModelDecider.RecordElementProvenance(state, SystemId, FactStatus.Declared, null);
+        var success = Assert.IsType<CommandResult<IReadOnlyList<ModelEvent>>.Success>(result);
+        var recorded = Assert.IsType<ModelEvent.ElementProvenanceRecorded>(Assert.Single(success.Value));
+        Assert.Equal(FactStatus.Declared, recorded.Status);
+        Assert.Null(recorded.Provenance);
+    }
+
+    [Fact]
+    public void RecordElementProvenance_observed_requires_source()
+    {
+        var state = StateWithElement();
+        var result = ModelDecider.RecordElementProvenance(state, SystemId, FactStatus.ObservedInSource, null);
+        Assert.IsType<CommandResult<IReadOnlyList<ModelEvent>>.Invalid>(result);
+    }
+
+    [Fact]
+    public void RecordElementProvenance_inferred_requires_confidence()
+    {
+        var state = StateWithElement();
+        var provenance = new Provenance("github.com/acme/orders@abc:src/Orders.cs:1-10", "abc", null);
+        var result = ModelDecider.RecordElementProvenance(state, SystemId, FactStatus.Inferred, provenance);
+        Assert.IsType<CommandResult<IReadOnlyList<ModelEvent>>.Invalid>(result);
+    }
+
+    [Fact]
+    public void RecordElementProvenance_measured_requires_evidence_pointer()
+    {
+        var state = StateWithElement();
+        var result = ModelDecider.RecordElementProvenance(state, SystemId, FactStatus.Measured, null);
+        Assert.IsType<CommandResult<IReadOnlyList<ModelEvent>>.Invalid>(result);
+    }
+
+    [Fact]
+    public void RecordElementProvenance_rejects_out_of_range_confidence()
+    {
+        var state = StateWithElement();
+        var provenance = new Provenance("github.com/acme/orders@abc:src/Orders.cs:1-10", "abc", 1.5);
+        var result = ModelDecider.RecordElementProvenance(state, SystemId, FactStatus.Inferred, provenance);
+        Assert.IsType<CommandResult<IReadOnlyList<ModelEvent>>.Invalid>(result);
+    }
+
+    [Fact]
+    public void RecordElementProvenance_records_status_source_and_confidence()
+    {
+        var state = StateWithElement();
+        var provenance = new Provenance("github.com/acme/orders@abc:src/Orders.cs:1-10", "abc", 0.6);
+        var result = ModelDecider.RecordElementProvenance(state, SystemId, FactStatus.Inferred, provenance);
+        var success = Assert.IsType<CommandResult<IReadOnlyList<ModelEvent>>.Success>(result);
+        var recorded = Assert.IsType<ModelEvent.ElementProvenanceRecorded>(Assert.Single(success.Value));
+        Assert.Equal(FactStatus.Inferred, recorded.Status);
+        Assert.Equal(0.6, recorded.Provenance!.Confidence);
+    }
+
+    [Fact]
+    public void RecordElementProvenance_unchanged_emits_no_events()
+    {
+        var provenance = new Provenance("github.com/acme/orders@abc:src/Orders.cs:1-10", "abc", 0.6);
+        var state = StateWithElement()
+            .Evolve(new ModelEvent.ElementProvenanceRecorded(SystemId, FactStatus.Inferred, provenance));
+
+        var result = ModelDecider.RecordElementProvenance(state, SystemId, FactStatus.Inferred, provenance with { AcceptedAt = DateTimeOffset.UtcNow });
+        var success = Assert.IsType<CommandResult<IReadOnlyList<ModelEvent>>.Success>(result);
+        Assert.Empty(success.Value);
+    }
+
+    [Fact]
+    public void RecordElementProvenance_missing_element_returns_not_found()
+    {
+        var result = ModelDecider.RecordElementProvenance(ModelState.Initial, Guid.NewGuid(), FactStatus.Declared, null);
+        Assert.IsType<CommandResult<IReadOnlyList<ModelEvent>>.NotFound>(result);
+    }
+
+    [Fact]
+    public void RecordRelationshipProvenance_inferred_without_source_is_invalid()
+    {
+        var relId = Guid.NewGuid();
+        var state = StateWith(
+            new ModelEvent.ElementAdded(SystemId, ElementKind.System, "Orders", null, null, null, ElementStatus.Current, null, []),
+            new ModelEvent.RelationshipAdded(relId, SystemId, SystemId, "calls", null, null));
+
+        var result = ModelDecider.RecordRelationshipProvenance(state, relId, FactStatus.Inferred,
+            new Provenance(null, null, 0.5));
+        Assert.IsType<CommandResult<IReadOnlyList<ModelEvent>>.Invalid>(result);
+    }
+
+    [Fact]
+    public void RecordMessageProvenance_records_observed_fact()
+    {
+        var msgId = Guid.NewGuid();
+        var state = StateWith(
+            new ModelEvent.ElementAdded(SystemId, ElementKind.System, "Orders", null, null, null, ElementStatus.Current, null, []),
+            new ModelEvent.MessageAdded(msgId, "OrderPlaced", null, SystemId, [SystemId], null, []));
+
+        var result = ModelDecider.RecordMessageProvenance(state, msgId, FactStatus.ObservedInSource,
+            new Provenance("github.com/acme/orders@abc:src/Events.cs:4-8", "abc", null));
+        var success = Assert.IsType<CommandResult<IReadOnlyList<ModelEvent>>.Success>(result);
+        var recorded = Assert.IsType<ModelEvent.MessageProvenanceRecorded>(Assert.Single(success.Value));
+        Assert.Equal(FactStatus.ObservedInSource, recorded.Status);
     }
 }

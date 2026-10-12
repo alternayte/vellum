@@ -28,11 +28,11 @@ public sealed class AddElementHandler : ICommandHandler<AddElementCommandEnvelop
     {
         var (state, version) = await _store.LoadAsync<ModelState, ModelEvent>(cmd.StreamId, ct);
 
-        if (!Enum.TryParse<ElementKind>(cmd.Request.Kind, ignoreCase: true, out var kind))
+        if (!ModelEnum.TryParseDefined(cmd.Request.Kind, out ElementKind kind))
             return new CommandResult<ElementDto>.Invalid([new ValidationError("kind", "Invalid element kind")]);
 
         var status = ElementStatus.Current;
-        if (cmd.Request.Status is not null && !Enum.TryParse(cmd.Request.Status, ignoreCase: true, out status))
+        if (cmd.Request.Status is not null && !ModelEnum.TryParseDefined(cmd.Request.Status, out status))
             return new CommandResult<ElementDto>.Invalid([new ValidationError("status", "Invalid status")]);
 
         var addCmd = new AddElementCommand(
@@ -63,10 +63,12 @@ public sealed class AddElementHandler : ICommandHandler<AddElementCommandEnvelop
         var newState = success.Value.Aggregate(state, (s, e) => s.Evolve(e));
         await _store.SaveAsync(cmd.StreamId, "model", version, newState, success.Value, metadata, ct);
 
-        var element = newState.Elements[cmd.Request.Id];
-        return new CommandResult<ElementDto>.Success(new ElementDto(
-            element.Id, element.Kind.ToString().ToLowerInvariant(), element.Name,
-            element.Description, element.Technology, element.OwnerId,
-            element.Status.ToString().ToLowerInvariant(), element.ParentId, element.Tags, element.Icon));
+        return new CommandResult<ElementDto>.Success(ToDto(newState.Elements[cmd.Request.Id]));
     }
+
+    internal static ElementDto ToDto(ElementState element) => new(
+        element.Id, element.Kind.ToString().ToLowerInvariant(), element.Name,
+        element.Description, element.Technology, element.OwnerId,
+        element.Status.ToString().ToLowerInvariant(), element.ParentId, element.Tags, element.Icon,
+        element.FactStatus.ToApiString(), ProvenanceMapper.ToDto(element.Provenance));
 }
