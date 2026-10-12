@@ -12,8 +12,8 @@ using Vellum.Modules.Modelling;
 namespace Vellum.Modules.Modelling.Migrations
 {
     [DbContext(typeof(ModellingDbContext))]
-    [Migration("20261012211205_AddFactsKindsRevisionsVariants")]
-    partial class AddFactsKindsRevisionsVariants
+    [Migration("20261012215338_InitialModelling")]
+    partial class InitialModelling
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -28,10 +28,10 @@ namespace Vellum.Modules.Modelling.Migrations
 
             modelBuilder.Entity("Vellum.Modules.Modelling.Entities.ElementEntity", b =>
                 {
-                    b.Property<Guid>("Id")
+                    b.Property<Guid>("RowId")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid")
-                        .HasColumnName("id");
+                        .HasColumnName("row_id");
 
                     b.Property<Guid>("Branch")
                         .HasColumnType("uuid")
@@ -49,6 +49,10 @@ namespace Vellum.Modules.Modelling.Migrations
                     b.Property<string>("Icon")
                         .HasColumnType("text")
                         .HasColumnName("icon");
+
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
 
                     b.Property<string>("Kind")
                         .IsRequired()
@@ -106,11 +110,12 @@ namespace Vellum.Modules.Modelling.Migrations
                         .HasColumnType("text")
                         .HasColumnName("technology");
 
-                    b.HasKey("Id")
+                    b.HasKey("RowId")
                         .HasName("pk_elements");
 
-                    b.HasIndex("ProjectId", "Branch")
-                        .HasDatabaseName("ix_elements_project_id_branch");
+                    b.HasIndex("ProjectId", "Branch", "Id")
+                        .IsUnique()
+                        .HasDatabaseName("ix_elements_project_id_branch_id");
 
                     b.HasIndex("ProjectId", "Branch", "ParentId")
                         .HasDatabaseName("ix_elements_project_id_branch_parent_id");
@@ -120,10 +125,10 @@ namespace Vellum.Modules.Modelling.Migrations
 
             modelBuilder.Entity("Vellum.Modules.Modelling.Entities.MessageEntity", b =>
                 {
-                    b.Property<Guid>("Id")
+                    b.Property<Guid>("RowId")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid")
-                        .HasColumnName("id");
+                        .HasColumnName("row_id");
 
                     b.Property<Guid>("Branch")
                         .HasColumnType("uuid")
@@ -142,6 +147,10 @@ namespace Vellum.Modules.Modelling.Migrations
                         .IsRequired()
                         .HasColumnType("text")
                         .HasColumnName("fact_status");
+
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
 
                     b.Property<string>("Name")
                         .IsRequired()
@@ -185,11 +194,12 @@ namespace Vellum.Modules.Modelling.Migrations
                         .HasColumnType("text[]")
                         .HasColumnName("tags");
 
-                    b.HasKey("Id")
+                    b.HasKey("RowId")
                         .HasName("pk_messages");
 
-                    b.HasIndex("ProjectId", "Branch")
-                        .HasDatabaseName("ix_messages_project_id_branch");
+                    b.HasIndex("ProjectId", "Branch", "Id")
+                        .IsUnique()
+                        .HasDatabaseName("ix_messages_project_id_branch_id");
 
                     b.HasIndex("ProjectId", "Branch", "ProducerId")
                         .HasDatabaseName("ix_messages_project_id_branch_producer_id");
@@ -199,10 +209,10 @@ namespace Vellum.Modules.Modelling.Migrations
 
             modelBuilder.Entity("Vellum.Modules.Modelling.Entities.RelationshipEntity", b =>
                 {
-                    b.Property<Guid>("Id")
+                    b.Property<Guid>("RowId")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid")
-                        .HasColumnName("id");
+                        .HasColumnName("row_id");
 
                     b.Property<Guid>("Branch")
                         .HasColumnType("uuid")
@@ -216,6 +226,10 @@ namespace Vellum.Modules.Modelling.Migrations
                     b.Property<Guid>("FromId")
                         .HasColumnType("uuid")
                         .HasColumnName("from_id");
+
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
 
                     b.Property<string>("Kind")
                         .IsRequired()
@@ -266,11 +280,12 @@ namespace Vellum.Modules.Modelling.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("to_id");
 
-                    b.HasKey("Id")
+                    b.HasKey("RowId")
                         .HasName("pk_relationships");
 
-                    b.HasIndex("ProjectId", "Branch")
-                        .HasDatabaseName("ix_relationships_project_id_branch");
+                    b.HasIndex("ProjectId", "Branch", "Id")
+                        .IsUnique()
+                        .HasDatabaseName("ix_relationships_project_id_branch_id");
 
                     b.ToTable("relationships", "modelling");
                 });
