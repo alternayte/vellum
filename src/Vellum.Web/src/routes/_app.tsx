@@ -2,13 +2,8 @@ import { createFileRoute, Outlet, redirect } from '@tanstack/react-router'
 
 export const Route = createFileRoute('/_app')({
   beforeLoad: async () => {
-    let response: Response
-    try {
-      response = await fetch('/api/auth/me')
-    } catch (err) {
-      // Network-level failure (DNS, CORS, offline) — let the error boundary handle it
-      throw err
-    }
+    // A network-level failure (DNS, CORS, offline) throws here and reaches the error boundary.
+    const response = await fetch('/api/auth/me')
     if (response.status === 401 || response.status === 403) {
       throw redirect({ to: '/login' })
     }

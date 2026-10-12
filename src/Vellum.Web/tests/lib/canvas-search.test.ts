@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { filterMatchingNodes } from '../../../src/components/canvas/search-overlay'
+import { filterMatchingNodes } from '../../src/lib/canvas-search'
 
 const nodes = [
   { id: '1', data: { name: 'Payment API', description: 'Handles payments' } },

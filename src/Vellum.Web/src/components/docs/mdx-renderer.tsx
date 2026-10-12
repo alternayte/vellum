@@ -7,12 +7,17 @@ import rehypePrettyCode from 'rehype-pretty-code'
 import { ElementLink } from './element-link'
 import { LiveViewCard } from './live-view-card'
 
+interface MdNode {
+  type: string
+  children?: MdNode[]
+}
+
 function remarkStripExpressions() {
-  return (tree: any) => {
-    function strip(node: any) {
+  return (tree: MdNode) => {
+    function strip(node: MdNode) {
       if (node.children) {
         node.children = node.children.filter(
-          (child: any) =>
+          (child) =>
             child.type !== 'mdxFlowExpression' &&
             child.type !== 'mdxTextExpression' &&
             child.type !== 'mdxjsEsm'
