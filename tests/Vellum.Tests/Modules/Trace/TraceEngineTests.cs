@@ -4,7 +4,7 @@ using Vellum.Modules.Trace.Engine;
 
 namespace Vellum.Tests.Modules.Trace;
 
-public class TraceEngineTests
+public partial class TraceEngineTests
 {
     // Orders reference case: a customer places an order, Orders writes it and publishes
     // OrderCreated, and Inventory and Billing consume it.
@@ -38,8 +38,9 @@ public class TraceEngineTests
         },
         new Dictionary<SubscriptionId, SubscriptionContract>
         {
-            [InventorySub] = new(InventorySub, OrderEvents, Inventory, inventoryRetry ?? RetryPolicy.None, inventoryDlq ? OrderEventsDlq : null),
+            // Inserted out of ID order on purpose: fan-out must not follow insertion order.
             [BillingSub] = new(BillingSub, OrderEvents, Billing, RetryPolicy.None, null),
+            [InventorySub] = new(InventorySub, OrderEvents, Inventory, inventoryRetry ?? RetryPolicy.None, inventoryDlq ? OrderEventsDlq : null),
         },
         new Dictionary<MessageId, MessageContract> { [OrderCreated] = new(OrderCreated, "OrderCreated", OrderCreatedSchema) },
         new Dictionary<SchemaId, string>
@@ -108,7 +109,7 @@ public class TraceEngineTests
         Assert.Equal(
             [
                 (TraceEventKind.RequestSent, 0L, 1), (TraceEventKind.RequestTimedOut, 1000L, 1),
-                (TraceEventKind.RetryScheduled, 1250L, 2), (TraceEventKind.RequestSent, 1250L, 2),
+                (TraceEventKind.RetryScheduled, 1000L, 2), (TraceEventKind.RequestSent, 1250L, 2),
                 (TraceEventKind.ResponseReceived, 1250L, 2),
             ],
             result.Events.Select(e => (e.Kind, e.AtMs, e.Attempt)));
@@ -247,7 +248,7 @@ public class TraceEngineTests
 
         Assert.Equal(0, result.Events.Single(e => e.StepId == "fast").AtMs);
         Assert.Equal(1000, result.Events.Single(e => e.Kind == TraceEventKind.Published).AtMs);
-        Assert.True(result.Events.Zip(result.Events.Skip(1)).All(p => p.First.AtMs <= p.Second.AtMs));
+        Assert.Equal(StepOutcome.Succeeded, result.Outcomes["both"]);
     }
 
     [Fact]
@@ -314,19 +315,22 @@ public class TraceEngineTests
         var restored = JsonSerializer.Deserialize<Scenario>(JsonSerializer.Serialize(scenario, options), options)!;
 
         var model = Model(inventoryRetry: new RetryPolicy(2, 10));
-        Assert.Equal(TraceEngine.Run(model, scenario).Hash, TraceEngine.Run(model, restored).Hash);
+        var (before, after) = (TraceEngine.Run(model, scenario), TraceEngine.Run(model, restored));
+        Assert.True(before.IsValid);
+        Assert.Equal(before.Hash, after.Hash);
+        Assert.Equal(before.Assertions, after.Assertions);
+        Assert.Equal(JsonSerializer.Serialize(scenario, options), JsonSerializer.Serialize(restored, options));
     }
 
     [Fact]
-    public void Random_valid_scenarios_always_replay_identically_in_time_order()
+    public void Random_valid_scenarios_replay_identically_and_in_time_order()
     {
         var random = new Random(20261013);
-        for (var i = 0; i < 300; i++)
+        var branches = 0;
+        for (var i = 0; i < 400; i++)
         {
             var counter = 0;
-            var scenario = Scenario(
-                RandomSteps(random, 3, ref counter),
-                RandomFaults(random));
+            var scenario = Scenario(RandomSteps(random, 3, ref counter, []), RandomFaults(random));
             var model = Model(new RetryPolicy(random.Next(1, 4), random.Next(0, 300)), new RetryPolicy(random.Next(1, 4), random.Next(0, 300)), random.Next(2) == 0);
 
             var first = TraceEngine.Run(model, scenario);
@@ -334,46 +338,58 @@ public class TraceEngineTests
 
             Assert.True(first.IsValid, string.Join("; ", first.Issues.Select(x => x.Message)));
             Assert.Equal(first.Hash, second.Hash);
+            // The engine does not sort: this holds only if the scheduler runs work in time order.
             Assert.True(first.Events.Zip(first.Events.Skip(1)).All(p => p.First.AtMs <= p.Second.AtMs && p.First.Sequence + 1 == p.Second.Sequence));
             // Every delivery belongs to a publish that reached the channel.
             var published = first.Events.Where(e => e.Kind == TraceEventKind.Published).Select(e => e.StepId).ToHashSet();
             Assert.All(first.Events.Where(e => e.Kind == TraceEventKind.Delivered), e => Assert.Contains(e.StepId, published));
+            // No attempt number exceeds what its contract allows.
+            Assert.All(first.Events, e => Assert.InRange(e.Attempt, 0, 3));
+            branches += first.Events.Count(e => e.Kind == TraceEventKind.BranchTaken);
         }
+        Assert.True(branches > 50, "the generator must exercise branches");
     }
 
-    private static Step[] RandomSteps(Random random, int depth, ref int counter)
+    // Mirrors the validator's rule: a branch may read only a step that is final before it.
+    private static Step[] RandomSteps(Random random, int depth, ref int counter, IReadOnlyList<string> inherited)
     {
         var steps = new List<Step>();
+        var completed = new List<string>(inherited);
         var count = random.Next(1, 4);
         for (var i = 0; i < count; i++)
         {
             var id = $"s{++counter}";
-            switch (depth == 0 ? 0 : random.Next(5))
+            Step step = (depth == 0 ? 0 : random.Next(5)) switch
             {
-                case 0:
-                    steps.Add(SaveOrder(id));
-                    break;
-                case 1:
-                    steps.Add(new CallStep(id, Orders, Charge, null, null,
-                        RandomSteps(random, depth - 1, ref counter),
-                        random.Next(2) == 0 ? RandomSteps(random, depth - 1, ref counter) : []));
-                    break;
-                case 2:
-                    steps.Add(PublishCreated(id, (InventorySub, RandomSteps(random, depth - 1, ref counter))));
-                    break;
-                case 3:
-                    steps.Add(new ParallelStep(id, [RandomSteps(random, depth - 1, ref counter), RandomSteps(random, depth - 1, ref counter)]));
-                    break;
-                default:
-                    steps.Add(new BranchStep(id, "s1", random.Next(2) == 0 ? StepOutcome.Failed : StepOutcome.Succeeded,
-                        id == "s1" ? [] : RandomSteps(random, depth - 1, ref counter), []));
-                    break;
-            }
+                1 => new CallStep(id, Orders, Charge, null, null,
+                    RandomSteps(random, depth - 1, ref counter, completed),
+                    random.Next(2) == 0 ? RandomSteps(random, depth - 1, ref counter, completed) : []),
+                2 => PublishCreated(id, (InventorySub, RandomSteps(random, depth - 1, ref counter, completed))),
+                3 => new ParallelStep(id, [RandomSteps(random, depth - 1, ref counter, completed), RandomSteps(random, depth - 1, ref counter, completed)]),
+                4 when completed.Count > 0 => new BranchStep(id, completed[random.Next(completed.Count)],
+                    (StepOutcome)random.Next(3),
+                    RandomSteps(random, depth - 1, ref counter, completed),
+                    random.Next(2) == 0 ? RandomSteps(random, depth - 1, ref counter, completed) : []),
+                _ => SaveOrder(id),
+            };
+            steps.Add(step);
+            AddCompleted(step, completed);
         }
-        // A branch may not name itself; replace a leading branch with a write.
-        if (steps[0] is BranchStep { Id: "s1" })
-            steps[0] = SaveOrder("s1");
         return steps.ToArray();
+    }
+
+    private static void AddCompleted(Step step, List<string> completed)
+    {
+        completed.Add(step.Id);
+        IEnumerable<IReadOnlyList<Step>> nested = step switch
+        {
+            CallStep call => [call.Then, call.OnError],
+            ParallelStep parallel => parallel.Branches,
+            BranchStep branch => [branch.Then, branch.Else],
+            _ => [],
+        };
+        foreach (var child in nested.SelectMany(list => list))
+            AddCompleted(child, completed);
     }
 
     private static Fault[] RandomFaults(Random random)
@@ -381,7 +397,10 @@ public class TraceEngineTests
         Guid[] targets = [Charge, Payments, OrderEvents, InventorySub, Inventory, OrdersDb];
         return targets
             .Where(_ => random.Next(3) == 0)
-            .Select(t => new Fault(t, (FaultKind)random.Next(3), random.Next(2) == 0 ? null : random.Next(1, 4)))
+            .Select(t => new Fault(
+                t,
+                t == Charge.Value ? (FaultKind)random.Next(3) : random.Next(2) == 0 ? FaultKind.Error : FaultKind.Outage,
+                random.Next(2) == 0 ? null : random.Next(1, 4)))
             .ToArray();
     }
 }

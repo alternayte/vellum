@@ -27,7 +27,21 @@ public enum TraceEventKind
 /// </summary>
 public sealed record TraceEvent(
     int Sequence, long AtMs, TraceEventKind Kind, string StepId, int Attempt,
-    Guid? From, Guid? To, Guid? Target, JsonElement? Payload, string? Detail);
+    Guid? From, Guid? To, Guid? Target, JsonElement? Payload, string? Detail,
+    Guid? Message = null, IReadOnlyDictionary<string, string>? Headers = null);
+
+/// <summary>
+/// Bounds on what one playback may cost. Scenarios arrive from imports and AI proposals, so
+/// they are untrusted input: nested retries multiply, and the limits keep that finite.
+/// </summary>
+public static class TraceLimits
+{
+    public const int MaxDepth = 24;
+    public const int MaxSteps = 500;
+    public const int MaxAttempts = 10;
+    public const int MaxDurationMs = 3_600_000;
+    public const int MaxEvents = 10_000;
+}
 
 public sealed record ScenarioIssue(string StepId, string Code, string Message);
 

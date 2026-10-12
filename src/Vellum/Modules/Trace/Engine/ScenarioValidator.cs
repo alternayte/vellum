@@ -5,46 +5,69 @@ using Vellum.Modules.Modelling.Model;
 namespace Vellum.Modules.Trace.Engine;
 
 /// <summary>
-/// Rejects a scenario that points at a contract that does not exist or carries a payload
-/// its schema does not accept. The engine never runs an invalid scenario.
+/// Rejects a scenario that is malformed, points at a contract that does not exist, carries a
+/// payload its schema does not accept, or exceeds <see cref="TraceLimits"/>. The engine never
+/// runs a scenario that has an issue.
 /// </summary>
 public static class ScenarioValidator
 {
     public static IReadOnlyList<ScenarioIssue> Validate(TraceModel model, Scenario scenario)
     {
         var issues = new List<ScenarioIssue>();
+        CheckModel(model, issues);
+
+        if (scenario.Steps is null || scenario.Faults is null || scenario.Assertions is null)
+        {
+            issues.Add(new("", "malformed-scenario", "A scenario needs steps, faults and assertions lists; an empty list is valid."));
+            return issues;
+        }
+
         var seen = new HashSet<string>(StringComparer.Ordinal);
         var schemas = new Dictionary<SchemaId, JsonSchema?>();
+        var stepCount = 0;
 
-        foreach (var step in scenario.Steps)
-            Visit(step);
+        VisitSequence(scenario.Steps, new HashSet<string>(StringComparer.Ordinal), 1, "");
 
-        foreach (var fault in scenario.Faults)
-        {
-            var known = model.Operations.ContainsKey(fault.Target)
-                || model.Channels.ContainsKey(fault.Target)
-                || model.Subscriptions.ContainsKey(fault.Target)
-                || model.Elements.ContainsKey(fault.Target);
-            if (!known)
-                issues.Add(new("", "unknown-fault-target", $"Fault target {fault.Target} is not an operation, channel, subscription or element."));
-            if (fault.FailFirst is < 1)
-                issues.Add(new("", "invalid-fault", $"Fault on {fault.Target} must fail at least one attempt."));
-        }
+        if (stepCount > TraceLimits.MaxSteps)
+            issues.Add(new("", "too-many-steps", $"A scenario has at most {TraceLimits.MaxSteps} steps; this one has {stepCount}."));
 
-        foreach (var assertion in scenario.Assertions)
-        {
-            if (assertion is OutcomeAssertion outcome && !seen.Contains(outcome.Step))
-                issues.Add(new(outcome.Step, "unknown-step", $"Assertion {assertion.Id} names step '{outcome.Step}', which is not in the scenario."));
-            if (assertion is EventCountAssertion { Expected: < 0 })
-                issues.Add(new("", "invalid-assertion", $"Assertion {assertion.Id} expects a negative count."));
-        }
-
+        CheckFaults(model, scenario, issues);
+        CheckAssertions(model, scenario, seen, issues);
         return issues;
 
-        void Visit(Step step)
+        // `completed` holds the steps whose outcome is final when the next step of this
+        // sequence starts. A branch may read only those.
+        void VisitSequence(IReadOnlyList<Step>? steps, HashSet<string> inherited, int depth, string owner)
         {
+            if (steps is null)
+            {
+                issues.Add(new(owner, "malformed-scenario", "A step list is missing; use an empty list for no steps."));
+                return;
+            }
+            if (depth > TraceLimits.MaxDepth)
+            {
+                issues.Add(new(owner, "too-deep", $"Steps nest at most {TraceLimits.MaxDepth} levels."));
+                return;
+            }
+
+            var completed = new HashSet<string>(inherited, StringComparer.Ordinal);
+            foreach (var step in steps)
+            {
+                if (step is null)
+                {
+                    issues.Add(new(owner, "malformed-scenario", "A step list holds an empty entry."));
+                    continue;
+                }
+                Visit(step, completed, depth);
+                AddCompleted(step, completed, depth);
+            }
+        }
+
+        void Visit(Step step, HashSet<string> completed, int depth)
+        {
+            stepCount++;
             if (string.IsNullOrWhiteSpace(step.Id))
-                issues.Add(new(step.Id, "missing-step-id", "Every step needs an ID."));
+                issues.Add(new("", "missing-step-id", "Every step needs an ID."));
             else if (!seen.Add(step.Id))
                 issues.Add(new(step.Id, "duplicate-step-id", $"Step ID '{step.Id}' is used more than once."));
 
@@ -54,8 +77,6 @@ public static class ScenarioValidator
                     RequireElement(step, call.From, "caller");
                     if (model.Operations.TryGetValue(call.Operation, out var operation))
                     {
-                        if (operation.Retry.MaxAttempts < 1)
-                            issues.Add(new(step.Id, "invalid-retry", $"Operation '{operation.Name}' must allow at least one attempt."));
                         CheckPayload(step, "request", call.Request, operation.RequestSchemaId);
                         CheckPayload(step, "response", call.Response, operation.ResponseSchemaId);
                     }
@@ -63,8 +84,8 @@ public static class ScenarioValidator
                     {
                         issues.Add(new(step.Id, "unknown-operation", $"Operation {call.Operation} does not exist."));
                     }
-                    VisitAll(call.Then);
-                    VisitAll(call.OnError);
+                    VisitSequence(call.Then, completed, depth + 1, step.Id);
+                    VisitSequence(call.OnError, completed, depth + 1, step.Id);
                     break;
 
                 case PublishStep publish:
@@ -76,21 +97,18 @@ public static class ScenarioValidator
                     else
                         issues.Add(new(step.Id, "unknown-message", $"Message {publish.Message} does not exist."));
 
+                    if (publish.Handlers is null || publish.Headers is null)
+                    {
+                        issues.Add(new(step.Id, "malformed-scenario", "A publish step needs headers and handlers; empty maps are valid."));
+                        break;
+                    }
                     foreach (var (subscriptionId, handler) in publish.Handlers)
                     {
                         if (!model.Subscriptions.TryGetValue(subscriptionId, out var subscription))
                             issues.Add(new(step.Id, "unknown-subscription", $"Subscription {subscriptionId} does not exist."));
                         else if (subscription.ChannelId != publish.Channel)
                             issues.Add(new(step.Id, "subscription-not-on-channel", $"Subscription {subscriptionId} does not listen to channel {publish.Channel}."));
-                        VisitAll(handler);
-                    }
-
-                    foreach (var subscription in model.Subscriptions.Values.Where(s => s.ChannelId == publish.Channel))
-                    {
-                        if (subscription.Retry.MaxAttempts < 1)
-                            issues.Add(new(step.Id, "invalid-retry", $"Subscription {subscription.Id} must allow at least one attempt."));
-                        if (subscription.DeadLetterChannelId is { } dlq && !model.Channels.ContainsKey(dlq))
-                            issues.Add(new(step.Id, "unknown-channel", $"Dead-letter channel {dlq} does not exist."));
+                        VisitSequence(handler, completed, depth + 1, step.Id);
                     }
                     break;
 
@@ -102,24 +120,45 @@ public static class ScenarioValidator
                     break;
 
                 case ParallelStep parallel:
+                    if (parallel.Branches is null)
+                    {
+                        issues.Add(new(step.Id, "malformed-scenario", "A parallel step needs a branches list."));
+                        break;
+                    }
                     foreach (var branch in parallel.Branches)
-                        VisitAll(branch);
+                        VisitSequence(branch, completed, depth + 1, step.Id);
                     break;
 
                 case BranchStep branch:
-                    // Only an earlier step has an outcome when the branch is reached.
-                    if (!seen.Contains(branch.WhenStep) || branch.WhenStep == branch.Id)
-                        issues.Add(new(step.Id, "unknown-step", $"Branch condition names step '{branch.WhenStep}', which does not run before it."));
-                    VisitAll(branch.Then);
-                    VisitAll(branch.Else);
+                    if (!Enum.IsDefined(branch.Is))
+                        issues.Add(new(step.Id, "invalid-outcome", "A branch compares against succeeded, failed or skipped."));
+                    if (branch.WhenStep is null || !completed.Contains(branch.WhenStep))
+                        issues.Add(new(step.Id, "unknown-step", $"Branch condition names step '{branch.WhenStep}', whose outcome is not final when the branch runs. Name a step that finishes earlier in the same flow."));
+                    VisitSequence(branch.Then, completed, depth + 1, step.Id);
+                    VisitSequence(branch.Else, completed, depth + 1, step.Id);
                     break;
             }
         }
 
-        void VisitAll(IReadOnlyList<Step> steps)
+        // Consumers run after the publisher has moved on, so handler steps never count as
+        // completed for whatever follows the publish.
+        void AddCompleted(Step step, HashSet<string> completed, int depth)
         {
-            foreach (var child in steps)
-                Visit(child);
+            if (depth > TraceLimits.MaxDepth || step is null)
+                return;
+            if (!string.IsNullOrWhiteSpace(step.Id))
+                completed.Add(step.Id);
+
+            IEnumerable<IReadOnlyList<Step>?> nested = step switch
+            {
+                CallStep call => [call.Then, call.OnError],
+                ParallelStep parallel => parallel.Branches ?? [],
+                BranchStep branch => [branch.Then, branch.Else],
+                _ => [],
+            };
+            foreach (var list in nested)
+                foreach (var child in list ?? [])
+                    AddCompleted(child, completed, depth + 1);
         }
 
         void RequireElement(Step step, ElementId id, string role)
@@ -136,20 +175,9 @@ public static class ScenarioValidator
             if (!schemas.TryGetValue(id, out var schema))
             {
                 if (!model.Schemas.TryGetValue(id, out var text))
-                {
                     issues.Add(new(step.Id, "unknown-schema", $"Schema {id} does not exist."));
-                }
-                else
-                {
-                    try
-                    {
-                        schema = JsonSchema.FromText(text);
-                    }
-                    catch (Exception ex) when (ex is JsonException or JsonSchemaException)
-                    {
-                        issues.Add(new(step.Id, "invalid-schema", $"Schema {id} is not a valid JSON Schema."));
-                    }
-                }
+                else if ((schema = Build(text)) is null)
+                    issues.Add(new(step.Id, "invalid-schema", $"Schema {id} is not a JSON Schema this version can evaluate."));
                 schemas[id] = schema;
             }
 
@@ -162,16 +190,145 @@ public static class ScenarioValidator
                 return;
             }
 
-            var result = schema.Evaluate(value, new EvaluationOptions { OutputFormat = OutputFormat.List });
-            if (result.IsValid)
-                return;
+            try
+            {
+                var result = schema.Evaluate(value, new EvaluationOptions { OutputFormat = OutputFormat.List });
+                if (result.IsValid)
+                    return;
 
-            var reasons = result.Details
-                .Where(d => d.Errors is { Count: > 0 })
-                .SelectMany(d => d.Errors!.Select(e => $"{d.InstanceLocation}: {e.Value}"))
-                .Order(StringComparer.Ordinal)
-                .Take(3);
-            issues.Add(new(step.Id, "schema-mismatch", $"The {what} does not match its schema. {string.Join("; ", reasons)}"));
+                var reasons = (result.Details ?? [])
+                    .Where(d => d.Errors is { Count: > 0 })
+                    .SelectMany(d => d.Errors!.Select(e => $"{d.InstanceLocation}: {e.Value}"))
+                    .Order(StringComparer.Ordinal)
+                    .Take(3);
+                issues.Add(new(step.Id, "schema-mismatch", $"The {what} does not match its schema. {string.Join("; ", reasons)}"));
+            }
+            // Schema text is stored input. A reference that cannot resolve or a pattern that
+            // cannot compile or finish is a schema defect, never a crash.
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                issues.Add(new(step.Id, "invalid-schema", $"Schema {id} cannot be evaluated: {ex.GetType().Name}."));
+            }
+        }
+    }
+
+    /// <summary>
+    /// Each schema gets its own registry. The library default is one process-wide registry
+    /// keyed by <c>$id</c>, which would make a second run, or another project with the same
+    /// <c>$id</c>, fail.
+    /// </summary>
+    private static JsonSchema? Build(string text)
+    {
+        try
+        {
+            return JsonSchema.FromText(text, new BuildOptions { SchemaRegistry = new SchemaRegistry() });
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            return null;
+        }
+    }
+
+    private static void CheckModel(TraceModel model, List<ScenarioIssue> issues)
+    {
+        void Bad(string message) => issues.Add(new("", "invalid-model", message));
+
+        foreach (var (id, operation) in model.Operations)
+        {
+            if (operation.Id != id) Bad($"Operation {id} is stored under another ID.");
+            if (!model.Elements.ContainsKey(operation.OwnerId)) Bad($"Operation '{operation.Name}' belongs to an element that does not exist.");
+            if (operation.TimeoutMs is < 0 or > TraceLimits.MaxDurationMs) Bad($"Operation '{operation.Name}' needs a timeout between 0 and {TraceLimits.MaxDurationMs} ms.");
+            CheckRetry(operation.Retry, $"Operation '{operation.Name}'");
+        }
+
+        foreach (var (id, channel) in model.Channels)
+            if (channel.Id != id) Bad($"Channel {id} is stored under another ID.");
+
+        foreach (var (id, subscription) in model.Subscriptions)
+        {
+            if (subscription.Id != id) Bad($"Subscription {id} is stored under another ID.");
+            if (!model.Channels.ContainsKey(subscription.ChannelId)) Bad($"Subscription {id} listens to a channel that does not exist.");
+            if (!model.Elements.ContainsKey(subscription.ConsumerId)) Bad($"Subscription {id} has a consumer that does not exist.");
+            if (subscription.DeadLetterChannelId is { } dlq && !model.Channels.ContainsKey(dlq)) Bad($"Subscription {id} dead-letters to a channel that does not exist.");
+            CheckRetry(subscription.Retry, $"Subscription {id}");
+        }
+
+        foreach (var (id, message) in model.Messages)
+            if (message.Id != id) Bad($"Message {id} is stored under another ID.");
+
+        void CheckRetry(RetryPolicy? retry, string owner)
+        {
+            if (retry is null)
+                Bad($"{owner} has no retry policy.");
+            else if (retry.MaxAttempts is < 1 or > TraceLimits.MaxAttempts)
+                Bad($"{owner} allows between 1 and {TraceLimits.MaxAttempts} attempts.");
+            else if (retry.BackoffMs is < 0 or > TraceLimits.MaxDurationMs)
+                Bad($"{owner} needs a backoff between 0 and {TraceLimits.MaxDurationMs} ms.");
+        }
+    }
+
+    private static void CheckFaults(TraceModel model, Scenario scenario, List<ScenarioIssue> issues)
+    {
+        var targets = new HashSet<Guid>();
+        foreach (var fault in scenario.Faults)
+        {
+            if (fault is null)
+            {
+                issues.Add(new("", "malformed-scenario", "The faults list holds an empty entry."));
+                continue;
+            }
+
+            var isOperation = model.Operations.ContainsKey(fault.Target);
+            var known = isOperation
+                || model.Channels.ContainsKey(fault.Target)
+                || model.Subscriptions.ContainsKey(fault.Target)
+                || model.Elements.ContainsKey(fault.Target);
+            if (!known)
+                issues.Add(new("", "unknown-fault-target", $"Fault target {fault.Target} is not an operation, channel, subscription or element."));
+            if (!targets.Add(fault.Target))
+                issues.Add(new("", "duplicate-fault", $"Target {fault.Target} has more than one fault; give it one."));
+            if (!Enum.IsDefined(fault.Kind))
+                issues.Add(new("", "invalid-fault", $"Fault on {fault.Target} has an unknown kind."));
+            else if (fault.Kind == FaultKind.Timeout && known && !isOperation)
+                issues.Add(new("", "invalid-fault", $"Only an operation can time out; use error or outage for {fault.Target}."));
+            if (fault.FailFirst is < 1)
+                issues.Add(new("", "invalid-fault", $"Fault on {fault.Target} must fail at least one attempt."));
+        }
+    }
+
+    private static void CheckAssertions(TraceModel model, Scenario scenario, HashSet<string> steps, List<ScenarioIssue> issues)
+    {
+        var ids = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var assertion in scenario.Assertions)
+        {
+            if (assertion is null)
+            {
+                issues.Add(new("", "malformed-scenario", "The assertions list holds an empty entry."));
+                continue;
+            }
+            if (string.IsNullOrWhiteSpace(assertion.Id) || !ids.Add(assertion.Id))
+                issues.Add(new("", "invalid-assertion", $"Assertion ID '{assertion.Id}' is missing or used more than once."));
+
+            switch (assertion)
+            {
+                case OutcomeAssertion outcome:
+                    if (outcome.Step is null || !steps.Contains(outcome.Step))
+                        issues.Add(new(outcome.Step ?? "", "unknown-step", $"Assertion {assertion.Id} names step '{outcome.Step}', which is not in the scenario."));
+                    if (!Enum.IsDefined(outcome.Expected))
+                        issues.Add(new("", "invalid-assertion", $"Assertion {assertion.Id} expects an unknown outcome."));
+                    break;
+
+                case EventCountAssertion count:
+                    if (count.Expected < 0)
+                        issues.Add(new("", "invalid-assertion", $"Assertion {assertion.Id} expects a negative count."));
+                    if (!Enum.IsDefined(count.Kind))
+                        issues.Add(new("", "invalid-assertion", $"Assertion {assertion.Id} counts an unknown event kind."));
+                    if (count.Target is { } target
+                        && !model.Operations.ContainsKey(target) && !model.Channels.ContainsKey(target)
+                        && !model.Subscriptions.ContainsKey(target) && !model.Elements.ContainsKey(target))
+                        issues.Add(new("", "unknown-assertion-target", $"Assertion {assertion.Id} counts events for {target}, which does not exist."));
+                    break;
+            }
         }
     }
 }
