@@ -39,7 +39,8 @@ builder.Services.AddDeedbox(deedbox => deedbox
 
 // Build-time OpenAPI generation starts the host with no database. Deedbox checks its
 // schema when the host starts, so its hosted services do not run in that process.
-if (Assembly.GetEntryAssembly()?.GetName().Name == "GetDocument.Insider")
+var generatingOpenApi = Assembly.GetEntryAssembly()?.GetName().Name == "GetDocument.Insider";
+if (generatingOpenApi)
 {
     for (var i = builder.Services.Count - 1; i >= servicesBeforeDeedbox; i--)
     {
@@ -107,20 +108,16 @@ app.MapSchemaEndpoints();
 app.MapScoreEndpoints();
 app.MapMcpEndpoints();
 
+if (!generatingOpenApi && app.Configuration.GetValue("Database:MigrateOnStartup", true))
+{
+    await DatabaseMigrations.ApplyAsync(
+        app.Services, app.Configuration.GetConnectionString("DefaultConnection")!);
+}
+
 if (app.Environment.IsDevelopment())
 {
     using var scope = app.Services.CreateScope();
     var services = scope.ServiceProvider;
-
-    // Apply all migrations. The modelling migrations also create the Deedbox tables.
-    await services.GetRequiredService<AppIdentityDbContext>().Database.MigrateAsync();
-    await services.GetRequiredService<WorkspacesDbContext>().Database.MigrateAsync();
-    await services.GetRequiredService<ModellingDbContext>().Database.MigrateAsync();
-    await services.GetRequiredService<ViewsDbContext>().Database.MigrateAsync();
-    await services.GetRequiredService<DocsDbContext>().Database.MigrateAsync();
-    await services.GetRequiredService<DraftsDbContext>().Database.MigrateAsync();
-    await services.GetRequiredService<SchemasDbContext>().Database.MigrateAsync();
-    await services.GetRequiredService<ScoringDbContext>().Database.MigrateAsync();
 
     // Seed dev data
     if (args.Contains("seed"))
