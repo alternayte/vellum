@@ -1,3 +1,5 @@
+using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using Json.Schema;
 using Vellum.Modules.Modelling.Model;
@@ -13,6 +15,9 @@ public static class ScenarioValidator
 {
     public static IReadOnlyList<ScenarioIssue> Validate(TraceModel model, Scenario scenario)
     {
+        ArgumentNullException.ThrowIfNull(model);
+        ArgumentNullException.ThrowIfNull(scenario);
+
         var issues = new List<ScenarioIssue>();
         CheckModel(model, issues);
 
@@ -25,6 +30,8 @@ public static class ScenarioValidator
         var seen = new HashSet<string>(StringComparer.Ordinal);
         var schemas = new Dictionary<SchemaId, JsonSchema?>();
         var stepCount = 0;
+        var schemaClock = new Stopwatch();
+        var schemaBudgetSpent = false;
 
         VisitSequence(scenario.Steps, new HashSet<string>(StringComparer.Ordinal), 1, "");
 
@@ -50,6 +57,8 @@ public static class ScenarioValidator
                 return;
             }
 
+            // A list counts toward the step limit even when empty: each one is scheduled work.
+            stepCount++;
             var completed = new HashSet<string>(inherited, StringComparer.Ordinal);
             foreach (var step in steps)
             {
@@ -83,6 +92,8 @@ public static class ScenarioValidator
                     else
                     {
                         issues.Add(new(step.Id, "unknown-operation", $"Operation {call.Operation} does not exist."));
+                        CheckPayload(step, "request", call.Request, null);
+                        CheckPayload(step, "response", call.Response, null);
                     }
                     VisitSequence(call.Then, completed, depth + 1, step.Id);
                     VisitSequence(call.OnError, completed, depth + 1, step.Id);
@@ -95,7 +106,10 @@ public static class ScenarioValidator
                     if (model.Messages.TryGetValue(publish.Message, out var message))
                         CheckPayload(step, "payload", publish.Payload, message.SchemaId);
                     else
+                    {
                         issues.Add(new(step.Id, "unknown-message", $"Message {publish.Message} does not exist."));
+                        CheckPayload(step, "payload", publish.Payload, null);
+                    }
 
                     if (publish.Handlers is null || publish.Headers is null)
                     {
@@ -117,6 +131,7 @@ public static class ScenarioValidator
                     RequireElement(step, write.Store, "data store");
                     if (string.IsNullOrWhiteSpace(write.Dataset))
                         issues.Add(new(step.Id, "missing-dataset", "A write names the dataset it changes."));
+                    CheckPayload(step, "change", write.Change, null);
                     break;
 
                 case ParallelStep parallel:
@@ -169,6 +184,8 @@ public static class ScenarioValidator
 
         void CheckPayload(Step step, string what, JsonElement? payload, SchemaId? schemaId)
         {
+            if (payload is { } given && !IsUsable(step, what, given))
+                return;
             if (schemaId is not { } id)
                 return;
 
@@ -190,6 +207,17 @@ public static class ScenarioValidator
                 return;
             }
 
+            // A stored schema can hold a pattern that backtracks for seconds per value. The
+            // allowance bounds the total; past it the scenario is rejected, never half-checked.
+            if (schemaClock.ElapsedMilliseconds > TraceLimits.SchemaBudgetMs)
+            {
+                if (!schemaBudgetSpent)
+                    issues.Add(new(step.Id, "validation-too-slow", "Schema checks took too long. Simplify the patterns in the schemas this scenario uses."));
+                schemaBudgetSpent = true;
+                return;
+            }
+
+            schemaClock.Start();
             try
             {
                 var result = schema.Evaluate(value, new EvaluationOptions { OutputFormat = OutputFormat.List });
@@ -208,6 +236,37 @@ public static class ScenarioValidator
             catch (Exception ex) when (ex is not OutOfMemoryException)
             {
                 issues.Add(new(step.Id, "invalid-schema", $"Schema {id} cannot be evaluated: {ex.GetType().Name}."));
+            }
+            finally
+            {
+                schemaClock.Stop();
+            }
+        }
+
+        // Every payload is later copied into events and hashed, so it must be bounded and
+        // must be JSON that can be written back out.
+        bool IsUsable(Step step, string what, JsonElement value)
+        {
+            if (value.ValueKind == JsonValueKind.Undefined)
+            {
+                issues.Add(new(step.Id, "invalid-payload", $"The {what} is not a JSON value."));
+                return false;
+            }
+            if (JsonMarshal.GetRawUtf8Value(value).Length > TraceLimits.MaxPayloadBytes)
+            {
+                issues.Add(new(step.Id, "payload-too-large", $"The {what} is larger than {TraceLimits.MaxPayloadBytes / 1024} KB. Use a representative fixture."));
+                return false;
+            }
+            try
+            {
+                using var writer = new Utf8JsonWriter(Stream.Null);
+                CanonicalJson.Write(writer, value);
+                return true;
+            }
+            catch (InvalidOperationException)
+            {
+                issues.Add(new(step.Id, "invalid-payload", $"The {what} holds text that is not valid Unicode."));
+                return false;
             }
         }
     }
@@ -232,6 +291,14 @@ public static class ScenarioValidator
     private static void CheckModel(TraceModel model, List<ScenarioIssue> issues)
     {
         void Bad(string message) => issues.Add(new("", "invalid-model", message));
+
+        if (model.Elements is null || model.Operations is null || model.Channels is null
+            || model.Subscriptions is null || model.Messages is null || model.Schemas is null
+            || model.Operations.Values.Any(o => o is null) || model.Channels.Values.Any(c => c is null)
+            || model.Subscriptions.Values.Any(x => x is null) || model.Messages.Values.Any(m => m is null))
+        {
+            throw new ArgumentException("A trace model has every collection and no empty entries.", nameof(model));
+        }
 
         foreach (var (id, operation) in model.Operations)
         {
@@ -291,6 +358,8 @@ public static class ScenarioValidator
                 issues.Add(new("", "invalid-fault", $"Fault on {fault.Target} has an unknown kind."));
             else if (fault.Kind == FaultKind.Timeout && known && !isOperation)
                 issues.Add(new("", "invalid-fault", $"Only an operation can time out; use error or outage for {fault.Target}."));
+            else if (fault.Kind == FaultKind.Timeout && isOperation && model.Operations[fault.Target].TimeoutMs == 0)
+                issues.Add(new("", "invalid-fault", $"Operation {fault.Target} declares no timeout, so it cannot time out. Give it one, or use error."));
             if (fault.FailFirst is < 1)
                 issues.Add(new("", "invalid-fault", $"Fault on {fault.Target} must fail at least one attempt."));
         }

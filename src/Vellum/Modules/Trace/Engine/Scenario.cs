@@ -70,8 +70,15 @@ public sealed record Fault(Guid Target, FaultKind Kind, int? FailFirst);
 [JsonDerivedType(typeof(EventCountAssertion), "event-count")]
 public abstract record Assertion(string Id);
 
+/// <summary>
+/// Checks the outcome a step had in the attempt that settled its enclosing call or delivery.
+/// A step that ran only inside an attempt that was retried has no outcome.
+/// </summary>
 public sealed record OutcomeAssertion(string Id, string Step, StepOutcome Expected) : Assertion(Id);
 
-/// <summary>Counts trace events of one kind, optionally for one contract or element.</summary>
+/// <summary>
+/// Counts trace events of one kind, optionally for one contract or element. It counts every
+/// attempt, including retried and abandoned ones: that is how a duplicate shows.
+/// </summary>
 public sealed record EventCountAssertion(
     string Id, TraceEventKind Kind, Guid? Target, int Expected) : Assertion(Id);

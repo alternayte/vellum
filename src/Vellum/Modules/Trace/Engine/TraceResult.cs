@@ -41,6 +41,11 @@ public static class TraceLimits
     public const int MaxAttempts = 10;
     public const int MaxDurationMs = 3_600_000;
     public const int MaxEvents = 10_000;
+    /// <summary>Scheduled work items, including ones that emit nothing.</summary>
+    public const int MaxWork = 200_000;
+    public const int MaxPayloadBytes = 64 * 1024;
+    /// <summary>Wall-clock allowance for all schema evaluation in one validation.</summary>
+    public const int SchemaBudgetMs = 2_000;
 }
 
 public sealed record ScenarioIssue(string StepId, string Code, string Message);

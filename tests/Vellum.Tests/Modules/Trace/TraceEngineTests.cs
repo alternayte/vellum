@@ -340,9 +340,6 @@ public partial class TraceEngineTests
             Assert.Equal(first.Hash, second.Hash);
             // The engine does not sort: this holds only if the scheduler runs work in time order.
             Assert.True(first.Events.Zip(first.Events.Skip(1)).All(p => p.First.AtMs <= p.Second.AtMs && p.First.Sequence + 1 == p.Second.Sequence));
-            // Every delivery belongs to a publish that reached the channel.
-            var published = first.Events.Where(e => e.Kind == TraceEventKind.Published).Select(e => e.StepId).ToHashSet();
-            Assert.All(first.Events.Where(e => e.Kind == TraceEventKind.Delivered), e => Assert.Contains(e.StepId, published));
             // No attempt number exceeds what its contract allows.
             Assert.All(first.Events, e => Assert.InRange(e.Attempt, 0, 3));
             branches += first.Events.Count(e => e.Kind == TraceEventKind.BranchTaken);

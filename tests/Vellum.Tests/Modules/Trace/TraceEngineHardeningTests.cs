@@ -269,4 +269,170 @@ public partial class TraceEngineTests
         Assert.Equal(OrderCreated.Value, published.Message);
         Assert.Equal("acme", published.Headers!["x-tenant"]);
     }
+
+    // ---- Second review: outcomes belong to an attempt, not to the scenario ----
+
+    private static readonly OperationId Slow = G(12), Quick = G(13);
+    private static readonly MessageId OrderShipped = G(41);
+
+    private static TraceModel WithOperations(TraceModel model, params OperationContract[] operations)
+    {
+        var all = new Dictionary<OperationId, OperationContract>(model.Operations);
+        foreach (var operation in operations)
+            all[operation.Id] = operation;
+        return model with { Operations = all };
+    }
+
+    private static OperationContract Op(OperationId id, int timeoutMs, int attempts = 1, int backoffMs = 0) =>
+        new(id, Payments, $"op-{id.Value.ToString()[^2..]}", Transport.Http, null, null, timeoutMs, new RetryPolicy(attempts, backoffMs));
+
+    private static CallStep CallOp(string id, OperationId operation, Step[]? then = null, Step[]? onError = null) =>
+        new(id, Orders, operation, null, null, then ?? [], onError ?? []);
+
+    [Fact]
+    public void Work_left_running_after_its_caller_retried_cannot_erase_the_outcomes_of_the_retry()
+    {
+        // `outer` allows 100 ms. In attempt 1 `slow` hangs for 150 ms, so `outer` retries at
+        // t=100 and succeeds. The abandoned attempt 1 keeps going and reaches `w` at t=150.
+        var model = WithOperations(Model(), Op(Charge, 100, attempts: 2), Op(Slow, 150, attempts: 2), Op(Quick, 0));
+        var outer = CallOp("outer", Charge, [CallOp("slow", Slow), CallOp("quick", Quick, [SaveOrder("w")])]);
+
+        var result = TraceEngine.Run(
+            model,
+            Scenario([outer], [new Fault(Slow, FaultKind.Timeout, 1)], [new OutcomeAssertion("w-ok", "w", StepOutcome.Succeeded)]));
+
+        Assert.Equal(StepOutcome.Succeeded, result.Outcomes["outer"]);
+        Assert.Equal(StepOutcome.Succeeded, result.Outcomes["w"]);
+        Assert.True(Assert.Single(result.Assertions).Passed);
+        // The abandoned work is still visible as events: `w` was written twice.
+        Assert.Equal([100L, 150L], result.Events.Where(e => e.StepId == "w").Select(e => e.AtMs));
+    }
+
+    [Fact]
+    public void Two_overlapping_runs_of_one_consumer_each_branch_on_their_own_outcomes()
+    {
+        // The publisher's request is retried after it published, so Inventory receives the
+        // event twice, 100 ms apart, and the two handler runs overlap. In run 1 `a` fails; in
+        // run 2 it succeeds. Each run's branch must follow its own `a`.
+        var model = WithOperations(Model(chargeRetry: new RetryPolicy(2, 100)), Op(Slow, 200));
+        Step[] handler =
+        [
+            PlaceCall("a", onError: [SaveOrder("a-fallback")]),
+            CallOp("wait", Slow, onError: [SaveOrder("waited")]),
+            new BranchStep("decide", "a", StepOutcome.Failed, [SaveOrder("saw-failure")], [SaveOrder("saw-success")]),
+        ];
+        var request = ChargeCall("request",
+        [
+            PublishCreated("publish", (InventorySub, handler)),
+            // Customer stands in as a store no consumer shares, so the fault hits only this write.
+            new WriteStep("commit", Payments, Customer, "ledger", null),
+        ]);
+
+        var result = TraceEngine.Run(
+            model,
+            Scenario([request],
+            [
+                new Fault(Customer, FaultKind.Error, 1), new Fault(PlaceOrder, FaultKind.Error, 1), new Fault(Slow, FaultKind.Timeout, null),
+            ]));
+
+        Assert.Equal(
+            [(200L, "then"), (300L, "else")],
+            result.Events.Where(e => e.Kind == TraceEventKind.BranchTaken).Select(e => (e.AtMs, e.Detail!)));
+        Assert.Equal([200L], result.Events.Where(e => e.StepId == "saw-failure").Select(e => e.AtMs));
+        Assert.Equal([300L], result.Events.Where(e => e.StepId == "saw-success").Select(e => e.AtMs));
+    }
+
+    [Fact]
+    public void A_step_that_failed_inside_the_final_attempt_keeps_its_outcome()
+    {
+        var result = TraceEngine.Run(
+            Model(),
+            Scenario([ChargeCall("outer", [SaveOrder("inner")])], [new Fault(OrdersDb, FaultKind.Error, null)]));
+
+        Assert.Equal(StepOutcome.Failed, result.Outcomes["inner"]);
+        Assert.Equal(StepOutcome.Failed, result.Outcomes["outer"]);
+    }
+
+    [Fact]
+    public void A_response_at_the_deadline_instant_is_late()
+    {
+        // `inner` times out at t=100 and its retry answers at t=100, the same instant the
+        // caller's 100 ms deadline ends.
+        var model = WithOperations(Model(), Op(Charge, 100), Op(Slow, 100, attempts: 2));
+        var result = TraceEngine.Run(
+            model,
+            Scenario([CallOp("outer", Charge, [CallOp("inner", Slow)])], [new Fault(Slow, FaultKind.Timeout, 1)]));
+
+        Assert.Equal(StepOutcome.Failed, result.Outcomes["outer"]);
+        Assert.Equal("outer", result.Events.First(e => e.Kind == TraceEventKind.RequestTimedOut && e.AtMs == 100).StepId);
+    }
+
+    [Fact]
+    public void An_operation_without_a_timeout_cannot_be_given_a_timeout_fault()
+    {
+        var model = WithOperations(Model(), Op(Quick, 0));
+
+        var issue = Assert.Single(ScenarioValidator.Validate(model, Scenario([CallOp("c", Quick)], [new Fault(Quick, FaultKind.Timeout, null)])));
+        Assert.Equal("invalid-fault", issue.Code);
+    }
+
+    [Theory]
+    [InlineData("\"\\ud800\"", "invalid-payload")]
+    [InlineData("{\"\\ud800\":1}", "invalid-payload")]
+    public void A_payload_that_cannot_be_written_back_out_is_rejected(string change, string code)
+    {
+        var write = new WriteStep("w", Orders, OrdersDb, "orders", Json(change));
+
+        var result = TraceEngine.Run(Model(), Scenario([write]));
+
+        Assert.Equal(code, Assert.Single(result.Issues).Code);
+    }
+
+    [Fact]
+    public void A_payload_over_the_size_limit_is_rejected()
+    {
+        var big = Json($"\"{new string('x', TraceLimits.MaxPayloadBytes)}\"");
+        var result = TraceEngine.Run(Model(), Scenario([new WriteStep("w", Orders, OrdersDb, "orders", big)]));
+
+        Assert.Equal("payload-too-large", Assert.Single(result.Issues).Code);
+    }
+
+    [Fact]
+    public void Empty_parallel_branches_count_toward_the_step_limit()
+    {
+        var branches = Enumerable.Range(0, TraceLimits.MaxSteps + 1).Select(_ => (IReadOnlyList<Step>)[]).ToArray();
+
+        var issues = ScenarioValidator.Validate(Model(), Scenario([new ParallelStep("p", branches)]));
+
+        Assert.Equal("too-many-steps", Assert.Single(issues).Code);
+    }
+
+    [Theory]
+    [InlineData("""{"n":1}""", """{"n":1.0}""")]
+    [InlineData("""{"n":100}""", """{"n":1e2}""")]
+    [InlineData("""{"n":1.5}""", """{"n":1.50}""")]
+    [InlineData("""{"n":0}""", """{"n":-0}""")]
+    [InlineData("""{"a":2}""", """{"a":1,"a":2}""")]
+    public void The_hash_does_not_depend_on_how_a_value_is_spelled(string one, string other)
+    {
+        string HashOf(string change) =>
+            TraceEngine.Run(Model(), Scenario([new WriteStep("w", Orders, OrdersDb, "orders", Json(change))])).Hash;
+
+        Assert.Equal(HashOf(one), HashOf(other));
+        Assert.NotEqual(HashOf(one), HashOf("""{"n":7,"a":7}"""));
+    }
+
+    [Fact]
+    public void The_hash_covers_the_message_and_the_outcomes()
+    {
+        var model = Model();
+        model = model with { Messages = new Dictionary<MessageId, MessageContract>(model.Messages) { [OrderShipped] = new(OrderShipped, "OrderShipped", null) } };
+        PublishStep Publish(MessageId message) =>
+            new("p", Orders, OrderEvents, message, Json("""{"orderId":"o-1"}"""), new Dictionary<string, string>(),
+                new Dictionary<SubscriptionId, IReadOnlyList<Step>>());
+
+        Assert.NotEqual(
+            TraceEngine.Run(model, Scenario([Publish(OrderCreated)])).Hash,
+            TraceEngine.Run(model, Scenario([Publish(OrderShipped)])).Hash);
+    }
 }

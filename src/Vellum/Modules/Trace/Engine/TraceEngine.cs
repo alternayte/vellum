@@ -25,15 +25,15 @@ public static class TraceEngine
         if (playback.Overflowed)
         {
             return Rejected([new ScenarioIssue("", "trace-too-large",
-                $"The scenario produces more than {TraceLimits.MaxEvents} events. Nested retries multiply; lower the attempts or flatten the steps.")]);
+                "The scenario is too large to play. Nested retries multiply; lower the attempts or flatten the steps.")]);
         }
 
         var assertions = scenario.Assertions.Select(a => Evaluate(a, playback.Events, playback.Outcomes)).ToList();
-        return new TraceResult(Version, [], playback.Events, playback.Outcomes, assertions, Hash(playback.Events));
+        return new TraceResult(Version, [], playback.Events, playback.Outcomes, assertions, Hash(playback.Events, playback.Outcomes));
     }
 
     private static TraceResult Rejected(IReadOnlyList<ScenarioIssue> issues) =>
-        new(Version, issues, [], new Dictionary<string, StepOutcome>(), [], Hash([]));
+        new(Version, issues, [], new Dictionary<string, StepOutcome>(), [], Hash([], new Dictionary<string, StepOutcome>()));
 
     private static AssertionResult Evaluate(
         Assertion assertion, IReadOnlyList<TraceEvent> events, IReadOnlyDictionary<string, StepOutcome> outcomes)
@@ -64,15 +64,17 @@ public static class TraceEngine
     };
 
     /// <summary>
-    /// The hash covers a canonical form: object keys are sorted, so a payload that went
-    /// through <c>jsonb</c> storage (which reorders keys) keeps its hash.
+    /// The hash covers the events and the outcomes in canonical form (see
+    /// <see cref="CanonicalJson"/>), so a scenario that went through storage keeps its hash.
     /// </summary>
-    private static string Hash(IReadOnlyList<TraceEvent> events)
+    private static string Hash(IReadOnlyList<TraceEvent> events, IReadOnlyDictionary<string, StepOutcome> outcomes)
     {
-        using var stream = new MemoryStream();
+        using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+        using var stream = new HashingStream(hash);
         using (var writer = new Utf8JsonWriter(stream))
         {
-            writer.WriteStartArray();
+            writer.WriteStartObject();
+            writer.WriteStartArray("events");
             foreach (var e in events)
             {
                 writer.WriteStartObject();
@@ -86,17 +88,24 @@ public static class TraceEngine
                 WriteId("target", e.Target);
                 WriteId("message", e.Message);
                 writer.WriteString("detail", e.Detail);
-                writer.WritePropertyName("headers");
-                writer.WriteStartObject();
+                writer.WriteStartObject("headers");
                 foreach (var (key, value) in (e.Headers ?? new Dictionary<string, string>()).OrderBy(h => h.Key, StringComparer.Ordinal))
                     writer.WriteString(key, value);
                 writer.WriteEndObject();
                 writer.WritePropertyName("payload");
-                if (e.Payload is { } payload) WriteCanonical(writer, payload);
+                if (e.Payload is { } payload) CanonicalJson.Write(writer, payload);
                 else writer.WriteNullValue();
                 writer.WriteEndObject();
+                // Flushed per event: the hash never holds more than one event in memory.
+                writer.Flush();
             }
             writer.WriteEndArray();
+
+            writer.WriteStartObject("outcomes");
+            foreach (var (stepId, outcome) in outcomes.OrderBy(o => o.Key, StringComparer.Ordinal))
+                writer.WriteString(stepId, outcome.ToString());
+            writer.WriteEndObject();
+            writer.WriteEndObject();
 
             void WriteId(string name, Guid? id)
             {
@@ -104,43 +113,44 @@ public static class TraceEngine
                 else writer.WriteNull(name);
             }
         }
-        return Convert.ToHexStringLower(SHA256.HashData(stream.ToArray()));
+        return Convert.ToHexStringLower(hash.GetHashAndReset());
     }
 
-    private static void WriteCanonical(Utf8JsonWriter writer, JsonElement element)
+    private sealed class HashingStream(IncrementalHash hash) : Stream
     {
-        switch (element.ValueKind)
-        {
-            case JsonValueKind.Object:
-                writer.WriteStartObject();
-                foreach (var property in element.EnumerateObject().OrderBy(p => p.Name, StringComparer.Ordinal))
-                {
-                    writer.WritePropertyName(property.Name);
-                    WriteCanonical(writer, property.Value);
-                }
-                writer.WriteEndObject();
-                break;
-            case JsonValueKind.Array:
-                writer.WriteStartArray();
-                foreach (var item in element.EnumerateArray())
-                    WriteCanonical(writer, item);
-                writer.WriteEndArray();
-                break;
-            default:
-                element.WriteTo(writer);
-                break;
-        }
+        public override bool CanRead => false;
+        public override bool CanSeek => false;
+        public override bool CanWrite => true;
+        public override long Length => throw new NotSupportedException();
+        public override long Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+        public override void Flush() { }
+        public override void Write(byte[] buffer, int offset, int count) => hash.AppendData(buffer, offset, count);
+        public override void Write(ReadOnlySpan<byte> buffer) => hash.AppendData(buffer);
+        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(long value) => throw new NotSupportedException();
     }
 
     /// <summary>
-    /// The attempt a step runs in. When the caller gives up on an attempt, work already
-    /// started inside it keeps emitting events (the callee does not know), but it no longer
-    /// decides any outcome.
+    /// The outcomes of one attempt of a call or one delivery to a consumer. A step reads
+    /// outcomes through its own attempt, then the enclosing ones. An attempt's outcomes reach
+    /// the enclosing scope only when the attempt settles the step: a retried attempt, and
+    /// work that still runs after its caller gave up, decide nothing.
     /// </summary>
     private sealed class Scope(Scope? parent)
     {
-        public bool Abandoned { get; set; }
-        public bool IsLive => !Abandoned && (parent?.IsLive ?? true);
+        private readonly Dictionary<string, StepOutcome> _outcomes = new(StringComparer.Ordinal);
+
+        public Dictionary<string, StepOutcome> Outcomes => _outcomes;
+        public void Record(string stepId, StepOutcome outcome) => _outcomes[stepId] = outcome;
+        public StepOutcome? Find(string stepId) =>
+            _outcomes.TryGetValue(stepId, out var outcome) ? outcome : parent?.Find(stepId);
+
+        public void PromoteTo(Scope target)
+        {
+            foreach (var (stepId, outcome) in _outcomes)
+                target._outcomes[stepId] = outcome;
+        }
     }
 
     private sealed class Playback(TraceModel model, Scenario scenario)
@@ -148,18 +158,26 @@ public static class TraceEngine
         private readonly PriorityQueue<Action, (long At, long Order)> _queue = new();
         private readonly Dictionary<Guid, Fault> _faults = scenario.Faults.ToDictionary(f => f.Target);
         private readonly Dictionary<Guid, int> _attemptsSeen = [];
+        private readonly Scope _root = new(null);
         private long _order;
         private long _now;
+        private int _worked;
 
         public List<TraceEvent> Events { get; } = [];
-        public Dictionary<string, StepOutcome> Outcomes { get; } = new(StringComparer.Ordinal);
+        public Dictionary<string, StepOutcome> Outcomes => _root.Outcomes;
         public bool Overflowed { get; private set; }
 
         public void Run()
         {
-            Sequence(scenario.Steps, 0, new Scope(null), _ => { });
+            Sequence(scenario.Steps, 0, _root, _ => { });
             while (!Overflowed && _queue.TryDequeue(out var work, out var due))
             {
+                // Work that emits nothing still costs time, so it has its own limit.
+                if (++_worked > TraceLimits.MaxWork)
+                {
+                    Overflowed = true;
+                    return;
+                }
                 _now = due.At;
                 work();
             }
@@ -188,7 +206,7 @@ public static class TraceEngine
 
                 foreach (var skipped in steps.Skip(index + 1))
                 {
-                    Record(skipped.Id, StepOutcome.Skipped, scope);
+                    scope.Record(skipped.Id, StepOutcome.Skipped);
                     Emit(TraceEventKind.StepSkipped, skipped.Id, 0, detail: "An earlier step failed.");
                 }
                 done(false);
@@ -215,8 +233,6 @@ public static class TraceEngine
             var attemptScope = new Scope(scope);
             var settled = false;
 
-            // A retry starts clean: nothing from the abandoned attempt may steer a branch.
-            Forget(step.Then);
             Emit(TraceEventKind.RequestSent, step.Id, attempt, from, to, target, step.Request);
 
             // Both targets see the attempt, so each fault counts every attempt against it.
@@ -235,7 +251,8 @@ public static class TraceEngine
                 return;
             }
 
-            // The caller's own deadline. Zero means the contract declares none.
+            // The caller's own deadline. Zero means the contract declares none. The timer is
+            // queued before the callee's work, so a response at the deadline instant is late.
             if (operation.TimeoutMs > 0)
                 After(operation.TimeoutMs, () => Fail(TraceEventKind.RequestTimedOut, $"No response within {operation.TimeoutMs} ms."));
 
@@ -249,8 +266,9 @@ public static class TraceEngine
                     return;
                 }
                 settled = true;
+                attemptScope.PromoteTo(scope);
                 Emit(TraceEventKind.ResponseReceived, step.Id, attempt, to, from, target, step.Response);
-                Record(step.Id, StepOutcome.Succeeded, scope);
+                scope.Record(step.Id, StepOutcome.Succeeded);
                 done(true);
             });
 
@@ -259,7 +277,6 @@ public static class TraceEngine
                 if (settled)
                     return;
                 settled = true;
-                attemptScope.Abandoned = true;
                 Emit(kind, step.Id, attempt, from, to, target, detail: detail);
 
                 if (attempt < operation.Retry.MaxAttempts)
@@ -270,7 +287,9 @@ public static class TraceEngine
                     return;
                 }
 
-                Record(step.Id, StepOutcome.Failed, scope);
+                // The last attempt is what happened; what ran inside it explains the failure.
+                attemptScope.PromoteTo(scope);
+                scope.Record(step.Id, StepOutcome.Failed);
                 if (step.OnError.Count > 0)
                     Sequence(step.OnError, 0, scope, done);
                 else
@@ -287,14 +306,14 @@ public static class TraceEngine
                 Emit(TraceEventKind.PublishFailed, step.Id, 1, from, target: channel, payload: step.Payload,
                     detail: fault is FaultKind.Outage ? "The channel is unavailable." : "The channel rejected the message.",
                     message: step.Message, headers: step.Headers);
-                Record(step.Id, StepOutcome.Failed, scope);
+                scope.Record(step.Id, StepOutcome.Failed);
                 done(false);
                 return;
             }
 
             Emit(TraceEventKind.Published, step.Id, 1, from, target: channel, payload: step.Payload,
                 message: step.Message, headers: step.Headers);
-            Record(step.Id, StepOutcome.Succeeded, scope);
+            scope.Record(step.Id, StepOutcome.Succeeded);
 
             // Fan-out order is by subscription ID so it does not depend on dictionary order.
             foreach (var subscription in model.Subscriptions.Values
@@ -302,18 +321,20 @@ public static class TraceEngine
                          .OrderBy(s => s.Id.Value))
             {
                 var handler = step.Handlers.GetValueOrDefault(subscription.Id) ?? [];
-                After(0, () => Deliver(step, subscription, handler, 1));
+                After(0, () => Deliver(step, subscription, handler, 1, scope));
             }
 
             // The publisher does not wait for its consumers.
             done(true);
         }
 
-        private void Deliver(PublishStep step, SubscriptionContract subscription, IReadOnlyList<Step> handler, int attempt)
+        private void Deliver(PublishStep step, SubscriptionContract subscription, IReadOnlyList<Step> handler, int attempt, Scope publisher)
         {
             Guid consumer = subscription.ConsumerId, target = subscription.Id;
 
-            Forget(handler);
+            // Each delivery has its own outcomes, so a redelivery that overlaps a slow first
+            // run cannot steer it. It reads what the publisher had settled when it published.
+            var delivery = new Scope(publisher);
             Emit(TraceEventKind.Delivered, step.Id, attempt, step.From, consumer, target, step.Payload,
                 message: step.Message, headers: step.Headers);
 
@@ -325,10 +346,13 @@ public static class TraceEngine
                 return;
             }
 
-            // A consumer is its own flow: giving up on the publisher does not cancel it.
-            Sequence(handler, 0, new Scope(null), ok =>
+            // A consumer is its own flow: giving up on the publisher does not cancel it, and
+            // its outcomes are final for the scenario once the delivery settles.
+            Sequence(handler, 0, delivery, ok =>
             {
-                if (!ok)
+                if (ok)
+                    delivery.PromoteTo(_root);
+                else
                     Fail("A step inside the consumer failed.");
             });
 
@@ -340,9 +364,11 @@ public static class TraceEngine
                 {
                     Emit(TraceEventKind.RetryScheduled, step.Id, attempt + 1, step.From, consumer, target,
                         detail: $"Next attempt in {subscription.Retry.BackoffMs} ms.");
-                    After(subscription.Retry.BackoffMs, () => Deliver(step, subscription, handler, attempt + 1));
+                    After(subscription.Retry.BackoffMs, () => Deliver(step, subscription, handler, attempt + 1, publisher));
                     return;
                 }
+
+                delivery.PromoteTo(_root);
 
                 if (subscription.DeadLetterChannelId is not { } deadLetter)
                 {
@@ -370,13 +396,13 @@ public static class TraceEngine
             {
                 Emit(TraceEventKind.DataWriteFailed, step.Id, 1, by, store, payload: step.Change,
                     detail: $"The store {(fault is FaultKind.Outage ? "is unavailable" : "rejected the write")}; '{step.Dataset}' is unchanged.");
-                Record(step.Id, StepOutcome.Failed, scope);
+                scope.Record(step.Id, StepOutcome.Failed);
                 done(false);
                 return;
             }
 
             Emit(TraceEventKind.DataWritten, step.Id, 1, by, store, payload: step.Change, detail: step.Dataset);
-            Record(step.Id, StepOutcome.Succeeded, scope);
+            scope.Record(step.Id, StepOutcome.Succeeded);
             done(true);
         }
 
@@ -386,7 +412,7 @@ public static class TraceEngine
             var ok = true;
             if (remaining == 0)
             {
-                Record(step.Id, StepOutcome.Succeeded, scope);
+                scope.Record(step.Id, StepOutcome.Succeeded);
                 done(true);
                 return;
             }
@@ -398,7 +424,7 @@ public static class TraceEngine
                     ok &= branchOk;
                     if (--remaining > 0)
                         return;
-                    Record(step.Id, ok ? StepOutcome.Succeeded : StepOutcome.Failed, scope);
+                    scope.Record(step.Id, ok ? StepOutcome.Succeeded : StepOutcome.Failed);
                     done(ok);
                 }));
             }
@@ -406,12 +432,12 @@ public static class TraceEngine
 
         private void Branch(BranchStep step, Scope scope, Action<bool> done)
         {
-            var taken = Outcomes.GetValueOrDefault(step.WhenStep, StepOutcome.Skipped) == step.Is;
+            var taken = (scope.Find(step.WhenStep) ?? StepOutcome.Skipped) == step.Is;
             Emit(TraceEventKind.BranchTaken, step.Id, 1, detail: taken ? "then" : "else");
 
             Sequence(taken ? step.Then : step.Else, 0, scope, ok =>
             {
-                Record(step.Id, ok ? StepOutcome.Succeeded : StepOutcome.Failed, scope);
+                scope.Record(step.Id, ok ? StepOutcome.Succeeded : StepOutcome.Failed);
                 done(ok);
             });
         }
@@ -424,27 +450,6 @@ public static class TraceEngine
 
             var attempt = _attemptsSeen[target] = _attemptsSeen.GetValueOrDefault(target) + 1;
             return fault.FailFirst is not { } limit || attempt <= limit ? fault.Kind : null;
-        }
-
-        private void Record(string stepId, StepOutcome outcome, Scope scope)
-        {
-            if (scope.IsLive)
-                Outcomes[stepId] = outcome;
-        }
-
-        private void Forget(IReadOnlyList<Step> steps)
-        {
-            foreach (var step in steps)
-            {
-                Outcomes.Remove(step.Id);
-                switch (step)
-                {
-                    case CallStep call: Forget(call.Then); Forget(call.OnError); break;
-                    case ParallelStep parallel: foreach (var branch in parallel.Branches) Forget(branch); break;
-                    case BranchStep branch: Forget(branch.Then); Forget(branch.Else); break;
-                    case PublishStep publish: foreach (var handler in publish.Handlers.Values) Forget(handler); break;
-                }
-            }
         }
 
         private void Emit(
