@@ -21,6 +21,12 @@ interface CanvasState {
   toggleLens: (lens: 'status' | 'metadata' | 'messages' | 'facts') => void
   setZoom: (zoom: number) => void
   toggleExpand: (id: string) => void
+  /**
+   * Puts the inside of an element on the canvas. `path` is the element's ancestors from the
+   * top level down, the element last. An element on the current level expands in place; the
+   * canvas goes into any other element. The current level's own element needs nothing.
+   */
+  showInside: (path: DrillSegment[]) => void
   reset: () => void
 }
 
@@ -65,6 +71,17 @@ export const useCanvasStore = create<CanvasState>((set) => ({
         next.add(id)
       }
       return { expandedNodeIds: next }
+    }),
+
+  showInside: (path) =>
+    set((state) => {
+      const target = path[path.length - 1]
+      if (!target || target.elementId === state.currentRootId) return {}
+      const levelOfTarget = path[path.length - 2]?.elementId ?? null
+      if (levelOfTarget === state.currentRootId) {
+        return { expandedNodeIds: new Set(state.expandedNodeIds).add(target.elementId) }
+      }
+      return { drillPath: path, currentRootId: target.elementId }
     }),
 
   reset: () =>

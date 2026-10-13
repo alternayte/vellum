@@ -35,6 +35,7 @@ import type { C4ContainerData } from './nodes/c4-container-node'
 import type { DiffState } from '@/stores/draft-store'
 import type { Provenance, StaleMark } from '@/lib/fact-status'
 import { kindColor } from '@/lib/kind-colors'
+import { CONTAINMENT_RULES, canContain } from '@/lib/containment-rules'
 import { prefersReducedMotion } from '@/lib/utils'
 import { traceEdgeLabel, traceFamily } from '@/lib/trace'
 import { currentTraceEvent, useTraceStore } from '@/stores/trace-store'
@@ -96,6 +97,8 @@ interface CanvasViewProps {
   onNodeDoubleClick?: (elementId: string) => void
   onFitViewReady?: (fitView: () => void) => void
   onAddElement?: () => void
+  /** Asks for a new element inside `parentId`. The canvas does not add it: the model does. */
+  onAddChild?: (parentId: string, kind?: string) => void
   onConnect?: (source: string, target: string) => void
   onBulkDelete?: (ids: string[]) => void
   onDuplicateElement?: (id: string) => void
@@ -155,6 +158,7 @@ function CanvasViewInner({
   onNodeDoubleClick,
   onFitViewReady,
   onAddElement,
+  onAddChild,
   onConnect: onConnectProp,
   onBulkDelete,
   onDuplicateElement,
@@ -251,6 +255,10 @@ function CanvasViewInner({
   const nodes: Node[] = useMemo(() => {
     const result: Node[] = []
 
+    // A system or an app offers "add inside" on its node. A review shows changes only.
+    const addInside = (el: ElementModel) =>
+      onAddChild && !isReviewMode && canContain(el.kind) ? () => onAddChild(el.id) : undefined
+
     for (const [index, el] of visibleElements.entries()) {
       const isExpanded = expandedNodeIds.has(el.id)
       const col = index % 3
@@ -260,6 +268,11 @@ function CanvasViewInner({
       const entityDiffState = diffStateMap?.get(el.id) ?? (isReviewMode ? 'unchanged' : undefined)
 
       if (isExpanded) {
+        const children = elements.filter((child) => child.parentId === el.id)
+        // Without a saved size the boundary is as large as the default grid of its children,
+        // so a child is not pushed onto its neighbour by the boundary's edge.
+        const columns = Math.min(3, Math.max(1, children.length))
+        const rows = Math.max(1, Math.ceil(children.length / 3))
         // Render as container boundary
         result.push({
           id: el.id,
@@ -270,15 +283,15 @@ function CanvasViewInner({
             kind: el.kind,
             name: el.name,
             onResize: onNodeResize ? (width: number, height: number) => onNodeResize(el.id, width, height) : undefined,
+            onAddChild: addInside(el),
           } satisfies C4ContainerData,
           style: {
-            width: savedPos?.width ?? undefined,
-            height: savedPos?.height ?? undefined,
+            width: savedPos?.width ?? 40 + columns * 300 + 20,
+            height: savedPos?.height ?? 60 + rows * 180 + 20,
           },
         })
 
         // Add children inside the container
-        const children = elements.filter((child) => child.parentId === el.id)
         children.forEach((child, ci) => {
           const savedChildPos = positionMap.get(child.id)
           const childPos = savedChildPos ? { x: savedChildPos.x, y: savedChildPos.y } : { x: 40 + (ci % 3) * 300, y: 60 + Math.floor(ci / 3) * 180 }
@@ -304,6 +317,8 @@ function CanvasViewInner({
               provenance: child.provenance ?? null,
               lod: tier,
               diffState: childDiffState,
+              childCount: elements.filter((e) => e.parentId === child.id).length,
+              onAddChild: addInside(child),
               onRename: onRenameElement ? (newName: string) => onRenameElement(child.id, newName) : undefined,
             } satisfies C4ElementData,
           })
@@ -329,6 +344,8 @@ function CanvasViewInner({
             provenance: el.provenance ?? null,
             lod: tier,
             diffState: entityDiffState,
+            childCount: elements.filter((e) => e.parentId === el.id).length,
+            onAddChild: addInside(el),
             onRename: onRenameElement ? (newName: string) => onRenameElement(el.id, newName) : undefined,
           } satisfies C4ElementData,
         })
@@ -336,7 +353,7 @@ function CanvasViewInner({
     }
 
     return result
-  }, [visibleElements, elements, positionMap, tier, diffStateMap, isReviewMode, expandedNodeIds, onRenameElement, onNodeResize])
+  }, [visibleElements, elements, positionMap, tier, diffStateMap, isReviewMode, expandedNodeIds, onRenameElement, onNodeResize, onAddChild])
 
   const edges: Edge[] = useMemo(() => {
     // Count parallel edges between each pair of nodes (ignoring direction)
@@ -794,6 +811,9 @@ function CanvasViewInner({
             position={contextMenu.position}
             hasChildren={children.length > 0}
             isExpanded={expandedNodeIds.has(nodeId)}
+            childKinds={onAddChild && !isReviewMode ? CONTAINMENT_RULES[el.kind] ?? [] : []}
+            canExpand={(el.parentId ?? null) === currentRootId}
+            onAddChild={(kind) => onAddChild?.(nodeId, kind)}
             onClose={() => setContextMenu(null)}
             onEditDetails={() => selectElement(nodeId)}
             onExpand={() => toggleExpand(nodeId)}

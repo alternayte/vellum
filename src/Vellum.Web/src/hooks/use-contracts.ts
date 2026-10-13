@@ -8,6 +8,7 @@ import {
   getApiProjectsByProjectIdChannels,
   getApiProjectsByProjectIdOperations,
   getApiProjectsByProjectIdSubscriptions,
+  patchApiProjectsByProjectIdOperationsByOperationId,
   postApiProjectsByProjectIdBindings,
   postApiProjectsByProjectIdChannels,
   postApiProjectsByProjectIdOperations,
@@ -95,8 +96,48 @@ export function apiErrorMessage(error: unknown, fallback: string): string {
   return fallback
 }
 
-function unwrap<T>(result: { data?: unknown; error?: unknown }, fallback: string): T {
-  if (result.error !== undefined) throw new Error(apiErrorMessage(result.error, fallback))
+/** A refused write. `fields` holds the server's reason for each request field it names. */
+export class ApiError extends Error {
+  readonly fields: Record<string, string>
+
+  constructor(message: string, fields: Record<string, string> = {}) {
+    super(message)
+    this.name = 'ApiError'
+    this.fields = fields
+  }
+}
+
+/** The reason for each field that the error envelope names; the first reason of a field wins. */
+export function apiFieldErrors(error: unknown): Record<string, string> {
+  const fields: Record<string, string> = {}
+  const errors = error && typeof error === 'object' ? (error as { errors?: unknown }).errors : null
+  if (!Array.isArray(errors)) return fields
+  for (const entry of errors as { field?: unknown; message?: unknown }[]) {
+    if (typeof entry?.field === 'string' && typeof entry.message === 'string' && !(entry.field in fields)) fields[entry.field] = entry.message
+  }
+  return fields
+}
+
+/** What a refused write says: a reason for each field the form shows, or one reason for the form. */
+export interface FormFailure {
+  fields: Record<string, string>
+  message: string | null
+}
+
+export const NO_FAILURE: FormFailure = { fields: {}, message: null }
+
+/**
+ * Sorts the server's reasons by the fields a form shows. A reason for a field that the form
+ * does not show becomes the reason of the form, so no refusal is lost.
+ */
+export function formFailure(error: Error, shown: string[]): FormFailure {
+  const all = error instanceof ApiError ? error.fields : {}
+  const fields = Object.fromEntries(Object.entries(all).filter(([field]) => shown.includes(field)))
+  return { fields, message: Object.keys(fields).length > 0 ? null : error.message }
+}
+
+export function unwrap<T>(result: { data?: unknown; error?: unknown }, fallback: string): T {
+  if (result.error !== undefined) throw new ApiError(apiErrorMessage(result.error, fallback), apiFieldErrors(result.error))
   return result.data as T
 }
 
@@ -139,6 +180,8 @@ export type NewOperation = Pick<Operation, 'ownerId' | 'name' | 'transport' | 't
   requestSchemaId?: string | null
   responseSchemaId?: string | null
 }
+/** A null schema ID clears the schema of the operation. */
+export type OperationChange = NewOperation & { id: string; requestSchemaId: string | null; responseSchemaId: string | null }
 export type NewChannel = Pick<Channel, 'name' | 'kind'>
 export type NewSubscription = Pick<Subscription, 'channelId' | 'consumerId' | 'retry' | 'deadLetterChannelId'>
 export type NewBinding = Pick<Binding, 'sourceChannelId' | 'targetChannelId' | 'routingKey'>
@@ -161,6 +204,19 @@ export function useContractMutations(projectId: string, branchId?: string | null
               responseSchemaId: null,
               ...operation,
             },
+          }),
+          'The operation was not saved.',
+        ),
+      onSuccess: refresh('operations'),
+      onError: shownInline,
+    }),
+    updateOperation: useMutation({
+      mutationFn: async ({ id, ...operation }: OperationChange) =>
+        unwrap<Operation>(
+          await patchApiProjectsByProjectIdOperationsByOperationId({
+            path: { projectId, operationId: id },
+            query,
+            body: { ...operation, setRequestSchemaId: true, setResponseSchemaId: true },
           }),
           'The operation was not saved.',
         ),

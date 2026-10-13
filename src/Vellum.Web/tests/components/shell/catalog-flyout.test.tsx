@@ -2,9 +2,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
 import { CatalogFlyout } from '../../../src/components/shell/catalog-flyout'
 import { useCanvasStore } from '../../../src/stores/canvas-store'
+import { useShellStore } from '../../../src/stores/shell-store'
 
 beforeEach(() => {
   useCanvasStore.getState().reset()
+  useShellStore.getState().reset()
 })
 
 describe('CatalogFlyout', () => {
@@ -21,7 +23,7 @@ describe('CatalogFlyout', () => {
     const onAddElement = vi.fn()
     render(
       <CatalogFlyout
-        elements={[{ id: 's1', kind: 'system' }]}
+        elements={[{ id: 's1', kind: 'system', name: 'API' }]}
         onAddElement={onAddElement}
       />
     )
@@ -34,11 +36,28 @@ describe('CatalogFlyout', () => {
     const onAddElement = vi.fn()
     render(<CatalogFlyout elements={[]} onAddElement={onAddElement} />)
     fireEvent.click(screen.getByText('System'))
-    expect(onAddElement).toHaveBeenCalledWith('system')
+    expect(onAddElement).toHaveBeenCalledWith('system', null)
   })
 
   it('shows keyboard shortcut hints', () => {
     render(<CatalogFlyout elements={[]} onAddElement={vi.fn()} />)
     expect(screen.getByText('⇧S')).toBeDefined()
+  })
+
+  it('adds inside the selected system from the top level', () => {
+    useShellStore.getState().selectElement('s1')
+    const onAddElement = vi.fn()
+    render(<CatalogFlyout elements={[{ id: 's1', kind: 'system', name: 'Orders' }]} onAddElement={onAddElement} />)
+    expect(screen.queryByText('Actor')).toBeNull()
+    fireEvent.click(screen.getByText('Store'))
+    expect(onAddElement).toHaveBeenCalledWith('store', 's1')
+  })
+
+  it('offers the kinds of the place that is chosen', () => {
+    const onAddElement = vi.fn()
+    render(<CatalogFlyout elements={[{ id: 's1', kind: 'system', name: 'Orders' }]} onAddElement={onAddElement} />)
+    fireEvent.change(screen.getByLabelText('Add inside'), { target: { value: 's1' } })
+    fireEvent.click(screen.getByText('App'))
+    expect(onAddElement).toHaveBeenCalledWith('app', 's1')
   })
 })

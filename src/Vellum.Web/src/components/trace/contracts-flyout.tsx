@@ -1,15 +1,18 @@
-import { useState, type FormEvent, type ReactNode } from 'react'
-import { Plus, Trash2 } from 'lucide-react'
+import { useMemo, useState, type FormEvent } from 'react'
+import { Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
-  canRouteFrom, canRouteTo, useBindings, useChannels, useContractMutations, useOperations, useSubscriptions,
+  NO_FAILURE, canRouteFrom, canRouteTo, formFailure, useBindings, useChannels, useContractMutations, useOperations, useSubscriptions,
+  type FormFailure, type NewOperation, type Operation,
 } from '@/hooks/use-contracts'
-
-interface NamedElement {
-  id: string
-  name: string
-}
+import { useMessages } from '@/hooks/use-messages'
+import { useSchemas, type Schema } from '@/hooks/use-schemas'
+import {
+  Field, FormError, Row, SchemaOptions, Section, selectClass, type NamedElement,
+} from './contract-parts'
+import { MessagesSection } from './messages-section'
+import { SchemasSection } from './schemas-section'
 
 interface ContractsFlyoutProps {
   projectId: string
@@ -17,89 +20,148 @@ interface ContractsFlyoutProps {
   elements: NamedElement[]
 }
 
-const selectClass =
-  'h-8 w-full rounded-lg border border-input bg-transparent px-2 text-sm text-foreground outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50'
+const OPERATION_FIELDS = ['name', 'ownerId', 'transport', 'requestSchemaId', 'responseSchemaId', 'timeoutMs']
 
-function Field({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <label className="block text-[11px] font-medium text-muted-foreground">
-      {label}
-      <span className="mt-1 block">{children}</span>
-    </label>
-  )
+interface OperationFormProps {
+  operation?: Operation
+  elements: NamedElement[]
+  schemas: Schema[]
+  failure: FormFailure
+  pending: boolean
+  onSubmit: (operation: NewOperation & { requestSchemaId: string | null; responseSchemaId: string | null }) => void
+  onCancel?: () => void
 }
 
-function Section({
-  title, count, hint, adding, onToggle, children,
-}: { title: string; count: number; hint: string; adding: boolean; onToggle: () => void; children: ReactNode }) {
-  return (
-    <section className="border-b border-border px-3 py-3 last:border-b-0">
-      <div className="flex items-center justify-between">
-        <h3 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-          {title} <span className="font-mono text-muted-foreground/70">{count}</span>
-        </h3>
-        <Button variant="ghost" size="sm" className="h-6 gap-1 px-1.5 text-xs" onClick={onToggle} aria-expanded={adding}>
-          <Plus className="h-3 w-3" />
-          {adding ? 'Cancel' : 'Add'}
-        </Button>
-      </div>
-      {count === 0 && !adding && <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">{hint}</p>}
-      {children}
-    </section>
-  )
-}
+function OperationForm({ operation, elements, schemas, failure, pending, onSubmit, onCancel }: OperationFormProps) {
+  const submit = (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    const form = new FormData(e.currentTarget)
+    onSubmit({
+      ownerId: String(form.get('ownerId')),
+      name: String(form.get('name')).trim(),
+      transport: String(form.get('transport')),
+      requestSchemaId: String(form.get('requestSchemaId')) || null,
+      responseSchemaId: String(form.get('responseSchemaId')) || null,
+      timeoutMs: Number(form.get('timeoutMs')),
+      retry: { maxAttempts: Number(form.get('maxAttempts')), backoffMs: Number(form.get('backoffMs')) },
+    })
+  }
 
-function Row({ title, detail, onRemove, removeLabel }: { title: string; detail: string; onRemove: () => void; removeLabel: string }) {
   return (
-    <li className="group flex items-start gap-2 rounded-md px-1.5 py-1 hover:bg-muted">
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm text-foreground">{title}</p>
-        <p className="truncate font-mono text-[10px] text-muted-foreground">{detail}</p>
+    <form onSubmit={submit} className="mt-2 space-y-2">
+      <Field label="Name" error={failure.fields.name}>
+        {(invalid) => <Input name="name" defaultValue={operation?.name ?? ''} placeholder="POST /orders" required autoFocus {...invalid} />}
+      </Field>
+      <Field label="Offered by" error={failure.fields.ownerId}>
+        {(invalid) => (
+          <select name="ownerId" className={selectClass} defaultValue={operation?.ownerId} required {...invalid}>
+            {elements.map((el) => <option key={el.id} value={el.id}>{el.name}</option>)}
+          </select>
+        )}
+      </Field>
+      <Field label="Request schema" error={failure.fields.requestSchemaId}>
+        {(invalid) => (
+          <select name="requestSchemaId" className={selectClass} defaultValue={operation?.requestSchemaId ?? ''} {...invalid}>
+            <SchemaOptions schemas={schemas} />
+          </select>
+        )}
+      </Field>
+      <Field label="Response schema" error={failure.fields.responseSchemaId}>
+        {(invalid) => (
+          <select name="responseSchemaId" className={selectClass} defaultValue={operation?.responseSchemaId ?? ''} {...invalid}>
+            <SchemaOptions schemas={schemas} />
+          </select>
+        )}
+      </Field>
+      {schemas.length === 0 && (
+        <p className="text-[11px] leading-relaxed text-muted-foreground">No schema exists yet. Add one under Schemas, then choose it here.</p>
+      )}
+      <div className="grid grid-cols-2 gap-2">
+        <Field label="Transport" error={failure.fields.transport}>
+          {(invalid) => (
+            <select name="transport" className={selectClass} defaultValue={operation?.transport ?? 'http'} {...invalid}>
+              <option value="http">HTTP</option>
+              <option value="grpc">gRPC</option>
+              <option value="command">Command</option>
+            </select>
+          )}
+        </Field>
+        <Field label="Timeout (ms)" error={failure.fields.timeoutMs}>
+          {(invalid) => <Input name="timeoutMs" type="number" min={0} defaultValue={operation?.timeoutMs ?? 1000} required {...invalid} />}
+        </Field>
       </div>
-      <button
-        type="button"
-        onClick={onRemove}
-        aria-label={removeLabel}
-        className="mt-0.5 rounded p-1 text-muted-foreground opacity-0 hover:text-[var(--trace-failure)] focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-primary group-hover:opacity-100"
-      >
-        <Trash2 className="h-3.5 w-3.5" />
-      </button>
-    </li>
+      <div className="grid grid-cols-2 gap-2">
+        <Field label="Attempts"><Input name="maxAttempts" type="number" min={1} max={10} defaultValue={operation?.retry.maxAttempts ?? 1} required /></Field>
+        <Field label="Backoff (ms)"><Input name="backoffMs" type="number" min={0} defaultValue={operation?.retry.backoffMs ?? 0} required /></Field>
+      </div>
+      <FormError message={failure.message} />
+      <div className="flex gap-2">
+        <Button type="submit" size="sm" className="flex-1" disabled={pending || elements.length === 0}>{operation ? 'Save operation' : 'Add operation'}</Button>
+        {onCancel && <Button type="button" variant="ghost" size="sm" onClick={onCancel}>Cancel</Button>}
+      </div>
+    </form>
   )
 }
 
 /**
  * Contracts are what a scenario may reference: operations a service offers, channels that
  * carry messages, the bindings that route a message from an exchange or a topic to another
- * channel, and the subscriptions that deliver them.
+ * channel, the subscriptions that deliver them, the messages themselves, and the schemas
+ * that operations and messages name.
  */
 export function ContractsFlyout({ projectId, branchId, elements }: ContractsFlyoutProps) {
   const { data: operations = [] } = useOperations(projectId, branchId)
   const { data: channels = [] } = useChannels(projectId, branchId)
   const { data: subscriptions = [] } = useSubscriptions(projectId, branchId)
   const { data: bindings = [] } = useBindings(projectId, branchId)
+  const { data: messages = [] } = useMessages(projectId, branchId ?? undefined)
+  const { data: schemas = [] } = useSchemas(projectId)
   const mutations = useContractMutations(projectId, branchId)
 
   const [adding, setAdding] = useState<'operation' | 'channel' | 'subscription' | null>(null)
+  const [editingOperation, setEditingOperation] = useState<string | null>(null)
+  const [operationFailure, setOperationFailure] = useState<FormFailure>(NO_FAILURE)
   // The exchange or topic that a binding is being added to.
   const [bindingFrom, setBindingFrom] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const nameOf = (id: string) => elements.find((e) => e.id === id)?.name ?? 'Unknown element'
   const channelName = (id: string) => channels.find((c) => c.id === id)?.name ?? 'Unknown channel'
-  const toggle = (kind: typeof adding) => { setError(null); setAdding(adding === kind ? null : kind) }
+  const schemaName = (id: string) => schemas.find((s) => s.id === id)?.name ?? 'schema not found'
+  const toggle = (kind: typeof adding) => {
+    setError(null)
+    setOperationFailure(NO_FAILURE)
+    setEditingOperation(null)
+    setAdding(adding === kind ? null : kind)
+  }
   const done = { onSuccess: () => { setAdding(null); setError(null) }, onError: (e: Error) => setError(e.message) }
   const removed = { onError: (e: Error) => setError(e.message) }
+  const operationDone = {
+    onSuccess: () => { setAdding(null); setEditingOperation(null); setOperationFailure(NO_FAILURE) },
+    onError: (e: Error) => setOperationFailure(formFailure(e, OPERATION_FIELDS)),
+  }
 
-  const submitOperation = (e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault()
-    const form = new FormData(e.currentTarget)
-    mutations.addOperation.mutate({
-      ownerId: String(form.get('ownerId')),
-      name: String(form.get('name')).trim(),
-      transport: String(form.get('transport')),
-      timeoutMs: Number(form.get('timeoutMs')),
-      retry: { maxAttempts: Number(form.get('maxAttempts')), backoffMs: Number(form.get('backoffMs')) },
-    }, done)
+  // What uses each schema on this branch. The server holds the rule for a removal; this says why before the click.
+  const schemaUsers = useMemo(() => {
+    const users = new Map<string, string[]>()
+    const note = (schemaId: string | null, name: string) => {
+      if (!schemaId) return
+      const names = users.get(schemaId) ?? []
+      if (!names.includes(name)) users.set(schemaId, [...names, name])
+    }
+    for (const operation of operations) {
+      note(operation.requestSchemaId, operation.name)
+      note(operation.responseSchemaId, operation.name)
+    }
+    for (const message of messages) note(message.schemaId, message.name)
+    return users
+  }, [operations, messages])
+
+  const operationDetail = (op: Operation) => {
+    const contract = [
+      op.requestSchemaId ? `request ${schemaName(op.requestSchemaId)}` : null,
+      op.responseSchemaId ? `response ${schemaName(op.responseSchemaId)}` : null,
+    ].filter(Boolean).join(', ') || 'no schema'
+    return `${nameOf(op.ownerId)} · ${op.transport} · ${op.timeoutMs} ms · ${op.retry.maxAttempts}× · ${contract}`
   }
 
   const submitChannel = (e: FormEvent<HTMLFormElement>) => {
@@ -129,13 +191,6 @@ export function ContractsFlyout({ projectId, branchId, elements }: ContractsFlyo
     }, done)
   }
 
-  const retryFields = (
-    <div className="grid grid-cols-2 gap-2">
-      <Field label="Attempts"><Input name="maxAttempts" type="number" min={1} max={10} defaultValue={1} required /></Field>
-      <Field label="Backoff (ms)"><Input name="backoffMs" type="number" min={0} defaultValue={0} required /></Field>
-    </div>
-  )
-
   return (
     <div className="flex h-full flex-col">
       <div className="border-b border-border px-3 py-2">
@@ -152,32 +207,25 @@ export function ContractsFlyout({ projectId, branchId, elements }: ContractsFlyo
           hint="An operation is a call a service accepts, such as POST /orders. Scenarios call operations."
         >
           {adding === 'operation' && (
-            <form onSubmit={submitOperation} className="mt-2 space-y-2">
-              <Field label="Name"><Input name="name" placeholder="POST /orders" required autoFocus /></Field>
-              <Field label="Offered by">
-                <select name="ownerId" className={selectClass} required>
-                  {elements.map((el) => <option key={el.id} value={el.id}>{el.name}</option>)}
-                </select>
-              </Field>
-              <div className="grid grid-cols-2 gap-2">
-                <Field label="Transport">
-                  <select name="transport" className={selectClass} defaultValue="http">
-                    <option value="http">HTTP</option>
-                    <option value="grpc">gRPC</option>
-                    <option value="command">Command</option>
-                  </select>
-                </Field>
-                <Field label="Timeout (ms)"><Input name="timeoutMs" type="number" min={0} defaultValue={1000} required /></Field>
-              </div>
-              {retryFields}
-              <Button type="submit" size="sm" className="w-full" disabled={mutations.addOperation.isPending || elements.length === 0}>Add operation</Button>
-            </form>
+            <OperationForm
+              elements={elements} schemas={schemas} failure={operationFailure} pending={mutations.addOperation.isPending}
+              onSubmit={(operation) => mutations.addOperation.mutate(operation, operationDone)}
+            />
           )}
           <ul className="mt-1.5 space-y-0.5">
-            {operations.map((op) => (
+            {operations.map((op) => editingOperation === op.id ? (
+              <li key={op.id} className="rounded-md border border-border px-2 pb-2">
+                <OperationForm
+                  operation={op} elements={elements} schemas={schemas} failure={operationFailure} pending={mutations.updateOperation.isPending}
+                  onSubmit={(operation) => mutations.updateOperation.mutate({ id: op.id, ...operation }, operationDone)}
+                  onCancel={() => { setEditingOperation(null); setOperationFailure(NO_FAILURE) }}
+                />
+              </li>
+            ) : (
               <Row
-                key={op.id} title={op.name}
-                detail={`${nameOf(op.ownerId)} · ${op.transport} · ${op.timeoutMs} ms · ${op.retry.maxAttempts}×`}
+                key={op.id} title={op.name} detail={operationDetail(op)}
+                editLabel={`Edit operation ${op.name}`}
+                onEdit={() => { setError(null); setAdding(null); setOperationFailure(NO_FAILURE); setEditingOperation(op.id) }}
                 removeLabel={`Remove operation ${op.name}`}
                 onRemove={() => mutations.removeOperation.mutate(op.id, removed)}
               />
@@ -280,7 +328,10 @@ export function ContractsFlyout({ projectId, branchId, elements }: ContractsFlyo
                   {elements.map((el) => <option key={el.id} value={el.id}>{el.name}</option>)}
                 </select>
               </Field>
-              {retryFields}
+              <div className="grid grid-cols-2 gap-2">
+                <Field label="Attempts"><Input name="maxAttempts" type="number" min={1} max={10} defaultValue={1} required /></Field>
+                <Field label="Backoff (ms)"><Input name="backoffMs" type="number" min={0} defaultValue={0} required /></Field>
+              </div>
               <Field label="Dead-letter channel">
                 <select name="deadLetterChannelId" className={selectClass} defaultValue="">
                   <option value="">None: a failed message is lost</option>
@@ -301,6 +352,9 @@ export function ContractsFlyout({ projectId, branchId, elements }: ContractsFlyo
             ))}
           </ul>
         </Section>
+
+        <MessagesSection projectId={projectId} branchId={branchId} messages={messages} elements={elements} schemas={schemas} />
+        <SchemasSection projectId={projectId} schemas={schemas} usedBy={schemaUsers} />
       </div>
     </div>
   )
