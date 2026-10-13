@@ -245,6 +245,10 @@
   "prices": {
     "d0000000-0000-0000-0000-000000000001": {
       "id": "d0000000-0000-0000-0000-000000000001",
+      "provider": "azure",
+      "region": "westeurope",
+      "sku": "D2s v5",
+      "meterId": "0561adcb-1c48-542e-9e0c-10dea22fc392",
       "unit": "1 Hour",
       "unitPrice": 0.115,
       "currency": "USD",
@@ -254,6 +258,10 @@
     },
     "d0000000-0000-0000-0000-000000000002": {
       "id": "d0000000-0000-0000-0000-000000000002",
+      "provider": "azure",
+      "region": "westeurope",
+      "sku": "Hot LRS",
+      "meterId": "10e5ee74-8fd6-4972-909f-65a83f92f0ce",
       "unit": "1 GB/Month",
       "unitPrice": 0.017247,
       "currency": "EUR",
@@ -263,6 +271,10 @@
     },
     "d0000000-0000-0000-0000-000000000003": {
       "id": "d0000000-0000-0000-0000-000000000003",
+      "provider": "custom",
+      "region": "",
+      "sku": "database server",
+      "meterId": null,
       "unit": "hour",
       "unitPrice": 0.25,
       "currency": "USD",
@@ -272,6 +284,10 @@
     },
     "d0000000-0000-0000-0000-000000000004": {
       "id": "d0000000-0000-0000-0000-000000000004",
+      "provider": "azure",
+      "region": "westeurope",
+      "sku": "Standard Data Transfer Out",
+      "meterId": null,
       "unit": "1 GB",
       "unitPrice": 0.08,
       "currency": "USD",
@@ -281,6 +297,10 @@
     },
     "d0000000-0000-0000-0000-000000000005": {
       "id": "d0000000-0000-0000-0000-000000000005",
+      "provider": "aws",
+      "region": "",
+      "sku": "broker messages",
+      "meterId": null,
       "unit": "1000000 messages",
       "unitPrice": 0.4,
       "currency": "USD",
@@ -290,6 +310,10 @@
     },
     "d0000000-0000-0000-0000-000000000006": {
       "id": "d0000000-0000-0000-0000-000000000006",
+      "provider": "azure",
+      "region": "westeurope",
+      "sku": "cache",
+      "meterId": "cache-meter",
       "unit": "10K",
       "unitPrice": 0.02,
       "currency": "USD",
@@ -299,6 +323,10 @@
     },
     "d0000000-0000-0000-0000-000000000007": {
       "id": "d0000000-0000-0000-0000-000000000007",
+      "provider": "azure",
+      "region": "",
+      "sku": "next year",
+      "meterId": null,
       "unit": "1 Hour",
       "unitPrice": 0.2,
       "currency": "USD",
@@ -308,6 +336,10 @@
     },
     "d0000000-0000-0000-0000-000000000008": {
       "id": "d0000000-0000-0000-0000-000000000008",
+      "provider": "custom",
+      "region": "",
+      "sku": "disk",
+      "meterId": null,
       "unit": "disk/hour",
       "unitPrice": 0.01,
       "currency": "USD",
@@ -316,6 +348,11 @@
       "observedOn": "2026-09-01"
     }
   },
+  "elements": [
+    "e1000000-0000-0000-0000-000000000001",
+    "e1000000-0000-0000-0000-000000000002",
+    "e1000000-0000-0000-0000-000000000003"
+  ],
   "asOf": "2026-10-13",
   "currency": "USD",
   "staleAfterDays": 90

@@ -1,13 +1,15 @@
 ---
 title: An estimate is not a measurement
-description: What a stress result tells you, and what it cannot tell you.
+description: What a stress result and a cost estimate tell you, and what they cannot tell you.
 ---
 
-This page explains what a stress result is evidence of.
+This page explains what a stress result and a cost estimate are evidence of. Vellum computes both from numbers that you give it. Neither is a measurement of a running system.
+
+## A stress result
 
 A stress run simulates one scenario under a load that you declare. It reads no code and calls no service. It moves jobs through queues and workers that exist only in the model.
 
-## What the result is
+### What the result is
 
 The result is the output of a queueing model. The inputs are your numbers: the arrival rate, the workers, the service times and the queue capacities. The model applies them to the flow, the timeouts and the retry policies of the design.
 
@@ -26,7 +28,7 @@ A result cannot show:
 - That a system can handle a load. Vellum never says so.
 - That your service times are correct.
 
-## Assumptions have labels
+### Assumptions have labels
 
 Every input is an assumption. The result lists each one with a label.
 
@@ -37,7 +39,7 @@ A value is `measured` only when it names an imported k6 result of the same proje
 
 A measured input does not make the output measured. The simulator computes every number of a stress result, so every number of a stress result stays `estimated`.
 
-## Confidence is a rule, not a probability
+### Confidence is a rule, not a probability
 
 The result states a confidence level and the rule that sets it.
 
@@ -46,7 +48,7 @@ The result states a confidence level and the rule that sets it.
 
 The stress engine never reports `high`. A model that leaves out the effects below does not earn it.
 
-## What the model leaves out
+### What the model leaves out
 
 Every result shows this list. It is not hidden and it does not depend on the profile.
 
@@ -67,15 +69,74 @@ Every result shows this list. It is not hidden and it does not depend on the pro
 
 A running system has all of these.
 
-## The same inputs give the same result
+### The same inputs give the same result
 
 A run is a pure function of the model version, the scenario version, the profile, the seed and the engine version. The same five give the same bytes and the same hash. So a difference between two runs comes from a difference in their inputs, and the comparison lists those inputs.
 
 A hash that repeats shows that the calculation repeats. It does not show that the calculation matches a real system.
 
+## A cost estimate
+
+A cost estimate multiplies quantities by unit prices. It reads no invoice and no usage data of a cloud account.
+
+### What the estimate is
+
+The estimate is arithmetic on three kinds of input:
+
+- The resources of the cost sheet and their quantities.
+- The workload assumptions, for example the requests for each month.
+- The price entries of the workspace. Vellum has no price of its own.
+
+Each number in a line shows where it comes from. A quantity has the label `declared`, `measured` or `inferred`. A price shows its provider, its region, its SKU and the day on which a person entered it or Vellum fetched it. Vellum never changes a label.
+
+An estimate can show:
+
+- The monthly cost that follows from the stated quantities and the stated prices.
+- Which resources and which categories hold most of that cost.
+- How two variants differ, when each side is complete.
+- Which lines have no price.
+
+An estimate cannot show:
+
+- What the provider will invoice.
+- That a quantity or an assumption is correct.
+- That a price is still the price of the provider. A stale price has a flag, and it stays in the total.
+
+### Unknown is not zero
+
+A line that Vellum cannot price has no amount. Vellum lists the line as **unknown** with the reason. The line is in no total.
+
+- A resource without a price entry is unknown.
+- A price for another provider or another region is not a price of the resource. The line is unknown.
+- A resource whose element is no longer in the model is unknown.
+- An empty cost sheet is not a cost of zero. Vellum does not say that a branch with an empty sheet costs less.
+
+A total holds known lines only. Read the unknown list together with the total.
+
+### What the estimate leaves out
+
+- Price tiers, free allowances and volume discounts.
+- Reservations, savings plans and negotiated prices.
+- Taxes and support plans.
+- Currency conversion. There is one total for each currency.
+- The cost of people.
+- Usage that no resource and no assumption of the sheet states.
+
+A real invoice has all of these.
+
+### The same inputs give the same estimate
+
+A cost estimate is a function of the sheet, the model elements, the price entries, the date, the currency and the stale age. The same inputs give the same lines and the same hash on each server.
+
+A hash that repeats shows that the calculation repeats. It does not show that the numbers match an invoice.
+
 ## How to use an estimate
 
-Use an estimate to compare designs and to find the first limit of a design. Then measure the real system. Keep the measurement apart from the estimate.
+Use a stress estimate to compare designs and to find the first limit of a design. Then measure the real system.
+
+Use a cost estimate to compare variants and to find the lines that hold most of the cost. Then compare it with the invoice of the provider.
+
+Keep each measurement apart from the estimate.
 
 ## What a measurement is
 

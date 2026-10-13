@@ -1,5 +1,7 @@
 using System.Collections.Immutable;
+using System.Globalization;
 using Vellum.Modules.Costs;
+using Vellum.Modules.Costs.Prices;
 using Vellum.Tests.Shared.Outbound;
 
 namespace Vellum.Tests.Modules.Costs;
@@ -10,7 +12,7 @@ namespace Vellum.Tests.Modules.Costs;
 /// </summary>
 public class EstimatorTests
 {
-    private const string PinnedHash = "d331a1b25773f0a40f2c9a676c65502460123e4ef661ec4bcb46ccf4651496f2";
+    private const string PinnedHash = "c7e4f77c6c6e5715ad08f7c9633fd746f9db123abdf053c945a88680db89ec53";
 
     private static EstimateInput Input() => CostJson.Read<EstimateInput>(Fixtures.Read("Costs/orders-estimate.input.json"));
 
@@ -138,6 +140,93 @@ public class EstimatorTests
         Assert.Empty(Line(Estimator.Run(input), "API instances").Flags);
     }
 
+    private static readonly Guid Element = Guid.Parse("e1000000-0000-0000-0000-000000000001");
+    private static readonly Guid PriceId = Guid.Parse("d0000000-0000-0000-0000-000000000001");
+
+    private static CostResource Hours(string name, decimal quantity, string unit = "hours") => new(
+        Guid.NewGuid(), Element, name, "compute", "azure", "westeurope", "", quantity, unit, PriceId, [], "declared", null);
+
+    private static Price PriceFor(string provider, string region, string unit = "hour", decimal unitPrice = 0.5m) => new(
+        PriceId, provider, region, "D2s v5", "meter-1", unit, unitPrice, "USD", new DateOnly(2026, 1, 1), "fetched", new DateOnly(2026, 10, 1));
+
+    private static Estimate Run(Price price, bool elementInModel, params CostResource[] resources) => Estimator.Run(new EstimateInput(
+        resources, [], new Dictionary<Guid, Price> { [price.Id] = price }, elementInModel ? new HashSet<Guid> { Element } : [],
+        new DateOnly(2026, 10, 13), "USD", 90));
+
+    [Fact]
+    public void A_price_for_another_provider_or_region_gives_no_amount_and_a_line_says_what_its_price_is_for()
+    {
+        var known = Run(PriceFor("azure", "westeurope"), true, Hours("API", 10)).Lines.Single();
+        Assert.Equal((LineStatus.Known, 5m), (known.Status, known.Amount));
+        Assert.Equal(("azure", "westeurope", "D2s v5", "meter-1", "fetched"),
+            (known.Price!.Provider, known.Price.Region, known.Price.Sku, known.Price.MeterId, known.Price.Source));
+
+        // The same number for another provider is not a price of this resource.
+        var otherProvider = Run(PriceFor("aws", "westeurope"), true, Hours("API", 10));
+        Assert.Equal((LineStatus.Unknown, UnknownReason.PriceProviderMismatch, null),
+            (otherProvider.Lines.Single().Status, otherProvider.Lines.Single().Reason, otherProvider.Lines.Single().Amount));
+        Assert.Equal("aws", otherProvider.Lines.Single().Price!.Provider);
+        Assert.Empty(otherProvider.Totals);
+
+        var otherRegion = Run(PriceFor("azure", "eastus"), true, Hours("API", 10));
+        Assert.Equal(UnknownReason.PriceRegionMismatch, otherRegion.Lines.Single().Reason);
+        Assert.Empty(otherRegion.Totals);
+
+        // A price that names no region is a price for every region of its provider.
+        Assert.Equal(5m, Run(PriceFor("azure", ""), true, Hours("API", 10)).Lines.Single().Amount);
+    }
+
+    [Fact]
+    public void A_resource_of_an_element_that_the_model_no_longer_has_is_unknown_and_in_no_total()
+    {
+        var estimate = Run(PriceFor("azure", "westeurope"), elementInModel: false, Hours("API", 10));
+
+        var line = estimate.Lines.Single();
+        Assert.Equal((LineStatus.Unknown, UnknownReason.ElementNotInModel, null), (line.Status, line.Reason, line.Amount));
+        Assert.Empty(estimate.Totals);
+        Assert.Equal(UnknownReason.ElementNotInModel, estimate.Unknown.Single().Reason);
+    }
+
+    [Fact]
+    public void Inputs_that_pass_validation_and_multiply_past_a_decimal_give_an_unknown_line_and_not_a_failure()
+    {
+        // Each number is one that the sheet and the price book accept.
+        const string unit = "1000000000 instances";
+        const string priceUnit = "0.001 hour";
+        Assert.Null(CostRules.Quantity("quantity", CostRules.MaxQuantity));
+        Assert.Null(CostRules.Unit("unit", unit));
+        Assert.Null(CostRules.Unit("unit", priceUnit));
+        Assert.Null(PriceRules.UnitPrice("unitPrice", PriceRules.MaxUnitPrice));
+
+        // 1e12 × 1e9 instances × 730 hours ÷ 0.001 × 1e6 is about 7e32. A decimal holds 7.9e28.
+        var estimate = Run(PriceFor("azure", "westeurope", priceUnit, PriceRules.MaxUnitPrice), true,
+            Hours("Huge", CostRules.MaxQuantity, unit), Hours("Small", 1, "instances"));
+
+        var huge = estimate.Lines.Single(l => l.ResourceName == "Huge");
+        Assert.Equal((LineStatus.Unknown, UnknownReason.AmountOutOfRange, null), (huge.Status, huge.Reason, huge.Amount));
+        // The other line and the total are computed: 730 hours ÷ 0.001 × 1e6.
+        Assert.Equal([new Money("USD", 730_000_000_000m)], estimate.Totals);
+    }
+
+    [Fact]
+    public void The_estimate_and_its_hash_do_not_depend_on_the_culture_of_the_server()
+    {
+        var before = CultureInfo.CurrentCulture;
+        try
+        {
+            // The Thai calendar counts the year 2026 as 2569.
+            CultureInfo.CurrentCulture = new CultureInfo("th-TH");
+            var estimate = Estimator.Run(Input());
+
+            Assert.Contains("2027-01-01", Line(estimate, "Next year").Detail);
+            Assert.Equal(PinnedHash, CostJson.Hash(estimate));
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = before;
+        }
+    }
+
     [Theory]
     [InlineData("1 Hour", 1, "hour", null)]
     [InlineData("hrs", 1, "hour", null)]
@@ -171,9 +260,10 @@ public class ComparerTests
         resources, [],
         new Dictionary<Guid, Price>
         {
-            [Hourly] = new(Hourly, "hour", 0.5m, "USD", new DateOnly(2026, 1, 1), "custom", new DateOnly(2026, 10, 1)),
-            [Euro] = new(Euro, "hour", 0.4m, "EUR", new DateOnly(2026, 1, 1), "custom", new DateOnly(2026, 10, 1)),
+            [Hourly] = new(Hourly, "azure", "westeurope", "small", null, "hour", 0.5m, "USD", new DateOnly(2026, 1, 1), "custom", new DateOnly(2026, 10, 1)),
+            [Euro] = new(Euro, "azure", "westeurope", "small", null, "hour", 0.4m, "EUR", new DateOnly(2026, 1, 1), "custom", new DateOnly(2026, 10, 1)),
         },
+        new HashSet<Guid> { Element },
         new DateOnly(2026, 10, 13), "USD", 90));
 
     [Fact]
@@ -219,6 +309,24 @@ public class ComparerTests
         Assert.Null(comparison.Categories.Single(c => c.Category == "database").Amounts.SingleOrDefault()?.Delta);
         Assert.Equal(45m, comparison.Resources.Single(r => r.Name == "API").Amounts.Single().Delta);
         Assert.Equal(45m, comparison.Categories.Single(c => c.Category == "compute").Amounts.Single().Delta);
+    }
+
+    [Fact]
+    public void A_side_with_an_empty_sheet_is_not_the_cheaper_side_and_gets_no_difference()
+    {
+        var comparison = Comparer.Run(Run(Resource("API", 100, Hourly)), Run());
+
+        Assert.False(comparison.Comparable);
+        Assert.Equal(NotComparable.RightEmpty, comparison.Reason);
+        Assert.Null(comparison.Cheaper);
+        Assert.Null(comparison.Difference);
+        // The left amount is shown. No row says that the empty side costs 50 less.
+        Assert.Equal([new AmountDelta("USD", 50m, null, null)], comparison.Totals);
+        Assert.Null(comparison.Resources.Single().Amounts.Single().Delta);
+        Assert.Null(comparison.Categories.Single().Amounts.Single().Delta);
+
+        Assert.Equal(NotComparable.LeftEmpty, Comparer.Run(Run(), Run(Resource("API", 100, Hourly))).Reason);
+        Assert.Equal(NotComparable.BothEmpty, Comparer.Run(Run(), Run()).Reason);
     }
 
     [Fact]

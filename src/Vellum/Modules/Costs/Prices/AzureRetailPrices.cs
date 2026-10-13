@@ -120,6 +120,13 @@ public sealed class AzureRetailPrices(IServiceProvider services, SettingsResolve
     private const string Consumption = "Consumption";
 
     /// <summary>
+    /// Why no row of a meter with tiers is stored. The API returns one row for each tier of a
+    /// meter, a SKU and a region, each with its <c>tierMinimumUnits</c>. The row from 0 is the
+    /// price of the first units only, and it is often 0.
+    /// </summary>
+    public const string Tiered = "The price of this meter has tiers. Vellum does not model price tiers. Enter the price that you pay as a custom price.";
+
+    /// <summary>
     /// The filter of a query, or null when a value cannot be put into a filter. The
     /// documentation shows a value in single quotes and does not say how a quote inside a
     /// value is written, so a value with a quote is refused. Only consumption prices are
@@ -201,15 +208,15 @@ public sealed class AzureRetailPrices(IServiceProvider services, SettingsResolve
                 foreach (var record in records)
                 {
                     if (items.Count == MaxItems)
-                        return new AzureMeterPage(items, true, sourceUrl);
+                        return Page(items, true, sourceUrl);
                     if (record is not null && Read(record, currency) is { } meter)
                         items.Add(meter);
                 }
 
                 if (string.IsNullOrEmpty(body.NextPageLink))
-                    return new AzureMeterPage(items, false, sourceUrl);
+                    return Page(items, false, sourceUrl);
                 if (page == MaxPages)
-                    return new AzureMeterPage(items, true, sourceUrl);
+                    return Page(items, true, sourceUrl);
 
                 // The next page is read only from the origin in settings. The pipeline checks
                 // the address again like any other, with the same private-network and https rules.
@@ -235,6 +242,22 @@ public sealed class AzureRetailPrices(IServiceProvider services, SettingsResolve
         }
     }
 
+    /// <summary>
+    /// The rows as a page. When one row of a meter, a SKU and a region starts above 0 units,
+    /// the price has tiers and no row of that group is importable, the row from 0 included.
+    /// </summary>
+    private static AzureMeterPage Page(List<AzureMeter> items, bool more, string sourceUrl)
+    {
+        static (string, string, string) Group(AzureMeter meter) => (meter.MeterId, meter.SkuId, meter.ArmRegionName);
+
+        var tiered = items.Where(m => m.TierMinimumUnits != 0m).Select(Group).ToHashSet();
+        return new AzureMeterPage(
+            tiered.Count == 0
+                ? items
+                : items.Select(m => m.NotImportable is null && tiered.Contains(Group(m)) ? m with { NotImportable = Tiered } : m).ToList(),
+            more, sourceUrl);
+    }
+
     private static AzurePricesFailure Failure(int status) => status switch
     {
         400 => new AzurePricesFailure.BadFilter(),
@@ -258,7 +281,6 @@ public sealed class AzureRetailPrices(IServiceProvider services, SettingsResolve
         var term = Clean(item.ReservationTerm, MaxIdChars);
         var notImportable =
             type != Consumption || term is not null ? "Vellum stores consumption prices only."
-            : tier != 0m ? "The price applies above a minimum amount. Vellum does not model price tiers."
             : PriceRules.UnitPrice("retailPrice", price) is not null ? "The price is outside the range that Vellum stores."
             : null;
 

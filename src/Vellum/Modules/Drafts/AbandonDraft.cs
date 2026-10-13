@@ -2,6 +2,7 @@
 using System.Security.Claims;
 using Deedbox;
 using Microsoft.EntityFrameworkCore;
+using Vellum.Modules.Costs;
 using Vellum.Modules.Modelling.Model;
 using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Shared;
@@ -20,26 +21,37 @@ public static class AbandonDraft
         var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
 
-        // The draft status, the closing event and the removal of the draft's read-model rows
-        // commit together.
+        // The draft status, the closing event, the removal of the draft's read-model rows and
+        // the removal of its cost sheet and saved estimates commit together.
         return await SharedTransaction.RunAsync(http.RequestServices, async services =>
         {
             var db = services.GetRequiredService<DraftsDbContext>();
 
-            var streamId = await db.Drafts.AsNoTracking()
+            var found = await db.Drafts.AsNoTracking()
                 .Where(d => d.Id == draftId && d.ProjectId == projectId)
-                .Select(d => (Guid?)d.StreamId)
+                .Select(d => new { d.StreamId, d.Status })
                 .FirstOrDefaultAsync(ct);
-            if (streamId is null)
+            if (found is null)
                 return Results.NotFound(new ErrorResponse("not_found", "Draft not found"));
+            // A closed draft has no cost sheet stream to lock. The status is read again under the lock.
+            if (found.Status != "open")
+                return Results.Conflict(new ErrorResponse("conflict", $"Draft is already {found.Status}"));
 
             // A return before the commit rolls everything back.
             await using var transaction = await db.Database.BeginTransactionAsync(ct);
             var store = services.GetRequiredService<IEventStore>().ForProject(projectId).UseDbContext(db);
 
-            // The draft's stream stays locked until the commit, so a merge of this draft and
-            // this abandon take turns. The status is read under that lock.
-            await store.Execute<ModelState>(StreamId.From(streamId.Value), _ => [], ct);
+            // The draft's model stream and its cost sheet stream stay locked until the commit,
+            // in ID order, so a merge of this draft and this abandon take turns. The status is
+            // read under that lock.
+            var sheetId = CostAccess.SheetStreamId(found.StreamId);
+            foreach (var streamId in new[] { found.StreamId, sheetId }.Order())
+            {
+                if (streamId == sheetId)
+                    await CostBranches.LockSheetAsync(store, streamId, ct);
+                else
+                    await store.Execute<ModelState>(StreamId.From(streamId), _ => [], ct);
+            }
 
             var draft = await db.Drafts.FirstAsync(d => d.Id == draftId, ct);
             if (draft.Status != "open")
@@ -52,6 +64,7 @@ public static class AbandonDraft
             // drops the draft's rows.
             await store.Append(
                 StreamId.From(draft.StreamId), ExpectedVersion.Any, [new ModelEvent.BranchClosed(draft.StreamId)], ct);
+            await CostBranches.CloseAsync(db, store, projectId, draft.StreamId, ct);
 
             await transaction.CommitAsync(ct);
             return Results.Ok(CreateDraft.ToDto(draft));

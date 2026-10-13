@@ -45,7 +45,10 @@ public static class CostsModule
 
     /// <summary>One stream per cost sheet: the sheet of one model branch of one project.</summary>
     public static DeedboxBuilder AddCostStreams(this DeedboxBuilder deedbox) => deedbox
-        .Stream<CostSheetState>("cost_sheet", stream => stream.EventsNestedIn(typeof(CostEvent)))
+        .Stream<CostSheetState>("cost_sheet", stream => stream
+            .EventsNestedIn(typeof(CostEvent))
+            // Version 2 of the state added what a sheet held right after its last copy.
+            .StateVersion(2))
         .Projection<CostSheetProjection>("cost_sheet_index", Run.Inline);
 
     public static WebApplication MapCostEndpoints(this WebApplication app)
@@ -103,7 +106,9 @@ public static class CostsModule
 public static class CostRetention
 {
     /// <summary>
-    /// Deletes the saved estimates, the pins and the cost sheets of a project. The index row
+    /// Deletes the saved estimates, the pins and the cost sheets of a project. The sheet and
+    /// the saved estimates of a draft go earlier, when the draft is merged or abandoned (see
+    /// <see cref="CostBranches.CloseAsync"/>). The index row
     /// of a sheet goes after its stream. A delete that is cut short leaves rows and streams
     /// that no request reaches: every cost endpoint resolves the project first.
     /// </summary>

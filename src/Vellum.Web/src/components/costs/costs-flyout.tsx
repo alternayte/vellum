@@ -55,12 +55,9 @@ export function CostsFlyout({ projectId, branchId, references }: CostsFlyoutProp
 
   const copy = useMutation({ mutationFn: () => costsApi.copy(projectId, branch, null), onSuccess: refresh, onError: shownInline })
   // A variant is a fork of main. Its cost sheet starts as a copy of the sheet shown now.
+  // The server makes the variant and the copy in one transaction: both exist, or neither.
   const createVariant = useMutation({
-    mutationFn: async () => {
-      const variant = await costsApi.createVariant(projectId, variantName!.trim())
-      await costsApi.copy(projectId, variant.streamId, branch)
-      return variant.streamId
-    },
+    mutationFn: async () => (await costsApi.createVariant(projectId, variantName!.trim(), branch)).streamId,
     onSuccess: (streamId) => {
       setVariantName(null)
       setBranch(streamId)
@@ -102,7 +99,9 @@ export function CostsFlyout({ projectId, branchId, references }: CostsFlyoutProp
                 <Button type="submit" size="sm" className="flex-1" disabled={createVariant.isPending || !variantName.trim()}>Create</Button>
                 <Button type="button" size="sm" variant="ghost" onClick={() => setVariantName(null)}>Cancel</Button>
               </div>
-              {createVariant.isError && <p role="alert" className="text-xs text-destructive">{describeError(createVariant.error)}</p>}
+              {createVariant.isError && (
+                <p role="alert" className="text-xs text-destructive">No variant was created. {describeError(createVariant.error)}</p>
+              )}
             </form>
           )}
         </div>

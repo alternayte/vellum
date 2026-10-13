@@ -12016,6 +12016,7 @@
           "value": {
             "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
             "type": [
+              "null",
               "number",
               "string"
             ],
@@ -13743,6 +13744,12 @@
               "string"
             ],
             "format": "uuid"
+          },
+          "costSheetFrom": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -14172,6 +14179,7 @@
           "unitPrice": {
             "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
             "type": [
+              "null",
               "number",
               "string"
             ],
@@ -19066,6 +19074,10 @@
       "PriceSource": {
         "required": [
           "priceId",
+          "provider",
+          "region",
+          "sku",
+          "meterId",
           "unitPrice",
           "unit",
           "currency",
@@ -19078,6 +19090,30 @@
           "priceId": {
             "type": "string",
             "format": "uuid"
+          },
+          "provider": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "region": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "sku": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "meterId": {
+            "type": [
+              "null",
+              "string"
+            ]
           },
           "unitPrice": {
             "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",

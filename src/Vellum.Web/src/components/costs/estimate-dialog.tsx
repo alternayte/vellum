@@ -7,7 +7,7 @@ import { selectClass } from '@/components/settings/fields'
 import { cn } from '@/lib/utils'
 import { shownInline } from '@/lib/mutation-errors'
 import {
-  FLAG_LABEL, NOT_COMPARABLE, UNKNOWN_REASON, costsApi, describeError, formatAmount, formatMoney, formatNumber, priceLabel,
+  FLAG_LABEL, NOT_COMPARABLE, UNKNOWN_REASON, costsApi, describeError, formatAmount, formatMoney, formatNumber, isEmptySide, priceFor, priceLabel,
   type AmountDelta, type Branch, type Estimate, type SavedEstimate, type UnknownLine,
 } from '@/lib/costs-api'
 
@@ -106,6 +106,7 @@ function EstimateView({ estimate, hash }: { estimate: Estimate; hash: string }) 
                     </td>
                     <td className={numeric}>
                       {formatNumber(line.price!.unitPrice)} {line.price!.currency} per {line.price!.unit}
+                      <span className="block font-sans text-[11px] text-muted-foreground">{priceFor(line.price!)}</span>
                       <span className="block font-sans text-[11px] text-muted-foreground">{priceLabel(line.price!)}</span>
                     </td>
                     <td className={`${cell} text-muted-foreground`}>{line.conversion}</td>
@@ -223,7 +224,11 @@ function CompareView({ projectId, branchId, branches }: { projectId: string; bra
             ) : (
               <>
                 <p className="text-sm text-[var(--trace-retry)]">Not comparable. {NOT_COMPARABLE[comparison.reason!] ?? comparison.reason}</p>
-                <p className="mt-1 text-xs text-muted-foreground">Vellum does not say which side costs less while a cost is unknown. The differences below are for complete rows only.</p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {isEmptySide(comparison.reason)
+                    ? 'An empty cost sheet is not a cost of zero. Vellum does not say which side costs less and shows no difference. Add resources to the empty side, or copy a sheet into it.'
+                    : 'Vellum does not say which side costs less while a cost is unknown. The differences below are for complete rows only.'}
+                </p>
               </>
             )}
           </div>
