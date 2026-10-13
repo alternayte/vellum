@@ -50,10 +50,15 @@ internal static partial class ContractDocuments
 
     public static string SendKey(Guid publisherId, Guid channelId) => $"send.{publisherId}.{channelId}";
 
-    /// <summary>The existing model export document, plus the promises.</summary>
-    public static byte[] Architecture(BuildView view)
+    /// <summary>
+    /// The existing model export document, plus the contracts of the operations that have no
+    /// OpenAPI document, and the promises: the binding ones, and apart from them the ones that
+    /// were never approved and the retired ones.
+    /// </summary>
+    public static byte[] Architecture(BuildView view, IReadOnlyDictionary<Guid, IReadOnlyList<Route>> routes)
     {
         var model = view.Model;
+        var routed = routes.Values.SelectMany(r => r).Select(r => r.Operation.Id).ToHashSet();
         var document = new
         {
             version = "1.0",
@@ -78,11 +83,35 @@ internal static partial class ContractDocuments
             subscriptions = model.Subscriptions.Values.OrderBy(s => s.Id.Value).Select(s => new SubscriptionExport(
                 s.Id, s.ChannelId, s.ConsumerId, new RetryExport(s.Retry.MaxAttempts, s.Retry.BackoffMs), s.DeadLetterChannelId,
                 s.FactStatus.ToApiString(), ProvenanceExport.From(s.Provenance))),
+            // An operation that is not a routed HTTP operation has no OpenAPI document. Its whole contract is here.
+            operationContracts = model.Operations.Values.Where(o => !routed.Contains(o.Id)).OrderBy(o => o.Id.Value).Select(o => new
+            {
+                id = o.Id.Value,
+                ownerId = o.OwnerId.Value,
+                name = o.Name,
+                transport = o.Transport.ToString().ToLowerInvariant(),
+                requestSchemaId = o.RequestSchemaId?.Value,
+                responseSchemaId = o.ResponseSchemaId?.Value,
+                timeoutMs = o.TimeoutMs,
+                retry = new RetryExport(o.Retry.MaxAttempts, o.Retry.BackoffMs),
+                truth = o.FactStatus.ToApiString(),
+                openApi = (string?)null,
+                noOpenApiBecause = NoOpenApiReason(o),
+                calledBy = view.AllSteps.Where(s => s.Step is CallStep call && call.Operation == o.Id)
+                    .Select(s => new { scenarioId = s.ScenarioId, stepId = s.Step.Id }),
+            }),
             staleFacts = StaleFacts(model),
-            promises = view.Promises.Select(PromiseDocuments.Export),
+            promises = view.Requirements.Select(PromiseDocuments.Export),
+            promisesNotApproved = view.Promises.Where(p => p.State == PromiseLifecycle.Draft).Select(PromiseDocuments.Export),
+            promisesRetired = view.Promises.Where(p => p.State == PromiseLifecycle.Retired).Select(PromiseDocuments.Export),
         };
         return BuildText.CanonicalJson(document);
     }
+
+    /// <summary>Why an operation has no OpenAPI document. OpenAPI describes HTTP operations that have a method and a path.</summary>
+    public static string NoOpenApiReason(OperationState operation) => operation.Transport == Transport.Http
+        ? "The name of this http operation is not a method and a path, so it has no place in an OpenAPI document."
+        : $"The transport is {operation.Transport.ToString().ToLowerInvariant()}. OpenAPI describes HTTP operations only.";
 
     /// <summary>Every fact a scan marked stale, by ID. The export format of the model has no place for the mark.</summary>
     private static IEnumerable<object> StaleFacts(ModelState model) =>
@@ -120,8 +149,27 @@ internal static partial class ContractDocuments
                 var response = BuildText.Map(("description", "The declared response."));
                 if (Reference(operation.ResponseSchemaId) is { } responseSchema)
                     response["content"] = Content(responseSchema);
-                // The model declares one response contract and no status codes.
-                entry["responses"] = BuildText.Map(("default", response));
+                // The model declares one response contract and no status code, and the scenario
+                // format has no status number either. What the scenarios show is whether a call
+                // is answered or fails. So the document carries the class 2XX when a playback
+                // shows the operation answering, with the steps that show it, and `default`
+                // for every other answer, with the steps whose playback shows a failure. No
+                // status number is invented.
+                var responses = new OrderedDictionary<string, object?>();
+                var answered = ShownBy(view, operation, TraceEventKind.ResponseReceived);
+                if (answered.Count > 0)
+                {
+                    var success = BuildText.Map(("description", "The operation answers. Scenario playbacks show it; they state no status number."));
+                    if (Reference(operation.ResponseSchemaId) is { } successSchema)
+                        success["content"] = Content(successSchema);
+                    success["x-vellum-shown-by"] = answered;
+                    responses["2XX"] = success;
+                }
+                var failing = ShownBy(view, operation, TraceEventKind.RequestFailed, TraceEventKind.RequestTimedOut);
+                if (failing.Count > 0)
+                    response["x-vellum-failure-shown-by"] = failing;
+                responses["default"] = response;
+                entry["responses"] = responses;
                 item[route.Method.ToLowerInvariant()] = entry;
             }
             paths[byPath.Key] = item;
@@ -142,6 +190,13 @@ internal static partial class ContractDocuments
             id is { } schemaId && schemaKeys.TryGetValue(schemaId.Value, out var key) ? $"#/components/schemas/{key}" : null;
     }
 
+    /// <summary>The call steps whose playback on the pinned model emits one of <paramref name="kinds"/> for the operation, as <c>scenario ID/step ID</c>.</summary>
+    private static List<object?> ShownBy(BuildView view, OperationState operation, params TraceEventKind[] kinds) =>
+        [.. view.AllSteps.Where(s => s.Step is CallStep call && call.Operation == operation.Id)
+            .Where(s => view.Playbacks[s.ScenarioId].Events.Any(e => e.StepId == s.Step.Id && e.Target == operation.Id.Value && kinds.Contains(e.Kind)))
+            .Select(s => (object?)$"{s.ScenarioId}/{s.Step.Id}")
+            .Distinct()];
+
     private static OrderedDictionary<string, object?> Content(string reference) =>
         BuildText.Map(("application/json", BuildText.Map(("schema", BuildText.Map(("$ref", reference))))));
 
@@ -156,15 +211,9 @@ internal static partial class ContractDocuments
     /// <summary>The schema as stored, or an empty schema that names the stored text when it is not a JSON object.</summary>
     private static object? SchemaBody(BuildSchema schema)
     {
-        try
-        {
-            using var document = JsonDocument.Parse(schema.Content);
-            if (document.RootElement.ValueKind is JsonValueKind.Object or JsonValueKind.True or JsonValueKind.False)
-                return BuildText.Plain(document.RootElement);
-        }
-        catch (JsonException)
-        {
-        }
+        using var document = BuildText.TryParseJson(schema.Content);
+        if (document?.RootElement.ValueKind is JsonValueKind.Object or JsonValueKind.True or JsonValueKind.False)
+            return BuildText.Plain(document.RootElement);
         return BuildText.Map(("description", $"Schema {schema.Id} is not a JSON Schema object. See architecture.json for its stored text."));
     }
 
@@ -257,15 +306,31 @@ internal static partial class ContractDocuments
 /// <summary>The promise and scenario files of a bundle.</summary>
 internal static class PromiseDocuments
 {
-    public static string Path(PromiseDto promise) => $"promises/{promise.RequirementId}.json";
+    /// <summary>
+    /// A binding promise is at <c>promises/</c>. A promise that was never approved and a
+    /// retired promise are in directories of their own, so no reader takes one for a requirement.
+    /// </summary>
+    public static string Path(PromiseDto promise) => promise.State switch
+    {
+        PromiseLifecycle.Approved => $"promises/{promise.RequirementId}.json",
+        PromiseLifecycle.Retired => $"promises-retired/{promise.RequirementId}.json",
+        _ => $"promises-not-approved/{promise.RequirementId}.json",
+    };
 
     public static string ScenarioPath(Scenario scenario) => $"scenarios/{scenario.Id.Value}.json";
 
     /// <summary>A promise as an implementer needs it: every revision, with the evidence status of each.</summary>
+    /// <param name="promise">
+    /// <c>binding</c> says whether the promise is a requirement. <c>requirement</c> is the
+    /// approved revision in force, and null for a promise that does not bind. <c>revisions</c>
+    /// is the whole history, each with its status.
+    /// </param>
     public static object Export(PromiseDto promise) => new
     {
         promise.Id, promise.RequirementId, promise.Origin, promise.State,
+        Binding = promise.State == PromiseLifecycle.Approved,
         promise.InForceRevision, promise.LatestRevision, promise.NeedsReview, promise.MissingLinks,
+        Requirement = promise.State == PromiseLifecycle.Approved ? promise.Current : null,
         promise.Revisions,
     };
 

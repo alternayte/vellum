@@ -6,6 +6,7 @@ namespace Vellum.Modules.Build;
 
 /// <summary>One implementation slice: a service with what it serves and what it needs from others.</summary>
 /// <param name="DependsOn">The services whose contracts this one calls or consumes, so they come first.</param>
+/// <param name="RequirementIds">The promises that bind the service: only promises whose revision in force is approved. A draft and a retired promise bind nothing.</param>
 /// <param name="InCycle">True when the service is in a dependency cycle; its place in the order is then by name.</param>
 internal sealed record Slice(
     int Order, ElementState Service,
@@ -81,7 +82,7 @@ internal static class Slices
                 Sorted(publishes.Where(p => p.From == service.Id).Select(p => p.Channel.Value)),
                 Sorted(writes.Where(w => w.By == service.Id).Select(w => w.Store.Value)),
                 [.. ordered.Select(o => o.Service.Id.Value).Where(dependencies[service.Id.Value].Contains)],
-                [.. view.Promises.Where(p => Links(p).Any(own.Contains)).Select(p => p.RequirementId)],
+                [.. view.Requirements.Where(p => Links(p).Any(own.Contains)).Select(p => p.RequirementId)],
                 entry.InCycle);
         }).ToList();
 
@@ -140,6 +141,19 @@ internal static class Blockers
             }
         }
 
+        // The model says who produces a message. A scenario that publishes it from another element disagrees with the model.
+        foreach (var scenario in view.Scenarios)
+        {
+            foreach (var publish in view.Steps[scenario.Id.Value].Select(s => s.Step).OfType<PublishStep>())
+            {
+                if (view.Model.Messages.TryGetValue(publish.Message, out var message) && message.ProducerId != publish.From)
+                {
+                    blockers.Add(new("producer-mismatch", message.Id.Value.ToString(),
+                        $"The model says '{view.Name(message.ProducerId)}' ({message.ProducerId.Value}) produces the message '{message.Name}'. Step '{publish.Id}' of scenario '{scenario.Name}' ({scenario.Id.Value}) publishes it from '{view.Name(publish.From)}' ({publish.From.Value}). Change the producer of the message or the scenario."));
+                }
+            }
+        }
+
         foreach (var promise in view.Promises)
         {
             if (promise.State == PromiseLifecycle.Draft)
@@ -150,12 +164,30 @@ internal static class Blockers
             }
             if (promise.State == PromiseLifecycle.Retired)
                 continue;
-            foreach (var gap in promise.Current.EvidenceStatus.Gaps)
+
+            var status = promise.Current.EvidenceStatus;
+            foreach (var gap in status.Gaps)
                 blockers.Add(new("promise-gap", promise.RequirementId, $"{promise.RequirementId}: {gap}"));
-            if (promise.Current.EvidenceStatus.Counts.Failed > 0)
+            if (status.Counts.Failed > 0)
             {
                 blockers.Add(new("promise-check-failed", promise.RequirementId,
-                    $"{promise.RequirementId}: {promise.Current.EvidenceStatus.Counts.Failed} obligation(s) failed their newest check."));
+                    $"{promise.RequirementId}: {status.Counts.Failed} obligation(s) failed their newest check."));
+            }
+            // An approved promise is evidence-backed only by results on the pinned inputs. A
+            // result on inputs that moved is no such result, and neither is no result at all.
+            var stale = status.Obligations.Where(o => o.Result is RunResult.Passed or RunResult.Failed && o.Current != true).Select(o => o.ObligationId).ToList();
+            var missing = status.Obligations.Where(o => o.Result is RunResult.NotRun or RunResult.Unsupported).Select(o => o.ObligationId).ToList();
+            if (stale.Count > 0 || missing.Count > 0 || status.Obligations.Count == 0)
+            {
+                var parts = new List<string>();
+                if (stale.Count > 0)
+                    parts.Add($"the newest result of {string.Join(", ", stale)} is for inputs that are not the pinned ones (stale)");
+                if (missing.Count > 0)
+                    parts.Add($"{string.Join(", ", missing)} {(missing.Count == 1 ? "has" : "have")} no result");
+                if (status.Obligations.Count == 0)
+                    parts.Add("it has no obligation");
+                blockers.Add(new("promise-evidence-stale", promise.RequirementId,
+                    $"{promise.RequirementId}: {string.Join("; ", parts)}. Run the checks on the pinned inputs, or record evidence for the commit the model follows."));
             }
         }
 

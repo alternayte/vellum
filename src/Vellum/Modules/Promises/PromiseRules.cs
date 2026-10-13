@@ -5,13 +5,19 @@ using Vellum.Shared;
 namespace Vellum.Modules.Promises;
 
 /// <summary>The things of a project that a promise or an obligation may name.</summary>
+/// <param name="ScenarioFaults">The faults each loaded scenario declares itself, by scenario ID. A scenario that was not loaded is absent.</param>
+/// <param name="GitHubHost">The host of the repository pages of the workspace's GitHub, or null when it is not configured or was not read.</param>
+/// <param name="Repositories"><c>host/owner/name</c> of every repository the project has an accepted import link or a tracked ref for.</param>
 public sealed record KnownThings(
     IReadOnlySet<Guid> Scenarios,
     IReadOnlySet<Guid> Operations,
     IReadOnlySet<Guid> Channels,
     IReadOnlySet<Guid> Subscriptions,
     IReadOnlySet<Guid> Messages,
-    IReadOnlySet<Guid> Elements)
+    IReadOnlySet<Guid> Elements,
+    IReadOnlyDictionary<Guid, IReadOnlyList<Fault>>? ScenarioFaults = null,
+    string? GitHubHost = null,
+    IReadOnlySet<string>? Repositories = null)
 {
     public bool Has(string kind, Guid id) => kind switch
     {
@@ -46,8 +52,19 @@ public static partial class PromiseRules
     public const int MaxFaults = 50;
     public const int MaxAssertions = 100;
 
-    /// <summary>The most characters a promise holds as JSON, with every revision and obligation it ever had.</summary>
-    public const int MaxDocumentChars = 2 * 1024 * 1024;
+    /// <summary>
+    /// The most characters the content and the obligations of ONE revision hold as JSON. The
+    /// write that would pass it is refused with 413. A revision that retires holds no content,
+    /// so a promise at this limit can still be revised and retired.
+    /// </summary>
+    public const int MaxRevisionChars = 256 * 1024;
+
+    /// <summary>The most characters one obligation recipe holds as JSON.</summary>
+    public const int MaxRecipeChars = 32 * 1024;
+
+    public const int MaxWorkflowChars = 255;
+
+    public const string GitHubActions = "github-actions";
 
     [GeneratedRegex(@"\A[A-Z]{2,6}\z")]
     private static partial Regex Prefix();
@@ -204,6 +221,18 @@ public static partial class PromiseRules
                 }
                 if ((check.Faults ?? []).Where(f => f is not null).GroupBy(f => f.Target).Any(g => g.Count() > 1))
                     errors.Add(new("recipe.scenarioCheck.faults", "Each target has at most one fault"));
+                // An obligation adds failures to the scenario. It cannot weaken or replace one the scenario declares.
+                if (known.ScenarioFaults is { } declared && declared.TryGetValue(check.ScenarioId, out var own))
+                {
+                    foreach (var (fault, i) in (check.Faults ?? []).Select((f, i) => (f, i)).Where(x => x.f is not null))
+                    {
+                        if (own.Any(f => f is not null && f.Target == fault.Target))
+                        {
+                            errors.Add(new($"recipe.scenarioCheck.faults[{i}].target",
+                                $"The scenario already declares a fault on {fault.Target}. An obligation adds faults to the scenario's own; it cannot weaken or replace one. Remove this fault, or change the scenario."));
+                        }
+                    }
+                }
                 foreach (var (assertion, i) in (check.Expect ?? []).Select((a, i) => (a, i)))
                 {
                     var at = $"recipe.scenarioCheck.expect[{i}]";
@@ -245,6 +274,8 @@ public static partial class PromiseRules
                     errors.Add(new("recipe.plan.contractIds", $"At most {MaxLinksPerKind} contracts are allowed"));
                 foreach (var id in (plan.ContractIds ?? []).Where(id => !known.HasContract(id)))
                     errors.Add(new("recipe.plan.contractIds", $"No operation, channel, subscription or message with ID {id} exists in the project"));
+                if (plan.EvidenceSource is { } evidenceSource)
+                    errors.AddRange(CheckEvidenceSource(evidenceSource, known));
                 break;
 
             case ObligationKind.ScenarioCheck:
@@ -264,7 +295,38 @@ public static partial class PromiseRules
                 break;
         }
 
+        if (errors.Count == 0 && PromiseJson.Write(recipe).Length > MaxRecipeChars)
+            errors.Add(new("recipe", $"A recipe holds at most {MaxRecipeChars} characters as JSON"));
         return errors;
+    }
+
+    /// <summary>
+    /// The evidence source of a test plan: a workflow of a repository that the project already
+    /// follows on the workspace's GitHub. A run of any other repository is never evidence here.
+    /// </summary>
+    private static IEnumerable<ValidationError> CheckEvidenceSource(EvidenceSource source, KnownThings known)
+    {
+        const string field = "recipe.plan.evidenceSource";
+        if (source.System != GitHubActions)
+            yield return new($"{field}.system", $"The system is {GitHubActions}");
+        if (string.IsNullOrWhiteSpace(source.Workflow))
+            yield return new($"{field}.workflow", "A workflow is required: the file name of the workflow, such as ci.yml, or its name");
+        else if (TextRule.Line($"{field}.workflow", source.Workflow, MaxWorkflowChars) is { } workflowError)
+            yield return workflowError;
+        if (source.Job is not null && string.IsNullOrWhiteSpace(source.Job))
+            yield return new($"{field}.job", "A job is a job name, or null for the whole run");
+        else if (TextRule.Line($"{field}.job", source.Job) is { } jobError)
+            yield return jobError;
+
+        if (!IsRepository(source.Repository))
+            yield return new($"{field}.repository", "A repository is owner/name in lower case");
+        else if (known.GitHubHost is not { } host)
+            yield return new($"{field}.repository", "The workspace has no usable GitHub address, so no repository can be an evidence source. Set github.apiBaseUrl in the workspace settings.");
+        else if (known.Repositories?.Contains($"{host}/{source.Repository}") != true)
+        {
+            yield return new($"{field}.repository",
+                $"The project follows no repository {source.Repository} on {host}. An evidence source is a repository with an accepted import or a tracked ref.");
+        }
     }
 
     private static ValidationError? PlanList(string field, IReadOnlyList<string>? items, bool required)
@@ -294,7 +356,15 @@ public static partial class PromiseRules
             : null,
         Plan = recipe.Plan is { } plan
             ? new TestPlanRecipe(plan.Steps ?? [], plan.Inputs ?? [], plan.ExpectedObservations ?? [],
-                plan.ForbiddenObservations ?? [], [.. (plan.ContractIds ?? []).Distinct().Order()])
+                plan.ForbiddenObservations ?? [], [.. (plan.ContractIds ?? []).Distinct().Order()],
+                plan.EvidenceSource is { } evidence
+                    ? evidence with
+                    {
+                        Repository = (evidence.Repository ?? "").Trim().ToLowerInvariant(),
+                        Workflow = (evidence.Workflow ?? "").Trim(),
+                        Job = evidence.Job?.Trim(),
+                    }
+                    : null)
             : null,
     };
 }

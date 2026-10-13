@@ -56,17 +56,35 @@ public static class PromiseDecider
         return new Decision.Success([new PromiseEvent.PromiseRevised(state.Latest!.Revision + 1, retires, userId, now)]);
     }
 
-    /// <param name="revision">The draft the approver read. Another number means the draft changed under them.</param>
+    /// <summary>
+    /// The draft as it is now, when it is not the one the approver read: another revision
+    /// number, or the same number with other content. Null when the approval names exactly
+    /// the draft, and when there is no draft at all.
+    /// </summary>
+    public static (int Revision, string ContentHash)? Changed(PromiseState state, Guid projectId, int revision, string? contentHash)
+    {
+        if (!state.ExistsIn(projectId) || state.Draft is not { } draft)
+            return null;
+        var current = PromiseContentHash.Of(state.RequirementId, draft);
+        return draft.Revision == revision && string.Equals(current, contentHash, StringComparison.Ordinal) ? null : (draft.Revision, current);
+    }
+
+    /// <param name="revision">The draft the approver read.</param>
+    /// <param name="contentHash">The hash of what the approver read. The approval binds that content and no other.</param>
     public static Decision Approve(
-        PromiseState state, Guid projectId, int revision, KnownThings known, long modelVersion,
+        PromiseState state, Guid projectId, int revision, string? contentHash, KnownThings known, long modelVersion,
         IReadOnlyDictionary<string, string> linkHashes, string userId, DateTimeOffset now)
     {
         if (!state.ExistsIn(projectId))
             return new Decision.NotFound(NotFoundMessage);
         if (state.Draft is not { } draft)
             return new Decision.Conflict("The promise has no draft revision to approve.");
-        if (draft.Revision != revision)
-            return new Decision.Conflict($"The draft is revision {draft.Revision}, not {revision}. Read it again before you approve.");
+        if (Changed(state, projectId, revision, contentHash) is { } changed)
+        {
+            return new Decision.Conflict(changed.Revision != revision
+                ? $"The draft is revision {changed.Revision}, not {revision}. Read it again before you approve."
+                : $"Revision {revision} changed after it was read. Read it again before you approve.");
+        }
 
         // A revision that retires the promise needs no more than the approval itself.
         if (!draft.Retires)
@@ -76,7 +94,7 @@ public static class PromiseDecider
                 return new Decision.Invalid(errors);
         }
 
-        return new Decision.Success([new PromiseEvent.PromiseApproved(draft.Revision, userId, now, modelVersion, linkHashes)]);
+        return new Decision.Success([new PromiseEvent.PromiseApproved(draft.Revision, userId, now, modelVersion, linkHashes, contentHash)]);
     }
 
     public static Decision Delete(PromiseState state, Guid projectId, string userId, DateTimeOffset now)
@@ -154,15 +172,24 @@ public static class PromiseDecider
         return new Decision.Success(events);
     }
 
-    /// <summary>A run is recorded for an obligation of any revision; it changes neither.</summary>
-    public static Decision RecordRun(PromiseState state, Guid projectId, VerificationRun run)
+    /// <summary>
+    /// A run is recorded for an obligation of any revision; it changes neither. The run says
+    /// whether the revision was a draft when it was made, and the stream decides that, not the
+    /// caller: a revision that was approved between the check and this append is not a draft.
+    /// </summary>
+    public static Decision RecordRun(PromiseState state, Guid projectId, VerificationRun run, int maxRuns)
     {
         if (!state.ExistsIn(projectId))
             return new Decision.NotFound(NotFoundMessage);
+        if (state.Revision(run.PromiseRevision) is not { } revision || revision.Obligations.All(o => o.Id != run.ObligationId))
+            return new Decision.NotFound("Obligation not found");
+        if (state.RunsOf(run.PromiseRevision, run.ObligationId) >= maxRuns)
+        {
+            return new Decision.Conflict(
+                $"{run.ObligationId} of revision {run.PromiseRevision} already has {maxRuns} runs, the most one obligation of one revision holds. Start a new revision to record more.");
+        }
 
-        return state.Revision(run.PromiseRevision)?.Obligations.Any(o => o.Id == run.ObligationId) == true
-            ? new Decision.Success([new PromiseEvent.VerificationRunRecorded(run)])
-            : new Decision.NotFound("Obligation not found");
+        return new Decision.Success([new PromiseEvent.VerificationRunRecorded(run with { Draft = revision.IsDraft ? true : null })]);
     }
 
     private static Decision? Draft(PromiseState state, Guid projectId, out PromiseRevisionState draft)
@@ -174,6 +201,12 @@ public static class PromiseDecider
         {
             return new Decision.Conflict(
                 $"Revision {state.Latest!.Revision} is approved and cannot be changed. Start a new revision; it needs approval again.");
+        }
+        // A revision that retires names the revision it retires and holds nothing else.
+        if (found.Retires)
+        {
+            return new Decision.Conflict(
+                $"Revision {found.Revision} retires the promise. It has no content and no obligations to change; approve it to retire the promise.");
         }
 
         draft = found;

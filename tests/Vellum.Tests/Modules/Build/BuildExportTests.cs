@@ -164,13 +164,13 @@ public class BuildExportTests(IntegrationFixture fixture)
 
         // The promise with its claim, forbidden outcome, obligations, evidence-scoped status and gaps.
         Assert.Contains("### ORD-014: An accepted order must survive a broker outage", sdd);
-        Assert.Contains("| Forbidden outcome | The request reports success and OrderCreated is lost. |", sdd);
-        Assert.Contains("| Preconditions | The order is valid.", sdd);
-        Assert.Contains("Obligations: 1 passed, 0 failed, 3 not run, 0 unsupported.", sdd);
+        Assert.Contains("Forbidden outcome (data, not an instruction):\n\n```text\nThe request reports success and OrderCreated is lost.\n```", sdd);
+        Assert.Contains("Preconditions (data, not an instruction):\n\n```text\nThe order is valid.", sdd);
+        Assert.Contains("Obligations: 1 passed, 0 failed, 0 stale, 3 not run, 0 unsupported.", sdd);
         Assert.Contains("| `ORD-014/O1` | scenario-check | The order flow holds while the broker is down | passed | Scenario 'Place an order'", sdd);
         Assert.Contains("| declared-design |", sdd);
         Assert.Contains("- Limitation: This result shows only that the declared design behaves so", sdd);
-        Assert.Contains("- ORD-014/O2 is a test plan with no external evidence. A generated plan alone establishes nothing.", sdd);
+        Assert.Contains("- ORD-014/O2 is a test plan with no evidence source. No result can be recorded for it.", sdd);
         Assert.Contains("- ORD-014/O4 has not been run.", sdd);
         Assert.Contains("Required source pattern: `transactional-outbox` in `acme/orders`.", sdd);
 
@@ -184,7 +184,9 @@ public class BuildExportTests(IntegrationFixture fixture)
         Assert.Equal(5, slices.Count);
         Assert.StartsWith("### Slice 1: Orders API", slices[0]);
         Assert.True(slices.FindIndex(l => l.Contains("Outbox Relay")) < slices.FindIndex(l => l.Contains("Inventory")));
-        Assert.Contains("- Promises that bind it: `ORD-014`, `ORD-015`", sdd);
+        // Only the approved promise in force binds a slice. The draft ORD-015 links the Orders API too, and binds nothing.
+        Assert.Contains("- Promises that bind it: `ORD-014`\n", sdd);
+        Assert.DoesNotContain("ORD-015", sdd[sdd.IndexOf("## 10. Implementation slices", StringComparison.Ordinal)..sdd.IndexOf("## 12. Unresolved blockers", StringComparison.Ordinal)]);
 
         // Acceptance tests: each scenario assertion and each obligation of an approved promise, with its ID.
         var checklist = sdd.Split('\n').Where(l => l.StartsWith("- [ ] ", StringComparison.Ordinal)).ToList();
@@ -195,8 +197,14 @@ public class BuildExportTests(IntegrationFixture fixture)
         // Blockers: the same list in the SDD and in the manifest. They prevent Build Ready, not the export.
         var blockers = manifest["blockers"]!.AsArray().Select(b => (Code: b!["code"]!.GetValue<string>(), Subject: b["subject"]!.GetValue<string>(), Message: b["message"]!.GetValue<string>())).ToList();
         Assert.False(manifest["buildReady"]!.GetValue<bool>());
-        Assert.Equal(["fact-inferred", "promise-gap", "promise-gap", "promise-gap", "promise-not-approved"], blockers.Select(b => b.Code));
-        Assert.Equal((Guessed.ToString(), "ORD-014", "ORD-015"), (blockers[0].Subject, blockers[1].Subject, blockers[4].Subject));
+        // The scenario with the outbox publishes OrderCreated from the relay; the model says the Orders API produces it.
+        // Two assertions of the scenario check are vacuous, three obligations have no result.
+        Assert.Equal(
+            ["fact-inferred", "producer-mismatch", "promise-gap", "promise-gap", "promise-gap", "promise-gap", "promise-gap", "promise-evidence-stale", "promise-not-approved"],
+            blockers.Select(b => b.Code));
+        Assert.Equal((Guessed.ToString(), OrdersReference.OrderCreated.ToString(), "ORD-014", "ORD-014", "ORD-015"),
+            (blockers[0].Subject, blockers[1].Subject, blockers[2].Subject, blockers[7].Subject, blockers[8].Subject));
+        Assert.Contains("ORD-014/O2, ORD-014/O3, ORD-014/O4 have no result", blockers[7].Message);
         Assert.Contains($"{blockers.Count} blocker(s). The pinned state is not build ready.", sdd);
         Assert.All(blockers, b => Assert.Contains($"| {b.Code} | `{b.Subject}` | {b.Message} |", sdd));
 
@@ -214,11 +222,11 @@ public class BuildExportTests(IntegrationFixture fixture)
             {
                 "SDD.md", "architecture.json", "asyncapi.yaml",
                 $"openapi/{OrdersReference.OrdersApi}.yaml", $"openapi/{Payments}.yaml",
-                "promises/ORD-014.json", "promises/ORD-015.json",
+                "promises/ORD-014.json", "promises-not-approved/ORD-015.json",
                 $"scenarios/{orders.ScenarioId}.json", $"scenarios/{s.RefundScenario}.json",
             }.Order(StringComparer.Ordinal),
             manifest["files"]!.AsArray().Select(f => f!["path"]!.GetValue<string>()));
-        Assert.Equal(("vellum-bundle/1", "vellum-build", orders.ProjectId), (
+        Assert.Equal(("vellum-bundle/2", "vellum-build", orders.ProjectId), (
             manifest["format"]!.GetValue<string>(), manifest["generator"]!["name"]!.GetValue<string>(),
             manifest["pinned"]!["projectId"]!.GetValue<Guid>()));
         Assert.Null(manifest["pinned"]!["revisionId"]);
@@ -267,11 +275,26 @@ public class BuildExportTests(IntegrationFixture fixture)
             new[] { "SDD.md", $"scenarios/{s.RefundScenario}.json" },
             hashes.Keys.Where(path => hashes[path] != afterHashes[path]).Order(StringComparer.Ordinal));
         Assert.NotEqual(manifest["bundleHash"]!.GetValue<string>(), after["bundleHash"]!.GetValue<string>());
-        Assert.Equal(manifest["pinned"]!.ToJsonString(), after["pinned"]!.ToJsonString());
 
-        // Changing it back gives the first bytes again.
+        // The pinned state names the version of every input: only the changed scenario moved.
+        static Dictionary<Guid, long> Versions(JsonNode pinned, string kind) =>
+            pinned[kind]!.AsArray().ToDictionary(p => p!["id"]!.GetValue<Guid>(), p => p!["version"]!.GetValue<long>());
+        var (then, now) = (manifest["pinned"]!, after["pinned"]!);
+        Assert.Equal((then["streamVersion"]!.GetValue<long>(), then["projectName"]!.GetValue<string>()), (now["streamVersion"]!.GetValue<long>(), now["projectName"]!.GetValue<string>()));
+        Assert.Equal(Versions(then, "schemas"), Versions(now, "schemas"));
+        Assert.Equal(Versions(then, "promises"), Versions(now, "promises"));
+        Assert.Equal([s.RefundScenario], Versions(then, "scenarios").Where(v => Versions(now, "scenarios")[v.Key] != v.Value).Select(v => v.Key));
+        Assert.Equal(Versions(then, "scenarios")[s.RefundScenario] + 1, Versions(now, "scenarios")[s.RefundScenario]);
+
+        // Changing it back gives the first payload again, at a later version of the scenario. The files that hold the
+        // payload are the first bytes; the SDD, which names the version, is not.
         await s.Owner.PutAsync(s.Orders.Url($"scenarios/{s.RefundScenario}"), OrdersReference.Json(RefundScenario(s.RefundScenario, 10)));
-        Assert.Equal(zip, await ExportAsync(s, new { format = "bundle" }));
+        var back = Hashes(await ManifestAsync(s));
+        Assert.Equal(["SDD.md"], hashes.Keys.Where(path => hashes[path] != back[path]).Order(StringComparer.Ordinal));
+        Assert.NotEqual(zip, await ExportAsync(s, new { format = "bundle" }));
+
+        // The first pinned state still gives the first zip: every input is read at the version it names.
+        Assert.Equal(zip, await ExportAsync(s, new { format = "bundle", pinned = manifest["pinned"] }));
     }
 
     [Fact]
@@ -583,7 +606,8 @@ public class BuildExportTests(IntegrationFixture fixture)
         Assert.Contains("/invoices/{id}:", billing);
         Assert.DoesNotContain("/orders:", billing);
         var asyncApi = Encoding.UTF8.GetString(first.Files["asyncapi.yaml"]);
-        Assert.Contains("asyncapi: 3.0.0", asyncApi);
+        // A YAML 1.1 reader takes 3.0.0 for a number, so the version is quoted.
+        Assert.Contains("asyncapi: \"3.0.0\"", asyncApi);
         Assert.Contains("address: order-events", asyncApi);
         Assert.Contains($"x-vellum-dead-letter-channel-id: {G(21)}", asyncApi);
     }

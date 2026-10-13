@@ -168,6 +168,29 @@ internal static class TestHost
         return member;
     }
 
+    /// <summary>
+    /// Creates a real agent token through the endpoint, as the owner does in the app, and
+    /// returns a client that sends it as a bearer credential and keeps no cookies.
+    /// </summary>
+    public static async Task<Agent> CreateAgentAsync(
+        WebApplicationFactory<Program> factory, HttpClient owner, Guid workspaceId,
+        string[]? scopes = null, Guid? projectId = null, DateTimeOffset? expiresAt = null)
+    {
+        var response = await Created(owner.PostAsJsonAsync($"/api/workspaces/{workspaceId}/agent-tokens",
+            new { name = "Test agent", scopes = scopes ?? ["read", "propose", "export"], projectId, expiresAt }));
+        var created = (await response.Content.ReadFromJsonAsync<JsonObject>())!;
+        var token = created["token"]!.GetValue<string>();
+        return new Agent(BearerClient(factory, token), created["id"]!.GetValue<Guid>(), token);
+    }
+
+    /// <summary>A client that sends <paramref name="token"/> as a bearer credential and keeps no cookies.</summary>
+    public static HttpClient BearerClient(WebApplicationFactory<Program> factory, string token)
+    {
+        var client = factory.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = false, AllowAutoRedirect = false });
+        client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+        return client;
+    }
+
     public static async Task<HttpResponseMessage> Created(Task<HttpResponseMessage> request)
     {
         var response = await request;
@@ -175,3 +198,6 @@ internal static class TestHost
         return response;
     }
 }
+
+/// <summary>An agent token and the client that presents it.</summary>
+internal sealed record Agent(HttpClient Client, Guid TokenId, string Token);

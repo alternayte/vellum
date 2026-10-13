@@ -21,7 +21,11 @@ public sealed record GenerateObligationsResponse(
 /// <param name="ModelRevisionId">For a scenario-check: the named model revision to play on.</param>
 /// <param name="BranchId">For a scenario-check: a branch to play on at its current version. Default: the main model.</param>
 /// <param name="ScanId">For a source-pattern-check: the completed scan whose snapshot is looked at.</param>
-/// <param name="Revision">The promise revision whose obligation runs. Default: the newest revision.</param>
+/// <param name="Revision">
+/// The promise revision whose obligation runs. Default: the approved revision in force. A
+/// draft runs only when it is named here; such a run is labelled <c>draft</c> and never
+/// counts for an approved revision.
+/// </param>
 public sealed record RunObligationRequest(Guid? ModelRevisionId = null, Guid? BranchId = null, Guid? ScanId = null, int? Revision = null);
 
 /// <summary>
@@ -41,14 +45,24 @@ public static class ObligationWrites
         if (request is null)
             return error!;
 
-        var world = await PromiseWorld.LoadAsync(http.RequestServices, projectId, [], ct);
+        var world = await WorldForAsync(http.RequestServices, projectId, request.Recipe, ct);
         var now = time.GetUtcNow();
         var result = await PromiseAccess.DecideAsync(store, promiseId,
             state => PromiseDecider.AddObligation(state, projectId, new(request.Kind, request.Title, request.Recipe), world.Known, userId, now), ct);
-        return result is CommandResult<PromiseState>.Success
+        return result.Succeeded
             ? Results.Created($"/api/projects/{projectId}/promises/{promiseId}", await reader.GetAsync(projectId, promiseId, ct))
-            : result.ToHttpResult();
+            : result.Refusal();
     }
+
+    /// <summary>
+    /// What a recipe is checked against: the scenario it plays, so that its faults can be
+    /// compared with the scenario's own, and the workspace's GitHub host when it names an
+    /// evidence source.
+    /// </summary>
+    private static Task<PromiseWorld> WorldForAsync(IServiceProvider services, Guid projectId, ObligationRecipe? recipe, CancellationToken ct) =>
+        PromiseWorld.LoadAsync(
+            services, projectId, recipe?.ScenarioCheck is { } check ? [check.ScenarioId] : [], ct,
+            withGitHubHost: recipe?.Plan?.EvidenceSource is not null);
 
     public static async Task<IResult> Change(
         Guid projectId, Guid promiseId, string obligationKey, HttpContext http,
@@ -60,7 +74,7 @@ public static class ObligationWrites
         if (request is null)
             return error!;
 
-        var world = await PromiseWorld.LoadAsync(http.RequestServices, projectId, [], ct);
+        var world = await WorldForAsync(http.RequestServices, projectId, request.Recipe, ct);
         var now = time.GetUtcNow();
         var result = await PromiseAccess.DecideAsync(store, promiseId,
             state => PromiseDecider.ChangeObligation(
@@ -100,12 +114,13 @@ public static class ObligationWrites
         var result = await PromiseAccess.DecideAsync(store, promiseId,
             state => PromiseDecider.AddGenerated(state, projectId, draft =>
             {
-                var (candidates, notMade) = ObligationGenerator.Generate(draft, world.Model, world.Scenarios);
+                var (candidates, notMade) = ObligationGenerator.Generate(
+                    draft, world.Model, world.Scenarios.ToDictionary(s => s.Key, s => s.Value.Document));
                 skipped = notMade;
                 return candidates;
             }, userId, now), ct);
-        if (result is not CommandResult<PromiseState>.Success success)
-            return result.ToHttpResult();
+        if (!result.Succeeded || result.Result is not CommandResult<PromiseState>.Success success)
+            return result.Refusal();
 
         var known = before.Latest.Obligations.Select(o => o.Id).ToHashSet(StringComparer.Ordinal);
         return Results.Ok(new GenerateObligationsResponse(
@@ -121,7 +136,7 @@ public static class ObligationWrites
     public static async Task<IResult> Run(
         Guid projectId, Guid promiseId, string obligationKey, HttpContext http,
         WorkspaceAuthorizationService auth, IEventStore store, PromisesDbContext db, SchemasDbContext schemasDb, ImportDbContext importDb,
-        TimeProvider time, CancellationToken ct)
+        PromiseLimits limits, TimeProvider time, CancellationToken ct)
     {
         var userId = PromiseAccess.UserId(http.User);
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
@@ -134,6 +149,7 @@ public static class ObligationWrites
         if (found is not { } located)
             return refusal!;
         var (revision, obligation) = located;
+        var obligationHash = PromiseViews.ObligationHash(obligation);
 
         CheckOutcome outcome;
         switch (obligation.Kind)
@@ -142,20 +158,20 @@ public static class ObligationWrites
                 var (pinned, pinRefusal) = await PinnedModel.ResolveAsync(http.RequestServices, projectId, request.ModelRevisionId, request.BranchId, ct);
                 if (pinned is null)
                     return pinRefusal!;
-                outcome = await ScenarioCheck.RunAsync(store, schemasDb, projectId, obligation.Recipe.ScenarioCheck!, pinned, ct);
+                outcome = await ScenarioCheck.RunAsync(store, schemasDb, projectId, obligation.Recipe.ScenarioCheck!, pinned, obligationHash, ct);
                 break;
 
             case ObligationKind.SourcePatternCheck:
                 var recipe = obligation.Recipe.SourcePattern!;
                 if (request.ScanId is not { } scanId)
                 {
-                    outcome = SourcePatternCheck.NoSnapshotGiven(recipe);
+                    outcome = SourcePatternCheck.NoSnapshotGiven(recipe, obligationHash);
                     break;
                 }
                 var (scan, scanRefusal) = await SourcePatternCheck.FindScanAsync(importDb, projectId, recipe, scanId, ct);
                 if (scan is null)
                     return PromiseAccess.Invalid("scanId", scanRefusal!);
-                outcome = await SourcePatternCheck.RunAsync(importDb, db, projectId, promiseId, obligation.Id, recipe, scan, ct);
+                outcome = await SourcePatternCheck.RunAsync(importDb, db, projectId, promiseId, obligation.Id, obligationHash, recipe, scan, ct);
                 break;
 
             default:
@@ -165,14 +181,18 @@ public static class ObligationWrites
                         : $"Vellum cannot check an obligation of kind '{obligation.Kind}'. It is unsupported."));
         }
 
-        return await RecordAsync(store, projectId, promiseId, revision, obligation, outcome, userId, time, ct);
+        return await RecordAsync(store, projectId, promiseId, revision, obligation, obligationHash, outcome, userId, limits, time, ct);
     }
 
-    /// <summary>Records the result of a test that ran outside Vellum, for a test-plan obligation.</summary>
+    /// <summary>
+    /// Records the result of a test that ran outside Vellum, for a test-plan obligation. The
+    /// result counts only when Vellum reads from the system that the run is the one the
+    /// obligation's evidence source names; a plan without an evidence source gets no result.
+    /// </summary>
     public static async Task<IResult> Evidence(
         Guid projectId, Guid promiseId, string obligationKey, HttpContext http,
-        WorkspaceAuthorizationService auth, IEventStore store, PromisesDbContext db, GitHubReader gitHub, SettingsResolver settings,
-        TimeProvider time, CancellationToken ct)
+        WorkspaceAuthorizationService auth, IEventStore store, PromisesDbContext db, ImportDbContext importDb,
+        GitHubReader gitHub, SettingsResolver settings, PromiseLimits limits, TimeProvider time, CancellationToken ct)
     {
         var userId = PromiseAccess.UserId(http.User);
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
@@ -198,8 +218,10 @@ public static class ObligationWrites
         }
 
         var workspaceId = await auth.GetProjectWorkspaceIdAsync(projectId, ct);
-        var outcome = await ExternalEvidence.AssessAsync(request, workspaceId, gitHub, settings, ct);
-        return await RecordAsync(store, projectId, promiseId, revision, obligation, outcome, userId, time, ct);
+        var obligationHash = PromiseViews.ObligationHash(obligation);
+        var outcome = await ExternalEvidence.AssessAsync(
+            request, obligation.Recipe.Plan?.EvidenceSource, workspaceId, projectId, obligationHash, gitHub, settings, importDb, ct);
+        return await RecordAsync(store, projectId, promiseId, revision, obligation, obligationHash, outcome, userId, limits, time, ct);
     }
 
     private static async Task<((int Revision, Obligation Obligation)? Found, IResult? Refusal)> FindAsync(
@@ -209,8 +231,16 @@ public static class ObligationWrites
         if (row is null)
             return (null, PromiseAccess.NotFound());
 
+        // With no revision named, the run is of the approved revision in force. A draft is
+        // checked only when the caller names it.
         var state = PromiseJson.Read<PromiseState>(row.Document);
-        var revision = revisionNumber is { } number ? state.Revision(number) : state.Latest;
+        if (revisionNumber is null && state.InForce is null)
+        {
+            return (null, Results.Conflict(new ErrorResponse("no_approved_revision",
+                "The promise has no approved revision",
+                $"To check the draft, name it: send revision {state.Latest!.Revision}. A run of a draft is labelled draft and does not count after approval.")));
+        }
+        var revision = revisionNumber is { } number ? state.Revision(number) : state.InForce;
         if (revision is null)
             return (null, Results.NotFound(new ErrorResponse("not_found", "Revision not found")));
         return revision.Find(obligationKey) is { } obligation
@@ -219,15 +249,23 @@ public static class ObligationWrites
     }
 
     private static async Task<IResult> RecordAsync(
-        IEventStore store, Guid projectId, Guid promiseId, int revision, Obligation obligation, CheckOutcome outcome,
-        string userId, TimeProvider time, CancellationToken ct)
+        IEventStore store, Guid projectId, Guid promiseId, int revision, Obligation obligation, string obligationHash, CheckOutcome outcome,
+        string userId, PromiseLimits limits, TimeProvider time, CancellationToken ct)
     {
         var run = new VerificationRun(
-            Guid.NewGuid(), obligation.Id, revision, PromiseViews.ObligationHash(obligation), userId, time.GetUtcNow(),
+            Guid.NewGuid(), obligation.Id, revision, obligationHash, userId, time.GetUtcNow(),
             outcome.ModelRevision, outcome.CommitSha, outcome.ScanId, outcome.Environment, outcome.Result, outcome.Scope,
-            outcome.Evidence, outcome.Limitations, outcome.Detail);
+            outcome.Evidence, outcome.Limitations, outcome.Detail,
+            outcome.Inputs ?? new RunInputs(obligationHash), outcome.Assertions, outcome.EffectiveFaults);
 
-        var result = await PromiseAccess.DecideAsync(store, promiseId, state => PromiseDecider.RecordRun(state, projectId, run), ct);
-        return result is CommandResult<PromiseState>.Success ? Results.Ok(run) : result.ToHttpResult();
+        // The decision sets the draft label from the stream, so the stored run is read back from the state.
+        VerificationRun? recorded = null;
+        var result = await PromiseAccess.DecideAsync(store, promiseId, state =>
+        {
+            var decision = PromiseDecider.RecordRun(state, projectId, run, limits.MaxRunsPerObligation);
+            recorded = decision is CommandResult<IReadOnlyList<object>>.Success { Value: [PromiseEvent.VerificationRunRecorded stored] } ? stored.Run : null;
+            return decision;
+        }, ct);
+        return result.Succeeded ? Results.Ok(recorded) : result.Refusal();
     }
 }

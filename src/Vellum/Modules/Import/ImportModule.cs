@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Vellum.Modules.Identity.AgentTokens;
 using Vellum.Modules.Import.Proposals;
 using Vellum.Modules.Import.Scans;
 using Vellum.Shared;
@@ -83,7 +84,7 @@ public static class ImportModule
             .Produces<ProposalDto>()
             .Produces<ErrorResponse>(StatusCodes.Status404NotFound);
 
-        imports.MapPost("/{importId}/proposals/decide", DecideProposals.Handle)
+        imports.MapPost("/{importId}/proposals/decide", DecideProposals.Handle).RequireHuman()
             .Produces<DecideProposalsResponse>()
             .Produces<ErrorResponse>(StatusCodes.Status400BadRequest)
             .Produces<ErrorResponse>(StatusCodes.Status409Conflict);

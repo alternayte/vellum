@@ -137,11 +137,13 @@ public class PromiseEndpointTests(ImportHost import) : IClassFixture<ImportHost>
         Assert.Null(draft["inForceRevision"]);
 
         // Approval needs the revision the approver read, and a complete promise.
-        await Refused(owner.PostAsJsonAsync(Url(projectId, $"/{id}/approve"), new { revision = 2 }), HttpStatusCode.Conflict);
+        var wrongRevision = await orders.ApprovalAsync(id);
+        wrongRevision["revision"] = 2;
+        Assert.Equal("revision_changed", (await Refused(Post(owner, Url(projectId, $"/{id}/approve"), wrongRevision), HttpStatusCode.Conflict))["type"]!.GetValue<string>());
         var incomplete = orders.Ord014();
         incomplete["evidenceCriteria"] = " ";
         await Ok(owner.PutAsync(Url(projectId, $"/{id}"), OrdersReference.Json(incomplete)));
-        var missing = await Refused(owner.PostAsJsonAsync(Url(projectId, $"/{id}/approve"), new { revision = 1 }), HttpStatusCode.BadRequest);
+        var missing = await Refused(Post(owner, Url(projectId, $"/{id}/approve"), await orders.ApprovalAsync(id)), HttpStatusCode.BadRequest);
         Assert.Equal("evidenceCriteria", missing["errors"]![0]!["field"]!.GetValue<string>());
         await Ok(owner.PutAsync(Url(projectId, $"/{id}"), OrdersReference.Json(orders.Ord014())));
 
@@ -157,7 +159,7 @@ public class PromiseEndpointTests(ImportHost import) : IClassFixture<ImportHost>
         await Refused(Post(owner, Url(projectId, $"/{id}/obligations/generate")), HttpStatusCode.Conflict);
         await Refused(Post(owner, Url(projectId, $"/{id}/obligations"), new JsonObject { ["kind"] = "manual-review", ["title"] = "t", ["recipe"] = new JsonObject { ["text"] = "x" } }), HttpStatusCode.Conflict);
         await Refused(owner.DeleteAsync(Url(projectId, $"/{id}")), HttpStatusCode.Conflict);
-        await Refused(owner.PostAsJsonAsync(Url(projectId, $"/{id}/approve"), new { revision = 1 }), HttpStatusCode.Conflict);
+        await Refused(Post(owner, Url(projectId, $"/{id}/approve"), await orders.ApprovalAsync(id)), HttpStatusCode.Conflict);
 
         // A change is a new draft revision. It starts as a copy; the approved one stays in force.
         var revised = await Ok(Post(owner, Url(projectId, $"/{id}/revise")));
@@ -188,44 +190,25 @@ public class PromiseEndpointTests(ImportHost import) : IClassFixture<ImportHost>
         await Refused(Post(owner, Url(projectId, $"/{id}/revise")), HttpStatusCode.Conflict);
     }
 
-    /// <summary>Stands in for an API key or an agent token: a principal that is authenticated, but not by the session cookie.</summary>
-    private sealed class AgentIdentity : IStartupFilter
-    {
-        public const string Header = "X-Test-Agent";
-
-        public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next) => app =>
-        {
-            app.Use(async (http, following) =>
-            {
-                if (http.Request.Headers.TryGetValue(Header, out var userId))
-                    http.User = new ClaimsPrincipal(new ClaimsIdentity([new Claim(ClaimTypes.NameIdentifier, userId.ToString())], "ApiKey"));
-                await following(http);
-            });
-            next(app);
-        };
-    }
-
     [Fact]
     public async Task Only_an_owner_in_an_interactive_session_approves()
     {
-        using var factory = TestHost.Create(import.Fixture.ConnectionString, configure: services => services.AddTransient<IStartupFilter, AgentIdentity>());
+        using var factory = TestHost.Create(import.Fixture.ConnectionString);
         var owner = await TestHost.SignInAsync(factory);
         var (workspaceId, projectId) = await TestHost.CreateProjectAsync(owner);
         var editor = await TestHost.SignInMemberAsync(factory, owner, workspaceId, "Editor");
         var ownerId = (await owner.GetFromJsonAsync<UserInfoResponse>("/api/auth/me"))!.Id;
         var orders = await OrdersReference.SeedAsync(owner, projectId);
 
-        // The same owner, authenticated in another way than the session cookie.
-        var agent = factory.CreateClient();
-        agent.DefaultRequestHeaders.Add(AgentIdentity.Header, ownerId);
+        // A real agent token of the same owner, with every scope. It is the owner in every
+        // role check and it is not the owner's session.
+        var agent = (await TestHost.CreateAgentAsync(factory, owner, workspaceId)).Client;
         Assert.Equal(HttpStatusCode.OK, (await agent.GetAsync(Url(projectId))).StatusCode);
 
+        // The body says a person wrote the promise. The origin is what the caller is.
         await Ok(owner.PutAsJsonAsync(Url(projectId, "/prefix"), new { prefix = "ORD", startAt = 14 }));
-        var human = await Refused(Post(agent, Url(projectId), orders.Ord014()), HttpStatusCode.BadRequest);
-        Assert.Equal("origin", human["errors"]![0]!["field"]!.GetValue<string>());
-
         var suggestion = orders.Ord014();
-        suggestion["origin"] = "agent-suggested";
+        suggestion["origin"] = "human";
         var suggested = await Ok(Post(agent, Url(projectId), suggestion), HttpStatusCode.Created);
         var id = suggested["id"]!.GetValue<Guid>();
         Assert.Equal(("agent-suggested", "draft"), (suggested["origin"]!.GetValue<string>(), suggested["state"]!.GetValue<string>()));
@@ -233,14 +216,14 @@ public class PromiseEndpointTests(ImportHost import) : IClassFixture<ImportHost>
         // The agent may work on the draft. It may not approve it, whatever role its user has.
         await Ok(Post(agent, Url(projectId, $"/{id}/obligations/generate")));
         var refused = await Refused(agent.PostAsJsonAsync(Url(projectId, $"/{id}/approve"), new { revision = 1 }), HttpStatusCode.Forbidden);
-        Assert.Equal("interactive_session_required", refused["type"]!.GetValue<string>());
+        Assert.Equal("human_only", refused["type"]!.GetValue<string>());
 
         // An editor in a real session is below the role approval needs.
         Assert.Equal(HttpStatusCode.Forbidden, (await editor.PostAsJsonAsync(Url(projectId, $"/{id}/approve"), new { revision = 1 })).StatusCode);
         Assert.Equal("draft", (await orders.GetAsync(id))["state"]!.GetValue<string>());
 
-        // A run and a piece of evidence approve nothing either.
-        await orders.RunAsync(id, "O1");
+        // A run approves nothing either. The agent may run a check of the draft when it names the draft.
+        Assert.True((await Ok(Post(agent, Url(projectId, $"/{id}/obligations/O1/run"), new JsonObject { ["revision"] = 1 })))["draft"]!.GetValue<bool>());
         Assert.Equal("draft", (await orders.GetAsync(id))["state"]!.GetValue<string>());
 
         var approved = await orders.ApproveAsync(id);
@@ -360,8 +343,12 @@ public class PromiseEndpointTests(ImportHost import) : IClassFixture<ImportHost>
         var status = regenerated["promise"]!["current"]!["evidenceStatus"]!;
         Assert.Equal((0, 0, 4, 0), Counts(status));
         Assert.All(status["obligations"]!.AsArray(), o => Assert.Equal("not-run", o!["result"]!.GetValue<string>()));
-        Assert.Contains(status["gaps"]!.AsArray(), g => g!.GetValue<string>() == "ORD-014/O2 is a test plan with no external evidence. A generated plan alone establishes nothing.");
-        var notRunnable = await Refused(Post(first.Client, Url(first.ProjectId, $"/{firstId}/obligations/O2/run")), HttpStatusCode.Conflict);
+        Assert.Contains(status["gaps"]!.AsArray(), g => g!.GetValue<string>() == "ORD-014/O2 is a test plan with no evidence source. No result can be recorded for it.");
+        // The promise is a draft: an obligation of it runs only when the draft is named.
+        var unnamed = await Refused(Post(first.Client, Url(first.ProjectId, $"/{firstId}/obligations/O2/run")), HttpStatusCode.Conflict);
+        Assert.Equal("no_approved_revision", unnamed["type"]!.GetValue<string>());
+        var draft = new JsonObject { ["revision"] = 1 };
+        var notRunnable = await Refused(Post(first.Client, Url(first.ProjectId, $"/{firstId}/obligations/O2/run"), draft.DeepClone()), HttpStatusCode.Conflict);
         Assert.Equal("not_runnable", notRunnable["type"]!.GetValue<string>());
 
         // A kind Vellum does not know is stored, is unsupported and cannot be run or given evidence.
@@ -370,8 +357,8 @@ public class PromiseEndpointTests(ImportHost import) : IClassFixture<ImportHost>
         var unsupported = custom["current"]!["evidenceStatus"]!["obligations"]!.AsArray().Single(o => o!["obligationId"]!.GetValue<string>() == "ORD-014/O6")!;
         Assert.Equal("unsupported", unsupported["result"]!.GetValue<string>());
         Assert.Equal(1, Counts(custom["current"]!["evidenceStatus"]!).Unsupported);
-        await Refused(Post(first.Client, Url(first.ProjectId, $"/{firstId}/obligations/O6/run")), HttpStatusCode.Conflict);
-        await Refused(Post(first.Client, Url(first.ProjectId, $"/{firstId}/obligations/O6/evidence"), Evidence("github.com", "passed", "success")), HttpStatusCode.Conflict);
+        Assert.Equal("not_runnable", (await Refused(Post(first.Client, Url(first.ProjectId, $"/{firstId}/obligations/O6/run"), draft.DeepClone()), HttpStatusCode.Conflict))["type"]!.GetValue<string>());
+        Assert.Equal("not_a_test_plan", (await Refused(Post(first.Client, Url(first.ProjectId, $"/{firstId}/obligations/O6/evidence"), Evidence("github.com", "passed", revision: 1)), HttpStatusCode.Conflict))["type"]!.GetValue<string>());
 
         // A typed recipe must fit its kind.
         await Refused(Post(first.Client, Url(first.ProjectId, $"/{firstId}/obligations"),
@@ -381,9 +368,12 @@ public class PromiseEndpointTests(ImportHost import) : IClassFixture<ImportHost>
         Assert.Equal("invalid_body", malformed["type"]!.GetValue<string>());
     }
 
+    /// <summary>Passed, failed, not run and unsupported. A stale result is in none of them; see <see cref="Stale"/>.</summary>
     private static (int Passed, int Failed, int NotRun, int Unsupported) Counts(JsonNode status) => (
         status["counts"]!["passed"]!.GetValue<int>(), status["counts"]!["failed"]!.GetValue<int>(),
         status["counts"]!["notRun"]!.GetValue<int>(), status["counts"]!["unsupported"]!.GetValue<int>());
+
+    private static int Stale(JsonNode status) => status["counts"]!["stale"]!.GetValue<int>();
 
     [Fact]
     public async Task ORD_014_fails_on_the_design_without_an_outbox_and_passes_on_the_design_with_one()
@@ -419,7 +409,7 @@ public class PromiseEndpointTests(ImportHost import) : IClassFixture<ImportHost>
         await orders.UseOutboxAsync();
         var passed = await orders.RunAsync(id, "O1");
         Assert.Equal("passed", passed["result"]!.GetValue<string>());
-        Assert.Equal("All 3 assertion(s) hold.", passed["detail"]!.GetValue<string>());
+        Assert.StartsWith("All 3 assertion(s) hold.", passed["detail"]!.GetValue<string>());
         Assert.NotEqual(failedEvidence["hash"]!.GetValue<string>(), passed["evidence"]![0]!["hash"]!.GetValue<string>());
         Assert.Equal(passed["evidence"]![0]!["hash"]!.GetValue<string>(), (await orders.RunAsync(id, "O1"))["evidence"]![0]!["hash"]!.GetValue<string>());
 
@@ -440,7 +430,7 @@ public class PromiseEndpointTests(ImportHost import) : IClassFixture<ImportHost>
         Assert.Equal(passed["evidence"]![0]!["hash"]!.GetValue<string>(), pinned["evidence"]![0]!["hash"]!.GetValue<string>());
         Assert.Equal((revisionId, "With outbox"), (pinned["modelRevision"]!["revisionId"]!.GetValue<Guid>(), pinned["modelRevision"]!["revisionName"]!.GetValue<string>()));
         var stale = (await orders.GetAsync(id))["current"]!["evidenceStatus"]!["gaps"]!.AsArray().Select(g => g!.GetValue<string>()).ToList();
-        Assert.Contains(stale, g => g.StartsWith("ORD-014/O1 passed on model version", StringComparison.Ordinal) && g.Contains("The model is now at version"));
+        Assert.Contains(stale, g => g.StartsWith("ORD-014/O1 passed (stale): it ran on model version", StringComparison.Ordinal) && g.Contains("The model is now at version"));
 
         // Runs are appended: all five are there, newest first.
         var runs = await AllAsync(owner, Url(projectId, $"/{id}/runs"));
@@ -455,7 +445,31 @@ public class PromiseEndpointTests(ImportHost import) : IClassFixture<ImportHost>
         Assert.Contains("cannot be played", unplayable["detail"]!.GetValue<string>());
     }
 
-    private async Task<(ImportScenario Scenario, Dictionary<long, JsonObject> Runs)> WithGitHubAsync()
+    /// <summary>The workflow runs and their jobs that the stand-in for GitHub answers with, by <c>owner/name/run number</c>.</summary>
+    private sealed class Actions
+    {
+        public Dictionary<string, JsonObject> Runs { get; } = new(StringComparer.Ordinal);
+        public Dictionary<string, JsonArray> Jobs { get; } = new(StringComparer.Ordinal);
+
+        /// <summary>A completed run of <c>.github/workflows/ci.yml</c> of <c>acme/orders</c>, unless said otherwise.</summary>
+        public void Run(
+            long number, string sha, string? conclusion = "success", string status = "completed",
+            string path = ".github/workflows/ci.yml", string repository = "acme/orders", string? answersAs = null, params (string Name, string? Conclusion)[] jobs)
+        {
+            Runs[$"{repository}/{number}"] = new JsonObject
+            {
+                ["id"] = number, ["head_sha"] = sha, ["status"] = status, ["conclusion"] = conclusion, ["name"] = "CI", ["path"] = path,
+                ["repository"] = new JsonObject { ["full_name"] = answersAs ?? repository },
+            };
+            Jobs[$"{repository}/{number}"] = new JsonArray(jobs.Select((job, i) => (JsonNode)new JsonObject
+            {
+                ["id"] = number * 100 + i, ["run_id"] = number, ["head_sha"] = sha, ["name"] = job.Name,
+                ["status"] = job.Conclusion is null ? "in_progress" : "completed", ["conclusion"] = job.Conclusion,
+            }).ToArray());
+        }
+    }
+
+    private async Task<(ImportScenario Scenario, Actions Actions)> WithGitHubAsync()
     {
         var owner = await TestHost.SignInAsync(import.Host.Factory);
         var (workspaceId, projectId) = await TestHost.CreateProjectAsync(owner);
@@ -463,17 +477,35 @@ public class PromiseEndpointTests(ImportHost import) : IClassFixture<ImportHost>
         await OutboundHost.PutSettingsAsync(owner, workspaceId, new JsonObject { ["github"] = new JsonObject { ["apiBaseUrl"] = $"https://{host}" } });
 
         var gitHub = new FixtureGitHub().Commit(ImportScenario.Commit1, FixtureGitHub.Load("orders"));
-        var runs = new Dictionary<long, JsonObject>();
+        var actions = new Actions();
+        static HttpResponseMessage Json(JsonNode? body) => body is null
+            ? new HttpResponseMessage(HttpStatusCode.NotFound) { Content = new StringContent("""{"message":"Not Found","status":"404"}""", System.Text.Encoding.UTF8, "application/json") }
+            : new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(body.ToJsonString(), System.Text.Encoding.UTF8, "application/json") };
         import.Host.Transport.For(host).Then(sent =>
         {
             var segments = sent.Uri.AbsolutePath.Trim('/').Split('/');
-            if (segments is not ["repos", "acme", "orders", "actions", "runs", var number])
-                return gitHub.Handle(sent);
-            return Task.FromResult(runs.TryGetValue(long.Parse(number), out var run)
-                ? new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(run.ToJsonString(), System.Text.Encoding.UTF8, "application/json") }
-                : new HttpResponseMessage(HttpStatusCode.NotFound) { Content = new StringContent("""{"message":"Not Found","status":"404"}""", System.Text.Encoding.UTF8, "application/json") });
+            return segments switch
+            {
+                ["repos", var o, var r, "actions", "runs", var number] => Task.FromResult(Json(actions.Runs.GetValueOrDefault($"{o}/{r}/{number}"))),
+                ["repos", var o, var r, "actions", "runs", var number, "jobs"] => Task.FromResult(Json(
+                    actions.Jobs.TryGetValue($"{o}/{r}/{number}", out var jobs) ? new JsonObject { ["total_count"] = jobs.Count, ["jobs"] = jobs.DeepClone() } : null)),
+                _ => gitHub.Handle(sent),
+            };
         });
-        return (new ImportScenario(import, owner, workspaceId, projectId, host, gitHub), runs);
+        return (new ImportScenario(import, owner, workspaceId, projectId, host, gitHub), actions);
+    }
+
+    /// <summary>Names the workflow whose run is the evidence of a test plan. Only a draft can be changed so.</summary>
+    private static async Task<HttpResponseMessage> BindAsync(
+        OrdersReference orders, Guid id, string key, string workflow = "ci.yml", string? job = null, string repository = "acme/orders", string system = "github-actions")
+    {
+        var obligation = (await orders.GetAsync(id))["revisions"]!.AsArray().Last()!["obligations"]!.AsArray().Single(o => o!["key"]!.GetValue<string>() == key)!;
+        var recipe = obligation["recipe"]!.DeepClone();
+        recipe["plan"]!["evidenceSource"] = new JsonObject { ["system"] = system, ["repository"] = repository, ["workflow"] = workflow, ["job"] = job };
+        return await orders.Client.PutAsync(orders.Url($"promises/{id}/obligations/{key}"), OrdersReference.Json(new JsonObject
+        {
+            ["kind"] = obligation["kind"]!.GetValue<string>(), ["title"] = obligation["title"]!.GetValue<string>(), ["recipe"] = recipe,
+        }));
     }
 
     [Fact]
@@ -536,7 +568,7 @@ public class PromiseEndpointTests(ImportHost import) : IClassFixture<ImportHost>
         // An older pass is not the newest scan: running it again on the old commit shows as a gap.
         await orders.RunAsync(id, "O4", new { scanId = first.Id() });
         var gaps = (await orders.GetAsync(id))["current"]!["evidenceStatus"]!["gaps"]!.AsArray().Select(g => g!.GetValue<string>());
-        Assert.Contains($"ORD-014/O4 passed at commit {ImportScenario.Commit1}. The newest scan of acme/orders is at commit {ImportScenario.Commit2}.", gaps);
+        Assert.Contains($"ORD-014/O4 passed (stale): evidence is for {ImportScenario.Commit1}; the newest scan of {s.GitHubHost}/acme/orders is at {ImportScenario.Commit2}.", gaps);
 
         // A scan of another repository is not evidence for this obligation.
         s.GitHub.Commit(ImportScenario.Commit3, FixtureGitHub.Load("orders"));
@@ -565,7 +597,8 @@ public class PromiseEndpointTests(ImportHost import) : IClassFixture<ImportHost>
             var generated = await Ok(Post(s.Owner, Url(s.ProjectId, $"/{id}/obligations/generate")));
             var obligation = Assert.Single(generated["promise"]!["current"]!["obligations"]!.AsArray())!;
             Assert.Equal("acme/orders", obligation["recipe"]!["sourcePattern"]!["repository"]!.GetValue<string>());
-            var run = await Ok(s.Owner.PostAsJsonAsync(Url(s.ProjectId, $"/{id}/obligations/{obligation["key"]}/run"), new { scanId = scan.Id() }));
+            var run = await Ok(s.Owner.PostAsJsonAsync(Url(s.ProjectId, $"/{id}/obligations/{obligation["key"]}/run"), new { scanId = scan.Id(), revision = 1 }));
+            Assert.True(run["draft"]!.GetValue<bool>());
             return run["result"]!.GetValue<string>();
         }
 
@@ -583,103 +616,168 @@ public class PromiseEndpointTests(ImportHost import) : IClassFixture<ImportHost>
         await Refused(Post(s.Owner, Url(s.ProjectId), unknownPattern), HttpStatusCode.BadRequest);
     }
 
-    private static JsonObject Evidence(string host, string result, string conclusion, long run = 42, string? sha = null, string system = "github-actions") => new()
+    private static JsonObject Evidence(
+        string host, string result, long run = 42, string? sha = null, string system = "github-actions", string repository = "acme/orders", int? revision = null) => new()
     {
         ["result"] = result,
         ["source"] = new JsonObject
         {
             ["system"] = system,
-            ["runUrl"] = $"https://{host}/acme/orders/actions/runs/{run}",
-            ["commitSha"] = sha ?? Sha,
-            ["jobName"] = "failure-tests",
-            ["conclusion"] = conclusion,
+            ["runUrl"] = $"https://{host}/{repository}/actions/runs/{run}",
+            ["commitSha"] = sha,
         },
         ["artifactDigest"] = "sha256:" + new string('c', 64),
+        ["revision"] = revision,
     };
 
     [Fact]
-    public async Task External_evidence_counts_only_when_vellum_can_check_the_run()
+    public async Task External_evidence_counts_only_for_the_obligation_it_is_bound_to()
     {
-        var (s, runs) = await WithGitHubAsync();
+        var (s, actions) = await WithGitHubAsync();
+        // The project follows acme/orders: its tracked ref is at Commit1.
+        await s.ScanAndAcceptAllAsync();
         var orders = await OrdersReference.SeedAsync(s.Owner, s.ProjectId);
         var id = (await orders.CreateOrd014Async())["id"]!.GetValue<Guid>();
-        await orders.ApproveAsync(id);
         string Path(string key) => Url(s.ProjectId, $"/{id}/obligations/{key}/evidence");
+
+        // An evidence source is a workflow of a repository the project follows, on the workspace's GitHub.
+        var notFollowed = await Refused(BindAsync(orders, id, "O2", repository: "acme/payments"), HttpStatusCode.BadRequest);
+        Assert.Equal("recipe.plan.evidenceSource.repository", notFollowed["errors"]![0]!["field"]!.GetValue<string>());
+        Assert.Equal("recipe.plan.evidenceSource.system", (await Refused(BindAsync(orders, id, "O2", system: "jenkins"), HttpStatusCode.BadRequest))["errors"]![0]!["field"]!.GetValue<string>());
+        Assert.Equal("recipe.plan.evidenceSource.workflow", (await Refused(BindAsync(orders, id, "O2", workflow: " "), HttpStatusCode.BadRequest))["errors"]![0]!["field"]!.GetValue<string>());
+
+        // O2 is bound to the job failure-tests of ci.yml of acme/orders. O3 stays unbound.
+        var bound = await Ok(BindAsync(orders, id, "O2", job: "failure-tests"));
+        Assert.Equal("ci.yml", bound["current"]!["obligations"]![1]!["recipe"]!["plan"]!["evidenceSource"]!["workflow"]!.GetValue<string>());
+        await orders.ApproveAsync(id);
 
         async Task<JsonObject> StatusOfAsync(string obligationId) =>
             (await orders.GetAsync(id))["current"]!["evidenceStatus"]!["obligations"]!.AsArray().Single(o => o!["obligationId"]!.GetValue<string>() == obligationId)!.AsObject();
+        async Task<string> ReasonAsync(string key, JsonObject body)
+        {
+            var recorded = await Ok(Post(s.Owner, Path(key), body));
+            Assert.Equal("not-run", recorded["result"]!.GetValue<string>());
+            Assert.Equal("claimed", recorded["evidence"]![0]!["identity"]!.GetValue<string>());
+            return recorded["evidence"]![0]!["identityReason"]!.GetValue<string>();
+        }
 
-        // The run does not exist on the workspace's GitHub: a claim, and the plan stays not run.
-        var claimed = await Ok(Post(s.Owner, Path("O2"), Evidence(s.GitHubHost, "passed", "success")));
-        Assert.Equal("not-run", claimed["result"]!.GetValue<string>());
-        var claim = Assert.Single(claimed["evidence"]!.AsArray())!;
-        Assert.Equal(("external", "claimed", "run-not-found", "passed"), (
-            claim["kind"]!.GetValue<string>(), claim["identity"]!.GetValue<string>(),
-            claim["identityReason"]!.GetValue<string>(), claim["claimedResult"]!.GetValue<string>()));
-        var shown = await StatusOfAsync("ORD-014/O2");
-        Assert.Equal(("not-run", "passed"), (shown["result"]!.GetValue<string>(), shown["evidence"]![0]!["claimedResult"]!.GetValue<string>()));
-        Assert.Contains((await orders.GetAsync(id))["current"]!["evidenceStatus"]!["gaps"]!.AsArray(),
-            g => g!.GetValue<string>() == "ORD-014/O2 has only a claim of 'passed' that Vellum could not check (run-not-found). It counts as not run.");
+        // A real, successful run of the right workflow. It is evidence for O2 only.
+        actions.Run(42, ImportScenario.Commit1, jobs: [("build", "success"), ("failure-tests", "success")]);
 
-        // The run exists, completed, on that commit, with that conclusion: passed, with its scope and limits.
-        runs[42] = new JsonObject { ["id"] = 42, ["head_sha"] = Sha, ["status"] = "completed", ["conclusion"] = "success", ["name"] = "CI" };
-        var passed = await Ok(Post(s.Owner, Path("O2"), Evidence(s.GitHubHost, "passed", "success")));
-        Assert.Equal(("passed", $"github-actions@{Sha}", Sha), (passed["result"]!.GetValue<string>(), passed["environment"]!.GetValue<string>(), passed["commitSha"]!.GetValue<string>()));
-        Assert.Equal($"GitHub Actions run 42 of acme/orders at commit {Sha}, concluded 'success'.", passed["scope"]!.GetValue<string>());
-        Assert.Equal(("verified", "failure-tests"), (passed["evidence"]![0]!["identity"]!.GetValue<string>(), passed["evidence"]![0]!["source"]!["jobName"]!.GetValue<string>()));
-        Assert.Contains(passed["limitations"]!.AsArray(), l => l!.GetValue<string>().StartsWith("Vellum did not run this test.", StringComparison.Ordinal));
-        Assert.Equal("passed", (await StatusOfAsync("ORD-014/O2"))["result"]!.GetValue<string>());
-        Assert.Contains(import.Host.Transport.For(s.GitHubHost).Requests, r => r.Uri.AbsolutePath == "/repos/acme/orders/actions/runs/42");
-
-        // What the caller says must be what GitHub says.
-        async Task<string> ReasonAsync(JsonObject body) =>
-            (await Ok(Post(s.Owner, Path("O3"), body)))["evidence"]![0]!["identityReason"]!.GetValue<string>();
-        Assert.Equal("commit-differs", await ReasonAsync(Evidence(s.GitHubHost, "passed", "success", sha: new string('b', 40))));
-        runs[43] = new JsonObject { ["id"] = 43, ["head_sha"] = Sha, ["status"] = "completed", ["conclusion"] = "failure", ["name"] = "CI" };
-        Assert.Equal("conclusion-differs", await ReasonAsync(Evidence(s.GitHubHost, "passed", "success", run: 43)));
-        runs[44] = new JsonObject { ["id"] = 44, ["head_sha"] = Sha, ["status"] = "in_progress", ["conclusion"] = null, ["name"] = "CI" };
-        Assert.Equal("run-not-completed", await ReasonAsync(Evidence(s.GitHubHost, "passed", "success", run: 44)));
-        Assert.Equal("run-url-host-differs", await ReasonAsync(Evidence("github.com", "passed", "success")));
-        Assert.Equal("system-not-checkable", await ReasonAsync(Evidence(s.GitHubHost, "passed", "success", system: "other")));
+        // A plan with no evidence source receives no result, whatever GitHub says about the run.
+        Assert.Equal("no-evidence-source", await ReasonAsync("O3", Evidence(s.GitHubHost, "passed")));
         Assert.Equal("not-run", (await StatusOfAsync("ORD-014/O3"))["result"]!.GetValue<string>());
 
-        // A failed run that GitHub confirms is a failed obligation.
-        var failed = await Ok(Post(s.Owner, Path("O3"), Evidence(s.GitHubHost, "failed", "failure", run: 43)));
-        Assert.Equal("failed", failed["result"]!.GetValue<string>());
+        // A successful run of ANOTHER repository is not evidence for this obligation.
+        actions.Run(7, ImportScenario.Commit1, repository: "acme/payments", jobs: [("failure-tests", "success")]);
+        Assert.Equal("repository-differs", await ReasonAsync("O2", Evidence(s.GitHubHost, "passed", run: 7, repository: "acme/payments")));
+        // GitHub answers the URL of acme/orders with a run that belongs to another repository.
+        actions.Run(8, ImportScenario.Commit1, answersAs: "acme/payments", jobs: [("failure-tests", "success")]);
+        Assert.Equal("run-repository-differs", await ReasonAsync("O2", Evidence(s.GitHubHost, "passed", run: 8)));
+        // A successful run of another workflow of the same repository is not evidence either.
+        actions.Run(9, ImportScenario.Commit1, path: ".github/workflows/deploy.yml", jobs: [("failure-tests", "success")]);
+        Assert.Equal("workflow-differs", await ReasonAsync("O2", Evidence(s.GitHubHost, "passed", run: 9)));
+        // The job must exist in the run, be completed and decide the result.
+        actions.Run(10, ImportScenario.Commit1, jobs: [("build", "success")]);
+        Assert.Equal("job-not-found", await ReasonAsync("O2", Evidence(s.GitHubHost, "passed", run: 10)));
+        actions.Run(11, ImportScenario.Commit1, jobs: [("failure-tests", null)]);
+        Assert.Equal("job-not-completed", await ReasonAsync("O2", Evidence(s.GitHubHost, "passed", run: 11)));
+        actions.Run(12, ImportScenario.Commit1, jobs: [("failure-tests", "skipped")]);
+        Assert.Equal("job-not-conclusive", await ReasonAsync("O2", Evidence(s.GitHubHost, "passed", run: 12)));
+        actions.Run(13, ImportScenario.Commit1, conclusion: "failure", jobs: [("build", "failure"), ("failure-tests", "success")]);
+        Assert.Equal("run-not-success", await ReasonAsync("O2", Evidence(s.GitHubHost, "passed", run: 13)));
+        // The run, the commit and the host.
+        Assert.Equal("run-not-found", await ReasonAsync("O2", Evidence(s.GitHubHost, "passed", run: 404)));
+        actions.Run(14, ImportScenario.Commit1, conclusion: null, status: "in_progress");
+        Assert.Equal("run-not-completed", await ReasonAsync("O2", Evidence(s.GitHubHost, "passed", run: 14)));
+        actions.Run(15, ImportScenario.Commit2, jobs: [("failure-tests", "success")]);
+        Assert.Equal("commit-differs", await ReasonAsync("O2", Evidence(s.GitHubHost, "passed", run: 15)));
+        Assert.Equal("commit-differs", await ReasonAsync("O2", Evidence(s.GitHubHost, "passed", sha: Sha)));
+        Assert.Equal("run-url-host-differs", await ReasonAsync("O2", Evidence("github.com", "passed")));
+        Assert.Equal("system-not-checkable", await ReasonAsync("O2", Evidence(s.GitHubHost, "passed", system: "other")));
+        // What the caller says must be what GitHub says.
+        Assert.Equal("result-differs", await ReasonAsync("O2", Evidence(s.GitHubHost, "failed")));
+
+        // Every refusal above is a claim: the plan is still not run, and the gap says why.
+        var shown = await StatusOfAsync("ORD-014/O2");
+        Assert.Equal(("not-run", "failed"), (shown["result"]!.GetValue<string>(), shown["evidence"]![0]!["claimedResult"]!.GetValue<string>()));
+        Assert.Contains((await orders.GetAsync(id))["current"]!["evidenceStatus"]!["gaps"]!.AsArray(),
+            g => g!.GetValue<string>() == "ORD-014/O2 has only a claim of 'failed' that Vellum could not check (result-differs). It counts as not run.");
+
+        // The bound run, with no commit named: the commit is the one the model follows. Passed, with its scope and limits.
+        var passed = await Ok(Post(s.Owner, Path("O2"), Evidence(s.GitHubHost, "passed")));
+        Assert.Equal(("passed", $"github-actions@{ImportScenario.Commit1}", ImportScenario.Commit1), (
+            passed["result"]!.GetValue<string>(), passed["environment"]!.GetValue<string>(), passed["commitSha"]!.GetValue<string>()));
+        Assert.Equal(
+            $"GitHub Actions run 42 of acme/orders, workflow '.github/workflows/ci.yml', job 'failure-tests', at commit {ImportScenario.Commit1} (the commit the model follows on 'main'), concluded 'success'.",
+            passed["scope"]!.GetValue<string>());
+        var source = passed["evidence"]![0]!["source"]!;
+        Assert.Equal(("verified", "failure-tests", "acme/orders", ".github/workflows/ci.yml", 42L), (
+            passed["evidence"]![0]!["identity"]!.GetValue<string>(), source["jobName"]!.GetValue<string>(),
+            source["repository"]!.GetValue<string>(), source["workflow"]!.GetValue<string>(), source["runId"]!.GetValue<long>()));
+        Assert.Equal(($"{s.GitHubHost}/acme/orders", ImportScenario.Commit1), (passed["inputs"]!["repository"]!.GetValue<string>(), passed["inputs"]!["commitSha"]!.GetValue<string>()));
+        Assert.Contains(passed["limitations"]!.AsArray(), l => l!.GetValue<string>().StartsWith("Vellum did not run this test.", StringComparison.Ordinal));
+        var current = await StatusOfAsync("ORD-014/O2");
+        Assert.Equal(("passed", true), (current["result"]!.GetValue<string>(), current["current"]!.GetValue<bool>()));
+        Assert.Contains(import.Host.Transport.For(s.GitHubHost).Requests, r => r.Uri.AbsolutePath == "/repos/acme/orders/actions/runs/42/jobs");
+
+        // The model follows a later commit: the pass is for the old one. It is stale, and it is not counted as passed.
+        Assert.Equal(1, await s.SqlAsync($"UPDATE import.tracked_refs SET commit_sha = {ImportScenario.Commit2} WHERE project_id = {s.ProjectId}"));
+        var status = (await orders.GetAsync(id))["current"]!["evidenceStatus"]!;
+        var stale = status["obligations"]!.AsArray().Single(o => o!["obligationId"]!.GetValue<string>() == "ORD-014/O2")!;
+        Assert.Equal(("passed", false), (stale["result"]!.GetValue<string>(), stale["current"]!.GetValue<bool>()));
+        Assert.Contains(status["gaps"]!.AsArray(),
+            g => g!.GetValue<string>() == $"ORD-014/O2 passed (stale): evidence is for {ImportScenario.Commit1}; the model follows {ImportScenario.Commit2}.");
+        Assert.Equal((0, 1), (Counts(status).Passed, Stale(status)));
+
+        // A commit the caller names is shown as the scope. It is current only while the model follows it.
+        var named = await Ok(Post(s.Owner, Path("O2"), Evidence(s.GitHubHost, "passed", sha: ImportScenario.Commit1)));
+        Assert.Contains("(a commit the caller named)", named["scope"]!.GetValue<string>());
+        Assert.False((await StatusOfAsync("ORD-014/O2"))["current"]!.GetValue<bool>());
+        // On the commit the model follows now, a failed job that GitHub confirms is a failed obligation.
+        actions.Run(16, ImportScenario.Commit2, conclusion: "failure", jobs: [("failure-tests", "failure")]);
+        var failed = await Ok(Post(s.Owner, Path("O2"), Evidence(s.GitHubHost, "failed", run: 16)));
+        Assert.Equal(("failed", "failure"), (failed["result"]!.GetValue<string>(), failed["evidence"]![0]!["source"]!["conclusion"]!.GetValue<string>()));
+        Assert.Equal(("failed", true), ((await StatusOfAsync("ORD-014/O2"))["result"]!.GetValue<string>(), (await StatusOfAsync("ORD-014/O2"))["current"]!.GetValue<bool>()));
 
         // A claim that contradicts itself, and evidence for a check Vellum runs itself, are refused.
-        await Refused(Post(s.Owner, Path("O3"), Evidence(s.GitHubHost, "passed", "failure")), HttpStatusCode.BadRequest);
-        await Refused(Post(s.Owner, Path("O3"), Evidence(s.GitHubHost, "skipped", "success")), HttpStatusCode.BadRequest);
-        var notHttps = Evidence(s.GitHubHost, "passed", "success");
+        var contradiction = Evidence(s.GitHubHost, "passed");
+        contradiction["source"]!["conclusion"] = "failure";
+        await Refused(Post(s.Owner, Path("O3"), contradiction), HttpStatusCode.BadRequest);
+        await Refused(Post(s.Owner, Path("O3"), Evidence(s.GitHubHost, "skipped")), HttpStatusCode.BadRequest);
+        var notHttps = Evidence(s.GitHubHost, "passed");
         notHttps["source"]!["runUrl"] = "http://example.test/acme/orders/actions/runs/42";
         await Refused(Post(s.Owner, Path("O3"), notHttps), HttpStatusCode.BadRequest);
-        var deterministic = await Refused(Post(s.Owner, Path("O1"), Evidence(s.GitHubHost, "passed", "success")), HttpStatusCode.Conflict);
+        var deterministic = await Refused(Post(s.Owner, Path("O1"), Evidence(s.GitHubHost, "passed")), HttpStatusCode.Conflict);
         Assert.Equal("not_a_test_plan", deterministic["type"]!.GetValue<string>());
 
-        Assert.Equal((1, 1, 2, 0), Counts((await orders.GetAsync(id))["current"]!["evidenceStatus"]!));
+        Assert.Equal((0, 1, 3, 0), Counts((await orders.GetAsync(id))["current"]!["evidenceStatus"]!));
     }
 
     [Fact]
     public async Task No_response_holds_a_flag_that_says_a_promise_is_verified()
     {
-        var (s, runs) = await WithGitHubAsync();
+        var (s, actions) = await WithGitHubAsync();
+        var scan = await s.ScanAndAcceptAllAsync();
         var orders = await OrdersReference.SeedAsync(s.Owner, s.ProjectId);
         var id = (await orders.CreateOrd014Async())["id"]!.GetValue<Guid>();
+        await Ok(BindAsync(orders, id, "O2"));
+        await Ok(BindAsync(orders, id, "O3"));
         await orders.ApproveAsync(id);
         await orders.UseOutboxAsync();
-        runs[42] = new JsonObject { ["id"] = 42, ["head_sha"] = Sha, ["status"] = "completed", ["conclusion"] = "success", ["name"] = "CI" };
-        var scan = await s.ScanAsync();
+        actions.Run(42, ImportScenario.Commit1);
 
-        // Every obligation passes. The answer is still counts, scopes and gaps.
+        // Every obligation passes on current inputs. The answer is still counts, scopes and gaps.
         var responses = new List<JsonNode>
         {
             await orders.RunAsync(id, "O1"),
-            await Ok(Post(s.Owner, Url(s.ProjectId, $"/{id}/obligations/O2/evidence"), Evidence(s.GitHubHost, "passed", "success"))),
-            await Ok(Post(s.Owner, Url(s.ProjectId, $"/{id}/obligations/O3/evidence"), Evidence(s.GitHubHost, "passed", "success"))),
+            await Ok(Post(s.Owner, Url(s.ProjectId, $"/{id}/obligations/O2/evidence"), Evidence(s.GitHubHost, "passed"))),
+            await Ok(Post(s.Owner, Url(s.ProjectId, $"/{id}/obligations/O3/evidence"), Evidence(s.GitHubHost, "passed"))),
             await orders.RunAsync(id, "O4", new { scanId = scan.Id() }),
         };
         var promise = await orders.GetAsync(id);
         Assert.Equal((4, 0, 0, 0), Counts(promise["current"]!["evidenceStatus"]!));
+        Assert.Equal(0, Stale(promise["current"]!["evidenceStatus"]!));
         responses.Add(promise);
         responses.Add((await s.Owner.GetFromJsonAsync<JsonObject>(Url(s.ProjectId)))!);
         responses.Add((await s.Owner.GetFromJsonAsync<JsonObject>(Url(s.ProjectId, $"/{id}/runs")))!);
@@ -736,14 +834,14 @@ public class PromiseEndpointTests(ImportHost import) : IClassFixture<ImportHost>
             (HttpMethod.Put, Url(projectId, "/prefix"), new JsonObject { ["prefix"] = "ZZ" }),
             (HttpMethod.Put, Url(projectId, $"/{id}"), body),
             (HttpMethod.Post, Url(projectId, $"/{id}/revise"), null),
-            (HttpMethod.Post, Url(projectId, $"/{id}/approve"), new JsonObject { ["revision"] = 1 }),
+            (HttpMethod.Post, Url(projectId, $"/{id}/approve"), new JsonObject { ["revision"] = 1, ["contentHash"] = "x" }),
             (HttpMethod.Delete, Url(projectId, $"/{id}"), null),
             (HttpMethod.Post, Url(projectId, $"/{id}/obligations"), new JsonObject { ["kind"] = "x", ["title"] = "t", ["recipe"] = new JsonObject { ["text"] = "x" } }),
             (HttpMethod.Post, Url(projectId, $"/{id}/obligations/generate"), null),
             (HttpMethod.Put, Url(projectId, $"/{id}/obligations/O1"), new JsonObject { ["kind"] = "x", ["title"] = "t", ["recipe"] = new JsonObject { ["text"] = "x" } }),
             (HttpMethod.Delete, Url(projectId, $"/{id}/obligations/O1"), null),
             (HttpMethod.Post, Url(projectId, $"/{id}/obligations/O1/run"), null),
-            (HttpMethod.Post, Url(projectId, $"/{id}/obligations/O2/evidence"), Evidence("github.com", "passed", "success")),
+            (HttpMethod.Post, Url(projectId, $"/{id}/obligations/O2/evidence"), Evidence("github.com", "passed")),
         ];
 
         async Task<HttpStatusCode> SendAsync(HttpClient client, (HttpMethod Method, string Url, JsonNode? Body) call)
@@ -765,7 +863,7 @@ public class PromiseEndpointTests(ImportHost import) : IClassFixture<ImportHost>
         Assert.Equal(HttpStatusCode.NotFound, (await owner.GetAsync(Url(projectId, $"/{theirs}"))).StatusCode);
         Assert.Equal(HttpStatusCode.NotFound, (await owner.GetAsync(Url(projectId, $"/{theirs}/runs"))).StatusCode);
         await Refused(owner.PutAsync(Url(projectId, $"/{theirs}"), OrdersReference.Json(body)), HttpStatusCode.NotFound);
-        await Refused(owner.PostAsJsonAsync(Url(projectId, $"/{theirs}/approve"), new { revision = 1 }), HttpStatusCode.NotFound);
+        await Refused(owner.PostAsJsonAsync(Url(projectId, $"/{theirs}/approve"), new { revision = 1, contentHash = "x" }), HttpStatusCode.NotFound);
         await Refused(owner.DeleteAsync(Url(projectId, $"/{theirs}")), HttpStatusCode.NotFound);
         await Refused(Post(owner, Url(projectId, $"/{theirs}/obligations/generate")), HttpStatusCode.NotFound);
         await Refused(Post(owner, Url(projectId, $"/{theirs}/obligations/O1/run")), HttpStatusCode.NotFound);

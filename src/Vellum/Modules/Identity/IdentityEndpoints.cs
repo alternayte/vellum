@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Identity;
+using Vellum.Modules.Identity.AgentTokens;
 using Vellum.Modules.Settings.Setup;
 using Vellum.Shared;
 
@@ -145,6 +146,7 @@ public static class IdentityEndpoints
             return Results.Redirect("/");
         });
 
+        app.MapAgentTokenEndpoints();
         return app;
     }
 }

@@ -35,6 +35,7 @@ internal sealed class BuildView
         SchemasById = Schemas.ToDictionary(s => s.Id);
         Scenarios = [.. input.Scenarios.OrderBy(s => s.Name, StringComparer.Ordinal).ThenBy(s => s.Id.Value)];
         Promises = [.. input.Promises.OrderBy(p => p.RequirementId.Length).ThenBy(p => p.RequirementId, StringComparer.Ordinal).ThenBy(p => p.Id)];
+        Requirements = [.. Promises.Where(p => p.State == PromiseLifecycle.Approved)];
 
         _playbacks = new Lazy<IReadOnlyDictionary<Guid, TraceResult>>(() =>
         {
@@ -57,6 +58,12 @@ internal sealed class BuildView
     public IReadOnlyDictionary<Guid, BuildSchema> SchemasById { get; }
     public IReadOnlyList<Scenario> Scenarios { get; }
     public IReadOnlyList<PromiseDto> Promises { get; }
+    /// <summary>
+    /// The promises that bind: those whose revision in force is approved. <c>Current</c> of
+    /// each is that revision. A promise that was never approved and a retired promise are in
+    /// <see cref="Promises"/> only, and every document lists them apart, as not binding.
+    /// </summary>
+    public IReadOnlyList<PromiseDto> Requirements { get; }
     /// <summary>Each scenario played on the pinned model. Played once, when first read.</summary>
     public IReadOnlyDictionary<Guid, TraceResult> Playbacks => _playbacks.Value;
     public IReadOnlyDictionary<Guid, IReadOnlyList<FlatStep>> Steps { get; }
@@ -127,11 +134,6 @@ internal static class BuildText
     private static readonly System.Text.Encodings.Web.JavaScriptEncoder Encoder =
         System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping;
 
-    private static readonly YamlDotNet.Serialization.ISerializer YamlSerializer = new YamlDotNet.Serialization.SerializerBuilder()
-        .WithQuotingNecessaryStrings()
-        .WithNewLine("\n")
-        .Build();
-
     /// <summary>Sorted keys, one spelling per number, two-space indent, <c>\n</c> line ends and one at the end.</summary>
     public static byte[] CanonicalJson<T>(T value) => CanonicalJson(JsonSerializer.SerializeToElement(value, Json));
 
@@ -147,12 +149,26 @@ internal static class BuildText
     /// <summary>A JSON value as text for a Markdown code block.</summary>
     public static string Pretty(JsonElement element) => System.Text.Encoding.UTF8.GetString(CanonicalJson(element)).TrimEnd('\n');
 
-    public static byte[] Yaml(object document) =>
-        System.Text.Encoding.UTF8.GetBytes(YamlSerializer.Serialize(document).ReplaceLineEndings("\n"));
+    /// <summary>The document as YAML that reads back the same in YAML 1.1 and 1.2 readers. See <see cref="YamlWriter"/>.</summary>
+    /// <exception cref="YamlNumberException">The document holds a number that YAML cannot hold with the same value.</exception>
+    public static byte[] Yaml(object document) => System.Text.Encoding.UTF8.GetBytes(YamlWriter.Write(document));
+
+    /// <summary>The text as a JSON document, or null when it is not JSON. The caller disposes the document.</summary>
+    public static JsonDocument? TryParseJson(string text)
+    {
+        try
+        {
+            return JsonDocument.Parse(text);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
 
     public static string Sha256(ReadOnlySpan<byte> bytes) => Convert.ToHexStringLower(System.Security.Cryptography.SHA256.HashData(bytes));
 
-    /// <summary>A JSON value as plain objects for the YAML writer, with sorted keys.</summary>
+    /// <summary>A JSON value as plain objects for the YAML writer, with sorted keys. A number keeps its source text.</summary>
     public static object? Plain(JsonElement value) => value.ValueKind switch
     {
         JsonValueKind.Object => ToMap(value.EnumerateObject()
@@ -160,7 +176,7 @@ internal static class BuildText
             .Select(g => new KeyValuePair<string, object?>(g.Key, Plain(g.Last().Value)))),
         JsonValueKind.Array => value.EnumerateArray().Select(Plain).ToList(),
         JsonValueKind.String => value.GetString(),
-        JsonValueKind.Number => value.TryGetInt64(out var whole) ? whole : value.TryGetDecimal(out var exact) ? exact : value.GetDouble(),
+        JsonValueKind.Number => new YamlNumber(value.GetRawText()),
         JsonValueKind.True => true,
         JsonValueKind.False => false,
         _ => null,

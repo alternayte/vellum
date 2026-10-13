@@ -1,9 +1,9 @@
 using System.ComponentModel;
+using System.Security.Claims;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using ModelContextProtocol.Server;
 using Vellum.Modules.Modelling;
-using Vellum.Modules.Workspaces;
 
 namespace Vellum.Modules.Mcp.Tools;
 
@@ -15,13 +15,11 @@ public class GetDependenciesTool
         [Description("Project ID")] Guid projectId,
         [Description("Element ID")] Guid elementId,
         ModellingDbContext db,
-        WorkspacesDbContext workspacesDb,
+        McpProjects projects,
+        ClaimsPrincipal user,
         CancellationToken ct)
     {
-        var proj = await workspacesDb.Projects.AsNoTracking()
-            .FirstOrDefaultAsync(p => p.Id == projectId, ct);
-        if (proj is null)
-            return """{"error":"Project not found"}""";
+        var proj = await projects.ReadAsync(user, projectId, ct);
 
         var inbound = await db.Relationships.AsNoTracking()
             .Where(r => r.ProjectId == projectId && r.Branch == proj.StreamId && r.ToId == elementId)

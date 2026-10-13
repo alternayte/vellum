@@ -1,4 +1,3 @@
-using System.Globalization;
 using Deedbox;
 using Microsoft.EntityFrameworkCore;
 
@@ -22,7 +21,7 @@ public sealed class PromiseProjection : Projection<PromisesDbContext>
                 row = new PromiseEntity { Id = id, ProjectId = created.ProjectId };
                 ctx.Db.Promises.Add(row);
             }
-            Write(row, PromiseState.Evolve(PromiseState.Initial, created));
+            Write(row, PromiseState.Evolve(PromiseState.Initial, created), ctx.Version);
         });
 
         Fold<PromiseEvent.PromiseDraftChanged>();
@@ -41,6 +40,19 @@ public sealed class PromiseProjection : Projection<PromisesDbContext>
                 ctx.Db.Runs.Remove(run);
         });
 
+        // The promise streams of a deleted project are deleted with it. Their rows go too, and
+        // a rebuild does not bring them back. The tombstone of any stream comes here; an ID
+        // that is no promise matches no row.
+        On<StreamDeleted>(async (_, ctx) =>
+        {
+            if (!Guid.TryParse(ctx.StreamId, out var id))
+                return;
+            foreach (var run in await ctx.Db.Runs.Where(r => r.PromiseId == id).ToListAsync(ctx.CancellationToken))
+                ctx.Db.Runs.Remove(run);
+            if (await ctx.Db.Promises.FindAsync([id], ctx.CancellationToken) is { } row)
+                ctx.Db.Promises.Remove(row);
+        });
+
         On<PromiseEvent.VerificationRunRecorded>(async (recorded, ctx) =>
         {
             var id = Guid.Parse(ctx.StreamId);
@@ -56,24 +68,22 @@ public sealed class PromiseProjection : Projection<PromisesDbContext>
             });
 
             var latest = PromiseJson.Read<Dictionary<string, VerificationRun>>(row.LatestRuns);
-            latest[LatestRunKey(run.PromiseRevision, run.ObligationId)] = run;
+            latest[PromiseState.RunKey(run.PromiseRevision, run.ObligationId)] = run;
             row.LatestRuns = PromiseJson.Write(latest);
-            Write(row, PromiseState.Evolve(PromiseJson.Read<PromiseState>(row.Document), recorded));
+            Write(row, PromiseState.Evolve(PromiseJson.Read<PromiseState>(row.Document), recorded), ctx.Version);
         });
     }
-
-    public static string LatestRunKey(int revision, string obligationId) =>
-        string.Create(CultureInfo.InvariantCulture, $"{revision}:{obligationId}");
 
     private void Fold<TEvent>() where TEvent : class =>
         On<TEvent>(async (@event, ctx) =>
         {
             if (await ctx.Db.Promises.FindAsync([Guid.Parse(ctx.StreamId)], ctx.CancellationToken) is { } row)
-                Write(row, PromiseState.Evolve(PromiseJson.Read<PromiseState>(row.Document), @event));
+                Write(row, PromiseState.Evolve(PromiseJson.Read<PromiseState>(row.Document), @event), ctx.Version);
         });
 
-    private static void Write(PromiseEntity row, PromiseState state)
+    private static void Write(PromiseEntity row, PromiseState state, long version)
     {
+        row.Version = version;
         row.RequirementId = state.RequirementId!;
         row.Number = state.Number;
         row.Title = (state.InForce ?? state.Latest!).Content.Title;

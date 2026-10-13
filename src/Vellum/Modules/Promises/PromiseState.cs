@@ -14,15 +14,21 @@ public static class PromiseEvent
     public sealed record PromiseDraftChanged(int Revision, PromiseContent Content, string By, DateTimeOffset At);
 
     /// <summary>
-    /// A new draft revision that starts as a copy of the revision in force, obligations
-    /// included. <paramref name="Retires"/>: approving it retires the promise.
+    /// A new draft revision. It starts as a copy of the revision in force, obligations
+    /// included. With <paramref name="Retires"/> it copies nothing: it only names the revision
+    /// in force, and approving it retires the promise.
     /// </summary>
     public sealed record PromiseRevised(int Revision, bool Retires, string By, DateTimeOffset At);
 
     /// <param name="ModelVersion">The version of the project's main model stream at approval.</param>
     /// <param name="Links">A hash of every linked thing as it was at approval, by <c>kind:id</c>.</param>
+    /// <param name="ContentHash">
+    /// <see cref="PromiseContentHash"/> of the revision the approver read. Null only in an
+    /// approval stored before the hash existed.
+    /// </param>
     public sealed record PromiseApproved(
-        int Revision, string ApprovedBy, DateTimeOffset At, long ModelVersion, IReadOnlyDictionary<string, string> Links);
+        int Revision, string ApprovedBy, DateTimeOffset At, long ModelVersion, IReadOnlyDictionary<string, string> Links,
+        string? ContentHash = null);
 
     public sealed record PromiseDeleted(string By, DateTimeOffset At);
 
@@ -35,6 +41,15 @@ public static class PromiseEvent
     public sealed record VerificationRunRecorded(VerificationRun Run);
 }
 
+/// <param name="RetiresRevision">
+/// For a revision that retires the promise: the revision it retires. Such a revision holds no
+/// content and no obligations of its own; a reader takes the text from the one it names.
+/// </param>
+/// <param name="ApprovedContentHash">The hash the approver sent and the decision checked.</param>
+/// <param name="ApprovalIntact">
+/// False when the content folded from the stream at the approval is not the content of
+/// <paramref name="ApprovedContentHash"/>. Every fold checks it: an append, a load and a rebuild.
+/// </param>
 public sealed record PromiseRevisionState(
     int Revision,
     string Status,
@@ -46,7 +61,10 @@ public sealed record PromiseRevisionState(
     string? ApprovedBy = null,
     DateTimeOffset? ApprovedAt = null,
     long? ApprovedModelVersion = null,
-    ImmutableDictionary<string, string>? ApprovedLinks = null)
+    ImmutableDictionary<string, string>? ApprovedLinks = null,
+    int? RetiresRevision = null,
+    string? ApprovedContentHash = null,
+    bool? ApprovalIntact = null)
 {
     [JsonIgnore]
     public bool IsDraft => Status == RevisionStatus.Draft;
@@ -69,10 +87,15 @@ public sealed record PromiseState(
     DateTimeOffset? UpdatedAt,
     ImmutableList<PromiseRevisionState> Revisions,
     int NextObligation,
-    bool Deleted)
+    bool Deleted,
+    ImmutableDictionary<string, int>? RunCounts = null)
     : IState<PromiseState>
 {
     public static PromiseState Initial => new(null, null, 0, null, null, null, null, [], 1, false);
+
+    /// <summary>The content of a revision that retires the promise: the title of what it retires and nothing else.</summary>
+    private static PromiseContent Retiring(PromiseContent retired) =>
+        new(retired.Title, "This revision retires the promise.", null, null, null, null, null, [], null, PromiseLinks.None);
 
     public static PromiseState Evolve(PromiseState state, object @event) => @event switch
     {
@@ -85,17 +108,22 @@ public sealed record PromiseState(
 
         PromiseEvent.PromiseDraftChanged e => state.WithRevision(e.Revision, e.At, r => r with { Content = e.Content }),
 
+        // A revision that retires copies nothing, so a promise of any size can be retired.
         PromiseEvent.PromiseRevised e when state.InForce is { } inForce => state with
         {
             UpdatedAt = e.At,
-            Revisions = state.Revisions.Add(new PromiseRevisionState(
-                e.Revision, RevisionStatus.Draft, e.Retires, inForce.Content, inForce.Obligations, e.By, e.At)),
+            Revisions = state.Revisions.Add(e.Retires
+                ? new PromiseRevisionState(e.Revision, RevisionStatus.Draft, true, Retiring(inForce.Content), [], e.By, e.At)
+                    { RetiresRevision = inForce.Revision }
+                : new PromiseRevisionState(e.Revision, RevisionStatus.Draft, false, inForce.Content, inForce.Obligations, e.By, e.At)),
         },
 
         PromiseEvent.PromiseApproved e => state.WithRevision(e.Revision, e.At, r => r with
         {
             Status = RevisionStatus.Approved, ApprovedBy = e.ApprovedBy, ApprovedAt = e.At,
             ApprovedModelVersion = e.ModelVersion, ApprovedLinks = e.Links.ToImmutableDictionary(),
+            ApprovedContentHash = e.ContentHash,
+            ApprovalIntact = e.ContentHash is null ? null : e.ContentHash == PromiseContentHash.Of(state.RequirementId, r),
         }),
 
         PromiseEvent.PromiseDeleted e => state with { Deleted = true, UpdatedAt = e.At },
@@ -115,7 +143,12 @@ public sealed record PromiseState(
             Obligations = r.Obligations.RemoveAll(o => o.Id == e.ObligationId),
         }),
 
-        PromiseEvent.VerificationRunRecorded e => state with { UpdatedAt = e.Run.At },
+        PromiseEvent.VerificationRunRecorded e => state with
+        {
+            UpdatedAt = e.Run.At,
+            RunCounts = (state.RunCounts ?? ImmutableDictionary<string, int>.Empty)
+                .SetItem(RunKey(e.Run.PromiseRevision, e.Run.ObligationId), state.RunsOf(e.Run.PromiseRevision, e.Run.ObligationId) + 1),
+        },
 
         _ => state,
     };
@@ -146,6 +179,20 @@ public sealed record PromiseState(
     };
 
     public PromiseRevisionState? Revision(int number) => Revisions.FirstOrDefault(r => r.Revision == number);
+
+    /// <summary>
+    /// The revision whose text and obligations a reader shows for <paramref name="revision"/>:
+    /// the revision itself, or the one it retires.
+    /// </summary>
+    public PromiseRevisionState Shown(PromiseRevisionState revision) =>
+        revision.RetiresRevision is { } retired && Revision(retired) is { } source ? source : revision;
+
+    public static string RunKey(int revision, string obligationId) =>
+        string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{revision}:{obligationId}");
+
+    /// <summary>How many runs were recorded for an obligation of a revision.</summary>
+    public int RunsOf(int revision, string obligationId) =>
+        RunCounts is { } counts && counts.TryGetValue(RunKey(revision, obligationId), out var count) ? count : 0;
 
     /// <summary>True when the promise exists in <paramref name="projectId"/>. A promise of another project reads as not found.</summary>
     public bool ExistsIn(Guid projectId) => !Deleted && ProjectId == projectId && Revisions.Count > 0;

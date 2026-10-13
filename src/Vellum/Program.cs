@@ -10,6 +10,7 @@ using Vellum.Shared.Outbound;
 using Vellum.Modules.Ai;
 using Vellum.Modules.GitHub;
 using Vellum.Modules.Identity;
+using Vellum.Modules.Identity.AgentTokens;
 using Vellum.Modules.Import;
 using Vellum.Modules.Mcp;
 using Vellum.Modules.Modelling;
@@ -139,6 +140,7 @@ if (app.Environment.IsDevelopment())
 app.UseExceptionHandler();
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseAgentBoundary();
 app.UseRateLimiter();
 app.UseBodyLimits();
 app.UseRequestBodyLimits();
@@ -146,11 +148,10 @@ app.UseRequestBodyLimits();
 // Every event a request appends records who caused it and which request it belongs to.
 app.Use(async (http, next) =>
 {
-    var userId = http.User.FindFirstValue(ClaimTypes.NameIdentifier);
     http.RequestServices.GetRequiredService<DeedboxContext>().Metadata = new EventMetadata
     {
         CorrelationId = http.TraceIdentifier,
-        Actor = userId is null ? null : $"user:{userId}",
+        Actor = AgentPrincipal.Actor(http.User),
     };
     await next(http);
 });

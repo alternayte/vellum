@@ -1,4 +1,3 @@
-using System.IO.Compression;
 using System.Text;
 using Vellum.Modules.Import.Extraction;
 using Vellum.Modules.Promises;
@@ -6,18 +5,21 @@ using Vellum.Modules.Promises;
 namespace Vellum.Modules.Build;
 
 /// <summary>The bounds of one export. A larger export is refused with 413; nothing is cut to fit.</summary>
-public sealed record BuildLimits(long MaxBundleBytes = 32 * 1024 * 1024, long MaxFileBytes = 16 * 1024 * 1024, int MaxFiles = 5_000)
+/// <param name="MaxManifestBytes">The most bytes a manifest, or a request that holds one or its pinned state, may have. An export whose manifest would be larger is refused.</param>
+/// <param name="MaxPinnedRuns">The most runs a pinned state names.</param>
+public sealed record BuildLimits(
+    long MaxBundleBytes = 32 * 1024 * 1024, long MaxFileBytes = 16 * 1024 * 1024, int MaxFiles = 5_000,
+    long MaxManifestBytes = 16 * 1024 * 1024, int MaxPinnedRuns = 100_000)
 {
     public static readonly BuildLimits Default = new();
+
+    /// <summary>The most promises, scenarios and elements one brief request selects.</summary>
+    public const int MaxBriefSelection = 200;
 }
 
 public sealed class BundleTooLargeException(string message) : Exception(message);
 
 public sealed record GeneratorInfo(string Name, string Version);
-
-/// <param name="Branch">The model stream the export was made from.</param>
-/// <param name="RevisionId">The named revision, or null when the branch was pinned at its version at export.</param>
-public sealed record PinnedState(Guid ProjectId, Guid Branch, long StreamVersion, Guid? RevisionId);
 
 public sealed record BundleFile(string Path, string Sha256, long Bytes);
 
@@ -63,11 +65,13 @@ public sealed record BuildManifest(
 /// </summary>
 public sealed class Bundle
 {
-    public const string Format = "vellum-bundle/1";
-    public const string GeneratorVersion = "1";
+    /// <summary>Format 2 pins the version of every input, so a bundle of it can be generated again. A manifest of format 1 cannot.</summary>
+    public const string Format = "vellum-bundle/2";
+    public const string GeneratorVersion = "2";
     public const string ManifestPath = "manifest.json";
 
-    private static readonly DateTimeOffset ZipTime = new(1980, 1, 1, 0, 0, 0, TimeSpan.Zero);
+    /// <summary>The code of the blocker for a contract file that holds a number YAML cannot hold exactly.</summary>
+    public const string YamlNumberBlocker = "yaml-unrepresentable-number";
 
     private Bundle(SortedDictionary<string, byte[]> files, BuildManifest manifest)
     {
@@ -99,32 +103,59 @@ public sealed class Bundle
             files[path] = bytes;
         }
 
+        // A contract file that YAML cannot hold exactly is not written: a file with another
+        // number in it would be a wrong contract. The blocker names the number.
+        var notWritten = new SortedDictionary<string, YamlNumberException>(StringComparer.Ordinal);
+        void AddYaml(string path, Func<byte[]> write)
+        {
+            try
+            {
+                Add(path, write());
+            }
+            catch (YamlNumberException unrepresentable)
+            {
+                notWritten[path] = unrepresentable;
+            }
+        }
+
         var routes = ContractDocuments.Routes(view);
         foreach (var (owner, routed) in routes.OrderBy(r => r.Key))
-            Add(ContractDocuments.OpenApiPath(owner), ContractDocuments.OpenApi(view, owner, routed));
-        Add(ContractDocuments.AsyncApiPath, ContractDocuments.AsyncApi(view));
+            AddYaml(ContractDocuments.OpenApiPath(owner), () => ContractDocuments.OpenApi(view, owner, routed));
+        AddYaml(ContractDocuments.AsyncApiPath, () => ContractDocuments.AsyncApi(view));
 
         var selfCheck = Check(view, routes, files);
         var blockers = Blockers.Of(view, routes).ToList();
+        foreach (var (path, unrepresentable) in notWritten)
+        {
+            blockers.Add(new Blocker(YamlNumberBlocker, path,
+                $"The file {path} is not written: the number {unrepresentable.Value} at {unrepresentable.Path} is not finite, is an integer outside 64 bits, or has more digits than a YAML reader keeps. Change the stored schema."));
+        }
         if (!selfCheck.Passed)
         {
             blockers.Add(new Blocker("self-check-failed", ContractDocuments.AsyncApiPath,
                 "The generated OpenAPI or AsyncAPI documents do not read back as the model. See selfCheck in the manifest."));
         }
 
-        Add("architecture.json", ContractDocuments.Architecture(view));
+        Add("architecture.json", ContractDocuments.Architecture(view, routes));
         foreach (var scenario in view.Scenarios)
             Add(PromiseDocuments.ScenarioPath(scenario), PromiseDocuments.Scenario(scenario, view.Playbacks[scenario.Id.Value]));
         foreach (var promise in view.Promises)
             Add(PromiseDocuments.Path(promise), PromiseDocuments.Promise(promise));
-        Add(SddDocument.Path, SddDocument.Write(view, routes, Slices.Of(view), blockers));
+        Add(SddDocument.Path, SddDocument.Write(view, routes, Slices.Of(view), blockers, notWritten.Keys.ToHashSet(StringComparer.Ordinal)));
 
         var listed = files.Select(f => new BundleFile(f.Key, BuildText.Sha256(f.Value), f.Value.Length)).ToList();
         var manifest = new BuildManifest(
             Format, Generator,
-            new PinnedState(input.ProjectId, input.Pin.StreamId, input.Pin.Version, input.Pin.RevisionId),
+            input.Pinned,
             listed, BundleHash(listed.Select(f => (f.Path, f.Sha256))), blockers.Count == 0, blockers, selfCheck);
-        return new Bundle(files, manifest);
+        var bundle = new Bundle(files, manifest);
+        // The manifest is sent back to verify and to export again, so it has the bound those requests have.
+        if (bundle.ManifestBytes.Length > limits.MaxManifestBytes || manifest.Pinned.Runs.Count > limits.MaxPinnedRuns)
+        {
+            throw new BundleTooLargeException(
+                $"The manifest of the export is larger than a manifest may be ({limits.MaxManifestBytes} bytes, {limits.MaxPinnedRuns} pinned runs). Export a build brief for a part of the model.");
+        }
+        return bundle;
     }
 
     /// <summary>SHA-256 over the sorted list of path and hash.</summary>
@@ -132,24 +163,10 @@ public sealed class Bundle
         string.Concat(files.OrderBy(f => f.Path, StringComparer.Ordinal).Select(f => $"{f.Path} {f.Sha256}\n"))));
 
     /// <summary>
-    /// A zip that is the same bytes for the same files: entries in path order, one fixed time
-    /// stamp, stored without compression (so no compressor version can change the bytes).
+    /// A zip that is the same bytes for the same files on every operating system: see
+    /// <see cref="ZipWriter"/>, which writes every header field itself.
     /// </summary>
-    public byte[] Zip()
-    {
-        using var buffer = new MemoryStream();
-        using (var zip = new ZipArchive(buffer, ZipArchiveMode.Create, leaveOpen: true))
-        {
-            foreach (var (path, bytes) in Files.Append(new(ManifestPath, ManifestBytes)).OrderBy(f => f.Key, StringComparer.Ordinal))
-            {
-                var entry = zip.CreateEntry(path, CompressionLevel.NoCompression);
-                entry.LastWriteTime = ZipTime;
-                using var stream = entry.Open();
-                stream.Write(bytes);
-            }
-        }
-        return buffer.ToArray();
-    }
+    public byte[] Zip() => ZipWriter.Write(Files.Append(new(ManifestPath, ManifestBytes)));
 
     private static SelfCheck Check(
         BuildView view, IReadOnlyDictionary<Guid, IReadOnlyList<Route>> routes, IReadOnlyDictionary<string, byte[]> files)
@@ -157,6 +174,14 @@ public sealed class Bundle
         var notes = new List<string>();
         ExtractionResult Read(string path)
         {
+            // A file that was not written cannot read back. The self-check then does not pass,
+            // and the blocker of the file says why it is missing.
+            if (!files.ContainsKey(path))
+            {
+                notes.Add($"{path}: the file was not written, so it was not read back.");
+                return new ExtractionResult("vellum-export", "pinned", [], [], true);
+            }
+
             // One document per call: the extractor never merges two generated files.
             var result = EvidenceExtractor.Extract(new ExtractionInput("vellum-export", "pinned", [new SourceFile(path, Encoding.UTF8.GetString(files[path]))]));
             if (!result.IsComplete)
