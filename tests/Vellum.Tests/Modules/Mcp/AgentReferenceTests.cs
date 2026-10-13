@@ -202,8 +202,12 @@ public class AgentReferenceTests(IntegrationFixture fixture)
         Assert.DoesNotContain(endpoints, e => e.Path.Contains("/build/export") || e.Path.Contains("{workspaceId}") || (e.Method == "POST" && e.Path.EndsWith("/promises")));
 
         // What it lists is what it gets: each listed GET of a project answers, and an endpoint it does not list is refused.
+        // A comparison needs query values, so without them it answers 400: the request passed the agent boundary.
         foreach (var (_, path) in endpoints.Where(e => e.Method == "GET" && e.Path.Contains("{projectId}") && e.Path.Count(c => c == '{') == 1))
-            Assert.Equal(HttpStatusCode.OK, (await narrow.Client.GetAsync(path.Replace("{projectId}", projectId.ToString()))).StatusCode);
+        {
+            var status = (await narrow.Client.GetAsync(path.Replace("{projectId}", projectId.ToString()))).StatusCode;
+            Assert.Equal(path.Contains("/compare/") ? HttpStatusCode.BadRequest : HttpStatusCode.OK, status);
+        }
         Assert.Equal(HttpStatusCode.Forbidden, (await narrow.Client.GetAsync($"/api/workspaces/{workspaceId}/projects")).StatusCode);
 
         // Every scope, no restriction.
