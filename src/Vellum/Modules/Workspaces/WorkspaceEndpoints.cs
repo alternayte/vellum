@@ -20,7 +20,7 @@ public static class WorkspaceEndpoints
 
         var projects = group.MapGroup("/{workspaceId}/projects").WithTags("Projects");
         projects.MapPost("/", CreateProject.Handle);
-        projects.MapGet("/", ListProjects.Handle);
+        projects.MapGet("/", ListProjects.Handle).AllowAgent(AgentScope.Read);
 
         var projectsGroup = app.MapGroup("/api/projects")
             .RequireAuthorization()

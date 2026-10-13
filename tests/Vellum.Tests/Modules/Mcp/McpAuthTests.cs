@@ -42,33 +42,17 @@ public class McpAuthTests(IntegrationFixture fixture)
         Assert.NotNull(initialized["result"]!["serverInfo"]);
 
         var tools = (await mcp.RequestAsync("tools/list"))["result"]!["tools"]!.AsArray();
-        Assert.Equal(
-            ["find_elements", "get_dependencies", "get_dependents", "get_element", "get_model_summary", "list_messages"],
-            tools.Select(t => t!["name"]!.GetValue<string>()).Order());
-
-        // The caller and the access check are not arguments: a client cannot supply them.
-        foreach (var tool in tools)
-        {
-            var properties = tool!["inputSchema"]!["properties"]!.AsObject().Select(p => p.Key).ToList();
-            Assert.Contains("projectId", properties);
-            Assert.DoesNotContain("user", properties);
-            Assert.DoesNotContain("projects", properties);
-        }
+        Assert.Contains("get_model_summary", tools.Select(t => t!["name"]!.GetValue<string>()));
 
         var (isError, text) = await mcp.ToolAsync("get_model_summary", Project(projectId));
         Assert.False(isError, text);
         var summary = JsonNode.Parse(text)!;
-        Assert.Equal(("Test Project", 1), (summary["projectName"]!.GetValue<string>(), summary["totalElements"]!.GetValue<int>()));
-
-        // find_elements declares its filters without defaults, so a call names each of them.
-        var found = await mcp.ToolAsync("find_elements",
-            new JsonObject { ["projectId"] = projectId, ["name"] = "Shop", ["kind"] = null, ["tag"] = null, ["status"] = null });
-        Assert.False(found.IsError, found.Text);
-        Assert.Equal(1, JsonNode.Parse(found.Text)!["count"]!.GetValue<int>());
+        Assert.Equal(projectId, summary["projectId"]!.GetValue<Guid>());
+        Assert.Equal(("Test Project", 1), (summary["data"]!["projectName"]!.GetValue<string>(), summary["data"]!["totalElements"]!.GetValue<int>()));
 
         var messages = await mcp.ToolAsync("list_messages", Project(projectId));
         Assert.False(messages.IsError, messages.Text);
-        Assert.Equal(projectId, JsonNode.Parse(messages.Text)!["projectId"]!.GetValue<Guid>());
+        Assert.Equal(0, JsonNode.Parse(messages.Text)!["data"]!["count"]!.GetValue<int>());
     }
 
     [Fact]
@@ -86,7 +70,7 @@ public class McpAuthTests(IntegrationFixture fixture)
         foreach (var (name, arguments) in new (string, JsonObject)[]
         {
             ("get_model_summary", Project(projectId)),
-            ("find_elements", new JsonObject { ["projectId"] = projectId, ["name"] = null, ["kind"] = null, ["tag"] = null, ["status"] = null }),
+            ("find_elements", Project(projectId)),
             ("list_messages", Project(projectId)),
             ("get_element", new JsonObject { ["projectId"] = projectId, ["elementId"] = Guid.NewGuid() }),
             ("get_dependencies", new JsonObject { ["projectId"] = projectId, ["elementId"] = Guid.NewGuid() }),

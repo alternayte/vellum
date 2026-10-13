@@ -3589,6 +3589,25 @@
         }
       }
     },
+    "/api/agent/capabilities": {
+      "get": {
+        "tags": [
+          "Agent"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentCapabilities"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/workspaces/{workspaceId}/github/test": {
       "post": {
         "tags": [
@@ -7361,6 +7380,82 @@
           }
         }
       },
+      "AgentCapabilities": {
+        "required": [
+          "caller",
+          "tokenId",
+          "workspaceId",
+          "projectId",
+          "scopes",
+          "expiresAt",
+          "mcpEndpoint",
+          "reference",
+          "skill",
+          "tools",
+          "endpoints"
+        ],
+        "type": "object",
+        "properties": {
+          "caller": {
+            "type": "string"
+          },
+          "tokenId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "workspaceId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "projectId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "expiresAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "mcpEndpoint": {
+            "type": "string"
+          },
+          "reference": {
+            "type": "string"
+          },
+          "skill": {
+            "type": "string"
+          },
+          "tools": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CapableTool"
+            }
+          },
+          "endpoints": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CapableEndpoint"
+            }
+          }
+        }
+      },
       "AgentTokenCreated": {
         "required": [
           "id",
@@ -8620,6 +8715,47 @@
               "string"
             ],
             "format": "int64"
+          }
+        }
+      },
+      "CapableEndpoint": {
+        "required": [
+          "method",
+          "path",
+          "scopes"
+        ],
+        "type": "object",
+        "properties": {
+          "method": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "CapableTool": {
+        "required": [
+          "name",
+          "scope",
+          "description"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
           }
         }
       },
@@ -16028,6 +16164,9 @@
     },
     {
       "name": "Scoring"
+    },
+    {
+      "name": "Agent"
     },
     {
       "name": "GitHub"

@@ -14,9 +14,6 @@ namespace Vellum.Modules.Promises;
 public sealed record PromiseLimits(int MaxRunsPerObligation = 1_000, int RunsPerMinute = 120)
 {
     public static readonly PromiseLimits Default = new();
-
-    /// <summary>The rate limit policy of the run and evidence endpoints.</summary>
-    public const string RunPolicy = "promise-run";
 }
 
 /// <summary>The result of a write to a promise stream. <paramref name="TooLarge"/>: the write was refused because the revision would pass its size limit.</summary>

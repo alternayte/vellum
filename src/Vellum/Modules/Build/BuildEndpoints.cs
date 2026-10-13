@@ -94,7 +94,9 @@ public static partial class BuildModule
             .Produces<ErrorResponse>(StatusCodes.Status409Conflict)
             .Produces<ErrorResponse>(StatusCodes.Status413PayloadTooLarge)
             .WithBodyLimit(BuildLimits.Default.MaxManifestBytes);
-        build.MapGet("/manifest", Manifest).AllowAgent(AgentScope.Export).Produces<BuildManifest>();
+        // The manifest holds no content: whether the state is build ready, the blockers, the
+        // pinned versions and the file hashes. A token that only reads may have it.
+        build.MapGet("/manifest", Manifest).AllowAgent(AgentScope.Read, AgentScope.Export).Produces<BuildManifest>();
         build.MapPost("/brief", MakeBrief).AllowAgent(AgentScope.Export).Produces<BriefResult>()
             .WithBodyLimit(RequestBodyLimit.Default);
 

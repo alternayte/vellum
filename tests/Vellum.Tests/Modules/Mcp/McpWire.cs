@@ -84,7 +84,7 @@ internal sealed class McpWire(HttpClient client)
     /// <summary>Calls a tool. Returns whether the result is an error, and its text.</summary>
     public async Task<(bool IsError, string Text)> ToolAsync(string name, JsonObject arguments)
     {
-        var reply = await RequestAsync("tools/call", new JsonObject { ["name"] = name, ["arguments"] = arguments });
+        var reply = await RequestAsync("tools/call", new JsonObject { ["name"] = name, ["arguments"] = arguments.DeepClone() });
         if (reply["error"] is { } error)
             return (true, error.ToJsonString());
         var result = reply["result"]!;

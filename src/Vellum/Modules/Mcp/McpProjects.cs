@@ -1,36 +1,65 @@
 using System.Security.Claims;
-using ModelContextProtocol;
+using Microsoft.EntityFrameworkCore;
 using Vellum.Modules.Identity;
 using Vellum.Modules.Identity.AgentTokens;
+using Vellum.Modules.Workspaces;
 using Vellum.Modules.Workspaces.Entities;
 
 namespace Vellum.Modules.Mcp;
 
 /// <summary>
 /// The one way an MCP tool reaches a project. A tool names the project in its arguments, so
-/// the HTTP boundary cannot check it; every tool asks here before it reads anything.
+/// the HTTP boundary cannot check it; every tool call passes here before its tool runs.
 /// </summary>
-public sealed class McpProjects(AgentAccess access, AppIdentityDbContext identity, TimeProvider time)
+public sealed class McpProjects(AgentAccess access, AppIdentityDbContext identity, WorkspacesDbContext workspaces, TimeProvider time)
 {
+    public const string AgentRequired = "An agent token is required.";
+    public const string NotFound = "Project not found.";
+
     /// <summary>
-    /// The project, for a caller that is an agent token with the <c>read</c> scope, whose
+    /// The project, for a caller that is an agent token with <paramref name="scope"/>, whose
     /// workspace holds the project, whose project restriction (when set) names it, and whose
-    /// user is still a member of the workspace.
+    /// user is still a member of the workspace. Else the refusal as a sentence. A project of
+    /// another workspace and a project that does not exist get the same sentence.
     /// </summary>
-    /// <exception cref="McpException">
-    /// The token may not read the project. The tool call ends as an error result. A project
-    /// of another workspace and a project that does not exist get the same message.
-    /// </exception>
-    public async Task<ProjectEntity> ReadAsync(ClaimsPrincipal? user, Guid projectId, CancellationToken ct)
+    public async Task<(ProjectEntity? Project, string? Refusal)> CheckAsync(
+        ClaimsPrincipal? user, AgentScope scope, Guid projectId, CancellationToken ct)
     {
         if (user is null || AgentPrincipal.TokenId(user) is not { } tokenId || AgentPrincipal.WorkspaceId(user) is not { } workspaceId)
-            throw new McpException("An agent token is required.");
+            return (null, AgentRequired);
 
-        var (refusal, project) = await access.CheckAsync(user, AgentScope.Read, null, projectId, ct);
+        var (refusal, project) = await access.CheckAsync(user, scope, null, projectId, ct);
         if (refusal is null)
-            return project!;
+            return (project, null);
 
         await AgentTokenAudit.RefusedAsync(identity, tokenId, workspaceId, refusal, "mcp tools/call", time.GetUtcNow(), ct);
-        throw new McpException(refusal == AgentAccess.OutsideWorkspace ? "Project not found." : AgentAccess.Explain(refusal));
+        return (null, refusal == AgentAccess.OutsideWorkspace ? NotFound : AgentAccess.Explain(refusal));
+    }
+
+    /// <summary>
+    /// One page of the projects the token may reach with <paramref name="scope"/>, by name and
+    /// then by ID: the one project of a restricted token, else the projects of its workspace.
+    /// </summary>
+    public async Task<(IReadOnlyList<ProjectEntity>? Projects, string? Refusal)> VisibleAsync(
+        ClaimsPrincipal? user, AgentScope scope, (string Name, Guid Id)? after, int take, CancellationToken ct)
+    {
+        if (user is null || AgentPrincipal.TokenId(user) is not { } tokenId || AgentPrincipal.WorkspaceId(user) is not { } workspaceId)
+            return (null, AgentRequired);
+
+        // A restricted token is checked for its project; any other for its workspace.
+        var restriction = AgentPrincipal.ProjectId(user);
+        var (refusal, _) = await access.CheckAsync(user, scope, restriction is null ? workspaceId : null, restriction, ct);
+        if (refusal is not null)
+        {
+            await AgentTokenAudit.RefusedAsync(identity, tokenId, workspaceId, refusal, "mcp tools/call", time.GetUtcNow(), ct);
+            return (null, AgentAccess.Explain(refusal));
+        }
+
+        var query = workspaces.Projects.AsNoTracking().Where(p => p.WorkspaceId == workspaceId);
+        if (restriction is { } only)
+            query = query.Where(p => p.Id == only);
+        if (after is var (name, id))
+            query = query.Where(p => string.Compare(p.Name, name) > 0 || (p.Name == name && p.Id.CompareTo(id) > 0));
+        return (await query.OrderBy(p => p.Name).ThenBy(p => p.Id).Take(take).ToListAsync(ct), null);
     }
 }

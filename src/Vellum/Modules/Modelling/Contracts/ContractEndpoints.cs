@@ -1,3 +1,4 @@
+using Vellum.Modules.Identity.AgentTokens;
 using Deedbox;
 using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Shared;
@@ -21,6 +22,7 @@ public static class ContractEndpoints
             HttpContext http, IEventStore store, CancellationToken ct) =>
             ModelBranches.RunAsync(http, projectId, branchId, WorkspaceRole.Viewer,
                 (streamId, _) => ListContracts.Operations(store, streamId, cursor, limit, ct), ct))
+            .AllowAgent(AgentScope.Read)
             .Produces<Page<OperationDto>>();
 
         operations.MapPost("/", (
@@ -54,6 +56,7 @@ public static class ContractEndpoints
             HttpContext http, IEventStore store, CancellationToken ct) =>
             ModelBranches.RunAsync(http, projectId, branchId, WorkspaceRole.Viewer,
                 (streamId, _) => ListContracts.Channels(store, streamId, cursor, limit, ct), ct))
+            .AllowAgent(AgentScope.Read)
             .Produces<Page<ChannelDto>>();
 
         channels.MapPost("/", (
@@ -87,6 +90,7 @@ public static class ContractEndpoints
             HttpContext http, IEventStore store, CancellationToken ct) =>
             ModelBranches.RunAsync(http, projectId, branchId, WorkspaceRole.Viewer,
                 (streamId, _) => ListContracts.Subscriptions(store, streamId, cursor, limit, ct), ct))
+            .AllowAgent(AgentScope.Read)
             .Produces<Page<SubscriptionDto>>();
 
         subscriptions.MapPost("/", (
@@ -120,6 +124,7 @@ public static class ContractEndpoints
             HttpContext http, IEventStore store, CancellationToken ct) =>
             ModelBranches.RunAsync(http, projectId, branchId, WorkspaceRole.Viewer,
                 (streamId, _) => ListContracts.Bindings(store, streamId, cursor, limit, ct), ct))
+            .AllowAgent(AgentScope.Read)
             .Produces<Page<BindingDto>>();
 
         bindings.MapPost("/", (
