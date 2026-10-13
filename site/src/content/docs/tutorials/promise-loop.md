@@ -313,6 +313,8 @@ In the app:
 7. Close the dialog. On the scan, select **Follow this ref**. This is what happens when the change is merged.
 8. Select **Impact** again and select **Run against this scan** again. The check has the label **Failed**, and `ORD-014` has the label **Broken**.
 
+   ![The dialog Impact of remove-outbox on acme/orders. Changed in the source has three entries with the label Definite: the schema OrderCreated, the message OrderCreated and the removed pattern Transactional outbox. Affected flows has Place an order. Affected promises has ORD-014 with the label Broken, and ORD-014/O3 with the label Failed.](../../../assets/screenshots/impact-view.png)
+
 With the HTTP API:
 
 1. Scan the ref.
@@ -373,6 +375,8 @@ With the HTTP API:
 
 5. In the app, open **Promises** and select **ORD-014**. The dialog shows the failed obligation with what it checked and against which commit. **Evidence gaps** lists what has no evidence.
 
+![The dialog of ORD-014 with its three obligations. ORD-014/O1 has the label Passed, with the faults played, the model version and the trace hash. ORD-014/O2 has the label Not run and the note that the plan names no evidence source. ORD-014/O3 has the label Failed against the tracking scan of remove-outbox.](../../../assets/screenshots/promise-obligations-results.png)
+
 The scenario check still passes. The scenario is your declared design, and you did not change it. Vellum does not change a declared flow because the source changed. The source check is the evidence that the code no longer has what the promise needs.
 
 ## Read the blockers
@@ -403,6 +407,8 @@ In the app:
 2. Below **Brief for an agent**, select the scope **A change**. In **Scan**, select the scan of `remove-outbox`.
 3. Select **Preview the brief**. The dialog says **This scope is not build ready** and lists each blocker. Below, it shows the text of the brief.
 4. Select **Copy**, or select **Download**.
+
+![The Build flyout. The first box says Not build ready: 5 blockers and gives the model version and the bundle hash. Below Brief for an agent, the scope A change is selected with the scan of remove-outbox. The list Blockers starts below the button Preview the brief.](../../../assets/screenshots/build-flyout-brief.png)
 
 The brief of a change has one more section, **8. Change under review**. It holds the impact report of the scan. The scope **A promise** gives the brief of the command below.
 

@@ -62,6 +62,8 @@ export function CostsFlyout({ projectId, branchId, references }: CostsFlyoutProp
       setVariantName(null)
       setBranch(streamId)
       refresh()
+      // The model switcher in the top bar lists the variants under its own key.
+      queryClient.invalidateQueries({ queryKey: ['projects', projectId, 'variants'] })
     },
     onError: shownInline,
   })

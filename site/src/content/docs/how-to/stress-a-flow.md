@@ -76,6 +76,8 @@ The result shows these parts:
 
 Vellum stores the run. A profile keeps its 20 newest runs.
 
+![The result of a stress run, with the label Estimated on each part. The first line gives the profile version, the model version, the seed 42 and the result hash. The headline numbers are throughput 9.62 for each second, latency p50 and p95 of 25.0 ms and 529 completed flows. The part Bottleneck says that no resource is saturated by the rule.](../../../assets/screenshots/stress-result.png)
+
 ## Compare two runs
 
 1. Change one input of the profile.

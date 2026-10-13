@@ -97,6 +97,8 @@ A value that Vellum does not have is shown as **unknown** with the reason. It is
 
 This view also shows each category and each resource. It says which side costs less only when the two sides can be compared. [Estimate costs](/how-to/estimate-costs/#compare-two-variants) has the details.
 
+![The tab Compare of the dialog Costs, with main at the left and the variant Scale out at the right. A notice says: Not comparable. Both sides have lines with no known cost. The table gives 193.00 USD and 266.00 USD for the known lines and not known as the difference of the totals. The resource API instances differs by 73.00 USD.](../../../assets/screenshots/cost-compare.png)
+
 ## Use the API
 
 The `curl` examples use the session cookie of a signed-in person in the file `vellum.cookies`. [Use the HTTP API](/how-to/use-the-http-api/) shows how to sign in. An agent token cannot make the write calls on this page: those endpoints are not open to agent tokens and answer `403`.

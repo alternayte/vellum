@@ -69,6 +69,8 @@ Add a fault to the `faults` list of the scenario:
 
 `kind` is `Error`, `Timeout` or `Outage`. `failFirst` is the number of attempts that fail. `null` fails every attempt. `Timeout` is valid only for an operation that declares a timeout. One target takes one fault.
 
+![The trace dock at event 3 of 12 of a scenario with an outage of the channel order-events. The event reads: Orders.Api cannot publish OrderCreated to order-events, the channel is unavailable. The payload of the message is at the right. The canvas rings Orders.Api in red.](../../../assets/screenshots/trace-dock-playback.png)
+
 ## Limits
 
 - A message that moves to a dead-letter channel follows the bindings of that channel. The trace does not deliver it to the consumers of the dead-letter channel.

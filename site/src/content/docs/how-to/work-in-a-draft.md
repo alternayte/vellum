@@ -64,6 +64,8 @@ The part **Cost sheet** says how many resources and assumptions the merge change
 
 The dialog shows the merge preview of the server. It writes nothing.
 
+![The dialog of the draft Add a notification service against main. It says: 1 added, 0 modified, 0 removed, cost sheet: 0 changes. The list Elements has the added element Notifications. The buttons are Show on the canvas, Close and Merge into main.](../../../assets/screenshots/model-switcher-diff.png)
+
 To see the changes on the canvas, select **Show on the canvas**. The canvas then marks each changed element. Select **Close the diff** in the bar at the bottom to leave this view.
 
 ## Resolve the conflicts
