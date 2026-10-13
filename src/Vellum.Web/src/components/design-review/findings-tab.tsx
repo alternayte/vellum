@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import { areaClass, selectClass } from './styles'
+import { SnapshotDialog } from './snapshot-dialog'
 import { shownInline } from '@/lib/mutation-errors'
 import {
   CATEGORY_LABEL, DEFAULT_FILTER, RESULT_COLOR, RESULT_LABEL, SEVERITY_LABEL, describeDisposition, filterFindings, groupFindings, reviewApi,
@@ -34,7 +35,7 @@ export function CitedPart({ cited, focusTarget, onFocus }: { cited: Cited } & Pi
   )
 }
 
-function Toggle<T extends string>({ value, label, active, onToggle }: { value: T; label: string; active: boolean; onToggle: (value: T) => void }) {
+export function Toggle<T extends string>({ value, label, active, onToggle }: { value: T; label: string; active: boolean; onToggle: (value: T) => void }) {
   return (
     <button
       type="button" aria-pressed={active} onClick={() => onToggle(value)}
@@ -167,6 +168,7 @@ export function FindingsTab(props: Props) {
   const snapshots = useQuery({ queryKey: ['projects', projectId, 'review', 'snapshots'], queryFn: () => reviewApi.snapshots(projectId) })
   const [filter, setFilter] = useState<FindingFilter>(DEFAULT_FILTER)
   const [note, setNote] = useState('')
+  const [openSnapshot, setOpenSnapshot] = useState<string | null>(null)
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: ['projects', projectId, 'review'] })
     void queryClient.invalidateQueries({ queryKey: ['projects', projectId, 'decisions'] })
@@ -255,7 +257,7 @@ export function FindingsTab(props: Props) {
 
           <section aria-labelledby="review-snapshots">
             <h3 id="review-snapshots" className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Snapshots</h3>
-            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">A snapshot keeps the findings of this model version with their answers.</p>
+            <p className="mt-1 text-xs leading-relaxed text-muted-foreground">A snapshot keeps the findings of this model version with their answers. Open one to read it. A snapshot is a record, not the current state.</p>
             <form className="mt-1.5 flex gap-1.5" onSubmit={(e) => { e.preventDefault(); save.mutate() }}>
               <Input className="h-7 text-xs" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Note (optional)" aria-label="Snapshot note" />
               <Button type="submit" size="sm" className="h-7 shrink-0 text-xs" disabled={save.isPending}>Save snapshot</Button>
@@ -265,13 +267,25 @@ export function FindingsTab(props: Props) {
               {snapshots.data?.map((snapshot) => (
                 <li key={snapshot.id} className="flex items-baseline gap-2 text-[11px]">
                   <span className="shrink-0 font-mono text-muted-foreground" title={snapshot.hash}>v{snapshot.modelVersion} · {snapshot.hash.slice(0, 8)}</span>
-                  <span className="min-w-0 flex-1 truncate text-foreground">{snapshot.note ?? new Date(snapshot.createdAt).toLocaleString()}</span>
+                  <button
+                    type="button" onClick={() => setOpenSnapshot(snapshot.id)} title="Open the stored snapshot"
+                    className="min-w-0 flex-1 truncate rounded text-left text-foreground underline decoration-dotted underline-offset-2 hover:bg-muted focus-visible:outline-2 focus-visible:outline-primary"
+                  >
+                    {snapshot.note ?? new Date(snapshot.createdAt).toLocaleString()}
+                  </button>
                   {snapshot.hash === data.hash && <span className="shrink-0 text-muted-foreground">same findings</span>}
-                  <button type="button" className="shrink-0 text-muted-foreground hover:text-destructive focus-visible:outline-2 focus-visible:outline-primary" onClick={() => removeSnapshot.mutate(snapshot.id)}>Delete</button>
+                  <button type="button" className="shrink-0 rounded text-muted-foreground hover:text-destructive focus-visible:outline-2 focus-visible:outline-primary" onClick={() => removeSnapshot.mutate(snapshot.id)}>Delete</button>
                 </li>
               ))}
             </ul>
+            {snapshots.isSuccess && snapshots.data.length === 0 && <p className="mt-1.5 text-[11px] text-muted-foreground">No snapshot is stored.</p>}
           </section>
+          {openSnapshot && (
+            <SnapshotDialog
+              projectId={projectId} snapshotId={openSnapshot} currentHash={data.hash}
+              focusTarget={props.focusTarget} onFocus={props.onFocus} onClose={() => setOpenSnapshot(null)}
+            />
+          )}
         </>
       )}
     </div>

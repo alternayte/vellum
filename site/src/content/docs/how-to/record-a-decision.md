@@ -25,11 +25,16 @@ The decision is now **proposed**. A proposed decision decides nothing and settle
 
 1. Open the decision.
 2. Read it.
-3. Select **Accept** or **Reject**.
+3. Read the list below **What an acceptance records**. It shows each finding that the decision names, as the finding is now, and it says which model the findings are of.
+4. Select **Accept** or **Reject**.
 
 Only a person with the owner role, signed in to Vellum, accepts or rejects a decision. An agent token cannot, whatever scopes it has.
 
-The acceptance records each finding that the decision names, as the finding is on the main model at that moment. The decision settles that exact finding.
+The acceptance records each finding in that list. The decision settles that exact finding. The findings are of the model that you have open: the main model, or a draft or a variant. A finding can be another finding on another model. There it shows `needs re-review` until you settle it again.
+
+Vellum accepts or rejects only the decision that you read. When another person changed the decision, accepted it or rejected it after you opened it, Vellum refuses and changes nothing. Select **Reload the decision**, read it again, then decide.
+
+Over HTTP, each read of a decision gives its `contentHash`. Send that value as `contentHash` to `POST decisions/{id}/accept` and `POST decisions/{id}/reject`. Send `branchId` to `accept` when you read the findings of a draft or a variant. A decision that is not the one you read gives the status 409 and the type `decision_changed`, with the `contentHash` of the decision as it is now.
 
 You cannot change the text of an accepted decision. To change it, supersede it.
 

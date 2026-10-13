@@ -14,11 +14,11 @@ internal static class ResilienceRules
 
     public static readonly Rule[] All =
     [
-        new("REL-001", 1, RuleCategory.Resilience, "A failed delivery has somewhere to go",
-            "Each subscription: its retry attempts and its dead-letter channel.",
+        new("REL-001", 2, RuleCategory.Resilience, "A failed delivery has somewhere to go",
+            "Each subscription: its channel, its consumer, its retry attempts and its dead-letter channel.",
             "Give the subscription more than one attempt or a dead-letter channel, or accept the loss in a decision.",
             DeliveryLoss),
-        new("REL-002", 1, RuleCategory.Resilience, "A chain of synchronous calls has a timeout on every hop",
+        new("REL-002", 2, RuleCategory.Resilience, "A chain of synchronous calls has a timeout on every hop",
             "Each scenario: the call steps that run inside another call, and the timeout of each operation in the chain.",
             "Declare a timeout on each operation of the chain, or record why the chain may wait without limit.",
             UnboundedChains),
@@ -26,16 +26,16 @@ internal static class ResilienceRules
             "Each operation: its retry attempts. The model holds no idempotency fact for an operation.",
             "The model cannot state idempotency, so the result stays unknown. Record in a decision how a repeated call is made harmless.",
             RetryWithoutIdempotency),
-        new("REL-004", 1, RuleCategory.Resilience, "A published message can reach a subscription",
-            "Each topic and exchange that a scenario publishes to, its bindings and the subscriptions behind them.",
+        new("REL-004", 2, RuleCategory.Resilience, "A published message can reach a subscription",
+            "Each channel that a scenario publishes to (a topic, an exchange or a queue), its bindings and the subscriptions on it and behind them.",
             "Add a subscription or a binding that leads to one, or remove the publish step.",
             UnreachablePublish),
-        new("REL-005", 1, RuleCategory.Resilience, "A dead-letter channel has a consumer",
-            "Each channel that a subscription names as its dead-letter channel, and the subscriptions on it.",
+        new("REL-005", 2, RuleCategory.Resilience, "A dead-letter channel has a consumer",
+            "Each channel that a subscription names as its dead-letter channel, those subscriptions, and the subscriptions on it and behind its bindings.",
             "Add a subscription to the dead-letter channel, or record who reads it outside the model.",
             UnreadDeadLetters),
-        new("REL-006", 1, RuleCategory.Resilience, "A binding with a routing key passes a published message",
-            "Each binding with a routing key, and the routing keys of the scenario steps that publish to its source.",
+        new("REL-006", 2, RuleCategory.Resilience, "A binding with a routing key passes a published message",
+            "Each binding with a routing key, the routing keys of the scenario steps that publish to its source, and the channels and bindings between such a step and the binding.",
             "State the routing key on a publish step that matches the binding, or correct the key of the binding.",
             UnmatchedBindings),
     ];
@@ -46,7 +46,7 @@ internal static class ResilienceRules
         {
             Guid id = subscription.Id;
             var name = facts.Name(id);
-            if (facts.Doubt(id, subscription.DeadLetterChannelId?.Value) is { } doubt)
+            if (facts.Doubt(id, subscription.ChannelId, subscription.ConsumerId, subscription.DeadLetterChannelId?.Value) is { } doubt)
             {
                 yield return new(RuleResult.Unknown, id, [subscription.ChannelId, subscription.ConsumerId],
                     $"The rule does not read the subscription '{name}': {doubt}.",
@@ -103,6 +103,8 @@ internal static class ResilienceRules
             var none = operations.Select(o => facts.Model.Operations[o]).Where(o => o.TimeoutMs == 0).OrderBy(o => o.Id.Value).ToList();
             var unread = none.Where(o => o.FactStatus != FactStatus.Declared).ToList();
             var depth = deep.Max(c => c.Count);
+            // Two operations can have one name, so the fingerprint holds the IDs.
+            string[] basis = [.. none.Select(o => $"{o.Id.Value} {(o.FactStatus == FactStatus.Declared ? "declares no timeout" : "timeout not stated")}")];
             if (none.Count == 0)
             {
                 yield return new(RuleResult.Verified, id, cites,
@@ -113,13 +115,13 @@ internal static class ResilienceRules
             {
                 yield return new(RuleResult.Unknown, id, cites,
                     $"The scenario '{scenario.Name}' has a chain of {depth} synchronous calls, and the timeout of {Names(facts, unread)} is not stated: an import does not read a timeout.",
-                    "State the timeout of each operation, or declare the operation.");
+                    "State the timeout of each operation, or declare the operation.", Basis: basis);
             }
             else
             {
                 yield return new(RuleResult.Concern, id, cites,
                     $"The scenario '{scenario.Name}' has a chain of {depth} synchronous calls, and {Names(facts, none.Except(unread))} declares no timeout, so a slow callee holds every caller above it.",
-                    "The result is verified when every operation of the chain declares a timeout.");
+                    "The result is verified when every operation of the chain declares a timeout.", Basis: basis);
             }
         }
 
@@ -177,23 +179,22 @@ internal static class ResilienceRules
         {
             Guid id = channel.Id;
             var steps = published[id].ToList();
-            if (channel.Kind == ChannelKind.Queue || steps.Count == 0)
+            if (steps.Count == 0)
             {
                 yield return new(RuleResult.NotApplicable, id, [],
-                    channel.Kind == ChannelKind.Queue
-                        ? $"The channel '{channel.Name}' is a queue. The rule reads topics and exchanges."
-                        : $"No scenario publishes to the channel '{channel.Name}'.",
-                    "The rule applies to a topic or an exchange that a scenario publishes to.");
+                    $"No scenario publishes to the channel '{channel.Name}'.",
+                    "The rule applies to a channel that a scenario publishes to.");
                 continue;
             }
 
+            var kind = channel.Kind.ToString().ToLowerInvariant();
             var scenarios = steps.Select(s => s.Scenario.Id.Value).Distinct().Order().ToList();
             // Blocking only when the publish is part of a scenario that an approved promise links.
             var severity = scenarios.Any(facts.IsOnPath) ? Severity.Blocking : Severity.Warning;
-            var behind = ChannelRouting.Reachable(facts.Trace, channel.Id);
-            var routes = facts.Model.Bindings.Values.Where(b => behind.Contains(b.SourceChannelId)).Select(b => (Guid?)b.Id.Value);
+            var route = facts.Route(channel.Id);
             var reached = facts.ReachableSubscriptions(channel.Id);
-            if (facts.Doubt([id, .. routes, .. reached.Select(s => (Guid?)s.Id.Value)]) is { } doubt)
+            Guid[] read = [.. route, .. reached.Select(s => s.Id.Value)];
+            if (facts.DoubtAmong([id, .. read]) is { } doubt)
             {
                 yield return new(RuleResult.Unknown, id, scenarios,
                     $"The rule does not read the routes of the channel '{channel.Name}': {doubt}.",
@@ -201,14 +202,15 @@ internal static class ResilienceRules
             }
             else if (reached.Count == 0)
             {
-                yield return new(RuleResult.Concern, id, scenarios,
-                    $"Steps of {Count(scenarios.Count, "scenario")} publish to the {channel.Kind.ToString().ToLowerInvariant()} '{channel.Name}', and no subscription is on it or behind its bindings, so nothing receives the message.{facts.PathNote(scenarios.FirstOrDefault(facts.IsOnPath))}",
+                // A queue keeps the message, and the model still shows nothing that takes it.
+                yield return new(RuleResult.Concern, id, [.. scenarios, .. route],
+                    $"Steps of {Count(scenarios.Count, "scenario")} publish to the {kind} '{channel.Name}', and no subscription is on it or behind its bindings, so nothing receives the message.{facts.PathNote(scenarios.FirstOrDefault(facts.IsOnPath))}",
                     "The result is verified when a subscription is on the channel or on a channel its bindings lead to.", severity);
             }
             else
             {
-                yield return new(RuleResult.Verified, id, [.. scenarios, .. reached.Select(s => s.Id.Value)],
-                    $"The declared model satisfies the rule: {Count(reached.Count, "subscription")} can be reached from the {channel.Kind.ToString().ToLowerInvariant()} '{channel.Name}'. Routing keys are not read here.",
+                yield return new(RuleResult.Verified, id, [.. scenarios, .. read],
+                    $"The declared model satisfies the rule: {Count(reached.Count, "subscription")} can be reached from the {kind} '{channel.Name}'. Routing keys are not read here.",
                     "The result is a concern when no subscription is on the channel or behind its bindings.", severity);
             }
         }
@@ -230,7 +232,8 @@ internal static class ResilienceRules
             }
 
             var readers = facts.ReachableSubscriptions(channel.Id);
-            if (facts.Doubt([id, .. readers.Select(s => (Guid?)s.Id.Value)]) is { } doubt)
+            Guid[] read = [.. facts.Route(channel.Id), .. readers.Select(s => s.Id.Value)];
+            if (facts.DoubtAmong([id, .. sources, .. read]) is { } doubt)
             {
                 yield return new(RuleResult.Unknown, id, sources,
                     $"The rule does not read the dead-letter channel '{channel.Name}': {doubt}.",
@@ -244,7 +247,7 @@ internal static class ResilienceRules
             }
             else
             {
-                yield return new(RuleResult.Verified, id, [.. sources, .. readers.Select(s => s.Id.Value)],
+                yield return new(RuleResult.Verified, id, [.. sources, .. read],
                     $"The declared model satisfies the rule: the dead-letter channel '{channel.Name}' has {Count(readers.Count, "subscription")} that can consume it.",
                     "The result is a concern when nothing consumes the dead-letter channel.", Severity.Note);
             }
@@ -265,16 +268,20 @@ internal static class ResilienceRules
                     "The rule applies to a binding with a routing key.");
                 continue;
             }
-            if (facts.Doubt(id, binding.SourceChannelId, binding.TargetChannelId) is { } doubt)
+            // A message keeps its key along the bindings, so every publish that can reach the source counts.
+            var arriving = facts.Publishes
+                .Where(p => facts.Model.Channels.ContainsKey(p.Step.Channel) && ChannelRouting.Reachable(facts.Trace, p.Step.Channel).Contains(binding.SourceChannelId))
+                .ToList();
+            // What such a message passes before it is at the source of the binding.
+            var before = arriving.Select(p => p.Step.Channel).Distinct()
+                .SelectMany(from => facts.Between(from, binding.SourceChannelId)).Distinct().Order().ToList();
+            cites = [.. cites.Union(before)];
+            if (facts.DoubtAmong([id, .. cites]) is { } doubt)
             {
                 yield return new(RuleResult.Unknown, id, cites, $"The rule does not read the binding '{name}': {doubt}.", "Confirm the fact, or correct it.");
                 continue;
             }
 
-            // A message keeps its key along the bindings, so every publish that can reach the source counts.
-            var arriving = facts.Publishes
-                .Where(p => facts.Model.Channels.ContainsKey(p.Step.Channel) && ChannelRouting.Reachable(facts.Trace, p.Step.Channel).Contains(binding.SourceChannelId))
-                .ToList();
             var stated = arriving.Where(p => p.Step.RoutingKey is not null).ToList();
             var scenarios = arriving.Select(p => p.Scenario.Id.Value).Distinct().Order();
             if (stated.Any(p => ChannelRouting.Matches(key, p.Step.RoutingKey)))

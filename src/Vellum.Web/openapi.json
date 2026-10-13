@@ -9365,6 +9365,16 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AcceptDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
         "responses": {
           "200": {
             "description": "OK",
@@ -9372,6 +9382,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/DecisionDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -9391,7 +9411,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/DecisionChangedResponse"
                 }
               }
             }
@@ -9445,6 +9465,16 @@
               }
             }
           },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "403": {
             "description": "Forbidden",
             "content": {
@@ -9460,7 +9490,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/DecisionChangedResponse"
                 }
               }
             }
@@ -9671,6 +9701,16 @@
                 }
               }
             }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -9713,6 +9753,16 @@
           },
           "404": {
             "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
             "content": {
               "application/json": {
                 "schema": {
@@ -9769,6 +9819,34 @@
   },
   "components": {
     "schemas": {
+      "AcceptDecisionRequest": {
+        "required": [
+          "contentHash"
+        ],
+        "type": "object",
+        "properties": {
+          "contentHash": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "revisionId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "branchId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          }
+        }
+      },
       "AcceptFlowProposalRequest": {
         "required": [
           "name"
@@ -13213,6 +13291,22 @@
           "subjectId": {
             "type": "string",
             "format": "uuid"
+          },
+          "findingResult": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "findingReason": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "claimSource": {
+            "type": "string",
+            "default": "assistant"
           }
         }
       },
@@ -13420,6 +13514,29 @@
           }
         }
       },
+      "DecisionChangedResponse": {
+        "required": [
+          "type",
+          "title",
+          "detail",
+          "contentHash"
+        ],
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "contentHash": {
+            "type": "string"
+          }
+        }
+      },
       "DecisionDto": {
         "required": [
           "id",
@@ -13442,7 +13559,8 @@
           "updatedAt",
           "acceptedBy",
           "acceptedAt",
-          "history"
+          "history",
+          "contentHash"
         ],
         "type": "object",
         "properties": {
@@ -13546,6 +13664,9 @@
             "items": {
               "$ref": "#/components/schemas/DecisionHistoryEntry"
             }
+          },
+          "contentHash": {
+            "type": "string"
           }
         }
       },
@@ -18772,6 +18893,12 @@
         "type": "object",
         "properties": {
           "reason": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "contentHash": {
             "type": [
               "null",
               "string"

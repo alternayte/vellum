@@ -57,6 +57,11 @@ public class CritiqueTests(SharedOutboundHost shared) : IClassFixture<SharedOutb
         var risk = Assert.Single(critique["risks"]!.AsArray())!;
         Assert.Equal(("A failed Billing delivery loses the message.", "REL-001", model.BillingSub),
             ((string)risk["claim"]!, (string)risk["ruleId"]!, (Guid)risk["subjectId"]!));
+        // The claim is the assistant's sentence. The sentence of the finding itself is beside it, as the rule gave it.
+        var supporting = before["findings"]!.AsArray().Select(f => f!["finding"]!).Single(f => (string)f["ruleId"]! == "REL-001" && (Guid)f["subject"]!["id"]! == model.BillingSub);
+        Assert.Equal(("assistant", "concern", (string)supporting["reason"]!),
+            ((string)risk["claimSource"]!, (string)risk["findingResult"]!, (string)risk["findingReason"]!));
+        Assert.NotEqual((string)risk["claim"]!, (string)risk["findingReason"]!);
 
         // A claim with no finding behind it is a question that says the model does not show it. Never a risk.
         var questions = critique["questions"]!.AsArray().Select(q => q!.AsObject()).ToList();
@@ -128,7 +133,7 @@ public class CritiqueTests(SharedOutboundHost shared) : IClassFixture<SharedOutb
         Assert.Equal(HttpStatusCode.NotFound, (await ai.Owner.PostAsync(Url(projectId, $"review/critiques/{critique["id"]}/proposed-decisions/9/keep"), null)).StatusCode);
         // Still nothing is settled: a proposal settles nothing until a person with the Owner role accepts it.
         Assert.All(Findings(await GetAsync(ai.Owner, Url(projectId, "review/findings"))), f => Assert.Equal("open", f.Status));
-        await BodyAsync(await ai.Owner.PostAsync(Url(projectId, $"decisions/{kept["id"]}/accept"), null), HttpStatusCode.OK);
+        await BodyAsync(await ai.Owner.PostAsJsonAsync(Url(projectId, $"decisions/{kept["id"]}/accept"), new { contentHash = kept["contentHash"] }), HttpStatusCode.OK);
         Assert.Contains(("REL-001", model.BillingSub, "concern", "accepted-by-decision"), Findings(await GetAsync(ai.Owner, Url(projectId, "review/findings"))));
 
         // The model moves on: the stored critique says so, and its other proposal is not kept.
@@ -226,6 +231,14 @@ public class CritiqueTests(SharedOutboundHost shared) : IClassFixture<SharedOutb
             await import.SaveChangesAsync();
         }
 
+        // A person wrote a scenario and a promise whose text names the private thing.
+        await TestHost.Created(ai.Owner.PostAsJsonAsync(Url(projectId, "scenarios"),
+            new { id = Guid.NewGuid(), name = "Billing charges the order", steps = Array.Empty<object>(), faults = Array.Empty<object>(), assertions = Array.Empty<object>() }));
+        await TestHost.Created(ai.Owner.PostAsJsonAsync(Url(projectId, "scenarios"),
+            new { id = Guid.NewGuid(), name = "Inventory reserves stock", steps = Array.Empty<object>(), faults = Array.Empty<object>(), assertions = Array.Empty<object>() }));
+        await BodyAsync(await ai.Owner.PutAsJsonAsync(Url(projectId, "promises/prefix"), new { prefix = "ORD", startAt = 1 }), HttpStatusCode.OK);
+        await TestHost.Created(ai.Owner.PostAsJsonAsync(Url(projectId, "promises"), new { title = "Billing never charges twice", claim = "One order gives one charge." }));
+
         ai.Stub.Json(ai.Completion("""{"questions":[],"risks":[],"proposedDecisions":[]}"""));
         var critique = await BodyAsync(await CritiqueAsync(ai.Owner, projectId), HttpStatusCode.Created);
 
@@ -234,7 +247,10 @@ public class CritiqueTests(SharedOutboundHost shared) : IClassFixture<SharedOutb
         Assert.DoesNotContain("Billing", sent);
         Assert.DoesNotContain("secret-billing", sent);
         Assert.Contains("\"name\":\"Inventory\"", sent);
-        Assert.Equal((1, "privacy.sendPrivateCodeToAi"), ((int)critique["omittedPrivate"]!["count"]!, (string)critique["omittedPrivate"]!["reason"]!));
+        // The scenario and the promise that name it are held back with it. The other scenario is sent.
+        Assert.Contains("Inventory reserves stock", sent);
+        Assert.DoesNotContain("charges", sent);
+        Assert.Equal((3, "privacy.sendPrivateCodeToAi"), ((int)critique["omittedPrivate"]!["count"]!, (string)critique["omittedPrivate"]!["reason"]!));
         Assert.True((int)critique["findingsLeftOut"]! > 0);
         // The person still sees the finding about Billing in the app: only the provider does not.
         Assert.Contains(Findings(await GetAsync(ai.Owner, Url(projectId, "review/findings"))), f => f is { Rule: "REL-001", Result: "concern" } && f.Subject == model.BillingSub);

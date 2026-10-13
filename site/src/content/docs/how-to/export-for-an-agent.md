@@ -74,6 +74,12 @@ curl -X POST https://vellum.example.com/api/projects/$PROJECT/build/verify \
   --data-binary @vellum-bundle.zip
 ```
 
+### A bundle of an older format
+
+A bundle of the format `vellum-bundle/2` holds no review and no decision. Vellum still checks such a bundle: the check generates it again as it was.
+
+Vellum does not export that format any more. `POST build/export` with a `pinned` state that names no `decisions` gives the status 409 and the type `pinned_format_not_exported`. A bundle with no review has no review blocker, so it must not say that a state is build ready. Export again in the format `vellum-bundle/3`: send the revision or the branch, or the `pinned` state of a `vellum-bundle/3` manifest.
+
 ## What the agent does next
 
 The agent builds to the contracts and the approved promises. It cites each requirement ID in its commits and tests. It records the result of its tests as evidence. See [Connect a coding agent](/how-to/connect-a-coding-agent/).

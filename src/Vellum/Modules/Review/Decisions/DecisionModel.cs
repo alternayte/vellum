@@ -49,7 +49,11 @@ public static class DecisionEvent
     public sealed record DecisionChanged(DecisionContent Content, string By, DateTimeOffset At);
 
     /// <param name="Stamps">Each finding the decision settles, as it was when the person accepted.</param>
-    public sealed record DecisionAccepted(string By, DateTimeOffset At, IReadOnlyList<SettlementStamp> Stamps);
+    /// <param name="ContentHash">
+    /// <see cref="DecisionContentHash"/> of the decision the person read. Null only in an event
+    /// that was stored before the acceptance named it.
+    /// </param>
+    public sealed record DecisionAccepted(string By, DateTimeOffset At, IReadOnlyList<SettlementStamp> Stamps, string? ContentHash = null);
 
     public sealed record DecisionRejected(string By, DateTimeOffset At, string? Reason);
 
@@ -112,6 +116,18 @@ public sealed record DecisionState(
 
     private DecisionState Noted(DateTimeOffset at, string by, string action, string? note) =>
         this with { UpdatedAt = at, History = History.Add(new DecisionHistoryEntry(at, by, action, note)) };
+}
+
+/// <summary>
+/// The hash of everything a person reads before they accept or reject a decision: its number,
+/// its stored status and its whole content, with the findings it names. The server computes it
+/// and returns it on every read. An acceptance and a rejection name it, so each binds exactly
+/// the decision the person read. A member that is null is left out, so a member added later
+/// does not change the hash of a decision that was read before it existed.
+/// </summary>
+public static class DecisionContentHash
+{
+    public static string Of(DecisionState state) => PromiseJson.StableHash(new { number = state.Number, status = state.Status, content = state.Content });
 }
 
 /// <summary>A decision at one version of its stream: what an export pins and what a review reads.</summary>

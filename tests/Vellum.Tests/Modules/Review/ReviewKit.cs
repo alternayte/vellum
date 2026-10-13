@@ -82,6 +82,7 @@ internal sealed class Fixture
             : model.Subscriptions.TryGetValue(G(id), out var s) ? model with { Subscriptions = model.Subscriptions.Remove(G(id)).Add(G(id), s with { FactStatus = status, Stale = mark }) }
             : model.Bindings.TryGetValue(G(id), out var b) ? model with { Bindings = model.Bindings.Remove(G(id)).Add(G(id), b with { FactStatus = status, Stale = mark }) }
             : model.Messages.TryGetValue(G(id), out var m) ? model with { Messages = model.Messages.Remove(G(id)).Add(G(id), m with { FactStatus = status, Stale = mark }) }
+            : model.Relationships.TryGetValue(G(id), out var r) ? model with { Relationships = model.Relationships.Remove(G(id)).Add(G(id), r with { FactStatus = status, Stale = mark }) }
             : throw new InvalidOperationException($"No fact {id}"));
         return this;
     }

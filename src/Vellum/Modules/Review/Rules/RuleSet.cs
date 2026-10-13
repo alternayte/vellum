@@ -12,13 +12,16 @@ namespace Vellum.Modules.Review.Rules;
 /// <para>
 /// A rule reads a fact as stated only when its truth label is <c>declared</c>,
 /// <c>observed-in-source</c> or <c>measured</c> and it is not stale. For any other fact the
-/// result is <c>unknown</c> (guarantee 2: an inference is never read as a fact).
+/// result is <c>unknown</c> (guarantee 2: an inference is never read as a fact). A rule
+/// cites every fact its result rests on, and every such fact passes
+/// <see cref="ReviewFacts.Doubt"/> before the rule says <c>verified</c> or
+/// <c>concern</c>. The one exception is TRU-001, whose subject is the fact in doubt.
 /// </para>
 /// </summary>
 public static class RuleSet
 {
     /// <summary>Changes when a rule is added or removed, or when the version of a rule changes.</summary>
-    public const string Version = "review-rules/1";
+    public const string Version = "review-rules/2";
 
     internal static readonly IReadOnlyList<Rule> Rules =
         [.. ResilienceRules.All, .. ContractRules.All, .. TruthRules.All, .. OverengineeringRules.All];
@@ -44,10 +47,11 @@ public static class RuleSet
             foreach (var outcome in rule.Check(facts).DistinctBy(o => o.SubjectId).OrderBy(o => o.SubjectId))
             {
                 var cites = outcome.Cites.Where(id => id != outcome.SubjectId).Distinct().Select(facts.Cite).ToList();
-                var fingerprint = PromiseJson.Hash(new
-                {
-                    rule.Id, outcome.Result, outcome.Severity, outcome.SubjectId, cites = cites.Select(c => c.Id).Order(), outcome.Reason,
-                });
+                // A result with no basis keeps the form of the hash it had before a basis existed.
+                var citedIds = cites.Select(c => c.Id).Order();
+                var fingerprint = outcome.Basis is null
+                    ? PromiseJson.Hash(new { rule.Id, outcome.Result, outcome.Severity, outcome.SubjectId, cites = citedIds, outcome.Reason })
+                    : PromiseJson.Hash(new { rule.Id, outcome.Result, outcome.Severity, outcome.SubjectId, cites = citedIds, outcome.Reason, basis = outcome.Basis });
                 findings.Add(new Finding(
                     rule.Id, rule.Version, rule.Category, outcome.Severity, outcome.Result,
                     facts.Cite(outcome.SubjectId), cites, outcome.Reason, outcome.WouldChange, outcome.Question, fingerprint));

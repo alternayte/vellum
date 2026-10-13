@@ -11,7 +11,7 @@ stream cost_sheet (CostSheetState)
   cost_sheet.sheet_opened v1 { at: date-time, branchId: uuid, by: string, projectId: uuid }
 
 stream decision (DecisionState)
-  decision.decision_accepted v1 { at: date-time, by: string, stamps: [{ fingerprint: string?, ruleId: string, ruleVersion: int32, subjectId: uuid }] }
+  decision.decision_accepted v1 { at: date-time, by: string, contentHash: string?, stamps: [{ fingerprint: string?, ruleId: string, ruleVersion: int32, subjectId: uuid }] }
   decision.decision_changed v1 { at: date-time, by: string, content: { affectedIds: [uuid], alternatives: [{ title: string, whyNot: string? }], consequences: string?, context: string, decision: string, settles: [{ ruleId: string, subjectId: uuid }], supersedes: uuid?, title: string } }
   decision.decision_deleted v1 { at: date-time, by: string }
   decision.decision_proposed v1 { at: date-time, by: string, content: { affectedIds: [uuid], alternatives: [{ title: string, whyNot: string? }], consequences: string?, context: string, decision: string, settles: [{ ruleId: string, subjectId: uuid }], supersedes: uuid?, title: string }, number: int32, origin: string, projectId: uuid }

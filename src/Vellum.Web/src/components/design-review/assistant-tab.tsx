@@ -1,12 +1,13 @@
 import { useState } from 'react'
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { UnavailableNote } from '@/components/assistant/unavailable-note'
 import { isUnavailable, type Unavailable } from '@/lib/design-api'
 import { shownInline } from '@/lib/mutation-errors'
 import { useShellStore } from '@/stores/shell-store'
-import { critiqueSections, reviewApi, type Cited, type Critique } from '@/lib/review-api'
+import { cn } from '@/lib/utils'
+import { RESULT_LABEL, critiqueSections, reviewApi, type Cited, type Critique } from '@/lib/review-api'
 import { CitedPart } from './findings-tab'
 import { areaClass } from './styles'
 
@@ -59,8 +60,17 @@ export function CritiquePanel({ critique, onKeepQuestion, onKeepDecision, keepin
           <ul className="mt-1 space-y-1.5">
             {sections.risks.map((risk, i) => (
               <li key={i} className="rounded-md border border-border px-2.5 py-1.5">
-                <p className="text-xs leading-relaxed text-foreground">{risk.claim}</p>
-                <p className="mt-0.5 text-[11px] text-muted-foreground">Rests on the finding <span className="font-mono">{risk.ruleId}</span>. The sentence is the assistant's.</p>
+                {/* Two sentences, each with its author: the finding is the rule's, the claim is the assistant's. */}
+                <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                  Finding <span className="font-mono normal-case">{risk.ruleId}</span>
+                  {risk.findingResult ? <> · {RESULT_LABEL[risk.findingResult]}</> : null}
+                </p>
+                <p className="mt-0.5 text-xs leading-relaxed text-foreground">
+                  {risk.findingReason ?? 'This answer was stored without the sentence of the finding. Read the finding in the Findings tab.'}
+                </p>
+                <p className="mt-1.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">The assistant's sentence</p>
+                <p className="mt-0.5 border-l-2 border-dashed border-border pl-2 text-xs italic leading-relaxed text-muted-foreground">{risk.claim}</p>
+                <p className="mt-1 text-[11px] text-muted-foreground">The rule found only what the finding says. No check supports the wording of the assistant.</p>
                 <About about={risk.about} focusTarget={focusTarget} onFocus={onFocus} />
               </li>
             ))}
@@ -157,11 +167,19 @@ export function AssistantTab({ projectId, branchId, focusTarget, onFocus }: Prop
   const [focusSelection, setFocusSelection] = useState(true)
   const [critique, setCritique] = useState<Critique | null>(null)
   const [unavailable, setUnavailable] = useState<Unavailable | null>(null)
+  const stored = useQuery({ queryKey: ['projects', projectId, 'review', 'critiques'], queryFn: () => reviewApi.critiques(projectId) })
   const ask = useMutation({
     mutationFn: () => reviewApi.critique(projectId, branchId, question.trim() || null, selectedElementId && focusSelection ? [selectedElementId] : []),
     onSuccess: (answer) => {
       if (isUnavailable(answer)) { setUnavailable(answer); setCritique(null) } else { setUnavailable(null); setCritique(answer) }
+      return queryClient.invalidateQueries({ queryKey: ['projects', projectId, 'review', 'critiques'] })
     },
+    onError: shownInline,
+  })
+  // A stored answer is read from the server, which says whether the model changed since.
+  const open = useMutation({
+    mutationFn: (id: string) => reviewApi.storedCritique(projectId, id),
+    onSuccess: (answer) => { setUnavailable(null); setCritique(answer) },
     onError: shownInline,
   })
   const mark = (change: (c: Critique) => Critique) => setCritique((c) => (c ? change(c) : c))
@@ -182,7 +200,7 @@ export function AssistantTab({ projectId, branchId, focusTarget, onFocus }: Prop
     // The model moved: the server refused. Show that the answer is stale.
     onError: (error) => { shownInline(); if (/changed/i.test(error.message)) mark((c) => ({ ...c, stale: true })) },
   })
-  const failure = ask.error ?? keepQuestion.error ?? keepDecision.error
+  const failure = ask.error ?? open.error ?? keepQuestion.error ?? keepDecision.error
 
   return (
     <div className="space-y-3 p-3">
@@ -214,6 +232,30 @@ export function AssistantTab({ projectId, branchId, focusTarget, onFocus }: Prop
           onKeepQuestion={(index) => keepQuestion.mutate(index)} onKeepDecision={(index) => keepDecision.mutate(index)}
         />
       )}
+
+      <section aria-labelledby="review-stored-critiques">
+        <h3 id="review-stored-critiques" className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Stored answers</h3>
+        <p className="mt-1 text-xs leading-relaxed text-muted-foreground">The project keeps the newest answers of the assistant. Open one to read it again. An answer is a set of suggestions for the model version it was made for.</p>
+        {stored.isError && <p role="alert" className="mt-1 text-xs text-destructive">{stored.error.message}</p>}
+        {stored.isSuccess && stored.data.length === 0 && <p className="mt-1.5 text-[11px] text-muted-foreground">No answer is stored.</p>}
+        <ul className="mt-1.5 space-y-1">
+          {stored.data?.map((item) => (
+            <li key={item.id}>
+              <button
+                type="button" onClick={() => open.mutate(item.id)} disabled={open.isPending} aria-current={critique?.id === item.id ? 'true' : undefined}
+                className={cn(
+                  'flex w-full items-baseline gap-2 rounded-md border px-2 py-1 text-left text-[11px] hover:bg-muted focus-visible:outline-2 focus-visible:outline-primary',
+                  critique?.id === item.id ? 'border-primary' : 'border-border',
+                )}
+              >
+                <span className="shrink-0 font-mono text-muted-foreground">{new Date(item.createdAt).toLocaleString()}</span>
+                <span className="min-w-0 flex-1 truncate text-foreground">{item.question || 'General review'}</span>
+                <span className="shrink-0 text-muted-foreground">{item.branchId ? 'draft or variant' : 'main model'}</span>
+              </button>
+            </li>
+          ))}
+        </ul>
+      </section>
     </div>
   )
 }

@@ -12,23 +12,23 @@ internal static class ContractRules
 
     public static readonly Rule[] All =
     [
-        new("CON-001", 1, RuleCategory.Contracts, "An operation and a message have a schema",
-            "Each operation: its request and response schema. Each message: its schema.",
+        new("CON-001", 2, RuleCategory.Contracts, "An operation and a message have a schema",
+            "Each operation: its owner, its request and response schema. Each message: its producer and its schema.",
             "Give the operation or the message a schema. On the path of an approved promise the concern blocks Build Ready until then, or until an accepted decision settles it.",
             MissingSchema),
         new("CON-002", 1, RuleCategory.Contracts, "A referenced schema exists",
             "Each operation and message: the schema IDs it names, against the schemas of the project.",
             "Create the schema again, or point the operation or the message at one that exists.",
             DanglingSchema),
-        new("CON-003", 1, RuleCategory.Contracts, "A scenario payload is valid against its schema",
-            "Each scenario, through the trace validator: every request, response and message payload against the schema of its contract.",
+        new("CON-003", 2, RuleCategory.Contracts, "A scenario payload is valid against its schema",
+            "Each scenario, through the trace validator: the operation of every call step and the message of every publish step, and every request, response and message payload against the schema of that contract.",
             "Correct the payload or the schema.",
             InvalidPayload),
         new("CON-004", 1, RuleCategory.Contracts, "A scenario shows the producer publishing its message",
             "Each message: its producer, and the publish steps of every scenario.",
             "Add a scenario in which the producer publishes the message. Until then the model does not show that the message is ever produced.",
             UnpublishedMessage),
-        new("CON-005", 1, RuleCategory.Contracts, "One element writes a dataset",
+        new("CON-005", 2, RuleCategory.Contracts, "One element writes a dataset",
             "Each store: the write steps of every scenario, by dataset and writer.",
             "Give the dataset one writer, or record in a decision why two elements share it.",
             SharedDataset),
@@ -40,7 +40,7 @@ internal static class ContractRules
         {
             Guid id = operation.Id;
             var severity = facts.SeverityOn(id);
-            if (facts.Doubt(id) is { } doubt)
+            if (facts.Doubt(id, operation.OwnerId) is { } doubt)
                 yield return new(RuleResult.Unknown, id, [operation.OwnerId], $"The rule does not read the operation '{operation.Name}': {doubt}.", "Confirm the fact, or correct it.", severity);
             else if (operation.RequestSchemaId is null && operation.ResponseSchemaId is null)
             {
@@ -60,7 +60,7 @@ internal static class ContractRules
         {
             Guid id = message.Id;
             var severity = facts.SeverityOn(id);
-            if (facts.Doubt(id) is { } doubt)
+            if (facts.Doubt(id, message.ProducerId) is { } doubt)
                 yield return new(RuleResult.Unknown, id, [message.ProducerId], $"The rule does not read the message '{message.Name}': {doubt}.", "Confirm the fact, or correct it.", severity);
             else if (message.SchemaId is null)
             {
@@ -115,31 +115,51 @@ internal static class ContractRules
             var issues = ScenarioValidator.Validate(facts.Trace, scenario);
             var payload = issues.Where(i => PayloadCodes.Contains(i.Code)).ToList();
             var checkedAgainst = Validated(facts, scenario).Distinct().Order().ToList();
-            if (payload.Count > 0)
+            // The contract of a step says which schema its payload has, so the rule reads the
+            // contract of every call and publish step. A step that names nothing in the model
+            // is an issue of the validator.
+            var contracts = facts.Facts(facts.View.Steps[id].Select(s => s.Step).SelectMany(step => step switch
             {
-                yield return new(RuleResult.Concern, id, checkedAgainst,
+                CallStep call => [call.Operation.Value],
+                PublishStep publish => [publish.Message.Value],
+                _ => Array.Empty<Guid>(),
+            })).Distinct().Order().ToList();
+            Guid[] cites = [.. checkedAgainst, .. contracts];
+            if (facts.DoubtAmong(contracts) is { } doubt)
+            {
+                yield return new(RuleResult.Unknown, id, cites,
+                    $"The rule does not read the payloads of the scenario '{scenario.Name}': {doubt}.",
+                    "Confirm the fact, or correct it.", severity);
+            }
+            else if (payload.Count > 0)
+            {
+                // The sentence names the first refused payload; the fingerprint holds each of them.
+                yield return new(RuleResult.Concern, id, cites,
                     $"The trace validator refuses {Count(payload.Count, "payload")} of the scenario '{scenario.Name}' (first: step '{payload[0].StepId}', {payload[0].Code}).{facts.PathNote(id)}",
-                    "The result is verified when every payload of the scenario is valid against the schema of its contract.", severity);
+                    "The result is verified when every payload of the scenario is valid against the schema of its contract.", severity, Basis: Lines(payload));
             }
             else if (issues.Count > 0)
             {
-                yield return new(RuleResult.Unknown, id, checkedAgainst,
+                yield return new(RuleResult.Unknown, id, cites,
                     $"The scenario '{scenario.Name}' cannot be validated on the pinned model ({issues[0].Code}), so its payloads were not all checked.",
-                    "Correct the scenario so that the validator can read every step.", severity);
+                    "Correct the scenario so that the validator can read every step.", severity, Basis: Lines(issues));
             }
             else if (checkedAgainst.Count == 0)
             {
-                yield return new(RuleResult.Unknown, id, [],
+                yield return new(RuleResult.Unknown, id, cites,
                     $"No step of the scenario '{scenario.Name}' has a payload with a schema to validate against, so the rule checked nothing.",
                     "Give the contracts of the scenario a schema and its steps a payload.", severity);
             }
             else
             {
-                yield return new(RuleResult.Verified, id, checkedAgainst,
+                yield return new(RuleResult.Verified, id, cites,
                     $"The declared model satisfies the rule: every payload of the scenario '{scenario.Name}' is valid against its schema ({Count(checkedAgainst.Count, "schema")} read).",
                     "The result is a concern when a payload is not valid against its schema.", severity);
             }
         }
+
+        static string[] Lines(IEnumerable<ScenarioIssue> issues) =>
+            [.. issues.Select(i => $"{i.StepId} {i.Code}").Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal)];
     }
 
     /// <summary>The schemas that the payloads of a scenario are validated against: one per payload that is present and whose contract names a schema that exists.</summary>
@@ -205,7 +225,9 @@ internal static class ContractRules
             {
                 yield return new(RuleResult.Concern, id, [.. shared.SelectMany(d => d.Writers).Distinct().Order()],
                     $"The dataset '{shared[0].Dataset}' of the store '{store.Name}' has {Count(shared[0].Writers.Count, "writer")} in the scenarios ({string.Join(", ", shared[0].Writers.Select(w => $"'{facts.Name(w)}'"))}), so they are coupled through its data{(shared.Count > 1 ? $"; {Count(shared.Count - 1, "more dataset")} of the store are shared too" : "")}.",
-                    "The result is verified when each dataset of the store has one writer in the scenarios.");
+                    "The result is verified when each dataset of the store has one writer in the scenarios.",
+                    // The sentence names the first shared dataset; the fingerprint holds each with its writers.
+                    Basis: [.. shared.Select(d => $"{d.Dataset}: {string.Join(", ", d.Writers)}")]);
             }
             else
             {

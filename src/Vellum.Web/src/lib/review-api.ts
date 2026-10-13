@@ -90,6 +90,11 @@ export interface SnapshotSummary {
   createdAt: string
 }
 
+/** The findings of one model version as a person saved them, with the answers of that time. A snapshot never changes. */
+export interface Snapshot extends SnapshotSummary {
+  findings: FindingView[]
+}
+
 export interface Alternative {
   title: string
   whyNot: string | null
@@ -122,6 +127,8 @@ export interface Decision {
   acceptedBy: string | null
   acceptedAt: string | null
   history: { at: string; by: string; action: string; note: string | null }[]
+  /** The hash of the number, the status and the content. An acceptance and a rejection name the hash that was read. */
+  contentHash: string
 }
 
 export interface DecisionInput {
@@ -159,9 +166,14 @@ export interface CritiqueQuestion {
 
 export interface CritiqueRisk {
   about: Cited[]
+  /** The sentence of the assistant. The server does not check what it says. */
   claim: string
+  claimSource: 'assistant'
   ruleId: string
   subjectId: string
+  /** The result and the sentence of the finding that supports the risk, as the rule gave them. Null in an answer stored before they were kept. */
+  findingResult: RuleResult | null
+  findingReason: string | null
 }
 
 export interface CritiqueProposedDecision {
@@ -172,6 +184,15 @@ export interface CritiqueProposedDecision {
   settles: Settles[]
   about: Cited[]
   keptAs: string | null
+}
+
+export interface CritiqueSummary {
+  id: string
+  /** Null for the main model. */
+  branchId: string | null
+  question: string
+  createdBy: string
+  createdAt: string
 }
 
 export interface Critique {
@@ -208,13 +229,20 @@ export const reviewApi = {
   snapshots: async (projectId: string) => (await api<{ items: SnapshotSummary[] }>('GET', `${base(projectId)}/review/snapshots`)).items,
   saveSnapshot: (projectId: string, branchId: string | null | undefined, note: string | null) =>
     api<SnapshotSummary>('POST', `${base(projectId)}/review/snapshots`, { revisionId: null, branchId: branchId ?? null, note }),
+  snapshot: (projectId: string, id: string) => api<Snapshot>('GET', `${base(projectId)}/review/snapshots/${id}`),
   deleteSnapshot: (projectId: string, id: string) => api<void>('DELETE', `${base(projectId)}/review/snapshots/${id}`),
 
   decisions: async (projectId: string) => (await api<{ items: Decision[] }>('GET', `${base(projectId)}/decisions`)).items,
   createDecision: (projectId: string, input: DecisionInput) => api<Decision>('POST', `${base(projectId)}/decisions`, { ...input, origin: 'human' }),
   updateDecision: (projectId: string, id: string, input: DecisionInput) => api<Decision>('PUT', `${base(projectId)}/decisions/${id}`, input),
-  acceptDecision: (projectId: string, id: string) => api<Decision>('POST', `${base(projectId)}/decisions/${id}/accept`),
-  rejectDecision: (projectId: string, id: string, reason: string | null) => api<Decision>('POST', `${base(projectId)}/decisions/${id}/reject`, { reason }),
+  /**
+   * `contentHash` is the hash of the decision as the person read it. The server refuses another decision with a 409.
+   * The acceptance records the findings of the branch, or of the main model without one.
+   */
+  acceptDecision: (projectId: string, decision: Decision, branchId: string | null | undefined) =>
+    api<Decision>('POST', `${base(projectId)}/decisions/${decision.id}/accept`, { contentHash: decision.contentHash, revisionId: null, branchId: branchId ?? null }),
+  rejectDecision: (projectId: string, decision: Decision, reason: string | null) =>
+    api<Decision>('POST', `${base(projectId)}/decisions/${decision.id}/reject`, { contentHash: decision.contentHash, reason }),
   deleteDecision: (projectId: string, id: string) => api<void>('DELETE', `${base(projectId)}/decisions/${id}`),
   decisionExportUrl: (projectId: string, id?: string) => (id ? `${base(projectId)}/decisions/${id}/export` : `${base(projectId)}/decisions/export`),
 
@@ -230,6 +258,8 @@ export const reviewApi = {
   /** `focus` holds the IDs of the parts the assistant looks at first. */
   critique: (projectId: string, branchId: string | null | undefined, question: string | null, focus: string[] = []) =>
     api<Critique | Unavailable>('POST', `${base(projectId)}/review/critiques`, { question, focus, branchId: branchId ?? null }),
+  critiques: async (projectId: string) => (await api<{ items: CritiqueSummary[] }>('GET', `${base(projectId)}/review/critiques`)).items,
+  storedCritique: (projectId: string, id: string) => api<Critique>('GET', `${base(projectId)}/review/critiques/${id}`),
   keepCritiqueQuestion: (projectId: string, critiqueId: string, index: number) =>
     api<Question>('POST', `${base(projectId)}/review/critiques/${critiqueId}/questions/${index}/keep`),
   keepCritiqueDecision: (projectId: string, critiqueId: string, index: number) =>
@@ -297,6 +327,25 @@ export function describeDisposition(view: FindingView): string | null {
   if (view.status === 'open') return null
   const what = view.status === 'accepted-by-decision' ? `Settled by ${view.decision ?? 'a decision'}` : "Won't fix"
   return view.needsReReview ? `${what} · needs re-review` : what
+}
+
+/** The counts of a list of findings, as the server counts the current ones. */
+export function countFindings(findings: FindingView[]): ReviewCounts {
+  const of = (result: RuleResult) => findings.filter((f) => f.finding.result === result).length
+  return {
+    blocking: findings.filter((f) => f.blocks).length,
+    concerns: of('concern'),
+    unknown: of('unknown'),
+    verified: of('verified'),
+    notApplicable: of('not-applicable'),
+    settled: findings.filter((f) => f.finding.fired && f.settled).length,
+    needsReReview: findings.filter((f) => f.needsReReview).length,
+  }
+}
+
+/** Which model an answer of the review is about, in words. */
+export function modelLabel(branchId: string | null | undefined): string {
+  return branchId ? 'the draft or variant that is open' : 'the main model'
 }
 
 /**

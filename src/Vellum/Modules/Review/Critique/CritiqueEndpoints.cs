@@ -30,6 +30,7 @@ public sealed record CritiqueRequest(string? Question = null, IReadOnlyList<Guid
 /// <param name="Stale">True when the branch is at another version now.</param>
 /// <param name="FindingsSent">How many findings (concerns and unknowns) the prompt held.</param>
 /// <param name="FindingsLeftOut">How many it left out: their subject has no alias, they name a private-sourced thing, or the prompt was full.</param>
+/// <param name="OmittedPrivate">How many things the prompt left out because of the private-code setting: parts of the model, and scenarios and promises whose name holds the name of such a part.</param>
 /// <param name="Disclaimer">Always <c>suggestions</c>: nothing here is a finding, and nothing here was verified.</param>
 public sealed record CritiqueDto(
     Guid Id, Guid ProjectId, Guid? BranchId, string Question, IReadOnlyList<Guid> Focus,
@@ -101,18 +102,46 @@ public static class CritiqueEndpoints
             model, review.Input.Schemas.ToDictionary(s => new SchemaId(s.Id), s => s.Content),
             AliasNeeds.For(body.Question ?? "", selected: focus.Concat(fired.Select(f => f.Finding.Subject.Id))), gate);
 
+        // No import writes a scenario or a promise: a person, an agent or the assistant does.
+        // Their text is free text, and it can hold the name of a private-sourced thing, as the
+        // sentence of a finding can. Such a thing may be named by text that does not cite it,
+        // so the names are compared as text. Text that holds one is left out while the
+        // private-code setting forbids it, and makes the part private code when it is sent.
+        var labels = Trace.Scenarios.TraceModelBuilder.Labels(model);
+        var schemaNames = review.Input.Schemas.ToDictionary(s => s.Id, s => s.Name);
+        var privateNames = gate.Ids.Select(id => labels.GetValueOrDefault(id) ?? schemaNames.GetValueOrDefault(id, "")).Where(name => name.Length > 0).ToList();
+        bool NamesPrivate(params string?[] texts) =>
+            privateNames.Any(name => texts.Any(text => text is not null && text.Contains(name, StringComparison.Ordinal)));
+        var (namesPrivate, withheld) = (false, 0);
+        bool Withheld(params string?[] texts)
+        {
+            var named = NamesPrivate(texts);
+            if (named && !gate.MaySend)
+            {
+                withheld++;
+                return true;
+            }
+            namesPrivate |= named;
+            return false;
+        }
+
         // Scenarios and promises have no alias in the model table. They get one here, by name.
+        // One that is withheld gets none, so a finding about it is not sent either.
         var aliases = table.ByAlias.ToDictionary(a => a.Key, a => new Cited(a.Value.Kind, a.Value.Id, a.Value.Name), StringComparer.Ordinal);
         var byId = table.ByAlias.ToDictionary(a => a.Value.Id, a => a.Key);
         var more = new JsonObject { ["scenarios"] = new JsonArray(), ["promises"] = new JsonArray() };
         foreach (var (scenario, i) in review.Input.Scenarios.OrderBy(s => s.Name, StringComparer.Ordinal).ThenBy(s => s.Id.Value).Select((s, i) => (s, i)))
         {
+            if (Withheld(scenario.Name))
+                continue;
             var alias = $"F{i + 1}";
             (aliases[alias], byId[scenario.Id.Value]) = (new Cited("scenario", scenario.Id.Value, scenario.Name), alias);
             more["scenarios"]!.AsArray().Add(new JsonObject { ["alias"] = alias, ["name"] = scenario.Name });
         }
         foreach (var (promise, i) in review.Input.Promises.Select((p, i) => (p, i)))
         {
+            if (Withheld(promise.RequirementId, promise.Current.Title))
+                continue;
             var alias = $"P{i + 1}";
             (aliases[alias], byId[promise.Id]) = (new Cited("promise", promise.Id, promise.RequirementId), alias);
             more["promises"]!.AsArray().Add(new JsonObject
@@ -122,17 +151,14 @@ public static class CritiqueEndpoints
         }
 
         // A finding goes to the provider only when its subject has an alias and its sentence
-        // names nothing that the private-code setting holds back. The sentence of a finding
-        // can name a thing that the finding does not cite, so the names are compared as text.
-        var labels = Trace.Scenarios.TraceModelBuilder.Labels(model);
-        var privateNames = gate.Ids.Select(id => labels.GetValueOrDefault(id, "")).Where(name => name.Length > 0).ToList();
+        // and its question name nothing that the private-code setting holds back.
         var sent = new JsonArray();
         var cited = new List<Guid>();
-        var (chars, leftOut, namesPrivate) = (0, 0, false);
+        var (chars, leftOut) = (0, 0);
         foreach (var view in fired)
         {
             var finding = view.Finding;
-            var named = privateNames.Any(name => finding.Reason.Contains(name, StringComparison.Ordinal));
+            var named = NamesPrivate(finding.Reason, finding.Question);
             if (!byId.TryGetValue(finding.Subject.Id, out var subject) || (named && !gate.MaySend))
             {
                 leftOut++;
@@ -188,7 +214,7 @@ public static class CritiqueEndpoints
         var document = new CritiqueDocument(
             focus, CritiqueGrounding.Ground(answer.Value, aliases, review.Report.Findings),
             review.Input.Pin.Version, review.Report.Hash, sent.Count, leftOut,
-            table.Omitted, OmittedPrivate.Of(table.OmittedPrivateCount),
+            table.Omitted, OmittedPrivate.Of(table.OmittedPrivateCount + withheld),
             new ProposalProvider(answer.Usage.ProviderKind, answer.Usage.Model, answer.Usage.ReportedModel),
             ReviewPrompts.CritiqueVersion, ProposalUsage.From(answer.Usage));
         var row = new CritiqueEntity
