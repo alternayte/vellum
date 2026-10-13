@@ -72,6 +72,12 @@ public class ResultEntity
     public string Format { get; set; } = null!;
     public DateTimeOffset StartedAt { get; set; }
     public DateTimeOffset EndedAt { get; set; }
+    /// <summary>
+    /// The length of the run in milliseconds, as the file states it. With the script and the
+    /// start it names one run: the Vellum result and the summary export of one run have the
+    /// same three. Null in a row from before the column, when another row has the same three.
+    /// </summary>
+    public double? ElapsedMs { get; set; }
     /// <summary>SHA-256 of the imported bytes. The same file is imported once.</summary>
     public string ContentHash { get; set; } = null!;
     /// <summary>A JSON <see cref="MeasuredRun"/>.</summary>
@@ -115,6 +121,8 @@ public class LoadTestsDbContext(DbContextOptions<LoadTestsDbContext> options) : 
             b.HasKey(r => r.Id);
             b.Property(r => r.Document).HasColumnType("jsonb");
             b.HasIndex(r => new { r.ProjectId, r.ContentHash }).IsUnique();
+            // One run is imported once, in either format.
+            b.HasIndex(r => new { r.ScriptId, r.StartedAt, r.ElapsedMs }).IsUnique();
             b.HasIndex(r => new { r.ProjectId, r.ScenarioId, r.TargetId, r.StartedAt });
             // A script that has a result stays: the result is read through it.
             b.HasOne<ScriptEntity>().WithMany().HasForeignKey(r => r.ScriptId).OnDelete(DeleteBehavior.Restrict);

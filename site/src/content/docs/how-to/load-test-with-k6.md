@@ -13,11 +13,9 @@ You need k6 on the machine that runs the test. See the [k6 installation guide](h
 
 You need a scenario that plays without issues. One top-level step of the scenario must call an `http` operation. The name of that operation must be a method and a path, such as `POST /orders`.
 
-When the path has a placeholder, such as `GET /orders/{orderId}`, the request fixture of the step must have a text, number or boolean member with that name. Without it, the script does not drive the step.
-
 You need a stress profile for the scenario. The script takes the arrival rate, the duration and the warm-up from the profile. See [Stress a flow](/how-to/stress-a-flow/).
 
-You need the Editor role to add a target, to generate a script and to import a result. You need the Owner role to authorise a target and to set a production override.
+You need the Editor role to add a target, to generate a script and to import a result. You need the Owner role to authorise a target.
 
 ## Add a target
 
@@ -26,73 +24,50 @@ A target is the base URL of a deployed system.
 1. Open **Stress** in the left toolbar.
 2. Select **Measure**.
 3. Select **Add** under **Targets**.
-4. Give the target a name in **Name**.
-5. Give the base URL in **Base URL**. The URL starts with `http://` or `https://`. Do not put credentials, a query or a fragment in the URL.
-6. Select the class in **Class of the system**: `development`, `test`, `staging` or `production`. Vellum selects no class for you.
+4. Give the target a name.
+5. Give the base URL. Do not put credentials or a query in the URL.
+6. Select the class of the system: `development`, `test`, `staging` or `production`. Vellum selects no class for you.
 7. Select **Add target**.
-
-Vellum sends no request to the base URL. The URL can be on a private network.
-
-A project holds 20 targets at most.
 
 ## Authorise the target
 
 Only an owner of the workspace does this step. An agent token cannot do it.
 
-1. Select the target in the list under **Targets**.
-2. Read the base URL.
-3. Select **Authorise this base URL**.
+1. Open the target.
+2. Read the base URL and the class under **You authorise k6 load against**.
+3. Select **Authorise as** with the class.
 
-The authorisation states that k6 load may go to that base URL. Vellum records who gave it and when. The list shows **Authorised** and the date, or **Not authorised**.
+The authorisation states that k6 load may go to that base URL as a system of that class. Vellum records who gave it and when.
 
-A change of the base URL or of the class voids the authorisation and clears a production override. Authorise the target again after such a change.
+The request names the base URL, the class and the version that the dialog shows. When another person changed the target in the meantime, Vellum authorises nothing. The dialog then shows the target as it is now. Read it and authorise again.
 
-To take the authorisation back, select **Revoke the authorisation**.
-
-Vellum writes each authorisation, each revocation and each override to the audit log of the workspace.
+A change of the base URL or of the class voids the authorisation. Authorise the target again after such a change. A script that was generated under the old authorisation gets no result under the new one. Generate a new script.
 
 ## Generate the script
 
-1. Under **k6 script**, select the stress profile in **Stress profile**.
-2. Select the target in **Target**.
+1. Select the stress profile under **k6 script**.
+2. Select the target.
 3. Select **Generate k6 script**.
 
-The dialog shows the steps that the script drives under **Driven steps** and the steps that it does not cover under **Not covered**. Read both lists before you run the script.
+The dialog shows the steps that the script drives and the steps that it does not cover. Read both lists before you run the script.
 
-Vellum refuses to generate a script in these cases. The panel then shows **No script was generated.** and the reason.
+Vellum refuses to generate a script in these cases:
 
 - No owner authorised the target.
 - The scenario is not valid against the model.
 - The scenario has no step that k6 can drive.
 - The target is production-class and the scenario declares faults.
+- A rate of the profile is too low for k6. k6 takes whole iterations for each hour. Vellum does not raise the rate.
 
 The same scenario version, model version, target and profile version give the same script and the same hash.
 
-A project holds 300 scripts at most. When the project is at the limit, Vellum deletes the oldest script that has no result.
-
-## What the script does
-
-The script plays the caller of the top-level HTTP calls of the scenario. It sends the requests of one flow one after the other. A flow ends at its first request that does not get the expected status.
-
-The script does not do these things:
-
-- It does not perform nested calls, writes, publishes or parallel steps. The system under test does that work.
-- It does not use a value from one response in a later request. Each request uses the request fixture of its step.
-- It does not inject the faults of the scenario. Inject them in the target system before the run.
-- It does not apply the outages and the overrides of the stress profile.
-- It does not reproduce the random gaps of Poisson arrivals. k6 starts iterations at an even rate with the same mean.
-
-When the target answers too slowly for the rate, k6 drops iterations. The result states how many.
-
-Do not edit the script. Vellum accepts a result only for the script that it generated.
-
 ## Run the script on your machine
 
-1. In the script dialog, select the button that starts with **Download**. The button names the file.
-2. Run the command under **Run it**. This is an example:
+1. Select **Download** in the script dialog.
+2. Run the command that the dialog shows. This is an example:
 
 ```sh
-k6 run -e VELLUM_BASE_URL='https://orders.test.example' vellum-k6-df2a6095749d.js
+k6 run -e VELLUM_BASE_URL='https://orders.test.example' vellum-k6-ef6f2900a8c9.js
 ```
 
 The script reads these values from the environment of k6:
@@ -107,6 +82,10 @@ The script reads these values from the environment of k6:
 The script holds no credential. Give a credential in the environment only.
 
 The script stops before its first request when `VELLUM_BASE_URL` is not the authorised base URL.
+
+The script follows no redirect. A `3xx` response counts as an unexpected status. So no request and no credential goes to a URL that you did not authorise.
+
+Run the script with the load that it holds. Do not give `--vus`, `--duration`, `--iterations` or `--stage`. Such an option replaces the load of the profile. The script then stops before its first request and tells you why.
 
 The run writes `vellum-k6-result.json` into the current directory.
 
@@ -135,7 +114,7 @@ jobs:
         env:
           VELLUM_BASE_URL: "https://orders.test.example"
           VELLUM_AUTHORIZATION: ${{ secrets.VELLUM_AUTHORIZATION }}
-        run: k6 run load-tests/vellum-k6-df2a6095749d.js
+        run: k6 run load-tests/vellum-k6-ef6f2900a8c9.js
       - name: Keep the result file
         if: always()
         uses: actions/upload-artifact@v4
@@ -153,65 +132,71 @@ jobs:
 
 Vellum stores the file only when it names a script that Vellum generated for this project. Vellum does not store a file that it refuses.
 
-Vellum also refuses a file in these cases:
+Vellum also refuses a file when the run did not apply the load of the script: the run was too short, or the number of iterations is not the planned number. The error states the reason.
 
-- The file has more than 256 KB.
-- The file states another scenario, version or target than the script was generated for.
-- The target of the script is not authorised now. The target was removed, its base URL or class changed, or its authorisation was revoked.
-- The run starts before the script was generated, or in the future.
-- The same file is imported already.
+An import shows that the file names a script that Vellum generated. Vellum did not run k6 and cannot check that k6 produced the numbers.
+
+Vellum stores one run once. The result file and the summary export of the same run are the same run. The second import is refused and names the stored result.
 
 An error names the member of the file that causes it. Select the member to go to its line in the text.
 
-A project holds 200 measured results at most. To remove a result, select the delete button on its row.
-
 You can also import the JSON that `k6 run --summary-export` writes. See [k6 result format and target rules](/reference/k6-results-and-targets/).
-
-An agent token with the `propose` scope can send a result file. The result records the token. See [k6 result format and target rules](/reference/k6-results-and-targets/).
 
 ## Compare the estimate with the measurement
 
 1. Select the measured result.
-2. Under **Estimated versus measured**, select a run in **Simulation run**.
-
-The list holds the stored runs of the stress profile that the script was generated from. When the profile has no stored run, run it on the **Simulate** tab first.
+2. Select a simulation run under **Estimated versus measured**.
 
 The table shows each number from the simulation beside the number from the k6 run. The column of the simulation has the label `Estimated`. The column of the k6 run has the label `Measured`.
 
-An operation that the script did not drive has no measured value. The table shows `Unknown` for it. `Unknown` is not zero and it is not a match.
+A step that the script did not drive has no measured value. The table shows `Unknown` for it. `Unknown` is not zero and it is not a match.
 
-The notes above the table state what the two sides do not share, for example another model version or dropped iterations.
+The row **Unexpected status** is the share of requests whose status was not the one that the script expected. It is not always an error rate. See [k6 result format and target rules](/reference/k6-results-and-targets/).
 
-The comparison gives no verdict. See [Estimates are not measurements](/concepts/estimates-are-not-measurements/).
+When the scenario declares faults, the table shows `Unknown` on the measured side. The simulation does not apply those faults, so the two sides are of different flows.
+
+The list above the table states each known difference of the two sides: the versions, the shape of the arrivals, rounded rates, outages and overrides that the run did not apply, and the two measured windows. Read the list before you read the table.
+
+The comparison gives no verdict.
 
 ## Find a regression between two runs
 
 1. Run the script again after a change of the system.
 2. Import the second result file.
 3. Select the second result.
-4. Under **Compare with a baseline run**, select the first result in **Baseline**.
+4. Select the first result under **Compare with a baseline run**.
 
 The table gives a verdict for each row: `Regressed`, `Improved`, `Unchanged` or `Unknown`. The rule for the verdict is below the table.
-
-A latency row is `Regressed` when the second run is more than 10 % and more than 1 ms above the baseline. An error rate row is `Regressed` when it is more than 0.1 percentage points above the baseline. A throughput row is `Regressed` when it is more than 10 % below the baseline.
 
 The two results must be of the same scenario and the same target.
 
 ## Use a measurement in a stress profile
 
-1. On the **Simulate** tab, select **Edit** on the stress profile.
-2. Find the service time under **Service times**.
-3. Enter the value that the k6 run measured. Vellum does not copy a number from the result into the profile.
-4. Select the k6 run in **Source of this value**. The field shows only when the project has an imported result.
+Only the service time of an operation that the script drove can be measured.
+
+1. Open the stress profile under **Simulate**.
+2. Find the service time of the operation.
+3. Select the distribution.
+4. Select the k6 run under **Source of this value**. The list shows the runs of the scenario of the profile.
 5. Select **Save**.
 
-The service time now has the label `measured` and names the result as `k6:<result ID>`. The result dialog shows this name under **Use in a stress profile**.
+Vellum writes the numbers of the result into the service time. You cannot type them. The service time now has the label `measured` and names the result.
 
-Vellum refuses the label `measured` for a value that names no imported result of the project.
+| Distribution | Numbers from the measured request latency of the operation |
+|---|---|
+| Fixed | The mean. |
+| Exponential | The mean. |
+| Lognormal | The median (p50) and the 95th percentile. |
+| Uniform | The minimum and the maximum. |
 
-Vellum does not delete a result while a stress profile names it. Set **Source of this value** back to **Declared: a person states it** first.
+The measured latency is the time from the request to the response as k6 saw it. It holds the network, the wait at the target and the steps inside the call. It is not a pure service time.
 
-A stress run reports the confidence `medium` when each service time on the path of the flow is `measured`. In all other cases it reports `low`.
+Vellum refuses the label `measured` in these cases:
+
+- The service time names no imported result of the project.
+- The result is of another scenario than the profile.
+- The result has no latency for the operation.
+- The value is not a service time: workers, consumers, a branch probability, an override or the arrivals.
 
 ## When a result is stale
 
@@ -219,25 +204,12 @@ A result is bound to one scenario version and one model version. Vellum marks th
 
 A stale result keeps its numbers. Generate a new script and run it to measure the flow as it is declared now.
 
+A service time that names a stale result shows `stale measurement` in the profile and in each run. A stale measurement does not raise the confidence of a run.
+
 ## Test a production system
 
 Do not run a load test against a production system unless the owner of that system agreed to it.
 
 A script for a production-class target leaves out every `POST`, `PUT`, `PATCH` and `DELETE` request. Vellum generates no script for a production-class target when the scenario declares faults.
 
-An owner can set an override on a production-class target:
-
-1. Select the target in the list under **Targets**.
-2. Under **Production override**, select what to allow: **Allow non-idempotent operations: POST, PUT, PATCH and DELETE requests** or **Allow failure injection: scripts for a scenario with faults**.
-3. Give the reason in **Reason**.
-4. Type the name of the target to confirm.
-5. Select **Set the override**.
-
-Vellum writes the override into the header of each script and into the audit log. To remove it, select **Clear the override**.
-
-## See also
-
-- [k6 result format and target rules](/reference/k6-results-and-targets/) for the file formats, the rules and the endpoints.
-- [Stress a flow](/how-to/stress-a-flow/) to make the stress profile and the simulation run.
-- [Stress model](/reference/stress-model/) for the confidence rule.
-- [Estimates are not measurements](/concepts/estimates-are-not-measurements/) for the difference between the two labels.
+An owner can set an override on the target. See [k6 result format and target rules](/reference/k6-results-and-targets/).

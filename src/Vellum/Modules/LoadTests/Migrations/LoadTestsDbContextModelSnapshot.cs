@@ -40,6 +40,10 @@ namespace Vellum.Modules.LoadTests.Migrations
                         .HasColumnType("jsonb")
                         .HasColumnName("document");
 
+                    b.Property<double?>("ElapsedMs")
+                        .HasColumnType("double precision")
+                        .HasColumnName("elapsed_ms");
+
                     b.Property<DateTimeOffset>("EndedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("ended_at");
@@ -107,12 +111,13 @@ namespace Vellum.Modules.LoadTests.Migrations
                     b.HasKey("Id")
                         .HasName("pk_results");
 
-                    b.HasIndex("ScriptId")
-                        .HasDatabaseName("ix_results_script_id");
-
                     b.HasIndex("ProjectId", "ContentHash")
                         .IsUnique()
                         .HasDatabaseName("ix_results_project_id_content_hash");
+
+                    b.HasIndex("ScriptId", "StartedAt", "ElapsedMs")
+                        .IsUnique()
+                        .HasDatabaseName("ix_results_script_id_started_at_elapsed_ms");
 
                     b.HasIndex("ProjectId", "ScenarioId", "TargetId", "StartedAt")
                         .HasDatabaseName("ix_results_project_id_scenario_id_target_id_started_at");

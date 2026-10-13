@@ -11,6 +11,7 @@ using Vellum.Modules.Identity.AgentTokens;
 using Vellum.Modules.Modelling;
 using Vellum.Modules.Modelling.Model;
 using Vellum.Modules.Promises;
+using Vellum.Modules.Settings;
 using Vellum.Modules.Workspaces;
 using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Shared;
@@ -24,7 +25,9 @@ namespace Vellum.Modules.Build;
 /// The <c>pinned</c> state of a manifest. With it the export is made again from exactly the
 /// versions it names, and <paramref name="RevisionId"/> and <paramref name="BranchId"/> must be absent.
 /// It names its decisions: a state of the format <c>vellum-bundle/2</c>, which names none, is
-/// refused with 409 <c>pinned_format_not_exported</c>.
+/// refused with 409 <c>pinned_format_not_exported</c>. It carries the <c>seal</c> that Vellum
+/// gave it: a state with no seal, or with a seal that does not verify for this project on this
+/// instance, is refused with 409 <c>pinned_not_issued</c>.
 /// </param>
 public sealed record ExportRequest(Guid? RevisionId = null, Guid? BranchId = null, string Format = "bundle", PinnedState? Pinned = null);
 
@@ -61,6 +64,13 @@ public sealed record MovedInput(string Kind, string Id, string? Pinned, string? 
 /// moved after the export; <paramref name="Moved"/> lists each. That is drift, not tampering.
 /// </para>
 /// </summary>
+/// <param name="Issued">
+/// True when the pinned state carries a seal that this instance issued for this project and
+/// the state is unchanged since. Only such a state is exported again. False for a manifest of
+/// a format before <c>vellum-bundle/4</c>, for a seal of another instance or of a master key
+/// that is not loaded any more, and for a state that somebody made or changed. False does not
+/// change <paramref name="MatchesPinned"/>: that answer is about the bytes only.
+/// </param>
 /// <param name="Identical">True only when <paramref name="MatchesPinned"/> is true and, for a zip, the archive is not <c>differs</c>.</param>
 /// <param name="Manifest"><c>match</c> or <c>differs</c>: the supplied manifest against the regenerated one, byte for byte.</param>
 /// <param name="ManifestDifferences">The top-level fields of the manifest that differ.</param>
@@ -70,7 +80,7 @@ public sealed record VerifyResponse(
     string Manifest, IReadOnlyList<string> ManifestDifferences, string? Archive,
     bool Current, IReadOnlyList<MovedInput> Moved,
     string ExpectedBundleHash, string ActualBundleHash,
-    IReadOnlyList<VerifiedFile> Files, SelfCheck SelfCheck);
+    IReadOnlyList<VerifiedFile> Files, SelfCheck SelfCheck, bool Issued);
 
 /// <summary>
 /// Build mode (SDD §3): the standalone SDD and the agent handoff bundle of a pinned state,
@@ -90,6 +100,8 @@ public static partial class BuildModule
         var build = app.MapGroup("/api/projects/{projectId}/build").RequireAuthorization().WithTags("Build");
 
         // An export request names a revision or holds the pinned state of a manifest: a document, not a bundle.
+        // The answer has the headers X-Vellum-Build-Ready, of the exported state, and X-Vellum-Current: false
+        // when that state is a past one.
         build.MapPost("/export", Export).AllowAgent(AgentScope.Export)
             .Produces<string>(contentType: "text/markdown")
             .Produces(StatusCodes.Status200OK, contentType: "application/zip")
@@ -117,7 +129,7 @@ public static partial class BuildModule
 
     private static async Task<IResult> Export(
         Guid projectId, ExportRequest request, HttpContext http,
-        WorkspaceAuthorizationService auth, BuildLimits limits, CancellationToken ct)
+        WorkspaceAuthorizationService auth, BuildLimits limits, Bootstrap bootstrap, CancellationToken ct)
     {
         await auth.RequireProjectRoleAsync(projectId, UserId(http.User), WorkspaceRole.Viewer, ct);
         if (request.Format is not ("bundle" or "sdd"))
@@ -138,16 +150,43 @@ public static partial class BuildModule
             {
                 return Results.Conflict(new ErrorResponse("pinned_format_not_exported",
                     $"The pinned state names no decision. It is of the format {Bundle.FormatWithoutReview}, which holds no review, and that format is not exported any more.",
-                    $"Export again in the format {Bundle.Format}: send the revision or the branch, or a pinned state that names its decisions. POST build/verify still checks a bundle of the format {Bundle.FormatWithoutReview}."));
+                    $"Export again in the format {Bundle.Format}: send the revision or the branch, or the pinned member of GET build/manifest unchanged. POST build/verify still checks a bundle of the format {Bundle.FormatWithoutReview}."));
             }
-            (bundle, refusal) = await BuildPinnedAsync(http.RequestServices, projectId, pin, limits, "pinned", ct);
+            // A pinned state decides what the export reads: a state with no promise has no
+            // promise blocker, and a state with an invented commit has no stale evidence. So
+            // only a state that Vellum issued is generated here. The export seals it again
+            // under the current master key.
+            if (!PinnedSeal.Verifies(bootstrap.Keys, projectId, pin))
+            {
+                return Results.Conflict(new ErrorResponse("pinned_not_issued",
+                    "The pinned state has no seal that this Vellum instance issued for this project, or the state was changed after Vellum issued it.",
+                    $"Read GET build/manifest again and send its pinned member unchanged, or send the revision or the branch. A manifest of a format before {Bundle.Format}, of another instance, or of a master key that is not loaded any more has no seal that verifies here. POST build/verify still checks its bundle."));
+            }
+            (bundle, refusal) = await BuildPinnedAsync(http.RequestServices, projectId, pin, limits, "pinned", ct, state => PinnedSeal.Issue(bootstrap.Keys, state));
         }
         else
             (bundle, refusal) = await BuildAsync(http.RequestServices, projectId, request.RevisionId, request.BranchId, limits, ct);
         if (bundle is null)
             return refusal!;
 
+        // An export of a pinned state is of that state, which can be a past one: its build ready
+        // answer is the answer of then. The header says whether every input is still at its
+        // pinned version. The files cannot say it: the same state always gives the same bytes.
+        var current = true;
+        if (request.Pinned is { } past)
+        {
+            try
+            {
+                current = (await MovedAsync(http.RequestServices, projectId, past, limits, ct)).Count == 0;
+            }
+            catch (BundleTooLargeException tooLarge)
+            {
+                return TooLarge(tooLarge);
+            }
+        }
+
         // The headers name the pinned state, so a caller can ask for the same export again.
+        http.Response.Headers["X-Vellum-Current"] = current ? "true" : "false";
         http.Response.Headers["X-Vellum-Stream-Version"] = bundle.Manifest.Pinned.StreamVersion.ToString(CultureInfo.InvariantCulture);
         http.Response.Headers["X-Vellum-Bundle-Hash"] = bundle.Manifest.BundleHash;
         http.Response.Headers["X-Vellum-Build-Ready"] = bundle.Manifest.BuildReady ? "true" : "false";
@@ -227,7 +266,7 @@ public static partial class BuildModule
     /// refused as <c>invalid_bundle</c>: it is never reported as identical.
     /// </summary>
     private static async Task<IResult> Verify(
-        Guid projectId, HttpContext http, WorkspaceAuthorizationService auth, BuildLimits limits, CancellationToken ct)
+        Guid projectId, HttpContext http, WorkspaceAuthorizationService auth, BuildLimits limits, Bootstrap bootstrap, CancellationToken ct)
     {
         await auth.RequireProjectRoleAsync(projectId, UserId(http.User), WorkspaceRole.Viewer, ct);
 
@@ -266,7 +305,10 @@ public static partial class BuildModule
             return invalid;
 
         var services = http.RequestServices;
-        var (bundle, refusal) = await BuildPinnedAsync(services, projectId, pin, limits, "manifest.pinned", ct);
+        // The seal is no input of a file. The manifest is generated with the seal it was given,
+        // whatever key made it, so a bundle of another master key or with no seal still
+        // compares byte for byte. Whether the seal verifies is the separate answer "issued".
+        var (bundle, refusal) = await BuildPinnedAsync(services, projectId, pin, limits, "manifest.pinned", ct, _ => pin.Seal);
         if (bundle is null)
             return refusal!;
 
@@ -301,7 +343,7 @@ public static partial class BuildModule
             manifestMatches ? "match" : "differs", differences, archive,
             moved.Count == 0, moved,
             bundle.Manifest.BundleHash, Bundle.BundleHash(supplied.Files.Select(f => (f.Key, f.Value))),
-            files, bundle.Manifest.SelfCheck));
+            files, bundle.Manifest.SelfCheck, PinnedSeal.Verifies(bootstrap.Keys, projectId, pin)));
     }
 
     /// <summary>The top-level fields whose values differ between two manifests, by name. When only the bytes differ, one entry says so.</summary>
@@ -442,11 +484,13 @@ public static partial class BuildModule
         if (pin.ProjectName is null || pin.Scenarios is null || pin.Schemas is null || pin.Promises is null || pin.Runs is null || pin.Sources is null)
         {
             return Results.BadRequest(new ErrorResponse("invalid_bundle",
-                $"The pinned state does not name the version of every input. Only a manifest of the format {Bundle.FormatWithoutReview} or {Bundle.Format} can be generated again."));
+                $"The pinned state does not name the version of every input. Only a manifest of the format {Bundle.FormatWithoutReview}, {Bundle.FormatWithoutSeal} or {Bundle.Format} can be generated again."));
         }
         // A state of the format before the review names no decision stream. That is not an error
         // here: verify generates it as it was. Export refuses it.
         var decisions = pin.Decisions ?? [];
+        if (pin.Seal is { Length: 0 or > PinnedSeal.MaxLength })
+            return Invalid($"{field}.seal", $"A seal has at most {PinnedSeal.MaxLength} characters");
         if (pin.Scenarios.Count + pin.Schemas.Count + pin.Promises.Count + decisions.Count > limits.MaxFiles
             || pin.Runs.Count > limits.MaxPinnedRuns || pin.Sources.Count > limits.MaxFiles)
             return Invalid(field, "The pinned state names more inputs than a bundle holds");
@@ -490,14 +534,15 @@ public static partial class BuildModule
 
     /// <summary>The bundle of a pinned state, made from exactly the versions it names.</summary>
     private static async Task<(Bundle? Bundle, IResult? Refusal)> BuildPinnedAsync(
-        IServiceProvider services, Guid projectId, PinnedState pin, BuildLimits limits, string field, CancellationToken ct)
+        IServiceProvider services, Guid projectId, PinnedState pin, BuildLimits limits, string field, CancellationToken ct,
+        Func<PinnedState, string?> seal)
     {
         var (pinned, refusal) = await ResolvePinnedAsync(services, projectId, pin, field, ct);
         if (pinned is null)
             return (null, refusal);
         try
         {
-            return (Bundle.Build(await BuildInput.LoadAsync(services, projectId, pinned, limits, ct, pin), limits), null);
+            return (Bundle.Build(await BuildInput.LoadAsync(services, projectId, pinned, limits, ct, pin), limits, seal), null);
         }
         catch (BundleTooLargeException tooLarge)
         {
@@ -576,9 +621,10 @@ public static partial class BuildModule
         var (pinned, refusal) = await PinnedModel.ResolveAsync(services, projectId, revisionId, branchId, ct);
         if (pinned is null)
             return (null, refusal);
+        var keys = services.GetRequiredService<Bootstrap>().Keys;
         try
         {
-            return (Bundle.Build(await BuildInput.LoadAsync(services, projectId, pinned, limits, ct), limits), null);
+            return (Bundle.Build(await BuildInput.LoadAsync(services, projectId, pinned, limits, ct), limits, state => PinnedSeal.Issue(keys, state)), null);
         }
         catch (BundleTooLargeException tooLarge)
         {

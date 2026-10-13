@@ -51,11 +51,49 @@ curl -X POST "http://localhost:8080/api/projects/<project-id>/build/export" \
 
 Use `"format":"bundle"` for the zip. The default is `bundle`. To export a named revision, add `"revisionId"`. To export a draft or a variant, add `"branchId"`. Give one of the two, not both. To export one state again, send the `pinned` object of a manifest and no `revisionId` or `branchId`.
 
-The answer has the headers `X-Vellum-Stream-Version`, `X-Vellum-Bundle-Hash` and `X-Vellum-Build-Ready`.
+The answer has these headers.
+
+| Header | What it says |
+|---|---|
+| `X-Vellum-Build-Ready` | `true` when the exported state has no open blocker. |
+| `X-Vellum-Current` | `true` when each input is still at its pinned version. `false` means that the export is of a past state. |
+| `X-Vellum-Bundle-Hash` | The hash of the files of the bundle. |
+| `X-Vellum-Stream-Version` | The version of the model that the export read. |
+
+## Export a pinned state again
+
+A manifest names the version of each input in its `pinned` member. Vellum can make the export of that state again, also after the project changed.
+
+1. Read the manifest. Use `GET /api/projects/$PROJECT/build/manifest`, or the `manifest.json` of a bundle.
+2. Send its `pinned` member in the body: `{"format":"bundle","pinned":{...}}`. Do not send `revisionId` or `branchId` with it.
+
+Send the `pinned` member whole and unchanged. It holds a `seal`. The seal says that this Vellum instance issued this state for this project. Vellum makes the seal with a key that it derives from the master key. The seal is not a secret.
+
+Vellum refuses a pinned state that it did not issue. The answer has the status 409 and the type `pinned_not_issued`. This happens in these cases.
+
+- The state has no seal. A manifest of a format before `vellum-bundle/4` has none.
+- A member of the state changed after Vellum issued it. For example, a promise or a commit was removed or added.
+- The seal is of another project.
+- The seal is of another Vellum instance.
+- The seal is of a master key that is not loaded any more.
+
+If Vellum refuses the state, read the manifest again and send its `pinned` member. Or send the revision or the branch.
+
+A pinned state can be a past state. Its bundle then says what was true then. For example, a state from before a blocker opened says that it is build ready. Read `X-Vellum-Current` to know whether the state is the state of now. The SDD starts with the model version that it is of.
+
+The seal is in `manifest.json` only. It does not change a file hash or the bundle hash. On one instance with one master key, the same state gives the same zip, byte for byte.
+
+### After a master key rotation
+
+A seal names the master key that made it. While the old key is loaded as the previous key, Vellum accepts a seal of the old key. The new export has a seal of the new key. Its `manifest.json` and its zip then differ from the old ones in the seal only. The bundle hash is the same.
+
+After you remove the previous key, Vellum refuses a seal of that key. Export each pinned state that you want to keep before you remove the previous key. The check of a bundle does not need the seal, so it works after a rotation and for a bundle of another instance's key.
+
+## Export a part of the model
 
 An export that is too large is not cut. A bundle holds at most 33,554,432 bytes, 16,777,216 bytes in one file and 5,000 files. A larger export gives the status 413 and the type `bundle_too_large`. Export a brief for a part of the model.
 
-For a brief, the endpoint is `POST /api/projects/{projectId}/build/brief`.
+A brief holds the part of the model that one change needs. For a brief, the endpoint is `POST /api/projects/{projectId}/build/brief`.
 
 ```sh
 curl -X POST "http://localhost:8080/api/projects/<project-id>/build/brief" \
@@ -82,9 +120,11 @@ In the app:
 2. Go to **Check a bundle**.
 3. Select **Select a bundle file** and select the zip.
 
-The app shows if the files match, each file that differs, and the number of inputs that moved.
+The answer has a third value, `issued`. It is `true` when the pinned state has a seal that this instance issued for this project. Only such a state can be exported again. A bundle from before the seal gives `false`. That does not make the bundle wrong.
 
-With an agent, call `verify_bundle_manifest` with the `manifest.json` of the bundle. The result has `matchesPinned`, `current` and `moved`. A manifest alone does not show a change to a file. A message to the MCP endpoint holds at most 1,048,576 bytes. To check the files, or a larger manifest, send the zip to `POST /api/projects/{projectId}/build/verify`:
+The check does not say that a state is build ready. Treat `buildReady` in a manifest as the state of the project now only when `matchesPinned` and `current` are both `true`.
+
+With an agent, call `verify_bundle_manifest` with the `manifest.json` of the bundle. The result has `matchesPinned`, `current`, `moved` and `issued`. A manifest alone does not show a change to a file. A message to the MCP endpoint holds at most 1,048,576 bytes. To check the files, or a larger manifest, send the zip to `POST /api/projects/{projectId}/build/verify`:
 
 ```sh
 curl -X POST "http://localhost:8080/api/projects/<project-id>/build/verify" \
@@ -110,9 +150,11 @@ Vellum refuses a body that is not a bundle it writes with the status 400 and the
 
 ### A bundle of an older format
 
-A bundle of the format `vellum-bundle/2` holds no review and no decision. Vellum still checks such a bundle: the check generates it again as it was. Vellum cannot generate a manifest of an earlier format again.
+Vellum writes the format `vellum-bundle/4`. Its manifest holds the seal of the pinned state. The other files are the files of the format `vellum-bundle/3`.
 
-Vellum does not export the format `vellum-bundle/2` any more. `POST /api/projects/{projectId}/build/export` with a `pinned` state that names no `decisions` gives the status 409 and the type `pinned_format_not_exported`. A bundle with no review has no review blocker, so it must not say that a state is build ready. Export again in the format `vellum-bundle/3`: send the revision or the branch, or the `pinned` state of a `vellum-bundle/3` manifest.
+A bundle of the format `vellum-bundle/3` has no seal. A bundle of the format `vellum-bundle/2` has no seal, no review and no decision. Vellum still checks both: the check generates the bundle again as it was.
+
+Vellum does not export a pinned state of those formats. `POST build/export` with a `pinned` state that names no `decisions` gives the status 409 and the type `pinned_format_not_exported`. A bundle with no review has no review blocker, so it must not say that a state is build ready. A `pinned` state with `decisions` and no seal gives the status 409 and the type `pinned_not_issued`. Export again in the format `vellum-bundle/4`: send the revision or the branch, or the `pinned` member of `GET build/manifest`.
 
 ## What the agent does next
 

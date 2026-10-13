@@ -1,49 +1,57 @@
 {
-  "scriptHash": "df2a6095749d7d483b695fd6228df7f37afa687305ab502aaebb34a289866fc6",
-  "format": "vellum-k6-result/1",
-  "generator": "vellum-k6/1",
-  "scenarioId": "e4491c93-5f17-4dbf-aeb2-10cd8953763f",
+  "scriptHash": "ef6f2900a8c9d4f7fb6ae0d830a1dc81c5b03cacfbe609b83afc598457778fa7",
+  "format": "vellum-k6-result/2",
+  "generator": "vellum-k6/2",
+  "scenarioId": "1183670c-b0c3-4cf4-99cc-7c4c844f5c1d",
   "scenarioVersion": 1,
-  "modelStreamId": "3006ffb6-6d0e-486f-a4d8-d17d64b4765e",
-  "modelVersion": 12,
-  "targetId": "a6ce0305-b02c-468e-9a59-4031eab2a3be",
+  "modelStreamId": "6e4c8d61-a51d-4686-9378-1526f9a618ee",
+  "modelVersion": 15,
+  "targetId": "4bb42d09-46f1-4d13-8107-b2e01808e8a8",
   "environment": "test",
-  "baseUrlHash": "14a1dad2562afbc1b52f6e8e7814e830fe250c04d29e2958c57e6dc5e5785c39",
-  "startedAt": "2026-10-13T16:23:07.072Z",
+  "baseUrlHash": "056cececee254dbaf7e1b7609d16900e4406c85499d48f39dbe7f68fa5d3a3c9",
+  "startedAt": "2026-10-13T17:49:33.117Z",
   "window": {
     "warmUpMs": 10000,
-    "elapsedMs": 60013
+    "elapsedMs": 60036
+  },
+  "load": {
+    "effective": "constant-arrival-rate rate=40 unit=1000 duration=60000 pre=40 max=400",
+    "plannedDurationMs": 60000,
+    "plannedIterations": 2400,
+    "iterations": 2401,
+    "droppedIterations": 0
   },
   "flow": {
-    "iterations": 2000,
-    "failed": 41,
-    "droppedIterations": 0,
+    "iterations": 2001,
+    "unexpectedStatus": 40,
     "latencyMs": {
-      "count": 1959,
-      "min": 26.358,
-      "mean": 31.526928534966874,
-      "p50": 31.369,
-      "p90": 34.916399999999996,
-      "p95": 35.430099999999996,
-      "p99": 40.139540000000004,
-      "max": 54.887
+      "count": 1961,
+      "min": 26.439,
+      "mean": 32.60759459459463,
+      "p50": 32.41,
+      "p90": 36.342,
+      "p95": 37.243,
+      "p99": 42.126599999999996,
+      "max": 52.34
     }
   },
   "operations": [
     {
       "operationId": "00000000-0000-0000-0000-000000000010",
-      "requests": 2000,
-      "failed": 41,
+      "requests": 2001,
+      "unexpectedStatus": 40,
+      "expectedFailures": 0,
       "latencyMs": {
-        "count": 1959,
-        "min": 26.358,
-        "mean": 31.526928534966874,
-        "p50": 31.369,
-        "p90": 34.916399999999996,
-        "p95": 35.430099999999996,
-        "p99": 40.139540000000004,
-        "max": 54.887
-      }
+        "count": 1961,
+        "min": 26.439,
+        "mean": 32.60759459459463,
+        "p50": 32.41,
+        "p90": 36.342,
+        "p95": 37.243,
+        "p99": 42.126599999999996,
+        "max": 52.34
+      },
+      "expectedFailureLatencyMs": null
     }
   ]
 }

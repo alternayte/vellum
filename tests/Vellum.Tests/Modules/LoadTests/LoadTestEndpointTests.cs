@@ -30,6 +30,11 @@ public class LoadTestEndpointTests(IntegrationFixture fixture)
     private const string Regressed = "orders-regressed.vellum-k6-result.json";
     private const string BaselineExport = "orders-baseline.k6-summary-export.json";
 
+    // The committed numbers of the baseline run.
+    private const long BaselineRequests = 2000;
+    private const double BaselineSeconds = 50.003;
+    private const double BaselineMean = 8.406916500000005, BaselineMin = 1.416, BaselineP50 = 8.041, BaselineP95 = 14.42865, BaselineMax = 40.29;
+
     private static string Url(Guid projectId, string path) => $"/api/projects/{projectId}/load-tests/{path}";
 
     private static async Task<JsonNode> Read(Task<HttpResponseMessage> request, HttpStatusCode expected = HttpStatusCode.OK)
@@ -98,12 +103,19 @@ public class LoadTestEndpointTests(IntegrationFixture fixture)
         return new Seeded(factory, owner, workspaceId, orders, created["id"]!.GetValue<Guid>());
     }
 
+    /// <summary>What an owner authorises: the base URL, the class and the version of the target as it was read.</summary>
+    private static Task<HttpResponseMessage> AuthoriseAsync(HttpClient client, Guid project, JsonNode target, string? baseUrl = null, string? environment = null, long? version = null) =>
+        client.PostAsJsonAsync(Url(project, $"targets/{target["id"]}/authorise"), new
+        {
+            baseUrl = baseUrl ?? target["baseUrl"]!.GetValue<string>(),
+            environment = environment ?? target["environment"]!.GetValue<string>(),
+            version = version ?? target["version"]!.GetValue<long>(),
+        });
+
     private static async Task<JsonNode> AddTargetAsync(HttpClient client, Guid project, string environment = "test", string baseUrl = "https://orders.test.example", string name = "Test system", bool authorise = true)
     {
         var target = await Read(client.PostAsJsonAsync(Url(project, "targets"), new { name, baseUrl, environment }), HttpStatusCode.Created);
-        return authorise
-            ? await Read(client.PostAsJsonAsync(Url(project, $"targets/{target["id"]}/authorise"), new { baseUrl = target["baseUrl"]!.GetValue<string>() }))
-            : target;
+        return authorise ? await Read(AuthoriseAsync(client, project, target)) : target;
     }
 
     private static Task<JsonNode> ScriptAsync(HttpClient client, Guid project, JsonNode target, Guid profileId, HttpStatusCode expected = HttpStatusCode.Created) =>
@@ -112,11 +124,17 @@ public class LoadTestEndpointTests(IntegrationFixture fixture)
     private static JsonObject Fixture(string name) =>
         JsonNode.Parse(File.ReadAllText(Path.Combine(AppContext.BaseDirectory, "Fixtures", "LoadTests", name)))!.AsObject();
 
-    /// <summary>A committed result file as k6 would have written it for <paramref name="script"/> a minute ago: the identity is the script's, the numbers stay.</summary>
-    private static JsonObject Bind(string name, JsonNode script)
+    /// <summary>A start of a run two minutes ago, in whole milliseconds as k6 writes it. Each call gives another instant, so each is another run.</summary>
+    private static DateTimeOffset Start() =>
+        DateTimeOffset.FromUnixTimeMilliseconds(DateTimeOffset.UtcNow.AddMinutes(-2).ToUnixTimeMilliseconds() - Interlocked.Increment(ref _runs));
+
+    private static long _runs;
+
+    /// <summary>A committed result file as k6 would have written it for <paramref name="script"/> two minutes ago: the identity is the script's, the numbers stay.</summary>
+    private static JsonObject Bind(string name, JsonNode script, DateTimeOffset? at = null)
     {
         var file = Fixture(name);
-        var startedAt = DateTimeOffset.UtcNow.AddMinutes(-1);
+        var startedAt = at ?? Start();
         if (file["metrics"] is JsonObject metrics)
         {
             var old = metrics.Single(m => m.Key.StartsWith("vellum_script_", StringComparison.Ordinal));
@@ -130,7 +148,7 @@ public class LoadTestEndpointTests(IntegrationFixture fixture)
         foreach (var member in new[] { "scenarioId", "scenarioVersion", "modelStreamId", "modelVersion", "targetId", "environment" })
             file[member] = script[member]!.DeepClone();
         file["baseUrlHash"] = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(script["baseUrl"]!.GetValue<string>())));
-        file["startedAt"] = startedAt.ToString("O");
+        file["startedAt"] = startedAt.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'");
         return file;
     }
 
@@ -163,15 +181,14 @@ public class LoadTestEndpointTests(IntegrationFixture fixture)
         using var editor = await TestHost.SignInMemberAsync(seeded.Factory, owner, seeded.WorkspaceId, "Editor");
         using var viewer = await TestHost.SignInMemberAsync(seeded.Factory, owner, seeded.WorkspaceId, "Viewer");
         var agent = await TestHost.CreateAgentAsync(seeded.Factory, owner, seeded.WorkspaceId);
-        var authorise = new { baseUrl = "https://orders.test.example/api" };
         var setOverride = new { allowNonIdempotent = true, allowFailureInjection = false, reason = "Window", confirmName = "Test system" };
-        await Status(HttpStatusCode.Forbidden, editor.PostAsJsonAsync(Url(project, $"targets/{id}/authorise"), authorise), "editor authorise");
+        await Status(HttpStatusCode.Forbidden, AuthoriseAsync(editor, project, target), "editor authorise");
         await Status(HttpStatusCode.Forbidden, editor.PutAsJsonAsync(Url(project, $"targets/{id}/override"), setOverride), "editor override");
         await Status(HttpStatusCode.Forbidden, viewer.PostAsJsonAsync(Url(project, "targets"), new { name = "V", baseUrl = "https://v.example", environment = "test" }), "viewer add");
         await Status(HttpStatusCode.OK, viewer.GetAsync(Url(project, "targets")), "viewer list");
         foreach (var refused in new[]
                  {
-                     await agent.Client.PostAsJsonAsync(Url(project, $"targets/{id}/authorise"), authorise),
+                     await AuthoriseAsync(agent.Client, project, target),
                      await agent.Client.PutAsJsonAsync(Url(project, $"targets/{id}/override"), setOverride),
                      await agent.Client.DeleteAsync(Url(project, $"targets/{id}/authorisation")),
                  })
@@ -181,9 +198,18 @@ public class LoadTestEndpointTests(IntegrationFixture fixture)
         }
         Assert.Null((await Read(owner.GetAsync(Url(project, "targets"))))[0]!["authorisation"]);
 
-        // The owner names the URL that was read. Another URL authorises nothing.
-        await Status(HttpStatusCode.Conflict, owner.PostAsJsonAsync(Url(project, $"targets/{id}/authorise"), new { baseUrl = "https://orders.example" }), "authorise another URL");
-        var authorised = await Read(owner.PostAsJsonAsync(Url(project, $"targets/{id}/authorise"), authorise));
+        // The owner names what was read: the stored URL, the class and the version. A difference in one of them authorises nothing.
+        await Status(HttpStatusCode.Conflict, AuthoriseAsync(owner, project, target, baseUrl: "https://orders.example"), "authorise another URL");
+        await Status(HttpStatusCode.Conflict, AuthoriseAsync(owner, project, target, baseUrl: "https://Orders.Test.example/api/"), "authorise another spelling of the URL");
+        await Status(HttpStatusCode.Conflict, AuthoriseAsync(owner, project, target, environment: "staging"), "authorise another class");
+        await Status(HttpStatusCode.Conflict, AuthoriseAsync(owner, project, target, version: target["version"]!.GetValue<long>() + 1), "authorise another version");
+        await Status(HttpStatusCode.Conflict, owner.PostAsJsonAsync(Url(project, $"targets/{id}/authorise"), new { baseUrl = "https://orders.test.example/api" }), "authorise with the URL only");
+        // The class changes to production and back between the read and the authorisation: the URL and the class are the same, the version is not.
+        await Read(editor.PutAsJsonAsync(Url(project, $"targets/{id}"), new { name = "Test system", baseUrl = "https://orders.test.example/api", environment = "production" }));
+        var back = await Read(editor.PutAsJsonAsync(Url(project, $"targets/{id}"), new { name = "Test system", baseUrl = "https://orders.test.example/api", environment = "test" }));
+        await Status(HttpStatusCode.Conflict, AuthoriseAsync(owner, project, target), "authorise what was read before two changes");
+        Assert.Null((await Read(owner.GetAsync(Url(project, "targets"))))[0]!["authorisation"]);
+        var authorised = await Read(AuthoriseAsync(owner, project, back));
         var me = (await owner.GetFromJsonAsync<JsonObject>("/api/auth/me"))!["id"]!.GetValue<string>();
         Assert.Equal((me, "https://orders.test.example/api", "test"),
             (authorised["authorisation"]!["by"]!.GetValue<string>(), authorised["authorisation"]!["baseUrl"]!.GetValue<string>(), authorised["authorisation"]!["environment"]!.GetValue<string>()));
@@ -193,7 +219,7 @@ public class LoadTestEndpointTests(IntegrationFixture fixture)
         Assert.NotNull(renamed["authorisation"]);
         var moved = await Read(editor.PutAsJsonAsync(Url(project, $"targets/{id}"), new { name = "Orders test", baseUrl = "https://orders.example", environment = "test" }));
         Assert.Null(moved["authorisation"]);
-        await Read(owner.PostAsJsonAsync(Url(project, $"targets/{id}/authorise"), new { baseUrl = "https://orders.example" }));
+        await Read(AuthoriseAsync(owner, project, moved));
 
         // An override is for production only, with a reason and the name typed again.
         Assert.Equal("environment", Field(await Read(owner.PutAsJsonAsync(Url(project, $"targets/{id}/override"), setOverride), HttpStatusCode.BadRequest)));
@@ -209,23 +235,28 @@ public class LoadTestEndpointTests(IntegrationFixture fixture)
         var staged = await Read(editor.PutAsJsonAsync(Url(project, $"targets/{id}"), new { name = "Orders test", baseUrl = "https://orders.example", environment = "staging" }));
         Assert.Null(staged["override"]);
 
-        // Each change of a permission is in the audit log of the workspace, with the origin and no path.
+        // A removal takes the authorisation with it.
+        await Read(AuthoriseAsync(owner, project, staged));
+        await Status(HttpStatusCode.NoContent, editor.DeleteAsync(Url(project, $"targets/{id}")), "remove");
+        Assert.Empty((await Read(owner.GetAsync(Url(project, "targets")))).AsArray());
+        await Status(HttpStatusCode.NotFound, AuthoriseAsync(owner, project, staged), "authorise a removed target");
+
+        // Each change of a permission is in the audit log of the workspace, with the origin and no path. An entry
+        // names the class and the origin that the permission was for: the state before the event that takes it.
         var audit = (await Read(owner.GetAsync($"/api/workspaces/{seeded.WorkspaceId}/audit?limit=50"))).AsArray()
             .Where(a => a!["action"]!.GetValue<string>().StartsWith("load-test.", StringComparison.Ordinal))
             .Select(a => $"{a!["action"]} {a["target"]}".Replace(id.ToString(), "T")).Reverse().ToList();
         Assert.Equal(
         [
             "load-test.target.authorised load-test-target:T environment:test origin:https://orders.test.example",
-            "load-test.target.authorisation-voided load-test-target:T environment:test origin:https://orders.example cause:base-url-changed",
+            "load-test.target.authorisation-voided load-test-target:T environment:test origin:https://orders.test.example cause:base-url-changed",
             "load-test.target.authorised load-test-target:T environment:test origin:https://orders.example",
-            "load-test.target.authorisation-voided load-test-target:T environment:production origin:https://orders.example cause:environment-changed",
+            "load-test.target.authorisation-voided load-test-target:T environment:test origin:https://orders.example cause:environment-changed",
             "load-test.target.override-set load-test-target:T environment:production origin:https://orders.example non-idempotent:allowed failure-injection:excluded",
-            "load-test.target.override-cleared load-test-target:T environment:staging origin:https://orders.example cause:environment-changed",
+            "load-test.target.override-cleared load-test-target:T environment:production origin:https://orders.example cause:environment-changed",
+            "load-test.target.authorised load-test-target:T environment:staging origin:https://orders.example",
+            "load-test.target.authorisation-voided load-test-target:T environment:staging origin:https://orders.example cause:target-removed",
         ], audit);
-
-        await Status(HttpStatusCode.NoContent, editor.DeleteAsync(Url(project, $"targets/{id}")), "remove");
-        Assert.Empty((await Read(owner.GetAsync(Url(project, "targets")))).AsArray());
-        await Status(HttpStatusCode.NotFound, owner.PostAsJsonAsync(Url(project, $"targets/{id}/authorise"), new { baseUrl = "https://orders.example" }), "authorise a removed target");
     }
 
     [Fact]
@@ -239,7 +270,7 @@ public class LoadTestEndpointTests(IntegrationFixture fixture)
         Assert.Equal("target-not-authorised", refused["type"]!.GetValue<string>());
         Assert.Empty((await Read(owner.GetAsync(Url(project, "scripts")))).AsArray());
 
-        await Read(owner.PostAsJsonAsync(Url(project, $"targets/{target["id"]}/authorise"), new { baseUrl = "https://orders.test.example" }));
+        await Read(AuthoriseAsync(owner, project, target));
         var script = await ScriptAsync(owner, project, target, seeded.ProfileId);
         var content = script["content"]!.GetValue<string>();
         Assert.Contains($"const SCRIPT_HASH = \"{script["hash"]}\";", content);
@@ -287,11 +318,12 @@ public class LoadTestEndpointTests(IntegrationFixture fixture)
         var script = await ScriptAsync(owner, project, target, seeded.ProfileId);
         var me = (await owner.GetFromJsonAsync<JsonObject>("/api/auth/me"))!["id"]!.GetValue<string>();
 
-        var file = Bind(Baseline, script);
+        var startedAt = Start();
+        var file = Bind(Baseline, script, startedAt);
         var imported = await ImportAsync(owner, project, file);
         var result = imported["result"]!;
         Assert.Equal("measured", result["label"]!.GetValue<string>());
-        Assert.Equal(("k6-import", "vellum-k6-result/1", script["hash"]!.GetValue<string>(), me, "Test system", "https://orders.test.example", "test"),
+        Assert.Equal(("k6-import", "vellum-k6-result/2", script["hash"]!.GetValue<string>(), me, "Test system", "https://orders.test.example", "test"),
             (result["provenance"]!["kind"]!.GetValue<string>(), result["provenance"]!["format"]!.GetValue<string>(), result["provenance"]!["scriptHash"]!.GetValue<string>(),
                 result["provenance"]!["importedBy"]!.GetValue<string>(), result["provenance"]!["targetName"]!.GetValue<string>(),
                 result["provenance"]!["baseUrl"]!.GetValue<string>(), result["provenance"]!["environment"]!.GetValue<string>()));
@@ -299,11 +331,11 @@ public class LoadTestEndpointTests(IntegrationFixture fixture)
         Assert.Equal((script["scenarioId"]!.GetValue<Guid>(), script["scenarioVersion"]!.GetValue<long>(), script["modelVersion"]!.GetValue<long>()),
             (result["scenarioId"]!.GetValue<Guid>(), result["scenarioVersion"]!.GetValue<long>(), result["modelVersion"]!.GetValue<long>()));
         var operation = Assert.Single(imported["operations"]!.AsArray())!;
-        Assert.Equal(("measured", 2000L, 0L, 0d, 10.51905, "measured"),
-            (operation["label"]!.GetValue<string>(), operation["requests"]!.GetValue<long>(), operation["failed"]!.GetValue<long>(), operation["errorRate"]!.GetValue<double>(),
+        Assert.Equal(("measured", BaselineRequests, 0L, 0d, BaselineP95, "measured"),
+            (operation["label"]!.GetValue<string>(), operation["requests"]!.GetValue<long>(), operation["unexpectedStatus"]!.GetValue<long>(), operation["unexpectedStatusRate"]!.GetValue<double>(),
                 operation["latency"]!["p95Ms"]!.GetValue<double>(), operation["latency"]!["label"]!.GetValue<string>()));
-        // 2000 requests in the 49.988 seconds after the warm-up.
-        Assert.Equal(2000 / 49.988, operation["throughputPerSecond"]!.GetValue<double>(), 9);
+        // The requests in the seconds after the warm-up.
+        Assert.Equal(BaselineRequests / BaselineSeconds, operation["throughputPerSecond"]!.GetValue<double>(), 9);
         Assert.Equal(["save-order", OrdersReference.PublishStep], imported["notCovered"]!.AsArray().Select(n => n!["stepId"]!.GetValue<string>()));
 
         // The same file is imported once.
@@ -328,8 +360,15 @@ public class LoadTestEndpointTests(IntegrationFixture fixture)
         Assert.Equal("modelVersion", Field(await Refuse(f => f["modelVersion"] = 1, HttpStatusCode.UnprocessableEntity)));
 
         // Numbers that the script cannot have written. Each error names the member of the file.
-        Assert.Equal("operations[0]", Field(await Refuse(f => f["operations"]![0]!["failed"] = 2001)));
-        Assert.Equal("operations[0].latencyMs", Field(await Refuse(f => f["operations"]![0]!["latencyMs"]!["count"] = 1999)));
+        Assert.Equal("operations[0]", Field(await Refuse(f => f["operations"]![0]!["unexpectedStatus"] = BaselineRequests + 1)));
+        Assert.Equal("operations[0].latencyMs", Field(await Refuse(f => f["operations"]![0]!["latencyMs"]!["count"] = BaselineRequests - 1)));
+        // A success latency that holds the durations of expected failures: this script expects none.
+        Assert.Equal("operations[0].expectedFailureLatencyMs", Field(await Refuse(f =>
+        {
+            f["operations"]![0]!["expectedFailures"] = 1;
+            f["operations"]![0]!["unexpectedStatus"] = 0;
+            f["operations"]![0]!["requests"] = BaselineRequests + 1;
+        })));
         Assert.Equal("operations[0].latencyMs", Field(await Refuse(f => f["operations"]![0]!["latencyMs"]!["p95"] = 99)));
         Assert.Equal("operations[0].latencyMs.p50", Field(await Refuse(f => f["operations"]![0]!["latencyMs"]!["p50"] = -1)));
         Assert.Equal("operations[0].requests", Field(await Refuse(f => f["operations"]![0]!["requests"] = 12.5)));
@@ -340,13 +379,35 @@ public class LoadTestEndpointTests(IntegrationFixture fixture)
         Assert.Equal("startedAt", Field(await Refuse(f => f["startedAt"] = "2020-01-01T00:00:00Z")));
         Assert.Equal("flow.latencyMs", Field(await Refuse(f => f["flow"]!["latencyMs"] = null)));
         Assert.Equal("format", Field(await Refuse(f => f["format"] = "vellum-k6-result/9")));
+
+        // The load. The profile plans 2400 iterations in 60 seconds. A run that k6 made with other options,
+        // a shorter run and a run with other iteration counts did not apply that load: each is refused with the reason.
+        var otherOptions = await Refuse(f => f["load"]!["effective"] = "scenarios=default");
+        Assert.Equal("load.effective", Field(otherOptions));
+        Assert.Contains("did not apply the load of the profile", otherOptions["errors"]![0]!["message"]!.GetValue<string>());
+        var shorter = await Refuse(f => f["window"]!["elapsedMs"] = 30_000);
+        Assert.Equal("window.elapsedMs", Field(shorter));
+        Assert.Contains("needs 57000 ms", shorter["errors"]![0]!["message"]!.GetValue<string>());
+        var fewer = await Refuse(f => f["load"]!["iterations"] = 2200);
+        Assert.Equal("load.iterations", Field(fewer));
+        Assert.Contains("may differ by 120", fewer["errors"]![0]!["message"]!.GetValue<string>());
+        Assert.Equal("load.plannedIterations", Field(await Refuse(f => f["load"]!["plannedIterations"] = 2200)));
+        // The end of a run is bounded as its start is: a run that started two minutes ago has not run for an hour.
+        var endless = await Refuse(f => f["window"]!["elapsedMs"] = 3_600_000);
+        Assert.Equal("window.elapsedMs", Field(endless));
+        Assert.Contains("ends in the future", endless["errors"]![0]!["message"]!.GetValue<string>());
         Assert.Equal("scriptHash", Field(await Refuse(f => f["scriptHash"] = "ABC")));
         Assert.Equal("invalid_body", (await Read(owner.PostAsync(Url(project, "results"), new StringContent("{ \"format\": ", Encoding.UTF8, "application/json")), HttpStatusCode.BadRequest))["type"]!.GetValue<string>());
         var large = Bind(Baseline, script);
         large["padding"] = new string('x', 300_000);
         await ImportAsync(owner, project, large, HttpStatusCode.RequestEntityTooLarge);
 
-        // The summary export of the same run carries the identity in the name of a metric, and gives the same numbers.
+        // The summary export of the same run is the same run. It is not stored a second time, and the refusal names the stored result.
+        var sameRun = await ImportAsync(owner, project, Bind(BaselineExport, script, startedAt), HttpStatusCode.Conflict);
+        Assert.Contains(result["id"]!.GetValue<Guid>().ToString(), sameRun["detail"]!.GetValue<string>());
+        Assert.Single((await Read(owner.GetAsync(Url(project, "results")))).AsArray());
+
+        // The summary export of a run carries the identity in the name of a metric, and gives the same numbers.
         var export = await ImportAsync(owner, project, Bind(BaselineExport, script));
         Assert.Equal(("measured", "k6-summary-export"), (export["result"]!["label"]!.GetValue<string>(), export["result"]!["provenance"]!["format"]!.GetValue<string>()));
         Assert.Equal(operation["latency"]!.ToJsonString(), export["operations"]![0]!["latency"]!.ToJsonString());
@@ -371,19 +432,25 @@ public class LoadTestEndpointTests(IntegrationFixture fixture)
         Assert.Equal(3, (await Read(owner.GetAsync(Url(project, "results")))).AsArray().Count);
 
         // The authorisation is revoked: a later run of the script is a run against a target that nobody allows.
-        await Read(owner.DeleteAsync(Url(project, $"targets/{target["id"]}/authorisation")));
-        var late = Bind(Regressed, script);
-        late["flow"]!["droppedIterations"] = 1;
-        Assert.Equal("target_not_authorised", (await ImportAsync(owner, project, late, HttpStatusCode.UnprocessableEntity))["type"]!.GetValue<string>());
+        var revoked = await Read(owner.DeleteAsync(Url(project, $"targets/{target["id"]}/authorisation")));
+        Assert.Equal("target_not_authorised", (await ImportAsync(owner, project, Bind(Regressed, script), HttpStatusCode.UnprocessableEntity))["type"]!.GetValue<string>());
+
+        // An owner authorises the target again. That is another authorisation: it does not admit a run of the old script.
+        var again = await Read(AuthoriseAsync(owner, project, revoked));
+        Assert.Equal("target_not_authorised", (await ImportAsync(owner, project, Bind(Regressed, script), HttpStatusCode.UnprocessableEntity))["type"]!.GetValue<string>());
+        var fresh = await ScriptAsync(owner, project, again, seeded.ProfileId);
+        Assert.NotEqual(script["hash"]!.GetValue<string>(), fresh["hash"]!.GetValue<string>());
+        await ImportAsync(owner, project, Bind(Regressed, fresh));
     }
 
     [Fact]
-    public async Task A_profile_value_is_measured_only_when_it_names_an_imported_result_of_the_same_project()
+    public async Task A_value_is_measured_only_as_the_service_time_of_an_operation_with_the_numbers_of_a_result_that_covers_it()
     {
         using var seeded = await SeedAsync();
         var (owner, project) = (seeded.Owner, seeded.Project);
         var script = await ScriptAsync(owner, project, await AddTargetAsync(owner, project), seeded.ProfileId);
         var resultId = (await ImportAsync(owner, project, Bind(Baseline, script)))["result"]!["id"]!.GetValue<Guid>();
+        var good = $"k6:{resultId}";
 
         // Another project of the same user has a result too. Its ID names nothing here.
         var (_, otherProject) = await TestHost.CreateProjectAsync(owner);
@@ -392,41 +459,142 @@ public class LoadTestEndpointTests(IntegrationFixture fixture)
         var otherScript = await ScriptAsync(owner, otherProject, await AddTargetAsync(owner, otherProject), otherProfile);
         var foreign = (await ImportAsync(owner, otherProject, Bind(Baseline, otherScript)))["result"]!["id"]!.GetValue<Guid>();
 
-        async Task<JsonNode> Save(string? reference, HttpStatusCode expected)
+        // A second scenario of this project. The result is of the first one.
+        var second = seeded.Orders.WithoutOutbox();
+        (second["id"], second["name"]) = (Guid.NewGuid().ToString(), "Place an order again");
+        await TestHost.Created(owner.PostAsync($"/api/projects/{project}/scenarios", OrdersReference.Json(second)));
+
+        async Task<JsonNode> Save(Action<JsonObject> change, HttpStatusCode expected)
         {
             var profile = Profile(seeded.Orders);
-            profile["serviceTimes"]![0]!["label"] = "measured";
-            profile["serviceTimes"]![0]!["measurementRef"] = reference;
+            change(profile);
             return await Read(owner.PutAsync($"/api/projects/{project}/stress/profiles/{seeded.ProfileId}", OrdersReference.Json(profile)), expected);
         }
+        static void Measure(JsonNode entry, string? reference) => (entry["label"], entry["measurementRef"]) = ("measured", reference);
 
-        foreach (var reference in new[] { $"k6:{Guid.NewGuid()}", $"k6:{foreign}", "k6:run-1", resultId.ToString(), $"k6:{resultId.ToString().ToUpperInvariant()}", $"K6:{resultId}" })
-            Assert.Equal("serviceTimes[0].measurementRef", Field(await Save(reference, HttpStatusCode.BadRequest)));
-        Assert.Equal("serviceTimes[0].measurementRef", Field(await Save(null, HttpStatusCode.BadRequest)));
+        // The name resolves to an imported result of this project, in its one spelling.
+        foreach (var reference in new[] { $"k6:{Guid.NewGuid()}", $"k6:{foreign}", "k6:run-1", resultId.ToString(), $"k6:{resultId.ToString().ToUpperInvariant()}", $"K6:{resultId}", null })
+            Assert.Equal("serviceTimes[0].measurementRef", Field(await Save(p => Measure(p["serviceTimes"]![0]!, reference), HttpStatusCode.BadRequest)));
 
-        var saved = await Save($"k6:{resultId}", HttpStatusCode.OK);
-        Assert.Equal("measured", saved["profile"]!["serviceTimes"]![0]!["label"]!.GetValue<string>());
+        // The result covers the operation that the script drove. It holds no latency of the write to the store or of a handler.
+        Assert.Equal("serviceTimes[1].measurementRef", Field(await Save(p => Measure(p["serviceTimes"]![1]!, good), HttpStatusCode.BadRequest)));
+        Assert.Equal("serviceTimes[2].measurementRef", Field(await Save(p => Measure(p["serviceTimes"]![2]!, good), HttpStatusCode.BadRequest)));
+        // The result is of the scenario of the profile.
+        var otherScenario = await Save(p => { p["scenarioId"] = second["id"]!.GetValue<string>(); Measure(p["serviceTimes"]![0]!, good); }, HttpStatusCode.BadRequest);
+        Assert.Equal("serviceTimes[0].measurementRef", Field(otherScenario));
+        Assert.Contains("another scenario", otherScenario["errors"]![0]!["message"]!.GetValue<string>());
+
+        // A k6 result measures no worker count, no consumer count, no probability, no policy and no arrival rate.
+        Assert.Equal("resources[0].label", Field(await Save(p => Measure(p["resources"]![0]!, good), HttpStatusCode.BadRequest)));
+        Assert.Equal("subscriptions[0].label", Field(await Save(p => Measure(p["subscriptions"]![0]!, good), HttpStatusCode.BadRequest)));
+        Assert.Equal("arrivals.label", Field(await Save(p => Measure(p["arrivals"]!, good), HttpStatusCode.BadRequest)));
+        Assert.Equal("branches[0].label", Field(await Save(p =>
+        {
+            p["branches"]!.AsArray().Add(new JsonObject { ["stepId"] = "choose", ["probability"] = 0.5 });
+            Measure(p["branches"]![0]!, good);
+        }, HttpStatusCode.BadRequest)));
+        Assert.Equal("overrides[0].label", Field(await Save(p =>
+        {
+            p["overrides"]!.AsArray().Add(new JsonObject { ["target"] = OrdersReference.PlaceOrder.ToString(), ["timeoutMs"] = 500 });
+            Measure(p["overrides"]![0]!, good);
+        }, HttpStatusCode.BadRequest)));
+
+        // A person picks the result and the distribution. The numbers are the numbers of the result: a typed number is not read.
+        async Task<JsonNode> Stored(JsonObject time)
+        {
+            var saved = await Save(p => { Measure(p["serviceTimes"]![0]!, good); p["serviceTimes"]![0]!["time"] = time; }, HttpStatusCode.OK);
+            Assert.Equal("measured", saved["profile"]!["serviceTimes"]![0]!["label"]!.GetValue<string>());
+            return saved["profile"]!["serviceTimes"]![0]!["time"]!;
+        }
+        var typed = await Stored(new JsonObject { ["kind"] = "lognormal", ["medianMs"] = 1, ["p95Ms"] = 2 });
+        Assert.Equal((BaselineP50, BaselineP95), (typed["medianMs"]!.GetValue<double>(), typed["p95Ms"]!.GetValue<double>()));
+        Assert.Equal(BaselineMean, (await Stored(new JsonObject { ["kind"] = "fixed", ["ms"] = 0.001 }))["ms"]!.GetValue<double>());
+        Assert.Equal(BaselineMean, (await Stored(new JsonObject { ["kind"] = "exponential" }))["meanMs"]!.GetValue<double>());
+        var uniform = await Stored(new JsonObject { ["kind"] = "uniform", ["minMs"] = 0, ["maxMs"] = 1 });
+        Assert.Equal((BaselineMin, BaselineMax), (uniform["minMs"]!.GetValue<double>(), uniform["maxMs"]!.GetValue<double>()));
+
+        var profileUrl = $"/api/projects/{project}/stress/profiles/{seeded.ProfileId}";
+        var measurement = Assert.Single((await Read(owner.GetAsync(profileUrl)))["measurements"]!.AsArray())!;
+        Assert.Equal((OrdersReference.PlaceOrder, good, false), (measurement["target"]!.GetValue<Guid>(), measurement["measurementRef"]!.GetValue<string>(), measurement["measurementStale"]!.GetValue<bool>()));
 
         // A measured input does not make an output measured: every number the simulator computes stays an estimate.
-        var run = await Read(owner.PostAsync($"/api/projects/{project}/stress/profiles/{seeded.ProfileId}/runs", null), HttpStatusCode.Created);
+        var run = await Read(owner.PostAsync($"{profileUrl}/runs", null), HttpStatusCode.Created);
         Assert.Equal("estimated", run["result"]!["label"]!.GetValue<string>());
         Assert.Equal("estimated", run["result"]!["operations"]![0]!["latency"]!["label"]!.GetValue<string>());
         Assert.DoesNotContain("\"label\":\"measured\"", run["result"]!["flow"]!.ToJsonString());
-        Assert.Contains(run["result"]!["assumptions"]!.AsArray(), a => a!["label"]!.GetValue<string>() == "measured" && a["measurementRef"]!.GetValue<string>() == $"k6:{resultId}");
+        static List<JsonNode> MeasuredRows(JsonNode stressRun) => [.. stressRun["result"]!["assumptions"]!.AsArray().Where(a => a!["label"]!.GetValue<string>() == "measured").Select(a => a!)];
+        Assert.All(MeasuredRows(run), a => Assert.Equal(("service-time", OrdersReference.PlaceOrder, good, false),
+            (a["group"]!.GetValue<string>(), a["target"]!.GetValue<Guid>(), a["measurementRef"]!.GetValue<string>(), a["measurementStale"]!.GetValue<bool>())));
+        Assert.Equal(3, MeasuredRows(run).Count);
+        static List<string> Reasons(JsonNode stressRun) => [.. stressRun["result"]!["confidence"]!["reasons"]!.AsArray().Select(r => r!.GetValue<string>())];
+        Assert.DoesNotContain(Reasons(run), r => r.Contains("POST /orders"));
+
+        // The model moves on. The result is stale, and the label says so wherever it shows: in the profile and in a new run.
+        await TestHost.Created(owner.PostAsJsonAsync($"/api/projects/{project}/elements", new { id = Guid.NewGuid(), kind = "system", name = "Later" }));
+        measurement = Assert.Single((await Read(owner.GetAsync(profileUrl)))["measurements"]!.AsArray())!;
+        Assert.Equal((true, "model"), (measurement["measurementStale"]!.GetValue<bool>(), measurement["staleBecause"]![0]!.GetValue<string>()));
+        var later = await Read(owner.PostAsync($"{profileUrl}/runs", null), HttpStatusCode.Created);
+        Assert.All(MeasuredRows(later), a => Assert.True(a["measurementStale"]!.GetValue<bool>()));
+        Assert.Contains(Reasons(later), r => r.StartsWith("The measurement behind the service time of 'POST /orders' does not count: the measured result is stale."));
 
         // The result stays while a profile names it.
         var held = await Read(owner.DeleteAsync(Url(project, $"results/{resultId}")), HttpStatusCode.Conflict);
         Assert.Contains("Black Friday", held["detail"]!.GetValue<string>());
-        await Read(owner.PutAsync($"/api/projects/{project}/stress/profiles/{seeded.ProfileId}", OrdersReference.Json(Profile(seeded.Orders))));
+        await Read(owner.PutAsync(profileUrl, OrdersReference.Json(Profile(seeded.Orders))));
         await Status(HttpStatusCode.NoContent, owner.DeleteAsync(Url(project, $"results/{resultId}")), "delete");
         await Status(HttpStatusCode.NotFound, owner.GetAsync(Url(project, $"results/{resultId}")), "read deleted");
+    }
+
+    [Fact]
+    public async Task Imports_at_the_same_instant_store_one_run_once_and_do_not_pass_the_limit_of_a_project()
+    {
+        using var seeded = await SeedAsync();
+        var (owner, project) = (seeded.Owner, seeded.Project);
+        var script = await ScriptAsync(owner, project, await AddTargetAsync(owner, project), seeded.ProfileId);
+
+        // The two files of one run, sent at once: one is stored, and the other is told which result holds the run.
+        var at = Start();
+        var both = await Task.WhenAll(
+            owner.PostAsync(Url(project, "results"), OrdersReference.Json(Bind(Baseline, script, at))),
+            owner.PostAsync(Url(project, "results"), OrdersReference.Json(Bind(BaselineExport, script, at))));
+        Assert.Equal([HttpStatusCode.Created, HttpStatusCode.Conflict], both.Select(r => r.StatusCode).Order());
+        var stored = (await Read(owner.GetAsync(Url(project, "results")))).AsArray().Single()!["id"]!.GetValue<Guid>();
+        Assert.Contains(stored.ToString(), await both.Single(r => r.StatusCode == HttpStatusCode.Conflict).Content.ReadAsStringAsync());
+
+        // Rows up to two below the limit, written to the table. Then six imports at once: two places are left.
+        using (var scope = seeded.Factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<LoadTestsDbContext>();
+            var row = await db.Results.AsNoTracking().SingleAsync(r => r.Id == stored);
+            for (var i = 1; i < MeasuredResults.MaxResultsPerProject - 2; i++)
+            {
+                db.Results.Add(new ResultEntity
+                {
+                    Id = Guid.NewGuid(), ProjectId = row.ProjectId, ScriptId = row.ScriptId, ScriptHash = row.ScriptHash, ScenarioId = row.ScenarioId, ScenarioVersion = row.ScenarioVersion,
+                    ModelStreamId = row.ModelStreamId, ModelVersion = row.ModelVersion, TargetId = row.TargetId, Environment = row.Environment, Format = row.Format,
+                    StartedAt = row.StartedAt.AddDays(-i), EndedAt = row.EndedAt.AddDays(-i), ElapsedMs = row.ElapsedMs, ContentHash = $"{i:x64}", Document = row.Document,
+                    ImportedBy = row.ImportedBy, ImportedAt = row.ImportedAt,
+                });
+            }
+            await db.SaveChangesAsync();
+        }
+        var atOnce = await Task.WhenAll(Enumerable.Range(0, 6).Select(_ => owner.PostAsync(Url(project, "results"), OrdersReference.Json(Bind(Regressed, script)))));
+        Assert.Equal(2, atOnce.Count(r => r.StatusCode == HttpStatusCode.Created));
+        Assert.Equal(4, atOnce.Count(r => r.StatusCode == HttpStatusCode.Conflict));
+        Assert.Equal(MeasuredResults.MaxResultsPerProject, (await Read(owner.GetAsync(Url(project, "results")))).AsArray().Count);
     }
 
     [Fact]
     public async Task An_estimate_stands_beside_a_measured_value_with_both_labels_and_a_missing_measurement_is_unknown()
     {
         // With the outbox the flow has a second operation, the relay, which is a command: k6 cannot drive it.
-        using var seeded = await SeedAsync(outbox: true);
+        // The profile replaces a timeout of the model: an input of the simulation that no k6 run applies.
+        using var seeded = await SeedAsync(orders =>
+        {
+            var profile = Profile(orders, withRelay: true);
+            profile["overrides"]!.AsArray().Add(new JsonObject { ["target"] = OrdersReference.PlaceOrder.ToString(), ["timeoutMs"] = 30_000 });
+            return profile;
+        }, outbox: true);
         var (owner, project) = (seeded.Owner, seeded.Project);
         var run = await Read(owner.PostAsync($"/api/projects/{project}/stress/profiles/{seeded.ProfileId}/runs", null), HttpStatusCode.Created);
         var script = await ScriptAsync(owner, project, await AddTargetAsync(owner, project), seeded.ProfileId);
@@ -437,17 +605,18 @@ public class LoadTestEndpointTests(IntegrationFixture fixture)
         var estimated = run["result"]!["operations"]!.AsArray().Single(o => o!["id"]!.GetValue<Guid>() == OrdersReference.PlaceOrder)!;
 
         var p95 = Row(comparison, "operation", "latencyP95", OrdersReference.PlaceOrder);
-        Assert.Equal((estimated["latency"]!["p95Ms"]!.GetValue<double>(), "estimated", 10.51905, "measured"),
+        Assert.Equal((estimated["latency"]!["p95Ms"]!.GetValue<double>(), "estimated", BaselineP95, "measured"),
             (p95["estimated"]!.GetValue<double>(), p95["estimatedLabel"]!.GetValue<string>(), p95["measured"]!.GetValue<double>(), p95["measuredLabel"]!.GetValue<string>()));
-        Assert.Equal(10.51905 - estimated["latency"]!["p95Ms"]!.GetValue<double>(), p95["difference"]!.GetValue<double>(), 9);
-        Assert.Equal((0d, 0d, 0d), (Row(comparison, "operation", "errorRate", OrdersReference.PlaceOrder)["estimated"]!.GetValue<double>(),
-            Row(comparison, "operation", "errorRate", OrdersReference.PlaceOrder)["measured"]!.GetValue<double>(),
-            Row(comparison, "operation", "errorRate", OrdersReference.PlaceOrder)["difference"]!.GetValue<double>()));
-        Assert.Equal(2000 / 49.988, Row(comparison, "operation", "throughput", OrdersReference.PlaceOrder)["measured"]!.GetValue<double>(), 9);
+        Assert.Equal(BaselineP95 - estimated["latency"]!["p95Ms"]!.GetValue<double>(), p95["difference"]!.GetValue<double>(), 9);
+        Assert.Null(p95["reason"]);
+        Assert.Equal((0d, 0d, 0d), (Row(comparison, "operation", "unexpectedStatusRate", OrdersReference.PlaceOrder)["estimated"]!.GetValue<double>(),
+            Row(comparison, "operation", "unexpectedStatusRate", OrdersReference.PlaceOrder)["measured"]!.GetValue<double>(),
+            Row(comparison, "operation", "unexpectedStatusRate", OrdersReference.PlaceOrder)["difference"]!.GetValue<double>()));
+        Assert.Equal(BaselineRequests / BaselineSeconds, Row(comparison, "operation", "throughput", OrdersReference.PlaceOrder)["measured"]!.GetValue<double>(), 9);
         Assert.Equal(run["result"]!["flow"]!["latency"]!["p50Ms"]!.GetValue<double>(), Row(comparison, "flow", "latencyP50")["estimated"]!.GetValue<double>());
 
         // The relay has an estimate and no measurement. That is unknown: not zero, and not a match.
-        foreach (var metric in new[] { "latencyP50", "latencyP90", "latencyP95", "latencyP99", "throughput", "errorRate" })
+        foreach (var metric in new[] { "latencyP50", "latencyP90", "latencyP95", "latencyP99", "throughput", "unexpectedStatusRate" })
         {
             var row = Row(comparison, "operation", metric, OrdersReference.RelayOutbox);
             Assert.Equal("estimated", row["estimatedLabel"]!.GetValue<string>());
@@ -456,7 +625,12 @@ public class LoadTestEndpointTests(IntegrationFixture fixture)
             Assert.Null(row["measured"]);
             Assert.Null(row["difference"]);
         }
-        Assert.Contains(comparison["differences"]!.AsArray(), d => d!.GetValue<string>().StartsWith("The script does not perform 4 step(s)"));
+        var differences = comparison["differences"]!.AsArray().Select(d => d!.GetValue<string>()).ToList();
+        Assert.Contains(differences, d => d.StartsWith("The script does not perform 4 step(s)"));
+        // Every known difference of the two sides is stated: the shape of the arrivals, the inputs that the run did not apply, and the two windows.
+        Assert.Contains("Load of the k6 run: The profile has Poisson arrivals. k6 starts iterations at a constant rate with the same mean; it does not reproduce the random gaps.", differences);
+        Assert.Contains(differences, d => d.StartsWith("The simulation applies 0 outage window(s) and 1 policy override(s) of its profile. The k6 run applied none of them"));
+        Assert.Contains($"The k6 run measured {BaselineSeconds.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)} s after its warm-up. The simulation measured 50 s: its profile has a duration of 60 s and a warm-up of 10 s.", differences);
         Assert.DoesNotContain(comparison.AsObject(), p => p.Key is "verdict" or "match" or "confirmed");
 
         // A run of another scenario is no estimate of this result.
@@ -476,7 +650,7 @@ public class LoadTestEndpointTests(IntegrationFixture fixture)
         var stale = await Read(owner.GetAsync(Url(project, $"compare/estimate?resultId={resultId}&runId={run["run"]!["id"]}")));
         Assert.Contains(stale["differences"]!.AsArray(), d => d!.GetValue<string>() == "The measured result is stale: the model and the scenario changed after the script was generated.");
         // The numbers of a stale result stay what k6 measured.
-        Assert.Equal(10.51905, Row(stale, "operation", "latencyP95", OrdersReference.PlaceOrder)["measured"]!.GetValue<double>());
+        Assert.Equal(BaselineP95, Row(stale, "operation", "latencyP95", OrdersReference.PlaceOrder)["measured"]!.GetValue<double>());
     }
 
     [Fact]
@@ -492,26 +666,26 @@ public class LoadTestEndpointTests(IntegrationFixture fixture)
         var report = await Read(owner.GetAsync(Url(project, $"compare/results?baseline={baseline}&candidate={regressed}")));
         Assert.Equal("measured", report["label"]!.GetValue<string>());
 
-        // The committed numbers of the two runs: 2000 requests each; the second run is 25 ms slower and 41 requests fail.
+        // The committed numbers of the two runs: 2000 and 2001 requests; the second run is 25 ms slower and 40 requests get a 500 status.
         string Line(string scope, string metric, Guid? id = null)
         {
             var row = Row(report, scope, metric, id);
             static string N(JsonNode? value) => value is null ? "-" : value.GetValue<double>().ToString("0.####", System.Globalization.CultureInfo.InvariantCulture);
             return $"{N(row["baseline"])} -> {N(row["candidate"])} change {N(row["change"])} relative {N(row["relative"])} {row["verdict"]}";
         }
-        Assert.Equal("6.72 -> 31.369 change 24.649 relative 3.668 regressed", Line("operation", "latencyP50", OrdersReference.PlaceOrder));
-        Assert.Equal("10.5191 -> 35.4301 change 24.9111 relative 2.3682 regressed", Line("operation", "latencyP95", OrdersReference.PlaceOrder));
-        Assert.Equal("13.989 -> 40.1395 change 26.1506 relative 1.8694 regressed", Line("operation", "latencyP99", OrdersReference.PlaceOrder));
-        Assert.Equal("0 -> 0.0205 change 0.0205 relative - regressed", Line("operation", "errorRate", OrdersReference.PlaceOrder));
+        Assert.Equal("8.041 -> 32.41 change 24.369 relative 3.0306 regressed", Line("operation", "latencyP50", OrdersReference.PlaceOrder));
+        Assert.Equal("14.4287 -> 37.243 change 22.8144 relative 1.5812 regressed", Line("operation", "latencyP95", OrdersReference.PlaceOrder));
+        Assert.Equal("25.7391 -> 42.1266 change 16.3875 relative 0.6367 regressed", Line("operation", "latencyP99", OrdersReference.PlaceOrder));
+        Assert.Equal("0 -> 0.02 change 0.02 relative - regressed", Line("operation", "unexpectedStatusRate", OrdersReference.PlaceOrder));
         Assert.Equal("regressed", Row(report, "flow", "latencyP95")["verdict"]!.GetValue<string>());
-        // 41 of 2000 requests fail, so 2 % fewer complete in the same window. That is inside the tolerance of 10 %.
+        // 40 of 2001 requests get an unexpected status, so 2 % fewer complete in the same window. That is inside the tolerance of 10 %.
         Assert.Equal("unchanged", Row(report, "operation", "throughput", OrdersReference.PlaceOrder)["verdict"]!.GetValue<string>());
 
         var subjects = report["subjects"]!.AsArray();
         Assert.Equal(2, report["regressions"]!.GetValue<int>());
         var placeOrder = subjects.Single(s => s!["target"]?.GetValue<Guid>() == OrdersReference.PlaceOrder)!;
         Assert.True(placeOrder["regressed"]!.GetValue<bool>());
-        Assert.Equal(["latencyP50", "latencyP95", "latencyP99", "errorRate"], placeOrder["regressedMetrics"]!.AsArray().Select(m => m!.GetValue<string>()));
+        Assert.Equal(["latencyP50", "latencyP95", "latencyP99", "unexpectedStatusRate"], placeOrder["regressedMetrics"]!.AsArray().Select(m => m!.GetValue<string>()));
         Assert.Contains("more than 10 % and more than 1 ms", report["rule"]!.GetValue<string>());
 
         // The other way round the same numbers are an improvement, and a result against itself is unchanged.
@@ -550,7 +724,7 @@ public class LoadTestEndpointTests(IntegrationFixture fixture)
         foreach (var path in new[] { "targets", "scripts", $"scripts/{script["id"]}", "results", $"results/{resultId}", $"compare/results?baseline={resultId}&candidate={resultId}" })
             await Status(HttpStatusCode.Forbidden, stranger.GetAsync(Url(theirs, path)), $"GET {path}");
         await Status(HttpStatusCode.Forbidden, stranger.PostAsJsonAsync(Url(theirs, "targets"), new { name = "X", baseUrl = "https://x.example", environment = "test" }), "POST target");
-        await Status(HttpStatusCode.Forbidden, stranger.PostAsJsonAsync(Url(theirs, $"targets/{target["id"]}/authorise"), new { baseUrl = "https://orders.test.example" }), "authorise");
+        await Status(HttpStatusCode.Forbidden, AuthoriseAsync(stranger, theirs, target), "authorise");
         await Status(HttpStatusCode.Forbidden, stranger.PutAsJsonAsync(Url(theirs, $"targets/{target["id"]}"), new { name = "X", baseUrl = "https://x.example", environment = "test" }), "PUT target");
         await Status(HttpStatusCode.Forbidden, stranger.PostAsJsonAsync(Url(theirs, "scripts"), new { targetId = target["id"]!.GetValue<Guid>(), profileId = seeded.ProfileId }), "POST script");
         await Status(HttpStatusCode.Forbidden, stranger.PostAsync(Url(theirs, "results"), OrdersReference.Json(Bind(Regressed, script))), "POST result");
@@ -562,7 +736,7 @@ public class LoadTestEndpointTests(IntegrationFixture fixture)
         await Status(HttpStatusCode.NotFound, stranger.DeleteAsync(Url(mine, $"results/{resultId}")), "DELETE foreign result");
         await Status(HttpStatusCode.NotFound, stranger.GetAsync(Url(mine, $"compare/results?baseline={ownResult}&candidate={resultId}")), "compare with a foreign result");
         await Status(HttpStatusCode.NotFound, stranger.PutAsJsonAsync(Url(mine, $"targets/{target["id"]}"), new { name = "X", baseUrl = "https://x.example", environment = "test" }), "PUT foreign target");
-        await Status(HttpStatusCode.NotFound, stranger.PostAsJsonAsync(Url(mine, $"targets/{target["id"]}/authorise"), new { baseUrl = "https://orders.test.example" }), "authorise foreign target");
+        await Status(HttpStatusCode.NotFound, AuthoriseAsync(stranger, mine, target), "authorise foreign target");
         await Status(HttpStatusCode.NotFound, stranger.DeleteAsync(Url(mine, $"targets/{target["id"]}")), "DELETE foreign target");
         await Status(HttpStatusCode.NotFound, stranger.PostAsJsonAsync(Url(mine, "scripts"), new { targetId = target["id"]!.GetValue<Guid>(), profileId = ownProfile }), "script for a foreign target");
         await Status(HttpStatusCode.NotFound, stranger.PostAsJsonAsync(Url(mine, "scripts"), new { targetId = ownTarget["id"]!.GetValue<Guid>(), profileId = seeded.ProfileId }), "script for a foreign profile");
@@ -586,68 +760,182 @@ public class LoadTestEndpointTests(IntegrationFixture fixture)
         Assert.Single((await Read(stranger.GetAsync(Url(mine, "results")))).AsArray());
     }
 
-    /// <summary>
-    /// The whole path with the real k6: a script that Vellum generates runs against a local
-    /// stand-in of the Orders API, and both files that the run leaves import as measured.
-    /// </summary>
-    [K6Fact]
-    public async Task K6_runs_a_generated_script_against_a_local_stand_in_and_both_of_its_result_files_import()
+    /// <summary>A local stand-in of the Orders API. <paramref name="answer"/> gets the number of the request and gives the status.</summary>
+    private sealed class StandIn(WebApplication app, string baseUrl) : IAsyncDisposable
     {
-        var builder = WebApplication.CreateSlimBuilder();
-        builder.WebHost.UseUrls("http://127.0.0.1:0");
-        await using var standIn = builder.Build();
-        var requests = 0;
-        standIn.MapPost("/orders", async (HttpRequest request) =>
+        public string BaseUrl => baseUrl;
+        public int Requests;
+        /// <summary>Requests that reached the other URL, the one a redirect names.</summary>
+        public int Elsewhere;
+        public bool CredentialElsewhere;
+
+        public static async Task<StandIn> StartAsync(Func<int, HttpRequest, Task<IResult>> answer)
         {
-            Interlocked.Increment(ref requests);
+            var builder = WebApplication.CreateSlimBuilder();
+            builder.WebHost.UseUrls("http://127.0.0.1:0");
+            var app = builder.Build();
+            StandIn? standIn = null;
+            app.MapPost("/orders", (HttpRequest request) => answer(Interlocked.Increment(ref standIn!.Requests), request));
+            app.Map("/elsewhere/{**rest}", (HttpRequest request) =>
+            {
+                Interlocked.Increment(ref standIn!.Elsewhere);
+                standIn.CredentialElsewhere |= request.Headers.Authorization.Count > 0;
+                return Results.Ok();
+            });
+            await app.StartAsync();
+            return standIn = new StandIn(app, app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.Single());
+        }
+
+        public static async Task<IResult> Orders(HttpRequest request)
+        {
             var order = await request.ReadFromJsonAsync<JsonObject>();
             return request.Headers.Authorization == "Bearer stand-in-token" && order!["sku"]!.GetValue<string>() == "apple"
                 ? Results.Json(new { orderId = "o-1" }, statusCode: StatusCodes.Status201Created)
                 : Results.StatusCode(StatusCodes.Status400BadRequest);
-        });
-        await standIn.StartAsync();
-        var baseUrl = standIn.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses.Single();
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            await app.StopAsync();
+            await app.DisposeAsync();
+        }
+    }
+
+    private static async Task<(int ExitCode, string Output, JsonNode? Result)> K6Async(string directory, JsonNode script, string baseUrl, params string[] options)
+    {
+        var fileName = script["fileName"]!.GetValue<string>();
+        await File.WriteAllTextAsync(Path.Combine(directory, fileName), script["content"]!.GetValue<string>());
+        var resultFile = Path.Combine(directory, "vellum-k6-result.json");
+        File.Delete(resultFile);
+        var (exitCode, output, error) = await K6FactAttribute.RunAsync(directory,
+            ["run", "--quiet", .. options, "-e", $"VELLUM_BASE_URL={baseUrl}", "-e", "VELLUM_AUTHORIZATION=Bearer stand-in-token", fileName]);
+        return (exitCode, output + error, File.Exists(resultFile) ? JsonNode.Parse(await File.ReadAllTextAsync(resultFile)) : null);
+    }
+
+    /// <summary>
+    /// The whole path with the real k6: a script that Vellum generates runs against a local
+    /// stand-in of the Orders API, and both files that the run leaves import as measured. A run
+    /// with another load than the profile's stops, and no redirect takes a request elsewhere.
+    /// </summary>
+    [K6Fact]
+    public async Task K6_runs_a_generated_script_against_a_local_stand_in_and_both_of_its_result_files_import()
+    {
+        var redirect = false;
+        await using var standIn = await StandIn.StartAsync((_, request) => redirect
+            ? Task.FromResult(Results.Redirect("/elsewhere/orders", permanent: false, preserveMethod: true))
+            : StandIn.Orders(request));
 
         // 20 orders each second for 4 seconds; the first second is warm-up.
         using var seeded = await SeedAsync(orders => Profile(orders, duration: 4, warmUp: 1, rate: 20));
         var (owner, project) = (seeded.Owner, seeded.Project);
-        var script = await ScriptAsync(owner, project, await AddTargetAsync(owner, project, baseUrl: baseUrl), seeded.ProfileId);
+        var script = await ScriptAsync(owner, project, await AddTargetAsync(owner, project, baseUrl: standIn.BaseUrl), seeded.ProfileId);
 
         var directory = Directory.CreateTempSubdirectory("vellum-k6-").FullName;
         try
         {
-            var fileName = script["fileName"]!.GetValue<string>();
-            await File.WriteAllTextAsync(Path.Combine(directory, fileName), script["content"]!.GetValue<string>());
-
             // Another URL than the authorised one: the script stops before it sends a request.
-            var (wrongExit, wrongOutput, wrongError) = await K6FactAttribute.RunAsync(directory, "run", "--quiet", "-e", "VELLUM_BASE_URL=http://127.0.0.1:9", fileName);
-            Assert.True(wrongExit != 0, wrongOutput);
-            Assert.Contains("is not the base URL that this script is authorised for", wrongOutput + wrongError);
-            Assert.Equal(0, requests);
+            var wrong = await K6Async(directory, script, "http://127.0.0.1:9");
+            Assert.True(wrong.ExitCode != 0, wrong.Output);
+            Assert.Contains("is not the base URL that this script is authorised for", wrong.Output);
 
-            var (exitCode, output, error) = await K6FactAttribute.RunAsync(directory,
-                "run", "--quiet", "--summary-export", "export.json", "-e", $"VELLUM_BASE_URL={baseUrl}", "-e", "VELLUM_AUTHORIZATION=Bearer stand-in-token", fileName);
-            Assert.True(exitCode == 0, output + error);
-            Assert.Contains("Vellum k6 result (measured)", output);
+            // Options of the command line replace the executor of the script: 4 virtual users for 3 seconds are not
+            // 20 orders each second for 4 seconds. The script stops in setup(), sends nothing and writes no measurement.
+            var otherLoad = await K6Async(directory, script, standIn.BaseUrl, "--vus", "4", "--duration", "3s");
+            Assert.True(otherLoad.ExitCode != 0, otherLoad.Output);
+            Assert.Contains("k6 does not run the load that this script was generated for", otherLoad.Output);
+            Assert.Contains("Effective: scenarios=default", otherLoad.Output);
+            Assert.Equal(0, standIn.Requests);
+            Assert.Null(otherLoad.Result);
+            Assert.Contains("No result file is written", otherLoad.Output);
 
-            var result = JsonNode.Parse(await File.ReadAllTextAsync(Path.Combine(directory, "vellum-k6-result.json")))!;
-            var imported = await ImportAsync(owner, project, result);
+            var run = await K6Async(directory, script, standIn.BaseUrl, "--summary-export", "export.json");
+            Assert.True(run.ExitCode == 0, run.Output);
+            Assert.Contains("Vellum k6 result (measured)", run.Output);
+
+            var imported = await ImportAsync(owner, project, run.Result!);
             var operation = Assert.Single(imported["operations"]!.AsArray())!;
             // 3 seconds after the warm-up at 20 each second. The first and the last iteration can fall on either side.
             Assert.InRange(operation["requests"]!.GetValue<long>(), 55, 62);
-            Assert.Equal(0, operation["failed"]!.GetValue<long>());
-            Assert.True(requests > operation["requests"]!.GetValue<long>(), "The warm-up requests are sent and not counted.");
+            Assert.Equal(0, operation["unexpectedStatus"]!.GetValue<long>());
+            Assert.True(standIn.Requests > operation["requests"]!.GetValue<long>(), "The warm-up requests are sent and not counted.");
             Assert.Equal("measured", operation["latency"]!["label"]!.GetValue<string>());
-            Assert.InRange(operation["throughputPerSecond"]!.GetValue<double>(), 18, 22);
+            Assert.InRange(operation["throughputPerSecond"]!.GetValue<double>(), 17, 22);
+            Assert.Equal("constant-arrival-rate rate=20 unit=1000 duration=4000 pre=20 max=200", run.Result!["load"]!["effective"]!.GetValue<string>());
 
-            var export = await ImportAsync(owner, project, JsonNode.Parse(await File.ReadAllTextAsync(Path.Combine(directory, "export.json")))!);
-            Assert.Equal("k6-summary-export", export["result"]!["provenance"]!["format"]!.GetValue<string>());
-            Assert.Equal(operation.ToJsonString(), export["operations"]![0]!.ToJsonString());
+            // The export of the same run is the same run.
+            var export = JsonNode.Parse(await File.ReadAllTextAsync(Path.Combine(directory, "export.json")))!;
+            await ImportAsync(owner, project, export, HttpStatusCode.Conflict);
+            await Status(HttpStatusCode.NoContent, owner.DeleteAsync(Url(project, $"results/{imported["result"]!["id"]}")), "delete the result");
+            var fromExport = await ImportAsync(owner, project, export);
+            Assert.Equal("k6-summary-export", fromExport["result"]!["provenance"]!["format"]!.GetValue<string>());
+            Assert.Equal(operation.ToJsonString(), fromExport["operations"]![0]!.ToJsonString());
+
+            // The target answers 307 with another URL. The script follows no redirect: nothing goes there, with or
+            // without the credential, and each 3xx is an unexpected status.
+            redirect = true;
+            var redirected = await K6Async(directory, script, standIn.BaseUrl);
+            Assert.True(redirected.ExitCode == 0, redirected.Output);
+            Assert.Equal((0, false), (standIn.Elsewhere, standIn.CredentialElsewhere));
+            var refused = Assert.Single((await ImportAsync(owner, project, redirected.Result!))["operations"]!.AsArray())!;
+            Assert.True(refused["requests"]!.GetValue<long>() > 50, redirected.Output);
+            Assert.Equal(refused["requests"]!.GetValue<long>(), refused["unexpectedStatus"]!.GetValue<long>());
+            Assert.Null(refused["latency"]);
         }
         finally
         {
             Directory.Delete(directory, recursive: true);
-            await standIn.StopAsync();
+        }
+    }
+
+    /// <summary>
+    /// A scenario with a fault: the playback has the call as failed, so the script expects a
+    /// failure. The real k6 keeps the durations of those failures out of the success latency,
+    /// and the comparison does not set the run beside a simulation that applied no fault.
+    /// </summary>
+    [K6Fact]
+    public async Task K6_keeps_expected_failures_apart_and_a_run_with_faults_is_unknown_beside_an_estimate()
+    {
+        await using var standIn = await StandIn.StartAsync((_, _) => Task.FromResult(Results.StatusCode(StatusCodes.Status503ServiceUnavailable)));
+        using var seeded = await SeedAsync(orders => Profile(orders, duration: 4, warmUp: 1, rate: 20));
+        var (owner, project) = (seeded.Owner, seeded.Project);
+
+        var stress = await Read(owner.PostAsync($"/api/projects/{project}/stress/profiles/{seeded.ProfileId}/runs", null), HttpStatusCode.Created);
+        var faulted = seeded.Orders.WithoutOutbox();
+        faulted["faults"] = new JsonArray(new JsonObject { ["target"] = OrdersReference.PlaceOrder.ToString(), ["kind"] = "Error" });
+        faulted["assertions"] = new JsonArray();
+        Assert.True((await owner.PutAsync($"/api/projects/{project}/scenarios/{seeded.Orders.ScenarioId}", OrdersReference.Json(faulted))).IsSuccessStatusCode);
+        var script = await ScriptAsync(owner, project, await AddTargetAsync(owner, project, baseUrl: standIn.BaseUrl), seeded.ProfileId);
+        Assert.Equal(("failure", 1), (script["plan"]!["steps"]![0]!["expect"]!.GetValue<string>(), script["plan"]!["faults"]!.GetValue<int>()));
+
+        var directory = Directory.CreateTempSubdirectory("vellum-k6-").FullName;
+        try
+        {
+            var run = await K6Async(directory, script, standIn.BaseUrl);
+            Assert.True(run.ExitCode == 0, run.Output);
+            var imported = await ImportAsync(owner, project, run.Result!);
+            var operation = Assert.Single(imported["operations"]!.AsArray())!;
+            var requests = operation["requests"]!.GetValue<long>();
+            Assert.True(requests > 50, run.Output);
+
+            // Every request failed, as expected: none has an unexpected status, and none is in a success latency.
+            Assert.Equal((0L, requests, requests), (operation["unexpectedStatus"]!.GetValue<long>(), operation["expectedFailures"]!.GetValue<long>(), operation["expectedFailureLatency"]!["count"]!.GetValue<long>()));
+            Assert.Null(operation["latency"]);
+            Assert.Null(imported["result"]!["flow"]!["latency"]);
+            Assert.Equal((1, true), (imported["faults"]!.GetValue<int>(), imported["expectsFailure"]!.GetValue<bool>()));
+
+            // Beside the estimate, the measured side is unknown with the reason. "0 % unexpected" is not "0 % errors".
+            var comparison = await Read(owner.GetAsync(Url(project, $"compare/estimate?resultId={imported["result"]!["id"]}&runId={stress["run"]!["id"]}")));
+            foreach (var row in comparison["rows"]!.AsArray().Where(r => r!["scope"]!.GetValue<string>() == "flow" || r["target"]?.GetValue<Guid>() == OrdersReference.PlaceOrder))
+            {
+                Assert.Equal(("unknown", Comparisons.FaultsReason), (row!["measuredLabel"]!.GetValue<string>(), row["reason"]!.GetValue<string>()));
+                Assert.Null(row["measured"]);
+                Assert.Null(row["difference"]);
+            }
+            Assert.Contains(Comparisons.FaultsReason, comparison["differences"]!.AsArray().Select(d => d!.GetValue<string>()));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
         }
     }
 }

@@ -76,7 +76,7 @@ export function ImportResultsDialog({ projectId, onClose, onImported }: Props) {
           <DialogTitle>Import k6 results</DialogTitle>
           <DialogDescription>
             Give the file that a run of a Vellum script wrote: <span className="font-mono">vellum-k6-result.json</span>, or the JSON of <span className="font-mono">k6 run --summary-export</span>.
-            Vellum stores a file only when it names a script that Vellum generated for this project.
+            Vellum stores a file only when it names a script that Vellum generated for this project, and only when the run applied the load of that script.
           </DialogDescription>
         </DialogHeader>
 
@@ -103,6 +103,11 @@ export function ImportResultsDialog({ projectId, onClose, onImported }: Props) {
               className="mt-1 w-full rounded-lg border border-input bg-transparent px-2.5 py-2 font-mono text-[11px] leading-4 text-foreground outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 aria-invalid:border-[var(--trace-failure)] dark:bg-input/30"
             />
           </label>
+
+          <p className="rounded-md border border-[var(--trace-retry)]/60 px-3 py-2 text-xs leading-relaxed text-foreground">
+            An import shows that the file names a script that Vellum generated. Vellum did not run k6 and cannot check that k6 produced the numbers.
+            The result records that you imported the file.
+          </p>
 
           {problem && (
             <div id={`${ids}-problem`} role="alert" className="rounded-md border border-[var(--trace-failure)]/60 px-3 py-2 text-xs">

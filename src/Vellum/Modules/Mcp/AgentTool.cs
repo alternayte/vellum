@@ -169,9 +169,9 @@ public static class AgentTools
             new("GET", "/api/projects/{projectId}/questions"), ReviewTools.ListQuestions),
         new("get_build_manifest", AgentScope.Read,
             "Reads the build manifest of the main model or of a named revision: whether it is build ready, the blockers, the pinned versions and the file hashes.",
-            "format, generator, bundleHash, buildReady, blockers[], pinned { projectId, projectName, branch, streamVersion, revisionId, scenarios[], schemas[], promises[], runs[], sources[] }, files[] { path, sha256, bytes }, selfCheck, totals",
+            "format, generator, bundleHash, buildReady, blockers[], pinned { projectId, projectName, branch, streamVersion, revisionId, scenarios[], schemas[], promises[], runs[], sources[], decisions[], seal }, files[] { path, sha256, bytes }, selfCheck, totals",
             $"{McpOutput.MaxListed} items of each list at most, and fewer when the result would pass the byte bound; totals has the real counts. {Bytes}", "declared",
-            "Derived from the declared model at the pinned versions. buildReady says that no blocker is open. It says nothing about an implementation.",
+            "Derived from the declared model at the pinned versions. buildReady says that no blocker is open. It says nothing about an implementation. pinned.seal says that Vellum issued the pinned state: an export takes a pinned state only whole, unchanged and with its seal.",
             new("GET", "/api/projects/{projectId}/build/manifest"), BuildTools.GetBuildManifest),
 
         // propose
@@ -235,9 +235,9 @@ public static class AgentTools
         // export
         new("export_sdd", AgentScope.Export,
             "Exports the standalone SDD of the main model, a branch or a named revision as Markdown.",
-            "bundleHash, streamVersion, buildReady, bytes, markdown. When the SDD is larger than the bound: manifest and no markdown.",
+            "bundleHash, streamVersion, buildReady, current, bytes, markdown. When the SDD is larger than the bound: manifest and no markdown.",
             $"{Bytes} A larger SDD is not cut: the result holds the manifest and the notice names the HTTP export.", "declared",
-            "The SDD states the declared design at the pinned versions, with the label of each fact inside it.",
+            "The SDD states the declared design at the pinned versions, with the label of each fact inside it. buildReady is of the pinned state. current false means an input moved while the tool ran: call the tool again.",
             new("POST", "/api/projects/{projectId}/build/export"), BuildTools.ExportSdd),
         new("export_brief", AgentScope.Export,
             "Exports the change-scoped build brief for the given promises, scenarios and elements: only what that selection needs.",
@@ -247,9 +247,9 @@ public static class AgentTools
             new("POST", "/api/projects/{projectId}/build/brief"), BuildTools.ExportBrief),
         new("verify_bundle_manifest", AgentScope.Export,
             "Checks a manifest of a bundle: generates the bundle of its pinned state again and compares. It answers whether the manifest is what its pinned versions generate, and whether those versions are still the newest.",
-            "matchesPinned, current, moved[] { kind, id, pinned, current }, manifest (match or differs), manifestDifferences[], expectedBundleHash, actualBundleHash, differingFiles[], selfCheckPassed",
+            "matchesPinned, current, moved[] { kind, id, pinned, current }, issued, manifest (match or differs), manifestDifferences[], expectedBundleHash, actualBundleHash, differingFiles[], selfCheckPassed",
             $"{McpOutput.MaxListed} items of each list at most. A message to the MCP endpoint holds at most {Shared.RequestBodyLimit.Document} bytes: check a larger manifest, or a bundle zip, over HTTP. {Bytes}", "declared",
-            "matchesPinned false means the manifest was changed after the export. current false means an input moved after the export: drift, not tampering. A manifest alone shows nothing about the files themselves.",
+            "matchesPinned false means the manifest was changed after the export. current false means an input moved after the export: drift, not tampering. issued false means the pinned state has no seal of this Vellum instance, so an export refuses it: it is a manifest of a format before vellum-bundle/4, of another instance or of a removed master key, or somebody made the state. Take buildReady of a manifest as the state of the project now only when matchesPinned and current are both true. A manifest alone shows nothing about the files themselves.",
             new("POST", "/api/projects/{projectId}/build/verify"), BuildTools.VerifyBundleManifest),
     ];
 

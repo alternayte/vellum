@@ -35,9 +35,19 @@ Every input is an assumption. The result lists each one with a label.
 - `declared`: a person entered the value.
 - `measured`: the value names a measurement that Vellum imported.
 
-A value is `measured` only when it names an imported k6 result of the same project, as `k6:<result ID>`. A save with the label `measured` and no such name is refused. A person cannot turn a typed number into a measured one.
+Only the service time of an operation can be `measured`. All of these must be true:
 
-The timeouts and the retry policies of the model are assumptions too. The result lists them with the label `declared`.
+- The service time names an imported k6 result of the same project, as `k6:<result ID>`.
+- The result is of the scenario of the profile.
+- The script of that result drove the operation, and the result has a latency for it.
+
+You select the result and the distribution. Vellum writes the numbers of the result into the profile. Vellum does not read a number that you type for a measured service time. A person cannot turn a typed number into a measured one.
+
+Vellum refuses the label `measured` on workers, consumers, branch probabilities, overrides and arrivals. A k6 result measures none of them.
+
+A measured service time has a limit. k6 measures the time from the request to the response. That time holds the network, the wait for a worker at the target and the steps inside the call. So the measured value is not a pure service time. It holds for the load of that run only.
+
+A measurement goes `stale` when the scenario or the model changes. The profile and each run show `stale measurement` beside the label.
 
 A measured input does not make the output measured. The simulator computes every number of a stress result, so every number of a stress result stays `estimated`.
 
@@ -46,13 +56,14 @@ A measured input does not make the output measured. The simulator computes every
 The result states a confidence level and the rule that sets it.
 
 - `low`: a service time on the path of the flow is declared without a measurement.
-- `medium`: every service time on the path of the flow is measured.
+- `low`: a measured service time on the path has a stale measurement.
+- `medium`: every service time on the path of the flow is measured, and no measurement is stale.
 
-The stress engine never reports `high`. A model that leaves out the effects below does not earn it. The level is not a probability.
+The stress engine never reports `high`. A model that leaves out the effects below does not earn it.
 
 ### What the model leaves out
 
-Every result shows this list. It is not hidden and it does not depend on the profile. The [stress model](/reference/stress-model/#not-modelled) states each item in full.
+Every result shows this list. It is not hidden and it does not depend on the profile.
 
 - Network latency, jitter and loss.
 - Garbage collection pauses and cold starts.
@@ -68,17 +79,12 @@ Every result shows this list. It is not hidden and it does not depend on the pro
 - Capacity that the consumers of a subscription share with the workers of the same element.
 - Retry jitter and growing backoff.
 - Consumers of a dead-letter channel.
-- Request cancellation and deadline propagation: a caller that gives up does not stop the call that it made.
 
 A running system has all of these.
 
-A result adds the faults and the assertions of the scenario to the list when the scenario has them. The engine applies neither.
-
 ### The same inputs give the same result
 
-A run is a pure function of the model version, the scenario version, the profile, the seed and the engine version. The same five give the same bytes and the same hash. The limits of the engine are in the result and in the hash too. No setting changes them. So a difference between two runs comes from a difference in their inputs, and the comparison lists those inputs.
-
-The comparison states that two runs have the same result only when their hashes are equal.
+A run is a pure function of the model version, the scenario version, the profile, the seed and the engine version. The same five give the same bytes and the same hash. So a difference between two runs comes from a difference in their inputs, and the comparison lists those inputs.
 
 A hash that repeats shows that the calculation repeats. It does not show that the calculation matches a real system.
 
@@ -114,16 +120,15 @@ An estimate cannot show:
 A line that Vellum cannot price has no amount. Vellum lists the line as **unknown** with the reason. The line is in no total.
 
 - A resource without a price entry is unknown.
-- A line whose units do not convert is unknown.
 - A price for another provider or another region is not a price of the resource. The line is unknown.
 - A resource whose element is no longer in the model is unknown.
 - An empty cost sheet is not a cost of zero. Vellum does not say that a branch with an empty sheet costs less.
 
-A total holds known lines only. Read the unknown list together with the total. The [cost model](/reference/cost-model/#unknown-reasons) lists each reason.
+A total holds known lines only. Read the unknown list together with the total.
 
 ### What the estimate leaves out
 
-- Price tiers, free allowances and volume discounts. Vellum does not store the price of an Azure meter that has tiers.
+- Price tiers, free allowances and volume discounts.
 - Reservations, savings plans and negotiated prices.
 - Taxes and support plans.
 - Currency conversion. There is one total for each currency.
@@ -140,9 +145,9 @@ A hash that repeats shows that the calculation repeats. It does not show that th
 
 ## How to use an estimate
 
-Use a stress estimate to compare designs and to find the first limit of a design. Then measure the real system. See [Stress a flow](/how-to/stress-a-flow/).
+Use a stress estimate to compare designs and to find the first limit of a design. Then measure the real system.
 
-Use a cost estimate to compare variants and to find the lines that hold most of the cost. Then compare it with the invoice of the provider. See [Estimate costs](/how-to/estimate-costs/).
+Use a cost estimate to compare variants and to find the lines that hold most of the cost. Then compare it with the invoice of the provider.
 
 Keep each measurement apart from the estimate.
 
@@ -150,9 +155,11 @@ Keep each measurement apart from the estimate.
 
 A measurement is a number that k6 recorded on a deployed system. Vellum does not produce it. Vellum generates the k6 script, you run it, and Vellum imports the result file. See [Load test with k6](/how-to/load-test-with-k6/).
 
-A measured result has the label `measured`. Its provenance names the import: the script, the hash of the file, the target, the user, the agent token when there is one, and the time.
+A measured result has the label `measured`. Its provenance names the import: the script, the target, the user and the time.
 
-Vellum accepts a result only when it names a script that Vellum generated for the project. The script binds the numbers to one scenario version, one model version and one authorised target. A file that names no such script is refused. It is not stored with a weaker label. Vellum also refuses a result when the authorisation of the target is not in force at the import.
+Vellum accepts a result only when it names a script that Vellum generated for the project. The script binds the numbers to one scenario version, one model version, one authorised target and one load. A file that names no such script is refused. It is not stored with a weaker label.
+
+The script stops when k6 runs another load than the load of the profile. Vellum refuses a file from a run that was shorter than the plan, or that started another number of iterations.
 
 A measurement has limits too:
 
@@ -167,6 +174,8 @@ The comparison puts a simulation run beside a measured result. Each side keeps i
 
 A step that the script did not drive has no measured value. The comparison shows `unknown` for it. `unknown` is not zero and it is not a match.
 
-The comparison states differences. It gives no verdict. An estimate that is near one measurement is not confirmed for any other load.
+A scenario with faults is another case of `unknown`. The simulation does not apply the faults of a scenario. The k6 run had them in the target. The two sides are of different flows, so the comparison shows `unknown` on the measured side, with the reason.
 
-The comparison of two measured results is different. Both sides are measured, and each row has a verdict from a fixed rule: `regressed`, `improved`, `unchanged` or `unknown`. See [k6 result format and target rules](/reference/k6-results-and-targets/#regression-between-two-measured-results).
+The comparison lists each known difference of the two sides. Read that list before you read the table.
+
+The comparison states differences. It gives no verdict. An estimate that is near one measurement is not confirmed for any other load.

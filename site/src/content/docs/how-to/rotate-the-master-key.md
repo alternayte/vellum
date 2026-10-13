@@ -29,6 +29,8 @@ A credential that a person saves during the rotation is safe. The rotation locks
 
 The fingerprint of each credential changes in a rotation, because the fingerprint depends on the master key.
 
+The seal of a pinned Build state depends on the master key too. Vellum stores no seal, so the rotation moves none. While the previous key is loaded, Vellum accepts a seal of that key. After you remove the previous key, `POST build/export` refuses a pinned state with a seal of that key. The check of a bundle still works. See [Export for an agent](/how-to/export-for-an-agent/).
+
 **Settings → Instance → Diagnostics** lists each master key that stored data uses, with the number of credentials and session keys. After a complete rotation the list holds the current key only.
 
 ## If the rotation reports an unavailable key

@@ -48,6 +48,13 @@ public sealed record PinnedSource(
 /// its JSON so that its manifest keeps its bytes. Only <c>POST build/verify</c> generates such a
 /// state; an export refuses it, because a state with no review has no review blocker.
 /// </param>
+/// <param name="Seal">
+/// The mark that Vellum issued this state, from the format <c>vellum-bundle/4</c> on: see
+/// <see cref="PinnedSeal"/>. Null in a state of an older format, and the member is then left
+/// out of its JSON so that its manifest keeps its bytes. An export takes a pinned state from a
+/// caller only when its seal verifies. The seal is no input of the files: it changes no file
+/// hash and no bundle hash.
+/// </param>
 public sealed record PinnedState(
     Guid ProjectId, string ProjectName, Guid Branch, long StreamVersion, Guid? RevisionId,
     IReadOnlyList<PinnedStream> Scenarios,
@@ -56,7 +63,9 @@ public sealed record PinnedState(
     IReadOnlyList<PinnedRun> Runs,
     IReadOnlyList<PinnedSource> Sources,
     [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
-    IReadOnlyList<PinnedStream>? Decisions = null);
+    IReadOnlyList<PinnedStream>? Decisions = null,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    string? Seal = null);
 
 /// <param name="StreamVersion">The version of the schema stream. <paramref name="Version"/> is the version of the content, which a rename does not change.</param>
 public sealed record BuildSchema(Guid Id, string Name, string? Description, string Content, int Version, long StreamVersion = 0);

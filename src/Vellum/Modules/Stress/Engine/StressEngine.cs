@@ -46,8 +46,12 @@ public static class StressEngine
     /// Version 2 replaced the bottleneck rule of version 1, counts only successful service as
     /// completed, reports the last instant with open work as the end, and puts the limits in
     /// the result and in the hash. A stored result of version 1 keeps its numbers and its rule.
+    /// Version 3 changed the confidence rule: a measured service time counts only when the
+    /// host found no doubt about its measurement (<see cref="MeasurementDoubt"/>), and each
+    /// assumption with a measurement states whether the measurement is stale. A stored result
+    /// of version 2 keeps its level and its rule.
     /// </summary>
-    public const string Version = "2";
+    public const string Version = "3";
 
     private const long NsPerMs = 1_000_000;
     private const double NsPerSecond = 1e9;
@@ -78,8 +82,11 @@ public static class StressEngine
     ];
 
     public const string ConfidenceRule =
-        "The level is 'low' when a service time on the path of the flow is declared without a measurement. "
-        + "It is 'medium' when every service time on the path is measured. This engine never reports 'high'. "
+        "The level is 'low' when a service time on the path of the flow is declared without a measurement, "
+        + "or when the measurement behind one is stale or is not the measurement that the profile names. "
+        + "It is 'medium' when every service time on the path is the value of a measured result that is not stale. "
+        + "A measured service time is the request latency that k6 recorded: it holds the network, the wait at the target "
+        + "and the steps inside the call, so it is not a pure service time. This engine never reports 'high'. "
         + "The level is not a probability.";
 
     /// <summary>The probability with which a resource that has spare capacity passes one part of the noise bound by chance.</summary>
@@ -174,8 +181,15 @@ public static class StressEngine
     private static string SubscriptionName(TraceModel model, SubscriptionContract subscription) =>
         $"{model.Elements.GetValueOrDefault(subscription.ConsumerId, "?")} on {(model.Channels.TryGetValue(subscription.ChannelId, out var channel) ? channel.Name : "?")}";
 
+    /// <param name="doubts">
+    /// The measured service times whose measurement does not count, by target, with the reason.
+    /// The engine reads no store, so the host states them. They are an input of the result: the
+    /// host derives them from the profile and from the model version and the scenario version
+    /// of the run, so the same pin gives the same doubts.
+    /// </param>
     public static StressOutcome Run(
-        TraceModel model, Scenario scenario, StressProfile profile, StressLimits? limits = null, CancellationToken ct = default)
+        TraceModel model, Scenario scenario, StressProfile profile, StressLimits? limits = null, CancellationToken ct = default,
+        IReadOnlyDictionary<Guid, MeasurementDoubt>? doubts = null)
     {
         ArgumentNullException.ThrowIfNull(model);
         ArgumentNullException.ThrowIfNull(scenario);
@@ -196,7 +210,7 @@ public static class StressEngine
         if (issues.Count > 0)
             return new(issues, null);
 
-        var simulation = new Simulation(model, scenario, plan, profile, limits, ct);
+        var simulation = new Simulation(model, scenario, plan, profile, limits, doubts ?? new Dictionary<Guid, MeasurementDoubt>(), ct);
         simulation.Run();
         if (simulation.LimitHit is { } limit)
             return new([TooLarge(limit, limits)], null);
@@ -728,6 +742,7 @@ public static class StressEngine
         private readonly StressPlan _plan;
         private readonly StressProfile _profile;
         private readonly StressLimits _limits;
+        private readonly IReadOnlyDictionary<Guid, MeasurementDoubt> _doubts;
         private readonly CancellationToken _ct;
 
         private readonly EventHeap _heap = new();
@@ -756,9 +771,11 @@ public static class StressEngine
 
         public string? LimitHit { get; private set; }
 
-        public Simulation(TraceModel model, Scenario scenario, StressPlan plan, StressProfile profile, StressLimits limits, CancellationToken ct)
+        public Simulation(
+            TraceModel model, Scenario scenario, StressPlan plan, StressProfile profile, StressLimits limits,
+            IReadOnlyDictionary<Guid, MeasurementDoubt> doubts, CancellationToken ct)
         {
-            (_model, _scenario, _plan, _profile, _limits, _ct) = (model, scenario, plan, profile, limits, ct);
+            (_model, _scenario, _plan, _profile, _limits, _doubts, _ct) = (model, scenario, plan, profile, limits, doubts, ct);
 
             StressProfileRules.TryParseSeed(profile.Seed, out var seed);
             var streams = new StressStreams(seed);
@@ -1518,8 +1535,10 @@ public static class StressEngine
                 else if (_writeTimes.ContainsKey(time.Target)) name = $"Write to {_model.Elements[time.Target]}";
                 else continue;
 
+                // Only a service time can hold a measured value, so only its rows state whether the measurement is stale.
+                bool? stale = time.Label == AssumptionLabel.Measured ? _doubts.TryGetValue(time.Target, out var doubt) && doubt.Stale : null;
                 void Time(string field, string value, string unit) =>
-                    rows.Add(new("service-time", time.Target, name, field, value, unit, time.Label, time.MeasurementRef));
+                    rows.Add(new("service-time", time.Target, name, field, value, unit, time.Label, time.MeasurementRef) { MeasurementStale = stale });
                 Time("kind", time.Time.Kind.ToString().ToLowerInvariant(), "");
                 switch (time.Time.Kind)
                 {
@@ -1625,14 +1644,20 @@ public static class StressEngine
         private Confidence ConfidenceOf()
         {
             var used = new HashSet<Guid>([.. _operations.Keys, .. _subscriptions.Keys, .. _writeTimes.Keys]);
-            var declared = _profile.ServiceTimes
-                .Where(t => used.Contains(t.Target) && t.Label != AssumptionLabel.Measured)
+            string Name(Guid target) =>
+                _operations.TryGetValue(target, out var o) ? o.Contract.Name
+                : _subscriptions.TryGetValue(target, out var s) ? $"Handler of {s.Pool.Name}"
+                : $"Write to {_model.Elements[target]}";
+            var reasons = _profile.ServiceTimes
+                .Where(t => used.Contains(t.Target) && (t.Label != AssumptionLabel.Measured || _doubts.ContainsKey(t.Target)))
                 .OrderBy(t => t.Target)
-                .Select(t => $"The service time of '{(_operations.TryGetValue(t.Target, out var o) ? o.Contract.Name : _subscriptions.TryGetValue(t.Target, out var s) ? $"Handler of {s.Pool.Name}" : $"Write to {_model.Elements[t.Target]}")}' is declared, not measured.")
+                .Select(t => t.Label != AssumptionLabel.Measured
+                    ? $"The service time of '{Name(t.Target)}' is declared, not measured."
+                    : $"The measurement behind the service time of '{Name(t.Target)}' does not count: {_doubts[t.Target].Reason}")
                 .ToList();
-            return declared.Count > 0
-                ? new("low", ConfidenceRule, declared)
-                : new("medium", ConfidenceRule, ["Every service time on the path of the flow names a measurement."]);
+            return reasons.Count > 0
+                ? new("low", ConfidenceRule, reasons)
+                : new("medium", ConfidenceRule, ["Every service time on the path of the flow is the value of a measured result that is not stale."]);
         }
     }
 }

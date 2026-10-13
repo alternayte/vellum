@@ -10,7 +10,11 @@ using Vellum.Modules.Trace.Engine;
 
 namespace Vellum.Tests.Modules.LoadTests;
 
-/// <summary>A test that needs the <c>k6</c> program. It is skipped, with the reason, on a machine that does not have it.</summary>
+/// <summary>
+/// A test that needs the <c>k6</c> program. On a machine of a developer that does not have
+/// it, the test is skipped with the reason. In CI (the variable <c>CI</c> is set) it is not
+/// skipped: it runs and fails, so a pipeline without k6 cannot pass with these tests unrun.
+/// </summary>
 public sealed class K6FactAttribute : FactAttribute
 {
     public static string? Program { get; } = (Environment.GetEnvironmentVariable("PATH") ?? "")
@@ -18,16 +22,20 @@ public sealed class K6FactAttribute : FactAttribute
         .Select(directory => Path.Combine(directory, OperatingSystem.IsWindows() ? "k6.exe" : "k6"))
         .FirstOrDefault(File.Exists);
 
-    public K6FactAttribute()
-    {
-        if (Program is null)
-            Skip = "k6 is not on PATH. Install k6 to run this test: it runs the generated script through the real k6.";
-    }
+    public K6FactAttribute() => Skip = SkipReason(Program, Environment.GetEnvironmentVariable("CI"));
+
+    /// <summary>Why the test is skipped, or null when it runs.</summary>
+    public static string? SkipReason(string? program, string? ci) =>
+        program is null && string.IsNullOrEmpty(ci)
+            ? "k6 is not on PATH. Install k6 to run this test: it runs the generated script through the real k6."
+            : null;
 
     /// <summary>Runs k6 in <paramref name="directory"/> and returns its exit code with all it wrote.</summary>
     public static async Task<(int ExitCode, string Output, string Error)> RunAsync(string directory, params string[] arguments)
     {
-        var start = new ProcessStartInfo(Program!) { WorkingDirectory = directory, RedirectStandardOutput = true, RedirectStandardError = true };
+        if (Program is null)
+            throw new InvalidOperationException("k6 is not on PATH, and CI is set. Install k6 in the pipeline: these tests run the generated script through the real k6.");
+        var start = new ProcessStartInfo(Program) { WorkingDirectory = directory, RedirectStandardOutput = true, RedirectStandardError = true };
         foreach (var argument in arguments)
             start.ArgumentList.Add(argument);
         // The test decides what k6 gets: no setting of the developer's shell reaches the run.
@@ -271,6 +279,75 @@ public partial class K6ScriptTests
         Assert.Contains(burst.Plan.Notes, n => n.Contains("does not reproduce the random gaps"));
     }
 
+    [Fact]
+    public void A_rate_that_k6_cannot_run_gets_no_script_and_is_never_raised_to_another_rate()
+    {
+        // Below one iteration in two hours: the rate rounds to no iteration in an hour.
+        var none = Refusal(Input(arrivals: Constant(rate: 0.0001, duration: 3600)));
+        Assert.Equal("rate-too-low", none.Code);
+        Assert.Contains("below one iteration in two hours", none.Message);
+        // One iteration in an hour, for a minute: the run would start no iteration.
+        var short_ = Refusal(Input(arrivals: Constant(rate: 0.0003, duration: 60)));
+        Assert.Equal("rate-too-low", short_.Code);
+        Assert.Contains("fewer than one iteration", short_.Message);
+        // A burst window with a rate that is not 0 and rounds to 0.
+        Assert.Equal("rate-too-low", Refusal(Input(arrivals: new Arrivals(ArrivalKind.Burst, 5, null, [new(10, 20, 0.0001)], 60, 0))).Code);
+
+        // A rate of 0 inside a ramp or a burst is a rate that k6 runs.
+        Assert.Contains("stages: [{ target: 0, duration: '120s' }]", Script(Input(arrivals: new Arrivals(ArrivalKind.Ramp, 10, 0, null, 120, 0))).Content);
+        // One iteration in an hour stays one iteration in an hour.
+        var slow = Script(Input(arrivals: Constant(rate: 1.0 / 3600, duration: 7200, warmUp: 0)));
+        Assert.Contains("executor: 'constant-arrival-rate', rate: 1, timeUnit: '1h', duration: '7200s'", slow.Content);
+        Assert.Equal(2, slow.Plan.PlannedIterations);
+    }
+
+    [Fact]
+    public void The_plan_states_the_load_that_a_result_is_held_to()
+    {
+        var constant = Script(Input()).Plan;
+        Assert.Equal(("constant-arrival-rate rate=40 unit=1000 duration=60000 pre=40 max=400", 2400d, 57_000L), (constant.Load, constant.PlannedIterations, constant.MinElapsedMs));
+        Assert.Contains("const LOAD = 'constant-arrival-rate rate=40 unit=1000 duration=60000 pre=40 max=400';", Script(Input()).Content);
+
+        // A ramp from 10 to 100 in 120 seconds starts 6600 iterations; the last 330 may be missing, and the rate reaches 6270 after about 116.6 seconds.
+        var ramp = Script(Input(arrivals: new Arrivals(ArrivalKind.Ramp, 10, 100, null, 120, 0))).Plan;
+        Assert.Equal(("ramping-arrival-rate start=10 unit=1000 pre=100 max=1000 stages=100:120000", 6600d), (ramp.Load, ramp.PlannedIterations));
+        Assert.InRange(ramp.MinElapsedMs!.Value, 116_500, 116_700);
+        Assert.Equal(ramp.LoadNotes, ramp.Notes);
+        Assert.Contains(ramp.LoadNotes!, n => n.StartsWith("The profile has a ramp of Poisson arrivals"));
+    }
+
+    [Fact]
+    public void A_k6_test_is_skipped_only_on_a_machine_without_k6_that_is_not_ci()
+    {
+        Assert.NotNull(K6FactAttribute.SkipReason(null, null));
+        Assert.NotNull(K6FactAttribute.SkipReason(null, ""));
+        Assert.Null(K6FactAttribute.SkipReason(null, "true"));
+        Assert.Null(K6FactAttribute.SkipReason("/usr/bin/k6", null));
+    }
+
+    [Fact]
+    public void A_measured_service_time_earns_medium_confidence_only_when_its_measurement_is_not_in_doubt()
+    {
+        var scenario = new Scenario(G(99), "Place", [new CallStep("place", Customer, PlaceOrder, Json("""{"sku":"apple"}"""), null, [], [])], [], []);
+        var profile = new StressProfile(
+            "Measured", G(99), "1", new Arrivals(ArrivalKind.Constant, 5, null, null, 10, 1),
+            [new ResourceAssumption(Api, 4, null)],
+            [new ServiceTimeAssumption(PlaceOrder, new Distribution(DistributionKind.Fixed, Ms: 6), AssumptionLabel.Measured, $"k6:{G(500)}")],
+            [], [], [], []);
+
+        var counted = StressEngine.Run(Model(), scenario, profile).Result!;
+        Assert.Equal("medium", counted.Confidence.Level);
+        Assert.All(counted.Assumptions.Where(a => a.Group == "service-time"), a => Assert.False(a.MeasurementStale));
+        Assert.All(counted.Assumptions.Where(a => a.Group != "service-time"), a => Assert.Null(a.MeasurementStale));
+
+        var stale = StressEngine.Run(Model(), scenario, profile, doubts: new Dictionary<Guid, MeasurementDoubt> { [PlaceOrder.Value] = new(true, "the measured result is stale.") }).Result!;
+        Assert.Equal(("low", "The measurement behind the service time of 'POST /orders' does not count: the measured result is stale."), (stale.Confidence.Level, Assert.Single(stale.Confidence.Reasons)));
+        Assert.All(stale.Assumptions.Where(a => a.Group == "service-time"), a => Assert.True(a.MeasurementStale));
+        // The doubt is an input: the two results differ, and each one repeats.
+        Assert.NotEqual(counted.Hash, stale.Hash);
+        Assert.Equal(counted.Hash, StressEngine.Run(Model(), scenario, profile).Result!.Hash);
+    }
+
     private const string HostileName = "\"; throw new Error('x'); //\n</script>\u2028*/ `${__ENV.SECRET}` \\";
     private const string HostilePath = "/orders/\"+__ENV.SECRET+\"/`$x`/*/</script>\\";
     private const string HostileStep = "place\";})();fetch('http://evil');//\r\n\u2029'";
@@ -314,6 +391,10 @@ public partial class K6ScriptTests
 
         // A comment line holds the text of one step only: a line break in a name starts no new line.
         Assert.Contains(script.Content.Split('\n'), line => line.StartsWith("//   - step \"w\\u000a*/\" (write):", StringComparison.Ordinal));
+
+        // What the script prints at the end of a run is printable ASCII: a name of the model reaches no terminal as an escape sequence.
+        Assert.Contains("const output = { stdout: lines.map(printable).join('\\n') + '\\n' };", script.Content);
+        Assert.Contains("return String(text).replace(/[^\\x20-\\x7e]/g, '?');", script.Content);
 
         // Half of a surrogate pair has a literal too.
         Assert.Equal("\"\\ud83d\"", JsText.Literal("\ud83d"));

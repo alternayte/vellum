@@ -1,187 +1,188 @@
 {
+    "root_group": {
+        "groups": {},
+        "checks": {
+                "vellum: the status is the expected one": {
+                    "passes": 2400,
+                    "fails": 0,
+                    "name": "vellum: the status is the expected one",
+                    "path": "::vellum: the status is the expected one",
+                    "id": "b3d9fa441c2dfbfde419dc2d292a1543"
+                }
+            },
+        "name": "",
+        "path": "",
+        "id": "d41d8cd98f00b204e9800998ecf8427e"
+    },
     "metrics": {
-        "vellum_flow_duration": {
-            "min": 1.574,
-            "avg": 6.717881000000006,
-            "med": 6.72,
-            "p(90)": 10.076400000000001,
-            "p(95)": 10.51905,
-            "p(99)": 13.988969999999997,
-            "max": 36.692,
-            "count": 2000
+        "vellum_script_ef6f2900a8c9d4f7fb6ae0d830a1dc81c5b03cacfbe609b83afc598457778fa7": {
+            "count": 2400,
+            "rate": 39.99691357150273
+        },
+        "vus": {
+            "value": 0,
+            "min": 0,
+            "max": 1
+        },
+        "vus_max": {
+            "max": 40,
+            "value": 40,
+            "min": 40
+        },
+        "vellum_flow_unexpected": {
+            "passes": 0,
+            "fails": 2000,
+            "value": 0
         },
         "http_req_failed": {
             "passes": 0,
             "fails": 2400,
             "value": 0
         },
-        "http_req_tls_handshaking": {
-            "max": 0,
+        "http_reqs": {
             "count": 2400,
+            "rate": 39.99691357150273
+        },
+        "http_req_duration": {
+            "avg": 8.762927500000016,
+            "med": 8.1845,
+            "p(90)": 13.189800000000002,
+            "p(95)": 16.686999999999994,
+            "p(99)": 25.7391,
+            "max": 40.29,
+            "count": 2400,
+            "min": 1.416
+        },
+        "http_req_blocked": {
+            "count": 2400,
+            "min": 0.001,
+            "avg": 0.01260416666666701,
+            "med": 0.004,
+            "p(90)": 0.009,
+            "p(95)": 0.012,
+            "p(99)": 0.31300999999999995,
+            "max": 2.012
+        },
+        "http_req_sending": {
+            "min": 0.005,
+            "avg": 0.03244291666666707,
+            "med": 0.019,
+            "p(90)": 0.035,
+            "p(95)": 0.046,
+            "p(99)": 0.13734999999999928,
+            "max": 7.303,
+            "count": 2400
+        },
+        "data_received": {
+            "count": 434400,
+            "rate": 7239.441356441995
+        },
+        "vellum_flow_duration": {
+            "min": 1.416,
+            "avg": 8.406916500000005,
+            "med": 8.041,
+            "p(90)": 12.4602,
+            "p(95)": 14.42865,
+            "p(99)": 25.7391,
+            "max": 40.29,
+            "count": 2000
+        },
+        "vellum_run_elapsed_ms": {
+            "value": 60003,
+            "min": 29,
+            "max": 60003
+        },
+        "iteration_duration": {
+            "p(99)": 27.13517249999999,
+            "max": 42.518875,
+            "count": 2400,
+            "min": 1.567833,
+            "avg": 9.088909486249987,
+            "med": 8.5050415,
+            "p(90)": 13.759516100000003,
+            "p(95)": 17.308857999999994
+        },
+        "vellum_op0_duration": {
+            "p(90)": 12.4602,
+            "p(95)": 14.42865,
+            "p(99)": 25.7391,
+            "max": 40.29,
+            "count": 2000,
+            "min": 1.416,
+            "avg": 8.406916500000005,
+            "med": 8.041
+        },
+        "http_req_tls_handshaking": {
             "min": 0,
             "avg": 0,
             "med": 0,
             "p(90)": 0,
             "p(95)": 0,
-            "p(99)": 0
-        },
-        "vellum_script_df2a6095749d7d483b695fd6228df7f37afa687305ab502aaebb34a289866fc6": {
-            "count": 2400,
-            "rate": 39.998010765597925
-        },
-        "http_req_blocked": {
-            "med": 0.004,
-            "p(90)": 0.008,
-            "p(95)": 0.012,
-            "p(99)": 0.31709999999999977,
-            "max": 3.927,
-            "count": 2400,
-            "min": 0.001,
-            "avg": 0.013981666666666948
-        },
-        "vellum_run_elapsed_ms": {
-            "max": 59988,
-            "value": 59988,
-            "min": 41
-        },
-        "http_req_waiting": {
-            "count": 2400,
-            "min": 1.534,
-            "avg": 6.651267499999994,
-            "med": 6.662,
-            "p(90)": 10.0105,
-            "p(95)": 10.46205,
-            "p(99)": 13.72933,
-            "max": 36.419
-        },
-        "http_reqs": {
-            "count": 2400,
-            "rate": 39.998010765597925
-        },
-        "vus": {
-            "value": 1,
-            "min": 0,
-            "max": 1
-        },
-        "http_req_receiving": {
-            "count": 2400,
-            "min": 0.009,
-            "avg": 0.05492708333333396,
-            "med": 0.042,
-            "p(90)": 0.076,
-            "p(95)": 0.1010499999999999,
-            "p(99)": 0.19001999999999997,
-            "max": 4.804
-        },
-        "iteration_duration": {
-            "min": 1.70225,
-            "avg": 7.0267421933333205,
-            "med": 6.9015415,
-            "p(90)": 10.5375,
-            "p(95)": 10.759732999999999,
-            "p(99)": 16.635620749999998,
-            "max": 39.60625,
+            "p(99)": 0,
+            "max": 0,
             "count": 2400
         },
-        "vellum_flow_failed": {
+        "iterations": {
+            "count": 2400,
+            "rate": 39.99691357150273
+        },
+        "http_req_duration{expected_response:true}": {
+            "p(90)": 13.189800000000002,
+            "p(95)": 16.686999999999994,
+            "p(99)": 25.7391,
+            "max": 40.29,
+            "count": 2400,
+            "min": 1.416,
+            "avg": 8.762927500000016,
+            "med": 8.1845
+        },
+        "http_req_waiting": {
+            "p(95)": 16.440699999999996,
+            "p(99)": 25.43711,
+            "max": 40.176,
+            "count": 2400,
+            "min": 1.35,
+            "avg": 8.657489166666672,
+            "med": 8.104,
+            "p(90)": 13.014
+        },
+        "http_req_receiving": {
+            "p(99)": 0.43229999999999935,
+            "max": 7.405,
+            "count": 2400,
+            "min": 0.008,
+            "avg": 0.07299541666666673,
+            "med": 0.046,
+            "p(90)": 0.092,
+            "p(95)": 0.116
+        },
+        "vellum_op0_unexpected": {
             "passes": 0,
             "fails": 2000,
             "value": 0
         },
         "data_sent": {
-            "count": 364800,
-            "rate": 6079.6976363708845
-        },
-        "data_received": {
-            "count": 470400,
-            "rate": 7839.610110057193
-        },
-        "checks": {
-            "fails": 0,
-            "passes": 2400,
-            "value": 1
-        },
-        "vellum_op0_duration": {
-            "min": 1.574,
-            "avg": 6.717881000000006,
-            "med": 6.72,
-            "p(90)": 10.076400000000001,
-            "p(95)": 10.51905,
-            "p(99)": 13.988969999999997,
-            "max": 36.692,
-            "count": 2000
-        },
-        "http_req_duration": {
-            "p(90)": 10.1584,
-            "p(95)": 10.53305,
-            "p(99)": 13.83301,
-            "max": 36.692,
-            "count": 2400,
-            "min": 1.574,
-            "avg": 6.73324750000001,
-            "med": 6.721
+            "count": 458400,
+            "rate": 7639.410492157022
         },
         "http_req_connecting": {
+            "max": 0.468,
+            "count": 2400,
             "min": 0,
-            "avg": 0.007196249999999999,
+            "avg": 0.004545833333333335,
             "med": 0,
             "p(90)": 0,
             "p(95)": 0,
-            "p(99)": 0.27302999999999994,
-            "max": 3.863,
-            "count": 2400
+            "p(99)": 0.25601999999999997
         },
-        "vellum_op0_failed": {
-            "passes": 0,
-            "fails": 2000,
-            "value": 0
-        },
-        "http_req_duration{expected_response:true}": {
-            "count": 2400,
-            "min": 1.574,
-            "avg": 6.73324750000001,
-            "med": 6.721,
-            "p(90)": 10.1584,
-            "p(95)": 10.53305,
-            "p(99)": 13.83301,
-            "max": 36.692
-        },
-        "http_req_sending": {
-            "avg": 0.027052916666666982,
-            "med": 0.018,
-            "p(90)": 0.032,
-            "p(95)": 0.04704999999999989,
-            "p(99)": 0.14901999999999996,
-            "max": 2.149,
-            "count": 2400,
-            "min": 0.005
-        },
-        "iterations": {
-            "count": 2400,
-            "rate": 39.998010765597925
-        },
-        "vus_max": {
-            "max": 40,
-            "value": 40,
-            "min": 40
+        "checks": {
+            "passes": 2400,
+            "fails": 0,
+            "value": 1
         }
     },
     "setup_data": {
-        "startedAtMs": 1791908514624
-    },
-    "root_group": {
-        "name": "",
-        "path": "",
-        "id": "d41d8cd98f00b204e9800998ecf8427e",
-        "groups": {},
-        "checks": {
-                "vellum: the status is the expected one": {
-                    "id": "b3d9fa441c2dfbfde419dc2d292a1543",
-                    "passes": 2400,
-                    "fails": 0,
-                    "name": "vellum: the status is the expected one",
-                    "path": "::vellum: the status is the expected one"
-                }
-            }
+        "startedAtMs": 1791913712526,
+        "load": "constant-arrival-rate rate=40 unit=1000 duration=60000 pre=40 max=400"
     }
 }
