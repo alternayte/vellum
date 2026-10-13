@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { shownInline } from '@/lib/mutation-errors'
 import { OpenQuestions } from './open-questions'
-import { designApi, type ArchitectureItem, type ArchitectureProposal } from '@/lib/design-api'
+import { describeOrigin, designApi, type ArchitectureItem, type ArchitectureProposal } from '@/lib/design-api'
 
 interface Props {
   projectId: string
@@ -77,14 +77,14 @@ export function ArchitectureProposalDialog({ projectId, proposal: initial, label
         <DialogHeader>
           <DialogTitle>Proposed additions</DialogTitle>
           <DialogDescription>
-            A suggestion from {proposal.provider.model}. Accepted items are added as inferred facts. Nothing in the model is changed or removed.
+            {describeOrigin(proposal)} Accepted items are added as inferred facts. Nothing in the model is changed or removed.
           </DialogDescription>
         </DialogHeader>
 
         {proposal.summary && <p className="text-sm text-foreground">{proposal.summary}</p>}
 
         <div className="min-h-0 flex-1 overflow-y-auto rounded-lg border border-border">
-          {proposal.items.length === 0 && <p className="p-4 text-sm text-muted-foreground">The assistant proposed no addition.</p>}
+          {proposal.items.length === 0 && <p className="p-4 text-sm text-muted-foreground">The proposal holds no addition that can be made.</p>}
           <ul>
             {proposal.items.map((item) => (
               <li key={item.id} className="flex items-start gap-2.5 border-b border-border px-3 py-2 last:border-b-0">
@@ -101,7 +101,7 @@ export function ArchitectureProposalDialog({ projectId, proposal: initial, label
                     <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">{item.entityKind}</span>
                     <span className={item.status === 'pending' ? 'text-sm text-foreground' : 'text-sm text-muted-foreground'}>{item.name}</span>
                     {item.status !== 'pending' && <span className="rounded-full border border-border px-1.5 text-[10px] text-muted-foreground">{item.status}</span>}
-                    <span className="ml-auto shrink-0 font-mono text-[10px] text-[var(--trace-retry)]" title="How sure the assistant says it is. This is not a measurement.">
+                    <span className="ml-auto shrink-0 font-mono text-[10px] text-[var(--trace-retry)]" title="How sure the author of the proposal says it is. This is not a measurement.">
                       inferred · {Math.round(item.confidence * 100)}%
                     </span>
                   </p>
@@ -126,14 +126,19 @@ export function ArchitectureProposalDialog({ projectId, proposal: initial, label
             The assistant did not see {proposal.omittedPrivate.count} {proposal.omittedPrivate.count === 1 ? 'part' : 'parts'} of the model that came from a private repository.
           </p>
         )}
+        {proposal.rejectedReferences.length > 0 && proposal.origin !== 'ai' && (
+          <ul className="max-h-24 space-y-0.5 overflow-y-auto font-mono text-[11px] text-muted-foreground">
+            {proposal.rejectedReferences.map((r, i) => <li key={i}>{r.where}: {r.reason}</li>)}
+          </ul>
+        )}
         {proposal.rejectedReferences.length > 0 && (
           <p className="text-xs text-muted-foreground">
-            Vellum left out {proposal.rejectedReferences.length} {proposal.rejectedReferences.length === 1 ? 'part' : 'parts'} of the answer that referred to things that do not exist, or that would change the model.
+            Vellum left out {proposal.rejectedReferences.length} {proposal.rejectedReferences.length === 1 ? 'part' : 'parts'} of the proposal that referred to things that do not exist, or that would change the model.
           </p>
         )}
         {proposal.openQuestions.length > 0 && (
           <details className="text-xs text-muted-foreground">
-            <summary className="cursor-pointer rounded hover:text-foreground focus-visible:outline-2 focus-visible:outline-primary">Questions the assistant could not answer ({proposal.openQuestions.length})</summary>
+            <summary className="cursor-pointer rounded hover:text-foreground focus-visible:outline-2 focus-visible:outline-primary">Questions {proposal.origin === 'ai' ? 'the assistant' : 'the agent'} could not answer ({proposal.openQuestions.length})</summary>
             <OpenQuestions projectId={projectId} proposalId={proposal.id} questions={proposal.openQuestions} />
           </details>
         )}

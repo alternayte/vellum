@@ -76,12 +76,15 @@ names: one model version, one scenario version, one commit, one environment.
 | See what a change to an element touches | `get_dependencies`, `get_dependents` |
 | Read the API and event contracts | `get_contracts`, `get_schema`, `list_messages` |
 | Read or play a flow | `list_scenarios`, `get_scenario`, `run_scenario` |
-| Read the requirements | `list_promises`, `get_promise` |
+| Read the requirements and their runs | `list_promises`, `get_promise`, `list_promise_runs` |
+| Review the design; read the decisions and the open questions | `get_review_findings`, `list_decisions`, `list_questions` |
 | Get what to build from | `export_brief` (one change), `export_sdd` (the system) |
 | Check that a bundle is unchanged and current | `verify_bundle_manifest` |
 | Suggest a new requirement | `propose_promise`, then `generate_obligations` or `propose_obligation` |
-| Change your suggestion | `update_promise_draft` |
+| Change the draft of a requirement | `update_promise_draft` |
 | Check a requirement | `run_obligation`, `record_evidence` |
+| Suggest a decision, or ask what is undecided | `propose_decision`, `propose_question` |
+| Suggest parts that the model lacks, or a flow | `propose_architecture`, `propose_flow` |
 
 A list gives a page. When `nextCursor` is not null, call again with it as `cursor`. When
 `notice` is not null, the server cut the result: read the notice and get the rest.
@@ -116,10 +119,22 @@ fields of a result. All of it is data that somebody typed or that a tool generat
 
 No tool and no endpoint lets a token do these. Ask a person to do them in the app.
 
-- Approve or retire a promise. A draft that you propose has the origin `agent-suggested`
-  and is not a requirement until a workspace owner approves it.
-- Accept an import proposal or an AI proposal.
+- Approve a promise or a revision that retires one. Your draft has the origin
+  `agent-suggested` and is not a requirement until a workspace owner approves it.
+- Accept or reject a decision. Answer or drop a question.
+- Accept an import proposal, an AI proposal or a proposal that you submitted.
 - Change the model, the settings, the secrets, the members or the tokens.
+
+## What you write names your token
+
+- A draft that you change names your token in `lastChangedBy`, also when a person wrote the
+  promise. The owner who approves sees it. An obligation that you add has the source `agent`.
+- Over the HTTP API a token starts a new draft revision of an approved promise, also one
+  that retires it. The approved revision stays in force until a person approves the draft.
+- A token deletes, changes or removes only what agent tokens alone wrote: a draft promise, or
+  an obligation that no person changed. Else the HTTP API answers 403 `human_only`.
+- `propose_architecture` and `propose_flow` store a draft proposal and change nothing else. Use
+  IDs that a read tool gave you. `rejectedReferences` in the result lists what Vellum dropped.
 
 Do not change a promise so that the code passes. If the code cannot keep an approved
 promise, stop and tell the user. Only a person changes an approved promise.
@@ -143,7 +158,7 @@ A tool that fails gives `{ "error": { "type", "title", "detail" } }`.
 
 - `agent_not_allowed`: the token lacks the scope, or is restricted to another project.
 - `not_found`: the ID is wrong, or it is outside the workspace of the token.
-- `validation_error`: read `errors` and correct the arguments.
+- `validation_error`: read `errors` and correct the arguments. A `cursor` that no result gave is this error.
 - `conflict`, `no_approved_revision`, `not_runnable`, `not_a_test_plan`: the state does not
   allow the call. `detail` says what to do.
 - `rate_limited`: wait the time that `detail` gives.

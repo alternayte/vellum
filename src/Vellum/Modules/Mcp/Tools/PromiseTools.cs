@@ -8,14 +8,15 @@ namespace Vellum.Modules.Mcp.Tools;
 /// <summary>
 /// The tools over promises. Each calls the endpoint the HTTP API has for the same thing, so
 /// the origin of a new promise, the validation, the size limit of a revision, the rate limit
-/// of runs and the binding rules of evidence are the ones of that endpoint. The catalog has
-/// no tool for the approve, revise, delete and prefix endpoints.
+/// of runs and of draft writes and the binding rules of evidence are the ones of that
+/// endpoint. The catalog has no tool for the approve, revise, delete and prefix endpoints,
+/// and none that changes or removes an obligation.
 /// </summary>
 internal static class PromiseTools
 {
     /// <summary>What every result that holds a draft says. It is a sentence of the server, not of the model.</summary>
     public const string Approval =
-        "A draft is not a requirement. A workspace owner must approve it in Vellum: no tool and no agent token approves.";
+        "A draft is not a requirement. A workspace owner must approve it in Vellum: no tool and no agent token approves. The draft names this token in lastChangedBy, and the owner sees that an agent token changed it.";
 
     private const string Links =
         "What the promise is bound to: { scenarioIds[], operationIds[], channelIds[], subscriptionIds[], messageIds[], elementIds[] }. Every ID names a thing of the project.";
@@ -39,6 +40,16 @@ internal static class PromiseTools
         var reply = await call.SendAsync(Promise(promiseId));
         return reply.Succeeded ? Shown(call, new JsonObject(), reply.Json(), projectId) : call.Refused(reply);
     }
+
+    public static Task<CallToolResult> ListPromiseRuns(
+        McpCall call,
+        [Description("The ID of the project.")] Guid projectId,
+        [Description("The ID of the promise (a GUID, not the requirement ID).")] Guid promiseId,
+        [Description("Only the runs of this obligation: its ID, or its key such as O2. Leave it out for every run.")] string? obligation = null,
+        [Description(Paged.Cursor)] string? cursor = null,
+        [Description(Paged.Limit)] int? limit = null) =>
+        Paged.ListAsync(call, cursor, limit, Promise(promiseId), new Dictionary<string, string?> { ["obligation"] = obligation },
+            $"GET /api/projects/{projectId}/promises/{promiseId}/runs");
 
     public static async Task<CallToolResult> ProposePromise(
         McpCall call,

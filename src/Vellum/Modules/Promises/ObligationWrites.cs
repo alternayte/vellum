@@ -1,6 +1,7 @@
 using Deedbox;
 using Microsoft.EntityFrameworkCore;
 using Vellum.Modules.GitHub;
+using Vellum.Modules.Identity.AgentTokens;
 using Vellum.Modules.Import;
 using Vellum.Modules.Promises.Checks;
 using Vellum.Modules.Schemas;
@@ -48,7 +49,8 @@ public static class ObligationWrites
         var world = await WorldForAsync(http.RequestServices, projectId, request.Recipe, ct);
         var now = time.GetUtcNow();
         var result = await PromiseAccess.DecideAsync(store, promiseId,
-            state => PromiseDecider.AddObligation(state, projectId, new(request.Kind, request.Title, request.Recipe), world.Known, userId, now), ct);
+            state => PromiseDecider.AddObligation(
+                state, projectId, new(request.Kind, request.Title, request.Recipe), world.Known, userId, PromiseAccess.Actor(http.User), now), ct);
         return result.Succeeded
             ? Results.Created($"/api/projects/{projectId}/promises/{promiseId}", await reader.GetAsync(projectId, promiseId, ct))
             : result.Refusal();
@@ -76,11 +78,31 @@ public static class ObligationWrites
 
         var world = await WorldForAsync(http.RequestServices, projectId, request.Recipe, ct);
         var now = time.GetUtcNow();
-        var result = await PromiseAccess.DecideAsync(store, promiseId,
-            state => PromiseDecider.ChangeObligation(
-                state, projectId, obligationKey, new(request.Kind, request.Title, request.Recipe), world.Known, userId, now), ct);
-        return await PromiseWrites.RespondAsync(result, reader, projectId, promiseId, ct);
+        var (actor, agent) = (PromiseAccess.Actor(http.User), AgentPrincipal.IsAgent(http.User));
+        var humanOnly = false;
+        var result = await PromiseAccess.DecideAsync(store, promiseId, state =>
+        {
+            humanOnly = agent && NotOfAgentsAlone(state, projectId, obligationKey);
+            return humanOnly
+                ? new CommandResult<IReadOnlyList<object>>.Conflict(HumanObligation)
+                : PromiseDecider.ChangeObligation(
+                    state, projectId, obligationKey, new(request.Kind, request.Title, request.Recipe), world.Known, userId, actor, now);
+        }, ct);
+        return humanOnly
+            ? await PromiseAccess.HumanOnlyAsync(http, HumanObligation)
+            : await PromiseWrites.RespondAsync(result, reader, projectId, promiseId, ct);
     }
+
+    private const string HumanObligation =
+        "A person wrote, changed or approved this obligation. An agent token changes or removes only an obligation that an agent token added to the draft and that no person changed since. Ask a person to do it in the app.";
+
+    /// <summary>
+    /// True for an obligation of the draft that exists and is not of agent tokens alone. An
+    /// obligation or a promise that does not exist gets the answer of the decision (404).
+    /// </summary>
+    private static bool NotOfAgentsAlone(PromiseState state, Guid projectId, string obligationKey) =>
+        state.ExistsIn(projectId) && state.Draft is { Retires: false } draft && draft.Find(obligationKey) is not null
+        && !PromiseDecider.AgentAlone(state, obligationKey);
 
     public static async Task<IResult> Remove(
         Guid projectId, Guid promiseId, string obligationKey, HttpContext http,
@@ -90,9 +112,18 @@ public static class ObligationWrites
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
 
         var now = time.GetUtcNow();
-        var result = await PromiseAccess.DecideAsync(store, promiseId,
-            state => PromiseDecider.RemoveObligation(state, projectId, obligationKey, userId, now), ct);
-        return await PromiseWrites.RespondAsync(result, reader, projectId, promiseId, ct);
+        var (actor, agent) = (PromiseAccess.Actor(http.User), AgentPrincipal.IsAgent(http.User));
+        var humanOnly = false;
+        var result = await PromiseAccess.DecideAsync(store, promiseId, state =>
+        {
+            humanOnly = agent && NotOfAgentsAlone(state, projectId, obligationKey);
+            return humanOnly
+                ? new CommandResult<IReadOnlyList<object>>.Conflict(HumanObligation)
+                : PromiseDecider.RemoveObligation(state, projectId, obligationKey, userId, actor, now);
+        }, ct);
+        return humanOnly
+            ? await PromiseAccess.HumanOnlyAsync(http, HumanObligation)
+            : await PromiseWrites.RespondAsync(result, reader, projectId, promiseId, ct);
     }
 
     /// <summary>Adds the default obligations of the draft (see <see cref="ObligationGenerator"/>). No AI is called.</summary>
@@ -118,7 +149,7 @@ public static class ObligationWrites
                     draft, world.Model, world.Scenarios.ToDictionary(s => s.Key, s => s.Value.Document));
                 skipped = notMade;
                 return candidates;
-            }, userId, now), ct);
+            }, userId, PromiseAccess.Actor(http.User), now), ct);
         if (!result.Succeeded || result.Result is not CommandResult<PromiseState>.Success success)
             return result.Refusal();
 

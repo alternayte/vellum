@@ -37,7 +37,16 @@ internal static class BuildTools
         [Description(Revision)] Guid? revisionId = null,
         [Description(Branch)] Guid? branchId = null)
     {
-        var reply = await call.SendAsync(body: new JsonObject { ["format"] = "sdd", ["revisionId"] = revisionId, ["branchId"] = branchId });
+        // One pinned state gives both the manifest and the SDD: the manifest is read first, and
+        // the SDD is generated from exactly the versions it pins. So the hash, the version and
+        // the manifest of the result are of the SDD of the result, also when the model moves
+        // between the two calls.
+        var pinned = await call.SendToAsync(AgentTools.Find("get_build_manifest").Endpoint!, query: Pin(revisionId, branchId));
+        if (!pinned.Succeeded)
+            return call.Refused(pinned);
+        var manifest = pinned.Json();
+
+        var reply = await call.SendAsync(body: new JsonObject { ["format"] = "sdd", ["pinned"] = manifest["pinned"]!.DeepClone() });
         if (!reply.Succeeded)
             return call.Refused(reply);
 
@@ -53,15 +62,11 @@ internal static class BuildTools
             return call.Ok(data);
 
         // The SDD is not cut: a part of a specification reads as the whole of it.
-        var manifest = await call.SendToAsync(AgentTools.Find("get_build_manifest").Endpoint!, query: Pin(revisionId, branchId));
-        if (!manifest.Succeeded)
-            return call.Refused(manifest);
-
         data["markdown"] = null;
-        data["manifest"] = manifest.Json();
-        Bound(data["manifest"]!.AsObject(), "");
+        data["manifest"] = manifest;
+        Bound(manifest, "");
         return call.Ok(data, notice:
-            $"The SDD has {reply.Body.Length} bytes, more than one result holds, so it is not here. POST /api/projects/{projectId}/build/export with the body {{\"format\":\"sdd\"}} gives it; the same token works there. The manifest of the state is in the result, with its long lists cut; totals has the real counts.");
+            $"The SDD has {reply.Body.Length} bytes, more than one result holds, so it is not here. The manifest in the result is the manifest of that SDD, with its long lists cut; totals has the real counts. POST /api/projects/{projectId}/build/export with the body {{\"format\":\"sdd\"}} gives the SDD of the model as it is then; the same token works there. Its X-Vellum-Bundle-Hash header equals bundleHash here unless the model moved. To get the SDD of exactly this state, send the pinned member of GET /api/projects/{projectId}/build/manifest as pinned in that body.");
     }
 
     public static async Task<CallToolResult> ExportBrief(

@@ -7,7 +7,7 @@ import { cn } from '@/lib/utils'
 import { shownInline } from '@/lib/mutation-errors'
 import { ApiError } from '@/lib/settings-api'
 import {
-  RESULT_COLOR, RESULT_LABEL, emptyPromise, promisesApi,
+  RESULT_COLOR, RESULT_LABEL, emptyPromise, isAgentActor, promisesApi, shortAgent,
   type EvidenceSource, type Obligation, type ObligationStatus, type PromiseDetail, type PromiseInput, type PromiseLinks, type PromiseRevision,
 } from '@/lib/promises-api'
 import type { ScenarioReference } from '@/components/trace/scenario-editor'
@@ -134,6 +134,16 @@ export function PromiseDialog({ projectId, promiseId, references, scenarios, onC
         </DialogHeader>
 
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
+          {promise && revision?.status === 'draft' && isAgentActor(revision.lastChangedBy) && (
+            <div role="status" className="rounded-md border border-[var(--trace-retry)]/60 px-3 py-2 text-xs text-foreground">
+              <p className="font-medium">An agent token changed this draft after the last change by a person.</p>
+              <p className="mt-0.5 text-muted-foreground">
+                Token <span className="font-mono">{shortAgent(revision.lastChangedBy)}</span>
+                {revision.lastChangedAt ? ` on ${new Date(revision.lastChangedAt).toLocaleString()}` : ''}.
+                {promise.origin === 'human' ? ' A person wrote this promise first.' : ''} Read every field and every obligation before you approve. Settings, Agent tokens lists the token.
+              </p>
+            </div>
+          )}
           <div className="grid gap-3 md:grid-cols-2">
             <label className="block text-xs font-medium text-muted-foreground md:col-span-2">
               Title
@@ -210,6 +220,11 @@ export function PromiseDialog({ projectId, promiseId, references, scenarios, onC
                         )}
                       </div>
                       <p className="mt-0.5 font-mono text-[10px] text-muted-foreground">
+                        {isAgentActor(obligation.lastChangedBy ?? obligation.addedBy) && (
+                          <span className="mr-1.5 rounded-full border border-[var(--trace-retry)]/60 px-1.5 text-[var(--trace-retry)]" title="An agent token wrote this obligation, or changed it last.">
+                            {isAgentActor(obligation.lastChangedBy) && !isAgentActor(obligation.addedBy) ? 'changed by an agent' : 'by an agent'}
+                          </span>
+                        )}
                         {obligation.kind}{obligation.execution === 'external-evidence' ? ' · a test plan: Vellum cannot run it; it needs a result from your CI' : obligation.execution === 'none' ? ' · Vellum cannot check this kind' : ''}
                       </p>
                       {obligation.recipe.plan && (

@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.Globalization;
 using System.Text.Json.Nodes;
 using ModelContextProtocol.Protocol;
+using Vellum.Shared;
 
 namespace Vellum.Modules.Mcp.Tools;
 
@@ -104,6 +105,25 @@ internal static class ScenarioTools
             .Where(list => list.Item2 is not null).Select(list => list.Item1).ToList();
         var cut = McpOutput.Fit(data, events);
 
+        var notices = new List<string>();
+        if (events.Count == 0 && rest.Count > 0)
+        {
+            // The first event alone is over the bound. It comes without its payload and its
+            // headers, so that the result holds an event and a cursor that goes past it.
+            var first = rest[0]!.DeepClone().AsObject();
+            first.Remove("payload");
+            first.Remove("headers");
+            events.Add(first);
+            if (!McpOutput.Fits(data))
+                first.Remove("detail");
+            notices.Add(
+                $"Event {first["sequence"]} is larger than one result holds, so it is here without its payload, its headers{(first.ContainsKey("detail") ? "" : " and its detail")}. POST /api/projects/{projectId}/scenarios/{scenarioId}/run gives the whole event; the same token works there. nextCursor gets the events after it.");
+        }
+        else if (cut > 0)
+        {
+            notices.Add($"The result was cut to fit the byte bound: {cut} fewer events than the limit. nextCursor gets the next ones.");
+        }
+
         // The names of the IDs that the events of this result carry, and no other.
         var names = run["labels"]!.AsObject();
         var labels = data["labels"]!.AsObject();
@@ -114,9 +134,6 @@ internal static class ScenarioTools
         }
 
         var more = rest.Count > events.Count;
-        var notices = new List<string>();
-        if (cut > 0)
-            notices.Add($"The result was cut to fit the byte bound: {cut} fewer events than the limit. nextCursor gets the next ones.");
         if (capped.Count > 0)
             notices.Add($"These lists have more items than the result holds: {string.Join(", ", capped)}. POST /api/projects/{projectId}/scenarios/{scenarioId}/run gives the whole run.");
         return call.Ok(data,
@@ -131,32 +148,99 @@ internal static class Paged
     public const string Cursor = "The nextCursor of the result before this one. Leave it out for the first page.";
     public const string Limit = "The most items to return: 1 to 200. Default 50.";
 
+    /// <summary>The longest text member that stays in an item that is over the byte bound by itself.</summary>
+    private const int ShortMember = 500;
+
     /// <summary>
     /// One page of the list of the tool's endpoint. A page over the byte bound is asked for
     /// again with half the limit, so the cursor is always the one the endpoint gave for the
-    /// items in the result.
+    /// items in the result. One item that is over the bound by itself comes with its short
+    /// members only (<see cref="Reduce"/>), so the cursor still goes past it.
     /// </summary>
-    public static async Task<CallToolResult> ListAsync(McpCall call, string? cursor, int? limit)
+    /// <param name="whole">The HTTP request that gives an item whole, for the notice.</param>
+    public static async Task<CallToolResult> ListAsync(
+        McpCall call, string? cursor, int? limit,
+        IReadOnlyDictionary<string, string>? values = null, IReadOnlyDictionary<string, string?>? filter = null, string? whole = null)
     {
         var asked = McpOutput.PageSize(limit);
         for (var size = asked; ; size /= 2)
         {
-            var reply = await call.SendAsync(query: new Dictionary<string, string?>
+            var query = new Dictionary<string, string?>(filter ?? new Dictionary<string, string?>())
             {
                 ["cursor"] = cursor,
                 ["limit"] = size.ToString(CultureInfo.InvariantCulture),
-            });
+            };
+            var reply = await call.SendAsync(values, query);
             if (!reply.Succeeded)
                 return call.Refused(reply);
 
             var page = reply.Json();
-            var data = new JsonObject { ["items"] = page["items"]!.DeepClone() };
-            if (McpOutput.Fits(data) || size == 1)
+            var items = page["items"]!.DeepClone().AsArray();
+            var data = new JsonObject { ["items"] = items };
+            var next = page["cursor"]?.GetValue<string>();
+            if (McpOutput.Fits(data))
             {
-                return call.Ok(data, page["cursor"]?.GetValue<string>(), size < asked
+                return call.Ok(data, next, size < asked
                     ? $"The result was cut to fit the byte bound: {size} items and not {asked}. nextCursor gets the next ones."
                     : null);
             }
+            if (size == 1)
+                return call.Ok(data, next, Reduce(items, 0, whole));
         }
+    }
+
+    /// <summary>
+    /// One page of a list that the endpoint gives whole: the tool pages it by position. The
+    /// cursor is the position of the first item of the next page. <c>total</c> is the number
+    /// of items the list has.
+    /// </summary>
+    /// <param name="data">The other members of the result. The page goes into <paramref name="member"/>.</param>
+    /// <param name="whole">The HTTP request that gives an item whole, for the notice.</param>
+    public static CallToolResult Local(McpCall call, JsonObject data, string member, JsonArray all, string? cursor, int? limit, string whole)
+    {
+        var start = 0;
+        if (cursor is not null && (!int.TryParse(cursor, NumberStyles.None, CultureInfo.InvariantCulture, out start) || start > all.Count))
+            return ModelTools.Invalid(InvalidCursorException.Field, InvalidCursorException.Text);
+
+        var size = McpOutput.PageSize(limit);
+        var items = new JsonArray([.. all.Skip(start).Take(size).Select(item => item!.DeepClone())]);
+        data["total"] = all.Count;
+        data[member] = items;
+        var asked = items.Count;
+        var cut = McpOutput.Fit(data, items);
+
+        string? notice = null;
+        if (items.Count == 0 && asked > 0)
+        {
+            items.Add(all[start]!.DeepClone());
+            notice = Reduce(items, start, whole);
+        }
+        else if (cut > 0)
+        {
+            notice = $"The result was cut to fit the byte bound: {cut} fewer {member} than the limit. nextCursor gets the next ones.";
+        }
+
+        var end = start + items.Count;
+        return call.Ok(data, end < all.Count ? end.ToString(CultureInfo.InvariantCulture) : null, notice);
+    }
+
+    /// <summary>
+    /// Makes the one item of <paramref name="items"/> fit: its lists, its objects and its long
+    /// texts are removed, and its short members stay, so that a caller can name it and ask
+    /// for it over HTTP. Returns the notice, which says so.
+    /// </summary>
+    private static string Reduce(JsonArray items, int position, string? whole)
+    {
+        if (items[0] is JsonObject item)
+        {
+            foreach (var (name, value) in item.ToList())
+            {
+                if (value is JsonObject or JsonArray || (value is JsonValue text && text.TryGetValue<string>(out var s) && s.Length > ShortMember))
+                    item.Remove(name);
+            }
+        }
+
+        return $"Item {position} is larger than one result holds, so only its short members are here: its lists, its objects and its long texts are left out. "
+            + $"{(whole is null ? "The HTTP endpoint of the tool" : whole)} gives it whole; the same token works there. nextCursor gets the items after it.";
     }
 }

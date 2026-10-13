@@ -56,9 +56,15 @@ public static class AgentPrincipal
     /// for a person, null for a request with no credential.
     /// </summary>
     public static string? Actor(ClaimsPrincipal user) =>
-        TokenId(user) is { } tokenId ? $"agent-token:{tokenId}"
+        TokenId(user) is { } tokenId ? $"{AgentActorPrefix}{tokenId}"
         : user.FindFirstValue(ClaimTypes.NameIdentifier) is { } userId ? $"user:{userId}"
         : null;
+
+    /// <summary>What the actor of an agent token starts with.</summary>
+    public const string AgentActorPrefix = "agent-token:";
+
+    /// <summary>True when <paramref name="actor"/>, as <see cref="Actor"/> wrote it, names an agent token. False for a person and for no actor.</summary>
+    public static bool IsAgentActor(string? actor) => actor?.StartsWith(AgentActorPrefix, StringComparison.Ordinal) == true;
 
     /// <summary>
     /// True for a person signed in to Vellum: the session cookie scheme authenticated the

@@ -5,15 +5,15 @@ description: Create an agent token, give it to an MCP client, and check what the
 
 This guide shows you how to connect a coding agent, such as Claude Code or Cursor, to a workspace. You need the owner role in the workspace.
 
-An agent reads the model, exports a specification, proposes draft promises and records evidence. It cannot approve a promise, accept a proposal or change settings. See [What an agent can and cannot do](/concepts/what-an-agent-can-and-cannot-do/).
+An agent reads the model, runs the review, exports a specification, and records evidence. It proposes draft promises, decisions, questions, additions to the model and flows. It cannot approve a promise, accept a decision or a proposal, or change settings. See [What an agent can and cannot do](/concepts/what-an-agent-can-and-cannot-do/).
 
 ## Create a token
 
 1. Open the workspace **Settings**, then **Agent tokens**.
 2. Enter a name that says which agent uses the token.
 3. Below **The token can**, select the scopes.
-   - `read`: read the model, the contracts, the scenarios and the promises.
-   - `propose`: write draft promises and obligations, run checks, record evidence.
+   - `read`: read the model, the contracts, the scenarios, the promises, the decisions and the open questions, and run the review.
+   - `propose`: write draft promises and obligations, proposed decisions, questions and draft proposals. Run checks. Record evidence.
    - `export`: export the SDD, the bundle and the brief, and check a bundle.
 4. Select **Create token**.
 5. Select **Copy**. Vellum shows the token one time only.
@@ -37,6 +37,8 @@ The answer holds the token. No later request shows it again.
 ## Configure the MCP client
 
 The MCP endpoint is `/mcp` on your Vellum address. It uses streamable HTTP. The client sends the token in the `Authorization` header.
+
+The endpoint keeps no session and opens no stream. Each message is one POST. A GET or a DELETE of `/mcp` with a token gets 405 with `Allow: POST`. A client reads that as "this server has no stream" and continues.
 
 For Claude Code:
 
@@ -62,6 +64,33 @@ For a client that reads a JSON configuration:
 ```
 
 Replace the address with your own. Keep the token out of a file that you commit. Most clients can read the header value from an environment variable.
+
+## Check the connection with the MCP Inspector
+
+Vellum is checked against the command-line mode of the MCP Inspector, version 2.10.1. It is a real client of the streamable HTTP transport. The two snippets above give the same three values to other clients: the transport `http`, the address, and the `Authorization` header.
+
+List the tools:
+
+```sh
+npx -y @modelcontextprotocol/inspector --cli https://vellum.example.com/mcp \
+  --transport http \
+  --header "Authorization: Bearer vlm_agt_..." \
+  --method tools/list
+```
+
+The answer is `{ "tools": [ … ] }` with 32 tools. An empty list means that the client did not reach the endpoint: check the address and the header.
+
+Call a tool:
+
+```sh
+npx -y @modelcontextprotocol/inspector --cli https://vellum.example.com/mcp \
+  --transport http \
+  --header "Authorization: Bearer vlm_agt_..." \
+  --method tools/call --tool-name get_model_summary \
+  --tool-arg projectId=<project ID>
+```
+
+The answer holds one text block. The text is a JSON document with `projectId`, `truth`, `truthNote` and `data`.
 
 ## Check the token
 
@@ -97,4 +126,6 @@ A token also stops when the user who created it leaves the workspace. A token ha
 
 ## Use the HTTP API without MCP
 
-Every tool has an HTTP endpoint. An agent that has no MCP client sends the same token to the API. [MCP tools](/reference/mcp-tools/) names the endpoint of each tool.
+An agent that has no MCP client sends the same token to the HTTP API. Most tools call one HTTP endpoint. [MCP tools](/reference/mcp-tools/) names that endpoint in the line `HTTP` of the tool.
+
+Some tools read the model and put more than one list in a result: `get_element`, `get_dependencies`, `get_dependents`, `list_messages`, `get_contracts` and `get_model_summary`. No single endpoint gives their result. The reference says so for each. The lists of the HTTP API give the same facts in separate requests. `/llms-full.txt` lists every HTTP endpoint that a token can call.

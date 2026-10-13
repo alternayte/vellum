@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.Json.Serialization;
 using Vellum.Modules.Trace.Engine;
 
 namespace Vellum.Modules.Promises;
@@ -11,14 +12,24 @@ public sealed record EvidenceCountsDto(int Passed, int Failed, int NotRun, int U
 /// <param name="Key">The last part of the ID (<c>O2</c>): what a URL names the obligation by.</param>
 /// <param name="Supported">True for the kinds Vellum checks by itself. Derived from the kind.</param>
 /// <param name="Execution"><c>deterministic</c>, <c>external-evidence</c> or <c>none</c>.</param>
+/// <param name="Source"><c>generated</c> (the generator made it from the links), <c>manual</c> (a person wrote it) or <c>agent</c> (an agent token wrote it).</param>
+/// <param name="AddedBy">
+/// Who added the obligation to this draft: <c>user:&lt;id&gt;</c> or <c>agent-token:&lt;id&gt;</c>.
+/// Left out for an obligation that the revision copied from an approved one, and for one that
+/// was added before events named their actor.
+/// </param>
+/// <param name="LastChangedBy">Who changed the obligation last, after it was added. Left out while nobody did.</param>
 public sealed record ObligationDto(
     string Id, string Key, int Number, string Kind, bool Supported, string Execution,
-    string Title, ObligationRecipe Recipe, string Source)
+    string Title, ObligationRecipe Recipe, string Source,
+    // A member that is null is not written, so a bundle of a state that has none is the bytes it was.
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? AddedBy = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? LastChangedBy = null)
 {
-    public static ObligationDto From(Obligation obligation) => new(
+    public static ObligationDto From(Obligation obligation, ObligationActors? actors = null) => new(
         obligation.Id, obligation.Key, obligation.Number, obligation.Kind,
         ObligationKind.IsDeterministic(obligation.Kind), ObligationKind.Execution(obligation.Kind),
-        obligation.Title, obligation.Recipe, obligation.Source);
+        obligation.Title, obligation.Recipe, obligation.Source, actors?.AddedBy, actors?.LastChangedBy);
 }
 
 /// <summary>
@@ -62,6 +73,13 @@ public sealed record MissingLinkDto(string Kind, Guid Id);
 /// <param name="InForce">True for the newest approved revision.</param>
 /// <param name="ContentHash">The hash of everything an approval of this revision binds. Send it with <c>approve</c>.</param>
 /// <param name="ApprovedContentHash">The hash the approver sent. Null for a draft, and for an approval stored before the hash existed.</param>
+/// <param name="LastChangedBy">
+/// Who changed the content or the obligations of the revision last: <c>user:&lt;id&gt;</c> for
+/// a person, <c>agent-token:&lt;id&gt;</c> for an agent token. A value that starts with
+/// <c>agent-token:</c> on a draft says that an agent token changed the draft after the last
+/// change by a person. Left out when the change was stored before events named their actor.
+/// </param>
+/// <param name="LastChangedAt">When <paramref name="LastChangedBy"/> made that change.</param>
 public sealed record PromiseRevisionDto(
     int Revision, string Status, bool Retires, int? RetiresRevision, bool InForce,
     string Title, string Claim, string? Scope, string? Preconditions, string? ExpectedOutcome,
@@ -70,7 +88,10 @@ public sealed record PromiseRevisionDto(
     IReadOnlyList<ObligationDto> Obligations,
     string CreatedBy, DateTimeOffset CreatedAt, string? ApprovedBy, DateTimeOffset? ApprovedAt, long? ApprovedModelVersion,
     string ContentHash, string? ApprovedContentHash,
-    EvidenceStatusDto EvidenceStatus);
+    EvidenceStatusDto EvidenceStatus,
+    // A member that is null is not written, so a bundle of a state that has none is the bytes it was.
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? LastChangedBy = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] DateTimeOffset? LastChangedAt = null);
 
 /// <param name="State"><c>draft</c>, <c>approved</c> or <c>retired</c>.</param>
 /// <param name="NeedsReview">True when a linked thing no longer exists. Computed on read.</param>
@@ -84,10 +105,11 @@ public sealed record PromiseDto(
 
 /// <param name="Counts">The same counts as <c>current.evidenceStatus.counts</c> of the promise.</param>
 /// <param name="HasGaps">True when <c>current.evidenceStatus.gaps</c> of the promise is not empty.</param>
+/// <param name="DraftLastChangedBy">For a promise with a draft: who changed the draft last (see <see cref="PromiseRevisionDto"/>). Null without a draft.</param>
 public sealed record PromiseSummaryDto(
     Guid Id, string RequirementId, string Title, string State, string Origin,
     int LatestRevision, int? InForceRevision, bool HasDraft, bool NeedsReview,
-    EvidenceCountsDto Counts, bool HasGaps, DateTimeOffset UpdatedAt);
+    EvidenceCountsDto Counts, bool HasGaps, DateTimeOffset UpdatedAt, string? DraftLastChangedBy = null);
 
 public sealed record PrefixDto(string? Prefix, int? NextNumber);
 
@@ -116,7 +138,7 @@ public static class PromiseViews
             id, state.RequirementId!, current.Content.Title, state.Lifecycle, state.Origin!,
             state.Latest!.Revision, state.InForce?.Revision, state.Draft is not null,
             Missing(current, state.Draft, world).Count > 0,
-            evidence.Counts, evidence.Gaps.Count > 0, state.UpdatedAt!.Value);
+            evidence.Counts, evidence.Gaps.Count > 0, state.UpdatedAt!.Value, state.Draft?.LastChangedBy);
     }
 
     private static List<MissingLinkDto> Missing(PromiseRevisionState current, PromiseRevisionState? draft, PromiseWorld world) =>
@@ -136,10 +158,10 @@ public static class PromiseViews
             content.Title, content.Claim, content.Scope, content.Preconditions, content.ExpectedOutcome,
             content.ForbiddenOutcome, content.EvidenceCriteria,
             content.ForbiddenEvents, content.RequiresPattern, content.Links,
-            revision.Obligations.Select(ObligationDto.From).ToList(),
+            revision.Obligations.Select(o => ObligationDto.From(o, revision.ActorsOf(o.Id))).ToList(),
             revision.CreatedBy, revision.CreatedAt, revision.ApprovedBy, revision.ApprovedAt, revision.ApprovedModelVersion,
             PromiseContentHash.Of(state.RequirementId, revision), revision.ApprovedContentHash,
-            Evidence(state, revision, latestRuns, world));
+            Evidence(state, revision, latestRuns, world), revision.LastChangedBy, revision.LastChangedAt);
     }
 
     /// <summary>The evidence status of one revision. Every sentence in <c>Gaps</c> names what is not established.</summary>

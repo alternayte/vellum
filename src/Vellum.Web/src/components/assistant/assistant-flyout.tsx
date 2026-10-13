@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
-import { useMutation } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Square } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { shownInline } from '@/lib/mutation-errors'
 import {
   designApi, explain, isUnavailable,
-  type ArchitectureProposal, type ExplainTarget, type FlowProposal, type Unavailable,
+  type ArchitectureProposal, type ExplainTarget, type FlowProposal, type PendingProposal, type Unavailable,
 } from '@/lib/design-api'
 import { useShellStore } from '@/stores/shell-store'
 import { currentTraceEvent, useTraceStore } from '@/stores/trace-store'
@@ -45,6 +45,17 @@ export function AssistantFlyout({ projectId, branchId, labels, playingScenarioId
   const [flow, setFlow] = useState<FlowProposal | null>(null)
   const [architecture, setArchitecture] = useState<ArchitectureProposal | null>(null)
   const closeFlyout = useShellStore((s) => s.closeFlyout)
+  const queryClient = useQueryClient()
+
+  // What agents submitted and nobody decided yet. A person opens each one here and decides.
+  const pending = useQuery({ queryKey: ['projects', projectId, 'proposals', 'pending'], queryFn: () => designApi.pending(projectId) })
+  const refreshPending = () => queryClient.invalidateQueries({ queryKey: ['projects', projectId, 'proposals', 'pending'] })
+  const open = useMutation({
+    mutationFn: (item: PendingProposal): Promise<FlowProposal | ArchitectureProposal> =>
+      item.kind === 'flow' ? designApi.getFlow(projectId, item.id) : designApi.getArchitecture(projectId, item.id),
+    onSuccess: (result) => { if ('scenario' in result) setFlow(result); else setArchitecture(result) },
+    onError: shownInline,
+  })
 
   const propose = useMutation({
     mutationFn: (): Promise<FlowProposal | ArchitectureProposal | Unavailable> =>
@@ -113,6 +124,40 @@ export function AssistantFlyout({ projectId, branchId, labels, playingScenarioId
         )}
         {unavailable && mode !== 'explain' && <UnavailableNote state={unavailable} />}
         {propose.isError && <p role="alert" className="text-xs text-destructive">{propose.error.message}</p>}
+
+        {pending.data && pending.data.length > 0 && (
+          <section aria-labelledby="pending-proposals" className="border-t border-border pt-3">
+            <h3 id="pending-proposals" className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+              Waiting for you <span className="font-mono">{pending.data.length}</span>
+            </h3>
+            <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+              An agent submitted these proposals. Nothing is in the model or saved as a scenario until you accept it.
+            </p>
+            <ul className="mt-1.5 space-y-1">
+              {pending.data.map((item) => (
+                <li key={item.id}>
+                  <button
+                    type="button"
+                    disabled={open.isPending}
+                    onClick={() => open.mutate(item)}
+                    className="w-full rounded-md border border-border px-2.5 py-2 text-left hover:bg-muted focus-visible:outline-2 focus-visible:outline-primary"
+                  >
+                    <p className="flex items-baseline gap-2">
+                      <span className="shrink-0 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">{item.kind === 'flow' ? 'flow' : 'model'}</span>
+                      <span className="min-w-0 flex-1 truncate text-sm text-foreground">{item.name}</span>
+                    </p>
+                    {/* The request is text that the agent wrote. It is shown as text. */}
+                    <p className="mt-0.5 line-clamp-2 text-[11px] text-muted-foreground">{item.request}</p>
+                    <p className="mt-0.5 font-mono text-[10px] text-[var(--trace-retry)]">
+                      {item.origin.startsWith('agent-token:') ? `agent token ${item.origin.slice(12, 20)}` : 'over the API'} · {new Date(item.createdAt).toLocaleString()}
+                    </p>
+                  </button>
+                </li>
+              ))}
+            </ul>
+            {open.isError && <p role="alert" className="mt-1 text-xs text-destructive">{open.error.message}</p>}
+          </section>
+        )}
       </div>
 
       {flow && (
@@ -120,11 +165,13 @@ export function AssistantFlyout({ projectId, branchId, labels, playingScenarioId
           projectId={projectId}
           proposal={flow}
           labels={labels}
-          onClose={() => setFlow(null)}
+          onClose={() => { setFlow(null); void refreshPending() }}
           onAccepted={(scenarioId) => { setFlow(null); closeFlyout(); onPlayScenario(scenarioId) }}
         />
       )}
-      {architecture && <ArchitectureProposalDialog projectId={projectId} proposal={architecture} labels={labels} onClose={() => setArchitecture(null)} />}
+      {architecture && (
+        <ArchitectureProposalDialog projectId={projectId} proposal={architecture} labels={labels} onClose={() => { setArchitecture(null); void refreshPending() }} />
+      )}
     </div>
   )
 }

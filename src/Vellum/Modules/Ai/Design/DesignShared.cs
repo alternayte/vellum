@@ -5,6 +5,8 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
 using Vellum.Modules.Drafts;
+using Vellum.Modules.Identity.AgentTokens;
+using Vellum.Modules.Modelling.Model;
 using Vellum.Modules.Modelling;
 using Vellum.Modules.Trace.Engine;
 using Vellum.Modules.Trace.Scenarios;
@@ -57,6 +59,65 @@ public sealed record AiUnavailable(string Status, AiUnavailableReason Reason)
 public sealed record AiUnavailableReason(string Code, string Message, string? Setting, int? RetryAfterSeconds);
 
 public sealed record ProposalProvider(string Kind, string Model, string? ReportedModel);
+
+/// <summary>
+/// A proposal that a caller wrote and submitted, in place of one the in-app assistant
+/// generated. It goes through the same checks, is stored as the same draft and is decided by
+/// a person in the same way. Its origin is the credential of the call, never a value of the body.
+/// </summary>
+internal static class SubmittedProposal
+{
+    /// <summary>The <c>origin</c> of a proposal that the in-app assistant generated.</summary>
+    public const string AiOrigin = "ai";
+
+    /// <summary>What the template version member holds: no prompt template made the proposal.</summary>
+    public const string NoTemplate = "none";
+
+    /// <summary>The most proposals one caller submits in a minute.</summary>
+    public const int PerMinute = 30;
+
+    public static readonly ProposalUsage NoUsage = new(null, null, null);
+
+    /// <summary><c>agent-token:&lt;id&gt;</c> for an agent token, else <c>user:&lt;id&gt;</c>.</summary>
+    public static string OriginOf(ClaimsPrincipal user) => AgentPrincipal.Actor(user)!;
+
+    /// <summary>The provider member of a submitted proposal: the kind and the ID of who submitted it, in place of a vendor and a model.</summary>
+    public static ProposalProvider Provider(string origin)
+    {
+        var at = origin.IndexOf(':', StringComparison.Ordinal);
+        return new ProposalProvider(origin[..at], origin[(at + 1)..], null);
+    }
+
+    /// <summary>
+    /// The reference table of a submitted proposal. A caller that submits has read the model,
+    /// so it references a thing by its ID, where the assistant uses an alias. Each reference
+    /// that is the ID of a thing of the model is listed under the text as it was written. A
+    /// reference that is not listed names nothing: the checks reject it and list it, as they
+    /// do for an alias that the assistant invented.
+    /// </summary>
+    public static Dictionary<string, AliasRef> References(IEnumerable<string?> references, ModelState model)
+    {
+        var table = new Dictionary<string, AliasRef>(StringComparer.Ordinal);
+        foreach (var reference in references)
+        {
+            if (reference is not null && !table.ContainsKey(reference) && Guid.TryParse(reference, out var id) && Find(model, id) is { } found)
+                table[reference] = found;
+        }
+
+        return table;
+    }
+
+    private static AliasRef? Find(ModelState model, Guid id) =>
+        model.Elements.TryGetValue(id, out var element) ? new AliasRef(AliasKinds.Element, id, element.Name)
+        : model.Operations.TryGetValue(id, out var operation) ? new AliasRef(AliasKinds.Operation, id, operation.Name)
+        : model.Channels.TryGetValue(id, out var channel) ? new AliasRef(AliasKinds.Channel, id, channel.Name)
+        : model.Subscriptions.TryGetValue(id, out var subscription) ? new AliasRef(AliasKinds.Subscription, id, ContractDecider.SubscriptionLabel(model, subscription))
+        : model.Messages.TryGetValue(id, out var message) ? new AliasRef(AliasKinds.Message, id, message.Name)
+        : null;
+}
+
+/// <summary>The rate limit of submitted proposals. A proposal is a stored document that a person must read, so one caller submits a bounded number in a minute.</summary>
+internal sealed class ProposalSubmitRate() : CallerRate(SubmittedProposal.PerMinute);
 
 /// <summary>What the provider reported. A member is null when the provider did not report it or the model has no price.</summary>
 public sealed record ProposalUsage(int? InputTokens, int? OutputTokens, decimal? CostUsd)

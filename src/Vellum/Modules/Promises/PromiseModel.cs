@@ -161,13 +161,17 @@ public sealed record ObligationRecipe(
     TestPlanRecipe? Plan = null);
 
 /// <param name="Id"><c>&lt;requirement ID&gt;/O&lt;number&gt;</c>, for example <c>ORD-014/O2</c>. Never reused inside a promise.</param>
-/// <param name="Source"><c>generated</c> or <c>manual</c>.</param>
+/// <param name="Source">
+/// Who wrote the obligation first: <c>generated</c> (the generator made it from the links),
+/// <c>manual</c> (a person wrote it) or <c>agent</c> (an agent token wrote it).
+/// </param>
 /// <param name="GeneratorKey">What a generated obligation was made for, so generating again adds nothing twice.</param>
 public sealed record Obligation(
     string Id, int Number, string Kind, string Title, ObligationRecipe Recipe, string Source, string? GeneratorKey)
 {
     public const string Generated = "generated";
     public const string Manual = "manual";
+    public const string Agent = "agent";
 
     /// <summary>The last part of the ID (<c>O2</c>): what a URL names the obligation by. Derived, so it is not stored.</summary>
     [JsonIgnore]
