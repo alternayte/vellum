@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { ApiError } from '@/lib/settings-api'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -35,12 +36,15 @@ export function FlowProposalDialog({ projectId, proposal: initial, labels, onClo
     onError: shownInline,
   })
   const accept = useMutation({
-    mutationFn: () => designApi.acceptFlow(projectId, proposal.id),
+    mutationFn: (acceptWithIssues: boolean) => designApi.acceptFlow(projectId, proposal.id, acceptWithIssues),
     onSuccess: async ({ scenarioId }) => { await refreshModel(); onAccepted(scenarioId) },
     onError: shownInline,
   })
   const reject = useMutation({ mutationFn: () => designApi.rejectFlow(projectId, proposal.id), onSuccess: onClose, onError: shownInline })
-  const failure = create.error ?? accept.error ?? reject.error
+  // The model changed between the proposal and the accept: show what is true now and ask again.
+  const wentStale = accept.error instanceof ApiError && accept.error.status === 409 && /changed|stale/i.test(accept.error.message)
+  const reload = useMutation({ mutationFn: () => designApi.getFlow(projectId, proposal.id), onSuccess: (next) => { setProposal(next); accept.reset() }, onError: shownInline })
+  const failure = create.error ?? (wentStale ? null : accept.error) ?? reject.error ?? reload.error
 
   // Names of parts created from this proposal are not in the page's label map yet.
   const allLabels = { ...labels, ...Object.fromEntries(proposal.missing.filter((m) => m.createdId).map((m) => [m.createdId!, m.name])) }
@@ -60,6 +64,25 @@ export function FlowProposalDialog({ projectId, proposal: initial, labels, onClo
 
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1 text-sm">
           {proposal.summary && <p className="text-foreground">{proposal.summary}</p>}
+          {(proposal.stale || wentStale) && (
+            <div role="status" className="rounded-md border border-[var(--trace-retry)]/60 px-3 py-2 text-xs text-foreground">
+              The model changed after the assistant made this proposal.{' '}
+              {wentStale ? 'Load the current check, then decide again.' : 'The steps and problems below are checked against the model as it is now.'}
+              {wentStale && (
+                <Button variant="secondary" size="sm" className="ml-2 h-6 text-xs" disabled={reload.isPending} onClick={() => reload.mutate()}>Load the current check</Button>
+              )}
+            </div>
+          )}
+          {proposal.omittedPrivate && proposal.omittedPrivate.count > 0 && (
+            <p role="status" className="rounded-md border border-border px-3 py-2 text-xs text-muted-foreground">
+              The assistant did not see {proposal.omittedPrivate.count} {proposal.omittedPrivate.count === 1 ? 'part' : 'parts'} of the model that came from a private repository. A workspace owner allows that under Settings, Privacy.
+            </p>
+          )}
+          {proposal.resolvedToExisting.length > 0 && (
+            <p className="text-xs text-muted-foreground">
+              The assistant asked for {proposal.resolvedToExisting.map((r) => r.name).join(', ')}. The model has {proposal.resolvedToExisting.length === 1 ? 'it' : 'them'} already, so the flow uses the existing {proposal.resolvedToExisting.length === 1 ? 'part' : 'parts'}.
+            </p>
+          )}
 
           <section aria-labelledby="flow-steps">
             <h3 id="flow-steps" className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Steps that can be saved <span className="font-mono">{countSteps(steps)}</span></h3>
@@ -155,8 +178,8 @@ export function FlowProposalDialog({ projectId, proposal: initial, labels, onClo
           {proposal.status === 'draft' && (
             <>
               <Button variant="secondary" size="sm" disabled={reject.isPending} onClick={() => reject.mutate()}>Reject</Button>
-              <Button size="sm" disabled={!canAccept || accept.isPending} onClick={() => accept.mutate()}>
-                {accept.isPending ? 'Saving…' : 'Accept and play'}
+              <Button size="sm" disabled={!canAccept || accept.isPending || wentStale} onClick={() => accept.mutate(proposal.issues.length > 0)}>
+                {accept.isPending ? 'Saving…' : proposal.issues.length > 0 ? 'Accept with these problems' : 'Accept and play'}
               </Button>
             </>
           )}

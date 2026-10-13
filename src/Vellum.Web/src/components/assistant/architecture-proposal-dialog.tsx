@@ -105,12 +105,25 @@ export function ArchitectureProposalDialog({ projectId, proposal: initial, label
                   </p>
                   <p className="font-mono text-[11px] text-muted-foreground">{detail(item)}</p>
                   {item.rationale && <p className="mt-0.5 text-xs text-muted-foreground">{item.rationale}</p>}
+                  {proposal.itemIssues.filter((issue) => issue.itemId === item.id).map((issue, i) => (
+                    <p key={i} className="mt-0.5 text-xs text-[var(--trace-retry)]">Cannot be added now: {issue.reason}</p>
+                  ))}
                 </div>
               </li>
             ))}
           </ul>
         </div>
 
+        {proposal.resolvedToExisting.length > 0 && (
+          <p className="text-xs text-muted-foreground">
+            The model already has {proposal.resolvedToExisting.map((r) => r.name).join(', ')}. Vellum did not propose {proposal.resolvedToExisting.length === 1 ? 'it' : 'them'} again.
+          </p>
+        )}
+        {proposal.omittedPrivate && proposal.omittedPrivate.count > 0 && (
+          <p role="status" className="text-xs text-muted-foreground">
+            The assistant did not see {proposal.omittedPrivate.count} {proposal.omittedPrivate.count === 1 ? 'part' : 'parts'} of the model that came from a private repository.
+          </p>
+        )}
         {proposal.rejectedReferences.length > 0 && (
           <p className="text-xs text-muted-foreground">
             Vellum left out {proposal.rejectedReferences.length} {proposal.rejectedReferences.length === 1 ? 'part' : 'parts'} of the answer that referred to things that do not exist, or that would change the model.

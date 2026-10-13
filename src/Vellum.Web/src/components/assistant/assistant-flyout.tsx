@@ -137,6 +137,7 @@ function ExplainPanel({ projectId, branchId, labels, playingScenarioId }: Pick<A
   const [state, setState] = useState<'idle' | 'streaming' | 'done'>('idle')
   const [unavailable, setUnavailable] = useState<Unavailable | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [omitted, setOmitted] = useState(0)
   const abort = useRef<AbortController | null>(null)
   useEffect(() => () => abort.current?.abort(), [])
 
@@ -152,9 +153,9 @@ function ExplainPanel({ projectId, branchId, labels, playingScenarioId }: Pick<A
     abort.current?.abort()
     const controller = new AbortController()
     abort.current = controller
-    setText(''); setError(null); setUnavailable(null); setState('streaming')
+    setText(''); setError(null); setUnavailable(null); setOmitted(0); setState('streaming')
     try {
-      const result = await explain(projectId, target, question.trim() || null, branchId, (delta) => setText((current) => current + delta), controller.signal)
+      const result = await explain(projectId, target, question.trim() || null, branchId, (delta) => setText((current) => current + delta), controller.signal, setOmitted)
       if (result) setUnavailable(result)
     } catch (err) {
       if (!controller.signal.aborted) setError(err instanceof Error ? err.message : 'The explanation stopped.')
@@ -182,6 +183,11 @@ function ExplainPanel({ projectId, branchId, labels, playingScenarioId }: Pick<A
       </div>
       {unavailable && <UnavailableNote state={unavailable} />}
       {error && <p role="alert" className="text-xs text-destructive">{error}</p>}
+      {omitted > 0 && (
+        <p role="status" className="text-xs text-muted-foreground">
+          The assistant did not see {omitted} {omitted === 1 ? 'part' : 'parts'} of the model that came from a private repository.
+        </p>
+      )}
       {text && (
         <div aria-live="polite" aria-busy={state === 'streaming'} className="rounded-md border border-border bg-background px-3 py-2">
           {/* The answer is model text. It is shown as text and never rendered as markup. */}

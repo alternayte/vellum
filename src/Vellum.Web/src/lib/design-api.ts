@@ -58,6 +58,11 @@ export interface FlowProposal {
   provider: { kind: string; model: string; reportedModel: string | null }
   usage: { inputTokens: number | null; outputTokens: number | null; costUsd: number | null }
   createdAt: string
+  /** Things the answer asked for that the model already holds. Vellum used the existing ones. */
+  resolvedToExisting: { alias: string; id: string; name: string }[]
+  /** The model changed after the proposal was made. The steps and problems shown are current. */
+  stale: boolean
+  omittedPrivate: { count: number; reason: string } | null
 }
 
 export interface ArchitectureItem {
@@ -83,6 +88,11 @@ export interface ArchitectureProposal {
   items: ArchitectureItem[]
   rejectedReferences: { where: string; alias: string; reason: string }[]
   provider: { kind: string; model: string; reportedModel: string | null }
+  resolvedToExisting: { alias: string; id: string; name: string }[]
+  stale: boolean
+  /** Items that cannot be accepted now, with the reason. */
+  itemIssues: { itemId: string; reason: string }[]
+  omittedPrivate: { count: number; reason: string } | null
 }
 
 export type ExplainTarget =
@@ -94,7 +104,9 @@ const base = (projectId: string) => `/api/projects/${projectId}/ai`
 export const designApi = {
   proposeFlow: (projectId: string, request: string, branchId?: string | null) =>
     api<FlowProposal | Unavailable>('POST', `${base(projectId)}/flow-proposals`, { request, branchId: branchId ?? null, reviseScenarioId: null }),
-  acceptFlow: (projectId: string, id: string) => api<{ scenarioId: string }>('POST', `${base(projectId)}/flow-proposals/${id}/accept`, { name: null }),
+  acceptFlow: (projectId: string, id: string, acceptWithIssues: boolean) =>
+    api<{ scenarioId: string }>('POST', `${base(projectId)}/flow-proposals/${id}/accept`, { name: null, acceptWithIssues }),
+  getFlow: (projectId: string, id: string) => api<FlowProposal>('GET', `${base(projectId)}/flow-proposals/${id}`),
   rejectFlow: (projectId: string, id: string) => api<FlowProposal>('POST', `${base(projectId)}/flow-proposals/${id}/reject`),
   createMissing: (projectId: string, id: string, alias: string) =>
     api<FlowProposal>('POST', `${base(projectId)}/flow-proposals/${id}/missing/${encodeURIComponent(alias)}/create`),
@@ -115,6 +127,7 @@ export async function explain(
   branchId: string | null | undefined,
   onDelta: (text: string) => void,
   signal: AbortSignal,
+  onNotice?: (omittedPrivate: number) => void,
 ): Promise<Unavailable | null> {
   const body = {
     target: {
@@ -155,7 +168,8 @@ export async function explain(
       buffer = buffer.slice(end + 2)
       for (const line of frame.split('\n')) {
         if (!line.startsWith('data:')) continue
-        const event = JSON.parse(line.slice(5)) as { delta?: string; done?: boolean; error?: { message: string } }
+        const event = JSON.parse(line.slice(5)) as { delta?: string; done?: boolean; error?: { message: string }; notice?: { omittedPrivate?: number } }
+        if (event.notice?.omittedPrivate) onNotice?.(event.notice.omittedPrivate)
         if (event.delta) onDelta(event.delta)
         if (event.error) throw new ApiError(502, event.error.message)
         if (event.done) return null
