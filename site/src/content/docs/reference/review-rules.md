@@ -77,13 +77,31 @@ A rule gives the severity `blocking` only on the path of an approved promise. Th
 |---|---|---|
 | `accepted-by-decision` | An owner, signed in | An accepted decision in force that names the rule and the subject settles the finding. A settled blocking finding does not block. |
 | `wont-fix` | An editor, signed in | Needs a reason. It is refused for a blocking finding, and it never removes a blocker. |
-| `open` | An editor. An owner when a decision names the finding | Removes the answer. |
+| `open` | An editor, signed in. An owner when a decision names the finding | Removes the answer. When a decision names the finding, Vellum takes the finding out of the decision. |
 
-An answer records the version of the rule and the fingerprint of the finding. The fingerprint is a hash of the result, the severity, the cited IDs and the reason. Where the reason gives a count or names only the first item, the fingerprint also holds each item: each refused payload with its step and its code (CON-003), each shared dataset with its writers (CON-005), each operation with no timeout (REL-002), and each obligation with its result and each gap (TRU-002). When either differs later, the finding shows `needs re-review` and the answer settles nothing. A blocking finding then blocks again.
+The request to `PUT /api/projects/{projectId}/review/dispositions` has `ruleId`, `subjectId` and `status`. It has `decisionId` for `accepted-by-decision` and `reason` for `wont-fix`. It can have `revisionId` or `branchId` to name the pinned state that the person read. An agent token cannot call it.
+
+| Refusal | When |
+|---|---|
+| 400 `validation_error` on `status` | The status is not one of the three. |
+| 400 `validation_error` on `ruleId` | The ID is not the ID of a rule. |
+| 400 `validation_error` on `reason` | `wont-fix` has no reason. |
+| 400 `validation_error` on `decisionId` | `accepted-by-decision` names no decision of the project. |
+| 403 | `accepted-by-decision` from a person who is not an owner. `open` from a person who is not an owner, for a finding that a decision names. |
+| 404 `not_found` | The rule gives no finding for the subject on the pinned state. |
+| 409 `conflict` | `wont-fix` or `accepted-by-decision` for a finding that is `verified` or `not-applicable`. It has nothing to answer. |
+| 409 `conflict` | `wont-fix` for a finding with the severity `blocking`. |
+| 409 `conflict` | `wont-fix` for a finding that a decision in force names. Set the finding to `open` first. |
+| 409 `conflict` | `accepted-by-decision` with a decision that is proposed, rejected or superseded. |
+| 409 `conflict` | `accepted-by-decision` for a finding that another decision in force names. Set the finding to `open` first. |
+
+An answer records the version of the rule and the fingerprint of the finding. The fingerprint is a hash of the rule ID, the result, the severity, the subject ID, the cited IDs and the reason. Where the reason gives a count or names only the first item, the fingerprint also holds each item: each refused payload with its step and its code (CON-003), each issue of the validator with its step and its code when the result is `unknown` (CON-003), each shared dataset with its writers (CON-005), each operation with the timeout 0, by ID, with whether it is declared (REL-002), and each obligation with its result and each gap (TRU-002). When either differs later, the finding shows `needs re-review` and the answer settles nothing. A blocking finding then blocks again.
 
 A decision settles a finding only while it is accepted and no accepted decision supersedes it. A proposed, rejected or superseded decision settles nothing.
 
 A settled finding is not deleted. The list and the SDD show it with its decision.
+
+An export reads the decisions. It reads no `wont-fix`. To write and accept a decision, see [Record a decision](/how-to/record-a-decision/).
 
 ## Resilience
 
@@ -217,13 +235,13 @@ Severity: `warning`. To settle: add a scenario in which the producer publishes t
 
 ### CON-005 One element writes a dataset
 
-Reads each store: the write steps of every scenario, by dataset and writer. The finding names the first shared dataset and gives the count of the others. Its fingerprint holds each shared dataset with its writers.
+Reads each store: the write steps of every scenario, by dataset and writer. A write step with no dataset name is not read. The finding names the first shared dataset and gives the count of the others. Its fingerprint holds each shared dataset with its writers.
 
 | Result | When |
 |---|---|
 | `concern` | Two elements write the same dataset of the store. They are coupled through its data. |
 | `verified` | Each dataset that scenarios write has one writer. |
-| `unknown` | No scenario writes to the store. Or the store or a writer is a fact in doubt. |
+| `unknown` | No scenario writes to a dataset of the store. Or the store or a writer is a fact in doubt. |
 
 Severity: `warning`. To settle: give the dataset one writer, or record in a decision why two elements share it.
 
@@ -249,10 +267,10 @@ Reads each promise: the evidence status that the Promises module computes for th
 | Result | When |
 |---|---|
 | `not-applicable` | The promise is a draft or is retired. |
-| `concern` | The promise has no obligation. Or an obligation failed its newest check, has a result for inputs that moved, or has no result. Or the status lists a gap. |
+| `concern` | The promise has no obligation. Or an obligation failed its newest check, has a result for inputs that moved, or has the result `not-run` or `unsupported`. Or the status lists a gap. |
 | `verified` | Every obligation has a result that passed on the pinned inputs. Each result covers only what its check names. |
 
-Severity: `warning`. The Build module has its own blockers for the evidence of a promise. To settle: run the checks on the pinned inputs, or record evidence for the commit the model follows.
+Severity: `warning`. The Build module has its own blockers for the evidence of a promise: `promise-gap`, `promise-check-failed` and `promise-evidence-stale`. See [Promises and evidence](/reference/promises-and-evidence/). To settle: run the checks on the pinned inputs, or record evidence for the commit the model follows.
 
 ## Overengineering
 
@@ -325,11 +343,29 @@ Severity: `warning`. Question: "What is the element for?"
 The critique of the assistant is not a rule and gives no finding. Vellum checks each item of its answer on the server:
 
 - An item that names a part outside the tables of the request is left out.
-- A risk is shown as a risk only when its basis is a rule that gave a concern or an unknown for a part it names. Every other risk is shown as a question, with the note that the model does not show it.
+- A risk is shown as a risk only when its basis is a rule that gave a concern or an unknown for a part it names. The part is the subject of that finding, or that finding cites it. Every other risk is shown as a question with the source `unsupported-risk`, and with the note that the model does not show it.
 - Vellum checks that the rule fired. It does not check what the sentence of the risk says. So a risk shows two sentences: the sentence of the finding, as the rule gave it, and the sentence of the assistant, with that label. The API gives them as `findingReason` and `claim`, with `findingResult` and `claimSource: assistant`.
 - A proposed decision keeps the rule it would settle only for the findings that the rule gave for the parts it names.
 - An item that holds one of these words is left out: `verified`, `proven`, `safe`, `secure`, `scalable`, `compliant`, `guaranteed`, `resolved`. The assistant cannot establish that. Vellum cannot tell a negation from an assertion reliably, so the word alone decides.
 
-The answer lists what was left out, with the reason.
+The answer lists what was left out, with the reason, in `leftOut`.
 
-No import writes a scenario or a promise. A person, an agent or the assistant writes them, and their text can hold the name of a part that came from a private repository. While the setting `privacy.sendPrivateCodeToAi` is off, the prompt leaves out each scenario whose name holds such a name, each promise whose requirement ID or title holds one, and each finding whose sentence or question holds one. The answer gives the count in `omittedPrivate` and `findingsLeftOut`.
+A person keeps a question of the answer as an open question of the project. A person keeps a proposed decision as a decision with the status `proposed` and the origin `ai-suggested`. Vellum refuses that with 409 `critique_stale` when the model changed after the answer was made. Only an owner accepts a decision.
+
+No import writes a scenario or a promise. A person, an agent or the assistant writes them, and their text can hold the name of a part that came from a private repository. While the setting `privacy.sendPrivateCodeToAi` is off, the prompt leaves out each scenario whose name holds such a name, each promise whose requirement ID or title holds one, and each finding whose sentence or question holds one. The answer gives the count in `omittedPrivate` and `findingsLeftOut`. See [What leaves your instance](/concepts/what-leaves-your-instance/).
+
+## Limits
+
+| Limit | Value |
+|---|---|
+| Saved snapshots in a project | 200. A save over the limit gives 409. |
+| Stored answers of the assistant in a project | 50. Vellum deletes the oldest when it stores a new one. |
+| Question to the assistant | 2,000 characters |
+| IDs in the `focus` of a question to the assistant | 50 |
+| Findings in one prompt | 98,304 characters as JSON. `findingsLeftOut` counts what does not fit. |
+| Questions in one answer of the assistant | 20 |
+| Questions and risks together in one answer | 40. A risk that no finding supports counts as a question. |
+| Proposed decisions in one answer | 10 |
+| Decisions in a project | 500 |
+| Findings that one decision settles | 100 |
+| Open questions in a project | 500 |

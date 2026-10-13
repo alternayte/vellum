@@ -105,7 +105,7 @@ An endpoint has more types of its own, such as `no_approved_revision`, `not_runn
 - The argument that continues `run_scenario` is `cursor`. The limits line of that tool calls it `afterSequence`. No argument has that name.
 - `list_projects`, `find_elements`, `list_messages` and `get_contracts` do not refuse a `cursor` that they cannot read. They return the first page.
 - `find_elements`, `get_element`, `get_dependencies`, `get_dependents`, `list_messages`, `get_contracts` and `get_model_summary` read the main model only. They take no branch and no revision.
-- When one event of `run_scenario` is larger than the byte bound, `events` is empty and `nextCursor` is null. Call again without `includePayloads`.
+- When `includePayloads` is true and the next event of `run_scenario` is larger than the byte bound, `events` is empty and `nextCursor` is null. Call again without `includePayloads`.
 
 ## What no tool does
 
@@ -132,11 +132,13 @@ These HTTP endpoints are open to a token and have no tool. Call them with the sa
 | `propose` | `POST /api/projects/{projectId}/questions` | Add an open question. |
 | `propose` | `POST /api/projects/{projectId}/load-tests/results` | Send a k6 result file. |
 | `export` | `POST /api/projects/{projectId}/load-tests/scripts` | Generate a k6 script. |
-| `export` | `POST /api/projects/{projectId}/build/export` | Export the bundle as a zip. `export_sdd` gives only the SDD. |
+| `export` | `POST /api/projects/{projectId}/build/export` | Export the bundle as a zip with the format `bundle`. `export_sdd` gives only the SDD. |
 
 `/llms-full.txt` lists every HTTP endpoint that is open to a token, with its scope.
 
 ## Tools
+
+The HTTP line of a tool shows the route as the server maps it. `{promiseId:guid}` in a route is the parameter `{promiseId}` of the HTTP API: `:guid` says that the value must be a GUID.
 
 <!-- generated:mcp-tools:start -->
 

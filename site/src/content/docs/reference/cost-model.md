@@ -66,7 +66,7 @@ A project can pin an entry. A project pins at most 500 entries. An owner cannot 
 
 Vellum reads the Azure Retail Prices API as Microsoft documents it at <https://learn.microsoft.com/en-us/rest/api/cost-management/retail-prices/azure-retail-prices>. The page was read on 2026-10-13.
 
-- The request is `GET {base URL}/api/retail/prices` with `api-version=2023-01-01-preview`, `currencyCode` and `$filter`. The currency code is in single quotes, for example `currencyCode='USD'`. Without `currency` in the search, Vellum uses the currency of the workspace.
+- The request is a `GET` of the path `api/retail/prices` under the base URL, with `api-version=2023-01-01-preview`, `currencyCode` and `$filter`. The currency code is in single quotes, for example `currencyCode='USD'`. Without `currency` in the search, Vellum uses the currency of the workspace.
 - The filter uses `serviceName`, `armRegionName`, `skuName`, `meterId` and `skuId` with `eq`, `contains(meterName, '…')` and `priceType eq 'Consumption'`.
 - A search needs `serviceName`. The values are case sensitive.
 - Vellum refuses a search value that holds a single quote or a control character, that starts or ends with a space, or that has more than 100 characters.
@@ -93,6 +93,8 @@ The search and the import answer with these refusals:
 ## Units
 
 A unit is `[number] name [/ period]`. The period is `hour`, `day` or `month`. Examples: `1 Hour`, `GB/month`, `1000000 requests`, `instances`. A space stands between the number and the name. Names are compared in lower case and in the singular. A unit has at most 50 characters. The number is from 0.001 to 1,000,000,000. `h`, `hr` and `hrs` are hours, `d` is a day and `mo` is a month.
+
+Vellum does not read a number with a suffix. A unit such as `10K requests` is not a unit. Write `10000 requests`.
 
 Vellum converts a quantity to price units with these rules only:
 
@@ -244,10 +246,10 @@ A project endpoint takes `?branchId=` with the stream ID of a draft or a variant
 | `PUT`, `DELETE /api/projects/{projectId}/costs/assumptions/{assumptionId}` | Change or remove an assumption. |
 | `POST /api/projects/{projectId}/costs/copy` | Replace the sheet with a copy of the sheet of the branch in `from`. `from` is `main` or a branch ID, and it is another branch than the target. |
 | `POST /api/projects/{projectId}/variants` | Create a variant. `costSheetFrom` is `main` or a branch ID. The variant starts with a copy of that cost sheet. |
-| `GET /api/projects/{projectId}/costs/estimate?asOf=` | The estimate as it is now. Nothing is stored. |
-| `GET`, `POST /api/projects/{projectId}/costs/estimates` | List the saved estimates, or save one. |
+| `GET /api/projects/{projectId}/costs/estimate` | The estimate as it is now. Nothing is stored. `asOf` is the date of the estimate. |
+| `GET`, `POST /api/projects/{projectId}/costs/estimates` | List the saved estimates, newest first, or save one. The body of a save has `name` and `asOf`. Both are optional. |
 | `GET`, `DELETE /api/projects/{projectId}/costs/estimates/{estimateId}` | Read or delete a saved estimate. |
-| `GET /api/projects/{projectId}/costs/compare?left=&right=&asOf=` | Compare two branches. A side is `main` or a branch ID. |
+| `GET /api/projects/{projectId}/costs/compare` | Compare the branches in `left` and `right` at the date in `asOf`. A side is `main` or a branch ID. |
 | `GET /api/projects/{projectId}/costs/prices` | The price book of the workspace of the project, and the IDs of the pinned entries. |
 | `PUT`, `DELETE /api/projects/{projectId}/costs/pins/{priceId}` | Pin or unpin a price entry. |
 | `GET`, `POST /api/workspaces/{workspaceId}/prices` | List the price book, or add a custom price. The list is in pages: `limit` is from 1 to 200 with a default of 50, and `cursor` is the `cursor` of the page before. |
@@ -261,4 +263,4 @@ A request body without `value` for an assumption, or without `unitPrice` for a c
 
 When a project is deleted, Vellum deletes its cost sheets, its pins and its saved estimates. The price book stays with the workspace.
 
-See [An estimate is not a measurement](/concepts/estimates-are-not-measurements/) for what a cost estimate can show.
+See [Estimate costs](/how-to/estimate-costs/) for the procedure and [An estimate is not a measurement](/concepts/estimates-are-not-measurements/) for what a cost estimate can show.

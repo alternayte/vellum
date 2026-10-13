@@ -13,9 +13,11 @@ You need k6 on the machine that runs the test. See the [k6 installation guide](h
 
 You need a scenario that plays without issues. One top-level step of the scenario must call an `http` operation. The name of that operation must be a method and a path, such as `POST /orders`.
 
+When the path has a placeholder, such as `GET /orders/{orderId}`, the request fixture of the step must have a text, number or boolean member with that name. Without it, the script does not drive the step.
+
 You need a stress profile for the scenario. The script takes the arrival rate, the duration and the warm-up from the profile. See [Stress a flow](/how-to/stress-a-flow/).
 
-You need the Editor role to add a target, to generate a script and to import a result. You need the Owner role to authorise a target.
+You need the Editor role to add a target, to generate a script and to import a result. You need the Owner role to authorise a target and to set a production override.
 
 ## Add a target
 
@@ -24,32 +26,40 @@ A target is the base URL of a deployed system.
 1. Open **Stress** in the left toolbar.
 2. Select **Measure**.
 3. Select **Add** under **Targets**.
-4. Give the target a name.
-5. Give the base URL. Do not put credentials or a query in the URL.
-6. Select the class of the system: `development`, `test`, `staging` or `production`. Vellum selects no class for you.
+4. Give the target a name in **Name**.
+5. Give the base URL in **Base URL**. The URL starts with `http://` or `https://`. Do not put credentials, a query or a fragment in the URL.
+6. Select the class in **Class of the system**: `development`, `test`, `staging` or `production`. Vellum selects no class for you.
 7. Select **Add target**.
+
+Vellum sends no request to the base URL. The URL can be on a private network.
+
+A project holds 20 targets at most.
 
 ## Authorise the target
 
 Only an owner of the workspace does this step. An agent token cannot do it.
 
-1. Open the target.
+1. Select the target in the list under **Targets**.
 2. Read the base URL.
 3. Select **Authorise this base URL**.
 
-The authorisation states that k6 load may go to that base URL. Vellum records who gave it and when.
+The authorisation states that k6 load may go to that base URL. Vellum records who gave it and when. The list shows **Authorised** and the date, or **Not authorised**.
 
-A change of the base URL or of the class voids the authorisation. Authorise the target again after such a change.
+A change of the base URL or of the class voids the authorisation and clears a production override. Authorise the target again after such a change.
+
+To take the authorisation back, select **Revoke the authorisation**.
+
+Vellum writes each authorisation, each revocation and each override to the audit log of the workspace.
 
 ## Generate the script
 
-1. Select the stress profile under **k6 script**.
-2. Select the target.
+1. Under **k6 script**, select the stress profile in **Stress profile**.
+2. Select the target in **Target**.
 3. Select **Generate k6 script**.
 
-The dialog shows the steps that the script drives and the steps that it does not cover. Read both lists before you run the script.
+The dialog shows the steps that the script drives under **Driven steps** and the steps that it does not cover under **Not covered**. Read both lists before you run the script.
 
-Vellum refuses to generate a script in these cases:
+Vellum refuses to generate a script in these cases. The panel then shows **No script was generated.** and the reason.
 
 - No owner authorised the target.
 - The scenario is not valid against the model.
@@ -58,10 +68,28 @@ Vellum refuses to generate a script in these cases:
 
 The same scenario version, model version, target and profile version give the same script and the same hash.
 
+A project holds 300 scripts at most. When the project is at the limit, Vellum deletes the oldest script that has no result.
+
+## What the script does
+
+The script plays the caller of the top-level HTTP calls of the scenario. It sends the requests of one flow one after the other. A flow ends at its first request that does not get the expected status.
+
+The script does not do these things:
+
+- It does not perform nested calls, writes, publishes or parallel steps. The system under test does that work.
+- It does not use a value from one response in a later request. Each request uses the request fixture of its step.
+- It does not inject the faults of the scenario. Inject them in the target system before the run.
+- It does not apply the outages and the overrides of the stress profile.
+- It does not reproduce the random gaps of Poisson arrivals. k6 starts iterations at an even rate with the same mean.
+
+When the target answers too slowly for the rate, k6 drops iterations. The result states how many.
+
+Do not edit the script. Vellum accepts a result only for the script that it generated.
+
 ## Run the script on your machine
 
-1. Select **Download** in the script dialog.
-2. Run the command that the dialog shows. This is an example:
+1. In the script dialog, select the button that starts with **Download**. The button names the file.
+2. Run the command under **Run it**. This is an example:
 
 ```sh
 k6 run -e VELLUM_BASE_URL='https://orders.test.example' vellum-k6-df2a6095749d.js
