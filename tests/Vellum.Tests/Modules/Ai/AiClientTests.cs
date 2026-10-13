@@ -322,7 +322,7 @@ public class AiClientTests(SharedOutboundHost shared) : IClassFixture<SharedOutb
 
             Assert.Equal(HttpStatusCode.OK, response.StatusCode);
             var test = (await response.Content.ReadFromJsonAsync<JsonObject>())!;
-            Assert.Equal(["ok", "latencyMs", "model", "reportedModel", "supportsStructuredOutput", "error"], test.Select(p => p.Key));
+            Assert.Equal(["ok", "latencyMs", "model", "reportedModel", "supportsStructuredOutput", "error", "structuredOutputNote"], test.Select(p => p.Key));
             Assert.True(test["ok"]!.GetValue<bool>());
             Assert.Equal(ai.Model, test["model"]!.GetValue<string>());
             Assert.Contains("fixture", test["reportedModel"]!.GetValue<string>());

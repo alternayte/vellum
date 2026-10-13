@@ -244,7 +244,7 @@ public static class ScenarioValidator
         }
 
         // Every payload is later copied into events and hashed, so it must be bounded and
-        // must be JSON that can be written back out.
+        // must have a canonical form: valid Unicode, and numbers that have a finite value.
         bool IsUsable(Step step, string what, JsonElement value)
         {
             if (value.ValueKind == JsonValueKind.Undefined)
@@ -257,17 +257,13 @@ public static class ScenarioValidator
                 issues.Add(new(step.Id, "payload-too-large", $"The {what} is larger than {TraceLimits.MaxPayloadBytes / 1024} KB. Use a representative fixture."));
                 return false;
             }
-            try
+            if (CanonicalJson.Defect(value) is { } defect)
             {
-                using var writer = new Utf8JsonWriter(Stream.Null);
-                CanonicalJson.Write(writer, value);
-                return true;
-            }
-            catch (InvalidOperationException)
-            {
-                issues.Add(new(step.Id, "invalid-payload", $"The {what} holds text that is not valid Unicode."));
+                issues.Add(new(step.Id, "invalid-payload", $"The {what} {defect}."));
                 return false;
             }
+
+            return true;
         }
     }
 

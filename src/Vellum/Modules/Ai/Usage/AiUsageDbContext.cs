@@ -44,7 +44,8 @@ public class UsageRecordEntity
     /// <summary>
     /// Null, or why the cost and the counts are not the provider's own: <c>cost_estimated</c>
     /// (a count was missing), <c>usage_out_of_range</c> (a count was negative or absurd and
-    /// was dropped) or <c>reaped</c> (the row was abandoned).
+    /// was dropped), <c>reaped</c> (the row was abandoned) or <c>schema_rejected_fallback</c>
+    /// (the provider rejected its structured-output mode, and this call sent the schema in the prompt).
     /// </summary>
     public string? UsageNote { get; set; }
     public string? ErrorCode { get; set; }

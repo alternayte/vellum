@@ -100,6 +100,16 @@ internal static class DesignAccess
         return refusal is null ? (new DesignCaller(workspaceId, userId, streamId), null) : (null, refusal);
     }
 
+    /// <summary>
+    /// The model stream of a branch, for a read. The ID of a draft or a variant is the ID of
+    /// its stream, and a stream outlives its branch, so a proposal that was made on a branch
+    /// can still be read after the branch was merged or abandoned. The caller took the branch
+    /// ID from a proposal of the project, which checked it when the proposal was made.
+    /// </summary>
+    public static async Task<Guid> StreamOfAsync(HttpContext http, Guid projectId, Guid? branchId, CancellationToken ct) =>
+        branchId ?? await http.RequestServices.GetRequiredService<WorkspacesDbContext>().Projects.AsNoTracking()
+            .Where(p => p.Id == projectId).Select(p => p.StreamId).FirstAsync(ct);
+
     public static IResult Invalid(string field, string message) =>
         Results.BadRequest(new ErrorResponse("validation_error", "Validation failed", Errors: [new FieldError(field, message)]));
 
@@ -179,9 +189,9 @@ internal static class DesignText
 /// </summary>
 internal static class DesignPrompts
 {
-    public const string ProposeFlowVersion = "design/propose-flow/1";
-    public const string InferArchitectureVersion = "design/infer-architecture/1";
-    public const string ExplainVersion = "design/explain/1";
+    public const string ProposeFlowVersion = "design/propose-flow/2";
+    public const string InferArchitectureVersion = "design/infer-architecture/2";
+    public const string ExplainVersion = "design/explain/2";
 
     /// <summary>
     /// SDD guarantee 8. The flow and the explanation templates both hold this sentence, and a

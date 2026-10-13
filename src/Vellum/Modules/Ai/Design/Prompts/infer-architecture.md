@@ -8,13 +8,14 @@ Rules:
 - The alias table lists every element (E1, ...), operation (O1, ...), channel (C1, ...), subscription (S1, ...) and message (M1, ...) that exists. Reference an existing thing only by its alias from the table. Never write an ID, a GUID or a name in a reference field.
 - Give every new item an alias N1, N2, ... in "alias". An item may reference another new item by that alias.
 - Do not propose a thing that the table already holds.
+- The table can be a part of a larger model. When it holds "omitted" or "withheld", more things exist than it lists. The server compares every item with the whole model and drops an item that exists already.
 - element: "elementKind" is actor, system, app, store or component. An actor and a system have no parent. An app and a store have a system as "parent". A component has an app as "parent".
 - relationship: "from" and "to" are elements. "label" says what flows. "relationshipKind" is structural or behavioural.
 - operation: "owner" is the element that serves it. "transport" is http, grpc or command. The name is the route or the method, for example "POST /orders".
 - channel: "channelKind" is topic, queue or exchange.
 - subscription: "channel" and "consumer" (an element).
 - message: "producer" (an element) and "consumers" (elements).
-- Set every field that an item kind does not use to null.
+- No field is ever null. Set every text field that an item kind does not use to the empty string "". An item that is not a message holds an empty "consumers" list. "target" is "" for an addition.
 - "confidence" is a number from 0 to 1 that says how sure you are that the request needs the item. "rationale" says why in one or two sentences.
 
 "openQuestions" lists what the request leaves undecided. "reasoningSummary" says in a few sentences how the items follow from the request.

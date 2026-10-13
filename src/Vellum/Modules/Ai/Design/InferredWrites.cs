@@ -26,7 +26,8 @@ internal sealed record AdditionRefused(Guid Id, string Reason, bool Conflict);
 /// followed by the decision that records its status and provenance. The status is always
 /// <see cref="FactStatus.Inferred"/>: a model's suggestion is not a declared fact because a
 /// person accepted it (SDD guarantee 2). A set of additions is one append to the model stream,
-/// so it is applied whole or not at all.
+/// so it is applied whole or not at all, and the append commits with the proposal row that
+/// records the decision.
 /// </summary>
 internal static class InferredWrites
 {
@@ -34,10 +35,17 @@ internal static class InferredWrites
     public static string Source(ProposalProvider provider, string proposalKind, Guid proposalId) =>
         $"ai:{provider.Kind}/{provider.Model}#{proposalKind}-proposal:{proposalId}";
 
+    /// <summary>
+    /// Appends the additions inside the transaction of <paramref name="pinned"/>, a store from
+    /// <c>UseDbContext</c>. The caller commits, so the append and the caller's own rows are
+    /// one unit. An addition that the branch holds already under another ID
+    /// (<see cref="ExistingFacts"/>) is refused as a conflict that names the existing thing:
+    /// the model can have changed since the proposal was made.
+    /// </summary>
     /// <param name="additions">In an order in which each addition finds what it references.</param>
     /// <returns>Null when every addition was written.</returns>
     public static async Task<AdditionRefused?> ApplyAsync(
-        IEventStore store, Guid projectId, Guid streamId,
+        IEventStore pinned, Guid streamId,
         IReadOnlyList<(Addition Addition, double Confidence)> additions, string source, string userId, CancellationToken ct)
     {
         // The acceptance stamp is taken once, so the decision stays a pure function of the state.
@@ -45,16 +53,20 @@ internal static class InferredWrites
         var acceptedAt = DateTimeOffset.UtcNow;
         AdditionRefused? refused = null;
 
-        var result = await store.ForProject(projectId).Decide<ModelState, bool>(streamId, state =>
+        var result = await pinned.DecideInTransaction<ModelState, bool>(streamId, state =>
         {
             refused = null;
             var events = new List<object>();
             foreach (var (addition, confidence) in additions)
             {
-                // A request that was applied and whose answer was lost is sent again. The
-                // addition is then in the model with this source, and is not written twice.
-                if (SourceOf(state, addition.Id) == source)
-                    continue;
+                if (ExistingFacts.Find(state, Describe(addition), except: addition.Id) is var match and not ExistingMatch.None)
+                {
+                    var message = match is ExistingMatch.One one
+                        ? $"The model holds this already: '{one.Name}' ({one.Id}). Nothing was created."
+                        : $"The model holds more than one thing that fits ({string.Join(", ", ((ExistingMatch.Ambiguous)match).Names.Select(n => $"'{n}'"))}). Nothing was created.";
+                    refused = new AdditionRefused(addition.Id, message, true);
+                    return new Decision.Conflict(message);
+                }
 
                 var provenance = new Provenance(source, null, confidence, acceptedBy, acceptedAt);
                 var decision = Add(state, addition).Then(state, after => Record(after, addition, provenance));
@@ -73,6 +85,18 @@ internal static class InferredWrites
 
         return result is CommandResult<bool>.Success ? null : refused;
     }
+
+    /// <summary>The addition as <see cref="ExistingFacts"/> compares it. Every reference of an addition is an ID.</summary>
+    private static ProposedThing Describe(Addition addition) => addition switch
+    {
+        Addition.Element e => new ProposedThing(AliasKinds.Element, e.Name, e.Kind.ToString(), e.ParentId),
+        Addition.Operation o => new ProposedThing(AliasKinds.Operation, o.Name, OwnerId: o.OwnerId),
+        Addition.Channel c => new ProposedThing(AliasKinds.Channel, c.Name),
+        Addition.Subscription s => new ProposedThing(AliasKinds.Subscription, "", ChannelId: s.ChannelId, ConsumerId: s.ConsumerId),
+        Addition.Message m => new ProposedThing(AliasKinds.Message, m.Name),
+        // A relationship has no rule for "the same thing"; the modelling decision judges it.
+        _ => new ProposedThing(AliasKinds.Relationship, ""),
+    };
 
     private static Decision Add(ModelState state, Addition addition) => addition switch
     {
@@ -97,15 +121,6 @@ internal static class InferredWrites
         Addition.Message => ModelDecider.RecordMessageProvenance(state, addition.Id, FactStatus.Inferred, provenance),
         _ => throw new InvalidOperationException($"Unknown addition {addition.GetType().Name}."),
     };
-
-    private static string? SourceOf(ModelState state, Guid id) =>
-        state.Elements.TryGetValue(id, out var element) ? element.Provenance?.Source
-        : state.Relationships.TryGetValue(id, out var relationship) ? relationship.Provenance?.Source
-        : state.Operations.TryGetValue(id, out var operation) ? operation.Provenance?.Source
-        : state.Channels.TryGetValue(id, out var channel) ? channel.Provenance?.Source
-        : state.Subscriptions.TryGetValue(id, out var subscription) ? subscription.Provenance?.Source
-        : state.Messages.TryGetValue(id, out var message) ? message.Provenance?.Source
-        : null;
 
     private static string Reason(Decision decision) => decision switch
     {

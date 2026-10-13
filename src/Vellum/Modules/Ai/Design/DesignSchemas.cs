@@ -3,7 +3,13 @@ using System.Text.Json.Nodes;
 
 namespace Vellum.Modules.Ai.Design;
 
-/// <summary>The flat answer a model gives for a flow. Every reference is an alias; every payload is JSON text.</summary>
+/// <summary>
+/// The flat answer a model gives for a flow. Every reference is an alias; every payload is
+/// JSON text. On the wire no member is null: the model writes the empty string for a text
+/// member it does not use, 0 for an unused <c>failFirst</c> and -1 for an unused
+/// <c>expectedCount</c> (see <see cref="DesignSchemas"/>). <see cref="FlowAssembler.Normalize"/>
+/// maps those values back to null, so a nullable member below is null after it.
+/// </summary>
 public sealed record FlowOutput(
     string Name, string Summary,
     IReadOnlyList<FlowStepOutput> Steps,
@@ -55,59 +61,84 @@ public sealed record ArchitectureItemOutput(
     double Confidence, string Rationale);
 
 /// <summary>
-/// The JSON Schemas of the two structured answers. They stay inside the subset that every
-/// provider accepts: each object is closed and lists all its properties as required, an
-/// optional value is a nullable type, and no length, range, pattern or format keyword is used.
-/// The schemas are flat: a nested step tree would need a recursive reference.
+/// The JSON Schemas of the structured answers. They sit inside the subset that all three
+/// vendors document for their structured-output mode, with margin:
+/// <list type="bullet">
+/// <item>Anthropic <c>output_config.format</c>: at most 16 parameters with a union type
+/// (<c>anyOf</c> or a type array such as <c>["string","null"]</c>) and at most 24 optional
+/// parameters in one request; no recursive schema; no length, range or array constraint;
+/// every object has <c>additionalProperties: false</c>
+/// (https://platform.claude.com/docs/en/build-with-claude/structured-outputs).</item>
+/// <item>OpenAI strict mode: every property is required; at most 10 levels of nesting and
+/// 5,000 object properties; at most 1,000 enum values
+/// (https://developers.openai.com/api/docs/guides/structured-outputs).</item>
+/// <item>Gemini: "a subset of the JSON Schema specification"; "very large or deeply nested
+/// schemas may be rejected", with no number given
+/// (https://ai.google.dev/gemini-api/docs/structured-output).</item>
+/// </list>
+/// So the schemas use six keywords only (<c>type</c>, <c>properties</c>, <c>required</c>,
+/// <c>additionalProperties</c>, <c>items</c>, <c>enum</c>), no union type and no optional
+/// property. A value that a step, a fault, an assertion or an item does not use is a
+/// sentinel: the empty string for text, 0 for <c>failFirst</c> ("fail every attempt"), -1 for
+/// <c>expectedCount</c>, an empty list for <c>consumers</c>. The prompt states the rule and
+/// the server maps each sentinel back to null. The schemas are flat: a nested step tree
+/// would need a recursive reference. <c>DesignSchemaTests</c> walks the schemas and enforces
+/// the limits.
 /// </summary>
 internal static class DesignSchemas
 {
+    /// <summary>The value of <c>failFirst</c> that means "no limit": the fault fails every attempt.</summary>
+    public const int NoFailFirst = 0;
+
+    /// <summary>The value of <c>expectedCount</c> in an assertion that does not count events.</summary>
+    public const int NoExpectedCount = -1;
+
     public static readonly JsonElement Flow = JsonSerializer.SerializeToElement(Object(
         ("name", Text()),
         ("summary", Text()),
         ("steps", Array(Object(
             ("id", Text()),
-            ("parentStepId", Optional("string")),
+            ("parentStepId", Text()),
             ("slot", Enum("root", "then", "onError", "handler", "branchThen", "branchElse", "parallelBranch")),
-            ("slotKey", Optional("string")),
+            ("slotKey", Text()),
             ("order", Type("integer")),
             ("type", Enum("call", "publish", "write", "parallel", "branch")),
-            ("from", Optional("string")),
-            ("operation", Optional("string")),
-            ("channel", Optional("string")),
-            ("message", Optional("string")),
-            ("by", Optional("string")),
-            ("store", Optional("string")),
-            ("dataset", Optional("string")),
-            ("whenStep", Optional("string")),
-            ("is", Optional("string")),
-            ("requestJson", Optional("string")),
-            ("responseJson", Optional("string")),
-            ("payloadJson", Optional("string")),
-            ("changeJson", Optional("string"))))),
+            ("from", Text()),
+            ("operation", Text()),
+            ("channel", Text()),
+            ("message", Text()),
+            ("by", Text()),
+            ("store", Text()),
+            ("dataset", Text()),
+            ("whenStep", Text()),
+            ("is", Text()),
+            ("requestJson", Text()),
+            ("responseJson", Text()),
+            ("payloadJson", Text()),
+            ("changeJson", Text())))),
         ("faults", Array(Object(
             ("target", Text()),
             ("kind", Enum("error", "timeout", "outage")),
-            ("failFirst", Optional("integer"))))),
+            ("failFirst", Type("integer"))))),
         ("assertions", Array(Object(
             ("id", Text()),
             ("type", Enum("outcome", "event-count")),
-            ("step", Optional("string")),
-            ("expected", Optional("string")),
-            ("eventKind", Optional("string")),
-            ("target", Optional("string")),
-            ("expectedCount", Optional("integer"))))),
+            ("step", Text()),
+            ("expected", Text()),
+            ("eventKind", Text()),
+            ("target", Text()),
+            ("expectedCount", Type("integer"))))),
         ("missing", Array(Object(
             ("alias", Text()),
             ("kind", Enum("element", "operation", "channel", "subscription", "message")),
             ("name", Text()),
-            ("elementKind", Optional("string")),
-            ("parentAlias", Optional("string")),
-            ("ownerAlias", Optional("string")),
-            ("transport", Optional("string")),
-            ("channelKind", Optional("string")),
-            ("channelAlias", Optional("string")),
-            ("consumerAlias", Optional("string")),
+            ("elementKind", Text()),
+            ("parentAlias", Text()),
+            ("ownerAlias", Text()),
+            ("transport", Text()),
+            ("channelKind", Text()),
+            ("channelAlias", Text()),
+            ("consumerAlias", Text()),
             ("reason", Text()),
             ("confidence", Type("number"))))),
         ("openQuestions", Array(Text())),
@@ -119,24 +150,24 @@ internal static class DesignSchemas
         ("items", Array(Object(
             ("alias", Text()),
             ("action", Enum("add", "change", "remove")),
-            ("target", Optional("string")),
+            ("target", Text()),
             ("entityKind", Enum("element", "relationship", "operation", "channel", "subscription", "message")),
             ("name", Text()),
-            ("description", Optional("string")),
-            ("technology", Optional("string")),
-            ("elementKind", Optional("string")),
-            ("parent", Optional("string")),
-            ("from", Optional("string")),
-            ("to", Optional("string")),
-            ("label", Optional("string")),
-            ("relationshipKind", Optional("string")),
-            ("owner", Optional("string")),
-            ("transport", Optional("string")),
-            ("channelKind", Optional("string")),
-            ("channel", Optional("string")),
-            ("consumer", Optional("string")),
-            ("producer", Optional("string")),
-            ("consumers", new JsonObject { ["type"] = new JsonArray("array", "null"), ["items"] = Text() }),
+            ("description", Text()),
+            ("technology", Text()),
+            ("elementKind", Text()),
+            ("parent", Text()),
+            ("from", Text()),
+            ("to", Text()),
+            ("label", Text()),
+            ("relationshipKind", Text()),
+            ("owner", Text()),
+            ("transport", Text()),
+            ("channelKind", Text()),
+            ("channel", Text()),
+            ("consumer", Text()),
+            ("producer", Text()),
+            ("consumers", Array(Text())),
             ("confidence", Type("number")),
             ("rationale", Text())))),
         ("openQuestions", Array(Text())),
@@ -166,8 +197,6 @@ internal static class DesignSchemas
     private static JsonObject Type(string type) => new() { ["type"] = type };
 
     private static JsonObject Text() => Type("string");
-
-    private static JsonObject Optional(string type) => new() { ["type"] = new JsonArray(type, "null") };
 
     private static JsonObject Enum(params string[] values) => new()
     {

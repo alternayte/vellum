@@ -15,13 +15,18 @@ namespace Vellum.Modules.Ai;
 /// provider rejected that mode or gave an answer outside the schema, null when the test could
 /// not tell.
 /// </param>
+/// <param name="StructuredOutputNote">
+/// Set when the provider's own structured-output mode cannot be used: a sentence that says
+/// what Vellum does instead and which setting to change.
+/// </param>
 /// <param name="Error">
 /// A stable code and a sentence that says what to change. The sentence holds text that the
 /// provider's server wrote only when that server is on the public internet: a base URL on a
 /// private network can point at any internal service, and its answer is not shown.
 /// </param>
 public sealed record AiConnectionTest(
-    bool Ok, long LatencyMs, string Model, string? ReportedModel, bool? SupportsStructuredOutput, ConnectionTestError? Error);
+    bool Ok, long LatencyMs, string Model, string? ReportedModel, bool? SupportsStructuredOutput, ConnectionTestError? Error,
+    string? StructuredOutputNote = null);
 
 /// <summary>
 /// The provider-neutral entry to every AI call. It routes the task to the provider in the
@@ -45,6 +50,26 @@ public sealed class AiClient(
     /// <summary>The corrected answers a provider is asked for after an invalid one.</summary>
     public const int MaxRepairs = 2;
     public const string TestPurpose = "test-connection";
+    /// <summary>The provider error code of a request that the provider rejected for its content, the schema included.</summary>
+    private const string RejectedRequest = "invalid_request";
+
+    public const string StructuredOutputRejected =
+        "The provider rejected a request in its structured-output mode. Vellum then sends the schema in the prompt and checks the answer itself " +
+        "(usage note 'schema_rejected_fallback'), which costs one rejected call for each request. " +
+        "Switch off 'supports structured output' for this provider entry to skip that call.";
+
+    public const string StructuredOutputInvalid =
+        "The provider accepted its structured-output mode and gave an answer outside the schema. " +
+        "Switch off 'supports structured output' for this provider entry; Vellum then sends the schema in the prompt and checks the answer itself.";
+
+    /// <summary>The schema of the connection test. It is one of the schemas that <c>DesignSchemaTests</c> holds to the vendors' limits.</summary>
+    internal static readonly JsonElement ConnectionTestSchema = JsonSerializer.SerializeToElement(new JsonObject
+    {
+        ["type"] = "object",
+        ["properties"] = new JsonObject { ["ok"] = new JsonObject { ["type"] = "boolean" } },
+        ["required"] = new JsonArray("ok"),
+        ["additionalProperties"] = false,
+    });
     private const int MaxReportedModelChars = 200;
 
     private sealed record Route(AiProviderSettings Provider, IAiProviderAdapter Adapter, ProviderTarget Target, decimal? WorkspaceBudgetUsd);
@@ -92,6 +117,17 @@ public sealed class AiClient(
     /// Asks for one JSON value and returns it as <typeparamref name="T"/> when it is valid
     /// against <see cref="AiRequest.JsonSchema"/>. An invalid answer is sent back for
     /// correction at most <see cref="MaxRepairs"/> times.
+    /// <para>
+    /// <b>A rejected schema.</b> The schemas of this application stay inside what each vendor
+    /// documents, and a vendor can still reject one: a limit changes, or an OpenAI-compatible
+    /// server implements less. When a provider that is marked <c>supportsStructuredOutput</c>
+    /// rejects the request (the adapters name every request that a provider rejects for its
+    /// content <c>invalid_request</c>; no vendor gives a narrower word for a schema), the
+    /// request is sent once more with the schema in the prompt, the mode that a provider
+    /// without structured output gets. The rejected call costs nothing and is metered as a
+    /// provider error; every call after it carries the usage note
+    /// <see cref="AiUsageLedger.NoteSchemaFallback"/>.
+    /// </para>
     /// </summary>
     /// <exception cref="ArgumentException">The request has no schema, or the schema is not a JSON Schema.</exception>
     public async Task<AiResult<T>> CompleteStructuredAsync<T>(AiRequest request, CancellationToken ct = default)
@@ -108,6 +144,7 @@ public sealed class AiClient(
         var totals = new Totals(route);
         var messages = prompt.Messages;
         IReadOnlyList<string> issues = [];
+        string? note = null;
 
         for (var attempt = 0; attempt <= MaxRepairs; attempt++)
         {
@@ -118,9 +155,20 @@ public sealed class AiClient(
                     return Outcome(answer);
                 issues = schema.Check(answer.Text, lenient: !native, out value);
                 return issues.Count == 0 ? "succeeded" : "invalid_output";
-            }, ct);
+            }, ct, note);
             if (reply is null)
                 return new AiResult<T>.Failed(failure!);
+
+            // Once: the second mode has no schema that a provider could reject.
+            if (native && reply.Error is { Code: RejectedRequest })
+            {
+                native = false;
+                note = AiUsageLedger.NoteSchemaFallback;
+                prompt = PromptAssembler.Build(request, askForJsonInPrompt: true);
+                messages = prompt.Messages;
+                attempt--;
+                continue;
+            }
 
             if (Failure(reply, request.MaxOutputTokens) is { } stopped)
                 return new AiResult<T>.Failed(stopped);
@@ -227,13 +275,7 @@ public sealed class AiClient(
                 : Fail("not_configured", "The provider needs a model name, a base URL where the kind has none of its own, and an API key in the workspace secrets.");
         }
 
-        var schemaJson = JsonSerializer.SerializeToElement(new JsonObject
-        {
-            ["type"] = "object",
-            ["properties"] = new JsonObject { ["ok"] = new JsonObject { ["type"] = "boolean" } },
-            ["required"] = new JsonArray("ok"),
-            ["additionalProperties"] = false,
-        });
+        var schemaJson = ConnectionTestSchema;
         var request = new AiRequest(
             workspaceId, AiTask.Explain, TestPurpose, "test-connection/1", "This is a connection test.",
             [new AiMessage(AiRole.User, [AiPart.Instruction("Reply with the JSON object {\"ok\": true} and nothing else.")])],
@@ -268,7 +310,7 @@ public sealed class AiClient(
             if (reply is null)
                 return Refused(failure!);
 
-            if (reply.Error is { Code: "invalid_request" } && native)
+            if (reply.Error is { Code: RejectedRequest } && native)
             {
                 structured = false;
                 continue;
@@ -280,7 +322,8 @@ public sealed class AiClient(
             // The provider answered. A refusal or a cut answer still proves the connection.
             if (native && reply.Stop == ProviderStop.Completed)
                 structured = valid;
-            return new AiConnectionTest(true, Elapsed(), provider.Model, totals.ReportedModel, structured, null);
+            return new AiConnectionTest(true, Elapsed(), provider.Model, totals.ReportedModel, structured, null,
+                structured != false ? null : native ? StructuredOutputInvalid : StructuredOutputRejected);
         }
 
         // Unreachable: the plain-text pass returns in every branch.
@@ -405,7 +448,7 @@ public sealed class AiClient(
     /// <returns>A null reply means that no call was made or that it was cancelled.</returns>
     private async Task<(ProviderReply? Reply, AiFailure? Failure)> CallAsync(
         Route route, AiRequest request, string task, AssembledPrompt prompt, IReadOnlyList<ProviderMessage> messages, bool native,
-        Totals totals, Func<ProviderReply, string> outcomeOf, CancellationToken ct)
+        Totals totals, Func<ProviderReply, string> outcomeOf, CancellationToken ct, string? note = null)
     {
         var schema = native ? request.JsonSchema : null;
         CallTicket? ticket;
@@ -439,16 +482,17 @@ public sealed class AiClient(
         }
         finally
         {
-            await CompleteAsync(route, request, ticket, reply, outcome, progress, totals);
+            await CompleteAsync(route, request, ticket, reply, outcome, progress, totals, note);
         }
     }
 
     private async Task CompleteAsync(
-        Route route, AiRequest request, CallTicket ticket, ProviderReply? reply, string outcome, CallProgress progress, Totals totals)
+        Route route, AiRequest request, CallTicket ticket, ProviderReply? reply, string outcome, CallProgress progress, Totals totals,
+        string? note = null)
     {
         var errorCode = reply?.Error?.Code;
         var cost = await ledger.CompleteAsync(ticket, new CallEnd(
-            outcome, errorCode, reply?.InputTokens, reply?.OutputTokens, reply?.ReportedModel, progress.MayHaveGenerated(reply?.Error)));
+            outcome, errorCode, reply?.InputTokens, reply?.OutputTokens, reply?.ReportedModel, progress.MayHaveGenerated(reply?.Error), note));
         if (reply is not null)
             totals.Add(cost, reply.ReportedModel);
 

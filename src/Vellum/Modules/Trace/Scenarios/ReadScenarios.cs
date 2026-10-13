@@ -1,12 +1,26 @@
 using System.Security.Claims;
 using Deedbox;
 using Microsoft.EntityFrameworkCore;
+using Vellum.Modules.Modelling.Model;
+using Vellum.Modules.Trace.Engine;
 using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Shared;
 
 namespace Vellum.Modules.Trace.Scenarios;
 
 public sealed record ScenarioSummaryDto(Guid Id, string Name);
+
+/// <summary>
+/// A scenario document as a read gives it: the document's own members and where it came from.
+/// </summary>
+/// <param name="Origin">Null for a scenario that only a person wrote. Else the accepted AI flow proposal.</param>
+public sealed record ScenarioDto(
+    ScenarioId Id, string Name, IReadOnlyList<Step> Steps, IReadOnlyList<Fault> Faults, IReadOnlyList<Assertion> Assertions,
+    ScenarioOrigin? Origin)
+{
+    public static ScenarioDto From(Scenario document, ScenarioOrigin? origin) =>
+        new(document.Id, document.Name, document.Steps, document.Faults, document.Assertions, origin);
+}
 
 public static class ReadScenarios
 {
@@ -60,7 +74,7 @@ public static class ReadScenarios
 
         var state = await ScenarioStreams.LoadAsync(store, scenarioId, ct);
         return state.DocumentIn(projectId) is { } document
-            ? Results.Ok(document)
+            ? Results.Ok(ScenarioDto.From(document, state.Origin))
             : Results.NotFound(new ErrorResponse("not_found", "Scenario not found"));
     }
 }
