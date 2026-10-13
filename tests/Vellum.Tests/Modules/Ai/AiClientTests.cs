@@ -137,7 +137,7 @@ public class AiClientTests(SharedOutboundHost shared) : IClassFixture<SharedOutb
             ai.Stub.Json(ai.Completion(AiScenario.ValidAnswer));
 
             Assert.IsType<AiResult<Summary>.Succeeded>(await ai.StructuredAsync(
-                ai.Request(AiPart.Instruction("Summarise the repository text."), AiPart.Untrusted(repositoryText))));
+                ai.Request(AiPart.Instruction("Summarise the repository text."), AiPart.Untrusted(repositoryText, AiDataClass.Public))));
 
             // The JSON writer escapes '<' and line breaks. The checks run on the wire text and on the text it stands for.
             var wire = Assert.Single(ai.Stub.Requests).Body;
@@ -164,12 +164,12 @@ public class AiClientTests(SharedOutboundHost shared) : IClassFixture<SharedOutb
         {
             var ok = await AiScenario.CreateAsync(_host, kind);
             ok.Stub.Json(ok.Completion($$"""{"title":"{{answerMarker}}","count":2}"""));
-            Assert.IsType<AiResult<Summary>.Succeeded>(await ok.StructuredAsync(ok.Request(AiPart.Untrusted(promptMarker))));
+            Assert.IsType<AiResult<Summary>.Succeeded>(await ok.StructuredAsync(ok.Request(AiPart.Untrusted(promptMarker, AiDataClass.Public))));
 
             // Faults of every class: a refused key, a broken connection, a timeout, a broken stream.
             var refused = await AiScenario.CreateAsync(_host, kind);
             refused.Stub.Json(HttpStatusCode.Unauthorized, refused.Fixture("error-401.json"));
-            failures.Add(FailureOf(await refused.StructuredAsync(refused.Request(AiPart.Untrusted(promptMarker)))));
+            failures.Add(FailureOf(await refused.StructuredAsync(refused.Request(AiPart.Untrusted(promptMarker, AiDataClass.Public)))));
 
             var reset = await AiScenario.CreateAsync(_host, kind);
             reset.Stub.Throw(() => new HttpRequestException(HttpRequestError.ResponseEnded, $"reset {AiScenario.ApiKey}"));
@@ -207,9 +207,10 @@ public class AiClientTests(SharedOutboundHost shared) : IClassFixture<SharedOutb
     [Fact]
     public async Task Concurrent_calls_do_not_spend_past_the_provider_budget()
     {
-        // Each call reserves at most 256 output tokens at 1000 USD per million: about 0.26 USD.
-        // A budget of 0.60 USD admits two calls that are in flight at the same time.
-        var ai = await AiScenario.CreateAsync(_host, "anthropic", p => p["monthlyBudgetUsd"] = 0.60);
+        // The Anthropic adapter adds 8192 tokens of thinking headroom to the output limit of 256.
+        // Each call reserves those 8448 output tokens at 1000 USD per million: about 8.45 USD.
+        // A budget of 17.50 USD admits two calls that are in flight at the same time.
+        var ai = await AiScenario.CreateAsync(_host, "anthropic", p => p["monthlyBudgetUsd"] = 17.50);
         await SetPriceAsync(ai, inputPerMillion: 1, outputPerMillion: 1000);
         var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         ai.Stub.Then(async _ =>
@@ -242,7 +243,7 @@ public class AiClientTests(SharedOutboundHost shared) : IClassFixture<SharedOutb
     public async Task The_workspace_budget_counts_every_provider_call_of_the_month()
     {
         var ai = await AiScenario.CreateAsync(_host, "openai", usage: new JsonObject { ["monthlyAiBudgetUsd"] = 0.30 });
-        await SetPriceAsync(ai, inputPerMillion: 0, outputPerMillion: 1000);
+        await SetPriceAsync(ai, inputPerMillion: 0.00000001m, outputPerMillion: 1000);
         // 9 output tokens cost 0.009 USD. The reservation for the next call is 0.256 USD.
         ai.Stub.Json(ai.Completion(AiScenario.ValidAnswer));
 

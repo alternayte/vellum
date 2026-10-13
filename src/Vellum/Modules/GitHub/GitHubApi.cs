@@ -16,10 +16,15 @@ internal interface IGitHubApi
     Task<HttpResponseMessage> GetRepository(string owner, string repo,
         [Property(OutboundCall.PropertyName)] OutboundCall call, CancellationToken ct);
 
-    /// <summary>With this media type the body is the commit SHA and nothing else.</summary>
-    [Get("/repos/{owner}/{repo}/commits/{**reference}")]
-    [Headers("Accept: application/vnd.github.sha")]
-    Task<HttpResponseMessage> GetCommitSha(string owner, string repo, string reference,
+    /// <summary>
+    /// "List commits" with one result: the newest commit that <paramref name="reference"/>
+    /// (a SHA, a branch or a tag) points at. The ref is a query value, so Refit encodes it as
+    /// a whole and a slash in it stays part of the ref. "Get a commit" takes the ref as path
+    /// parts, where <c>main/status</c> is another endpoint.
+    /// </summary>
+    [Get("/repos/{owner}/{repo}/commits")]
+    Task<HttpResponseMessage> ListCommits(string owner, string repo,
+        [AliasAs("sha")] string reference, [AliasAs("per_page")] int perPage,
         [Property(OutboundCall.PropertyName)] OutboundCall call, CancellationToken ct);
 
     [Get("/repos/{owner}/{repo}/git/trees/{sha}?recursive=1")]
@@ -48,11 +53,11 @@ internal interface IGitHubApi
     /// <summary>Repeats a read at the address in <see cref="OutboundCall.AbsoluteUri"/>.</summary>
     [Get("/")]
     Task<HttpResponseMessage> Follow([Property(OutboundCall.PropertyName)] OutboundCall call, CancellationToken ct);
-
-    [Get("/")]
-    [Headers("Accept: application/vnd.github.sha")]
-    Task<HttpResponseMessage> FollowSha([Property(OutboundCall.PropertyName)] OutboundCall call, CancellationToken ct);
 }
+
+internal sealed record ErrorDto(
+    [property: JsonPropertyName("message")] string? Message,
+    [property: JsonPropertyName("documentation_url")] string? DocumentationUrl);
 
 internal sealed record RepositoryDto(
     [property: JsonPropertyName("id")] long Id,

@@ -162,6 +162,11 @@ namespace Vellum.Modules.Ai.Usage.Migrations
                         .HasColumnType("character varying(40)")
                         .HasColumnName("task");
 
+                    b.Property<string>("UsageNote")
+                        .HasMaxLength(40)
+                        .HasColumnType("character varying(40)")
+                        .HasColumnName("usage_note");
+
                     b.Property<Guid>("WorkspaceId")
                         .HasColumnType("uuid")
                         .HasColumnName("workspace_id");

@@ -15,6 +15,11 @@ namespace Vellum.Modules.Ai;
 /// provider rejected that mode or gave an answer outside the schema, null when the test could
 /// not tell.
 /// </param>
+/// <param name="Error">
+/// A stable code and a sentence that says what to change. The sentence holds text that the
+/// provider's server wrote only when that server is on the public internet: a base URL on a
+/// private network can point at any internal service, and its answer is not shown.
+/// </param>
 public sealed record AiConnectionTest(
     bool Ok, long LatencyMs, string Model, string? ReportedModel, bool? SupportsStructuredOutput, ConnectionTestError? Error);
 
@@ -25,6 +30,14 @@ public sealed record AiConnectionTest(
 /// returns <see cref="AiFailure.NotConfigured"/>; it never throws for a provider fault.
 /// Model output is untrusted: only an answer that is valid against the request's schema
 /// becomes a value.
+/// <para>
+/// <b>Private code.</b> A request with a part of class
+/// <see cref="AiDataClass.PrivateRepository"/> is sent only when the workspace's effective
+/// <c>privacy.sendPrivateCodeToAi</c> is true. The effective value already holds the instance
+/// policy. Otherwise the request fails with <see cref="AiFailure.Disabled"/> that names the
+/// setting, before a provider is chosen and before anything is metered or sent. This check,
+/// and not the secret redactor, is what keeps private code inside the instance.
+/// </para>
 /// </summary>
 public sealed class AiClient(
     IServiceProvider services, SettingsResolver settings, SecretReader secrets, AiUsageLedger ledger, ILogger<AiClient> logger)
@@ -32,10 +45,11 @@ public sealed class AiClient(
     /// <summary>The corrected answers a provider is asked for after an invalid one.</summary>
     public const int MaxRepairs = 2;
     public const string TestPurpose = "test-connection";
+    private const int MaxReportedModelChars = 200;
 
     private sealed record Route(AiProviderSettings Provider, IAiProviderAdapter Adapter, ProviderTarget Target, decimal? WorkspaceBudgetUsd);
 
-    /// <summary>The provider calls of one request, added up.</summary>
+    /// <summary>The provider calls of one request, added up. A sum that leaves the range of its type becomes unknown.</summary>
     private sealed class Totals(Route route)
     {
         private int _calls;
@@ -43,13 +57,29 @@ public sealed class AiClient(
         private decimal? _cost = 0m;
         private string? _reportedModel;
 
-        public void Add(ProviderReply reply, decimal? cost)
+        public void Add(CallCost cost, string? reportedModel)
         {
             _calls++;
-            _input = _input is null || reply.InputTokens is null ? null : _input + reply.InputTokens;
-            _output = _output is null || reply.OutputTokens is null ? null : _output + reply.OutputTokens;
-            _cost = _cost is null || cost is null ? null : _cost + cost;
-            _reportedModel = reply.ReportedModel ?? _reportedModel;
+            _input = Sum(_input, cost.InputTokens);
+            _output = Sum(_output, cost.OutputTokens);
+            try
+            {
+                _cost = _cost is null || cost.CostUsd is null ? null : checked(_cost + cost.CostUsd);
+            }
+            catch (OverflowException)
+            {
+                _cost = null;
+            }
+
+            _reportedModel = reportedModel ?? _reportedModel;
+        }
+
+        private static int? Sum(int? total, int? count)
+        {
+            if (total is null || count is null)
+                return null;
+            var sum = (long)total.Value + count.Value;
+            return sum is >= 0 and <= int.MaxValue ? (int)sum : null;
         }
 
         public string? ReportedModel => _reportedModel;
@@ -69,7 +99,7 @@ public sealed class AiClient(
         if (request.JsonSchema is not { } schemaJson || StructuredOutput.Compile(schemaJson) is not { } schema)
             throw new ArgumentException("A structured request needs a JSON Schema.", nameof(request));
 
-        var (route, unroutable) = await RouteAsync(request.WorkspaceId, request.Task, ct);
+        var (route, unroutable) = await RouteAsync(request, ct);
         if (route is null)
             return new AiResult<T>.Failed(unroutable!);
 
@@ -81,18 +111,19 @@ public sealed class AiClient(
 
         for (var attempt = 0; attempt <= MaxRepairs; attempt++)
         {
-            var (reply, ticket, failure) = await CallAsync(route, request, TaskName(request.Task), prompt, messages, native, ct);
+            T? value = default;
+            var (reply, failure) = await CallAsync(route, request, TaskName(request.Task), prompt, messages, native, totals, answer =>
+            {
+                if (Failure(answer, request.MaxOutputTokens) is not null)
+                    return Outcome(answer);
+                issues = schema.Check(answer.Text, lenient: !native, out value);
+                return issues.Count == 0 ? "succeeded" : "invalid_output";
+            }, ct);
             if (reply is null)
                 return new AiResult<T>.Failed(failure!);
 
             if (Failure(reply, request.MaxOutputTokens) is { } stopped)
-            {
-                await EndAsync(route, request, ticket!, reply, Outcome(reply), totals);
                 return new AiResult<T>.Failed(stopped);
-            }
-
-            issues = schema.Check<T>(reply.Text, lenient: !native, out var value);
-            await EndAsync(route, request, ticket!, reply, issues.Count == 0 ? "succeeded" : "invalid_output", totals);
             if (issues.Count == 0)
                 return new AiResult<T>.Succeeded(value!, totals.ToUsage());
 
@@ -110,7 +141,7 @@ public sealed class AiClient(
     /// </summary>
     public async IAsyncEnumerable<string> StreamTextAsync(AiRequest request, [EnumeratorCancellation] CancellationToken ct = default)
     {
-        var (route, unroutable) = await RouteAsync(request.WorkspaceId, request.Task, ct);
+        var (route, unroutable) = await RouteAsync(request, ct);
         if (route is null)
             throw new AiStreamFailedException(unroutable!);
 
@@ -119,11 +150,9 @@ public sealed class AiClient(
 
         if (!route.Provider.SupportsStreaming)
         {
-            var (whole, wholeTicket, refused) = await CallAsync(route, request, TaskName(request.Task), prompt, prompt.Messages, native: false, ct);
+            var (whole, refused) = await CallAsync(route, request, TaskName(request.Task), prompt, prompt.Messages, native: false, totals, Outcome, ct);
             if (whole is null)
                 throw new AiStreamFailedException(refused!);
-
-            await EndAsync(route, request, wholeTicket!, whole, Outcome(whole), totals);
             if (Failure(whole, request.MaxOutputTokens) is { } stopped)
                 throw new AiStreamFailedException(stopped);
 
@@ -135,29 +164,35 @@ public sealed class AiClient(
         if (ticket is null)
             throw new AiStreamFailedException(admission!);
 
-        var providerRequest = new ProviderRequest(route.Target, prompt.System, prompt.Messages, null, SchemaName(request.Purpose), request.MaxOutputTokens);
+        var progress = new CallProgress();
+        var providerRequest = new ProviderRequest(
+            route.Target, prompt.System, prompt.Messages, null, SchemaName(request.Purpose), request.MaxOutputTokens, progress);
         ProviderReply? end = null;
         try
         {
             await foreach (var item in route.Adapter.StreamAsync(providerRequest, ct))
             {
                 if (item is ProviderStreamEvent.Delta delta)
+                {
+                    progress.OutputStarted = true;
                     yield return delta.Text;
+                }
                 else if (item is ProviderStreamEvent.End last)
-                    end = last.Reply;
+                {
+                    end = Cleaned(last.Reply);
+                }
             }
         }
         finally
         {
-            // No terminal event was read: the caller cancelled or stopped reading.
-            if (end is null)
-                await EndAsync(route, request, ticket, null, "cancelled", totals);
+            // Every way out of the stream ends the call's reservation: a complete answer, a
+            // provider failure, a cancelled token, a reader that stopped, and an exception.
+            // Without a terminal event the caller cancelled or stopped reading.
+            await CompleteAsync(route, request, ticket, end, end is null ? "cancelled" : Outcome(end), progress, totals);
         }
 
         if (end is null)
-            throw new AiStreamFailedException(new AiFailure.ProviderError("stream_interrupted", "The provider's stream ended before it was complete."));
-
-        await EndAsync(route, request, ticket, end, Outcome(end), totals);
+            throw new AiStreamFailedException(new AiFailure.ProviderError("stream_interrupted", ProviderErrors.Sentence("stream_interrupted")));
         if (Failure(end, request.MaxOutputTokens) is { } failure)
             throw new AiStreamFailedException(failure);
     }
@@ -171,17 +206,16 @@ public sealed class AiClient(
     public async Task<AiConnectionTest?> TestProviderAsync(Guid workspaceId, Guid providerId, string actorId, CancellationToken ct = default)
     {
         var workspace = await settings.GetWorkspaceAsync(workspaceId, ct);
-        var instance = await settings.GetInstanceAsync(ct);
         if (workspace.Effective.Ai.Providers.FirstOrDefault(p => p.Id == providerId) is not { } provider)
             return null;
 
         AiConnectionTest Fail(string code, string message, long latency = 0, string? reported = null) =>
             new(false, latency, provider.Model, reported, null, new ConnectionTestError(code, message));
 
-        if (!instance.Policy.AllowedAiProviderKinds.Contains(provider.Kind))
+        if (!workspace.Policy.AllowedAiProviderKinds.Contains(provider.Kind))
             return Fail("disabled_by_policy", $"The instance policy does not allow the provider kind '{provider.Kind}'.");
 
-        var (route, unroutable) = await TargetAsync(workspaceId, provider, instance.Policy, workspace, ct);
+        var (route, unroutable) = await TargetAsync(workspaceId, provider, workspace, ct);
         if (route is null)
         {
             return unroutable is AiFailure.ProviderError error
@@ -219,13 +253,16 @@ public sealed class AiClient(
         foreach (var native in (bool[])[true, false])
         {
             var prompt = PromptAssembler.Build(request, askForJsonInPrompt: !native);
-            var (reply, ticket, failure) = await CallAsync(route, request, "test", prompt, prompt.Messages, native, ct);
+            var valid = false;
+            var (reply, failure) = await CallAsync(route, request, "test", prompt, prompt.Messages, native, totals, answer =>
+            {
+                if (answer.Error is not null || answer.Stop != ProviderStop.Completed)
+                    return Outcome(answer);
+                valid = schema.Check<JsonElement>(answer.Text, lenient: !native, out _).Count == 0;
+                return valid ? "succeeded" : "invalid_output";
+            }, ct);
             if (reply is null)
                 return Refused(failure!);
-
-            var valid = reply.Error is null && reply.Stop == ProviderStop.Completed
-                && schema.Check<JsonElement>(reply.Text, lenient: !native, out _).Count == 0;
-            await EndAsync(route, request, ticket!, reply, reply.Error is null && reply.Stop == ProviderStop.Completed && !valid ? "invalid_output" : Outcome(reply), totals);
 
             if (reply.Error is { Code: "invalid_request" } && native)
             {
@@ -246,12 +283,17 @@ public sealed class AiClient(
         throw new UnreachableException();
     }
 
-    private async Task<(Route? Route, AiFailure? Failure)> RouteAsync(Guid workspaceId, AiTask task, CancellationToken ct)
+    private async Task<(Route? Route, AiFailure? Failure)> RouteAsync(AiRequest request, CancellationToken ct)
     {
-        var workspace = await settings.GetWorkspaceAsync(workspaceId, ct);
-        var instance = await settings.GetInstanceAsync(ct);
+        var workspace = await settings.GetWorkspaceAsync(request.WorkspaceId, ct);
+
+        // The gate for private code comes first: no provider is chosen, no key is read and
+        // nothing is metered for a request that may not leave the instance.
+        if (!workspace.Effective.Privacy.SendPrivateCodeToAi && request.Messages.Any(message => message.Parts.Any(part => part.IsPrivateCode)))
+            return (null, new AiFailure.Disabled(AiFailure.Disabled.PrivateCodeSetting));
+
         var routing = workspace.Effective.Ai.TaskRouting;
-        var providerId = task switch
+        var providerId = request.Task switch
         {
             AiTask.InferArchitecture => routing.InferArchitecture,
             AiTask.ProposeFlow => routing.ProposeFlow,
@@ -263,7 +305,7 @@ public sealed class AiClient(
         {
             // The effective document drops a route to a provider that is switched off or that
             // the policy no longer allows. The stored choice tells that case from no choice.
-            return (null, StoredRoute(workspace, task) is null ? new AiFailure.NotConfigured() : new AiFailure.Disabled());
+            return (null, StoredRoute(workspace, request.Task) is null ? new AiFailure.NotConfigured() : new AiFailure.Disabled());
         }
 
         if (workspace.Effective.Ai.Providers.FirstOrDefault(p => p.Id == providerId) is not { } provider)
@@ -271,7 +313,7 @@ public sealed class AiClient(
         if (!provider.Enabled)
             return (null, new AiFailure.Disabled());
 
-        return await TargetAsync(workspaceId, provider, instance.Policy, workspace, ct);
+        return await TargetAsync(request.WorkspaceId, provider, workspace, ct);
     }
 
     private static Guid? StoredRoute(WorkspaceSettings workspace, AiTask task)
@@ -291,7 +333,7 @@ public sealed class AiClient(
     }
 
     private async Task<(Route? Route, AiFailure? Failure)> TargetAsync(
-        Guid workspaceId, AiProviderSettings provider, InstancePolicy policy, WorkspaceSettings workspace, CancellationToken ct)
+        Guid workspaceId, AiProviderSettings provider, WorkspaceSettings workspace, CancellationToken ct)
     {
         var adapter = services.GetServices<IAiProviderAdapter>().FirstOrDefault(a => a.Kind == provider.Kind);
         if (adapter is null || string.IsNullOrWhiteSpace(provider.Model))
@@ -337,9 +379,11 @@ public sealed class AiClient(
         if (apiKey is null && adapter.RequiresApiKey)
             return (null, new AiFailure.NotConfigured());
 
+        // The policy and the https rule come from the same settings read as the URL. The
+        // pipeline applies both to every attempt.
         var target = new ProviderTarget(
             provider.Id, provider.Kind, provider.Model, baseUrl, apiKey is null ? null : adapter.Credential(apiKey),
-            policy.AllowPrivateNetworkUrls, TimeSpan.FromSeconds(provider.TimeoutSeconds), provider.Temperature);
+            workspace.Policy.AllowPrivateNetworkUrls, workspace.RequireHttps, TimeSpan.FromSeconds(provider.TimeoutSeconds), provider.Temperature);
         return (new Route(provider, adapter, target, workspace.Effective.Usage.MonthlyAiBudgetUsd), null);
     }
 
@@ -347,51 +391,72 @@ public sealed class AiClient(
         Route route, AiRequest request, string task, AssembledPrompt prompt, IReadOnlyList<ProviderMessage> messages, JsonElement? schema) =>
         new(request.WorkspaceId, route.Provider.Id, route.Provider.Kind, route.Provider.Model, task, request.Purpose,
             request.PromptTemplateVersion, request.ActorId, route.Provider.MonthlyBudgetUsd, route.WorkspaceBudgetUsd,
-            route.Provider.RequestsPerMinute, prompt.ByteCount(messages, schema), request.MaxOutputTokens);
+            route.Provider.RequestsPerMinute, prompt.ByteCount(messages, schema), route.Adapter.OutputTokenCeiling(request.MaxOutputTokens));
 
-    /// <summary>Admits and makes one provider call. A null reply means no call was made or it was cancelled.</summary>
-    private async Task<(ProviderReply? Reply, CallTicket? Ticket, AiFailure? Failure)> CallAsync(
+    /// <summary>
+    /// Admits, makes and meters one provider call. The call's reservation ends on every way
+    /// out: an answer, a provider failure, a cancelled token and an exception.
+    /// </summary>
+    /// <param name="outcomeOf">Names the outcome of an answer for the usage record. It can check the answer against a schema.</param>
+    /// <returns>A null reply means that no call was made or that it was cancelled.</returns>
+    private async Task<(ProviderReply? Reply, AiFailure? Failure)> CallAsync(
         Route route, AiRequest request, string task, AssembledPrompt prompt, IReadOnlyList<ProviderMessage> messages, bool native,
-        CancellationToken ct)
+        Totals totals, Func<ProviderReply, string> outcomeOf, CancellationToken ct)
     {
         var schema = native ? request.JsonSchema : null;
+        CallTicket? ticket;
         try
         {
-            var (ticket, refused) = await ledger.BeginAsync(Start(route, request, task, prompt, messages, schema), ct);
+            (ticket, var refused) = await ledger.BeginAsync(Start(route, request, task, prompt, messages, schema), ct);
             if (ticket is null)
-                return (null, null, refused);
-
-            try
-            {
-                var reply = await route.Adapter.CompleteAsync(
-                    new ProviderRequest(route.Target, prompt.System, messages, schema, SchemaName(request.Purpose), request.MaxOutputTokens), ct);
-                return (reply, ticket, null);
-            }
-            catch (OperationCanceledException)
-            {
-                await EndAsync(route, request, ticket, null, "cancelled", null);
-                return (null, null, new AiFailure.Cancelled());
-            }
+                return (null, refused);
         }
         catch (OperationCanceledException)
         {
-            return (null, null, new AiFailure.Cancelled());
+            return (null, new AiFailure.Cancelled());
+        }
+
+        var progress = new CallProgress();
+        ProviderReply? reply = null;
+        // An exception inside Vellum leaves this word. Every other path replaces it.
+        var outcome = "failed";
+        try
+        {
+            reply = Cleaned(await route.Adapter.CompleteAsync(
+                new ProviderRequest(route.Target, prompt.System, messages, schema, SchemaName(request.Purpose), request.MaxOutputTokens, progress), ct));
+            outcome = outcomeOf(reply);
+            return (reply, null);
+        }
+        catch (OperationCanceledException)
+        {
+            reply = null;
+            outcome = "cancelled";
+            return (null, new AiFailure.Cancelled());
+        }
+        finally
+        {
+            await CompleteAsync(route, request, ticket, reply, outcome, progress, totals);
         }
     }
 
-    private async Task EndAsync(Route route, AiRequest request, CallTicket ticket, ProviderReply? reply, string outcome, Totals? totals)
+    private async Task CompleteAsync(
+        Route route, AiRequest request, CallTicket ticket, ProviderReply? reply, string outcome, CallProgress progress, Totals totals)
     {
         var errorCode = reply?.Error?.Code;
         var cost = await ledger.CompleteAsync(ticket, new CallEnd(
-            outcome, errorCode, reply?.InputTokens, reply?.OutputTokens, reply?.ReportedModel, reply?.Error?.Rejected ?? false));
+            outcome, errorCode, reply?.InputTokens, reply?.OutputTokens, reply?.ReportedModel, progress.MayHaveGenerated(reply?.Error)));
         if (reply is not null)
-            totals?.Add(reply, cost);
+            totals.Add(cost, reply.ReportedModel);
 
         // Labels and counts only. No prompt text, no answer text and no credential is logged.
         logger.Log(outcome == "succeeded" ? LogLevel.Information : LogLevel.Warning,
             "AI call {ProviderKind} {Task} {Purpose} ended {Outcome} {ErrorCode}",
             route.Provider.Kind, request.Task, request.Purpose, outcome, errorCode ?? "-");
     }
+
+    /// <summary>The model name that the provider reported is remote text: it is bounded and holds no control character.</summary>
+    private static ProviderReply Cleaned(ProviderReply reply) =>
+        reply.ReportedModel is { } model ? reply with { ReportedModel = OutboundText.Clean(model, MaxReportedModelChars) } : reply;
 
     private static string Outcome(ProviderReply reply) => reply switch
     {

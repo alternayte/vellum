@@ -18,22 +18,42 @@ internal interface IAnthropicApi
 }
 
 /// <summary>
-/// Structured output uses <c>output_config.format</c>. The request sends no <c>thinking</c>
-/// field, so each model uses its own default, and it sends <c>temperature</c> only when the
-/// provider entry sets one, because the newer models reject it.
+/// Structured output uses <c>output_config.format</c>.
+/// <para>
+/// <b>Temperature.</b> The request holds <c>temperature</c> only when the provider entry sets
+/// one. The current models reject the field (Opus 4.7 and later, Sonnet 5, the Fable models)
+/// or reject any value but the default (Sonnet 5.5, Haiku 5.5); the older ones accept it.
+/// The adapter cannot know the model's rule from its name, so it sends what the entry holds
+/// and names a rejection <c>unsupported_parameter</c>, which tells the user to clear it.
+/// </para>
+/// <para>
+/// <b>Thinking.</b> The request never holds a <c>thinking</c> field. A model that thinks by
+/// default (Opus 5 and later, Sonnet 5 and later, Haiku 5.5, the Fable models) then thinks,
+/// and no single value of the field turns that off for every model: <c>disabled</c> is itself
+/// rejected by several of them. <c>max_tokens</c> caps thinking and answer together, so an
+/// output limit that is sized for the answer alone would cut the answer. The adapter
+/// therefore sends <c>max_tokens</c> as the request's output limit plus
+/// <see cref="ThinkingHeadroomTokens"/>, and reports that sum as the output ceiling, so the
+/// budget reserves it. A model that does not think can use the headroom for a longer answer.
+/// </para>
 /// </summary>
 internal sealed class AnthropicAdapter(IAnthropicApi api) : IAiProviderAdapter
 {
+    /// <summary>Room for the thinking of a model that thinks by default. A stated choice, not a vendor constant.</summary>
+    public const int ThinkingHeadroomTokens = 8192;
+
     public string Kind => "anthropic";
     public Uri? DefaultBaseUrl { get; } = new("https://api.anthropic.com");
     public bool RequiresApiKey => true;
 
     public OutboundCredential Credential(string apiKey) => new("x-api-key", null, apiKey);
 
+    public int OutputTokenCeiling(int maxOutputTokens) => maxOutputTokens + ThinkingHeadroomTokens;
+
     public Task<ProviderReply> CompleteAsync(ProviderRequest request, CancellationToken ct) =>
         ProviderHttp.SendAsync(
             () => api.CreateMessage(Body(request, stream: false), ProviderHttp.Call(request, "messages", streaming: false), ct),
-            Read, ReadError, ct);
+            Read, ReadError, request.Progress, ct);
 
     public IAsyncEnumerable<ProviderStreamEvent> StreamAsync(ProviderRequest request, CancellationToken ct)
     {
@@ -42,7 +62,10 @@ internal sealed class AnthropicAdapter(IAnthropicApi api) : IAiProviderAdapter
 
         return ProviderHttp.StreamAsync(
             () => api.CreateMessage(Body(request, stream: true), ProviderHttp.Call(request, "messages-stream", streaming: true), ct),
-            Decode, ReadError, ct);
+            Decode,
+            // message_stop is the end of a message. A stream that closes before it was cut.
+            () => null,
+            ReadError, request.Progress, ct);
 
         IReadOnlyList<ProviderStreamEvent> Decode(SseItem<string> item)
         {
@@ -76,12 +99,12 @@ internal sealed class AnthropicAdapter(IAnthropicApi api) : IAiProviderAdapter
         }
     }
 
-    private static JsonObject Body(ProviderRequest request, bool stream)
+    private JsonObject Body(ProviderRequest request, bool stream)
     {
         var body = new JsonObject
         {
             ["model"] = request.Target.Model,
-            ["max_tokens"] = request.MaxOutputTokens,
+            ["max_tokens"] = OutputTokenCeiling(request.MaxOutputTokens),
             ["system"] = request.System,
             ["messages"] = new JsonArray(request.Messages.Select(m => (JsonNode)new JsonObject
             {
@@ -126,9 +149,9 @@ internal sealed class AnthropicAdapter(IAnthropicApi api) : IAiProviderAdapter
     {
         "end_turn" or "stop_sequence" => new(ProviderStop.Completed, text, null, input, output, model),
         "max_tokens" or "model_context_window_exceeded" => new(ProviderStop.Truncated, text, null, input, output, model),
-        "refusal" => new(ProviderStop.Refused, "", category ?? "refusal", input, output, model),
+        "refusal" => new(ProviderStop.Refused, "", OutboundText.Clean(category ?? "refusal", 60), input, output, model),
         null => ProviderReply.Failed(ProviderErrors.Create("malformed_response")),
-        _ => new(ProviderStop.Completed, "", null, input, output, model, ProviderErrors.Create("unexpected_stop")),
+        _ => new(ProviderStop.Completed, "", null, input, output, model, ProviderErrors.UnexpectedStop(stop)),
     };
 
     // Cached input is reported apart from the rest; the three counts together are the input.
@@ -147,7 +170,7 @@ internal sealed class AnthropicAdapter(IAnthropicApi api) : IAiProviderAdapter
         "rate_limit_error" => ProviderErrors.Create("rate_limited"),
         "billing_error" => ProviderErrors.Create("quota_exceeded"),
         "request_too_large" => ProviderErrors.Create("request_too_large"),
-        "invalid_request_error" => ProviderErrors.Create("invalid_request", detail),
+        "invalid_request_error" => ProviderErrors.Rejected(type, detail),
         "timeout_error" => ProviderErrors.Create("timeout"),
         _ => ProviderErrors.Create("provider_unavailable"),
     };

@@ -61,12 +61,12 @@ public class LiveSmokeTests
         var adapter = provider.GetServices<IAiProviderAdapter>().Single(a => a.Kind == kind);
         var target = new ProviderTarget(
             Guid.NewGuid(), kind, model, baseUrl is null ? adapter.DefaultBaseUrl! : new Uri(baseUrl),
-            apiKey is null ? null : adapter.Credential(apiKey), allowPrivateNetwork, TimeSpan.FromSeconds(120), Temperature: null);
+            apiKey is null ? null : adapter.Credential(apiKey), allowPrivateNetwork, RequireHttps: !allowPrivateNetwork, TimeSpan.FromSeconds(120), Temperature: null);
 
         var structured = await adapter.CompleteAsync(new ProviderRequest(
             target, "You answer with JSON only.",
             [new ProviderMessage(AiRole.User, """Reply with the JSON object {"title":"Orders","count":2}.""")],
-            AiScenario.SummarySchema, "summary", MaxOutputTokens: 2048), default);
+            AiScenario.SummarySchema, "summary", MaxOutputTokens: 2048, new CallProgress()), default);
 
         Assert.True(structured.Error is null, $"{structured.Error?.Code}: {structured.Error?.Message}");
         Assert.Equal(ProviderStop.Completed, structured.Stop);
@@ -77,7 +77,7 @@ public class LiveSmokeTests
         var text = "";
         ProviderReply? end = null;
         await foreach (var item in adapter.StreamAsync(new ProviderRequest(
-            target, "You answer briefly.", [new ProviderMessage(AiRole.User, "Say the word hello.")], null, "text", MaxOutputTokens: 2048), default))
+            target, "You answer briefly.", [new ProviderMessage(AiRole.User, "Say the word hello.")], null, "text", MaxOutputTokens: 2048, new CallProgress()), default))
         {
             if (item is ProviderStreamEvent.Delta delta)
                 text += delta.Text;
@@ -112,7 +112,7 @@ public class LiveSmokeTests
     {
         await using var provider = Build();
         var connection = new GitHubConnection(
-            provider.GetRequiredService<IGitHubApi>(), new Uri("https://api.github.com"), allowPrivateNetwork: false,
+            provider.GetRequiredService<IGitHubApi>(), new Uri("https://api.github.com"), allowPrivateNetwork: false, requireHttps: true,
             new OutboundCredential("Authorization", "Bearer", Variable("VELLUM_LIVE_GITHUB_TOKEN")));
 
         var identity = await connection.IdentifyAsync();

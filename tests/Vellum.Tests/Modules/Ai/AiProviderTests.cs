@@ -42,7 +42,8 @@ public class AiProviderTests(SharedOutboundHost shared) : IClassFixture<SharedOu
         Assert.Contains(ai.NativeSchemaField, sent.Body);
         Assert.Contains("\"additionalProperties\":false", sent.Body);
         Assert.Contains("0.2", sent.Body);
-        Assert.Contains("256", sent.Body);
+        // The Anthropic adapter adds its thinking headroom to the output limit.
+        Assert.Contains(kind == "anthropic" ? "\"max_tokens\":8448" : "256", sent.Body);
         // The model name comes from settings: in the body, or in the path for Gemini.
         Assert.Contains(ai.Model, sent.Body + sent.Uri.AbsolutePath);
         if (kind == "anthropic")
@@ -263,8 +264,8 @@ public class AiProviderTests(SharedOutboundHost shared) : IClassFixture<SharedOu
         Assert.Equal(3, overloaded.Stub.Requests.Count);
         // A 500 does not say that the request was not processed, so a POST is not sent again.
         Assert.Single(broken.Stub.Requests);
-        // The cost of a call that may have run is unknown, not zero.
-        Assert.Null(Assert.Single(await broken.RowsAsync()).CostUsd);
+        // No success status arrived, so the provider generated nothing that it bills.
+        Assert.Equal((0m, null), (Assert.Single(await broken.RowsAsync()) is var row ? (row.CostUsd, row.ReservedUsd) : default));
     }
 
     [Theory, MemberData(nameof(Kinds))]
