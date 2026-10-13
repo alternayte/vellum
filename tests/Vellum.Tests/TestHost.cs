@@ -12,7 +12,7 @@ using Vellum.Modules.Identity;
 using Vellum.Modules.Modelling;
 using Vellum.Modules.Schemas;
 using Npgsql;
-using Vellum.Modules.Scoring;
+using Vellum.Modules.Review;
 using Vellum.Modules.Settings.Setup;
 using Vellum.Shared;
 using Vellum.Modules.Views;
@@ -49,7 +49,7 @@ internal static class TestHost
                 Replace<DocsDbContext>(services, cs);
                 Replace<DraftsDbContext>(services, cs);
                 Replace<SchemasDbContext>(services, cs);
-                Replace<ScoringDbContext>(services, cs);
+                Replace<ReviewDbContext>(services, cs);
                 configure?.Invoke(services);
             });
         });

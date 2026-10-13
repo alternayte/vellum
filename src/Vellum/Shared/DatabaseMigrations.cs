@@ -9,7 +9,7 @@ using Vellum.Modules.Import;
 using Vellum.Modules.Modelling;
 using Vellum.Modules.Promises;
 using Vellum.Modules.Schemas;
-using Vellum.Modules.Scoring;
+using Vellum.Modules.Review;
 using Vellum.Modules.Settings;
 using Vellum.Modules.Trace.Scenarios;
 using Vellum.Modules.Views;
@@ -29,7 +29,16 @@ public static class DatabaseMigrations
     // Any constant works; every Vellum instance must use the same one.
     private const long LockKey = 0x56454C4C554D;
 
-    /// <summary>Every module that owns a schema, in the order the migrations run.</summary>
+    /// <summary>
+    /// Every module that owns a schema, in the order the migrations run.
+    /// <para>
+    /// The <c>scoring</c> module is retired and has no entry. A database that was created
+    /// while it existed keeps the schema <c>scoring</c>, its table <c>scores</c> and the row
+    /// <c>20260624214310_InitialScoring</c> in <c>__EFMigrationsHistory</c>. Nothing reads
+    /// or writes them, and nothing drops them: migrations are additive. A new database does
+    /// not get the schema.
+    /// </para>
+    /// </summary>
     public static readonly IReadOnlyList<(string Module, Type Context)> Modules =
     [
         ("identity", typeof(AppIdentityDbContext)),
@@ -39,13 +48,13 @@ public static class DatabaseMigrations
         ("docs", typeof(DocsDbContext)),
         ("drafts", typeof(DraftsDbContext)),
         ("schemas", typeof(SchemasDbContext)),
-        ("scoring", typeof(ScoringDbContext)),
         ("scenarios", typeof(ScenariosDbContext)),
         ("settings", typeof(SettingsDbContext)),
         ("ai", typeof(AiUsageDbContext)),
         ("import", typeof(ImportDbContext)),
         ("ai-design", typeof(AiDesignDbContext)),
         ("promises", typeof(PromisesDbContext)),
+        ("review", typeof(ReviewDbContext)),
     ];
 
     public static async Task ApplyAsync(IServiceProvider services, string connectionString, CancellationToken ct = default)

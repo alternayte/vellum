@@ -46,12 +46,13 @@ public class DesignSchemaTests
     private const int MaxEnumValues = 50;
     private const int MaxNameChars = 2_000;
 
-    public static TheoryData<string> Schemas => new("flow", "architecture", "connection-test");
+    public static TheoryData<string> Schemas => new("flow", "architecture", "critique", "connection-test");
 
     private static JsonElement Schema(string name) => name switch
     {
         "flow" => DesignSchemas.Flow,
         "architecture" => DesignSchemas.Architecture,
+        "critique" => Vellum.Modules.Review.Critique.CritiqueSchema.Schema,
         _ => AiClient.ConnectionTestSchema,
     };
 
@@ -131,6 +132,7 @@ public class DesignSchemaTests
         Assert.Contains("0 fails all", DesignPrompts.ProposeFlow["system"]);
         Assert.Contains("\"expectedCount\" -1", DesignPrompts.ProposeFlow["system"]);
         Assert.Contains("No field is ever null", DesignPrompts.InferArchitecture["system"]);
+        Assert.Contains("No field is ever null", Vellum.Modules.Review.Critique.ReviewPrompts.Critique["system"]);
         Assert.Equal(0, DesignSchemas.NoFailFirst);
         Assert.Equal(-1, DesignSchemas.NoExpectedCount);
     }

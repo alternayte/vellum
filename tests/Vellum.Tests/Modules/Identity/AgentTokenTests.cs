@@ -468,6 +468,9 @@ public class AgentTokenTests(IntegrationFixture fixture)
         const string promises = "/api/projects/{projectId}/promises";
         const string obligations = promises + "/{promiseId:guid}/obligations";
         const string build = "/api/projects/{projectId}/build";
+        const string review = "/api/projects/{projectId}/review";
+        const string decisions = "/api/projects/{projectId}/decisions";
+        const string questions = "/api/projects/{projectId}/questions";
         var expected = new Dictionary<string, AgentScope>
         {
             [$"GET {promises}/"] = AgentScope.Read,
@@ -488,6 +491,16 @@ public class AgentTokenTests(IntegrationFixture fixture)
             [$"GET {build}/manifest"] = AgentScope.Export,
             [$"POST {build}/brief"] = AgentScope.Export,
             [$"POST {build}/verify"] = AgentScope.Export,
+            // Review: an agent reads the findings, the decisions and the questions, and proposes a decision or a question.
+            [$"GET {review}/rules"] = AgentScope.Read,
+            [$"GET {review}/findings"] = AgentScope.Read,
+            [$"GET {decisions}/"] = AgentScope.Read,
+            [$"GET {decisions}/export"] = AgentScope.Read,
+            [$"GET {decisions}/{{decisionId:guid}}"] = AgentScope.Read,
+            [$"GET {decisions}/{{decisionId:guid}}/export"] = AgentScope.Read,
+            [$"POST {decisions}/"] = AgentScope.Propose,
+            [$"GET {questions}/"] = AgentScope.Read,
+            [$"POST {questions}/"] = AgentScope.Propose,
         };
 
         var open = endpoints.Where(e => e.Endpoint.Metadata.GetMetadata<AgentAllowed>() is not null).ToList();
@@ -526,6 +539,19 @@ public class AgentTokenTests(IntegrationFixture fixture)
             "POST /api/projects/{projectId}/ai/flow-proposals/{proposalId}/missing/{alias}/create",
             "POST /api/projects/{projectId}/ai/architecture-proposals/",
             "POST /api/projects/{projectId}/ai/architecture-proposals/{proposalId}/decide",
+            $"POST {review}/snapshots",
+            $"DELETE {review}/snapshots/{{snapshotId:guid}}",
+            $"PUT {review}/dispositions",
+            $"POST {review}/critiques/",
+            $"DELETE {review}/critiques/{{critiqueId:guid}}",
+            $"POST {review}/critiques/{{critiqueId:guid}}/proposed-decisions/{{index:int}}/keep",
+            $"POST {review}/critiques/{{critiqueId:guid}}/questions/{{index:int}}/keep",
+            $"POST {decisions}/{{decisionId:guid}}/accept",
+            $"POST {decisions}/{{decisionId:guid}}/reject",
+            $"POST {questions}/keep",
+            $"POST {questions}/{{questionId:guid}}/answer",
+            $"POST {questions}/{{questionId:guid}}/drop",
+            $"DELETE {questions}/{{questionId:guid}}",
         }.Order(StringComparer.Ordinal), humanOnly);
 
         // No endpoint is both.

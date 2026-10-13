@@ -200,8 +200,10 @@ public class BuildExportTests(IntegrationFixture fixture)
         // The scenario with the outbox publishes OrderCreated from the relay; the model says the Orders API produces it.
         // Two assertions of the scenario check are vacuous, three obligations have no result.
         Assert.Equal(
-            ["fact-inferred", "producer-mismatch", "promise-gap", "promise-gap", "promise-gap", "promise-gap", "promise-gap", "promise-evidence-stale", "promise-not-approved"],
+            ["fact-inferred", "producer-mismatch", "promise-gap", "promise-gap", "promise-gap", "promise-gap", "promise-gap", "promise-evidence-stale", "promise-not-approved", "review-CON-001"],
             blockers.Select(b => b.Code));
+        // The review blocks on the relay operation: it is on the path of ORD-014 through the scenario, and it names no schema.
+        Assert.Equal(OrdersReference.RelayOutbox.ToString(), blockers[9].Subject);
         Assert.Equal((Guessed.ToString(), OrdersReference.OrderCreated.ToString(), "ORD-014", "ORD-014", "ORD-015"),
             (blockers[0].Subject, blockers[1].Subject, blockers[2].Subject, blockers[7].Subject, blockers[8].Subject));
         Assert.Contains("ORD-014/O2, ORD-014/O3, ORD-014/O4 have no result", blockers[7].Message);
@@ -226,7 +228,7 @@ public class BuildExportTests(IntegrationFixture fixture)
                 $"scenarios/{orders.ScenarioId}.json", $"scenarios/{s.RefundScenario}.json",
             }.Order(StringComparer.Ordinal),
             manifest["files"]!.AsArray().Select(f => f!["path"]!.GetValue<string>()));
-        Assert.Equal(("vellum-bundle/2", "vellum-build", orders.ProjectId), (
+        Assert.Equal(("vellum-bundle/3", "vellum-build", orders.ProjectId), (
             manifest["format"]!.GetValue<string>(), manifest["generator"]!["name"]!.GetValue<string>(),
             manifest["pinned"]!["projectId"]!.GetValue<Guid>()));
         Assert.Null(manifest["pinned"]!["revisionId"]);

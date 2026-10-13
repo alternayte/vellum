@@ -1,6 +1,8 @@
 using System.Text.Json;
 using Vellum.Modules.Modelling.Model;
 using Vellum.Modules.Promises;
+using Vellum.Modules.Review;
+using Vellum.Modules.Review.Decisions;
 using Vellum.Modules.Trace.Engine;
 using Vellum.Modules.Trace.Scenarios;
 
@@ -20,6 +22,7 @@ internal sealed record FlatStep(Guid ScenarioId, int Row, int ParentRow, string 
 internal sealed class BuildView
 {
     private readonly Lazy<IReadOnlyDictionary<Guid, TraceResult>> _playbacks;
+    private readonly Lazy<IReadOnlyList<FindingView>> _review;
 
     public BuildView(BuildInput input)
     {
@@ -45,6 +48,8 @@ internal sealed class BuildView
         });
         Steps = Scenarios.ToDictionary(s => s.Id.Value, s => (IReadOnlyList<FlatStep>)Flatten(s));
         AllSteps = [.. Scenarios.SelectMany(s => Steps[s.Id.Value])];
+        Decisions = new DecisionBook(input.Decisions);
+        _review = new Lazy<IReadOnlyList<FindingView>>(() => Reviewed ? ReviewEngine.Evaluate(this) : []);
     }
 
     public BuildInput Input { get; }
@@ -70,6 +75,19 @@ internal sealed class BuildView
     public IReadOnlyDictionary<Guid, TraceResult> Playbacks => _playbacks.Value;
     public IReadOnlyDictionary<Guid, IReadOnlyList<FlatStep>> Steps { get; }
     public IReadOnlyList<FlatStep> AllSteps { get; }
+    /// <summary>The decisions of the pinned state, with which of them is in force.</summary>
+    public DecisionBook Decisions { get; }
+    /// <summary>
+    /// False for a pinned state of the format <c>vellum-bundle/2</c>, which names no decision
+    /// stream: it was exported before the review existed and is generated without it.
+    /// </summary>
+    public bool Reviewed => Input.Pinned.Decisions is not null;
+    /// <summary>
+    /// The findings of the review rules on this input, with the decisions that settle them.
+    /// This is the one place where the Build module asks the Review module. Computed once,
+    /// when first read; empty when the state is not <see cref="Reviewed"/>.
+    /// </summary>
+    public IReadOnlyList<FindingView> Review => _review.Value;
 
     /// <summary>The name of whatever the ID names in the model or the scenarios, or the ID itself.</summary>
     public string Name(Guid id)

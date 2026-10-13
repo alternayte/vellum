@@ -18,6 +18,7 @@ import { ImportFlyout } from '@/components/import/import-flyout'
 import { AssistantFlyout } from '@/components/assistant/assistant-flyout'
 import { PromisesFlyout } from '@/components/promises/promises-flyout'
 import { BuildFlyout } from '@/components/build/build-flyout'
+import { ReviewFlyout } from '@/components/design-review/review-flyout'
 import { useRunScenario, useScenarios } from '@/hooks/use-scenarios'
 import { useTraceStore } from '@/stores/trace-store'
 import type { ScenarioReference } from '@/components/trace/scenario-editor'
@@ -75,6 +76,13 @@ function ProjectWorkspace() {
       ...(messages ?? []).map((m) => ({ group: 'Messages' as const, id: m.id, label: m.name })),
     ]
   }, [elements, operations, channels, subscriptions, messages])
+  // The review shows a cited contract on the canvas through the element that owns it.
+  const reviewElementIds = useMemo(() => (elements ?? []).map((e) => e.id), [elements])
+  const reviewOwners = useMemo<Record<string, string>>(() => Object.fromEntries([
+    ...(operations ?? []).map((o) => [o.id, o.ownerId]),
+    ...(subscriptions ?? []).map((x) => [x.id, x.consumerId]),
+    ...(messages ?? []).map((m) => [m.id, m.producerId]),
+  ]), [operations, subscriptions, messages])
   const referenceLabels = useMemo(() => Object.fromEntries(scenarioReferences.map((r) => [r.id, r.label])), [scenarioReferences])
   const runScenario = useRunScenario(projectId, contractBranchId)
   const { data: scenarioList } = useScenarios(projectId)
@@ -636,6 +644,9 @@ function ProjectWorkspace() {
           )}
           {activeFlyout === 'import' && <ImportFlyout projectId={projectId} />}
           {activeFlyout === 'promises' && <PromisesFlyout projectId={projectId} references={scenarioReferences} scenarios={scenarioList ?? []} />}
+          {activeFlyout === 'review' && (
+            <ReviewFlyout projectId={projectId} branchId={contractBranchId} references={scenarioReferences} elementIds={reviewElementIds} owners={reviewOwners} />
+          )}
           {activeFlyout === 'build' && <BuildFlyout projectId={projectId} />}
           {activeFlyout === 'assistant' && (
             <AssistantFlyout

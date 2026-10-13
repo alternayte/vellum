@@ -1,6 +1,6 @@
 import { type ReactNode, useEffect } from 'react'
 import { useShellStore, type Flyout } from '@/stores/shell-store'
-import { FileText, Plus, LayoutGrid, Search, Cable, Route, GitPullRequestArrow, Sparkles, ShieldCheck, PackageOpen } from 'lucide-react'
+import { FileText, Plus, LayoutGrid, Search, Cable, Route, GitPullRequestArrow, Sparkles, ShieldCheck, PackageOpen, ClipboardCheck } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface LeftToolbarProps {
@@ -16,6 +16,7 @@ const toolbarItems: { flyout: Flyout; label: string; icon: typeof FileText }[] =
   { flyout: 'import', label: 'Import from GitHub', icon: GitPullRequestArrow },
   { flyout: 'assistant', label: 'Assistant', icon: Sparkles },
   { flyout: 'promises', label: 'Promises', icon: ShieldCheck },
+  { flyout: 'review', label: 'Review', icon: ClipboardCheck },
   { flyout: 'build', label: 'Build', icon: PackageOpen },
   { flyout: 'search', label: 'Search', icon: Search },
 ]
@@ -54,15 +55,16 @@ export function LeftToolbar({ children }: LeftToolbarProps) {
 
       {activeFlyout && (
         <>
-          {/* The assistant explains what is selected on the canvas or in the trace, so it stays open while those are used. */}
-          {activeFlyout !== 'assistant' && (
+          {/* The assistant explains what is selected on the canvas or in the trace, and the review shows
+              the cited parts on the canvas, so both stay open while the canvas is used. */}
+          {activeFlyout !== 'assistant' && activeFlyout !== 'review' && (
             <div
               data-testid="flyout-backdrop"
               className="fixed inset-0 z-10"
               onClick={closeFlyout}
             />
           )}
-          <div className="absolute left-12 top-0 bottom-0 z-20 w-[280px] border-r border-border bg-card shadow-lg">
+          <div className={cn('absolute left-12 top-0 bottom-0 z-20 border-r border-border bg-card shadow-lg', activeFlyout === 'review' ? 'w-[420px]' : 'w-[280px]')}>
             {children}
           </div>
         </>

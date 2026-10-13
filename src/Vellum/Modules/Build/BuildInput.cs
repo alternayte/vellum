@@ -3,6 +3,8 @@ using Microsoft.EntityFrameworkCore;
 using Vellum.Modules.Import;
 using Vellum.Modules.Modelling.Model;
 using Vellum.Modules.Promises;
+using Vellum.Modules.Review;
+using Vellum.Modules.Review.Decisions;
 using Vellum.Modules.Schemas;
 using Vellum.Modules.Trace.Engine;
 using Vellum.Modules.Trace.Scenarios;
@@ -39,13 +41,21 @@ public sealed record PinnedSource(
 /// </summary>
 /// <param name="Branch">The model stream the export was made from.</param>
 /// <param name="RevisionId">The named revision, or null when the branch was pinned at its version at export.</param>
+/// <param name="Decisions">
+/// The decision streams, from the format <c>vellum-bundle/3</c> on. Null in a pinned state of
+/// the format <c>vellum-bundle/2</c>, which was made before the review existed: such a state
+/// is generated as it was then, with no review and no decision, and the member is left out of
+/// its JSON so that its manifest keeps its bytes.
+/// </param>
 public sealed record PinnedState(
     Guid ProjectId, string ProjectName, Guid Branch, long StreamVersion, Guid? RevisionId,
     IReadOnlyList<PinnedStream> Scenarios,
     IReadOnlyList<PinnedStream> Schemas,
     IReadOnlyList<PinnedStream> Promises,
     IReadOnlyList<PinnedRun> Runs,
-    IReadOnlyList<PinnedSource> Sources);
+    IReadOnlyList<PinnedSource> Sources,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    IReadOnlyList<PinnedStream>? Decisions = null);
 
 /// <param name="StreamVersion">The version of the schema stream. <paramref name="Version"/> is the version of the content, which a rename does not change.</param>
 public sealed record BuildSchema(Guid Id, string Name, string? Description, string Content, int Version, long StreamVersion = 0);
@@ -74,6 +84,9 @@ public sealed record BuildInput(
     PinnedState Pinned,
     IReadOnlyDictionary<Guid, ScenarioSnapshot> ScenarioSnapshots)
 {
+    /// <summary>The decisions (ADRs) of the project at their pinned versions. The review reads which findings they settle.</summary>
+    public IReadOnlyList<PinnedDecision> Decisions { get; init; } = [];
+
     /// <summary>
     /// An input whose parts the caller holds in memory and did not read from streams. Every
     /// part counts as version 1 of itself, and no run and no source is pinned.
@@ -87,7 +100,7 @@ public sealed record BuildInput(
                 [.. scenarios.Select(s => new PinnedStream(s.Id.Value, 1)).OrderBy(p => p.Id)],
                 [.. schemas.Select(s => new PinnedStream(s.Id, 1)).OrderBy(p => p.Id)],
                 [.. promises.Select(p => new PinnedStream(p.Id, 1)).OrderBy(p => p.Id)],
-                [], []),
+                [], [], []),
             scenarios.ToDictionary(s => s.Id.Value, s => ScenarioSnapshot.Of(s, 1)))
     {
     }
@@ -183,6 +196,11 @@ public sealed record BuildInput(
             }
         }
 
+        // Decisions: a stream each. A pinned state of the format before decisions names none and reads none.
+        IReadOnlyList<PinnedDecision> decisions = pins is null
+            ? await DecisionReads.CurrentAsync(services.GetRequiredService<ReviewDbContext>(), projectId, ct)
+            : await DecisionReads.AtAsync(store, projectId, (pins.Decisions ?? []).Select(p => (p.Id, p.Version)), unavailable, ct);
+
         if (unavailable.Count > 0)
             throw new PinnedInputUnavailableException(unavailable);
 
@@ -208,10 +226,14 @@ public sealed record BuildInput(
             [.. promiseStates.OrderBy(p => p.Id).Select(p => new PinnedStream(p.Id, p.Version))],
             [.. promiseStates.SelectMany(p => p.Runs.Values.Select(run => new PinnedRun(p.Id, run.PromiseRevision, run.ObligationId, run.Id)))
                 .OrderBy(r => r.PromiseId).ThenBy(r => r.PromiseRevision).ThenBy(r => r.ObligationId, StringComparer.Ordinal)],
-            [.. sources.OrderBy(s => s.Repository, StringComparer.Ordinal)]);
+            [.. sources.OrderBy(s => s.Repository, StringComparer.Ordinal)],
+            pins is not null && pins.Decisions is null ? null : [.. decisions.OrderBy(d => d.Id).Select(d => new PinnedStream(d.Id, d.Version))]);
 
         return new BuildInput(
-            projectId, projectName, pinned.Pin, pinned.State, schemas, [.. scenarios.Values.Select(s => s.Document)], promises, state, scenarios);
+            projectId, projectName, pinned.Pin, pinned.State, schemas, [.. scenarios.Values.Select(s => s.Document)], promises, state, scenarios)
+        {
+            Decisions = decisions,
+        };
     }
 
     /// <summary>A promise stream at a version: its state, and the newest run of each obligation of each revision among the runs it holds there.</summary>

@@ -20,7 +20,6 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
-    <PackageReference Include="Microsoft.Extensions.AI.OpenAI" Version="10.7.0" />
     <PackageReference Include="Microsoft.Extensions.ApiDescription.Server" Version="10.0.9">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
@@ -42,8 +41,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <EmbeddedResource Include="../Vellum.Web/src/rubrics/*.md" LinkBase="Rubrics" />
     <EmbeddedResource Include="Modules/Ai/Design/Prompts/*.md" />
+    <EmbeddedResource Include="Modules/Review/Critique/Prompts/*.md" />
   </ItemGroup>
 
 </Project>

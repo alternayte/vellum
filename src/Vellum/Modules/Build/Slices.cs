@@ -1,5 +1,6 @@
 using Vellum.Modules.Modelling.Model;
 using Vellum.Modules.Promises;
+using Vellum.Modules.Review;
 using Vellum.Modules.Trace.Engine;
 
 namespace Vellum.Modules.Build;
@@ -193,6 +194,17 @@ internal static class Blockers
 
         return blockers;
     }
+
+    /// <summary>
+    /// The blockers of the review: one <c>review-&lt;rule ID&gt;</c> for each blocking concern that
+    /// no accepted decision settles. The subject is the ID the finding is about. A draft is
+    /// never blocked: only Build Ready is.
+    /// </summary>
+    public static IEnumerable<Blocker> FromReview(IEnumerable<FindingView> findings) =>
+        findings.Where(f => f.Blocks).Select(f => new Blocker($"review-{f.Finding.RuleId}", f.Finding.Subject.Id.ToString(),
+            f.NeedsReReview
+                ? $"{f.Finding.Reason} {f.Decision} named this finding, and the finding changed since. Review it again, or change the model."
+                : $"{f.Finding.Reason} Change the model, or settle the finding with an accepted decision that names {f.Finding.RuleId} and this subject."));
 
     public static IEnumerable<(Guid Id, string Kind, string Name, FactStatus Status, StaleMark? Stale)> Facts(BuildView view) =>
         view.Elements.Select(e => (e.Id.Value, "element", e.Name, e.FactStatus, e.Stale))

@@ -37,7 +37,7 @@ public class StartupTests
         await using var check = new NpgsqlConnection(connectionString);
         await check.OpenAsync();
         await using var schemas = new NpgsqlCommand(
-            "SELECT count(*) FROM information_schema.schemata WHERE schema_name IN ('deedbox','identity','workspaces','modelling','views','docs','drafts','schemas','scoring','trace','settings','ai')",
+            "SELECT count(*) FROM information_schema.schemata WHERE schema_name IN ('deedbox','identity','workspaces','modelling','views','docs','drafts','schemas','review','trace','settings','ai')",
             check);
         Assert.Equal(12L, await schemas.ExecuteScalarAsync());
     }

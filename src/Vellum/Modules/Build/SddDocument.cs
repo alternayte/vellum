@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using Vellum.Modules.Modelling.Model;
 using Vellum.Modules.Promises;
+using Vellum.Modules.Review.Decisions;
 using Vellum.Modules.Trace.Engine;
 
 namespace Vellum.Modules.Build;
@@ -41,7 +42,7 @@ internal static class SddDocument
 
         md.Heading(1, $"{view.Input.ProjectName}: Software Design Document");
         md.Line(PinnedLine(view.Input.Pin));
-        md.Line($"Project `{view.Input.ProjectId}`. Generator vellum-build {Md.Raw(Bundle.GeneratorVersion)}. Build ready: {(blockers.Count == 0 ? Md.Raw("yes") : Md.Of($"no, {blockers.Count} blocker(s) in section 12"))}.").Blank();
+        md.Line($"Project `{view.Input.ProjectId}`. Generator vellum-build {Md.Raw(Bundle.GeneratorVersionOf(view))}. Build ready: {(blockers.Count == 0 ? Md.Raw("yes") : Md.Of($"no, {blockers.Count} blocker(s) in section 12"))}.").Blank();
         md.Line($"Read this first:").Blank();
         md.Line(DataNotice);
         md.Line(EscapeNotice);
@@ -67,6 +68,8 @@ internal static class SddDocument
         SliceSection(md, view, slices);
         AcceptanceTests(md, Sections[10], view);
         BlockerSection(md, Sections[11], blockers);
+        if (view.Reviewed)
+            DecisionDocuments.Section(md, view);
 
         return Encoding.UTF8.GetBytes(md.ToString());
     }

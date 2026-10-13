@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { shownInline } from '@/lib/mutation-errors'
+import { OpenQuestions } from './open-questions'
 import { designApi, type ArchitectureItem, type ArchitectureProposal } from '@/lib/design-api'
 
 interface Props {
@@ -133,7 +134,7 @@ export function ArchitectureProposalDialog({ projectId, proposal: initial, label
         {proposal.openQuestions.length > 0 && (
           <details className="text-xs text-muted-foreground">
             <summary className="cursor-pointer rounded hover:text-foreground focus-visible:outline-2 focus-visible:outline-primary">Questions the assistant could not answer ({proposal.openQuestions.length})</summary>
-            <ul className="mt-1 list-disc space-y-0.5 pl-4">{proposal.openQuestions.map((q, i) => <li key={i}>{q}</li>)}</ul>
+            <OpenQuestions projectId={projectId} proposalId={proposal.id} questions={proposal.openQuestions} />
           </details>
         )}
         {decide.isError && <p role="alert" className="text-xs text-destructive">{decide.error.message}</p>}

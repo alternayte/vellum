@@ -4,6 +4,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { shownInline } from '@/lib/mutation-errors'
+import { OpenQuestions } from './open-questions'
 import { childLists, describeStep, designApi, type FlowProposal, type FlowStep, type MissingEntry } from '@/lib/design-api'
 
 interface Props {
@@ -158,7 +159,7 @@ export function FlowProposalDialog({ projectId, proposal: initial, labels, onClo
           {proposal.openQuestions.length > 0 && (
             <section aria-labelledby="flow-questions">
               <h3 id="flow-questions" className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Questions the assistant could not answer</h3>
-              <ul className="mt-1 list-disc space-y-0.5 pl-4 text-xs text-foreground">{proposal.openQuestions.map((q, i) => <li key={i}>{q}</li>)}</ul>
+              <OpenQuestions projectId={projectId} proposalId={proposal.id} questions={proposal.openQuestions} />
             </section>
           )}
 
