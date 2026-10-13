@@ -17,6 +17,9 @@ using Vellum.Modules.Docs;
 using Vellum.Modules.Drafts;
 using Vellum.Modules.Schemas;
 using Vellum.Modules.Scoring;
+using Vellum.Modules.Settings;
+using Vellum.Modules.Settings.Entities;
+using Vellum.Modules.Settings.Setup;
 using Vellum.Modules.Trace.Scenarios;
 using Vellum.Modules.Views;
 using Vellum.Modules.Workspaces;
@@ -75,6 +78,7 @@ builder.Services.AddSchemasModule(builder.Configuration);
 builder.Services.AddScoringModule(builder.Configuration);
 builder.Services.AddScenariosModule();
 builder.Services.AddMcpModule();
+builder.Services.AddSettingsModule(generatingOpenApi);
 
 // Command handlers (Scrutor scan)
 builder.Services.Scan(s => s.FromAssemblyOf<Program>()
@@ -83,6 +87,11 @@ builder.Services.Scan(s => s.FromAssemblyOf<Program>()
     .WithScopedLifetime());
 
 var app = builder.Build();
+
+// The environment is read once, here. An unsafe hosted bootstrap stops the start with a
+// message that states the fix.
+if (!generatingOpenApi)
+    app.Services.GetRequiredService<Bootstrap>();
 
 if (app.Environment.IsDevelopment())
 {
@@ -106,7 +115,6 @@ app.Use(async (http, next) =>
     await next(http);
 });
 
-app.MapGet("/health", () => Results.Ok());
 
 // Endpoints
 app.MapIdentityEndpoints();
@@ -125,12 +133,16 @@ app.MapSchemaEndpoints();
 app.MapScenarioEndpoints();
 app.MapScoreEndpoints();
 app.MapMcpEndpoints();
+app.MapSettingsEndpoints();
 
 if (!generatingOpenApi && app.Configuration.GetValue("Database:MigrateOnStartup", true))
 {
     await DatabaseMigrations.ApplyAsync(
         app.Services, app.Configuration.GetConnectionString("DefaultConnection")!);
 }
+
+if (!generatingOpenApi)
+    await SetupState.RefuseOpenHostedSetupAsync(app.Services);
 
 if (app.Environment.IsDevelopment())
 {
@@ -142,6 +154,7 @@ if (app.Environment.IsDevelopment())
     {
         var userManager = services.GetRequiredService<UserManager<ApplicationUser>>();
         var workspacesDb = services.GetRequiredService<WorkspacesDbContext>();
+        var settingsDb = services.GetRequiredService<SettingsDbContext>();
         var store = services.GetRequiredService<IEventStore>();
 
         // Create dev user
@@ -158,6 +171,13 @@ if (app.Environment.IsDevelopment())
             if (!seedResult.Succeeded)
                 throw new InvalidOperationException(
                     $"Failed to create dev user: {string.Join(", ", seedResult.Errors.Select(e => e.Description))}");
+        }
+
+        // The seeded user stands in for first-run setup, so it is the instance admin.
+        if (await settingsDb.InstanceAdmins.FindAsync(devUser.Id) is null)
+        {
+            settingsDb.InstanceAdmins.Add(new InstanceAdminEntity { UserId = devUser.Id });
+            await settingsDb.SaveChangesAsync();
         }
 
         // Create workspace + project

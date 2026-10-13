@@ -6,6 +6,7 @@ using Vellum.Modules.Identity;
 using Vellum.Modules.Modelling;
 using Vellum.Modules.Schemas;
 using Vellum.Modules.Scoring;
+using Vellum.Modules.Settings;
 using Vellum.Modules.Trace.Scenarios;
 using Vellum.Modules.Views;
 using Vellum.Modules.Workspaces;
@@ -24,6 +25,21 @@ public static class DatabaseMigrations
     // Any constant works; every Vellum instance must use the same one.
     private const long LockKey = 0x56454C4C554D;
 
+    /// <summary>Every module that owns a schema, in the order the migrations run.</summary>
+    public static readonly IReadOnlyList<(string Module, Type Context)> Modules =
+    [
+        ("identity", typeof(AppIdentityDbContext)),
+        ("workspaces", typeof(WorkspacesDbContext)),
+        ("modelling", typeof(ModellingDbContext)),
+        ("views", typeof(ViewsDbContext)),
+        ("docs", typeof(DocsDbContext)),
+        ("drafts", typeof(DraftsDbContext)),
+        ("schemas", typeof(SchemasDbContext)),
+        ("scoring", typeof(ScoringDbContext)),
+        ("scenarios", typeof(ScenariosDbContext)),
+        ("settings", typeof(SettingsDbContext)),
+    ];
+
     public static async Task ApplyAsync(IServiceProvider services, string connectionString, CancellationToken ct = default)
     {
         // Several instances can start at once. A session-level advisory lock makes them
@@ -40,15 +56,8 @@ public static class DatabaseMigrations
         {
             using var scope = services.CreateScope();
             var provider = scope.ServiceProvider;
-            await provider.GetRequiredService<AppIdentityDbContext>().Database.MigrateAsync(ct);
-            await provider.GetRequiredService<WorkspacesDbContext>().Database.MigrateAsync(ct);
-            await provider.GetRequiredService<ModellingDbContext>().Database.MigrateAsync(ct);
-            await provider.GetRequiredService<ViewsDbContext>().Database.MigrateAsync(ct);
-            await provider.GetRequiredService<DocsDbContext>().Database.MigrateAsync(ct);
-            await provider.GetRequiredService<DraftsDbContext>().Database.MigrateAsync(ct);
-            await provider.GetRequiredService<SchemasDbContext>().Database.MigrateAsync(ct);
-            await provider.GetRequiredService<ScoringDbContext>().Database.MigrateAsync(ct);
-            await provider.GetRequiredService<ScenariosDbContext>().Database.MigrateAsync(ct);
+            foreach (var (_, context) in Modules)
+                await ((DbContext)provider.GetRequiredService(context)).Database.MigrateAsync(ct);
         }
         finally
         {

@@ -12,3 +12,8 @@ appsettings.*.local.json
 
 # Frontend build output (SPA built to .NET wwwroot)
 src/Vellum/wwwroot/
+
+# Local-profile data directory (generated master key)
+src/Vellum/data/
+/data/
+.env

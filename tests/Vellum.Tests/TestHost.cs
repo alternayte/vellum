@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Security.Cryptography;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
@@ -9,7 +10,10 @@ using Vellum.Modules.Drafts;
 using Vellum.Modules.Identity;
 using Vellum.Modules.Modelling;
 using Vellum.Modules.Schemas;
+using Npgsql;
 using Vellum.Modules.Scoring;
+using Vellum.Modules.Settings.Setup;
+using Vellum.Shared;
 using Vellum.Modules.Views;
 using Vellum.Modules.Workspaces;
 
@@ -18,14 +22,25 @@ namespace Vellum.Tests;
 /// <summary>The app over the fixture's database, and the calls most endpoint tests start with.</summary>
 internal static class TestHost
 {
-    public static WebApplicationFactory<Program> Create(IntegrationFixture fixture) =>
+    public static WebApplicationFactory<Program> Create(IntegrationFixture fixture) => Create(fixture.ConnectionString);
+
+    /// <summary>
+    /// The app over any database, with bootstrap values as the environment would give them
+    /// (<c>Vellum:Profile</c>, <c>Vellum:MasterKey</c>, <c>AllowedHosts</c> and so on).
+    /// </summary>
+    public static WebApplicationFactory<Program> Create(
+        string connectionString,
+        IReadOnlyDictionary<string, string?>? settings = null,
+        Action<IServiceCollection>? configure = null) =>
         new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Testing");
-            builder.UseSetting("ConnectionStrings:DefaultConnection", fixture.ConnectionString);
+            builder.UseSetting("ConnectionStrings:DefaultConnection", connectionString);
+            foreach (var (key, value) in settings ?? new Dictionary<string, string?>())
+                builder.UseSetting(key, value);
             builder.ConfigureServices(services =>
             {
-                var cs = fixture.ConnectionString;
+                var cs = connectionString;
                 Replace<AppIdentityDbContext>(services, cs);
                 Replace<WorkspacesDbContext>(services, cs);
                 Replace<ModellingDbContext>(services, cs);
@@ -34,8 +49,59 @@ internal static class TestHost
                 Replace<DraftsDbContext>(services, cs);
                 Replace<SchemasDbContext>(services, cs);
                 Replace<ScoringDbContext>(services, cs);
+                configure?.Invoke(services);
             });
         });
+
+    /// <summary>A new empty database on the fixture's server. The app creates its schema when it starts.</summary>
+    public static async Task<string> CreateDatabaseAsync(IntegrationFixture fixture)
+    {
+        var database = $"t_{Guid.NewGuid():N}";
+        await using var admin = new NpgsqlConnection(fixture.ConnectionString);
+        await admin.OpenAsync();
+        await using var create = new NpgsqlCommand($"CREATE DATABASE {database}", admin);
+        await create.ExecuteNonQueryAsync();
+        return new NpgsqlConnectionStringBuilder(fixture.ConnectionString) { Database = database }.ToString();
+    }
+
+    public static string NewMasterKey() => Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
+
+    /// <summary>The bootstrap of a hosted instance that is safe to start.</summary>
+    public static Dictionary<string, string?> Hosted(string masterKey, string? setupToken = SetupToken) => new()
+    {
+        ["Vellum:Profile"] = "hosted",
+        ["Vellum:MasterKey"] = masterKey,
+        ["Vellum:SetupToken"] = setupToken,
+        ["AllowedHosts"] = "localhost",
+    };
+
+    public const string SetupToken = "setup-token-for-tests-0123456789";
+    public const string AdminPassword = "Admin123!";
+
+    /// <summary>A cookie-keeping client. A hosted instance marks its cookie Secure, so its client uses https.</summary>
+    public static HttpClient Client(WebApplicationFactory<Program> factory, bool https = false) =>
+        factory.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            HandleCookies = true,
+            AllowAutoRedirect = false,
+            BaseAddress = new Uri(https ? "https://localhost" : "http://localhost"),
+        });
+
+    /// <summary>Runs first-run setup and returns the signed-in admin client.</summary>
+    public static async Task<(HttpClient Admin, SetupResponse Created, string Email)> SetUpAsync(
+        WebApplicationFactory<Program> factory, string? setupToken = null, bool https = false)
+    {
+        var client = Client(factory, https);
+        var email = $"admin-{Guid.NewGuid():N}@vellum.local";
+        var response = await Created(client.PostAsJsonAsync("/api/setup",
+            new { email, password = AdminPassword, displayName = "Admin", workspaceName = "Home", setupToken }));
+        return (client, (await response.Content.ReadFromJsonAsync<SetupResponse>())!, email);
+    }
+
+    /// <summary>A resolver for tests: named hosts map to fixed addresses and no test reaches DNS.</summary>
+    public static void UseResolver(IServiceCollection services, IReadOnlyDictionary<string, string> hosts) =>
+        services.AddSingleton<HostResolver>(_ => (host, _) => Task.FromResult(
+            hosts.TryGetValue(host, out var address) ? new[] { IPAddress.Parse(address) } : [IPAddress.Parse("93.184.216.34")]));
 
     private static void Replace<TContext>(IServiceCollection services, string connectionString) where TContext : DbContext
     {

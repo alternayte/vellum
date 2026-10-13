@@ -5,30 +5,6 @@
     "version": "1.0.0"
   },
   "paths": {
-    "/health": {
-      "get": {
-        "tags": [
-          "Vellum"
-        ],
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/api/scoring/status": {
-      "get": {
-        "tags": [
-          "Scoring"
-        ],
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      }
-    },
     "/api/auth/register": {
       "post": {
         "tags": [
@@ -3183,6 +3159,18 @@
         }
       }
     },
+    "/api/scoring/status": {
+      "get": {
+        "tags": [
+          "Scoring"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/projects/{projectId}/docs/{docId}/scores": {
       "post": {
         "tags": [
@@ -3282,6 +3270,453 @@
         "responses": {
           "200": {
             "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/setup/status": {
+      "get": {
+        "tags": [
+          "Setup"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetupStatusResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/setup": {
+      "post": {
+        "tags": [
+          "Setup"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetupResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/instance": {
+      "get": {
+        "tags": [
+          "Instance"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstanceInfoResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/instance/settings": {
+      "get": {
+        "tags": [
+          "Instance"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstanceSettingsResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Instance"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateInstanceSettingsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InstanceSettingsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/instance/keys/rotate": {
+      "post": {
+        "tags": [
+          "Instance"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RotateKeysResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/instance/diagnostics": {
+      "get": {
+        "tags": [
+          "Instance"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DiagnosticsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workspaces/{workspaceId}/settings": {
+      "get": {
+        "tags": [
+          "Settings"
+        ],
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceSettingsResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Settings"
+        ],
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/JsonElement"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceSettingsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workspaces/{workspaceId}/secrets": {
+      "get": {
+        "tags": [
+          "Settings"
+        ],
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SecretStatusDto"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workspaces/{workspaceId}/secrets/{name}": {
+      "put": {
+        "tags": [
+          "Settings"
+        ],
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetSecretRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Settings"
+        ],
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workspaces/{workspaceId}/audit": {
+      "get": {
+        "tags": [
+          "Settings"
+        ],
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": [
+                "integer",
+                "string"
+              ],
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AuditEntryDto"
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -3575,6 +4010,100 @@
           }
         }
       },
+      "AiProviderSettings": {
+        "required": [
+          "id",
+          "kind",
+          "name",
+          "model"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "baseUrl": {
+            "type": "string",
+            "default": ""
+          },
+          "enabled": {
+            "type": "boolean",
+            "default": true
+          },
+          "supportsStructuredOutput": {
+            "type": "boolean",
+            "default": true
+          },
+          "supportsStreaming": {
+            "type": "boolean",
+            "default": true
+          },
+          "temperature": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "timeoutSeconds": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32",
+            "default": 60
+          },
+          "monthlyBudgetUsd": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "requestsPerMinute": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          }
+        }
+      },
+      "AiSettings": {
+        "required": [
+          "providers",
+          "taskRouting"
+        ],
+        "type": "object",
+        "properties": {
+          "providers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AiProviderSettings"
+            }
+          },
+          "taskRouting": {
+            "$ref": "#/components/schemas/TaskRouting"
+          }
+        }
+      },
       "Assertion": {
         "required": [
           "type"
@@ -3676,6 +4205,30 @@
           }
         }
       },
+      "AuditEntryDto": {
+        "required": [
+          "at",
+          "actorId",
+          "action",
+          "target"
+        ],
+        "type": "object",
+        "properties": {
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "actorId": {
+            "type": "string"
+          },
+          "action": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          }
+        }
+      },
       "ChannelDto": {
         "required": [
           "id",
@@ -3714,6 +4267,25 @@
       "ChannelId": {
         "type": "string",
         "format": "uuid"
+      },
+      "CostSettings": {
+        "required": [
+          "provider",
+          "region",
+          "currency"
+        ],
+        "type": "object",
+        "properties": {
+          "provider": {
+            "type": "string"
+          },
+          "region": {
+            "type": "string"
+          },
+          "currency": {
+            "type": "string"
+          }
+        }
       },
       "CreateCommentRequest": {
         "required": [
@@ -3956,9 +4528,144 @@
           }
         }
       },
+      "DatabaseDiagnostics": {
+        "required": [
+          "reachable"
+        ],
+        "type": "object",
+        "properties": {
+          "reachable": {
+            "type": "boolean"
+          }
+        }
+      },
+      "DiagnosticsResponse": {
+        "required": [
+          "profile",
+          "version",
+          "database",
+          "migrations",
+          "eventStore",
+          "masterKeyId",
+          "previousMasterKeyLoaded"
+        ],
+        "type": "object",
+        "properties": {
+          "profile": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "database": {
+            "$ref": "#/components/schemas/DatabaseDiagnostics"
+          },
+          "migrations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ModuleMigrations"
+            }
+          },
+          "eventStore": {
+            "$ref": "#/components/schemas/EventStoreDiagnostics"
+          },
+          "masterKeyId": {
+            "type": "string"
+          },
+          "previousMasterKeyLoaded": {
+            "type": "boolean"
+          }
+        }
+      },
       "ElementId": {
         "type": "string",
         "format": "uuid"
+      },
+      "ErrorResponse": {
+        "required": [
+          "type",
+          "title"
+        ],
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "detail": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "errors": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/FieldError"
+            }
+          }
+        }
+      },
+      "EventStoreConsumer": {
+        "required": [
+          "name",
+          "mode",
+          "status",
+          "lag"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "lag": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          }
+        }
+      },
+      "EventStoreDiagnostics": {
+        "required": [
+          "reachable",
+          "head",
+          "consumers"
+        ],
+        "type": "object",
+        "properties": {
+          "reachable": {
+            "type": "boolean"
+          },
+          "head": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "consumers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EventStoreConsumer"
+            }
+          }
+        }
       },
       "ExecuteMergeRequest": {
         "required": [
@@ -4016,6 +4723,141 @@
           "Outage"
         ]
       },
+      "FieldError": {
+        "required": [
+          "field",
+          "message"
+        ],
+        "type": "object",
+        "properties": {
+          "field": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "GithubSettings": {
+        "required": [
+          "apiBaseUrl",
+          "defaultRef"
+        ],
+        "type": "object",
+        "properties": {
+          "apiBaseUrl": {
+            "type": "string"
+          },
+          "defaultRef": {
+            "type": "string"
+          }
+        }
+      },
+      "ImportSettings": {
+        "required": [
+          "maxFiles",
+          "maxFileBytes",
+          "maxTotalBytes",
+          "excludeGlobs"
+        ],
+        "type": "object",
+        "properties": {
+          "maxFiles": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "maxFileBytes": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "maxTotalBytes": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "excludeGlobs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "InstanceInfoResponse": {
+        "required": [
+          "profile",
+          "version",
+          "isInstanceAdmin",
+          "allowSelfRegistration"
+        ],
+        "type": "object",
+        "properties": {
+          "profile": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "isInstanceAdmin": {
+            "type": "boolean"
+          },
+          "allowSelfRegistration": {
+            "type": "boolean"
+          }
+        }
+      },
+      "InstancePolicy": {
+        "required": [
+          "allowSelfRegistration",
+          "allowPrivateNetworkUrls",
+          "allowedAiProviderKinds",
+          "allowSendingPrivateCodeToAi"
+        ],
+        "type": "object",
+        "properties": {
+          "allowSelfRegistration": {
+            "type": "boolean"
+          },
+          "allowPrivateNetworkUrls": {
+            "type": "boolean"
+          },
+          "allowedAiProviderKinds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "allowSendingPrivateCodeToAi": {
+            "type": "boolean"
+          }
+        }
+      },
+      "InstanceSettingsResponse": {
+        "required": [
+          "policy",
+          "defaults"
+        ],
+        "type": "object",
+        "properties": {
+          "policy": {
+            "$ref": "#/components/schemas/InstancePolicy"
+          },
+          "defaults": {
+            "$ref": "#/components/schemas/SettingsDocument"
+          }
+        }
+      },
       "InviteMemberRequest": {
         "required": [
           "userId",
@@ -4033,6 +4875,9 @@
       },
       "JsonDocument": { },
       "JsonElement": { },
+      "JsonObject": {
+        "type": "object"
+      },
       "LoginRequest": {
         "required": [
           "email",
@@ -4067,6 +4912,45 @@
       "MessageId": {
         "type": "string",
         "format": "uuid"
+      },
+      "ModuleMigrations": {
+        "required": [
+          "module",
+          "applied",
+          "pending"
+        ],
+        "type": "object",
+        "properties": {
+          "module": {
+            "type": "string"
+          },
+          "applied": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "pending": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "NotificationSettings": {
+        "required": [
+          "webhookUrl"
+        ],
+        "type": "object",
+        "properties": {
+          "webhookUrl": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
       },
       "OperationDto": {
         "required": [
@@ -4225,6 +5109,17 @@
           }
         }
       },
+      "PrivacySettings": {
+        "required": [
+          "sendPrivateCodeToAi"
+        ],
+        "type": "object",
+        "properties": {
+          "sendPrivateCodeToAi": {
+            "type": "boolean"
+          }
+        }
+      },
       "ProvenanceDto": {
         "required": [
           "source",
@@ -4341,6 +5236,22 @@
             "format": "int32"
           },
           "backoffMs": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          }
+        }
+      },
+      "RotateKeysResponse": {
+        "required": [
+          "rewrapped"
+        ],
+        "type": "object",
+        "properties": {
+          "rewrapped": {
             "pattern": "^-?(?:0|[1-9]\\d*)$",
             "type": [
               "integer",
@@ -4576,6 +5487,207 @@
           },
           "name": {
             "type": "string"
+          }
+        }
+      },
+      "SecretStatusDto": {
+        "required": [
+          "name",
+          "isSet",
+          "updatedAt",
+          "updatedBy",
+          "fingerprint"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "isSet": {
+            "type": "boolean"
+          },
+          "updatedAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "updatedBy": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "fingerprint": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "SetSecretRequest": {
+        "required": [
+          "value"
+        ],
+        "type": "object",
+        "properties": {
+          "value": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "SettingsDocument": {
+        "required": [
+          "ai",
+          "github",
+          "import",
+          "cost",
+          "simulation",
+          "privacy",
+          "usage",
+          "notifications"
+        ],
+        "type": "object",
+        "properties": {
+          "ai": {
+            "$ref": "#/components/schemas/AiSettings"
+          },
+          "github": {
+            "$ref": "#/components/schemas/GithubSettings"
+          },
+          "import": {
+            "$ref": "#/components/schemas/ImportSettings"
+          },
+          "cost": {
+            "$ref": "#/components/schemas/CostSettings"
+          },
+          "simulation": {
+            "$ref": "#/components/schemas/SimulationSettings"
+          },
+          "privacy": {
+            "$ref": "#/components/schemas/PrivacySettings"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/UsageSettings"
+          },
+          "notifications": {
+            "$ref": "#/components/schemas/NotificationSettings"
+          }
+        }
+      },
+      "SetupRequest": {
+        "required": [
+          "email",
+          "password",
+          "displayName",
+          "workspaceName",
+          "setupToken"
+        ],
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "password": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "displayName": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "workspaceName": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "setupToken": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "SetupResponse": {
+        "required": [
+          "userId",
+          "workspaceId"
+        ],
+        "type": "object",
+        "properties": {
+          "userId": {
+            "type": "string"
+          },
+          "workspaceId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "SetupStatusResponse": {
+        "required": [
+          "needsSetup",
+          "profile",
+          "requiresSetupToken"
+        ],
+        "type": "object",
+        "properties": {
+          "needsSetup": {
+            "type": "boolean"
+          },
+          "profile": {
+            "type": "string"
+          },
+          "requiresSetupToken": {
+            "type": "boolean"
+          }
+        }
+      },
+      "SimulationSettings": {
+        "required": [
+          "seed",
+          "durationSeconds",
+          "arrivalRatePerSecond"
+        ],
+        "type": "object",
+        "properties": {
+          "seed": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "durationSeconds": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "arrivalRatePerSecond": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
           }
         }
       },
@@ -4879,6 +5991,45 @@
                 "$ref": "#/components/schemas/ProvenanceDto"
               }
             ]
+          }
+        }
+      },
+      "TaskRouting": {
+        "required": [
+          "inferArchitecture",
+          "proposeFlow",
+          "critique",
+          "explain"
+        ],
+        "type": "object",
+        "properties": {
+          "inferArchitecture": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "proposeFlow": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "critique": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "explain": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
           }
         }
       },
@@ -5224,6 +6375,28 @@
           "setProvenance": {
             "type": "boolean",
             "default": false
+          }
+        }
+      },
+      "UpdateInstanceSettingsRequest": {
+        "required": [
+          "policy",
+          "defaults"
+        ],
+        "type": "object",
+        "properties": {
+          "policy": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/InstancePolicy"
+              }
+            ]
+          },
+          "defaults": {
+            "$ref": "#/components/schemas/JsonElement"
           }
         }
       },
@@ -5690,16 +6863,55 @@
             ]
           }
         }
+      },
+      "UsageSettings": {
+        "required": [
+          "monthlyAiBudgetUsd",
+          "maxScansPerDay"
+        ],
+        "type": "object",
+        "properties": {
+          "monthlyAiBudgetUsd": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "maxScansPerDay": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          }
+        }
+      },
+      "WorkspaceSettingsResponse": {
+        "required": [
+          "effective",
+          "overrides",
+          "defaults"
+        ],
+        "type": "object",
+        "properties": {
+          "effective": {
+            "$ref": "#/components/schemas/SettingsDocument"
+          },
+          "overrides": {
+            "$ref": "#/components/schemas/JsonObject"
+          },
+          "defaults": {
+            "$ref": "#/components/schemas/SettingsDocument"
+          }
+        }
       }
     }
   },
   "tags": [
-    {
-      "name": "Vellum"
-    },
-    {
-      "name": "Scoring"
-    },
     {
       "name": "Auth"
     },
@@ -5765,6 +6977,18 @@
     },
     {
       "name": "Scenarios"
+    },
+    {
+      "name": "Scoring"
+    },
+    {
+      "name": "Setup"
+    },
+    {
+      "name": "Instance"
+    },
+    {
+      "name": "Settings"
     }
   ]
 }

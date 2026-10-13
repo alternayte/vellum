@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using Microsoft.EntityFrameworkCore;
+using Vellum.Modules.Settings.Audit;
 using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Shared;
 
@@ -34,8 +35,13 @@ public static class RemoveMember
                     "A workspace must have at least one owner."));
         }
 
+        // The removal and its audit entry commit together.
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
         db.Memberships.Remove(membership);
         await db.SaveChangesAsync(ct);
+        await AuditLog.AppendAsync(db, workspaceId, userId, AuditLog.MemberRemoved,
+            $"user:{membership.UserId} role:{membership.Role.ToLowerInvariant()}", ct);
+        await transaction.CommitAsync(ct);
         return Results.NoContent();
     }
 }

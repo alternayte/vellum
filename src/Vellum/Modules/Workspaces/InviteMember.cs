@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using Microsoft.EntityFrameworkCore;
+using Vellum.Modules.Settings.Audit;
 using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Modules.Workspaces.Entities;
 using Vellum.Shared;
@@ -38,8 +39,13 @@ public static class InviteMember
             UserId = request.UserId,
             Role = request.Role
         };
+        // The membership and its audit entry commit together.
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
         db.Memberships.Add(membership);
         await db.SaveChangesAsync(ct);
+        await AuditLog.AppendAsync(db, workspaceId, userId, AuditLog.MemberAdded,
+            $"user:{membership.UserId} role:{membership.Role.ToLowerInvariant()}", ct);
+        await transaction.CommitAsync(ct);
 
         return Results.Created($"/api/workspaces/{workspaceId}/members/{request.UserId}",
             new MembershipDto(membership.Id, membership.WorkspaceId, membership.UserId, membership.Role, membership.CreatedAt));
