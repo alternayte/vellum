@@ -61,6 +61,10 @@ public sealed record GitHubComparison(
 public sealed record GitHubPullRequest(
     int Number, string State, bool Merged, string BaseRef, string BaseSha, string HeadRef, string HeadSha, string? HeadRepository);
 
+/// <param name="Status"><c>queued</c>, <c>in_progress</c>, <c>completed</c> and the other words GitHub uses.</param>
+/// <param name="Conclusion">Null until the run is completed. Then <c>success</c>, <c>failure</c>, <c>cancelled</c> and so on.</param>
+public sealed record GitHubWorkflowRun(long Id, string HeadSha, string Status, string? Conclusion, string? Name);
+
 public sealed record GitHubRateLimit(int Limit, int Remaining, DateTimeOffset ResetAt);
 
 /// <param name="Login">Null when the workspace has no token; the calls are then anonymous.</param>
@@ -249,6 +253,16 @@ public sealed partial class GitHubConnection
                 } dto && IsSha(baseSha) && IsSha(headSha)
                 && Clean(dto.State, MaxWordChars) is { } state && Clean(@base.Ref, MaxRefChars) is { } baseRef && Clean(head.Ref, MaxRefChars) is { } headRef
                     ? new GitHubPullRequest(dto.Number, state, dto.Merged, baseRef, baseSha, headRef, headSha, Clean(head.Repo?.FullName, MaxNameChars))
+                    : Unexpected, ct);
+
+    /// <summary>A GitHub Actions run by its number: the commit it ran on, its status and its conclusion.</summary>
+    public Task<GitHubResult<GitHubWorkflowRun>> GetWorkflowRunAsync(string owner, string repo, long runId, CancellationToken ct = default) =>
+        !IsName(owner) || !IsName(repo) || runId < 1
+            ? NotFound<GitHubWorkflowRun>()
+            : SendAsync<GitHubWorkflowRun>("get-workflow-run", call => _api.GetWorkflowRun(owner, repo, runId, call, ct), async response =>
+                await OutboundBody.ReadJsonAsync<WorkflowRunDto>(response, ct) is { HeadSha: { } headSha } dto
+                && dto.Id == runId && IsSha(headSha) && Clean(dto.Status, MaxWordChars) is { } status
+                    ? new GitHubWorkflowRun(dto.Id, headSha, status, Clean(dto.Conclusion, MaxWordChars), Clean(dto.Name, MaxNameChars))
                     : Unexpected, ct);
 
     public Task<GitHubResult<GitHubRateLimit>> GetRateLimitAsync(CancellationToken ct = default) =>
