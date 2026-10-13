@@ -6,4 +6,4 @@ public sealed record MessageDto(
     Guid Id, string Name, string? Description,
     Guid ProducerId, Guid[] ConsumerIds,
     Guid? SchemaId, string[] Tags,
-    string FactStatus, ProvenanceDto? Provenance);
+    string FactStatus, ProvenanceDto? Provenance, StaleDto? Stale = null);

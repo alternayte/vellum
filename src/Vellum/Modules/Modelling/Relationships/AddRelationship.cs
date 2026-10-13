@@ -37,5 +37,5 @@ public sealed class AddRelationshipHandler : ICommandHandler<AddRelationshipComm
         relationship.Id, relationship.FromId, relationship.ToId, relationship.Label,
         relationship.Technology, relationship.MessageId, relationship.LineShape,
         relationship.Kind.ToString().ToLowerInvariant(),
-        relationship.FactStatus.ToApiString(), ProvenanceMapper.ToDto(relationship.Provenance));
+        relationship.FactStatus.ToApiString(), ProvenanceMapper.ToDto(relationship.Provenance), StaleDto.From(relationship.Stale));
 }

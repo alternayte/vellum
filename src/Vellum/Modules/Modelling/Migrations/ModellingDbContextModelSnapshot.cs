@@ -93,6 +93,14 @@ namespace Vellum.Modules.Modelling.Migrations
                         .HasColumnType("text")
                         .HasColumnName("provenance_source");
 
+                    b.Property<string>("StaleReason")
+                        .HasColumnType("text")
+                        .HasColumnName("stale_reason");
+
+                    b.Property<string>("StaleSinceRevision")
+                        .HasColumnType("text")
+                        .HasColumnName("stale_since_revision");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasColumnType("text")
@@ -186,6 +194,14 @@ namespace Vellum.Modules.Modelling.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("schema_id");
 
+                    b.Property<string>("StaleReason")
+                        .HasColumnType("text")
+                        .HasColumnName("stale_reason");
+
+                    b.Property<string>("StaleSinceRevision")
+                        .HasColumnType("text")
+                        .HasColumnName("stale_since_revision");
+
                     b.PrimitiveCollection<string[]>("Tags")
                         .IsRequired()
                         .HasColumnType("text[]")
@@ -268,6 +284,14 @@ namespace Vellum.Modules.Modelling.Migrations
                     b.Property<string>("ProvenanceSource")
                         .HasColumnType("text")
                         .HasColumnName("provenance_source");
+
+                    b.Property<string>("StaleReason")
+                        .HasColumnType("text")
+                        .HasColumnName("stale_reason");
+
+                    b.Property<string>("StaleSinceRevision")
+                        .HasColumnType("text")
+                        .HasColumnName("stale_since_revision");
 
                     b.Property<string>("Technology")
                         .HasColumnType("text")

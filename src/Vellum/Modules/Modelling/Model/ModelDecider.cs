@@ -313,7 +313,7 @@ public static class ModelDecider
         if (validationError is not null)
             return new CommandResult<IReadOnlyList<object>>.Invalid([validationError]);
 
-        if (element.FactStatus == status && ProvenanceEquivalent(element.Provenance, provenance))
+        if (element.FactStatus == status && ProvenanceEquivalent(element.Provenance, provenance) && element.Stale is null)
             return new CommandResult<IReadOnlyList<object>>.Success([]);
 
         return new CommandResult<IReadOnlyList<object>>.Success(
@@ -330,7 +330,7 @@ public static class ModelDecider
         if (validationError is not null)
             return new CommandResult<IReadOnlyList<object>>.Invalid([validationError]);
 
-        if (relationship.FactStatus == status && ProvenanceEquivalent(relationship.Provenance, provenance))
+        if (relationship.FactStatus == status && ProvenanceEquivalent(relationship.Provenance, provenance) && relationship.Stale is null)
             return new CommandResult<IReadOnlyList<object>>.Success([]);
 
         return new CommandResult<IReadOnlyList<object>>.Success(
@@ -347,7 +347,7 @@ public static class ModelDecider
         if (validationError is not null)
             return new CommandResult<IReadOnlyList<object>>.Invalid([validationError]);
 
-        if (message.FactStatus == status && ProvenanceEquivalent(message.Provenance, provenance))
+        if (message.FactStatus == status && ProvenanceEquivalent(message.Provenance, provenance) && message.Stale is null)
             return new CommandResult<IReadOnlyList<object>>.Success([]);
 
         return new CommandResult<IReadOnlyList<object>>.Success(
@@ -356,7 +356,9 @@ public static class ModelDecider
 
     /// <summary>
     /// Compares the claim-bearing fields only. Acceptance stamps change on every call and
-    /// must not by themselves produce a new event.
+    /// must not by themselves produce a new event. A fact with a stale mark is the exception:
+    /// recording the same claim again is how a person says the fact still holds, so it
+    /// produces the event that clears the mark.
     /// </summary>
     private static bool ProvenanceEquivalent(Provenance? a, Provenance? b) =>
         a?.Source == b?.Source && a?.Revision == b?.Revision && a?.Confidence == b?.Confidence;

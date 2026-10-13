@@ -42,5 +42,5 @@ public sealed class AddElementHandler : ICommandHandler<AddElementCommandEnvelop
         element.Id, element.Kind.ToString().ToLowerInvariant(), element.Name,
         element.Description, element.Technology, element.OwnerId,
         element.Status.ToString().ToLowerInvariant(), element.ParentId, element.Tags, element.Icon,
-        element.FactStatus.ToApiString(), ProvenanceMapper.ToDto(element.Provenance));
+        element.FactStatus.ToApiString(), ProvenanceMapper.ToDto(element.Provenance), StaleDto.From(element.Stale));
 }

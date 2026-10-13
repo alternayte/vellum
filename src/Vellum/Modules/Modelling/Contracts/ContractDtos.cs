@@ -16,33 +16,33 @@ public sealed record OperationDto(
     Guid Id, Guid OwnerId, string Name, string Transport,
     Guid? RequestSchemaId, Guid? ResponseSchemaId,
     int TimeoutMs, RetryDto Retry,
-    string FactStatus, ProvenanceDto? Provenance)
+    string FactStatus, ProvenanceDto? Provenance, StaleDto? Stale = null)
 {
     public static OperationDto From(OperationState operation) => new(
         operation.Id, operation.OwnerId, operation.Name, operation.Transport.ToString().ToLowerInvariant(),
         operation.RequestSchemaId, operation.ResponseSchemaId,
         operation.TimeoutMs, RetryDto.From(operation.Retry),
-        operation.FactStatus.ToApiString(), ProvenanceMapper.ToDto(operation.Provenance));
+        operation.FactStatus.ToApiString(), ProvenanceMapper.ToDto(operation.Provenance), StaleDto.From(operation.Stale));
 }
 
 public sealed record ChannelDto(
     Guid Id, string Name, string Kind,
-    string FactStatus, ProvenanceDto? Provenance)
+    string FactStatus, ProvenanceDto? Provenance, StaleDto? Stale = null)
 {
     public static ChannelDto From(ChannelState channel) => new(
         channel.Id, channel.Name, channel.Kind.ToString().ToLowerInvariant(),
-        channel.FactStatus.ToApiString(), ProvenanceMapper.ToDto(channel.Provenance));
+        channel.FactStatus.ToApiString(), ProvenanceMapper.ToDto(channel.Provenance), StaleDto.From(channel.Stale));
 }
 
 public sealed record SubscriptionDto(
     Guid Id, Guid ChannelId, Guid ConsumerId,
     RetryDto Retry, Guid? DeadLetterChannelId,
-    string FactStatus, ProvenanceDto? Provenance)
+    string FactStatus, ProvenanceDto? Provenance, StaleDto? Stale = null)
 {
     public static SubscriptionDto From(SubscriptionState subscription) => new(
         subscription.Id, subscription.ChannelId, subscription.ConsumerId,
         RetryDto.From(subscription.Retry), subscription.DeadLetterChannelId,
-        subscription.FactStatus.ToApiString(), ProvenanceMapper.ToDto(subscription.Provenance));
+        subscription.FactStatus.ToApiString(), ProvenanceMapper.ToDto(subscription.Provenance), StaleDto.From(subscription.Stale));
 }
 
 /// <summary>What the contract requests share: reading a fact status label.</summary>

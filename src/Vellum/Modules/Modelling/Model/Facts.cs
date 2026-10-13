@@ -29,6 +29,23 @@ public sealed record Provenance(
     Guid? AcceptedBy = null,
     DateTimeOffset? AcceptedAt = null);
 
+/// <summary>
+/// A mark on an accepted fact whose evidence a complete repository scan no longer finds. It
+/// deletes nothing and changes no value of the fact. <paramref name="SinceRevision"/> is the
+/// commit SHA of the first complete scan that did not find the evidence;
+/// <paramref name="Reason"/> is a fixed code such as <c>evidence-not-found</c>.
+/// </summary>
+public sealed record StaleMark(string SinceRevision, string Reason);
+
+/// <summary>A stale mark as returned by the API.</summary>
+public sealed record StaleDto(string SinceRevision, string Reason)
+{
+    public static StaleDto? From(StaleMark? mark) => mark is null ? null : new(mark.SinceRevision, mark.Reason);
+
+    public static StaleDto? From(string? sinceRevision, string? reason) =>
+        sinceRevision is null || reason is null ? null : new(sinceRevision, reason);
+}
+
 /// <summary>Provenance as supplied by a caller. Acceptance stamps are set by the server.</summary>
 public sealed record ProvenanceInput(string? Source, string? Revision, double? Confidence);
 

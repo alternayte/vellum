@@ -64,7 +64,7 @@ public sealed class DeleteSchemaHandler(IServiceProvider requestServices)
     /// Why the schema must stay, or null. Each read sees what is committed when it runs, and
     /// every transaction that could add a reference has either committed or waits for the row.
     /// </summary>
-    private static async Task<string?> ReferrersAsync(
+    internal static async Task<string?> ReferrersAsync(
         IServiceProvider services, IEventStore store, DeleteSchemaCommandEnvelope cmd, CancellationToken ct)
     {
         var modellingDb = services.GetRequiredService<ModellingDbContext>();

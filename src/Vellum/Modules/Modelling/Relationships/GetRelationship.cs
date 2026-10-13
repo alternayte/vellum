@@ -19,6 +19,7 @@ public static class GetRelationship
             entity.Label, entity.Technology, entity.MessageId, entity.LineShape,
             entity.Kind, entity.FactStatus,
             Model.ProvenanceMapper.ToDto(entity.ProvenanceSource, entity.ProvenanceRevision,
-                entity.ProvenanceConfidence, entity.ProvenanceAcceptedBy, entity.ProvenanceAcceptedAt)));
+                entity.ProvenanceConfidence, entity.ProvenanceAcceptedBy, entity.ProvenanceAcceptedAt),
+            Model.StaleDto.From(entity.StaleSinceRevision, entity.StaleReason)));
     }
 }
