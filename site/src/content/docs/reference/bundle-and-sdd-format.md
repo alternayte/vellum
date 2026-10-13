@@ -30,6 +30,7 @@ The answer has these headers.
 | `X-Vellum-Stream-Version` | The version of the model stream that the export read. |
 | `X-Vellum-Bundle-Hash` | The `bundleHash` of the manifest. |
 | `X-Vellum-Build-Ready` | `true` or `false`. |
+| `X-Vellum-Current` | `true` when each input is still at its pinned version. `false` means that the export is of a past state. |
 
 The file name of the zip is `vellum-bundle-<first 12 characters of the bundle hash>.zip`.
 
@@ -58,7 +59,7 @@ A contract file is not written when it holds a number that YAML cannot hold exac
 
 | Field | Type | Meaning |
 |---|---|---|
-| `format` | string | `vellum-bundle/3`. |
+| `format` | string | `vellum-bundle/4`. |
 | `generator.name` | string | `vellum-build`. |
 | `generator.version` | string | `3`. |
 | `pinned` | object | Every input of the export at the version that the export read. See [The pinned state](#the-pinned-state). |
@@ -89,6 +90,16 @@ A contract file is not written when it holds a number that YAML cannot hold exac
 | `runs` | list | Each verification run that the export shows: `promiseId`, `promiseRevision`, `obligationId`, `runId`. |
 | `sources` | list | For each imported repository: `repository` (`host/owner/name`), `trackedRef`, `trackedCommit`, `trackedScan`, `latestCommit`, `latestScan`. |
 | `decisions` | list of `{id, version}` | Each decision stream and its version. Not present in the format `vellum-bundle/2`. |
+| `seal` | string | The mark that this Vellum instance issued this state for this project: `v1.<master key ID>.<digest>`. Not present before the format `vellum-bundle/4`. See [The seal](#the-seal). |
+
+### The seal
+
+The seal is a keyed digest of the pinned state and the project ID. Vellum makes it with a key that it derives from the master key. The seal is not a secret. A caller cannot compute it.
+
+- An export with a `pinned` state needs a seal that verifies. A state with no seal, a state that changed after Vellum issued it, and a seal of another project, of another instance or of a master key that is not loaded get `409` with the type `pinned_not_issued`.
+- A seal verifies while its master key is loaded as the current key or as the previous key. After a rotation, an export of a state whose seal still verifies gets a seal of the current key.
+- The seal is in `manifest.json` only. It changes no file hash and not the bundle hash.
+- Nothing stores a seal.
 
 ### The self-check
 
@@ -110,12 +121,13 @@ A count object has `expected`, `parsed`, `missing` (names in the model and not i
 
 | Format | Generator version | Status |
 |---|---|---|
-| `vellum-bundle/3` | `3` | The format that Vellum exports. It pins the decision streams, holds `decisions/` and has review blockers. |
+| `vellum-bundle/4` | `3` | The format that Vellum exports. Its manifest holds the seal of the pinned state. The other files are the files of the format `vellum-bundle/3`. |
+| `vellum-bundle/3` | `3` | Not exported any more. It pins the decision streams, holds `decisions/` and has review blockers. It has no seal. `POST /api/projects/{projectId}/build/verify` still checks it. |
 | `vellum-bundle/2` | `2` | Not exported any more. `POST /api/projects/{projectId}/build/verify` still checks it: Vellum generates it again as it was, with no review and no decision. |
 | `vellum-bundle/1` | | Vellum cannot generate a manifest of this format again. |
 | `vellum-brief/1` | `3` | The format of a brief manifest. |
 
-An export with a `pinned` state that names no `decisions` gets `409` with the type `pinned_format_not_exported`.
+An export with a `pinned` state that names no `decisions` gets `409` with the type `pinned_format_not_exported`. An export with a `pinned` state that has `decisions` and no seal that verifies gets `409` with the type `pinned_not_issued`.
 
 ## Sections of SDD.md
 
@@ -136,7 +148,7 @@ The title is `<project name>: Software Design Document`. Below it are the pinned
 | `11. Acceptance tests` | The checks that the obligations require. |
 | `12. Unresolved blockers` | Every blocker of the manifest. |
 
-In the format `vellum-bundle/3` a subsection `Decisions` follows section 12.
+From the format `vellum-bundle/3` on, a subsection `Decisions` follows section 12.
 
 Only a promise that has a heading of its own in section 8 is a requirement.
 
@@ -240,6 +252,7 @@ See [Promises and evidence](/reference/promises-and-evidence/), [Review rules](/
 | `actualBundleHash` | string | The bundle hash of what you sent. |
 | `files` | list | One entry for each file: `path`, `status`, `expectedSha256`, `actualSha256`. The `status` is `match`, `differs`, `missing` or `unknown-file`. |
 | `selfCheck` | object | The self-check of the generated bundle. |
+| `issued` | boolean | `true` when the pinned state has a seal that this instance issued for this project. Only such a state can be exported again. `false` does not make the bundle wrong. |
 
 `matchesPinned: false` means that the bundle changed after the export. `current: false` means that the model moved after the export. The second is drift, not a changed bundle.
 
@@ -248,6 +261,7 @@ See [Promises and evidence](/reference/promises-and-evidence/), [Review rules](/
 | `400` | `invalid_bundle` | The body is not a manifest or a bundle that Vellum writes. Examples: an entry that the manifest does not list, an entry name two times, a path that is not plain, no pinned state. |
 | `409` | `pinned_input_unavailable` | A pinned version is no longer stored. |
 | `409` | `pinned_format_not_exported` | An export of a pinned state of the format `vellum-bundle/2`. |
+| `409` | `pinned_not_issued` | An export of a pinned state with no seal that verifies. |
 | `409` | `file_not_generated` | An export with `"format":"sdd"` when `SDD.md` was not generated. |
 | `413` | `payload_too_large` | A manifest over the manifest limit. |
 | `413` | `bundle_too_large` | An export over a bundle limit. |

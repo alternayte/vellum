@@ -10,9 +10,9 @@ The model is the source of truth. The canvas shows the model. A change on the ca
 ## Create a project
 
 1. Open `http://localhost:8080` and sign in.
-2. Below **Workspaces**, find the workspace. If there is none, select **Create Workspace** and enter a **Workspace name**.
+2. Below **Workspaces**, find the workspace. If there is none, select **Create Workspace**, enter a **Workspace name** and select **Create**.
 3. Select the workspace, then select **+ New Project**.
-4. In **Create Project**, enter a **Project name** and confirm.
+4. In **Create Project**, enter a **Project name** and select **Create**.
 5. Open the project.
 
 Vellum creates a diagram named `Default` the first time you open a project that has no diagram.

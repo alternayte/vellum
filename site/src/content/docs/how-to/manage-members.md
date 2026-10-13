@@ -22,8 +22,8 @@ The person who creates a workspace is its first owner.
 ## Create a workspace
 
 1. Open `http://localhost:8080` and sign in.
-2. Select **Create Workspace**.
-3. Enter a **Workspace name** and confirm.
+2. Select **+ New Workspace**. When the account has no workspace, the button reads **Create Workspace**.
+3. Enter a **Workspace name** and select **Create**.
 
 The request is `POST /api/workspaces` with `id` (a new UUID) and `name`.
 
@@ -31,7 +31,7 @@ The request is `POST /api/workspaces` with `id` (a new UUID) and `name`.
 
 1. Below **Workspaces**, select the workspace.
 2. Select **+ New Project**.
-3. In **Create Project**, enter a **Project name** and confirm.
+3. In **Create Project**, enter a **Project name** and select **Create**.
 
 The request is `POST /api/workspaces/{workspaceId}/projects` with `id` (a new UUID), `name` and `description`. You need the editor role.
 

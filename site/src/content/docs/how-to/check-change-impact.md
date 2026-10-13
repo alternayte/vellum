@@ -102,6 +102,7 @@ The comparison shows that the registration is gone from the source. It does not 
 A missing fact counts only when the scan read the files that the fact came from.
 
 - A partial scan shows **This scan is partial. A limit stopped it before every file was read, so it proposes no removals and missing items prove nothing.**
+  The notice is not exact. A partial scan proposes no removal for a fact whose files it did not read. It can propose a removal for a fact whose files it read.
 - A scan with fewer folders says nothing about the facts in the other folders.
 - The review states how many accepted facts the scan did not judge, and why.
 
