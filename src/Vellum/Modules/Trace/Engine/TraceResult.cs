@@ -19,11 +19,15 @@ public enum TraceEventKind
     DataWriteFailed,
     BranchTaken,
     StepSkipped,
+    Routed,
+    NotRouted,
 }
 
 /// <summary>
 /// One observable moment of a playback. <paramref name="Target"/> is the operation, channel
 /// or subscription involved; <paramref name="From"/> and <paramref name="To"/> are elements.
+/// The two routing kinds differ: <paramref name="From"/> is the source channel,
+/// <paramref name="To"/> the target channel and <paramref name="Target"/> the binding.
 /// </summary>
 public sealed record TraceEvent(
     int Sequence, long AtMs, TraceEventKind Kind, string StepId, int Attempt,
@@ -43,6 +47,8 @@ public static class TraceLimits
     public const int MaxEvents = 10_000;
     /// <summary>Scheduled work items, including ones that emit nothing.</summary>
     public const int MaxWork = 200_000;
+    /// <summary>Bindings one published or dead-lettered message is matched against, followed or not.</summary>
+    public const int MaxRoutes = 200;
     public const int MaxPayloadBytes = 64 * 1024;
     /// <summary>Wall-clock allowance for all schema evaluation in one validation.</summary>
     public const int SchemaBudgetMs = 2_000;

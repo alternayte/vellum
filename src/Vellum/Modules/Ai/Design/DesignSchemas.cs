@@ -22,11 +22,13 @@ public sealed record FlowOutput(
 
 /// <param name="Slot"><c>root</c>, <c>then</c>, <c>onError</c>, <c>handler</c>, <c>branchThen</c>, <c>branchElse</c> or <c>parallelBranch</c>.</param>
 /// <param name="SlotKey">The subscription alias of a handler, or the branch number of a parallel branch.</param>
+/// <param name="RoutingKey">For a publish step: the key that the bindings of the channel are matched against. An answer stored before the member existed reads as null.</param>
 public sealed record FlowStepOutput(
     string Id, string? ParentStepId, string Slot, string? SlotKey, int Order, string Type,
     string? From, string? Operation, string? Channel, string? Message, string? By, string? Store, string? Dataset,
     string? WhenStep, string? Is,
-    string? RequestJson, string? ResponseJson, string? PayloadJson, string? ChangeJson);
+    string? RequestJson, string? ResponseJson, string? PayloadJson, string? ChangeJson,
+    string? RoutingKey = null);
 
 public sealed record FlowFaultOutput(string Target, string Kind, int? FailFirst);
 
@@ -49,6 +51,9 @@ public sealed record ArchitectureOutput(
     string ReasoningSummary);
 
 /// <param name="Action"><c>add</c>. A model that answers <c>change</c> or <c>remove</c> names the existing thing in <paramref name="Target"/>; the item is dropped.</param>
+/// <param name="From">The source of a relationship (an element) or of a binding (a channel).</param>
+/// <param name="To">The target of a relationship (an element) or of a binding (a channel).</param>
+/// <param name="Label">What a relationship carries, or the routing key of a binding.</param>
 public sealed record ArchitectureItemOutput(
     string Alias, string Action, string? Target, string EntityKind, string Name,
     string? Description, string? Technology,
@@ -115,7 +120,8 @@ internal static class DesignSchemas
             ("requestJson", Text()),
             ("responseJson", Text()),
             ("payloadJson", Text()),
-            ("changeJson", Text())))),
+            ("changeJson", Text()),
+            ("routingKey", Text())))),
         ("faults", Array(Object(
             ("target", Text()),
             ("kind", Enum("error", "timeout", "outage")),
@@ -151,7 +157,7 @@ internal static class DesignSchemas
             ("alias", Text()),
             ("action", Enum("add", "change", "remove")),
             ("target", Text()),
-            ("entityKind", Enum("element", "relationship", "operation", "channel", "subscription", "message")),
+            ("entityKind", Enum("element", "relationship", "operation", "channel", "subscription", "binding", "message")),
             ("name", Text()),
             ("description", Text()),
             ("technology", Text()),

@@ -13,6 +13,9 @@ namespace Vellum.Modules.Trace.Engine;
 /// </summary>
 public static class ScenarioValidator
 {
+    /// <summary>The same length as a name in the model, where a binding keeps its key.</summary>
+    public const int MaxRoutingKeyChars = 200;
+
     public static IReadOnlyList<ScenarioIssue> Validate(TraceModel model, Scenario scenario)
     {
         ArgumentNullException.ThrowIfNull(model);
@@ -111,17 +114,28 @@ public static class ScenarioValidator
                         CheckPayload(step, "payload", publish.Payload, null);
                     }
 
+                    // The key is copied into events and matched word by word, so it is one bounded line.
+                    if (publish.RoutingKey is { } routingKey
+                        && (routingKey.Length is 0 or > MaxRoutingKeyChars || routingKey.Any(char.IsControl)))
+                    {
+                        issues.Add(new(step.Id, "invalid-routing-key",
+                            $"A routing key is one line of 1 to {MaxRoutingKeyChars} characters. Leave it out to state none."));
+                    }
+
                     if (publish.Handlers is null || publish.Headers is null)
                     {
                         issues.Add(new(step.Id, "malformed-scenario", "A publish step needs headers and handlers; empty maps are valid."));
                         break;
                     }
+                    // A handler may name a subscription on the channel or on a channel that
+                    // the bindings lead to.
+                    var reachable = publish.Handlers.Count > 0 ? ChannelRouting.Reachable(model, publish.Channel) : null;
                     foreach (var (subscriptionId, handler) in publish.Handlers)
                     {
                         if (!model.Subscriptions.TryGetValue(subscriptionId, out var subscription))
                             issues.Add(new(step.Id, "unknown-subscription", $"Subscription {subscriptionId} does not exist."));
-                        else if (subscription.ChannelId != publish.Channel)
-                            issues.Add(new(step.Id, "subscription-not-on-channel", $"Subscription {subscriptionId} does not listen to channel {publish.Channel}."));
+                        else if (!reachable!.Contains(subscription.ChannelId))
+                            issues.Add(new(step.Id, "subscription-not-on-channel", $"Subscription {subscriptionId} does not listen to channel {publish.Channel} or to a channel that its bindings route to."));
                         VisitSequence(handler, completed, depth + 1, step.Id);
                     }
                     break;
@@ -289,9 +303,10 @@ public static class ScenarioValidator
         void Bad(string message) => issues.Add(new("", "invalid-model", message));
 
         if (model.Elements is null || model.Operations is null || model.Channels is null
-            || model.Subscriptions is null || model.Messages is null || model.Schemas is null
+            || model.Subscriptions is null || model.Messages is null || model.Schemas is null || model.Bindings is null
             || model.Operations.Values.Any(o => o is null) || model.Channels.Values.Any(c => c is null)
-            || model.Subscriptions.Values.Any(x => x is null) || model.Messages.Values.Any(m => m is null))
+            || model.Subscriptions.Values.Any(x => x is null) || model.Messages.Values.Any(m => m is null)
+            || model.Bindings.Values.Any(b => b is null))
         {
             throw new ArgumentException("A trace model has every collection and no empty entries.", nameof(model));
         }
@@ -318,6 +333,13 @@ public static class ScenarioValidator
 
         foreach (var (id, message) in model.Messages)
             if (message.Id != id) Bad($"Message {id} is stored under another ID.");
+
+        foreach (var (id, binding) in model.Bindings)
+        {
+            if (binding.Id != id) Bad($"Binding {id} is stored under another ID.");
+            if (!model.Channels.ContainsKey(binding.SourceChannelId)) Bad($"Binding {id} routes from a channel that does not exist.");
+            if (!model.Channels.ContainsKey(binding.TargetChannelId)) Bad($"Binding {id} routes to a channel that does not exist.");
+        }
 
         void CheckRetry(RetryPolicy? retry, string owner)
         {
@@ -390,7 +412,8 @@ public static class ScenarioValidator
                         issues.Add(new("", "invalid-assertion", $"Assertion {assertion.Id} counts an unknown event kind."));
                     if (count.Target is { } target
                         && !model.Operations.ContainsKey(target) && !model.Channels.ContainsKey(target)
-                        && !model.Subscriptions.ContainsKey(target) && !model.Elements.ContainsKey(target))
+                        && !model.Subscriptions.ContainsKey(target) && !model.Elements.ContainsKey(target)
+                        && !model.Bindings.ContainsKey(target))
                         issues.Add(new("", "unknown-assertion-target", $"Assertion {assertion.Id} counts events for {target}, which does not exist."));
                     break;
             }

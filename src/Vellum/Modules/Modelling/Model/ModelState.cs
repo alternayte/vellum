@@ -116,6 +116,27 @@ public sealed record SubscriptionState(
     public override int GetHashCode() => HashCode.Combine(Id, ChannelId, ConsumerId);
 }
 
+/// <summary>
+/// A route from an exchange or a topic to a queue or an exchange. A binding without a routing
+/// key passes every message; one with a key passes a message that is published with a
+/// matching key.
+/// </summary>
+public sealed record BindingState(
+    BindingId Id, ChannelId SourceChannelId, ChannelId TargetChannelId, string? RoutingKey,
+    FactStatus FactStatus = FactStatus.Declared,
+    Provenance? Provenance = null,
+    StaleMark? Stale = null)
+{
+    // Without the stale mark, for the reason given on ElementState.
+    public bool Equals(BindingState? other) =>
+        other is not null
+        && Id == other.Id && SourceChannelId == other.SourceChannelId && TargetChannelId == other.TargetChannelId
+        && RoutingKey == other.RoutingKey
+        && FactStatus == other.FactStatus && Provenance == other.Provenance;
+
+    public override int GetHashCode() => HashCode.Combine(Id, SourceChannelId, TargetChannelId, RoutingKey);
+}
+
 public sealed record ModelState(
     ImmutableDictionary<ElementId, ElementState> Elements,
     ImmutableDictionary<RelationshipId, RelationshipState> Relationships,
@@ -134,6 +155,10 @@ public sealed record ModelState(
     public ImmutableDictionary<SubscriptionId, SubscriptionState> Subscriptions { get; init; } =
         ImmutableDictionary<SubscriptionId, SubscriptionState>.Empty;
 
+    // Added after the contracts, in the same way: a state stored without it reads back with none.
+    public ImmutableDictionary<BindingId, BindingState> Bindings { get; init; } =
+        ImmutableDictionary<BindingId, BindingState>.Empty;
+
     public static ModelState Initial => new(
         ImmutableDictionary<ElementId, ElementState>.Empty,
         ImmutableDictionary<RelationshipId, RelationshipState>.Empty,
@@ -149,6 +174,7 @@ public sealed record ModelState(
             Operations = (e.Operations ?? []).ToImmutableDictionary(o => o.Id),
             Channels = (e.Channels ?? []).ToImmutableDictionary(c => c.Id),
             Subscriptions = (e.Subscriptions ?? []).ToImmutableDictionary(s => s.Id),
+            Bindings = (e.Bindings ?? []).ToImmutableDictionary(b => b.Id),
         },
 
         ModelEvent.ElementAdded e => state with
@@ -240,6 +266,19 @@ public sealed record ModelState(
         ModelEvent.SubscriptionProvenanceRecorded e => state.WithSubscription(e.SubscriptionId,
             s => s with { FactStatus = e.Status, Provenance = e.Provenance, Stale = e.Stale }),
 
+        ModelEvent.BindingAdded e => state with
+        {
+            Bindings = state.Bindings.SetItem(e.Id, new BindingState(
+                e.Id, e.SourceChannelId, e.TargetChannelId, e.RoutingKey))
+        },
+        ModelEvent.BindingChanged e => state.WithBinding(e.BindingId, b => b with
+        {
+            SourceChannelId = e.SourceChannelId, TargetChannelId = e.TargetChannelId, RoutingKey = e.RoutingKey,
+        }),
+        ModelEvent.BindingRemoved e => state with { Bindings = state.Bindings.Remove(e.BindingId) },
+        ModelEvent.BindingProvenanceRecorded e => state.WithBinding(e.BindingId,
+            b => b with { FactStatus = e.Status, Provenance = e.Provenance, Stale = e.Stale }),
+
         _ => state
     };
 
@@ -256,6 +295,7 @@ public sealed record ModelState(
         if (Operations.ContainsKey(id)) return "an operation";
         if (Channels.ContainsKey(id)) return "a channel";
         if (Subscriptions.ContainsKey(id)) return "a subscription";
+        if (Bindings.ContainsKey(id)) return "a binding";
         return null;
     }
 
@@ -289,6 +329,11 @@ public sealed record ModelState(
     private ModelState WithSubscription(SubscriptionId id, Func<SubscriptionState, SubscriptionState> update) =>
         Subscriptions.TryGetValue(id, out var subscription)
             ? this with { Subscriptions = Subscriptions.Remove(id).Add(id, update(subscription)) }
+            : this;
+
+    private ModelState WithBinding(BindingId id, Func<BindingState, BindingState> update) =>
+        Bindings.TryGetValue(id, out var binding)
+            ? this with { Bindings = Bindings.Remove(id).Add(id, update(binding)) }
             : this;
 
     private ModelState WithElement(ElementId id, Func<ElementState, ElementState> update) =>

@@ -15,11 +15,15 @@ public static class TraceModelBuilder
         model.Subscriptions.ToDictionary(s => s.Key, s => new SubscriptionContract(
             s.Value.Id, s.Value.ChannelId, s.Value.ConsumerId, s.Value.Retry, s.Value.DeadLetterChannelId)),
         model.Messages.ToDictionary(m => m.Key, m => new MessageContract(m.Value.Id, m.Value.Name, m.Value.SchemaId)),
-        schemas);
+        schemas)
+    {
+        Bindings = model.Bindings.ToDictionary(b => b.Key, b => new BindingContract(
+            b.Value.Id, b.Value.SourceChannelId, b.Value.TargetChannelId, b.Value.RoutingKey)),
+    };
 
     /// <summary>
     /// A display name for every ID a trace event can carry: elements, operations, channels,
-    /// messages and subscriptions. Sorted by ID, so the same model gives the same document.
+    /// messages, subscriptions and bindings. Sorted by ID, so the same model gives the same document.
     /// </summary>
     public static IReadOnlyDictionary<Guid, string> Labels(ModelState model)
     {
@@ -30,6 +34,8 @@ public static class TraceModelBuilder
         foreach (var message in model.Messages.Values) labels[message.Id] = message.Name;
         foreach (var subscription in model.Subscriptions.Values)
             labels[subscription.Id] = ContractDecider.SubscriptionLabel(model, subscription);
+        foreach (var binding in model.Bindings.Values)
+            labels[binding.Id] = ContractDecider.BindingLabel(model, binding);
         return labels;
     }
 }

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest'
 import { currentTraceEvent, useTraceStore } from '../../src/stores/trace-store'
-import { describeEvent, formatVirtualTime, type TraceEvent, type TraceRun } from '../../src/lib/trace'
+import { describeEvent, formatVirtualTime, reachableChannels, type TraceEvent, type TraceRun } from '../../src/lib/trace'
 
 const event = (sequence: number, kind: TraceEvent['kind'], extra: Partial<TraceEvent> = {}): TraceEvent => ({
   sequence, atMs: 0, kind, stepId: 's', attempt: 1, from: 'a', to: 'b', target: 'op', payload: null, detail: null, message: null, headers: null, ...extra,
@@ -60,6 +60,30 @@ describe('trace wording', () => {
 
   it('says a dropped message is lost', () => {
     expect(describeEvent(event(1, 'Dropped', { from: 'b' }), run.labels)).toBe('The message for Orders is lost')
+  })
+
+  it('says which channel routes a message to which, and why a binding was not followed', () => {
+    const labels = { x: 'order-events', q: 'billing.order-created', m: 'OrderCreated' }
+    const binding = '00000000-0000-0000-0000-000000000080'
+    const routing = { from: 'x', to: 'q', target: binding, message: 'm' }
+
+    expect(describeEvent(event(1, 'Routed', { ...routing, detail: `Binding ${binding} has no routing key.` }), labels))
+      .toBe('order-events routes OrderCreated to billing.order-created')
+    expect(describeEvent(event(2, 'NotRouted', { ...routing, detail: `Binding ${binding} needs routing key 'order.created'; the step states none.` }), labels))
+      .toBe("order-events does not route OrderCreated to billing.order-created: the binding needs routing key 'order.created'; the step states none")
+    expect(describeEvent(event(3, 'NotRouted', { ...routing, detail: `Binding ${binding}: routing key 'a' does not match 'b.*'.` }), labels))
+      .toBe("order-events does not route OrderCreated to billing.order-created: routing key 'a' does not match 'b.*'")
+  })
+
+  it('finds every channel a publish reaches through bindings, once, with a cycle', () => {
+    const bindings = [
+      { sourceChannelId: 'x', targetChannelId: 'relay' },
+      { sourceChannelId: 'relay', targetChannelId: 'q' },
+      { sourceChannelId: 'relay', targetChannelId: 'x' },
+      { sourceChannelId: 'other', targetChannelId: 'z' },
+    ]
+    expect(reachableChannels('x', bindings)).toEqual(['x', 'relay', 'q'])
+    expect(reachableChannels('q', bindings)).toEqual(['q'])
   })
 
   it('formats virtual time', () => {

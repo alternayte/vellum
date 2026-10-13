@@ -21,7 +21,8 @@
       "requestJson": "{\"sku\":\"apple\",\"qty\":2}",
       "responseJson": "",
       "payloadJson": "",
-      "changeJson": ""
+      "changeJson": "",
+      "routingKey": ""
     },
     {
       "id": "loop-a",
@@ -42,7 +43,8 @@
       "requestJson": "",
       "responseJson": "",
       "payloadJson": "",
-      "changeJson": ""
+      "changeJson": "",
+      "routingKey": ""
     },
     {
       "id": "loop-b",
@@ -63,7 +65,8 @@
       "requestJson": "",
       "responseJson": "",
       "payloadJson": "",
-      "changeJson": ""
+      "changeJson": "",
+      "routingKey": ""
     },
     {
       "id": "orphan",
@@ -84,7 +87,8 @@
       "requestJson": "",
       "responseJson": "",
       "payloadJson": "",
-      "changeJson": ""
+      "changeJson": "",
+      "routingKey": ""
     },
     {
       "id": "bad-slot",
@@ -105,7 +109,8 @@
       "requestJson": "",
       "responseJson": "",
       "payloadJson": "",
-      "changeJson": ""
+      "changeJson": "",
+      "routingKey": ""
     },
     {
       "id": "not-json",
@@ -126,7 +131,8 @@
       "requestJson": "",
       "responseJson": "",
       "payloadJson": "",
-      "changeJson": "{not json"
+      "changeJson": "{not json",
+      "routingKey": ""
     },
     {
       "id": "ok",
@@ -147,7 +153,8 @@
       "requestJson": "",
       "responseJson": "",
       "payloadJson": "",
-      "changeJson": ""
+      "changeJson": "",
+      "routingKey": ""
     }
   ],
   "faults": [

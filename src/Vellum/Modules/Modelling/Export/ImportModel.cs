@@ -26,6 +26,7 @@ public static class ImportModel
     public const int MaxOperations = ContractDecider.MaxPerKind;
     public const int MaxChannels = ContractDecider.MaxPerKind;
     public const int MaxSubscriptions = ContractDecider.MaxPerKind;
+    public const int MaxBindings = ContractDecider.MaxPerKind;
 
     public static async Task<IResult> Handle(
         Guid projectId,
@@ -71,13 +72,15 @@ public static class ImportModel
             Operations = doc.Operations ?? [],
             Channels = doc.Channels ?? [],
             Subscriptions = doc.Subscriptions ?? [],
+            // A document written before bindings existed has none.
+            Bindings = doc.Bindings ?? [],
         };
 
         // A document is untrusted: a list can hold `null`, and an entry can leave a list out.
         var hasEmptyEntry = doc.Elements.Any(e => e is null) || doc.Relationships.Any(r => r is null)
             || doc.Messages.Any(m => m is null) || doc.Schemas.Any(s => s is null)
             || doc.Operations.Any(o => o is null) || doc.Channels.Any(c => c is null)
-            || doc.Subscriptions.Any(s => s is null);
+            || doc.Subscriptions.Any(s => s is null) || doc.Bindings.Any(b => b is null);
         if (hasEmptyEntry)
             return Results.BadRequest(new ErrorResponse("invalid_export", "A list in the document holds an empty entry"));
 
@@ -96,6 +99,7 @@ public static class ImportModel
             ("operations", doc.Operations.Count, MaxOperations),
             ("channels", doc.Channels.Count, MaxChannels),
             ("subscriptions", doc.Subscriptions.Count, MaxSubscriptions),
+            ("bindings", doc.Bindings.Count, MaxBindings),
         ];
         foreach (var (name, count, max) in sizes)
         {
@@ -334,8 +338,9 @@ public static class ImportModel
             }
         }
 
-        // Import contracts. Channels come first: a subscription names its channels, and both
-        // operations and subscriptions name elements that are already in the state.
+        // Import contracts. Channels come first: a subscription and a binding name their
+        // channels, and both operations and subscriptions name elements that are already in
+        // the state.
         foreach (var channel in doc.Channels)
         {
             var label = $"Channel {channel.Id}";
@@ -402,6 +407,24 @@ public static class ImportModel
                     deadLetter, SetDeadLetterChannelId: true))
                 : ContractDecider.AddSubscription(state, new AddSubscriptionCommand(
                     id, subscription.ChannelId, subscription.ConsumerId, retry, deadLetter));
+            if (Apply(label, decision.Then(state, after =>
+                    Relabelled(after, id.Value, factStatus, provenance, stale))) is { } failure)
+                return failure;
+        }
+
+        foreach (var binding in doc.Bindings)
+        {
+            var label = $"Binding {binding.Id}";
+            if (!TryReadFacts(binding.FactStatus, binding.Provenance, binding.Stale, out var factStatus, out var provenance, out var stale, out var factError))
+                return Results.BadRequest(new ErrorResponse("invalid_export", $"{label}: {factError}"));
+
+            BindingId id = binding.Id;
+            var decision = state.Bindings.ContainsKey(id)
+                ? ContractDecider.UpdateBinding(state, new UpdateBindingCommand(
+                    id, new ChannelId(binding.SourceChannelId), new ChannelId(binding.TargetChannelId),
+                    binding.RoutingKey, SetRoutingKey: true))
+                : ContractDecider.AddBinding(state, new AddBindingCommand(
+                    id, binding.SourceChannelId, binding.TargetChannelId, binding.RoutingKey));
             if (Apply(label, decision.Then(state, after =>
                     Relabelled(after, id.Value, factStatus, provenance, stale))) is { } failure)
                 return failure;

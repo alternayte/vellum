@@ -32,6 +32,8 @@ public static class ThreeWayMerge
             "channel", changes, conflicts);
         MergeEntities(baseState.Subscriptions, ours.Subscriptions, theirs.Subscriptions,
             "subscription", changes, conflicts);
+        MergeEntities(baseState.Bindings, ours.Bindings, theirs.Bindings,
+            "binding", changes, conflicts);
 
         DetectOrphanedChildren(baseState, ours, theirs, conflicts);
         DetectDanglingRelationships(baseState, ours, theirs, changes, conflicts);
@@ -55,6 +57,8 @@ public static class ThreeWayMerge
             c => c.Key, c => c.Value with { Stale = main.Channels.GetValueOrDefault(c.Key)?.Stale }),
         Subscriptions = state.Subscriptions.ToImmutableDictionary(
             s => s.Key, s => s.Value with { Stale = main.Subscriptions.GetValueOrDefault(s.Key)?.Stale }),
+        Bindings = state.Bindings.ToImmutableDictionary(
+            b => b.Key, b => b.Value with { Stale = main.Bindings.GetValueOrDefault(b.Key)?.Stale }),
     };
 
     private static void MergeEntities<TKey, T>(
@@ -269,6 +273,7 @@ public static class ThreeWayMerge
 
         var operations = ours.Operations.ToDictionary(o => o.Key, o => o.Value);
         var subscriptions = ours.Subscriptions.ToDictionary(s => s.Key, s => s.Value);
+        var bindings = ours.Bindings.ToDictionary(b => b.Key, b => b.Value);
 
         foreach (var change in changes.Where(c => c.EntityType == "operation").ToList())
         {
@@ -312,6 +317,26 @@ public static class ThreeWayMerge
             }
         }
 
+        foreach (var change in changes.Where(c => c.EntityType == "binding").ToList())
+        {
+            if (change.ResolvedValue is not BindingState binding)
+            {
+                bindings.Remove(change.EntityId);
+            }
+            else if (channels.Contains(binding.SourceChannelId) && channels.Contains(binding.TargetChannelId))
+            {
+                bindings[binding.Id] = binding;
+            }
+            else
+            {
+                changes.Remove(change);
+                conflicts.Add(new MergeConflict("binding", change.EntityId, "dangling_binding",
+                    baseState.Bindings.GetValueOrDefault(change.EntityId),
+                    ours.Bindings.GetValueOrDefault(change.EntityId),
+                    theirs.Bindings.GetValueOrDefault(change.EntityId)));
+            }
+        }
+
         foreach (var change in changes.Where(c => c.ChangeKind == "removed").ToList())
         {
             var referenced = change.EntityType switch
@@ -319,7 +344,9 @@ public static class ThreeWayMerge
                 "element" => operations.Values.Any(o => o.OwnerId.Value == change.EntityId)
                     || subscriptions.Values.Any(s => s.ConsumerId.Value == change.EntityId),
                 "channel" => subscriptions.Values.Any(s =>
-                    s.ChannelId.Value == change.EntityId || s.DeadLetterChannelId?.Value == change.EntityId),
+                        s.ChannelId.Value == change.EntityId || s.DeadLetterChannelId?.Value == change.EntityId)
+                    || bindings.Values.Any(b =>
+                        b.SourceChannelId.Value == change.EntityId || b.TargetChannelId.Value == change.EntityId),
                 _ => false,
             };
             if (!referenced)

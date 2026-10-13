@@ -45,6 +45,15 @@ public sealed record SubscriptionDto(
         subscription.FactStatus.ToApiString(), ProvenanceMapper.ToDto(subscription.Provenance), StaleDto.From(subscription.Stale));
 }
 
+public sealed record BindingDto(
+    Guid Id, Guid SourceChannelId, Guid TargetChannelId, string? RoutingKey,
+    string FactStatus, ProvenanceDto? Provenance, StaleDto? Stale = null)
+{
+    public static BindingDto From(BindingState binding) => new(
+        binding.Id, binding.SourceChannelId, binding.TargetChannelId, binding.RoutingKey,
+        binding.FactStatus.ToApiString(), ProvenanceMapper.ToDto(binding.Provenance), StaleDto.From(binding.Stale));
+}
+
 /// <summary>What the contract requests share: reading a fact status label.</summary>
 internal static class ContractRequests
 {

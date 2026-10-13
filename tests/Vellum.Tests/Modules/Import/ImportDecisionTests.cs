@@ -98,7 +98,7 @@ public class ImportDecisionTests(ImportHost import) : IClassFixture<ImportHost>
 
         var scan = await s.ScanAsync();
         var proposals = await s.ProposalsAsync(scan.Id());
-        Assert.Equal(20, proposals.Count);
+        Assert.Equal(21, proposals.Count);
 
         // A match is a proposal to link, never a silent link, and only for the same kind:
         // the hand-made system "Billing" is not the app "Billing".
@@ -136,7 +136,7 @@ public class ImportDecisionTests(ImportHost import) : IClassFixture<ImportHost>
         Assert.Empty(refused["accepted"]!.AsArray());
         Assert.Contains(refused["failed"]!.AsArray(), f =>
             f!["id"]!.GetValue<Guid>() == billing.Id() && f["reason"]!.GetValue<string>().Contains("already used by a channel"));
-        Assert.Equal(20, Counts(await s.GetAsync(scan.Id())).Pending);
+        Assert.Equal(21, Counts(await s.GetAsync(scan.Id())).Pending);
         Assert.Equal(2, (await s.ElementsAsync()).Count);
         Assert.Empty(await s.AllAsync(s.Model("operations")));
         Assert.Equal(HttpStatusCode.NoContent, (await s.Owner.DeleteAsync(s.Model($"channels/{billing.Id("entityId")}"))).StatusCode);
@@ -182,7 +182,7 @@ public class ImportDecisionTests(ImportHost import) : IClassFixture<ImportHost>
         // its subscription are not proposals.
         var next = await s.ScanAsync();
         var keys = (await s.ProposalsAsync(next.Id())).Values("factKey");
-        Assert.Equal(17, keys.Length);
+        Assert.Equal(18, keys.Length);
         Assert.DoesNotContain(worker.Text("factKey"), keys);
         var blocked = (await s.EvidenceAsync(next.Id())).Where(e => e.Text("reason") == "dependency-rejected").ToList();
         Assert.Equal(dependents, blocked.Values("factKey"));

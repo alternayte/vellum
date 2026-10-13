@@ -280,6 +280,12 @@ public static class Explain
                     ["deadLetterChannelFor"] = List(model.Subscriptions.Values.Where(s => s.DeadLetterChannelId == channel.Id).OrderBy(s => s.Id.Value)
                         .Where(s => scope.Shows(s.Id) && scope.Shows(s.ChannelId) && scope.Shows(s.ConsumerId))
                         .Select(s => (JsonNode?)Label(s.Id))),
+                    ["routesTo"] = List(model.Bindings.Values.Where(b => b.SourceChannelId == channel.Id).OrderBy(b => b.Id.Value)
+                        .Where(b => scope.Shows(b.Id) && scope.Shows(b.TargetChannelId))
+                        .Select(b => (JsonNode?)new JsonObject { ["channel"] = Label(b.TargetChannelId), ["routingKey"] = b.RoutingKey })),
+                    ["routedFrom"] = List(model.Bindings.Values.Where(b => b.TargetChannelId == channel.Id).OrderBy(b => b.Id.Value)
+                        .Where(b => scope.Shows(b.Id) && scope.Shows(b.SourceChannelId))
+                        .Select(b => (JsonNode?)new JsonObject { ["channel"] = Label(b.SourceChannelId), ["routingKey"] = b.RoutingKey })),
                 }, null);
 
             case AliasKinds.Subscription when model.Subscriptions.TryGetValue(target.Id!.Value, out var subscription):

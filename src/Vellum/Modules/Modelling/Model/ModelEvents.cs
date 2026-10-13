@@ -18,13 +18,15 @@ public static class ModelEvent
     /// <summary>
     /// The first event of a draft or variant stream: the complete model the branch starts
     /// from, read from <paramref name="SourceStreamId"/> at <paramref name="SourceVersion"/>.
-    /// The contract collections were added later as nullable members, which keeps the event at
-    /// shape version 1: a fork stored without them reads as null and means no contracts.
+    /// The contract collections, and after them the bindings, were added later as nullable
+    /// members, which keeps the event at shape version 1: a fork stored without them reads as
+    /// null and means no contracts.
     /// </summary>
     public sealed record BranchForked(
         Guid SourceStreamId, long SourceVersion,
         ElementState[] Elements, RelationshipState[] Relationships, MessageState[] Messages,
-        OperationState[]? Operations = null, ChannelState[]? Channels = null, SubscriptionState[]? Subscriptions = null);
+        OperationState[]? Operations = null, ChannelState[]? Channels = null, SubscriptionState[]? Subscriptions = null,
+        BindingState[]? Bindings = null);
 
     /// <summary>
     /// The branch <paramref name="BranchId"/> stopped being a live model: its draft was merged
@@ -34,7 +36,7 @@ public static class ModelEvent
     /// </summary>
     public sealed record BranchClosed(Guid BranchId);
 
-    // The Stale member of the six provenance events was added later as a nullable member,
+    // The Stale member of the first six provenance events was added later as a nullable member,
     // which keeps them at shape version 1: an event stored without it reads as null and means
     // "not stale". A provenance event therefore always states the whole truth label of a
     // fact: status, provenance and stale mark. Recording provenance without a mark clears it.
@@ -118,4 +120,14 @@ public static class ModelEvent
 
     public sealed record SubscriptionRemoved(SubscriptionId SubscriptionId);
     public sealed record SubscriptionProvenanceRecorded(SubscriptionId SubscriptionId, FactStatus Status, Provenance? Provenance, StaleMark? Stale = null);
+
+    // Binding events. A change carries the whole binding, so a null routing key is unambiguous.
+    public sealed record BindingAdded(
+        BindingId Id, ChannelId SourceChannelId, ChannelId TargetChannelId, string? RoutingKey);
+
+    public sealed record BindingChanged(
+        BindingId BindingId, ChannelId SourceChannelId, ChannelId TargetChannelId, string? RoutingKey);
+
+    public sealed record BindingRemoved(BindingId BindingId);
+    public sealed record BindingProvenanceRecorded(BindingId BindingId, FactStatus Status, Provenance? Provenance, StaleMark? Stale = null);
 }

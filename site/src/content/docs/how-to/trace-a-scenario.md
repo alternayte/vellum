@@ -16,6 +16,9 @@ A scenario can reference only contracts that exist in the model.
 3. Add a **channel** for each topic, queue or exchange.
 4. Add a **subscription** for each consumer of a channel. Give its retry attempts.
 5. Select a dead-letter channel for the subscription. Without one, a message that fails every attempt is lost.
+6. When a producer publishes to an exchange or a topic and a consumer reads a queue, add a **binding** below the exchange or the topic. Select the channel to route to. Give a routing key only when the broker uses one.
+
+A scenario then publishes to the exchange, as the code does. The trace shows each binding that the message follows and each binding that it does not follow.
 
 Vellum refuses to remove an element, a channel or a schema that a contract uses.
 

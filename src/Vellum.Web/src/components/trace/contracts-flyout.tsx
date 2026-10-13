@@ -2,7 +2,9 @@ import { useState, type FormEvent, type ReactNode } from 'react'
 import { Plus, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { useChannels, useContractMutations, useOperations, useSubscriptions } from '@/hooks/use-contracts'
+import {
+  canRouteFrom, canRouteTo, useBindings, useChannels, useContractMutations, useOperations, useSubscriptions,
+} from '@/hooks/use-contracts'
 
 interface NamedElement {
   id: string
@@ -68,15 +70,19 @@ function Row({ title, detail, onRemove, removeLabel }: { title: string; detail: 
 
 /**
  * Contracts are what a scenario may reference: operations a service offers, channels that
- * carry messages, and the subscriptions that deliver them.
+ * carry messages, the bindings that route a message from an exchange or a topic to another
+ * channel, and the subscriptions that deliver them.
  */
 export function ContractsFlyout({ projectId, branchId, elements }: ContractsFlyoutProps) {
   const { data: operations = [] } = useOperations(projectId, branchId)
   const { data: channels = [] } = useChannels(projectId, branchId)
   const { data: subscriptions = [] } = useSubscriptions(projectId, branchId)
+  const { data: bindings = [] } = useBindings(projectId, branchId)
   const mutations = useContractMutations(projectId, branchId)
 
   const [adding, setAdding] = useState<'operation' | 'channel' | 'subscription' | null>(null)
+  // The exchange or topic that a binding is being added to.
+  const [bindingFrom, setBindingFrom] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const nameOf = (id: string) => elements.find((e) => e.id === id)?.name ?? 'Unknown element'
   const channelName = (id: string) => channels.find((c) => c.id === id)?.name ?? 'Unknown channel'
@@ -100,6 +106,16 @@ export function ContractsFlyout({ projectId, branchId, elements }: ContractsFlyo
     e.preventDefault()
     const form = new FormData(e.currentTarget)
     mutations.addChannel.mutate({ name: String(form.get('name')).trim(), kind: String(form.get('kind')) }, done)
+  }
+
+  const submitBinding = (sourceChannelId: string) => (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    const form = new FormData(e.currentTarget)
+    mutations.addBinding.mutate({
+      sourceChannelId,
+      targetChannelId: String(form.get('targetChannelId')),
+      routingKey: String(form.get('routingKey')).trim() || null,
+    }, { onSuccess: () => { setBindingFrom(null); setError(null) }, onError: (failure: Error) => setError(failure.message) })
   }
 
   const submitSubscription = (e: FormEvent<HTMLFormElement>) => {
@@ -171,7 +187,7 @@ export function ContractsFlyout({ projectId, branchId, elements }: ContractsFlyo
 
         <Section
           title="Channels" count={channels.length} adding={adding === 'channel'} onToggle={() => toggle('channel')}
-          hint="A channel is a topic, queue or exchange. Scenarios publish messages to channels."
+          hint="A channel is a topic, queue or exchange. Scenarios publish messages to channels. A binding routes a message from an exchange or a topic to a queue or an exchange."
         >
           {adding === 'channel' && (
             <form onSubmit={submitChannel} className="mt-2 space-y-2">
@@ -187,13 +203,64 @@ export function ContractsFlyout({ projectId, branchId, elements }: ContractsFlyo
             </form>
           )}
           <ul className="mt-1.5 space-y-0.5">
-            {channels.map((channel) => (
-              <Row
-                key={channel.id} title={channel.name} detail={channel.kind}
-                removeLabel={`Remove channel ${channel.name}`}
-                onRemove={() => mutations.removeChannel.mutate(channel.id, removed)}
-              />
-            ))}
+            {channels.map((channel) => {
+              const routes = bindings.filter((b) => b.sourceChannelId === channel.id)
+              const targets = channels.filter((c) => c.id !== channel.id && canRouteTo(c.kind))
+              return (
+                <li key={channel.id}>
+                  <ul>
+                    <Row
+                      title={channel.name} detail={channel.kind}
+                      removeLabel={`Remove channel ${channel.name}`}
+                      onRemove={() => mutations.removeChannel.mutate(channel.id, removed)}
+                    />
+                  </ul>
+                  {canRouteFrom(channel.kind) && (
+                    <div className="mb-1.5 ml-3 border-l border-border pl-2">
+                      <ul aria-label={`Bindings of ${channel.name}`} className="space-y-0.5">
+                        {routes.map((binding) => (
+                          <Row
+                            key={binding.id} title={`to ${channelName(binding.targetChannelId)}`}
+                            detail={binding.routingKey ? `routing key ${binding.routingKey}` : 'every message'}
+                            removeLabel={`Remove binding from ${channel.name} to ${channelName(binding.targetChannelId)}`}
+                            onRemove={() => mutations.removeBinding.mutate(binding.id, removed)}
+                          />
+                        ))}
+                      </ul>
+                      {bindingFrom === channel.id ? (
+                        <form onSubmit={submitBinding(channel.id)} className="mt-1.5 space-y-2 pb-1">
+                          <Field label="Route to">
+                            <select name="targetChannelId" className={selectClass} required autoFocus>
+                              {targets.map((c) => <option key={c.id} value={c.id}>{c.name} ({c.kind})</option>)}
+                            </select>
+                          </Field>
+                          <Field label="Routing key (optional)">
+                            <Input name="routingKey" placeholder="order.created or order.*" maxLength={200} />
+                          </Field>
+                          <p className="text-[11px] leading-relaxed text-muted-foreground">
+                            Without a key, every message is routed. With a key, a message is routed when its routing key is equal to it or matches it: * is one word, # is zero or more words.
+                          </p>
+                          <div className="flex gap-2">
+                            <Button type="submit" size="sm" className="flex-1" disabled={mutations.addBinding.isPending || targets.length === 0}>Add binding</Button>
+                            <Button type="button" variant="ghost" size="sm" onClick={() => { setBindingFrom(null); setError(null) }}>Cancel</Button>
+                          </div>
+                        </form>
+                      ) : (
+                        <Button
+                          variant="ghost" size="sm" className="h-6 gap-1 px-1.5 text-xs text-muted-foreground"
+                          disabled={targets.length === 0}
+                          title={targets.length === 0 ? 'Add a queue or an exchange to route to.' : undefined}
+                          onClick={() => { setError(null); setBindingFrom(channel.id) }}
+                        >
+                          <Plus className="h-3 w-3" />
+                          {routes.length === 0 ? 'Bind to a channel' : 'Add binding'}
+                        </Button>
+                      )}
+                    </div>
+                  )}
+                </li>
+              )
+            })}
           </ul>
         </Section>
 

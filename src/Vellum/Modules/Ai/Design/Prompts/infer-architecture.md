@@ -14,6 +14,7 @@ Rules:
 - operation: "owner" is the element that serves it. "transport" is http, grpc or command. The name is the route or the method, for example "POST /orders".
 - channel: "channelKind" is topic, queue or exchange.
 - subscription: "channel" and "consumer" (an element).
+- binding: a route between two channels. "from" is the source channel (an exchange or a topic), "to" is the target channel (a queue or an exchange) and "label" is the routing key, or "" for none. A message that is published to the source reaches the subscriptions on the target. A binding without a routing key passes every message; one with a key passes a message that is published with a key that equals it or matches it as an AMQP topic pattern ("*" is one word, "#" is zero or more words). The table lists the existing bindings in "bindings"; a binding has no alias.
 - message: "producer" (an element) and "consumers" (elements).
 - No field is ever null. Set every text field that an item kind does not use to the empty string "". An item that is not a message holds an empty "consumers" list. "target" is "" for an addition.
 - "confidence" is a number from 0 to 1 that says how sure you are that the request needs the item. "rationale" says why in one or two sentences.

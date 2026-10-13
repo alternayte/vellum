@@ -30,6 +30,7 @@ public static class MergedModel
             ("operations", merged.Operations.Count),
             ("channels", merged.Channels.Count),
             ("subscriptions", merged.Subscriptions.Count),
+            ("bindings", merged.Bindings.Count),
         ];
         foreach (var (kind, count) in contracts)
         {
@@ -38,9 +39,15 @@ public static class MergedModel
         }
 
         var dangling = DanglingReferences(merged).Except(DanglingReferences(main)).ToList();
-        return dangling.Count == 0
+        if (dangling.Count > 0)
+            return $"The merge would leave a dangling reference: {string.Join("; ", dangling)}. Change the resolutions or the draft.";
+
+        // Each branch can hold a valid binding while both together do not: one changes the kind
+        // of a channel that the other binds, or both add the same route.
+        var bindings = ContractDecider.BindingProblems(merged).Except(ContractDecider.BindingProblems(main)).ToList();
+        return bindings.Count == 0
             ? null
-            : $"The merge would leave a dangling reference: {string.Join("; ", dangling)}. Change the resolutions or the draft.";
+            : $"The merge would leave a binding that the model does not allow: {string.Join("; ", bindings)}. Change the resolutions or the draft.";
     }
 
     /// <summary>Every reference in <paramref name="state"/> that points at nothing.</summary>
@@ -117,6 +124,11 @@ public static class MergedModel
         ModelEvent.SubscriptionChanged e => Present(state.Subscriptions.ContainsKey(e.SubscriptionId), "subscription", e.SubscriptionId.Value),
         ModelEvent.SubscriptionProvenanceRecorded e => Present(state.Subscriptions.ContainsKey(e.SubscriptionId), "subscription", e.SubscriptionId.Value),
         ModelEvent.SubscriptionRemoved e => Present(state.Subscriptions.ContainsKey(e.SubscriptionId), "subscription", e.SubscriptionId.Value),
+
+        ModelEvent.BindingAdded e => Unused(state, "binding", e.Id.Value),
+        ModelEvent.BindingChanged e => Present(state.Bindings.ContainsKey(e.BindingId), "binding", e.BindingId.Value),
+        ModelEvent.BindingProvenanceRecorded e => Present(state.Bindings.ContainsKey(e.BindingId), "binding", e.BindingId.Value),
+        ModelEvent.BindingRemoved e => Present(state.Bindings.ContainsKey(e.BindingId), "binding", e.BindingId.Value),
 
         // A new kind of merge event must be given its rule here before a merge may write it.
         _ => throw new InvalidOperationException($"A merge has no rule for the event {@event.GetType().Name}."),

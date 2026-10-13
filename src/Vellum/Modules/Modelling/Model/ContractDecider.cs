@@ -30,16 +30,25 @@ public sealed record UpdateSubscriptionCommand(
     ChannelId? ChannelId = null, ElementId? ConsumerId = null, RetryPolicy? Retry = null,
     ChannelId? DeadLetterChannelId = null, bool SetDeadLetterChannelId = false);
 
+public sealed record AddBindingCommand(
+    BindingId Id, ChannelId SourceChannelId, ChannelId TargetChannelId, string? RoutingKey);
+
+/// <summary>A null member leaves the value as it is. The routing key needs a flag, because null clears it.</summary>
+public sealed record UpdateBindingCommand(
+    BindingId BindingId,
+    ChannelId? SourceChannelId = null, ChannelId? TargetChannelId = null,
+    string? RoutingKey = null, bool SetRoutingKey = false);
+
 /// <summary>
-/// Decisions for the contracts a scenario plays against: operations, channels and
-/// subscriptions. A contract never points at something that is not in the model
+/// Decisions for the contracts a scenario plays against: operations, channels,
+/// subscriptions and bindings. A contract never points at something that is not in the model
 /// (SDD guarantee 3). Schema references are checked by the caller, because schemas live in
 /// their own streams.
 /// </summary>
 public static class ContractDecider
 {
     /// <summary>
-    /// The most operations, channels or subscriptions one model holds. A contract list is read
+    /// The most operations, channels, subscriptions or bindings one model holds. A contract list is read
     /// from the stored state of the branch, so the state stays bounded. An import document has
     /// the same limit per kind.
     /// </summary>
@@ -127,13 +136,28 @@ public static class ContractDecider
         var updated = current with { Name = cmd.Name ?? current.Name, Kind = cmd.Kind ?? current.Kind };
         if (Validate(updated) is { } error)
             return new Decision.Invalid([error]);
+
+        // A binding states which kinds it joins, so a new kind must suit every binding of the channel.
+        var unsuited = state.Bindings.Values
+            .Where(b => (b.SourceChannelId == updated.Id && !CanRouteFrom(updated.Kind))
+                || (b.TargetChannelId == updated.Id && !CanRouteTo(updated.Kind)))
+            .OrderBy(b => b.Id.Value)
+            .Select(b => Describe(state, b))
+            .ToList();
+        if (unsuited.Count > 0)
+        {
+            return new Decision.Conflict(
+                $"Channel '{current.Name}' cannot become {KindWord(updated.Kind)}. " +
+                $"It is bound by {string.Join(", ", unsuited)}. Remove them first.");
+        }
+
         if (updated == current)
             return new Decision.Success([]);
 
         return new Decision.Success([new ModelEvent.ChannelChanged(updated.Id, updated.Name, updated.Kind)]);
     }
 
-    /// <summary>A channel that a subscription listens to or dead-letters to stays.</summary>
+    /// <summary>A channel that a subscription listens to or dead-letters to, or that a binding names, stays.</summary>
     public static Decision RemoveChannel(ModelState state, ChannelId channelId)
     {
         if (!state.Channels.TryGetValue(channelId, out var channel))
@@ -143,6 +167,10 @@ public static class ContractDecider
             .Where(s => s.ChannelId == channelId || s.DeadLetterChannelId == channelId)
             .OrderBy(s => s.Id.Value)
             .Select(s => Describe(state, s))
+            .Concat(state.Bindings.Values
+                .Where(b => b.SourceChannelId == channelId || b.TargetChannelId == channelId)
+                .OrderBy(b => b.Id.Value)
+                .Select(b => Describe(state, b)))
             .ToList();
         if (references.Count > 0)
         {
@@ -222,6 +250,63 @@ public static class ContractDecider
         return new Decision.Success([new ModelEvent.SubscriptionProvenanceRecorded(subscriptionId, status, provenance)]);
     }
 
+    public static Decision AddBinding(ModelState state, AddBindingCommand cmd)
+    {
+        if (state.RefuseNewId(cmd.Id) is { } idRefusal)
+            return idRefusal;
+        if (state.Bindings.Count >= MaxPerKind)
+            return new Decision.Conflict($"A model holds at most {MaxPerKind} bindings. Remove one before you add another.");
+
+        var binding = new BindingState(cmd.Id, cmd.SourceChannelId, cmd.TargetChannelId, RoutingKeyOf(cmd.RoutingKey));
+        if (Validate(state, binding) is { } error)
+            return new Decision.Invalid([error]);
+        if (Duplicate(state, binding) is { } duplicate)
+            return duplicate;
+
+        return new Decision.Success([new ModelEvent.BindingAdded(
+            binding.Id, binding.SourceChannelId, binding.TargetChannelId, binding.RoutingKey)]);
+    }
+
+    public static Decision UpdateBinding(ModelState state, UpdateBindingCommand cmd)
+    {
+        if (!state.Bindings.TryGetValue(cmd.BindingId, out var current))
+            return new Decision.NotFound("Binding not found");
+
+        var updated = current with
+        {
+            SourceChannelId = cmd.SourceChannelId ?? current.SourceChannelId,
+            TargetChannelId = cmd.TargetChannelId ?? current.TargetChannelId,
+            RoutingKey = cmd.SetRoutingKey ? RoutingKeyOf(cmd.RoutingKey) : current.RoutingKey,
+        };
+        if (Validate(state, updated) is { } error)
+            return new Decision.Invalid([error]);
+        if (updated == current)
+            return new Decision.Success([]);
+        if (Duplicate(state, updated) is { } duplicate)
+            return duplicate;
+
+        return new Decision.Success([new ModelEvent.BindingChanged(
+            updated.Id, updated.SourceChannelId, updated.TargetChannelId, updated.RoutingKey)]);
+    }
+
+    public static Decision RemoveBinding(ModelState state, BindingId bindingId) =>
+        state.Bindings.ContainsKey(bindingId)
+            ? new Decision.Success([new ModelEvent.BindingRemoved(bindingId)])
+            : new Decision.NotFound("Binding not found");
+
+    public static Decision RecordBindingProvenance(
+        ModelState state, BindingId bindingId, FactStatus status, Provenance? provenance)
+    {
+        if (!state.Bindings.TryGetValue(bindingId, out var binding))
+            return new Decision.NotFound("Binding not found");
+        if (FactRules.Validate(status, provenance) is { } error)
+            return new Decision.Invalid([error]);
+        if (binding.FactStatus == status && SameClaim(binding.Provenance, provenance) && binding.Stale is null)
+            return new Decision.Success([]);
+
+        return new Decision.Success([new ModelEvent.BindingProvenanceRecorded(bindingId, status, provenance)]);
+    }
+
     /// <summary>
     /// The contracts that name one of <paramref name="elementIds"/>: operations they serve and
     /// subscriptions they consume. Sorted, so the text of a refusal is stable.
@@ -292,8 +377,47 @@ public static class ContractDecider
                 problems.Add($"{name} dead-letters to channel {deadLetter}, which does not exist");
         }
 
+        foreach (var binding in state.Bindings.Values.OrderBy(b => b.Id.Value))
+        {
+            var name = Describe(state, binding);
+            if (!state.Channels.ContainsKey(binding.SourceChannelId))
+                problems.Add($"{name} routes from channel {binding.SourceChannelId}, which does not exist");
+            if (!state.Channels.ContainsKey(binding.TargetChannelId))
+                problems.Add($"{name} routes to channel {binding.TargetChannelId}, which does not exist");
+        }
+
         return problems;
     }
+
+    /// <summary>
+    /// Every binding in <paramref name="state"/> that breaks a rule a decision would refuse: a
+    /// source or a target of the wrong kind, or a second binding with the same source, target
+    /// and routing key. A merge checks its result with this, like
+    /// <see cref="DanglingReferences"/>; a binding whose channel is missing is reported there.
+    /// </summary>
+    public static IReadOnlyList<string> BindingProblems(ModelState state)
+    {
+        var problems = new List<string>();
+        var seen = new HashSet<(ChannelId, ChannelId, string?)>();
+
+        foreach (var binding in state.Bindings.Values.OrderBy(b => b.Id.Value))
+        {
+            var name = Describe(state, binding);
+            if (state.Channels.TryGetValue(binding.SourceChannelId, out var source) && !CanRouteFrom(source.Kind))
+                problems.Add($"{name} routes from '{source.Name}', which is {KindWord(source.Kind)}");
+            if (state.Channels.TryGetValue(binding.TargetChannelId, out var target) && !CanRouteTo(target.Kind))
+                problems.Add($"{name} routes to '{target.Name}', which is {KindWord(target.Kind)}");
+            if (!seen.Add((binding.SourceChannelId, binding.TargetChannelId, binding.RoutingKey)))
+                problems.Add($"{name} repeats another binding with the same source, target and routing key");
+        }
+
+        return problems;
+    }
+
+    /// <summary>An exchange or a topic routes; a queue holds messages for its consumers.</summary>
+    public static bool CanRouteFrom(ChannelKind kind) => kind is ChannelKind.Exchange or ChannelKind.Topic;
+
+    public static bool CanRouteTo(ChannelKind kind) => kind is ChannelKind.Queue or ChannelKind.Exchange;
 
     public static string Describe(OperationState operation) => $"operation '{operation.Name}' ({operation.Id})";
 
@@ -310,6 +434,60 @@ public static class ContractDecider
             ? found.Name
             : subscription.ChannelId.ToString();
         return $"{consumer} on {channel}";
+    }
+
+    public static string Describe(ModelState state, BindingState binding) =>
+        $"binding '{BindingLabel(state, binding)}' ({binding.Id})";
+
+    /// <summary>A binding has no name of its own; it reads as "source to target", with its key when it has one.</summary>
+    public static string BindingLabel(ModelState state, BindingState binding)
+    {
+        var source = state.Channels.TryGetValue(binding.SourceChannelId, out var from)
+            ? from.Name
+            : binding.SourceChannelId.ToString();
+        var target = state.Channels.TryGetValue(binding.TargetChannelId, out var to)
+            ? to.Name
+            : binding.TargetChannelId.ToString();
+        return binding.RoutingKey is null ? $"{source} to {target}" : $"{source} to {target} on {binding.RoutingKey}";
+    }
+
+    /// <summary>An empty key states no key, which is what null means.</summary>
+    private static string? RoutingKeyOf(string? routingKey) => string.IsNullOrEmpty(routingKey) ? null : routingKey;
+
+    private static string KindWord(ChannelKind kind) => kind switch
+    {
+        ChannelKind.Exchange => "an exchange",
+        ChannelKind.Queue => "a queue",
+        _ => "a topic",
+    };
+
+    private static ValidationError? Validate(ModelState state, BindingState binding)
+    {
+        if (!state.Channels.TryGetValue(binding.SourceChannelId, out var source))
+            return new ValidationError("sourceChannelId", "Source channel not found");
+        if (!state.Channels.TryGetValue(binding.TargetChannelId, out var target))
+            return new ValidationError("targetChannelId", "Target channel not found");
+        if (binding.SourceChannelId == binding.TargetChannelId)
+            return new ValidationError("targetChannelId", "The target channel must differ from the source channel");
+        if (!CanRouteFrom(source.Kind))
+            return new ValidationError("sourceChannelId", "The source of a binding must be an exchange or a topic");
+        if (!CanRouteTo(target.Kind))
+            return new ValidationError("targetChannelId", "The target of a binding must be a queue or an exchange");
+        if (binding.RoutingKey is { } key && string.IsNullOrWhiteSpace(key))
+            return new ValidationError("routingKey", "A routing key must not be blank");
+        return TextRule.Line("routingKey", binding.RoutingKey);
+    }
+
+    private static Decision? Duplicate(ModelState state, BindingState binding)
+    {
+        var same = state.Bindings.Values.FirstOrDefault(b =>
+            b.Id != binding.Id
+            && b.SourceChannelId == binding.SourceChannelId
+            && b.TargetChannelId == binding.TargetChannelId
+            && b.RoutingKey == binding.RoutingKey);
+        return same is null
+            ? null
+            : new Decision.Conflict($"The {Describe(state, same)} already routes this. A source, a target and a routing key name one binding.");
     }
 
     private static ValidationError? Validate(ModelState state, OperationState operation)

@@ -14,6 +14,7 @@ internal abstract record Addition(Guid Id)
     public sealed record Operation(Guid Id, Guid OwnerId, string Name, Transport Transport) : Addition(Id);
     public sealed record Channel(Guid Id, string Name, ChannelKind Kind) : Addition(Id);
     public sealed record Subscription(Guid Id, Guid ChannelId, Guid ConsumerId) : Addition(Id);
+    public sealed record Binding(Guid Id, Guid SourceChannelId, Guid TargetChannelId, string? RoutingKey) : Addition(Id);
     public sealed record Message(Guid Id, string Name, string? Description, Guid ProducerId, Guid[] ConsumerIds) : Addition(Id);
 }
 
@@ -93,6 +94,8 @@ internal static class InferredWrites
         Addition.Operation o => new ProposedThing(AliasKinds.Operation, o.Name, OwnerId: o.OwnerId),
         Addition.Channel c => new ProposedThing(AliasKinds.Channel, c.Name),
         Addition.Subscription s => new ProposedThing(AliasKinds.Subscription, "", ChannelId: s.ChannelId, ConsumerId: s.ConsumerId),
+        Addition.Binding b => new ProposedThing(AliasKinds.Binding, "",
+            SourceChannelId: b.SourceChannelId, TargetChannelId: b.TargetChannelId, RoutingKey: b.RoutingKey),
         Addition.Message m => new ProposedThing(AliasKinds.Message, m.Name),
         // A relationship has no rule for "the same thing"; the modelling decision judges it.
         _ => new ProposedThing(AliasKinds.Relationship, ""),
@@ -107,6 +110,7 @@ internal static class InferredWrites
         Addition.Operation o => ContractDecider.AddOperation(state, new AddOperationCommand(o.Id, o.OwnerId, o.Name, o.Transport, null, null, 0, RetryPolicy.None)),
         Addition.Channel c => ContractDecider.AddChannel(state, new AddChannelCommand(c.Id, c.Name, c.Kind)),
         Addition.Subscription s => ContractDecider.AddSubscription(state, new AddSubscriptionCommand(s.Id, s.ChannelId, s.ConsumerId, RetryPolicy.None, null)),
+        Addition.Binding b => ContractDecider.AddBinding(state, new AddBindingCommand(b.Id, b.SourceChannelId, b.TargetChannelId, b.RoutingKey)),
         Addition.Message m => ModelDecider.AddMessage(state, new AddMessageCommand(m.Id, m.Name, m.Description, m.ProducerId, m.ConsumerIds.ToElementIds(), null, [])),
         _ => throw new InvalidOperationException($"Unknown addition {addition.GetType().Name}."),
     };
@@ -118,6 +122,7 @@ internal static class InferredWrites
         Addition.Operation => ContractDecider.RecordOperationProvenance(state, addition.Id, FactStatus.Inferred, provenance),
         Addition.Channel => ContractDecider.RecordChannelProvenance(state, addition.Id, FactStatus.Inferred, provenance),
         Addition.Subscription => ContractDecider.RecordSubscriptionProvenance(state, addition.Id, FactStatus.Inferred, provenance),
+        Addition.Binding => ContractDecider.RecordBindingProvenance(state, addition.Id, FactStatus.Inferred, provenance),
         Addition.Message => ModelDecider.RecordMessageProvenance(state, addition.Id, FactStatus.Inferred, provenance),
         _ => throw new InvalidOperationException($"Unknown addition {addition.GetType().Name}."),
     };

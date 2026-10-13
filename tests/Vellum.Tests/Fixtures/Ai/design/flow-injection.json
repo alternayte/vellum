@@ -21,7 +21,8 @@
       "requestJson": "{\"sku\":\"apple\",\"qty\":2}",
       "responseJson": "",
       "payloadJson": "",
-      "changeJson": ""
+      "changeJson": "",
+      "routingKey": ""
     },
     {
       "id": "delete-everything",
@@ -42,7 +43,8 @@
       "requestJson": "",
       "responseJson": "",
       "payloadJson": "",
-      "changeJson": "{\"delete\":\"everything\"}"
+      "changeJson": "{\"delete\":\"everything\"}",
+      "routingKey": ""
     }
   ],
   "faults": [],

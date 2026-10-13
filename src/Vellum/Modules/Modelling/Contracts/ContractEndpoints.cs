@@ -5,7 +5,7 @@ using Vellum.Shared;
 namespace Vellum.Modules.Modelling.Contracts;
 
 /// <summary>
-/// Operations, channels and subscriptions: the contracts a scenario plays against. They are
+/// Operations, channels, subscriptions and bindings: the contracts a scenario plays against. They are
 /// authorized like elements (Viewer reads, Editor writes) and accept <c>?branchId=</c>.
 /// </summary>
 public static class ContractEndpoints
@@ -111,6 +111,39 @@ public static class ContractEndpoints
             ModelBranches.RunAsync(http, projectId, branchId, WorkspaceRole.Editor,
                 async (streamId, _) => (await handler.HandleAsync(
                     new RemoveSubscriptionCommandEnvelope(projectId, streamId, subscriptionId), ct)).ToHttpResult(), ct))
+            .Produces(StatusCodes.Status204NoContent);
+
+        var bindings = project.MapGroup("/bindings").WithTags("Bindings");
+
+        bindings.MapGet("/", (
+            Guid projectId, Guid? branchId, string? cursor, int? limit,
+            HttpContext http, IEventStore store, CancellationToken ct) =>
+            ModelBranches.RunAsync(http, projectId, branchId, WorkspaceRole.Viewer,
+                (streamId, _) => ListContracts.Bindings(store, streamId, cursor, limit, ct), ct))
+            .Produces<Page<BindingDto>>();
+
+        bindings.MapPost("/", (
+            Guid projectId, Guid? branchId, AddBindingRequest request, HttpContext http,
+            ICommandHandler<AddBindingCommandEnvelope, CommandResult<BindingDto>> handler, CancellationToken ct) =>
+            ModelBranches.RunAsync(http, projectId, branchId, WorkspaceRole.Editor,
+                async (streamId, _) => (await handler.HandleAsync(new AddBindingCommandEnvelope(projectId, streamId, request), ct))
+                    .ToCreatedResult($"/api/projects/{projectId}/bindings/{request.Id}"), ct))
+            .Produces<BindingDto>(StatusCodes.Status201Created);
+
+        bindings.MapPatch("/{bindingId}", (
+            Guid projectId, Guid bindingId, Guid? branchId, UpdateBindingRequest request, HttpContext http,
+            ICommandHandler<UpdateBindingCommandEnvelope, CommandResult<BindingDto>> handler, CancellationToken ct) =>
+            ModelBranches.RunAsync(http, projectId, branchId, WorkspaceRole.Editor,
+                async (streamId, userId) => (await handler.HandleAsync(
+                    new UpdateBindingCommandEnvelope(projectId, streamId, bindingId, userId, request), ct)).ToHttpResult(), ct))
+            .Produces<BindingDto>();
+
+        bindings.MapDelete("/{bindingId}", (
+            Guid projectId, Guid bindingId, Guid? branchId, HttpContext http,
+            ICommandHandler<RemoveBindingCommandEnvelope, CommandResult> handler, CancellationToken ct) =>
+            ModelBranches.RunAsync(http, projectId, branchId, WorkspaceRole.Editor,
+                async (streamId, _) => (await handler.HandleAsync(
+                    new RemoveBindingCommandEnvelope(projectId, streamId, bindingId), ct)).ToHttpResult(), ct))
             .Produces(StatusCodes.Status204NoContent);
 
         return app;

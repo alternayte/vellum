@@ -7,7 +7,7 @@ namespace Vellum.Modules.Modelling.Contracts;
 /// <summary>
 /// Contracts have no read-model rows. A list reads them from the branch's stored state, which
 /// <see cref="ContractDecider.MaxPerKind"/> bounds, and returns one page of it. The order is
-/// by name, then by ID; subscriptions have no name and are ordered by ID alone. Text is
+/// by name, then by ID; subscriptions and bindings have no name and are ordered by ID alone. Text is
 /// compared by code point, so the order does not depend on the server's culture.
 /// </summary>
 public static class ListContracts
@@ -31,6 +31,13 @@ public static class ListContracts
     {
         var (state, _) = await store.Load<ModelState>(StreamId.From(streamId), ct);
         return Results.Ok(Page(state.Subscriptions.Values, _ => "", s => s.Id.Value, SubscriptionDto.From, cursor, limit));
+    }
+
+    public static async Task<IResult> Bindings(
+        IEventStore store, Guid streamId, string? cursor, int? limit, CancellationToken ct)
+    {
+        var (state, _) = await store.Load<ModelState>(StreamId.From(streamId), ct);
+        return Results.Ok(Page(state.Bindings.Values, _ => "", b => b.Id.Value, BindingDto.From, cursor, limit));
     }
 
     /// <summary>The same paging as the lists that read rows: 50 items by default, 200 at most.</summary>

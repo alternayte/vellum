@@ -34,14 +34,19 @@ public sealed record CallStep(
     IReadOnlyList<Step> Then, IReadOnlyList<Step> OnError) : Step(Id);
 
 /// <summary>
-/// A message published to a channel. Every subscription on the channel receives it;
+/// A message published to a channel. Every subscription on the channel receives it, and so
+/// does every subscription on a channel that the bindings of the channel route it to;
 /// <paramref name="Handlers"/> gives the steps each consumer runs. The publisher does not
 /// wait for consumers and does not fail when one of them does.
+/// <paramref name="RoutingKey"/> is what a binding with a key is matched against. It is left
+/// out of the document when null, so a scenario written before it existed keeps its text
+/// and its hash.
 /// </summary>
 public sealed record PublishStep(
     string Id, ElementId From, ChannelId Channel, MessageId Message,
     JsonElement? Payload, IReadOnlyDictionary<string, string> Headers,
-    IReadOnlyDictionary<SubscriptionId, IReadOnlyList<Step>> Handlers) : Step(Id);
+    IReadOnlyDictionary<SubscriptionId, IReadOnlyList<Step>> Handlers,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] string? RoutingKey = null) : Step(Id);
 
 public sealed record WriteStep(
     string Id, ElementId By, ElementId Store, string Dataset, JsonElement? Change) : Step(Id);

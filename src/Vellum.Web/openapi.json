@@ -1682,6 +1682,204 @@
         }
       }
     },
+    "/api/projects/{projectId}/bindings": {
+      "get": {
+        "tags": [
+          "Bindings"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "branchId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": [
+                "integer",
+                "string"
+              ],
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PageOfBindingDto"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Bindings"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "branchId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AddBindingRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BindingDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/bindings/{bindingId}": {
+      "patch": {
+        "tags": [
+          "Bindings"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "bindingId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "branchId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateBindingRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BindingDto"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Bindings"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "bindingId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "branchId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          }
+        }
+      }
+    },
     "/api/projects/{projectId}/revisions": {
       "post": {
         "tags": [
@@ -6595,6 +6793,35 @@
           }
         }
       },
+      "AddBindingRequest": {
+        "required": [
+          "id",
+          "sourceChannelId",
+          "targetChannelId",
+          "routingKey"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sourceChannelId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "targetChannelId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "routingKey": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
       "AddChannelRequest": {
         "required": [
           "id",
@@ -7230,6 +7457,15 @@
               "string"
             ],
             "format": "int32"
+          },
+          "bindings": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32",
+            "default": 0
           }
         }
       },
@@ -7598,6 +7834,60 @@
           },
           "target": {
             "type": "string"
+          }
+        }
+      },
+      "BindingDto": {
+        "required": [
+          "id",
+          "sourceChannelId",
+          "targetChannelId",
+          "routingKey",
+          "factStatus",
+          "provenance"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sourceChannelId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "targetChannelId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "routingKey": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "factStatus": {
+            "type": "string"
+          },
+          "provenance": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ProvenanceDto"
+              }
+            ]
+          },
+          "stale": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/StaleDto"
+              }
+            ]
           }
         }
       },
@@ -10326,6 +10616,27 @@
       "OperationId": {
         "type": "string",
         "format": "uuid"
+      },
+      "PageOfBindingDto": {
+        "required": [
+          "items",
+          "cursor"
+        ],
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BindingDto"
+            }
+          },
+          "cursor": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
       },
       "PageOfChannelDto": {
         "required": [
@@ -13389,6 +13700,12 @@
               }
             }
           },
+          "routingKey": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
           "id": {
             "type": "string"
           }
@@ -13690,8 +14007,64 @@
           "DataWritten",
           "DataWriteFailed",
           "BranchTaken",
-          "StepSkipped"
+          "StepSkipped",
+          "Routed",
+          "NotRouted"
         ]
+      },
+      "UpdateBindingRequest": {
+        "required": [
+          "sourceChannelId",
+          "targetChannelId",
+          "routingKey"
+        ],
+        "type": "object",
+        "properties": {
+          "sourceChannelId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "targetChannelId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "routingKey": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "setRoutingKey": {
+            "type": "boolean",
+            "default": false
+          },
+          "factStatus": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "provenance": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ProvenanceInput"
+              }
+            ]
+          },
+          "setProvenance": {
+            "type": "boolean",
+            "default": false
+          }
+        }
       },
       "UpdateChannelRequest": {
         "required": [
@@ -14650,6 +15023,9 @@
     },
     {
       "name": "Subscriptions"
+    },
+    {
+      "name": "Bindings"
     },
     {
       "name": "Revisions"

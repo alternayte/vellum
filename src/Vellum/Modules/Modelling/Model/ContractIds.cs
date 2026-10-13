@@ -29,6 +29,15 @@ public readonly record struct SubscriptionId(Guid Value) : IArchitectureId
     public override string ToString() => Value.ToString();
 }
 
+/// <summary>A route from an exchange or a topic to a queue or an exchange.</summary>
+[JsonConverter(typeof(BindingIdJsonConverter))]
+public readonly record struct BindingId(Guid Value) : IArchitectureId
+{
+    public static implicit operator BindingId(Guid value) => new(value);
+    public static implicit operator Guid(BindingId id) => id.Value;
+    public override string ToString() => Value.ToString();
+}
+
 [JsonConverter(typeof(ScenarioIdJsonConverter))]
 public readonly record struct ScenarioId(Guid Value) : IArchitectureId
 {
@@ -53,6 +62,12 @@ public sealed class SubscriptionIdJsonConverter : GuidIdJsonConverter<Subscripti
 {
     protected override SubscriptionId FromGuid(Guid value) => new(value);
     protected override Guid ToGuid(SubscriptionId value) => value.Value;
+}
+
+public sealed class BindingIdJsonConverter : GuidIdJsonConverter<BindingId>
+{
+    protected override BindingId FromGuid(Guid value) => new(value);
+    protected override Guid ToGuid(BindingId value) => value.Value;
 }
 
 public sealed class ScenarioIdJsonConverter : GuidIdJsonConverter<ScenarioId>

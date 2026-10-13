@@ -51,6 +51,7 @@ internal sealed class ProposalApplier(
             EntityKinds.Operation => Operation(proposal, proposed, current, provenance),
             EntityKinds.Channel => Channel(proposal, proposed, current, provenance),
             EntityKinds.Subscription => Subscription(proposal, proposed, current, provenance),
+            EntityKinds.Binding => Binding(proposal, proposed, current, provenance),
             EntityKinds.Message => Message(proposal, proposed, current, provenance),
             EntityKinds.Schema => Schema(proposal, proposed, current),
             _ => $"Entity kind '{proposal.EntityKind}' is not one the importer writes.",
@@ -157,6 +158,27 @@ internal sealed class ProposalApplier(
                 id, new ChannelId(channel), new ElementId(consumer), null, deadLetter, SetDeadLetterChannelId: true));
         return Run(p, decision.Then(State, after =>
             ContractDecider.RecordSubscriptionProvenance(after, id, FactStatus.ObservedInSource, provenance)));
+    }
+
+    private string? Binding(ProposalEntity p, JsonObject? proposed, JsonObject? current, Provenance? provenance)
+    {
+        BindingId id = p.EntityId;
+        if (p.Action != ProposalAction.Add
+            && (!State.Bindings.TryGetValue(id, out var binding) || Differs(ModelIndex.Of(State, binding), current)))
+            return ChangedSinceScan;
+        if (p.Action == ProposalAction.Remove)
+            return Run(p, ContractDecider.RemoveBinding(State, id));
+
+        if (Id(proposed, Field.SourceChannelId) is not { } source || Id(proposed, Field.TargetChannelId) is not { } target)
+            return "The proposal names no source channel or no target channel.";
+        var routingKey = Text(proposed, Field.RoutingKey);
+
+        var decision = p.Action == ProposalAction.Add
+            ? ContractDecider.AddBinding(State, new AddBindingCommand(id, source, target, routingKey))
+            : ContractDecider.UpdateBinding(State, new UpdateBindingCommand(
+                id, new ChannelId(source), new ChannelId(target), routingKey, SetRoutingKey: true));
+        return Run(p, decision.Then(State, after =>
+            ContractDecider.RecordBindingProvenance(after, id, FactStatus.ObservedInSource, provenance)));
     }
 
     private string? Message(ProposalEntity p, JsonObject? proposed, JsonObject? current, Provenance? provenance)

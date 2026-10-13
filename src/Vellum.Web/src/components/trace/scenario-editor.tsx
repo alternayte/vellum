@@ -3,7 +3,9 @@ import { Copy } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
+import { useBindings, useChannels, useSubscriptions } from '@/hooks/use-contracts'
 import { useDeleteScenario, useSaveScenario, type ScenarioDocument } from '@/hooks/use-scenarios'
+import { reachableChannels } from '@/lib/trace'
 
 export interface ScenarioReference {
   group: 'Elements' | 'Operations' | 'Channels' | 'Subscriptions' | 'Messages'
@@ -13,6 +15,7 @@ export interface ScenarioReference {
 
 interface ScenarioEditorProps {
   projectId: string
+  branchId?: string | null
   scenario: ScenarioDocument
   isNew: boolean
   references: ScenarioReference[]
@@ -22,7 +25,10 @@ interface ScenarioEditorProps {
 
 const STEP_HELP = `Step types
   call     { "type":"call", "id", "from": element, "operation": operation, "request", "response", "then": [], "onError": [] }
-  publish  { "type":"publish", "id", "from": element, "channel", "message", "payload", "headers": {}, "handlers": { subscription: [] } }
+  publish  { "type":"publish", "id", "from": element, "channel", "message", "payload", "headers": {}, "handlers": { subscription: [] },
+             "routingKey": "order.created" (optional) }
+           A handler names a subscription on the channel or on a channel that its bindings route to.
+           A binding with a routing key is followed when the step's key is equal to it or matches it (* one word, # zero or more).
   write    { "type":"write", "id", "by": element, "store": element, "dataset": "orders", "change" }
   parallel { "type":"parallel", "id", "branches": [[], []] }
   branch   { "type":"branch", "id", "whenStep": step id, "is": "Succeeded" | "Failed" | "Skipped", "then": [], "else": [] }
@@ -34,7 +40,10 @@ Assertions  { "type":"outcome", "id", "step", "expected": "Succeeded" }
  * Edits a scenario as its stored document. Contract IDs are copied from the reference list;
  * the server checks every reference and payload when the scenario plays.
  */
-export function ScenarioEditor({ projectId, scenario, isNew, references, onClose, onPlay }: ScenarioEditorProps) {
+export function ScenarioEditor({ projectId, branchId, scenario, isNew, references, onClose, onPlay }: ScenarioEditorProps) {
+  const { data: channels = [] } = useChannels(projectId, branchId)
+  const { data: subscriptions = [] } = useSubscriptions(projectId, branchId)
+  const { data: bindings = [] } = useBindings(projectId, branchId)
   const save = useSaveScenario(projectId)
   const remove = useDeleteScenario(projectId)
   const [name, setName] = useState(scenario.name)
@@ -43,11 +52,33 @@ export function ScenarioEditor({ projectId, scenario, isNew, references, onClose
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState<string | null>(null)
 
+  // Subscriptions are listed by the channel a step publishes to, so they are not a group of their own.
   const groups = useMemo(() => {
     const byGroup = new Map<string, ScenarioReference[]>()
-    for (const reference of references) byGroup.set(reference.group, [...(byGroup.get(reference.group) ?? []), reference])
+    for (const reference of references) {
+      if (reference.group !== 'Subscriptions') byGroup.set(reference.group, [...(byGroup.get(reference.group) ?? []), reference])
+    }
     return [...byGroup.entries()]
   }, [references])
+
+  // For each channel a step can publish to: the subscriptions a handler may name, by the
+  // channel they listen to. The published channel comes first, then the channels its bindings reach.
+  const handlerChoices = useMemo(() => {
+    const labelOf = new Map(references.map((r) => [r.id, r.label]))
+    const channelName = new Map(channels.map((c) => [c.id, c.name]))
+    return channels
+      .map((channel) => ({
+        channel,
+        reached: reachableChannels(channel.id, bindings)
+          .map((id) => ({
+            id,
+            name: channelName.get(id) ?? 'Unknown channel',
+            subscriptions: subscriptions.filter((s) => s.channelId === id).map((s) => ({ id: s.id, label: labelOf.get(s.id) ?? s.id })),
+          }))
+          .filter((group) => group.subscriptions.length > 0),
+      }))
+      .filter((choice) => choice.reached.length > 0)
+  }, [references, channels, subscriptions, bindings])
 
   const submit = (thenPlay: boolean) => {
     let body: { steps?: unknown; faults?: unknown; assertions?: unknown }
@@ -118,7 +149,7 @@ export function ScenarioEditor({ projectId, scenario, isNew, references, onClose
           </div>
 
           <div className="min-h-0 overflow-y-auto rounded-lg border border-border p-2 md:max-h-[26rem]">
-            {groups.length === 0 && <p className="text-xs text-muted-foreground">The model has nothing to reference yet. Add elements and contracts first.</p>}
+            {groups.length === 0 && handlerChoices.length === 0 && <p className="text-xs text-muted-foreground">The model has nothing to reference yet. Add elements and contracts first.</p>}
             {groups.map(([group, items]) => (
               <div key={group} className="mb-2 last:mb-0">
                 <p className="px-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">{group}</p>
@@ -141,6 +172,38 @@ export function ScenarioEditor({ projectId, scenario, isNew, references, onClose
                 </ul>
               </div>
             ))}
+            {handlerChoices.length > 0 && (
+              <div className="mb-2 last:mb-0">
+                <p className="px-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Handlers</p>
+                {handlerChoices.map(({ channel, reached }) => (
+                  <div key={channel.id} className="mt-1">
+                    <p className="px-1 text-[11px] text-muted-foreground">A publish to <span className="text-foreground">{channel.name}</span> reaches</p>
+                    {reached.map((group) => (
+                      <div key={group.id} className="ml-1 border-l border-border pl-1.5">
+                        {group.id !== channel.id && <p className="px-1 pt-0.5 font-mono text-[10px] text-muted-foreground">through {group.name}</p>}
+                        <ul>
+                          {group.subscriptions.map((item) => (
+                            <li key={item.id}>
+                              <button
+                                type="button"
+                                onClick={() => copy(item.id)}
+                                title={item.id}
+                                className="flex w-full items-center gap-1.5 rounded px-1 py-1 text-left text-xs text-foreground hover:bg-muted focus-visible:outline-2 focus-visible:outline-primary"
+                              >
+                                <span className="min-w-0 flex-1 truncate">{item.label}</span>
+                                <span className="shrink-0 font-mono text-[10px] text-muted-foreground" aria-live="polite">
+                                  {copied === item.id ? 'copied' : <Copy className="h-3 w-3" aria-label="Copy ID" />}
+                                </span>
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ))}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
 

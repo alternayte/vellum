@@ -100,7 +100,9 @@ internal static partial class FlowAssembler
                 string.IsNullOrEmpty(step.Dataset) ? null : DesignText.Line(step.Dataset),
                 Token(step.WhenStep), Token(step.Is),
                 Payload(step.RequestJson, "request"), Payload(step.ResponseJson, "response"),
-                Payload(step.PayloadJson, "payload"), Payload(step.ChangeJson, "change")));
+                Payload(step.PayloadJson, "payload"), Payload(step.ChangeJson, "change"),
+                // The empty string is the model's word for "no routing key".
+                string.IsNullOrEmpty(step.RoutingKey) ? null : DesignText.Line(step.RoutingKey) is { Length: > 0 } key ? key : null));
         }
 
         var name = DesignText.Line(raw.Name);
@@ -420,7 +422,7 @@ internal static partial class FlowAssembler
                     foreach (var group in node.Children.Where(c => c.Step.Slot == "handler").GroupBy(c => c.Ids["subscription"]).OrderBy(g => g.Min(c => c.Index)))
                         handlers[group.Key] = Steps(group);
                     return new PublishStep(step.Id, node.Ids["from"], node.Ids["channel"], node.Ids["message"],
-                        Payload(node, "payload", step.PayloadJson), new Dictionary<string, string>(), handlers);
+                        Payload(node, "payload", step.PayloadJson), new Dictionary<string, string>(), handlers, step.RoutingKey);
                 case "write":
                     return new WriteStep(step.Id, node.Ids["by"], node.Ids["store"], step.Dataset ?? "", Payload(node, "change", step.ChangeJson));
                 case "parallel":
@@ -605,9 +607,10 @@ internal static partial class FlowAssembler
                 FlowStepOutput Row(
                     string type, string? from = null, string? operation = null, string? channel = null, string? message = null,
                     string? by = null, string? store = null, string? dataset = null, string? whenStep = null, string? @is = null,
-                    string? request = null, string? response = null, string? payload = null, string? change = null) =>
+                    string? request = null, string? response = null, string? payload = null, string? change = null,
+                    string? routingKey = null) =>
                     new(step.Id, parent, slot, slotKey, order, type, from, operation, channel, message, by, store, dataset, whenStep, @is,
-                        request, response, payload, change);
+                        request, response, payload, change, routingKey);
 
                 switch (step)
                 {
@@ -617,7 +620,8 @@ internal static partial class FlowAssembler
                         Visit(call.OnError, step.Id, "onError", null, depth + 1);
                         break;
                     case PublishStep publish:
-                        flat.Add(Row("publish", from: name(publish.From), channel: name(publish.Channel), message: name(publish.Message), payload: Text(publish.Payload)));
+                        flat.Add(Row("publish", from: name(publish.From), channel: name(publish.Channel), message: name(publish.Message), payload: Text(publish.Payload),
+                            routingKey: publish.RoutingKey));
                         foreach (var (subscription, handler) in publish.Handlers ?? new Dictionary<SubscriptionId, IReadOnlyList<Step>>())
                             Visit(handler, step.Id, "handler", name(subscription), depth + 1);
                         break;

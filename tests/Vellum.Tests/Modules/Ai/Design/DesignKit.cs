@@ -121,7 +121,7 @@ internal static class DesignKit
             id = $"s{i}", parentStepId = "", slot = "root", slotKey = "", order = i, type = "write",
             from = "", operation = "", channel = "", message = "",
             by = "E4", store = "E5", dataset = "d", whenStep = "", @is = "",
-            requestJson = "", responseJson = "", payloadJson = "", changeJson = "",
+            requestJson = "", responseJson = "", payloadJson = "", changeJson = "", routingKey = "",
         }),
         faults = Array.Empty<object>(),
         assertions = Array.Empty<object>(),

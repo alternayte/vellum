@@ -13,7 +13,9 @@ public sealed record ImpactEntityDto(string EntityKind, Guid Id, string Name);
 
 /// <summary>
 /// What accepting a proposal would break. For a <c>remove</c>: the stored scenarios that
-/// name the entity, and the entities of the model that point at it. For a <c>change</c> that
+/// name the entity, and the entities of the model that point at it. For the <c>remove</c> of
+/// a binding, also the publish steps with a handler for a subscription that the message no
+/// longer reaches without the binding. For a <c>change</c> that
 /// alters the schema of a message or the route of an operation: the stored scenarios that use it.
 /// </summary>
 public sealed record ProposalImpactDto(IReadOnlyList<ImpactScenarioDto> Scenarios, IReadOnlyList<ImpactEntityDto> Entities)
@@ -65,7 +67,11 @@ internal sealed class ProposalImpact
     public ProposalImpactDto Of(string action, string entityKind, Guid entityId, IReadOnlyCollection<string> changedFields)
     {
         if (action == ProposalAction.Remove)
-            return new ProposalImpactDto(Scenarios([entityId]), Dependents(entityKind, entityId));
+        {
+            return new ProposalImpactDto(
+                Scenarios([entityId], entityKind == EntityKinds.Binding ? new BindingId(entityId) : null),
+                Dependents(entityKind, entityId));
+        }
 
         if (action is not (ProposalAction.Change or ProposalAction.Conflict))
             return ProposalImpactDto.None;
@@ -82,13 +88,15 @@ internal sealed class ProposalImpact
         return targets.Count == 0 ? ProposalImpactDto.None : new ProposalImpactDto(Scenarios(targets), []);
     }
 
-    private List<ImpactScenarioDto> Scenarios(IReadOnlyCollection<Guid> targets)
+    private List<ImpactScenarioDto> Scenarios(IReadOnlyCollection<Guid> targets, BindingId? removedBinding = null)
     {
         var found = new List<ImpactScenarioDto>();
         foreach (var (id, name, document) in _scenarios)
         {
             var steps = new List<string>();
             Collect(document.Steps, targets, steps);
+            if (removedBinding is { } binding)
+                CollectCutOff(document.Steps, binding, steps);
             steps.AddRange(document.Assertions.OfType<EventCountAssertion>()
                 .Where(a => a.Target is { } target && targets.Contains(target)).Select(a => "assertion:" + a.Id));
             if (document.Faults.Any(f => targets.Contains(f.Target)))
@@ -134,6 +142,56 @@ internal sealed class ProposalImpact
         }
     }
 
+    /// <summary>The publish steps with a handler for a subscription that is reachable only through <paramref name="removed"/>.</summary>
+    private void CollectCutOff(IEnumerable<Step> steps, BindingId removed, List<string> found)
+    {
+        foreach (var step in steps)
+        {
+            switch (step)
+            {
+                case CallStep call:
+                    CollectCutOff(call.Then, removed, found);
+                    CollectCutOff(call.OnError, removed, found);
+                    break;
+                case PublishStep publish:
+                    if (publish.Handlers.Count > 0)
+                    {
+                        var reached = Reachable(publish.Channel, removed);
+                        if (publish.Handlers.Keys.Any(k =>
+                                _model.Subscriptions.TryGetValue(k, out var subscription) && !reached.Contains(subscription.ChannelId)))
+                            found.Add(publish.Id);
+                    }
+                    foreach (var handler in publish.Handlers.Values)
+                        CollectCutOff(handler, removed, found);
+                    break;
+                case ParallelStep parallel:
+                    foreach (var branch in parallel.Branches)
+                        CollectCutOff(branch, removed, found);
+                    break;
+                case BranchStep branch:
+                    CollectCutOff(branch.Then, removed, found);
+                    CollectCutOff(branch.Else, removed, found);
+                    break;
+            }
+        }
+    }
+
+    /// <summary>The channels a message published to <paramref name="channel"/> reaches when <paramref name="without"/> is gone.</summary>
+    private HashSet<ChannelId> Reachable(ChannelId channel, BindingId without)
+    {
+        var reached = new HashSet<ChannelId> { channel };
+        var open = new Queue<ChannelId>([channel]);
+        while (open.TryDequeue(out var current))
+        {
+            foreach (var binding in _model.Bindings.Values)
+            {
+                if (binding.Id != without && binding.SourceChannelId == current && reached.Add(binding.TargetChannelId))
+                    open.Enqueue(binding.TargetChannelId);
+            }
+        }
+        return reached;
+    }
+
     /// <summary>The entities of the model that point at the entity.</summary>
     private List<ImpactEntityDto> Dependents(string entityKind, Guid id)
     {
@@ -153,6 +211,8 @@ internal sealed class ProposalImpact
             case EntityKinds.Channel:
                 found.AddRange(_model.Subscriptions.Values.Where(s => s.ChannelId.Value == id || s.DeadLetterChannelId?.Value == id)
                     .Select(s => new ImpactEntityDto(EntityKinds.Subscription, s.Id, ContractDecider.SubscriptionLabel(_model, s))));
+                found.AddRange(_model.Bindings.Values.Where(b => b.SourceChannelId.Value == id || b.TargetChannelId.Value == id)
+                    .Select(b => new ImpactEntityDto(EntityKinds.Binding, b.Id, ContractDecider.BindingLabel(_model, b))));
                 break;
             case EntityKinds.Schema:
                 found.AddRange(_model.Messages.Values.Where(m => m.SchemaId?.Value == id).Select(m => new ImpactEntityDto(EntityKinds.Message, m.Id, m.Name)));

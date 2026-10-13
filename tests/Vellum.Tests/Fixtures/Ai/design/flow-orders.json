@@ -21,7 +21,8 @@
       "requestJson": "{\"sku\":\"apple\",\"qty\":2}",
       "responseJson": "{\"orderId\":\"o-1\"}",
       "payloadJson": "",
-      "changeJson": ""
+      "changeJson": "",
+      "routingKey": ""
     },
     {
       "id": "save",
@@ -42,7 +43,8 @@
       "requestJson": "",
       "responseJson": "",
       "payloadJson": "",
-      "changeJson": "{\"orderId\":\"o-1\",\"status\":\"accepted\"}"
+      "changeJson": "{\"orderId\":\"o-1\",\"status\":\"accepted\"}",
+      "routingKey": ""
     },
     {
       "id": "publish",
@@ -63,7 +65,8 @@
       "requestJson": "",
       "responseJson": "",
       "payloadJson": "{\"orderId\":\"o-1\"}",
-      "changeJson": ""
+      "changeJson": "",
+      "routingKey": ""
     },
     {
       "id": "reserve",
@@ -84,7 +87,8 @@
       "requestJson": "",
       "responseJson": "",
       "payloadJson": "",
-      "changeJson": "{\"sku\":\"apple\",\"reserved\":2}"
+      "changeJson": "{\"sku\":\"apple\",\"reserved\":2}",
+      "routingKey": ""
     },
     {
       "id": "invoice",
@@ -105,7 +109,8 @@
       "requestJson": "",
       "responseJson": "",
       "payloadJson": "",
-      "changeJson": "{\"orderId\":\"o-1\"}"
+      "changeJson": "{\"orderId\":\"o-1\"}",
+      "routingKey": ""
     }
   ],
   "faults": [

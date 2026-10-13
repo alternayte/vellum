@@ -14,6 +14,8 @@ export type TraceEventKind =
   | 'DataWriteFailed'
   | 'BranchTaken'
   | 'StepSkipped'
+  | 'Routed'
+  | 'NotRouted'
 
 export interface TraceEvent {
   sequence: number
@@ -49,7 +51,7 @@ export interface TraceRun {
   events: TraceEvent[]
   outcomes: Record<string, 'Succeeded' | 'Failed' | 'Skipped'>
   assertions: TraceAssertionResult[]
-  /** Display names for every element, operation, channel and subscription ID in the run. */
+  /** Display names for every element, operation, channel, subscription and binding ID in the run. */
   labels: Record<string, string>
 }
 
@@ -75,6 +77,8 @@ const FAMILY: Record<TraceEventKind, TraceFamily> = {
   DataWriteFailed: 'failure',
   BranchTaken: 'control',
   StepSkipped: 'control',
+  Routed: 'event',
+  NotRouted: 'control',
 }
 
 export function traceFamily(kind: TraceEventKind): TraceFamily {
@@ -87,6 +91,34 @@ export function traceColor(kind: TraceEventKind): string {
 
 export function formatVirtualTime(ms: number): string {
   return ms < 1000 ? `${ms} ms` : `${(ms / 1000).toFixed(ms % 1000 === 0 ? 0 : 2)} s`
+}
+
+/**
+ * Why a binding was not followed, from the detail of a `NotRouted` event. The engine writes
+ * the binding's ID first; the sentence already names both channels, so the ID is left out.
+ */
+export function notRoutedReason(detail: string | null): string {
+  const reason = (detail ?? '').replace(/^Binding [0-9a-fA-F-]{36}:? /, '').replace(/\.$/, '')
+  if (!reason) return 'the binding does not match'
+  return reason.startsWith('needs ') ? `the binding ${reason}` : reason
+}
+
+/**
+ * The channels a message published to `channelId` can reach through bindings, the channel
+ * itself first. Routing keys are not read: the server accepts a handler for every
+ * subscription on these channels, and a trace says which bindings a key closes.
+ */
+export function reachableChannels(
+  channelId: string,
+  bindings: { sourceChannelId: string; targetChannelId: string }[],
+): string[] {
+  const reached = [channelId]
+  for (let i = 0; i < reached.length; i++) {
+    for (const binding of bindings) {
+      if (binding.sourceChannelId === reached[i] && !reached.includes(binding.targetChannelId)) reached.push(binding.targetChannelId)
+    }
+  }
+  return reached
 }
 
 export function describeEvent(event: TraceEvent, labels: Record<string, string>): string {
@@ -128,6 +160,10 @@ export function describeEvent(event: TraceEvent, labels: Record<string, string>)
       return `Step ${event.stepId} takes the ${event.detail} path`
     case 'StepSkipped':
       return `Step ${event.stepId} is skipped`
+    case 'Routed':
+      return `${from} routes ${message} to ${to}`
+    case 'NotRouted':
+      return `${from} does not route ${message} to ${to}: ${notRoutedReason(event.detail)}`
   }
 }
 

@@ -89,6 +89,7 @@ public static class ScenarioShape
                     ?? Sequence(call.OnError, $"{at}.onError", depth + 1, ref count),
                 PublishStep publish =>
                     Payload(publish.Payload, $"{at}.payload")
+                    ?? TextRule.Line($"{at}.routingKey", publish.RoutingKey)
                     ?? Headers(publish.Headers, $"{at}.headers")
                     ?? Handlers(publish, at, depth, ref count),
                 WriteStep write =>

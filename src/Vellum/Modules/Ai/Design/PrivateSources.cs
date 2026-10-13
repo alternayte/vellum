@@ -58,6 +58,7 @@ public sealed class PrivateSources(ImportDbContext import, SettingsResolver sett
         : model.Operations.TryGetValue(id, out var operation) ? operation.FactStatus
         : model.Channels.TryGetValue(id, out var channel) ? channel.FactStatus
         : model.Subscriptions.TryGetValue(id, out var subscription) ? subscription.FactStatus
+        : model.Bindings.TryGetValue(id, out var binding) ? binding.FactStatus
         : model.Messages.TryGetValue(id, out var message) ? message.FactStatus
         : null;
 }

@@ -40,7 +40,7 @@ public class ReviewFixTests(SharedOutboundHost shared) : IClassFixture<SharedOut
         string request = "", string response = "", string payload = "", string change = "") => new
         {
             id, parentStepId = parent, slot, slotKey, order, type, from, operation, channel, message, by, store, dataset, whenStep, @is,
-            requestJson = request, responseJson = response, payloadJson = payload, changeJson = change,
+            requestJson = request, responseJson = response, payloadJson = payload, changeJson = change, routingKey = "",
         };
 
     private static object Missing(

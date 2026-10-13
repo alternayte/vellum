@@ -189,8 +189,8 @@ internal static class DesignText
 /// </summary>
 internal static class DesignPrompts
 {
-    public const string ProposeFlowVersion = "design/propose-flow/2";
-    public const string InferArchitectureVersion = "design/infer-architecture/2";
+    public const string ProposeFlowVersion = "design/propose-flow/3";
+    public const string InferArchitectureVersion = "design/infer-architecture/3";
     public const string ExplainVersion = "design/explain/2";
 
     /// <summary>

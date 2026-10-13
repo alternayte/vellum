@@ -50,7 +50,7 @@ public class OrdersImportTests(ImportHost import) : IClassFixture<ImportHost>
         var evidence = await s.EvidenceAsync(scan.Id());
         Assert.Equal(facts.MappedKeys, proposals.Values("factKey"));
         Assert.All(proposals, p => Assert.Equal(("add", "pending", false), (p.Text("action"), p.Text("status"), p["partial"]!.GetValue<bool>())));
-        Assert.Equal(20, proposals.Count);
+        Assert.Equal(21, proposals.Count);
         Assert.Equal(facts.EvidenceOnly, evidence.Count);
         // Folded: the publication that gives the message its producer, and the AsyncAPI
         // declarations of the message and of the exchange that the code also declares.
@@ -66,7 +66,7 @@ public class OrdersImportTests(ImportHost import) : IClassFixture<ImportHost>
         Assert.False(string.IsNullOrEmpty(outbox.Text("reason")));
         Assert.NotEmpty(outbox["evidence"]!.AsArray());
         Assert.Single(await s.EvidenceAsync(scan.Id(), "factKey=" + Uri.EscapeDataString(outbox.Text("factKey")!)));
-        Assert.Equal(20, scan["proposalCounts"]!["pending"]!.GetValue<int>());
+        Assert.Equal(21, scan["proposalCounts"]!["pending"]!.GetValue<int>());
 
         // The hero items, with their exact lines.
         var postOrders = proposals.Proposal("operation", "POST /orders");
@@ -99,7 +99,7 @@ public class OrdersImportTests(ImportHost import) : IClassFixture<ImportHost>
         // 4. One decision for everything, named in reverse order: the order is resolved for the caller.
         var decision = await s.DecideAsync(scan.Id(), accept: proposals.Select(p => p.Id()).Reverse());
         Assert.Empty(decision["failed"]!.AsArray());
-        Assert.Equal(20, decision["accepted"]!.AsArray().Count);
+        Assert.Equal(21, decision["accepted"]!.AsArray().Count);
         var me = (await s.Owner.GetFromJsonAsync<JsonObject>("/api/auth/me"))!.Text("id");
 
         var elements = await s.ElementsAsync();
@@ -156,7 +156,7 @@ public class OrdersImportTests(ImportHost import) : IClassFixture<ImportHost>
         Assert.Empty(await s.ProposalsAsync(again.Id()));
         Assert.Equal(fetched, s.GitHub.BlobRequests.Count);
         Assert.Equal(before, await s.Owner.GetStringAsync(s.Model("elements")));
-        Assert.Equal(20, (await s.GetAsync(scan.Id()))["proposalCounts"]!["accepted"]!.GetValue<int>());
+        Assert.Equal(21, (await s.GetAsync(scan.Id()))["proposalCounts"]!["accepted"]!.GetValue<int>());
 
         // 7. A commit that removes the outbox and renames a field of the event.
         s.GitHub.Commit(ImportScenario.Commit2, FixtureGitHub.Load("orders-outbox-removed"));

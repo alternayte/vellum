@@ -74,6 +74,9 @@ public static class StaleDecider
         if (state.Subscriptions.TryGetValue(id, out var subscription))
             return new(subscription.FactStatus, subscription.Provenance, subscription.Stale,
                 (status, provenance, mark) => new ModelEvent.SubscriptionProvenanceRecorded(subscription.Id, status, provenance, mark));
+        if (state.Bindings.TryGetValue(id, out var binding))
+            return new(binding.FactStatus, binding.Provenance, binding.Stale,
+                (status, provenance, mark) => new ModelEvent.BindingProvenanceRecorded(binding.Id, status, provenance, mark));
         return null;
     }
 }
