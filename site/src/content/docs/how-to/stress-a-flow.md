@@ -93,7 +93,7 @@ A stored run names the version of the model and of the scenario that it used. Wh
 
 A stored run also names the version of the profile. When you save the profile again, the result of an older run says that the profile is at a newer version.
 
-A stored run names its engine version too. The current engine version is 2. A run of engine version 1 keeps the numbers and the bottleneck rule of that version, and the result says so. Run the profile again to apply the current rules.
+A stored run names its engine version too. [Stress model](/reference/stress-model/) gives the current engine version. A run of an earlier engine version keeps the numbers and the bottleneck rule of that version, and the result says so. Run the profile again to apply the current rules.
 
 ## When a run is refused
 
