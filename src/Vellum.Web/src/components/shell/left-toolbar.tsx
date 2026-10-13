@@ -54,11 +54,14 @@ export function LeftToolbar({ children }: LeftToolbarProps) {
 
       {activeFlyout && (
         <>
-          <div
-            data-testid="flyout-backdrop"
-            className="fixed inset-0 z-10"
-            onClick={closeFlyout}
-          />
+          {/* The assistant explains what is selected on the canvas or in the trace, so it stays open while those are used. */}
+          {activeFlyout !== 'assistant' && (
+            <div
+              data-testid="flyout-backdrop"
+              className="fixed inset-0 z-10"
+              onClick={closeFlyout}
+            />
+          )}
           <div className="absolute left-12 top-0 bottom-0 z-20 w-[280px] border-r border-border bg-card shadow-lg">
             {children}
           </div>
