@@ -18,7 +18,7 @@ Vellum has two settings documents. Both are JSON.
 | Workspace override | The value that one workspace sets. It is in `overrides` of the workspace settings. |
 | Instance-only policy | A value in `policy` of the instance settings. A workspace cannot set it. |
 
-Every key of the settings document can be an instance default and a workspace override. The four policy keys are instance-only.
+Every key of the settings document can be an instance default and a workspace override. The five policy keys are instance-only.
 
 The effective document of a workspace is the instance defaults with the workspace overrides laid over them. The merge rules are:
 
@@ -96,11 +96,12 @@ A save does not resolve the host name of `cost.azureRetailPricesBaseUrl`. The pr
 
 | JSON path | Type | Default | Allowed | UI | Effect |
 |---|---|---|---|---|---|
-| `simulation.seed` | integer | `1` | 0 to 2147483647 | **Simulation** → **Seed** | Stored and validated only. No backend code reads it. |
-| `simulation.durationSeconds` | integer | `300` | 1 to 86400 | **Simulation** → **Duration** | Stored and validated only. No backend code reads it. |
-| `simulation.arrivalRatePerSecond` | number | `10` | More than 0, and 100000 at most | **Simulation** → **Arrival rate** | Stored and validated only. No backend code reads it. |
+| `simulation.seed` | integer | `1` | 0 to 2147483647 | **Simulation** → **Seed** | The seed that a new stress profile starts with. |
+| `simulation.durationSeconds` | integer | `300` | 1 to 3600 | **Simulation** → **Duration** | The duration that a new stress profile starts with, in seconds of model time. |
+| `simulation.warmUpSeconds` | integer | `5` | 0 or more, and less than `simulation.durationSeconds` | **Simulation** → **Warm-up** | The warm-up that a new stress profile starts with. Flows that start before this time are left out of the statistics. |
+| `simulation.arrivalRatePerSecond` | number | `10` | More than 0, and 100000 at most | **Simulation** → **Arrival rate** | The arrival rate that a new stress profile starts with, in flows per second. |
 
-A stress model holds its own seed, duration and arrival rate. See [Stress model](/reference/stress-model/).
+These four values are what the form of a new stress profile shows first. `GET /api/projects/{projectId}/stress/defaults` returns them for the workspace of the project. A profile keeps its own values after it is saved. A change of these settings does not change a profile that exists, and a run never reads them. See [Stress model](/reference/stress-model/#defaults-of-a-new-profile).
 
 ### `privacy`
 
@@ -125,7 +126,7 @@ Vellum does not send webhook notifications in this version.
 
 ## The instance policy
 
-The policy is in `policy` of the instance settings. A `PUT` must state all four keys.
+The policy is in `policy` of the instance settings. A `PUT` must state the first four keys. `policy.maxConcurrentStressRuns` is optional: a `PUT` that leaves it out sets it to `4`. The policy holds no other field.
 
 | JSON path | Type | Default, self-hosted profile | Default, hosted profile | UI | Effect |
 |---|---|---|---|---|---|
@@ -133,6 +134,9 @@ The policy is in `policy` of the instance settings. A `PUT` must state all four 
 | `policy.allowPrivateNetworkUrls` | boolean | `true` | `false` | **Instance** → **Allow URLs on private networks** | With `false`, Vellum refuses a settings URL that points at a private, loopback or link-local address. |
 | `policy.allowedAiProviderKinds` | list of strings | all four kinds | all four kinds | none (API only) | The provider kinds that a workspace can use. No repeats. Each entry is `openai`, `anthropic`, `gemini` or `openai-compatible`. |
 | `policy.allowSendingPrivateCodeToAi` | boolean | `true` | `false` | **Instance** → **Let workspaces send private code to AI** | With `false`, no workspace can set `privacy.sendPrivateCodeToAi` to `true`. |
+| `policy.maxConcurrentStressRuns` | integer, 1 to 64 | `4` | `4` | **Instance** → **Stress runs at the same time** | The number of stress runs that one app process does at the same time, for all workspaces together. A run over the number gets `429` with the type `busy`. |
+
+One stress run holds a processor thread and memory until it ends. So `policy.maxConcurrentStressRuns` bounds what stress runs take from the instance. Vellum reads the value for each run. A change applies to the next run with no restart. Runs that are in progress when the value goes down continue to their end. A value outside 1 to 64 is refused with `400` on the field `policy.maxConcurrentStressRuns`. See [Stress model](/reference/stress-model/#runs-at-the-same-time).
 
 Vellum checks each stored workspace value against the policy each time it reads the settings. A value that the policy refuses does not apply, and the stored value does not change. `GET /api/workspaces/{workspaceId}/settings` lists such values in `policyViolations`, with a `field` and a `message` for each.
 

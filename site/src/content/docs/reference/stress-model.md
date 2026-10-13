@@ -57,6 +57,25 @@ A scenario that the trace engine refuses is refused.
 
 A save checks the ranges and the shape only. A profile that lacks an input of its scenario is saved, and the run names what is missing.
 
+### Defaults of a new profile
+
+`GET /api/projects/{projectId}/stress/defaults` returns what a new profile of the project starts with. The values come from the **Simulation** settings of the workspace of the project. A Viewer can read them.
+
+```json
+{ "seed": "1", "durationSeconds": 300, "warmUpSeconds": 5, "arrivalRatePerSecond": 10 }
+```
+
+| Member | Source |
+|---|---|
+| `seed` | `simulation.seed`, as text. |
+| `durationSeconds` | `simulation.durationSeconds`, and at most the limit of the arrival window. |
+| `warmUpSeconds` | `simulation.warmUpSeconds`, and at most one second less than `durationSeconds`. |
+| `arrivalRatePerSecond` | `simulation.arrivalRatePerSecond`. |
+
+The app fills the form of a new profile with these values and the pattern **Poisson**. The app does not read them for a profile that exists.
+
+The endpoint gives start values only. A run reads the profile and never these settings. The capacity inputs have no default: see [Refusals](#refusals). [Settings](/reference/settings/#simulation) lists the keys.
+
 ## Time and events
 
 - Time is virtual. It is a whole number of nanoseconds.
@@ -388,11 +407,13 @@ In the measured worst profiles, one run at these limits holds about 150 MB of ma
 
 | Bound | Value | Answer over the bound |
 |---|---|---|
-| Runs of the instance at the same time, over all workspaces | 4 | 429 `busy` |
+| Runs of one app process at the same time, over all workspaces | The instance policy `maxConcurrentStressRuns`: 1 to 64, default 4 | 429 `busy` |
 | Runs of one workspace at the same time | 2 | 429 `rate_limited` |
 | Runs of one workspace in one minute | 30 | 429 `rate_limited` |
 
-Each 429 answer has a `Retry-After` header. The instance bound of 4 is a default of the server. No setting changes it.
+Each 429 answer has a `Retry-After` header.
+
+The instance administrator changes the first bound under **Settings → Instance → Stress runs at the same time**, or with `policy.maxConcurrentStressRuns` in `PUT /api/instance/settings`. Vellum reads the policy for each run, so a change applies to the next run with no restart. Runs that are in progress when the bound goes down continue to their end. The bound counts in the memory of one app process. A deployment with more than one instance has the bound for each instance. No setting changes the two workspace bounds.
 
 These bounds apply to stored data:
 
@@ -427,6 +448,7 @@ A create of profile 51 gets status 409. A profile keeps its newest 20 runs. Vell
 | Method and path | Role | Result |
 |---|---|---|
 | `GET /api/projects/{projectId}/stress/requirements` | Viewer | What a profile for the scenario in `scenarioId` must state |
+| `GET /api/projects/{projectId}/stress/defaults` | Viewer | What a new profile starts with: `seed`, `durationSeconds`, `warmUpSeconds` and `arrivalRatePerSecond` |
 | `GET /api/projects/{projectId}/stress/profiles` | Viewer | The profiles of the project |
 | `POST /api/projects/{projectId}/stress/profiles` | Editor | A new profile |
 | `GET /api/projects/{projectId}/stress/profiles/{profileId}` | Viewer | One profile |

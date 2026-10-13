@@ -1,6 +1,6 @@
 ---
 title: Configure a workspace
-description: Change settings in the app, store credentials and read the audit log.
+description: Change settings in the app, store credentials, set the start values and the bound of stress runs, and read the audit log.
 ---
 
 This guide shows you how to change the settings of a workspace. You need the owner role in the workspace to change them. Any member can read them.
@@ -82,6 +82,31 @@ Your stored value does not change. The settings screen lists each blocked settin
 The same list shows an AI provider of a kind that the instance no longer allows, and the private code setting when the instance no longer allows it.
 
 When the instance administrator saves the instance settings, Vellum reports how many workspaces now have a blocked setting.
+
+## Set the start values of a stress profile
+
+**Simulation** holds the values that the form of a new stress profile shows first.
+
+1. Open **Simulation**.
+2. Give the **Seed**.
+3. Give the **Duration** in seconds of model time, from 1 to 3600.
+4. Give the **Warm-up** in seconds. It must be less than the duration. Flows that start before this time are left out of the statistics.
+5. Give the **Arrival rate** in flows per second.
+6. Select **Save changes**.
+
+A profile keeps its own values after you save it. A change here does not change a profile that exists. See [Stress a flow](/how-to/stress-a-flow/#create-a-profile).
+
+## Bound the stress runs of the instance
+
+You need to be the instance administrator for this task.
+
+1. Open **Instance**.
+2. Enter a whole number from 1 to 64 in **Stress runs at the same time**. The default is 4.
+3. Select **Save** next to the field.
+
+The number is for all workspaces together, in each app process. One run holds a processor thread until it ends. A change applies to the next run. A run over the number gets `429` with the message **The instance is busy with other stress runs**.
+
+In the API the value is `policy.maxConcurrentStressRuns` of `PUT /api/instance/settings`. See [Settings](/reference/settings/#the-instance-policy).
 
 ## Private code and AI
 

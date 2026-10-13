@@ -32,6 +32,10 @@ Vellum creates its database tables on the first start. It also creates a master 
 
 `docker compose ps` shows the `vellum` service as `healthy` when the app reaches its database.
 
+The Compose file limits the `vellum` container. The process is not root and has no Linux capability. The root file system is read-only. Vellum writes to the `vellum-data` volume on `/data` and to a temporary directory in memory, and to nothing else.
+
+Vellum sends no telemetry to another machine. [Diagnostics and logs](/runbooks/diagnostics-and-logs/#telemetry) shows how to turn it on.
+
 ## Get the setup code
 
 The first start creates a one-time setup code. The setup screen asks for it. The code proves that you operate this instance.

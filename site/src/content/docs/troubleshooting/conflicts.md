@@ -36,8 +36,9 @@ An error answer has these fields.
 | `403` | `human_only` | An agent token on an endpoint for people | A person does it in the app. |
 | `403` | `agent_not_allowed` | An agent token with no access to the endpoint | Use an endpoint that is open to agents, or another scope. |
 | `403` | none | A member with a role that is too low | Ask an owner. |
+| `403` | `cross_site_request` | A write that a page of another origin sent, or a script with a wrong `Origin` header | Do it in Vellum, or remove the header from the script. |
 | `413` | `payload_too_large` and others | A request body that is too large | Send less. |
-| `429` | `rate_limited`, `scan_limit_reached` | Too many calls | Wait for `Retry-After`. |
+| `429` | `rate_limited`, `busy`, `scan_limit_reached` | Too many calls | Wait for `Retry-After`. |
 | `503` | `busy` | Two writes blocked each other | Send the request again after one second. |
 
 ## The model changed while the request ran
@@ -200,6 +201,26 @@ See [What an agent can and cannot do](/concepts/what-an-agent-can-and-cannot-do/
 
 A person who is not a member of the workspace gets the same answer.
 
+## The request does not come from this app
+
+**Symptom:** `403`, type `cross_site_request`, title `The request does not come from this app`, detail `A page of another origin sent it. Open Vellum and do it there.` Nothing was changed.
+
+**Cause:** Vellum checks each request that can change state: each method other than `GET`, `HEAD`, `OPTIONS` and `TRACE`. One of these is true.
+
+- The request has a `Sec-Fetch-Site` header with a value other than `same-origin` and `none`. A browser sends `cross-site` or `same-site` when a page of another origin sends the request.
+- The request has no `Sec-Fetch-Site` header, and its `Origin` header names another host or port than the request.
+
+A request with neither header passes. A request with an agent token is not checked.
+
+**Fix:**
+
+1. In a browser, open Vellum at its own address and do the task there. A page on another host name cannot write to Vellum with your session, also when the host name is a sibling such as `other.example.com`.
+2. In a script, remove the `Sec-Fetch-Site` header and the `Origin` header. `curl` sends neither by itself. Do not copy the headers of a browser into a script.
+3. If the tool must send `Origin`, set it to the address of the instance, with the host name and the port that Vellum sees in the `Host` header.
+4. Behind a reverse proxy, make the proxy pass the `Host` header on unchanged. If the proxy changes it, the `Origin` of the browser does not match the host that Vellum sees. Current browsers send `Sec-Fetch-Site`, and Vellum then does not read `Origin`.
+
+See [Use the HTTP API](/how-to/use-the-http-api/#know-the-rule-for-writes-with-the-cookie) for the rule and a working `curl` command.
+
 ## The request body is too large
 
 **Symptom:** `413`.
@@ -223,8 +244,11 @@ Vellum refuses the body before it reads it.
 
 | Type | Where | Limit |
 |---|---|---|
-| `rate_limited`, title `Too many attempts` | `POST /api/auth/login` and `POST /api/setup` | 10 calls in one minute from one client address. |
+| `rate_limited`, title `Too many attempts` | `POST /api/auth/login`, `POST /api/setup`, `POST /api/auth/register`, and the start and the completion of a sign-in with a provider | 10 calls in one minute from one client address, for each endpoint. |
+| `rate_limited`, title `Too many attempts` | Each request with no valid credential to `/api`, `/mcp`, `/llms.txt`, `/llms-full.txt` or `/skills` | 300 calls in one minute from one client address. A wrong or expired agent token counts here. |
 | `rate_limited` | Promise runs and evidence | A number of records in one minute for one caller. |
+| `rate_limited`, title `Too many stress runs` | `POST /api/projects/{projectId}/stress/profiles/{profileId}/runs` | 2 runs at the same time and 30 runs in one minute for one workspace. |
+| `busy`, title `The instance is busy with other stress runs` | `POST /api/projects/{projectId}/stress/profiles/{profileId}/runs` | The instance policy **Stress runs at the same time**: 4 by default, for all workspaces together. |
 | `scan_limit_reached` | `POST /api/projects/{projectId}/imports` | **Repository scans per day** for one workspace. The day is a UTC day. |
 
 **Fix:**
@@ -232,6 +256,8 @@ Vellum refuses the body before it reads it.
 1. Wait for the number of seconds in `Retry-After`.
 2. Send the request again.
 3. For `scan_limit_reached`, a workspace owner can increase the limit under **Settings → Usage limits**.
+4. For `busy` on a stress run, the instance administrator can increase **Stress runs at the same time** under **Settings → Instance**.
+5. If a script with a valid agent token gets `429` on each call, check the token. A token that Vellum refuses counts as a call with no credential.
 
 ## The text cannot be stored
 

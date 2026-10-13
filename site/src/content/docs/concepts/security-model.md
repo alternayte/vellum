@@ -1,6 +1,6 @@
 ---
 title: Security model
-description: How Vellum separates workspaces, authenticates people and agents, protects credentials, limits outbound requests and treats untrusted input, and what it does not protect against.
+description: How Vellum separates workspaces, authenticates people and agents, checks requests, protects credentials, limits outbound requests and treats untrusted input, and what it does not protect against.
 ---
 
 This page explains the security design of Vellum: what each control does, why it is there, and where it stops.
@@ -34,13 +34,41 @@ A person signs in with an email address and a password, or with GitHub or Google
 
 A new password has 10 characters or more, with a digit and an upper-case letter.
 
+A sign-in with GitHub takes the email address from GitHub, and only the primary address that GitHub verified. Vellum does not take the public address of a profile, because the owner of the profile types that text. A sign-in with a provider never takes over an account that exists: Vellum refuses it with `409`. A provider that the operator did not configure answers `404`.
+
+### Requests that change state
+
+`SameSite=Strict` knows sites, not origins. A page on a sibling host name, for example `other.example.com` beside `vellum.example.com`, is the same site, so the browser sends the cookie with a request from that page. So Vellum also checks the origin of each request that can change state. That is each request with a method other than `GET`, `HEAD`, `OPTIONS` and `TRACE`.
+
+- With a `Sec-Fetch-Site` header, the value must be `same-origin` or `none`. Each current browser sends this header, and a page cannot set it.
+- With no `Sec-Fetch-Site` header and with an `Origin` header, the host and the port in `Origin` must be the host and the port of the request. Vellum does not compare the scheme, because behind a proxy that terminates TLS the app sees `http`.
+- A request with neither header passes. It does not come from a page in a current browser. It comes from `curl`, a script or an agent, and such a caller carries no cookie of another person.
+- A request that presents an agent token is not checked. The token authenticates it, never the cookie.
+
+A request that fails the check gets `403` with the type `cross_site_request`. Nothing is changed.
+
 ### Limits on guessing
 
-- `POST /api/auth/login` and `POST /api/setup` accept 10 calls in one minute from one client address. Then they answer `429` with a `Retry-After` header.
+Each limit counts for one client address in one minute. Over the limit, the answer is `429` with the type `rate_limited` and a `Retry-After` header.
+
+| Requests | Limit |
+|---|---|
+| `POST /api/auth/login`, `POST /api/setup`, and the start and the completion of a sign-in with a provider | 10 calls for each endpoint |
+| `POST /api/auth/register` | 10 calls |
+| Each request with no valid credential to `/api`, `/mcp`, `/llms.txt`, `/llms-full.txt` or `/skills` | 300 calls together |
+
+The last limit also counts a request with a wrong bearer token. It does not count the health endpoints or the files of the web client. A request with a valid session or a valid agent token is not counted. The limit of an endpoint and the limit of 300 both apply.
+
 - Five wrong passwords lock an account for five minutes.
 - Sign-in gives the same `401` for a wrong password, an unknown account and a locked account. The answer does not tell an attacker which accounts exist.
 
-Behind a reverse proxy, the rate limit counts by the client address only when the proxy passes it on and `ASPNETCORE_FORWARDEDHEADERS_ENABLED` is `true`. If not, all clients of the proxy share one limit.
+### Behind a reverse proxy
+
+Vellum reads `X-Forwarded-For` and `X-Forwarded-Proto` only from the senders that `Vellum__TrustedProxies` names. The value is a list of addresses or CIDR ranges, separated by `;`. From each other sender Vellum ignores the two headers. Vellum reads only the last hop, which is the value that the trusted proxy wrote.
+
+The reason is that a client writes these headers as easily as a proxy does. A server that trusts them from every sender lets a client select the address that the rate limit counts, and lets a client claim HTTPS.
+
+Without `Vellum__TrustedProxies`, Vellum ignores the headers. All clients of a proxy then share one limit. Do not set `ASPNETCORE_FORWARDEDHEADERS_ENABLED`: the web framework reads it and then trusts the headers from every sender. See [Run in hosted mode](/how-to/run-in-hosted-mode/#configure-the-reverse-proxy).
 
 ### The first account
 
@@ -125,6 +153,51 @@ The redactor works on the shape of a value and on the name beside it. It does no
 Generated documents apply the same idea in the other direction. The SDD and the brief mark each text from the model as data and escape it, so that a name in a model cannot form an instruction or a heading for the agent that reads the document.
 
 Each request body has a size limit, and a body over the limit gets `413` before the endpoint parses it.
+
+A project document is untrusted text too. Vellum parses it to a tree and builds the page from the tree. It generates no code from a document and evaluates none. An expression, an `import`, an event handler and a `script` tag in a document have no effect. See [Write project documents](/how-to/write-project-docs/#know-what-the-text-can-contain).
+
+## The browser
+
+Vellum sends these headers with each response.
+
+| Header | Value | Effect |
+|---|---|---|
+| `Content-Security-Policy` | See below. | The page loads code and data from its own origin only. |
+| `X-Content-Type-Options` | `nosniff` | The browser does not guess the type of a file. |
+| `X-Frame-Options` | `DENY` | No page can show Vellum in a frame. |
+| `Referrer-Policy` | `no-referrer` | A link from Vellum does not tell the other site the address of the page. |
+| `Cross-Origin-Opener-Policy` | `same-origin` | A window of another origin gets no reference to the Vellum window. |
+| `Permissions-Policy` | `camera=(), microphone=(), geolocation=(), payment=()` | The page cannot use these functions of the browser. |
+| `Cache-Control` | `no-store`, on `/api` and `/mcp` only | No shared cache and no browser history keeps an answer of the API. |
+| `Strict-Transport-Security` | `max-age=31536000`, in the hosted profile only, and only on a request that came over HTTPS | The browser uses HTTPS for the host name for one year. |
+
+The content security policy is:
+
+```text
+default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'
+```
+
+- Scripts come from the origin of the app only. The policy has no `'unsafe-inline'` and no `'unsafe-eval'` for scripts. So text that reaches the page cannot run as a script.
+- `'wasm-unsafe-eval'` lets the code highlighter compile its grammar engine. It allows no script text.
+- Styles need `'unsafe-inline'`, because the canvas and the editor position their parts with style attributes.
+- The page connects to its own origin only. A script in the page cannot send data to another host.
+
+The local profile sends no `Strict-Transport-Security` header. A local instance on plain HTTP must not make a browser use HTTPS for its host name. In the hosted profile, the scheme of a request comes from a trusted proxy: see [Behind a reverse proxy](#behind-a-reverse-proxy).
+
+In the `Development` environment, the pages of the API reference under `/scalar` and `/openapi` have no content security policy. The container image does not serve them.
+
+## The container
+
+The image and the two Compose files limit what the app process can do.
+
+- **Not root.** The process runs as the app user of the image, not as root.
+- **Read-only root file system.** The process cannot change the program or write a file beside it. It writes to the data volume on `/data` and to a temporary directory in memory on `/tmp`, and to nothing else.
+- **No Linux capability.** The Compose files drop all capabilities.
+- **No new privileges.** A program that the process starts cannot get more privileges than the process has.
+
+`docker-compose.yml` and `docker-compose.hosted.example.yml` set the last three. A container that you start with `docker run` has them only when you give the options: see [Run in hosted mode](/how-to/run-in-hosted-mode/#start-one-instance-with-docker-run).
+
+Both Compose files publish the app port on `127.0.0.1` only, unless you set `VELLUM_BIND`.
 
 ## The audit log
 
