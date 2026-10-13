@@ -1,6 +1,6 @@
 import { type ReactNode, useEffect } from 'react'
 import { useShellStore, type Flyout } from '@/stores/shell-store'
-import { FileText, Plus, LayoutGrid, Search, Cable, Route, GitPullRequestArrow, Sparkles } from 'lucide-react'
+import { FileText, Plus, LayoutGrid, Search, Cable, Route, GitPullRequestArrow, Sparkles, ShieldCheck, PackageOpen } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface LeftToolbarProps {
@@ -15,6 +15,8 @@ const toolbarItems: { flyout: Flyout; label: string; icon: typeof FileText }[] =
   { flyout: 'scenarios', label: 'Scenarios', icon: Route },
   { flyout: 'import', label: 'Import from GitHub', icon: GitPullRequestArrow },
   { flyout: 'assistant', label: 'Assistant', icon: Sparkles },
+  { flyout: 'promises', label: 'Promises', icon: ShieldCheck },
+  { flyout: 'build', label: 'Build', icon: PackageOpen },
   { flyout: 'search', label: 'Search', icon: Search },
 ]
 

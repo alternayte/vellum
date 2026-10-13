@@ -16,7 +16,9 @@ import { ContractsFlyout } from '@/components/trace/contracts-flyout'
 import { ScenariosFlyout } from '@/components/trace/scenarios-flyout'
 import { ImportFlyout } from '@/components/import/import-flyout'
 import { AssistantFlyout } from '@/components/assistant/assistant-flyout'
-import { useRunScenario } from '@/hooks/use-scenarios'
+import { PromisesFlyout } from '@/components/promises/promises-flyout'
+import { BuildFlyout } from '@/components/build/build-flyout'
+import { useRunScenario, useScenarios } from '@/hooks/use-scenarios'
 import { useTraceStore } from '@/stores/trace-store'
 import type { ScenarioReference } from '@/components/trace/scenario-editor'
 import { useChannels, useOperations, useSubscriptions } from '@/hooks/use-contracts'
@@ -75,6 +77,7 @@ function ProjectWorkspace() {
   }, [elements, operations, channels, subscriptions, messages])
   const referenceLabels = useMemo(() => Object.fromEntries(scenarioReferences.map((r) => [r.id, r.label])), [scenarioReferences])
   const runScenario = useRunScenario(projectId, contractBranchId)
+  const { data: scenarioList } = useScenarios(projectId)
   const playingScenarioId = useTraceStore((s) => s.scenarioId)
   const { data: schemas } = useSchemas(projectId)
   const { data: views } = useViews(projectId)
@@ -632,6 +635,8 @@ function ProjectWorkspace() {
             <ScenariosFlyout projectId={projectId} branchId={contractBranchId} references={scenarioReferences} />
           )}
           {activeFlyout === 'import' && <ImportFlyout projectId={projectId} />}
+          {activeFlyout === 'promises' && <PromisesFlyout projectId={projectId} references={scenarioReferences} scenarios={scenarioList ?? []} />}
+          {activeFlyout === 'build' && <BuildFlyout projectId={projectId} />}
           {activeFlyout === 'assistant' && (
             <AssistantFlyout
               projectId={projectId}
