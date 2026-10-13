@@ -9,11 +9,22 @@ You need Docker with the Compose plugin.
 
 ## Start it
 
+Get the source and go to its directory:
+
+<!-- snippet: syntax -->
 ```sh
 git clone https://github.com/alternayte/vellum
 cd vellum
-docker compose up -d
 ```
+
+Build the image and start the app and the database:
+
+<!-- snippet: live -->
+```sh
+docker compose up -d --wait
+```
+
+The first start builds the image. `--wait` returns when both services are ready.
 
 Vellum listens on `http://localhost:8080`. To use other ports, set `VELLUM_PORT` and `VELLUM_POSTGRES_PORT` before the command.
 
@@ -25,6 +36,7 @@ Vellum creates its database tables on the first start. It also creates a master 
 
 The first start creates a one-time setup code. The setup screen asks for it. The code proves that you operate this instance.
 
+<!-- snippet: live -->
 ```sh
 docker compose logs vellum | grep "VELLUM SETUP CODE"
 ```
@@ -33,6 +45,7 @@ The line shows the code, for example `VELLUM SETUP CODE: ABCDE-FGHJK-MNPQR-STUVW
 
 The code is also in the file `setup-code` in the data directory:
 
+<!-- snippet: live -->
 ```sh
 docker compose exec vellum cat /data/setup-code
 ```
@@ -73,6 +86,7 @@ To let other machines reach the app:
 
 ## Stop and start
 
+<!-- snippet: live -->
 ```sh
 docker compose stop
 docker compose start

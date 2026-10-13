@@ -17,3 +17,11 @@ src/Vellum/wwwroot/
 src/Vellum/data/
 /data/
 .env
+
+# Documentation site build output
+site/dist/
+site/node_modules/
+site/.astro/
+
+# Written by the backup runbook when it is run in the repository directory
+/backup/

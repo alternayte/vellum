@@ -87,7 +87,7 @@ npx -y @modelcontextprotocol/inspector --cli https://vellum.example.com/mcp \
   --transport http \
   --header "Authorization: Bearer vlm_agt_..." \
   --method tools/call --tool-name get_model_summary \
-  --tool-arg projectId=<project ID>
+  --tool-arg projectId=<project-id>
 ```
 
 The answer holds one text block. The text is a JSON document with `projectId`, `truth`, `truthNote` and `data`.

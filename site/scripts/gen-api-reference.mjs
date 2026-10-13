@@ -4,7 +4,7 @@
 //
 //   node scripts/gen-api-reference.mjs
 //
-// Output: src/content/docs/reference/http-api/index.md, one page for each tag, schemas.md.
+// Output: src/content/docs/reference/http-api/index.md, one page for each tag, types.md.
 
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -47,7 +47,7 @@ function typeOf(schema) {
   if (!schema || Object.keys(schema).length === 0) return 'any'
   if (schema.$ref) {
     const name = refName(schema.$ref)
-    return `[${name}](${base}/schemas/#${schemaAnchors.get(name)})`
+    return `[${name}](${base}/types/#${schemaAnchors.get(name)})`
   }
   for (const key of ['oneOf', 'anyOf']) {
     if (schema[key]) return schema[key].map(typeOf).join(' or ')
@@ -148,7 +148,7 @@ for (const [path, item] of Object.entries(doc.paths)) {
 const tagSlugs = new Set()
 for (const tag of byTag.keys()) {
   const s = tagSlug(tag)
-  if (tagSlugs.has(s) || s === 'schemas' || s === 'index') throw new Error(`The tag "${tag}" has no unique page name.`)
+  if (tagSlugs.has(s) || s === 'types' || s === 'index') throw new Error(`The tag "${tag}" has no unique page name.`)
   tagSlugs.add(s)
 }
 
@@ -164,23 +164,12 @@ mkdirSync(outDir, { recursive: true })
 // Index
 {
   const lines = [
-    frontmatter('HTTP API', 'Every endpoint of the Vellum HTTP API, by area, with its parameters, request body and answers.', 0).replace(
-      'title: "HTTP API"',
-      'title: "HTTP API"\nsidebar_label: Overview',
-    ),
+    frontmatter(
+      'HTTP API',
+      'Every endpoint of the Vellum HTTP API, by area, with its parameters, request body and answers.',
+      0,
+    ).replace('sidebar:\n', 'sidebar:\n  label: Overview\n'),
   ]
-  // `sidebar_label` is not a Starlight key; the label is set below.
-  lines[0] = [
-    '---',
-    'title: HTTP API',
-    'description: Every endpoint of the Vellum HTTP API, by area, with its parameters, request body and answers.',
-    'sidebar:',
-    '  label: Overview',
-    '  order: 0',
-    'editUrl: false',
-    '---',
-    '',
-  ].join('\n')
   lines.push(
     `${generatedNote} It lists ${operationCount} operations on ${Object.keys(doc.paths).length} paths and ${Object.keys(schemas).length} schemas. The document is OpenAPI ${doc.openapi}.`,
     '',
@@ -198,7 +187,7 @@ mkdirSync(outDir, { recursive: true })
     const paths = [...new Set(operations.map((o) => `\`${o.path}\``))]
     lines.push(`| [${tag}](${base}/${tagSlug(tag)}/) | ${operations.length} | ${cell(paths.join('<br>'))} |`)
   }
-  lines.push('', `[Schemas](${base}/schemas/) lists each request and answer type with its fields.`, '')
+  lines.push('', `[Types](${base}/types/) lists each request and answer type with its fields.`, '')
   writeFileSync(join(outDir, 'index.md'), lines.join('\n'))
 }
 
@@ -221,7 +210,7 @@ for (const [tag, operations] of byTag) {
 // Schemas
 {
   const lines = [
-    frontmatter('Schemas', 'Every request and answer type of the Vellum HTTP API, with its fields.', 1000),
+    frontmatter('Types', 'Every request and answer type of the Vellum HTTP API, with its fields.', 1000),
     generatedNote,
     '',
   ]
@@ -235,7 +224,7 @@ for (const [tag, operations] of byTag) {
       lines.push(`Other fields: ${typeOf(schema.additionalProperties)}`, '')
     }
   }
-  writeFileSync(join(outDir, 'schemas.md'), lines.join('\n'))
+  writeFileSync(join(outDir, 'types.md'), lines.join('\n'))
 }
 
 console.log(`http-api: ${operationCount} operations, ${byTag.size} areas, ${Object.keys(schemas).length} schemas`)

@@ -9,7 +9,13 @@ The master key wraps the key of each stored credential and the keys that sign se
 
 ## Follow this order
 
-1. Create a new key: `openssl rand -base64 32`.
+1. Create a new key. The key is the base64 form of 32 random bytes.
+
+   <!-- snippet: run -->
+   ```sh
+   openssl rand -base64 32
+   ```
+
 2. Set `Vellum__MasterKey` to the new key. Set `Vellum__PreviousMasterKey` to the old key.
 3. Restart every instance of Vellum. Each instance encrypts with the new key and can still read with the old key.
 4. Sign in as the instance administrator. Open **Settings**, then **Instance**, and start the key rotation. This calls `POST /api/instance/keys/rotate`.

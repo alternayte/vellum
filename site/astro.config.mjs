@@ -5,7 +5,8 @@ import starlightLinksValidator from 'starlight-links-validator'
 import starlightLlmsTxt from 'starlight-llms-txt'
 
 // The public address of the docs site. The sitemap and llms.txt need an absolute address.
-const site = process.env.VELLUM_DOCS_SITE ?? 'https://vellum-docs.pages.dev'
+// Set VELLUM_DOCS_SITE in the build that publishes the site.
+const site = process.env.VELLUM_DOCS_SITE ?? 'http://localhost:4321'
 
 export default defineConfig({
   site,
@@ -108,7 +109,8 @@ export default defineConfig({
         {
           label: 'Reference',
           items: [
-            'reference/http-api',
+            // Written by scripts/gen-api-reference.mjs from the OpenAPI document on each build.
+            { label: 'HTTP API', collapsed: true, items: [{ autogenerate: { directory: 'reference/http-api' } }] },
             'reference/mcp-tools',
             'reference/settings',
             'reference/bootstrap-environment',

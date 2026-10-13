@@ -9,13 +9,24 @@ A rule produces a fact only when the source text establishes it. When a rule can
 
 ## What a scan reads
 
-A scan reads files with these names: `*.cs`, `*.csproj`, `*.go`, `go.mod`, `*.json`, `*.yaml`, `*.yml`, and Dockerfiles.
+A scan reads files with these names: `*.cs`, `*.csproj`, `*.go`, `go.mod`, `*.json`, `*.yaml`, `*.yml`, and Dockerfiles (`Dockerfile`, `Dockerfile.*` and `*.Dockerfile`).
 
 A scan never reads:
 
-- Binary files, minified files and lock files.
-- `node_modules`, `vendor`, `bin`, `obj`, `dist` and `.git`.
-- Files that look like a secret store: `.env` files, `*.pem`, `*.key`, `*.pfx`, SSH keys, `secrets.*`, `*.tfvars`, and Kubernetes Secret manifests.
+- Files with a binary extension, such as images, archives, compiled files, fonts and database files.
+- Minified files (`*.min.*`) and source maps (`*.map`).
+- Lock files: `package-lock.json`, `packages.lock.json`, `pnpm-lock.yaml`, `npm-shrinkwrap.json`, `go.sum`, `bun.lockb` and `*.lock`.
+- The directories `node_modules`, `vendor`, `bin`, `obj`, `dist` and `.git`.
+- Go test files (`*_test.go`).
+- Files that look like a secret store. Vellum decides this from the path alone, before it reads the content:
+  - The directories `.ssh`, `.aws`, `.gnupg`, `.azure` and `.kube`.
+  - Names that start with `.env`, `id_rsa`, `id_dsa`, `id_ecdsa`, `id_ed25519` or `secrets.`.
+  - Names that end with `.pem`, `.key`, `.pfx`, `.p12`, `.jks`, `.keystore`, `.kdbx`, `.tfvars`, `.tfvars.json` or `.tfstate`.
+  - The names `.npmrc`, `.pypirc`, `.netrc`, `.htpasswd`, `.dockercfg`, `kubeconfig`, `credentials` and `credentials.json`, `.yaml`, `.yml` or `.xml`.
+  - A `.yaml`, `.yml` or `.json` file whose name contains `secret`.
+- A file in which a document or a list item is a Kubernetes Secret, whatever its name.
+
+A path is also refused when it has more than 1,024 characters, starts with `/`, or has a `\`, a control character or a `.` or `..` part.
 
 A fact never holds a value from the source: no environment value, no command argument, no default or example from a schema, and no user name or password from a URL. It holds names, types and structure.
 
@@ -23,23 +34,38 @@ A fact never holds a value from the source: no environment value, no command arg
 
 | Area | Recognises | Does not recognise |
 |---|---|---|
-| OpenAPI 3.0 and 3.1 | Operations, component schemas, servers, whether security is required, optional or absent. | Swagger 2. References to other files. Callbacks and webhooks. Two documents in one file. |
-| AsyncAPI 2 and 3 | Channels, messages, who sends and who receives, AMQP and Kafka bindings. | Traits. References to other files. Other bindings. |
-| Docker Compose | Services, images, ports, dependencies, names of environment variables. Known images as data stores and brokers. | `extends`, `include`, profiles, variable substitution. |
-| .NET projects | Projects as services, package references. | `Directory.Build.props`, central package versions. |
+| OpenAPI 3.0 and 3.1 | Operations, component schemas, servers, whether security is required, optional or absent. | Swagger 2. References to other files. A request body or a response behind `$ref`. Path-level parameters, callbacks, webhooks and links. The security schemes. Two documents in one file. |
+| AsyncAPI 2 and 3 | Channels, messages, who sends and who receives, AMQP and Kafka bindings of channels and operations. | Traits. References to other files. A channel or an operation behind `$ref`. Server and message bindings. Other bindings. Correlation IDs, headers and reply operations. Server variables and security. Two documents in one file. |
+| Docker Compose | Services, images, ports, dependencies, names of environment variables. Known images as data stores and brokers. | `extends`, `include`, profiles, merge keys, variable substitution, networks, volumes and labels. |
+| .NET projects | A project as a service when its SDK is Web or Worker, or its output type is `Exe` or `WinExe`. Package references and project references. | `Directory.Build.props`, imports, `Condition` attributes, central package versions, transitive packages. |
 | .NET minimal API | `MapGet`, `MapPost`, `MapPut`, `MapPatch`, `MapDelete` and `MapGroup` with a fixed prefix on an application or route builder. | `MapMethods`, `MapFallback`. A route in an extension method. A route that is not one string. |
 | .NET controllers | `[Route]` with `[HttpGet]` and the other verb attributes, with base and partial classes when every part is in the scan. | `[AcceptVerbs]`, areas, conventional routing. |
-| MassTransit | Consumers, receive endpoints, publish and send on a bus type, the Entity Framework outbox. | Sagas, convention-registered consumers. Open generic types. |
+| MassTransit | Consumers, receive endpoints, publish and send on a bus type, entity names set with `SetEntityName`, the Entity Framework outbox and the in-memory outbox. | Sagas, convention-registered consumers. Open generic types. `PublishBatch` and scheduled messages. |
+| .NET message contracts | The fields of a message type that a consumer, a publish, a send or an entity name refers to: the positional parameters of a record and the public properties, as name and type. | Inherited members, expression-bodied properties, fields. A type that is declared outside the scan. |
 | Hand-written outbox | An outbox table and a hosted service in the same project that reads it and publishes. | A dispatcher in another project. CAP, NServiceBus, Wolverine. |
 | EF Core | A `DbContext` and its `DbSet` properties. | Entities mapped only in `OnModelCreating`. Dapper and raw SQL. |
-| Go modules | The module as a service, its requirements. | `go.work`, `replace`. |
+| Go modules | The module as a service, its requirements. | `go.work`, `replace`, `exclude`. Several commands in one module give one service. |
 | Go routes | `net/http`, chi, gin and echo routes on a router declared in the same function. | A router held in a struct field, returned from a function or passed in. |
-| Go brokers | AMQP exchanges, queues, bindings, publish and consume. Kafka topics. NATS subjects. A struct that a consumer decodes a delivery into. | JetStream. A decode in a helper function. |
+| Go brokers | AMQP exchanges, queues, bindings, publish and consume. Kafka topics. NATS subjects. A struct that a consumer decodes a delivery into with `json.Unmarshal`. | JetStream. An AMQP channel that is a struct field. A decode in a helper function or with another decoder. A struct with an embedded field. |
+| Go SQL | That a module opens a database connection with `database/sql`, sqlx, pgx or pgxpool. The connection string is never read. | Tables and queries, ORMs, the database name. |
 | Dockerfile | Base image, ports, the executable and flag names of the entrypoint. | `ARG`, `ENV`, substitution. |
-| Kubernetes | Deployment, StatefulSet, DaemonSet, Service, Ingress: names, images, ports, replicas. | Helm templates, Kustomize, other kinds. |
-| GitHub Actions | The workflow and its jobs, with build and deploy jobs named by known actions and commands. | Reusable workflows, matrix expansion. |
+| Kubernetes | Deployment, StatefulSet, DaemonSet, Service, Ingress: names, images, ports, replicas, the executable and flag names of a container command, Service selectors, Ingress rules. | Helm templates, Kustomize, other kinds. Environment variables, labels, annotations, volumes and init containers. |
+| GitHub Actions | The workflow, its triggers and its jobs, with build and deploy jobs found by known actions and commands. The name of a job says nothing. | Reusable workflows, matrix expansion, composite actions. A command after `sudo` or `time`, in a script file, or not first on its line. `env`, `with`, `inputs` and `secrets` are never read. |
 
 Code inside `#if false` produces nothing. Code inside `#if SYMBOL` produces facts with the condition recorded.
+
+## Rule identifiers
+
+Each rule has the version 2, but `go.struct-message`, which has the version 1.
+
+| Area | Rule identifiers |
+|---|---|
+| OpenAPI | `openapi.document`, `openapi.operation`, `openapi.schema` |
+| AsyncAPI | `asyncapi.document`, `asyncapi.channel`, `asyncapi.message`, `asyncapi.operation`, `asyncapi.schema` |
+| Docker Compose | `compose.service` |
+| .NET | `dotnet.project`, `dotnet.package-reference`, `dotnet.minimal-api-route`, `dotnet.controller-route`, `dotnet.masstransit-consumer`, `dotnet.masstransit-receive-endpoint`, `dotnet.masstransit-publish`, `dotnet.masstransit-entity-name`, `dotnet.masstransit-outbox`, `dotnet.outbox-handwritten`, `dotnet.efcore-dbcontext`, `dotnet.message-contract` |
+| Go | `go.module`, `go.require`, `go.net-http-route`, `go.chi-route`, `go.gin-route`, `go.echo-route`, `go.amqp-exchange-declare`, `go.amqp-queue-declare`, `go.amqp-queue-bind`, `go.amqp-publish`, `go.amqp-consume`, `go.kafka-topic`, `go.nats-subject`, `go.sql-open`, `go.struct-message` |
+| Deployment | `docker.dockerfile`, `k8s.workload`, `k8s.service`, `k8s.ingress`, `github.workflow` |
 
 ## Limits of one scan
 
@@ -49,6 +75,15 @@ Code inside `#if false` produces nothing. Code inside `#if SYMBOL` produces fact
 | Size of one file | 256 KB |
 | Total size | 20 MB |
 | Facts | 20,000 |
+| Facts from one file | 2,000 |
+| Size of one schema body in a fact | 64 KB |
+| Depth of a JSON or YAML document | 64 |
+| Items in one list attribute, such as ports | 200 |
+| Notes | 2,000 |
+
+A workspace owner changes the first three limits in the settings: `import.maxFiles`, `import.maxFileBytes` and `import.maxTotalBytes`. See [Settings](/reference/settings/#import). The other limits are fixed.
+
+A file over the size limit is not read, and the scan continues. A scan that reaches the limit of files or of total size reads no more files and extracts the files that it read. A scan that reaches the limit of facts stops and keeps the facts that it found.
 
 A scan that reaches a limit is partial. It keeps what it found and says so.
 

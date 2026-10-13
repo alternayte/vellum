@@ -1,6 +1,6 @@
 ---
 title: Stress model
-description: The exact rules of the stress engine: events, arrivals, distributions, statistics and limits.
+description: "The exact rules of the stress engine: events, arrivals, distributions, statistics and limits."
 ---
 
 This page states what the stress engine does. The engine version is `2`. A change to any rule on this page is a new engine version.

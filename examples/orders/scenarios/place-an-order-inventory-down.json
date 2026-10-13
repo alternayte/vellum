@@ -1,0 +1,170 @@
+{
+  "id": "e0a1d5c0-15ed-4000-8000-000000000101",
+  "name": "Place an order when Inventory is down",
+  "steps": [
+    {
+      "type": "call",
+      "id": "place",
+      "from": "e0a1d5c0-15ed-4000-8000-000000000011",
+      "operation": "e0a1d5c0-15ed-4000-8000-000000000040",
+      "request": {
+        "sku": "apple",
+        "qty": 2
+      },
+      "response": {
+        "orderId": "o-1",
+        "status": "accepted"
+      },
+      "then": [
+        {
+          "type": "write",
+          "id": "save-order",
+          "by": "e0a1d5c0-15ed-4000-8000-000000000020",
+          "store": "e0a1d5c0-15ed-4000-8000-000000000021",
+          "dataset": "orders",
+          "change": {
+            "orderId": "o-1",
+            "status": "accepted"
+          }
+        },
+        {
+          "type": "call",
+          "id": "reserve",
+          "from": "e0a1d5c0-15ed-4000-8000-000000000020",
+          "operation": "e0a1d5c0-15ed-4000-8000-000000000041",
+          "request": {
+            "orderId": "o-1",
+            "sku": "apple",
+            "qty": 2
+          },
+          "response": null,
+          "then": [
+            {
+              "type": "write",
+              "id": "save-reservation",
+              "by": "e0a1d5c0-15ed-4000-8000-000000000022",
+              "store": "e0a1d5c0-15ed-4000-8000-000000000023",
+              "dataset": "reservations",
+              "change": {
+                "orderId": "o-1",
+                "sku": "apple",
+                "qty": 2
+              }
+            }
+          ],
+          "onError": [
+            {
+              "type": "write",
+              "id": "mark-waiting-for-stock",
+              "by": "e0a1d5c0-15ed-4000-8000-000000000020",
+              "store": "e0a1d5c0-15ed-4000-8000-000000000021",
+              "dataset": "orders",
+              "change": {
+                "orderId": "o-1",
+                "status": "waiting-for-stock"
+              }
+            }
+          ]
+        },
+        {
+          "type": "branch",
+          "id": "stock-reserved",
+          "whenStep": "reserve",
+          "is": "Succeeded",
+          "then": [
+            {
+              "type": "publish",
+              "id": "publish-order-created",
+              "from": "e0a1d5c0-15ed-4000-8000-000000000020",
+              "channel": "e0a1d5c0-15ed-4000-8000-000000000050",
+              "message": "e0a1d5c0-15ed-4000-8000-000000000080",
+              "routingKey": "order.created",
+              "payload": {
+                "orderId": "o-1",
+                "sku": "apple",
+                "qty": 2
+              },
+              "headers": {
+                "x-correlation-id": "c-1"
+              },
+              "handlers": {
+                "e0a1d5c0-15ed-4000-8000-000000000060": [
+                  {
+                    "type": "write",
+                    "id": "confirm-reservation",
+                    "by": "e0a1d5c0-15ed-4000-8000-000000000022",
+                    "store": "e0a1d5c0-15ed-4000-8000-000000000023",
+                    "dataset": "reservations",
+                    "change": {
+                      "orderId": "o-1",
+                      "state": "confirmed"
+                    }
+                  }
+                ],
+                "e0a1d5c0-15ed-4000-8000-000000000061": [
+                  {
+                    "type": "call",
+                    "id": "charge",
+                    "from": "e0a1d5c0-15ed-4000-8000-000000000024",
+                    "operation": "e0a1d5c0-15ed-4000-8000-000000000042",
+                    "request": {
+                      "orderId": "o-1",
+                      "amount": 4.2,
+                      "currency": "EUR"
+                    },
+                    "response": null,
+                    "then": [],
+                    "onError": []
+                  }
+                ]
+              }
+            }
+          ],
+          "else": []
+        }
+      ],
+      "onError": []
+    }
+  ],
+  "faults": [
+    {
+      "target": "e0a1d5c0-15ed-4000-8000-000000000041",
+      "kind": "Outage",
+      "failFirst": null
+    }
+  ],
+  "assertions": [
+    {
+      "type": "outcome",
+      "id": "order-still-accepted",
+      "step": "place",
+      "expected": "Succeeded"
+    },
+    {
+      "type": "outcome",
+      "id": "reservation-fails",
+      "step": "reserve",
+      "expected": "Failed"
+    },
+    {
+      "type": "outcome",
+      "id": "order-waits-for-stock",
+      "step": "mark-waiting-for-stock",
+      "expected": "Succeeded"
+    },
+    {
+      "type": "event-count",
+      "id": "reservation-is-tried-three-times",
+      "kind": "RequestFailed",
+      "target": "e0a1d5c0-15ed-4000-8000-000000000041",
+      "expected": 3
+    },
+    {
+      "type": "event-count",
+      "id": "no-order-created-without-stock",
+      "kind": "Published",
+      "target": null,
+      "expected": 0
+    }
+  ]
+}

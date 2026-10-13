@@ -14,7 +14,7 @@ This page lists the values Vellum reads from the environment. You edit every oth
 | `Vellum__PreviousMasterKey`, `Vellum__PreviousMasterKeyFile` | none | The old key during a rotation. Vellum only reads with it. |
 | `Vellum__DataDirectory` | `./data` | Local profile only: where Vellum keeps the master key that it creates (`master.key`) and the setup code (`setup-code`). |
 | `Vellum__SetupToken` | none | The token that the first administrator types in the setup screen. At least 16 characters. Required in the hosted profile while no user exists. Optional in the local profile. |
-| `Vellum__SecureCookies` | `true` in hosted | Marks the session cookie as Secure. |
+| `Vellum__SecureCookies` | `true` in hosted, `false` in local | `true` marks the session cookie as Secure on every response. With `false`, the cookie is Secure only when the request came over HTTPS. |
 | `AllowedHosts` | `*` | The public host names of the instance, separated by `;`. |
 | `Database__MigrateOnStartup` | `true` | Applies database migrations when Vellum starts. Set `false` when a separate step applies them. |
 | `ASPNETCORE_FORWARDEDHEADERS_ENABLED` | `false` | Set `true` behind a reverse proxy. Vellum then reads the address of the client from the proxy. The rate limit for sign-in and setup counts by that address. |
@@ -34,6 +34,8 @@ The Compose file reads these values from your shell or from a `.env` file. Vellu
 | `VELLUM_MASTER_KEY` | empty | Passed to Vellum as `Vellum__MasterKey`. Empty means that Vellum uses `master.key` on the data volume. |
 | `VELLUM_PREVIOUS_MASTER_KEY` | empty | Passed to Vellum as `Vellum__PreviousMasterKey`. |
 | `VELLUM_SETUP_TOKEN` | empty | Passed to Vellum as `Vellum__SetupToken`. Empty means that Vellum creates a setup code. |
+
+The Compose file sets `Vellum__Profile` to `local`, `Vellum__DataDirectory` to `/data` on the volume `vellum-data`, and the connection string of the Compose database.
 
 ## The two profiles
 
@@ -69,13 +71,16 @@ In both profiles:
 - `Vellum__SetupToken` is set and is shorter than 16 characters.
 - The database holds stored credentials or session keys under a master key that is not loaded. The message gives the ID of each missing key, the number of rows that use it, and the IDs of the loaded keys. See [Rotate the master key](/how-to/rotate-the-master-key/).
 
+In the local profile, when the environment gives the master key and a `master.key` file also exists, Vellum starts, does not read the file and writes a warning to the log.
+
 In the local profile:
 
 - No master key is set, no `master.key` file exists, and the database holds data under a key. Vellum does not create a new key.
 - No master key is set and the database cannot be reached to make that check.
 - Users other than the owner can read or change `master.key`. The fix is `chmod 600` on the file.
 - `master.key` is empty, or the data directory cannot be written.
-- The `setup-code` file cannot be written.
+- The `setup-code` file cannot be read or created.
+- The `setup-code` file is empty or holds fewer than 16 characters. The fix is to delete the file and start again.
 
 In the hosted profile:
 
@@ -92,7 +97,8 @@ The Vellum program accepts these commands in place of a normal start. With Compo
 |---|---|
 | `dotnet Vellum.dll keys forget` | Lists the stored credentials and session keys that use a master key that the environment does not give. It deletes nothing and exits with code 1 if it lists any. |
 | `dotnet Vellum.dll keys forget --yes` | Deletes those rows and records the deletion in the audit log. Use it only when the key is lost. |
-| `dotnet Vellum.dll health` | Calls `/health` on the same machine. It exits with code 0 when the answer is `200`. The container health check runs it. |
+| `dotnet Vellum.dll keys` with other arguments | Prints the usage line and exits with code 2. |
+| `dotnet Vellum.dll health` | Calls `/health` on `127.0.0.1`, on the first port in `ASPNETCORE_HTTP_PORTS` (`8080` when the value is not set). It exits with code 0 when the answer is `200`. The container health check runs it. |
 
 ## Limits on sign-in and setup
 
@@ -100,7 +106,7 @@ The Vellum program accepts these commands in place of a normal start. With Compo
 
 Five wrong passwords lock an account for five minutes. Sign-in answers `401` for a wrong password, for an unknown account and for a locked account.
 
-A new password has 10 characters or more.
+A new password has 10 characters or more, with one digit or more and one upper-case letter or more.
 
 A request body that is larger than its limit gets `413` before Vellum reads it: 4 KB for sign-in and setup, 32 KB for a credential, 64 KB for workspace settings and 68 KB for instance settings.
 
