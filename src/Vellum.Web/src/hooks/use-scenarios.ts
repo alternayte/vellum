@@ -8,6 +8,7 @@ import {
   putApiProjectsByProjectIdScenariosByScenarioId,
 } from '@/api/generated'
 import '@/api/client'
+import { shownInline } from '@/lib/mutation-errors'
 import type { TraceRun } from '@/lib/trace'
 import { apiErrorMessage } from './use-contracts'
 
@@ -61,6 +62,7 @@ export function useSaveScenario(projectId: string) {
       return unwrap<ScenarioDocument>(result, 'The scenario was not saved.')
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['projects', projectId, 'scenarios'] }),
+    onError: shownInline,
   })
 }
 
@@ -73,6 +75,7 @@ export function useDeleteScenario(projectId: string) {
         'The scenario was not deleted.',
       ),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['projects', projectId, 'scenarios'] }),
+    onError: shownInline,
   })
 }
 
@@ -86,5 +89,6 @@ export function useRunScenario(projectId: string, branchId?: string | null) {
         }),
         'The scenario did not run.',
       ),
+    onError: shownInline,
   })
 }

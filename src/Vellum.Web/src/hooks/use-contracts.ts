@@ -11,6 +11,7 @@ import {
   postApiProjectsByProjectIdSubscriptions,
 } from '@/api/generated'
 import '@/api/client'
+import { shownInline } from '@/lib/mutation-errors'
 
 export interface RetryPolicy {
   maxAttempts: number
@@ -132,6 +133,7 @@ export function useContractMutations(projectId: string, branchId?: string | null
           'The operation was not saved.',
         ),
       onSuccess: refresh('operations'),
+      onError: shownInline,
     }),
     removeOperation: useMutation({
       mutationFn: async (operationId: string) =>
@@ -140,6 +142,7 @@ export function useContractMutations(projectId: string, branchId?: string | null
           'The operation was not removed.',
         ),
       onSuccess: refresh('operations'),
+      onError: shownInline,
     }),
     addChannel: useMutation({
       mutationFn: async (channel: NewChannel) =>
@@ -148,6 +151,7 @@ export function useContractMutations(projectId: string, branchId?: string | null
           'The channel was not saved.',
         ),
       onSuccess: refresh('channels'),
+      onError: shownInline,
     }),
     removeChannel: useMutation({
       mutationFn: async (channelId: string) =>
@@ -156,6 +160,7 @@ export function useContractMutations(projectId: string, branchId?: string | null
           'The channel was not removed.',
         ),
       onSuccess: refresh('channels'),
+      onError: shownInline,
     }),
     addSubscription: useMutation({
       mutationFn: async (subscription: NewSubscription) =>
@@ -168,6 +173,7 @@ export function useContractMutations(projectId: string, branchId?: string | null
           'The subscription was not saved.',
         ),
       onSuccess: refresh('subscriptions'),
+      onError: shownInline,
     }),
     removeSubscription: useMutation({
       mutationFn: async (subscriptionId: string) =>
@@ -176,6 +182,7 @@ export function useContractMutations(projectId: string, branchId?: string | null
           'The subscription was not removed.',
         ),
       onSuccess: refresh('subscriptions'),
+      onError: shownInline,
     }),
   }
 }

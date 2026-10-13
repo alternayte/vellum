@@ -160,14 +160,24 @@ function WorkspacePicker() {
                 <h2 className="text-sm font-medium uppercase tracking-wider text-muted-foreground">
                   Projects in {activeWorkspace?.name}
                 </h2>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-7 text-xs"
-                  onClick={() => setShowCreateProject(true)}
-                >
-                  + New Project
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 text-xs"
+                    onClick={() => navigate({ to: '/workspaces/$workspaceId/settings', params: { workspaceId: selectedWorkspaceId } })}
+                  >
+                    Settings
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 text-xs"
+                    onClick={() => setShowCreateProject(true)}
+                  >
+                    + New Project
+                  </Button>
+                </div>
               </div>
               {projectsLoading ? (
                 <p className="text-sm text-muted-foreground">Loading projects…</p>
