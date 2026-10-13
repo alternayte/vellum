@@ -10,3 +10,6 @@ src/Vellum/wwwroot
 .claude
 docs
 tests
+src/Vellum/data
+data
+.env

@@ -1,5 +1,10 @@
+# Postgres only, for running the API and the web client on the host.
 up:
-    docker compose up -d
+    docker compose up -d postgres
+
+# The whole app in containers, at http://localhost:8080.
+up-all:
+    docker compose up -d --build
 
 down:
     docker compose down
@@ -33,6 +38,9 @@ migrate-schemas name:
 
 migrate-scenarios name:
     dotnet ef migrations add {{name}} --project src/Vellum --context ScenariosDbContext --output-dir Modules/Trace/Scenarios/Migrations
+
+migrate-settings name:
+    dotnet ef migrations add {{name}} --project src/Vellum --context SettingsDbContext --output-dir Modules/Settings/Migrations
 
 seed:
     dotnet run --project src/Vellum -- seed

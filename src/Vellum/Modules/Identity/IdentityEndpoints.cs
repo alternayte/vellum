@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Identity;
+using Vellum.Modules.Settings.Setup;
 using Vellum.Shared;
 
 namespace Vellum.Modules.Identity;
@@ -17,8 +18,13 @@ public static class IdentityEndpoints
         group.MapPost("/register", async (
             RegisterRequest request,
             UserManager<ApplicationUser> userManager,
-            SignInManager<ApplicationUser> signInManager) =>
+            SignInManager<ApplicationUser> signInManager,
+            RegistrationPolicy registration,
+            CancellationToken ct) =>
         {
+            if (await registration.RefusalAsync(ct) is { } refusal)
+                return Results.Json(refusal, statusCode: StatusCodes.Status403Forbidden);
+
             var user = new ApplicationUser
             {
                 UserName = request.Email,
@@ -78,7 +84,9 @@ public static class IdentityEndpoints
 
         group.MapGet("/external/callback", async (
             SignInManager<ApplicationUser> signInManager,
-            UserManager<ApplicationUser> userManager) =>
+            UserManager<ApplicationUser> userManager,
+            RegistrationPolicy registration,
+            CancellationToken ct) =>
         {
             var info = await signInManager.GetExternalLoginInfoAsync();
             if (info is null)
@@ -97,6 +105,11 @@ public static class IdentityEndpoints
             var user = await userManager.FindByEmailAsync(email);
             if (user is null)
             {
+                // A first sign-in with an external provider creates an account, so it obeys
+                // the same policy as registration.
+                if (await registration.RefusalAsync(ct) is { } refusal)
+                    return Results.Json(refusal, statusCode: StatusCodes.Status403Forbidden);
+
                 user = new ApplicationUser
                 {
                     UserName = email,

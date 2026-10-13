@@ -1,14 +1,38 @@
+# `docker compose up` gives the whole app at http://localhost:8080 in the local profile.
+# No other configuration is needed: the app creates its schema and its master key.
+# For host-run development start only the database: `docker compose up -d postgres`.
 services:
   postgres:
     image: postgres:17
     ports:
-      - "5432:5432"
+      - "${VELLUM_POSTGRES_PORT:-5432}:5432"
     environment:
       POSTGRES_USER: vellum
       POSTGRES_PASSWORD: vellum
       POSTGRES_DB: vellum
     volumes:
       - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vellum -d vellum"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  vellum:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "${VELLUM_PORT:-8080}:8080"
+    environment:
+      Vellum__Profile: local
+      # The generated master key lives here, on a volume, so it survives a restart.
+      Vellum__DataDirectory: /data
+      ConnectionStrings__DefaultConnection: Host=postgres;Database=vellum;Username=vellum;Password=vellum
+    volumes:
+      - vellum-data:/data
 
 volumes:
   pgdata:
+  vellum-data:

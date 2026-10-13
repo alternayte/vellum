@@ -1,4 +1,7 @@
 using System.Security.Claims;
+using Microsoft.EntityFrameworkCore;
+using Vellum.Modules.Settings.Audit;
+using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Modules.Workspaces.Entities;
 
 namespace Vellum.Modules.Workspaces;
@@ -33,10 +36,14 @@ public static class CreateWorkspace
             Id = Guid.NewGuid(),
             WorkspaceId = request.Id,
             UserId = userId,
-            Role = "Owner"
+            Role = nameof(WorkspaceRole.Owner)
         });
 
+        // The workspace, its first owner and the audit entry commit together.
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
         await db.SaveChangesAsync(ct);
+        await AuditLog.AppendAsync(db, workspace.Id, userId, AuditLog.MemberAdded, $"user:{userId} role:owner", ct);
+        await transaction.CommitAsync(ct);
         return Results.Created($"/api/workspaces/{workspace.Id}", ToDto(workspace));
     }
 
