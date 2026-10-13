@@ -52,3 +52,13 @@ export function provenanceSummary(provenance: Provenance | null | undefined): st
 
   return parts.length > 0 ? parts.join(' · ') : null
 }
+
+/** Set when a complete rescan no longer finds the source evidence of an accepted fact. */
+export interface StaleMark {
+  sinceRevision: string
+  reason: string
+}
+
+export function staleSummary(stale: StaleMark): string {
+  return `Stale: the last complete scan (${stale.sinceRevision.slice(0, 10)}) did not find this in the source`
+}

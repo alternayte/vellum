@@ -4,7 +4,7 @@ import { kindColor } from '@/lib/kind-colors'
 import { defaultIconForKind, getIconComponent } from '@/lib/default-icons'
 import { useCanvasStore } from '@/stores/canvas-store'
 import { cn } from '@/lib/utils'
-import { factStatusColor, factStatusLabel, provenanceSummary, type Provenance } from '@/lib/fact-status'
+import { factStatusColor, factStatusLabel, provenanceSummary, staleSummary, type Provenance, type StaleMark } from '@/lib/fact-status'
 import type { DiffState } from '@/stores/draft-store'
 
 export interface C4ElementData extends Record<string, unknown> {
@@ -18,6 +18,7 @@ export interface C4ElementData extends Record<string, unknown> {
   ownerId: string | null
   icon?: string | null
   factStatus?: string | null
+  stale?: StaleMark | null
   provenance?: Provenance | null
   lod?: 'full' | 'compact' | 'chip'
   diffState?: DiffState
@@ -152,6 +153,14 @@ export const C4ElementNode = memo(function C4ElementNode({ data }: NodeProps<C4E
           <div className="flex items-center gap-1">
             {diff === 'conflict' && (
               <span className="text-[12px]" title="Conflict">⚠</span>
+            )}
+            {d.stale && (
+              <span
+                className="rounded border border-dashed border-[var(--trace-retry)] px-1 font-mono text-[9px] uppercase tracking-wider text-[var(--trace-retry)]"
+                title={staleSummary(d.stale)}
+              >
+                stale
+              </span>
             )}
             {d.factStatus && d.factStatus !== 'declared' && (
               <span

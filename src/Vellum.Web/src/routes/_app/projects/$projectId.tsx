@@ -14,6 +14,7 @@ import { CommandPalette } from '@/components/command-palette/command-palette'
 import { TraceDock } from '@/components/trace/trace-dock'
 import { ContractsFlyout } from '@/components/trace/contracts-flyout'
 import { ScenariosFlyout } from '@/components/trace/scenarios-flyout'
+import { ImportFlyout } from '@/components/import/import-flyout'
 import type { ScenarioReference } from '@/components/trace/scenario-editor'
 import { useChannels, useOperations, useSubscriptions } from '@/hooks/use-contracts'
 import { useElements, useAddElement, useUpdateElement, useRemoveElement } from '@/hooks/use-elements'
@@ -624,6 +625,7 @@ function ProjectWorkspace() {
           {activeFlyout === 'scenarios' && (
             <ScenariosFlyout projectId={projectId} branchId={contractBranchId} references={scenarioReferences} />
           )}
+          {activeFlyout === 'import' && <ImportFlyout projectId={projectId} />}
           {activeFlyout === 'search' && null /* ⌘K handles search for now */}
         </LeftToolbar>
         <main className="relative flex-1">

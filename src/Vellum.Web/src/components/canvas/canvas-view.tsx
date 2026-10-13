@@ -33,7 +33,7 @@ import { Button } from '@/components/ui/button'
 import type { C4ElementData } from './nodes/c4-element-node'
 import type { C4ContainerData } from './nodes/c4-container-node'
 import type { DiffState } from '@/stores/draft-store'
-import type { Provenance } from '@/lib/fact-status'
+import type { Provenance, StaleMark } from '@/lib/fact-status'
 import { kindColor } from '@/lib/kind-colors'
 import { traceEdgeLabel, traceFamily } from '@/lib/trace'
 import { currentTraceEvent, useTraceStore } from '@/stores/trace-store'
@@ -51,6 +51,7 @@ interface ElementModel {
   parentId: string | null
   icon: string | null
   factStatus?: string | null
+  stale?: StaleMark | null
   provenance?: Provenance | null
 }
 
@@ -290,6 +291,7 @@ function CanvasViewInner({
               ownerId: child.ownerId,
               icon: child.icon,
               factStatus: child.factStatus ?? null,
+              stale: child.stale ?? null,
               provenance: child.provenance ?? null,
               lod: tier,
               diffState: childDiffState,
@@ -314,6 +316,7 @@ function CanvasViewInner({
             ownerId: el.ownerId,
             icon: el.icon,
             factStatus: el.factStatus ?? null,
+            stale: el.stale ?? null,
             provenance: el.provenance ?? null,
             lod: tier,
             diffState: entityDiffState,

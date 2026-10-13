@@ -206,3 +206,15 @@ describe('C4ElementNode', () => {
     expect(screen.queryByText('Handles order lifecycle')).toBeNull()
   })
 })
+
+describe('C4ElementNode stale mark', () => {
+  it('shows the mark and the revision when a rescan lost the evidence', () => {
+    renderNode({ ...mockData, stale: { sinceRevision: '38035b90ae71d6d3', reason: 'evidence-not-found' } })
+    expect(screen.getByText('stale').getAttribute('title')).toContain('38035b90ae')
+  })
+
+  it('shows no mark for a fact with current evidence', () => {
+    renderNode({ ...mockData, stale: null })
+    expect(screen.queryByText('stale')).toBeNull()
+  })
+})

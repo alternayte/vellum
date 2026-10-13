@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 
-export type Flyout = 'files' | 'create' | 'catalog' | 'contracts' | 'scenarios' | 'search'
+export type Flyout = 'files' | 'create' | 'catalog' | 'contracts' | 'scenarios' | 'import' | 'search'
 
 interface ShellState {
   activeFlyout: Flyout | null
