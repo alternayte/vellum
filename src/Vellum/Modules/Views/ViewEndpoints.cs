@@ -1,3 +1,5 @@
+using Vellum.Shared;
+
 namespace Vellum.Modules.Views;
 
 public static class ViewEndpoints
@@ -13,7 +15,8 @@ public static class ViewEndpoints
         group.MapGet("/{viewId}", GetView.Handle);
         group.MapPatch("/{viewId}", UpdateView.Handle);
         group.MapDelete("/{viewId}", DeleteView.Handle);
-        group.MapPut("/{viewId}/layout", SaveLayout.Handle);
+        // A layout holds one position for each element on the canvas.
+        group.MapPut("/{viewId}/layout", SaveLayout.Handle).WithBodyLimit(RequestBodyLimit.Document);
 
         return app;
     }

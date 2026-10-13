@@ -19,6 +19,9 @@ public static class UpdateWorkspace
         var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
         await auth.RequireRoleAsync(id, userId, WorkspaceRole.Owner, ct);
 
+        if (WorkspaceText.Refusal(request.Name, nameRequired: false) is { } refusal)
+            return refusal;
+
         var workspace = await db.Workspaces.FindAsync([id], ct);
         if (workspace is null)
             return Results.NotFound(new ErrorResponse("not_found", "Workspace not found"));

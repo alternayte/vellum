@@ -49,7 +49,7 @@ public static class RunScenario
 
             // Only the project's own schemas count. A reference to anything else stays
             // unresolved, and the engine reports it as an issue.
-            var referenced = TraceModelBuilder.ReferencedSchemaIds(model);
+            var referenced = ContractDecider.ReferencedSchemaIds(model);
             var schemas = await schemasDb.Schemas.AsNoTracking()
                 .Where(s => s.ProjectId == projectId && referenced.Contains(s.Id))
                 .Select(s => new { s.Id, s.Content })

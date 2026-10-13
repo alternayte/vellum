@@ -1,7 +1,4 @@
-using Deedbox;
-using Microsoft.EntityFrameworkCore;
 using Vellum.Modules.Modelling.Model;
-using Vellum.Modules.Schemas;
 using Vellum.Shared;
 
 namespace Vellum.Modules.Modelling.Messages;
@@ -17,27 +14,11 @@ public sealed record UpdateMessageRequest(
 public sealed record UpdateMessageCommandEnvelope(
     Guid ProjectId, Guid StreamId, Guid MessageId, string UserId, UpdateMessageRequest Request);
 
-public sealed class UpdateMessageHandler : ICommandHandler<UpdateMessageCommandEnvelope, CommandResult<MessageDto>>
+public sealed class UpdateMessageHandler(IServiceProvider services)
+    : ICommandHandler<UpdateMessageCommandEnvelope, CommandResult<MessageDto>>
 {
-    private readonly IEventStore _store;
-    private readonly SchemasDbContext _schemasDb;
-
-    public UpdateMessageHandler(IEventStore store, SchemasDbContext schemasDb)
-    {
-        _store = store;
-        _schemasDb = schemasDb;
-    }
-
     public async Task<CommandResult<MessageDto>> HandleAsync(UpdateMessageCommandEnvelope cmd, CancellationToken ct = default)
     {
-        if (cmd.Request.SetSchemaId && cmd.Request.SchemaId.HasValue &&
-            !await _schemasDb.Schemas.AsNoTracking()
-                .AnyAsync(s => s.Id == cmd.Request.SchemaId.Value && s.ProjectId == cmd.ProjectId, ct))
-        {
-            return new CommandResult<MessageDto>.Invalid(
-                [new ValidationError("schemaId", "Schema not found in this project")]);
-        }
-
         FactStatus? requestedStatus = null;
         if (cmd.Request.FactStatus is not null)
         {
@@ -60,8 +41,9 @@ public sealed class UpdateMessageHandler : ICommandHandler<UpdateMessageCommandE
             ? ProvenanceMapper.ToDomain(cmd.Request.Provenance, Guid.Parse(cmd.UserId))
             : null;
 
-        return await _store.ForProject(cmd.ProjectId).Decide<ModelState, MessageDto>(
-            cmd.StreamId,
+        return await SchemaBoundWrite.DecideAsync(
+            services, cmd.ProjectId, cmd.StreamId,
+            [("schemaId", cmd.Request.SetSchemaId ? cmd.Request.SchemaId : null)],
             Decide,
             state => AddMessageHandler.ToDto(state.Messages[cmd.MessageId]),
             ct);

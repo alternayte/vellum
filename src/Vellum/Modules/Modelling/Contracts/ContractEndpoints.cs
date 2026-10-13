@@ -16,9 +16,11 @@ public static class ContractEndpoints
 
         var operations = project.MapGroup("/operations").WithTags("Operations");
 
-        operations.MapGet("/", (Guid projectId, Guid? branchId, HttpContext http, IEventStore store, CancellationToken ct) =>
+        operations.MapGet("/", (
+            Guid projectId, Guid? branchId, string? cursor, int? limit,
+            HttpContext http, IEventStore store, CancellationToken ct) =>
             ModelBranches.RunAsync(http, projectId, branchId, WorkspaceRole.Viewer,
-                (streamId, _) => ListContracts.Operations(store, streamId, ct), ct))
+                (streamId, _) => ListContracts.Operations(store, streamId, cursor, limit, ct), ct))
             .Produces<Page<OperationDto>>();
 
         operations.MapPost("/", (
@@ -47,9 +49,11 @@ public static class ContractEndpoints
 
         var channels = project.MapGroup("/channels").WithTags("Channels");
 
-        channels.MapGet("/", (Guid projectId, Guid? branchId, HttpContext http, IEventStore store, CancellationToken ct) =>
+        channels.MapGet("/", (
+            Guid projectId, Guid? branchId, string? cursor, int? limit,
+            HttpContext http, IEventStore store, CancellationToken ct) =>
             ModelBranches.RunAsync(http, projectId, branchId, WorkspaceRole.Viewer,
-                (streamId, _) => ListContracts.Channels(store, streamId, ct), ct))
+                (streamId, _) => ListContracts.Channels(store, streamId, cursor, limit, ct), ct))
             .Produces<Page<ChannelDto>>();
 
         channels.MapPost("/", (
@@ -78,9 +82,11 @@ public static class ContractEndpoints
 
         var subscriptions = project.MapGroup("/subscriptions").WithTags("Subscriptions");
 
-        subscriptions.MapGet("/", (Guid projectId, Guid? branchId, HttpContext http, IEventStore store, CancellationToken ct) =>
+        subscriptions.MapGet("/", (
+            Guid projectId, Guid? branchId, string? cursor, int? limit,
+            HttpContext http, IEventStore store, CancellationToken ct) =>
             ModelBranches.RunAsync(http, projectId, branchId, WorkspaceRole.Viewer,
-                (streamId, _) => ListContracts.Subscriptions(store, streamId, ct), ct))
+                (streamId, _) => ListContracts.Subscriptions(store, streamId, cursor, limit, ct), ct))
             .Produces<Page<SubscriptionDto>>();
 
         subscriptions.MapPost("/", (

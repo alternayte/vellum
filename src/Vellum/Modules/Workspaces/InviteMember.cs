@@ -23,6 +23,10 @@ public static class InviteMember
         var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
         await auth.RequireRoleAsync(workspaceId, userId, WorkspaceRole.Owner, ct);
 
+        if (string.IsNullOrWhiteSpace(request.UserId) || TextRule.Line("userId", request.UserId, TextRule.MaxIdentifier) is not null)
+            return Results.BadRequest(new ErrorResponse("validation_error", "Invalid user",
+                Errors: [new FieldError("userId", "A user ID of at most 100 characters with no control characters is required")]));
+
         if (!Enum.TryParse<WorkspaceRole>(request.Role, ignoreCase: true, out _))
             return Results.BadRequest(new ErrorResponse("validation_error", "Invalid role",
                 Errors: [new FieldError("role", "Must be Owner, Editor, or Viewer")]));

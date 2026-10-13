@@ -4,8 +4,6 @@ using Microsoft.EntityFrameworkCore;
 using Vellum.Modules.Modelling.Model;
 using Vellum.Modules.Schemas;
 using Vellum.Modules.Workspaces;
-using YamlDotNet.Serialization;
-using YamlDotNet.Serialization.NamingConventions;
 
 namespace Vellum.Modules.Modelling.Export;
 
@@ -16,10 +14,6 @@ public static class ExportModel
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         WriteIndented = true,
     };
-
-    private static readonly ISerializer YamlSerializer = new SerializerBuilder()
-        .WithNamingConvention(CamelCaseNamingConvention.Instance)
-        .Build();
 
     public static async Task<IResult> Handle(
         Guid projectId, string format,
@@ -102,8 +96,7 @@ public static class ExportModel
 
         if (format.Equals("yaml", StringComparison.OrdinalIgnoreCase))
         {
-            var yaml = YamlSerializer.Serialize(doc);
-            return Results.Text(yaml, "application/x-yaml");
+            return Results.Text(ModelYaml.Write(doc, JsonOpts), "application/x-yaml");
         }
 
         return Results.Json(doc, JsonOpts);

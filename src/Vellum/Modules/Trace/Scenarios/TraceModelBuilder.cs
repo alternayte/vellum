@@ -17,22 +17,6 @@ public static class TraceModelBuilder
         model.Messages.ToDictionary(m => m.Key, m => new MessageContract(m.Value.Id, m.Value.Name, m.Value.SchemaId)),
         schemas);
 
-    /// <summary>The schemas the model's operations and messages name.</summary>
-    public static IReadOnlySet<Guid> ReferencedSchemaIds(ModelState model)
-    {
-        var ids = new HashSet<Guid>();
-        foreach (var operation in model.Operations.Values)
-        {
-            if (operation.RequestSchemaId is { } request) ids.Add(request);
-            if (operation.ResponseSchemaId is { } response) ids.Add(response);
-        }
-        foreach (var message in model.Messages.Values)
-        {
-            if (message.SchemaId is { } schema) ids.Add(schema);
-        }
-        return ids;
-    }
-
     /// <summary>
     /// A display name for every ID a trace event can carry: elements, operations, channels,
     /// messages and subscriptions. Sorted by ID, so the same model gives the same document.

@@ -38,10 +38,19 @@ public sealed record UpdateSubscriptionCommand(
 /// </summary>
 public static class ContractDecider
 {
+    /// <summary>
+    /// The most operations, channels or subscriptions one model holds. A contract list is read
+    /// from the stored state of the branch, so the state stays bounded. An import document has
+    /// the same limit per kind.
+    /// </summary>
+    public const int MaxPerKind = 5_000;
+
     public static Decision AddOperation(ModelState state, AddOperationCommand cmd)
     {
-        if (IdOwner(state, cmd.Id) is { } owner)
-            return new Decision.Conflict($"ID {cmd.Id} is already used by {owner}");
+        if (state.RefuseNewId(cmd.Id) is { } idRefusal)
+            return idRefusal;
+        if (state.Operations.Count >= MaxPerKind)
+            return new Decision.Conflict($"A model holds at most {MaxPerKind} operations. Remove one before you add another.");
 
         var operation = new OperationState(
             cmd.Id, cmd.OwnerId, cmd.Name, cmd.Transport,
@@ -99,8 +108,10 @@ public static class ContractDecider
 
     public static Decision AddChannel(ModelState state, AddChannelCommand cmd)
     {
-        if (IdOwner(state, cmd.Id) is { } owner)
-            return new Decision.Conflict($"ID {cmd.Id} is already used by {owner}");
+        if (state.RefuseNewId(cmd.Id) is { } idRefusal)
+            return idRefusal;
+        if (state.Channels.Count >= MaxPerKind)
+            return new Decision.Conflict($"A model holds at most {MaxPerKind} channels. Remove one before you add another.");
 
         if (Validate(new ChannelState(cmd.Id, cmd.Name, cmd.Kind)) is { } error)
             return new Decision.Invalid([error]);
@@ -158,8 +169,10 @@ public static class ContractDecider
 
     public static Decision AddSubscription(ModelState state, AddSubscriptionCommand cmd)
     {
-        if (IdOwner(state, cmd.Id) is { } owner)
-            return new Decision.Conflict($"ID {cmd.Id} is already used by {owner}");
+        if (state.RefuseNewId(cmd.Id) is { } idRefusal)
+            return idRefusal;
+        if (state.Subscriptions.Count >= MaxPerKind)
+            return new Decision.Conflict($"A model holds at most {MaxPerKind} subscriptions. Remove one before you add another.");
 
         var subscription = new SubscriptionState(
             cmd.Id, cmd.ChannelId, cmd.ConsumerId, cmd.Retry, cmd.DeadLetterChannelId);
@@ -225,14 +238,34 @@ public static class ContractDecider
             .Select(s => Describe(state, s)),
     ];
 
-    /// <summary>The operations that use a schema, for the refusal to delete it.</summary>
+    /// <summary>The operations and messages that use a schema, for the refusal to delete it.</summary>
     public static IReadOnlyList<string> ReferencesToSchema(ModelState state, SchemaId schemaId) =>
     [
         .. state.Operations.Values
             .Where(o => o.RequestSchemaId == schemaId || o.ResponseSchemaId == schemaId)
             .OrderBy(o => o.Id.Value)
             .Select(Describe),
+        .. state.Messages.Values
+            .Where(m => m.SchemaId == schemaId)
+            .OrderBy(m => m.Id.Value)
+            .Select(m => $"message '{m.Name}' ({m.Id})"),
     ];
+
+    /// <summary>Every schema that an operation or a message of <paramref name="state"/> names.</summary>
+    public static IReadOnlySet<Guid> ReferencedSchemaIds(ModelState state)
+    {
+        var ids = new HashSet<Guid>();
+        foreach (var operation in state.Operations.Values)
+        {
+            if (operation.RequestSchemaId is { } request) ids.Add(request);
+            if (operation.ResponseSchemaId is { } response) ids.Add(response);
+        }
+        foreach (var message in state.Messages.Values)
+        {
+            if (message.SchemaId is { } schema) ids.Add(schema);
+        }
+        return ids;
+    }
 
     /// <summary>
     /// Every contract reference in <paramref name="state"/> that points at nothing. A merge
@@ -279,25 +312,12 @@ public static class ContractDecider
         return $"{consumer} on {channel}";
     }
 
-    /// <summary>
-    /// A fault or an assertion in a scenario names its target by ID alone, so an ID means one
-    /// thing in a model.
-    /// </summary>
-    private static string? IdOwner(ModelState state, Guid id)
-    {
-        if (state.Elements.ContainsKey(id)) return "an element";
-        if (state.Relationships.ContainsKey(id)) return "a relationship";
-        if (state.Messages.ContainsKey(id)) return "a message";
-        if (state.Operations.ContainsKey(id)) return "an operation";
-        if (state.Channels.ContainsKey(id)) return "a channel";
-        if (state.Subscriptions.ContainsKey(id)) return "a subscription";
-        return null;
-    }
-
     private static ValidationError? Validate(ModelState state, OperationState operation)
     {
         if (string.IsNullOrWhiteSpace(operation.Name))
             return new ValidationError("name", "Name is required");
+        if (TextRule.Line("name", operation.Name) is { } nameError)
+            return nameError;
         if (!Enum.IsDefined(operation.Transport))
             return new ValidationError("transport", "Transport must be http, grpc or command");
         if (!state.Elements.ContainsKey(operation.OwnerId))
@@ -311,6 +331,8 @@ public static class ContractDecider
     {
         if (string.IsNullOrWhiteSpace(channel.Name))
             return new ValidationError("name", "Name is required");
+        if (TextRule.Line("name", channel.Name) is { } nameError)
+            return nameError;
         if (!Enum.IsDefined(channel.Kind))
             return new ValidationError("kind", "Kind must be topic, queue or exchange");
         return null;

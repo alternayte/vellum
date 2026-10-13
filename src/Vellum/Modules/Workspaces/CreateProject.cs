@@ -20,6 +20,9 @@ public static class CreateProject
         var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
         await auth.RequireRoleAsync(workspaceId, userId, WorkspaceRole.Editor, ct);
 
+        if (WorkspaceText.Refusal(request.Name, nameRequired: true, request.Description) is { } refusal)
+            return refusal;
+
         var existing = await db.Projects.FindAsync([request.Id], ct);
         if (existing is not null)
             return Results.Ok(ToDto(existing));

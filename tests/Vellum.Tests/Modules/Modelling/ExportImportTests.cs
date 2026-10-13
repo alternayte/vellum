@@ -106,6 +106,30 @@ public class ExportImportTests
         Assert.Contains("Orders", content);
     }
 
+    /// <summary>A document that leaves out what the importer reads is refused or read with defaults, never a 500.</summary>
+    [Theory]
+    [InlineData("""{ "elements": [ null ] }""", HttpStatusCode.BadRequest)]
+    [InlineData("""{ "channels": [ null ] }""", HttpStatusCode.BadRequest)]
+    [InlineData("""{ "elements": [ { "id": "ID1" } ] }""", HttpStatusCode.BadRequest)]
+    [InlineData("""{ "elements": [ { "id": "ID1", "kind": "system", "name": "No status" } ] }""", HttpStatusCode.BadRequest)]
+    [InlineData("""{ "elements": [ { "id": "ID1", "kind": "system", "name": "No tags", "status": "current" } ] }""", HttpStatusCode.OK)]
+    [InlineData("""{ "elements": [ { "id": "ID1", "kind": "system", "name": "A", "status": "current" } ], "messages": [ { "id": "ID2", "name": "No lists", "producerId": "ID1" } ] }""", HttpStatusCode.OK)]
+    [InlineData("""{ "schemas": [ { "id": "ID1", "name": "No content" } ] }""", HttpStatusCode.BadRequest)]
+    [InlineData("""{ "channels": [ { "id": "ID1" } ] }""", HttpStatusCode.BadRequest)]
+    [InlineData("""{ "elements": [ { "id": "ID1", "kind": "system", "name": "A", "status": "current" } ], "operations": [ { "id": "ID2", "ownerId": "ID1" } ] }""", HttpStatusCode.BadRequest)]
+    public async Task An_incomplete_import_document_is_refused_or_read_with_defaults(string document, HttpStatusCode expected)
+    {
+        using var factory = CreateFactory();
+        using var client = await CreateAuthenticatedClientAsync(factory);
+        var projectId = await SetupProjectAsync(client);
+
+        var json = document.Replace("ID1", Guid.NewGuid().ToString()).Replace("ID2", Guid.NewGuid().ToString());
+        var response = await client.PostAsync($"/api/projects/{projectId}/import",
+            new StringContent(json, System.Text.Encoding.UTF8, "application/json"));
+
+        Assert.True(response.StatusCode == expected, $"{response.StatusCode}: {await response.Content.ReadAsStringAsync()}");
+    }
+
     [Fact]
     public async Task Export_yaml_returns_ok()
     {

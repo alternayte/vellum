@@ -22,6 +22,11 @@ public static class CreateComment
         var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
 
+        if (request.Id == Guid.Empty)
+            return CommentRules.Invalid(new ValidationError("id", "An ID is required"));
+        if (CommentRules.Check(request.Body, request.EntityType) is { } invalid)
+            return CommentRules.Invalid(invalid);
+
         var draft = await db.Drafts.AsNoTracking()
             .FirstOrDefaultAsync(d => d.Id == draftId && d.ProjectId == projectId, ct);
         if (draft is null)
@@ -56,4 +61,17 @@ public static class CreateComment
 
     internal static CommentDto ToDto(CommentEntity c) =>
         new(c.Id, c.DraftId, c.EntityId, c.EntityType, c.Author, c.Body, c.CreatedAt, c.UpdatedAt);
+}
+
+/// <summary>What a comment may hold, on create and on edit.</summary>
+internal static class CommentRules
+{
+    public static ValidationError? Check(string? body, string? entityType) =>
+        string.IsNullOrWhiteSpace(body)
+            ? new ValidationError("body", "A comment needs text")
+            : TextRule.Lines("body", body) ?? TextRule.Line("entityType", entityType, TextRule.MaxIdentifier);
+
+    public static IResult Invalid(ValidationError error) =>
+        Results.BadRequest(new ErrorResponse("validation_error", "Validation failed",
+            Errors: [new FieldError(error.Field, error.Message)]));
 }

@@ -9,6 +9,9 @@ public static class ScenarioEndpoints
     {
         var scenarios = app.MapGroup("/api/projects/{projectId}/scenarios")
             .RequireAuthorization()
+            // A scenario is stored in at most ScenarioShape.MaxDocumentBytes. The request may be
+            // larger, because an author's indentation is not stored.
+            .WithBodyLimit(RequestBodyLimit.Document)
             .WithTags("Scenarios");
 
         scenarios.MapGet("/", ReadScenarios.List)

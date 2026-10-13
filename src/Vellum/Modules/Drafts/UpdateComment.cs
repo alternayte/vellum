@@ -21,6 +21,9 @@ public static class UpdateComment
         var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
 
+        if (CommentRules.Check(request.Body, entityType: null) is { } invalid)
+            return CommentRules.Invalid(invalid);
+
         // The draft must be one of this project. Without that, a caller could name a draft of
         // another project and learn from the 403 below that the comment exists.
         var draftInProject = await db.Drafts.AsNoTracking()

@@ -19,7 +19,7 @@ All three lists are required. An empty list is valid.
 
 ## Steps
 
-Every step has a `type` and an `id`. A step ID is unique in the scenario.
+Every step has a `type` and an `id`. A step ID is unique in the scenario. The `type` can be at any position in the object.
 
 | Type | Fields | What it does |
 |---|---|---|
@@ -91,6 +91,26 @@ Vellum checks a scenario before it plays. A scenario with a problem plays nothin
 | Timeout or backoff | 3,600,000 ms |
 | Payload size | 64 KB |
 | Events in one playback | 10,000 |
+
+## Limits of a saved document
+
+Vellum saves a scenario that has validation problems. It refuses a document that is over one of these limits.
+
+| Limit | Value | Status |
+|---|---|---|
+| Request body | 1 MiB | 413 |
+| Stored document | 512 KiB | 413 |
+| Nesting depth of step lists | 24 | 400 |
+| Steps and step lists | 500 | 400 |
+| Payload size | 64 KB | 400 |
+| Arrays and objects nested in one payload | 32 | 400 |
+| Scenario name, dataset name, header name | 200 characters | 400 |
+| Step ID, assertion ID | 100 characters | 400 |
+| Header value | 2,000 characters | 400 |
+| Headers of one message | 50 | 400 |
+| Scenarios in one project | 2,000 | 409 |
+
+A name, an ID or a header must not contain a control character. A payload must not contain the character U+0000.
 
 ## HTTP API
 

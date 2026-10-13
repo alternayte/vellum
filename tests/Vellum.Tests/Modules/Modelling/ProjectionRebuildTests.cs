@@ -111,6 +111,90 @@ public class ProjectionRebuildTests
         Assert.Equal(before, await ReadAll(client, reads));
     }
 
+    /// <summary>
+    /// A model stream also holds contract events, which have no read-model rows, and
+    /// <c>BranchClosed</c>, on which the read model drops a branch. A rebuild replays them all:
+    /// it must not stop on them, and the rows of a merged or abandoned draft must stay gone.
+    /// </summary>
+    [Fact]
+    public async Task Rebuild_replays_contract_events_and_closed_branches()
+    {
+        using var factory = CreateFactory();
+        using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = true, AllowAutoRedirect = false });
+        await client.PostAsJsonAsync("/api/auth/register",
+            new { email = $"test-{Guid.NewGuid():N}@vellum.local", password = "Test123!", displayName = "Test User" });
+
+        var workspaceId = Guid.NewGuid();
+        await client.PostAsJsonAsync("/api/workspaces", new { id = workspaceId, name = "Test WS" });
+        var projectId = Guid.NewGuid();
+        await client.PostAsJsonAsync($"/api/workspaces/{workspaceId}/projects", new { id = projectId, name = "Test Project" });
+        string Url(string path, Guid? branch = null) => $"/api/projects/{projectId}/{path}" + (branch is null ? "" : $"?branchId={branch}");
+
+        // Main: every kind of contract event (added, changed, provenance, removed).
+        Guid orders = Guid.NewGuid(), operation = Guid.NewGuid(), events = Guid.NewGuid(), deadLetters = Guid.NewGuid(), subscription = Guid.NewGuid();
+        await Created(client.PostAsJsonAsync(Url("elements"), new { id = orders, kind = "system", name = "Orders" }));
+        await Created(client.PostAsJsonAsync(Url("operations"), new { id = operation, ownerId = orders, name = "POST /orders", transport = "http" }));
+        await Created(client.PostAsJsonAsync(Url("channels"), new { id = events, name = "order-events", kind = "topic" }));
+        await Created(client.PostAsJsonAsync(Url("channels"), new { id = deadLetters, name = "dlq", kind = "queue" }));
+        await Created(client.PostAsJsonAsync(Url("subscriptions"), new { id = subscription, channelId = events, consumerId = orders, deadLetterChannelId = deadLetters }));
+        foreach (var (path, change) in new (string, object)[]
+        {
+            ($"operations/{operation}", new { timeoutMs = 500, factStatus = "observed-in-source", setProvenance = true, provenance = new { source = "repo@abc:Orders.cs:1" } }),
+            ($"channels/{events}", new { name = "orders.events", factStatus = "unknown" }),
+            ($"subscriptions/{subscription}", new { setDeadLetterChannelId = true, factStatus = "unknown" }),
+        })
+        {
+            Assert.Equal(HttpStatusCode.OK, (await client.PatchAsJsonAsync(Url(path), change)).StatusCode);
+        }
+        Assert.Equal(HttpStatusCode.NoContent, (await client.DeleteAsync(Url($"channels/{deadLetters}"))).StatusCode);
+
+        async Task<DraftDto> DraftAsync(string name) =>
+            (await (await client.PostAsJsonAsync(Url("drafts"), new { id = Guid.NewGuid(), name })).Content.ReadFromJsonAsync<DraftDto>())!;
+
+        // A merged draft: BranchClosed goes to main with the merged contract and element.
+        var merged = await DraftAsync("Merged");
+        await Created(client.PostAsJsonAsync(Url("elements", merged.StreamId), new { id = Guid.NewGuid(), kind = "system", name = "From the merged draft" }));
+        await Created(client.PostAsJsonAsync(Url("channels", merged.StreamId), new { id = Guid.NewGuid(), name = "merged-channel", kind = "topic" }));
+        var preview = await (await client.PostAsync(Url($"drafts/{merged.Id}/merge/preview"), null)).Content.ReadFromJsonAsync<MergePreviewResponse>();
+        var execute = await client.PostAsJsonAsync(Url($"drafts/{merged.Id}/merge/execute"),
+            new { resolutions = Array.Empty<object>(), expectedMainVersion = preview!.MainVersion });
+        Assert.Equal(HttpStatusCode.OK, execute.StatusCode);
+
+        // An abandoned draft: BranchClosed goes to the draft's own stream.
+        var abandoned = await DraftAsync("Abandoned");
+        await Created(client.PostAsJsonAsync(Url("elements", abandoned.StreamId), new { id = Guid.NewGuid(), kind = "system", name = "Only on the abandoned draft" }));
+        Assert.Equal(HttpStatusCode.OK, (await client.PostAsync(Url($"drafts/{abandoned.Id}/abandon"), null)).StatusCode);
+
+        // An open draft with contracts of its own.
+        var open = await DraftAsync("Open");
+        await Created(client.PostAsJsonAsync(Url("elements", open.StreamId), new { id = Guid.NewGuid(), kind = "system", name = "Only on the open draft" }));
+        await Created(client.PostAsJsonAsync(Url("operations", open.StreamId), new { id = Guid.NewGuid(), ownerId = orders, name = "Draft operation", transport = "grpc" }));
+
+        string[] reads =
+        [
+            Url("elements"), Url("operations"), Url("channels"), Url("subscriptions"),
+            Url("elements", open.StreamId), Url("operations", open.StreamId), Url("channels", open.StreamId),
+        ];
+        var before = await ReadAll(client, reads);
+        Assert.Contains("From the merged draft", before[0]);
+        Assert.Contains("merged-channel", before[2]);
+        Assert.DoesNotContain("abandoned", before[0]);
+        Assert.Contains("Only on the open draft", before[4]);
+
+        async Task<int> ClosedBranchRowsAsync()
+        {
+            using var scope = factory.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<ModellingDbContext>();
+            return await db.Elements.CountAsync(e => e.Branch == merged.StreamId || e.Branch == abandoned.StreamId);
+        }
+        Assert.Equal(0, await ClosedBranchRowsAsync());
+
+        await RebuildAsync(factory.Services.GetRequiredService<IEventStoreAdmin>(), "model_read_model");
+
+        Assert.Equal(before, await ReadAll(client, reads));
+        Assert.Equal(0, await ClosedBranchRowsAsync());
+    }
+
     private static async Task Created(Task<HttpResponseMessage> request) =>
         Assert.Equal(HttpStatusCode.Created, (await request).StatusCode);
 
