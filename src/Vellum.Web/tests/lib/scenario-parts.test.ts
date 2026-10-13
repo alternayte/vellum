@@ -1,0 +1,19 @@
+import { describe, it, expect } from 'vitest'
+import { scenarioSteps } from '../../src/lib/scenario-parts'
+
+describe('the parts a scenario names', () => {
+  // A fault of a check is chosen from these, and "Show on canvas" rings them: a step that is missed is a part nobody can fault or see.
+  it('finds nested steps, with the elements and the contracts each names', () => {
+    const steps = scenarioSteps([
+      {
+        type: 'call', id: 'place', from: 'customer', operation: 'post-orders',
+        then: [{ type: 'write', id: 'save', by: 'api', store: 'db' }],
+        onError: [{ type: 'branch', id: 'check', whenStep: 'save', is: 'Failed', then: [], else: [{ type: 'write', id: 'undo', by: 'api', store: 'db' }] }],
+      },
+      { type: 'parallel', id: 'fan', branches: [[{ type: 'publish', id: 'publish', from: 'api', channel: 'events', message: 'created', handlers: { billing: [{ type: 'call', id: 'charge', from: 'worker', operation: 'pay' }] } }]] },
+    ])
+    expect(steps.map((s) => s.id)).toEqual(['place', 'save', 'check', 'undo', 'fan', 'publish', 'charge'])
+    expect(steps.find((s) => s.id === 'place')).toMatchObject({ elementIds: ['customer'], contractIds: ['post-orders'], messageId: null })
+    expect(steps.find((s) => s.id === 'publish')).toMatchObject({ elementIds: ['api'], contractIds: ['events', 'billing'], messageId: 'created' })
+  })
+})

@@ -7,7 +7,7 @@ In this tutorial you ask one question about the Orders system: "What happens if 
 
 The tutorial uses no AI provider and no GitHub account.
 
-You use the terminal for most steps. The app can show a promise, approve it and run its checks. In this version the app cannot set a first number for the requirement ID, a forbidden event, a required source pattern or the faults of a check. It also has no button for a brief. The HTTP API can do all of these.
+You declare the flow in the terminal. After that, each step has two ways: **In the app** and **With the HTTP API**. Use one way for the full tutorial. The terminal commands use the variables of the commands before them, so a command does not work after a step that you did in the app.
 
 ## Before you start
 
@@ -123,7 +123,24 @@ The payload of `publish-order-created` matches the schema of `OrderCreated` that
 
 ## Declare the promise
 
-1. Set the prefix of the requirement IDs. `startAt` gives the number of the first promise. The app sets the prefix with no `startAt`, and then the first promise is `ORD-001`.
+In the app:
+
+1. Open the project and select **Promises** in the left toolbar.
+2. In **Prefix (2 to 6 letters)**, enter `ORD`. In **First number**, enter `14`. The line below the fields shows `ORD-014`.
+3. Select **Set the prefix**. A project gets its prefix one time.
+4. Select **New**.
+5. In **Title**, enter `An accepted order must survive a broker outage`.
+6. Fill **Claim**, **Scope**, **Preconditions**, **Expected outcome**, **Forbidden outcome** and **What counts as evidence** with the texts of the command in step 2 below.
+7. Below **Forbidden events**, select **Add a forbidden event**. Keep `Dropped` and **Anywhere in the scenario**.
+8. Below **Required source pattern**, select **The source of a repository must declare a pattern.** Keep `acme/orders`, `transactional-outbox` and **The whole repository**.
+9. Below **Linked to**, select **Place an order**, **POST /orders · Orders.Api**, **order-events**, **OrderCreated** and **Orders.Api**.
+10. Select **Create draft**. The title of the dialog starts with `ORD-014`.
+
+You choose each part of the model by its name. You do not enter an ID.
+
+With the HTTP API:
+
+1. Set the prefix of the requirement IDs. `startAt` gives the number of the first promise.
 
    <!-- snippet: live -->
    ```sh
@@ -166,6 +183,18 @@ A draft is not a requirement. Nothing counts it until an owner approves it.
 
 An obligation is one check that gives evidence for the promise. Vellum generates obligations from the links. It never adds a result.
 
+In the app:
+
+1. In the dialog of `ORD-014`, select **Generate from the links**. The list **Obligations** shows `ORD-014/O1`, `ORD-014/O2` and `ORD-014/O3`.
+2. Select the pencil button of `ORD-014/O1`. Its name is **Change ORD-014/O1**.
+3. In **Title**, enter `The order flow holds while the broker is down`.
+4. Below **Faults**, select **Add a fault**. Keep **order-events (channel)**, **Outage** and `1` in **Fails the first**. You can select only the parts that the steps of the scenario name.
+5. Select **Save the obligation**.
+
+To add an obligation that the links do not give, select **Add an obligation** and select its **Kind**. If the server refuses a value, the message shows below the field of that value.
+
+With the HTTP API:
+
 1. Generate them.
 
    <!-- snippet: live -->
@@ -198,7 +227,15 @@ An obligation is one check that gives evidence for the promise. Vellum generates
 
 Only a workspace owner can approve. An agent token cannot.
 
-1. In the app, open **Promises** in the left toolbar and select **ORD-014**. Read every field and every obligation.
+In the app:
+
+1. Open **Promises** in the left toolbar and select **ORD-014**. Read every field and every obligation.
+2. Read the box above the buttons. It says **Approval is blocked:** and gives each cause, or it says that nothing on the screen blocks approval.
+3. Select **Approve revision 1**.
+
+With the HTTP API:
+
+1. Read the promise: `api GET "promises/$PROMISE"`.
 2. Approve the revision that you read. An approval names the revision and its content hash. If the draft changed after you read it, Vellum answers `409` with the type `revision_changed` and approves nothing.
 
    <!-- snippet: live -->
@@ -211,9 +248,16 @@ Only a workspace owner can approve. An agent token cannot.
    {"state":"approved","inForceRevision":1}
    ```
 
-   In the app, the button **Approve revision 1** in the promise dialog does the same.
-
 ## Run the checks
+
+In the app:
+
+1. In the dialog of `ORD-014`, select **Run** on `ORD-014/O1`. The label becomes **Passed**. Below it you read what the check played, the model version, the faults and each assertion that shows nothing.
+2. On `ORD-014/O3`, keep the scan `main` in the list and select **Run against this scan**. The label becomes **Passed**, with the source lines.
+3. `ORD-014/O2` stays **Not run**. It is a test plan.
+4. Select **Show on canvas**. The dialog closes, and the canvas rings the parts of the model that the promise and its flow name.
+
+With the HTTP API:
 
 1. Run the scenario check.
 
@@ -258,7 +302,20 @@ A passed check is evidence for what it checked, in the scope that the result sho
 
 The stand-in serves a second ref of `acme/orders`: `remove-outbox`. On that ref the Orders API publishes directly, and the field `Total` of `OrderCreated` has the name `TotalAmount`.
 
-1. Scan the ref. You can also do this in the app: open **Import from GitHub**, give `acme/orders` in **Repository** and `remove-outbox` in **Branch, tag or commit**, and select **Scan repository**.
+In the app:
+
+1. Open **Import from GitHub**. Enter `acme/orders` in **Repository** and `remove-outbox` in **Branch, tag or commit**. Select **Scan repository**.
+2. When the scan shows **Scan complete**, select **Impact** on it.
+3. Read **Changed in the source**. It has the changed schema and the changed message `OrderCreated`, and the line **Removed Transactional outbox**. Each line has the label **Definite**. Open a line to read the diff and the source lines.
+4. Read **Affected flows**. **Place an order** has one **Definite** reason: a step names the changed schema. It has one **Possible** reason: its steps run in the service of the outbox.
+5. Read **Affected promises**. `ORD-014` has the label **At risk**.
+6. On `ORD-014/O3` in that list, select **Run against this scan**. The label becomes **Unsupported**. A comparison scan cannot establish that a pattern is absent.
+7. Close the dialog. On the scan, select **Follow this ref**. This is what happens when the change is merged.
+8. Select **Impact** again and select **Run against this scan** again. The check has the label **Failed**, and `ORD-014` has the label **Broken**.
+
+With the HTTP API:
+
+1. Scan the ref.
 
    <!-- snippet: live -->
    ```sh
@@ -289,7 +346,7 @@ The stand-in serves a second ref of `acme/orders`: `remove-outbox`. On that ref 
 
    The result is `unsupported`. The detail says that the snapshot has no such fact, that a comparison scan cannot establish absence, and where the pattern was found before. Vellum does not report a failure that it cannot establish.
 
-3. Make the changed ref the one that the model follows. This is what happens when the change is merged. In the app the button is **Follow this ref** on the scan in **Import from GitHub**.
+3. Make the changed ref the one that the model follows. This is what happens when the change is merged.
 
    <!-- snippet: live -->
    ```sh
@@ -339,6 +396,17 @@ A blocker prevents **Build ready**. It does not prevent an export. [Stale result
 ## Export the brief for an agent
 
 A brief holds only the part of the model that one change needs: the promise, what it links, and the checks.
+
+In the app:
+
+1. Open **Build** in the left toolbar.
+2. Below **Brief for an agent**, select the scope **A change**. In **Scan**, select the scan of `remove-outbox`.
+3. Select **Preview the brief**. The dialog says **This scope is not build ready** and lists each blocker. Below, it shows the text of the brief.
+4. Select **Copy**, or select **Download**.
+
+The brief of a change has one more section, **8. Change under review**. It holds the impact report of the scan. The scope **A promise** gives the brief of the command below.
+
+With the HTTP API:
 
 <!-- snippet: live -->
 ```sh

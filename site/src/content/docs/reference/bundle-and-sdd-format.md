@@ -158,6 +158,8 @@ Text from the model, from a repository or from a person is in a block marked `(d
 
 A brief is one Markdown document for a selection. The body of `POST /api/projects/{projectId}/build/brief` takes `promiseIds`, `scenarioIds` and `elementIds`, and optionally `revisionId` or `branchId`. The selection has 1 to 200 IDs.
 
+The body also takes `changeScanId`, the ID of a completed scan of the project. The brief then selects each promise, scenario and element that the change impact of that scan names. With `changeScanId`, the other IDs are optional.
+
 The closure rule decides what the brief holds. A selected element brings its own operations, subscriptions and messages. A selected approved promise brings what it links. A scenario brings everything that its steps and faults name.
 
 | Section | Content |
@@ -168,6 +170,8 @@ The closure rule decides what the brief holds. A selected element brings its own
 | `4. Requirements (approved promises)` | The approved promises in scope. |
 | `5. Required checks` | The checks that the obligations require. |
 | `6. Not approved: do not implement as requirements` | Draft promises, retired promises and unconfirmed facts in scope. |
+| `7. Blockers in scope` | The open blockers for the things in scope. |
+| `8. Change under review` | Only with `changeScanId`: the impact report of the scan. Each entry is `definite`, `possible` or `unknown`. The section is not a requirement. |
 
 A brief holds no contract file.
 
@@ -178,7 +182,8 @@ The answer is `{"brief": "<Markdown>", "manifest": {}}` with these manifest fiel
 | `format` | `vellum-brief/1`. |
 | `generator` | As in the bundle manifest. |
 | `pinned` | The pinned state. |
-| `selection` | `promiseIds`, `scenarioIds`, `elementIds` as sent. |
+| `selection` | `promiseIds`, `scenarioIds`, `elementIds` as sent, and what `changeScanId` added. |
+| `changeScanId` | The scan of the change. Absent in a brief of a selection alone. |
 | `included` | Everything in the brief by ID: `elementIds`, `operationIds`, `channelIds`, `subscriptionIds`, `messageIds`, `schemaIds`, `scenarioIds`, `requirementIds`. |
 | `notApproved` | Requirement IDs of promises in scope that no person approved. |
 | `retired` | Requirement IDs of selected promises that are retired. |

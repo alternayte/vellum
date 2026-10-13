@@ -261,6 +261,12 @@
   transition: outline-color 0.2s, box-shadow 0.2s;
 }
 
+/* A promise or an affected flow shown on the canvas: its parts keep the ring above, the
+   rest steps back. */
+.react-flow__node.vellum-dimmed-node {
+  opacity: 0.35;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .vellum-trace-particle {
     display: none;

@@ -3626,6 +3626,65 @@
         }
       }
     },
+    "/api/projects/{projectId}/imports/{importId}/impact": {
+      "get": {
+        "tags": [
+          "Imports"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "importId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChangeImpactDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/setup/status": {
       "get": {
         "tags": [
@@ -13185,6 +13244,13 @@
             "items": {
               "$ref": "#/components/schemas/Blocker"
             }
+          },
+          "changeScanId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
           }
         }
       },
@@ -13229,6 +13295,13 @@
             "format": "uuid"
           },
           "branchId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "changeScanId": {
             "type": [
               "null",
               "string"
@@ -13490,6 +13563,71 @@
             "format": "int32"
           },
           "unknownLines": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          }
+        }
+      },
+      "ChangeImpactDto": {
+        "required": [
+          "scanId",
+          "repository",
+          "kind",
+          "base",
+          "head",
+          "limits",
+          "changes",
+          "flows",
+          "promises",
+          "promisesNotAffected"
+        ],
+        "type": "object",
+        "properties": {
+          "scanId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "repository": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "base": {
+            "$ref": "#/components/schemas/ImpactSideDto"
+          },
+          "head": {
+            "$ref": "#/components/schemas/ImpactSideDto"
+          },
+          "limits": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "changes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ImpactChangeDto"
+            }
+          },
+          "flows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ImpactFlowDto"
+            }
+          },
+          "promises": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ImpactPromiseDto"
+            }
+          },
+          "promisesNotAffected": {
             "pattern": "^-?(?:0|[1-9]\\d*)$",
             "type": [
               "integer",
@@ -17421,6 +17559,108 @@
           }
         }
       },
+      "ImpactChangeDto": {
+        "required": [
+          "id",
+          "kind",
+          "action",
+          "entityKind",
+          "entityId",
+          "name",
+          "certainty",
+          "basis",
+          "diff",
+          "evidence",
+          "elementId",
+          "pattern"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "action": {
+            "type": "string"
+          },
+          "entityKind": {
+            "type": "string"
+          },
+          "entityId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "certainty": {
+            "type": "string"
+          },
+          "basis": {
+            "type": "string"
+          },
+          "diff": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProposalChangeDto"
+            }
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EvidenceDto"
+            }
+          },
+          "elementId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "pattern": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "ImpactCheckDto": {
+        "required": [
+          "obligationId",
+          "key",
+          "title",
+          "result",
+          "detail"
+        ],
+        "type": "object",
+        "properties": {
+          "obligationId": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "result": {
+            "type": "string"
+          },
+          "detail": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
       "ImpactEntityDto": {
         "required": [
           "entityKind",
@@ -17437,6 +17677,114 @@
             "format": "uuid"
           },
           "name": {
+            "type": "string"
+          }
+        }
+      },
+      "ImpactFlowDto": {
+        "required": [
+          "scenarioId",
+          "name",
+          "stepIds",
+          "certainty",
+          "reasons"
+        ],
+        "type": "object",
+        "properties": {
+          "scenarioId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "stepIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "certainty": {
+            "type": "string"
+          },
+          "reasons": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ImpactReasonDto"
+            }
+          }
+        }
+      },
+      "ImpactPromiseDto": {
+        "required": [
+          "id",
+          "requirementId",
+          "title",
+          "state",
+          "revision",
+          "standing",
+          "certainty",
+          "reasons",
+          "checks"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "requirementId": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "revision": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "standing": {
+            "type": "string"
+          },
+          "certainty": {
+            "type": "string"
+          },
+          "reasons": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ImpactReasonDto"
+            }
+          },
+          "checks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ImpactCheckDto"
+            }
+          }
+        }
+      },
+      "ImpactReasonDto": {
+        "required": [
+          "certainty",
+          "changeId",
+          "text"
+        ],
+        "type": "object",
+        "properties": {
+          "certainty": {
+            "type": "string"
+          },
+          "changeId": {
+            "type": "string"
+          },
+          "text": {
             "type": "string"
           }
         }
@@ -17461,6 +17809,35 @@
             "items": {
               "type": "string"
             }
+          }
+        }
+      },
+      "ImpactSideDto": {
+        "required": [
+          "scanId",
+          "ref",
+          "commitSha"
+        ],
+        "type": "object",
+        "properties": {
+          "scanId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "ref": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "commitSha": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -27534,6 +27911,9 @@
       "name": "GitHub"
     },
     {
+      "name": "Imports"
+    },
+    {
       "name": "Setup"
     },
     {
@@ -27547,9 +27927,6 @@
     },
     {
       "name": "AI design"
-    },
-    {
-      "name": "Imports"
     },
     {
       "name": "Promises"

@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils'
 import { shownInline } from '@/lib/mutation-errors'
 import { describeScan, importApi, isActive, type ScanSummary } from '@/lib/import-api'
 import { ProposalReview } from './proposal-review'
+import { ImpactDialog } from './impact-dialog'
 
 const STATUS_COLOR: Record<ScanSummary['status'], string> = {
   queued: 'var(--muted-foreground)',
@@ -21,12 +22,17 @@ const STATUS_COLOR: Record<ScanSummary['status'], string> = {
  * Imports read a GitHub repository at one commit and propose what they found. Nothing
  * reaches the model until a person accepts it in the review.
  */
-export function ImportFlyout({ projectId }: { projectId: string }) {
+export function ImportFlyout({ projectId, owners }: {
+  projectId: string
+  /** The element that owns an operation, a subscription or a message: what the canvas shows for it. */
+  owners: Record<string, string>
+}) {
   const queryClient = useQueryClient()
   const [repository, setRepository] = useState('')
   const [ref, setRef] = useState('')
   const [folders, setFolders] = useState('')
   const [reviewing, setReviewing] = useState<ScanSummary | null>(null)
+  const [impactOf, setImpactOf] = useState<ScanSummary | null>(null)
 
   const scans = useQuery({
     queryKey: ['projects', projectId, 'imports'],
@@ -90,7 +96,7 @@ export function ImportFlyout({ projectId }: { projectId: string }) {
                 <GitBranch className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm text-foreground">{scan.repository}</p>
-                  <p className="truncate font-mono text-[10px] text-muted-foreground">
+                  <p className="break-words font-mono text-[10px] text-muted-foreground">
                     {scan.ref ?? scan.trackedRef ?? 'default branch'}{scan.commitSha ? ` · ${scan.commitSha.slice(0, 10)}` : ''}
                     {scan.kind === 'comparison' && ' · comparison'}
                   </p>
@@ -100,10 +106,19 @@ export function ImportFlyout({ projectId }: { projectId: string }) {
                 <span className={cn('mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-current', scan.status === 'running' && 'motion-safe:animate-pulse')} />
                 <span className={scan.status === 'failed' || !scan.isComplete ? '' : 'text-muted-foreground'}>{describeScan(scan)}</span>
               </p>
-              <div className="mt-2 flex items-center gap-1.5">
+              <div className="mt-2 flex flex-wrap items-center gap-1.5">
                 {scan.status === 'completed' && (
                   <Button size="sm" variant="secondary" className="h-6 px-2 text-xs" onClick={() => setReviewing(scan)}>
                     {scan.proposalCounts.pending > 0 ? `Review ${scan.proposalCounts.pending} ${scan.proposalCounts.pending === 1 ? 'proposal' : 'proposals'}` : 'Open review'}
+                  </Button>
+                )}
+                {scan.status === 'completed' && (
+                  <Button
+                    size="sm" variant="secondary" className="h-6 px-2 text-xs"
+                    title="What this scan changes, and which flows and promises that reaches"
+                    onClick={() => setImpactOf(scan)}
+                  >
+                    Impact
                   </Button>
                 )}
                 {scan.status === 'completed' && scan.kind === 'comparison' && scan.ref && (
@@ -131,6 +146,7 @@ export function ImportFlyout({ projectId }: { projectId: string }) {
         </ul>
       </div>
 
+      {impactOf && <ImpactDialog projectId={projectId} scan={impactOf} owners={owners} onClose={() => setImpactOf(null)} />}
       {reviewing && <ProposalReview projectId={projectId} scan={reviewing} onClose={() => { setReviewing(null); refresh() }} />}
     </div>
   )

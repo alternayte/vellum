@@ -112,6 +112,15 @@ public static class PromisesModule
             .Produces<ErrorResponse>(StatusCodes.Status429TooManyRequests)
             .AddEndpointFilter(CallerRate.Filter<PromiseRunRate>);
 
+        // The change impact of a scan reads the import, the scenarios and the promises. It
+        // is with the imports in the API, and for a signed-in session like every import read.
+        app.MapGet("/api/projects/{projectId}/imports/{importId:guid}/impact", ChangeImpact.Handle)
+            .RequireAuthorization()
+            .WithTags("Imports")
+            .Produces<ChangeImpactDto>()
+            .Produces<ErrorResponse>(StatusCodes.Status404NotFound)
+            .Produces<ErrorResponse>(StatusCodes.Status409Conflict);
+
         return app;
     }
 }

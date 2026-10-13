@@ -1,27 +1,31 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Crosshair, Pencil, Plus, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import { shownInline } from '@/lib/mutation-errors'
-import { ApiError } from '@/lib/settings-api'
+import { importApi } from '@/lib/import-api'
+import { promiseElementIds } from '@/lib/scenario-parts'
+import { useShellStore } from '@/stores/shell-store'
 import {
-  RESULT_COLOR, RESULT_LABEL, emptyPromise, isAgentActor, promisesApi, shortAgent,
+  describeResult, emptyPromise, isAgentActor, promisesApi, shortAgent,
   type EvidenceSource, type Obligation, type ObligationStatus, type PromiseDetail, type PromiseInput, type PromiseLinks, type PromiseRevision,
 } from '@/lib/promises-api'
 import type { ScenarioReference } from '@/components/trace/scenario-editor'
+import { ObligationDialog } from './obligation-dialog'
+import { Failure, Field, ForbiddenEvents, PatternFields, areaClass, smallSelect } from './promise-fields'
 
 interface Props {
   projectId: string
   promiseId: string | null
   references: ScenarioReference[]
   scenarios: { id: string; name: string }[]
+  /** The element that owns an operation, a subscription or a message: what the canvas shows for it. */
+  owners: Record<string, string>
   onClose: () => void
 }
-
-const areaClass =
-  'mt-1 min-h-16 w-full resize-y rounded-lg border border-input bg-transparent p-2 text-sm text-foreground outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-70'
 
 const LINK_GROUPS: { field: keyof PromiseLinks; label: string; group: ScenarioReference['group'] | 'Scenarios' }[] = [
   { field: 'scenarioIds', label: 'Scenarios', group: 'Scenarios' },
@@ -32,24 +36,15 @@ const LINK_GROUPS: { field: keyof PromiseLinks; label: string; group: ScenarioRe
   { field: 'elementIds', label: 'Elements', group: 'Elements' },
 ]
 
-const FIELD_LABEL: Record<string, string> = {
-  title: 'Title', claim: 'Claim', scope: 'Scope', preconditions: 'Preconditions', expectedOutcome: 'Expected outcome',
-  forbiddenOutcome: 'Forbidden outcome', evidenceCriteria: 'What counts as evidence',
-}
+type TextField = 'scope' | 'preconditions' | 'expectedOutcome' | 'forbiddenOutcome' | 'evidenceCriteria'
 
-/** The error of a request, with each refused field named. */
-function Failure({ error }: { error: Error }) {
-  return (
-    <div role="alert" className="text-xs text-destructive">
-      <p>{error.message}</p>
-      {error instanceof ApiError && error.fields.length > 0 && (
-        <ul className="mt-0.5 list-disc pl-4">
-          {error.fields.map((e, i) => <li key={i}>{FIELD_LABEL[e.field] ?? e.field}: {e.message}</li>)}
-        </ul>
-      )}
-    </div>
-  )
-}
+/** The fields an approval needs beside the title and the claim, with the name each has on the screen. */
+const NEEDED: { field: TextField; label: string }[] = [
+  { field: 'preconditions', label: 'Preconditions' },
+  { field: 'expectedOutcome', label: 'Expected outcome' },
+  { field: 'forbiddenOutcome', label: 'Forbidden outcome' },
+  { field: 'evidenceCriteria', label: 'What counts as evidence' },
+]
 
 function toInput(revision: PromiseRevision): PromiseInput {
   const { title, claim, scope, preconditions, expectedOutcome, forbiddenOutcome, evidenceCriteria, forbiddenEvents, requiresPattern, links } = revision
@@ -61,7 +56,7 @@ function toInput(revision: PromiseRevision): PromiseInput {
  * evidence. An approved revision cannot be edited; a change is a new revision that needs
  * approval again.
  */
-export function PromiseDialog({ projectId, promiseId, references, scenarios, onClose }: Props) {
+export function PromiseDialog({ projectId, promiseId, references, scenarios, owners, onClose }: Props) {
   const queryClient = useQueryClient()
   const [id, setId] = useState(promiseId)
   const loaded = useQuery({
@@ -69,19 +64,21 @@ export function PromiseDialog({ projectId, promiseId, references, scenarios, onC
     queryFn: () => promisesApi.get(projectId, id!),
     enabled: id !== null,
   })
+  // A check of a source pattern reads one completed scan, so the dialog offers the scans there are.
+  const scans = useQuery({ queryKey: ['projects', projectId, 'imports'], queryFn: () => importApi.list(projectId) })
+  const completed = (scans.data ?? []).filter((s) => s.status === 'completed')
+  const repositories = [...new Set(completed.map((s) => s.repository.toLowerCase()))]
+
   const promise = loaded.data ?? null
   // The draft is what a person edits; without one, the dialog shows the revision in force.
   const revision = promise ? (promise.draft ?? promise.current) : null
-  const editable = promise === null ? id === null : revision?.status === 'draft'
+  const editable = promise === null ? id === null : revision?.status === 'draft' && !revision.retires
 
   const [edited, setEdited] = useState<PromiseInput | null>(null)
   const form = edited ?? (revision ? toInput(revision) : emptyPromise())
   const set = <K extends keyof PromiseInput>(field: K, value: PromiseInput[K]) => setEdited({ ...form, [field]: value })
-  const text = (field: 'scope' | 'preconditions' | 'expectedOutcome' | 'forbiddenOutcome' | 'evidenceCriteria') => ({
-    value: form[field] ?? '',
-    onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => set(field, e.target.value || null),
-    disabled: !editable,
-  })
+  const [editing, setEditing] = useState<Obligation | 'new' | null>(null)
+  const [scanFor, setScanFor] = useState<Record<string, string>>({})
 
   const store = (next: PromiseDetail) => {
     setId(next.id)
@@ -100,14 +97,25 @@ export function PromiseDialog({ projectId, promiseId, references, scenarios, onC
     // The content changed after it was loaded: show what is stored now, so the approver reads it first.
     onError: (error) => { shownInline(); if (/changed/i.test(error.message)) void reload() },
   })
-  const revise = useMutation({ mutationFn: () => promisesApi.revise(projectId, id!), onSuccess: store, onError: shownInline })
+  const revise = useMutation({ mutationFn: (retire: boolean) => promisesApi.revise(projectId, id!, retire), onSuccess: store, onError: shownInline })
+  const removeObligation = useMutation({ mutationFn: (key: string) => promisesApi.removeObligation(projectId, id!, key), onSuccess: store, onError: shownInline })
   const run = useMutation({
     // A draft is run by its number. That run is labelled as a draft run and does not count after approval.
-    mutationFn: (key: string) => promisesApi.run(projectId, id!, key, null, revision!.status === 'draft' ? revision!.revision : null),
+    mutationFn: ({ key, scanId }: { key: string; scanId: string | null }) =>
+      promisesApi.run(projectId, id!, key, scanId, revision!.status === 'draft' ? revision!.revision : null),
     onSuccess: reload,
     onError: shownInline,
   })
-  const failure = save.error ?? generate.error ?? approve.error ?? revise.error ?? run.error
+  const show = useMutation({
+    mutationFn: () => promiseElementIds(projectId, revision!, owners),
+    onSuccess: (elementIds) => {
+      useShellStore.getState().showOnCanvas({ title: `${promise!.requirementId} · ${revision!.title}`, elementIds })
+      onClose()
+    },
+    onError: shownInline,
+  })
+  // The save error stays next to its fields. The other errors have no field on this screen.
+  const failure = generate.error ?? approve.error ?? revise.error ?? removeObligation.error ?? run.error ?? show.error
 
   const toggleLink = (field: keyof PromiseLinks, linkId: string) => {
     const current = form.links[field]
@@ -116,11 +124,28 @@ export function PromiseDialog({ projectId, promiseId, references, scenarios, onC
   const options = (group: (typeof LINK_GROUPS)[number]['group']) =>
     group === 'Scenarios' ? scenarios.map((s) => ({ id: s.id, label: s.name })) : references.filter((r) => r.group === group)
   const statusOf = (obligationId: string): ObligationStatus | undefined => revision?.evidenceStatus.obligations.find((o) => o.obligationId === obligationId)
+  const nameOf = (partId: string) => references.find((r) => r.id === partId)?.label ?? scenarios.find((s) => s.id === partId)?.name ?? `${partId.slice(0, 8)} (not in the model)`
+
+  const area = (field: TextField, label: string, wide = false) => (
+    <Field label={label} field={field} error={save.error} className={wide ? 'md:col-span-2' : undefined}>
+      {(control) => <textarea {...control} className={areaClass} value={form[field] ?? ''} disabled={!editable} onChange={(e) => set(field, e.target.value || null)} />}
+    </Field>
+  )
+
+  // What the server refuses an approval for. The dialog names each before the owner selects Approve.
+  const draft = promise && revision?.status === 'draft' ? revision : null
+  const blockers = draft
+    ? [
+        ...(edited !== null ? ['You have changes that are not saved. Save the draft, then read it again.'] : []),
+        ...(draft.retires ? [] : NEEDED.filter((n) => !(form[n.field] ?? '').trim()).map((n) => `“${n.label}” is empty. An approved promise states it.`)),
+        ...(promise!.missingLinks.length > 0 ? ['A linked part no longer exists in the model. Remove the link, then save.'] : []),
+      ]
+    : []
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose() }}>
       <DialogContent className="flex max-h-[92vh] flex-col gap-3 sm:max-w-4xl">
-        <DialogHeader>
+        <DialogHeader className="pr-8">
           <DialogTitle>
             {promise ? <><span className="font-mono">{promise.requirementId}</span> · {revision?.title}</> : 'New promise'}
           </DialogTitle>
@@ -128,8 +153,12 @@ export function PromiseDialog({ projectId, promiseId, references, scenarios, onC
             {promise === null
               ? 'State what must always hold. You approve it before it counts as a requirement.'
               : revision?.status === 'draft'
-                ? `Revision ${revision.revision} is a draft.${promise.inForceRevision ? ` Revision ${promise.inForceRevision} stays in force until this one is approved.` : ' It is not a requirement until an owner approves it.'}`
-                : `Revision ${revision?.revision} is approved and cannot be edited. To change it, start a new revision.`}
+                ? revision.retires
+                  ? `Revision ${revision.revision} retires this promise when an owner approves it. Revision ${revision.retiresRevision ?? promise.inForceRevision} stays in force until then.`
+                  : `Revision ${revision.revision} is a draft.${promise.inForceRevision ? ` Revision ${promise.inForceRevision} stays in force until this one is approved.` : ' It is not a requirement until an owner approves it.'}`
+                : promise.state === 'retired'
+                  ? 'This promise is retired. It binds nothing.'
+                  : `Revision ${revision?.revision} is approved and cannot be edited. To change it, start a new revision.`}
           </DialogDescription>
         </DialogHeader>
 
@@ -145,20 +174,40 @@ export function PromiseDialog({ projectId, promiseId, references, scenarios, onC
             </div>
           )}
           <div className="grid gap-3 md:grid-cols-2">
-            <label className="block text-xs font-medium text-muted-foreground md:col-span-2">
-              Title
-              <Input className="mt-1" value={form.title} onChange={(e) => set('title', e.target.value)} disabled={!editable} placeholder="An accepted order survives a broker outage" />
-            </label>
-            <label className="block text-xs font-medium text-muted-foreground md:col-span-2">
-              Claim
-              <textarea className={areaClass} value={form.claim} onChange={(e) => set('claim', e.target.value)} disabled={!editable} placeholder="When Orders accepts an order, the OrderCreated event reaches its consumers, also when the broker is down at that moment." />
-            </label>
-            <label className="block text-xs font-medium text-muted-foreground">Scope<textarea className={areaClass} {...text('scope')} /></label>
-            <label className="block text-xs font-medium text-muted-foreground">Preconditions<textarea className={areaClass} {...text('preconditions')} /></label>
-            <label className="block text-xs font-medium text-muted-foreground">Expected outcome<textarea className={areaClass} {...text('expectedOutcome')} /></label>
-            <label className="block text-xs font-medium text-muted-foreground">Forbidden outcome<textarea className={areaClass} {...text('forbiddenOutcome')} /></label>
-            <label className="block text-xs font-medium text-muted-foreground md:col-span-2">What counts as evidence<textarea className={areaClass} {...text('evidenceCriteria')} /></label>
+            <Field label="Title" field="title" error={save.error} className="md:col-span-2">
+              {(control) => <Input {...control} className="mt-1" value={form.title} onChange={(e) => set('title', e.target.value)} disabled={!editable} placeholder="An accepted order survives a broker outage" />}
+            </Field>
+            <Field label="Claim" field="claim" error={save.error} className="md:col-span-2">
+              {(control) => (
+                <textarea {...control} className={areaClass} value={form.claim} onChange={(e) => set('claim', e.target.value)} disabled={!editable} placeholder="When Orders accepts an order, the OrderCreated event reaches its consumers, also when the broker is down at that moment." />
+              )}
+            </Field>
+            {area('scope', 'Scope')}
+            {area('preconditions', 'Preconditions')}
+            {area('expectedOutcome', 'Expected outcome')}
+            {area('forbiddenOutcome', 'Forbidden outcome')}
+            <ForbiddenEvents value={form.forbiddenEvents} onChange={(value) => set('forbiddenEvents', value)} references={references} disabled={!editable} error={save.error} />
+            {area('evidenceCriteria', 'What counts as evidence', true)}
           </div>
+
+          <section aria-labelledby="promise-pattern">
+            <h3 id="promise-pattern" className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Required source pattern</h3>
+            <label className="mt-1.5 flex items-start gap-2 text-xs text-foreground">
+              <input
+                type="checkbox" className="mt-0.5 h-3.5 w-3.5 accent-[var(--primary)]" checked={form.requiresPattern !== null} disabled={!editable}
+                onChange={(e) => set('requiresPattern', e.target.checked ? { repository: repositories[0] ?? '', pattern: 'transactional-outbox', service: null } : null)}
+              />
+              <span>
+                The source of a repository must declare a pattern.
+                <span className="block text-[11px] text-muted-foreground">“Generate from the links” then adds a source pattern check for it.</span>
+              </span>
+            </label>
+            {form.requiresPattern && (
+              <div className="mt-2">
+                <PatternFields value={form.requiresPattern} onChange={(value) => set('requiresPattern', value)} repositories={repositories} references={references} disabled={!editable} error={save.error} prefix="requiresPattern" />
+              </div>
+            )}
+          </section>
 
           <section aria-labelledby="promise-links">
             <h3 id="promise-links" className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Linked to</h3>
@@ -188,16 +237,22 @@ export function PromiseDialog({ projectId, promiseId, references, scenarios, onC
                 )
               })}
             </div>
+            {save.error && <div className="mt-1"><Failure error={save.error} shown={['title', 'claim', 'scope', 'preconditions', 'expectedOutcome', 'forbiddenOutcome', 'evidenceCriteria', 'forbiddenEvents', 'requiresPattern']} /></div>}
           </section>
 
-          {promise && revision && (
+          {promise && revision && !revision.retires && (
             <section aria-labelledby="promise-obligations">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-wrap items-center justify-between gap-x-2">
                 <h3 id="promise-obligations" className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Obligations</h3>
                 {editable && (
-                  <Button variant="ghost" size="sm" className="h-6 text-xs" disabled={generate.isPending || edited !== null} onClick={() => generate.mutate()} title={edited ? 'Save your changes first' : undefined}>
-                    Generate from the links
-                  </Button>
+                  <div className="flex gap-1">
+                    <Button variant="ghost" size="sm" className="h-6 text-xs" disabled={generate.isPending || edited !== null} onClick={() => generate.mutate()} title={edited ? 'Save your changes first' : undefined}>
+                      Generate from the links
+                    </Button>
+                    <Button variant="ghost" size="sm" className="h-6 gap-1 text-xs" disabled={edited !== null} onClick={() => setEditing('new')} title={edited ? 'Save your changes first' : undefined}>
+                      <Plus className="h-3 w-3" /> Add an obligation
+                    </Button>
+                  </div>
                 )}
               </div>
               {revision.obligations.length === 0 && (
@@ -206,17 +261,22 @@ export function PromiseDialog({ projectId, promiseId, references, scenarios, onC
               <ul className="mt-1.5 space-y-1.5">
                 {revision.obligations.map((obligation) => {
                   const status = statusOf(obligation.id)
-                  const result = status?.result ?? (obligation.supported ? 'not-run' : 'unsupported')
                   const stale = status?.current === false
-                  const color = stale ? 'var(--trace-retry)' : RESULT_COLOR[result]
+                  const shown = describeResult(status, obligation.supported)
+                  const source = obligation.recipe.sourcePattern
+                  const candidates = source ? completed.filter((s) => s.repository.toLowerCase() === source.repository) : []
+                  const scanId = scanFor[obligation.id] ?? candidates[0]?.id ?? null
                   return (
                     <li key={obligation.id} className="rounded-md border border-border px-3 py-2">
-                      <div className="flex flex-wrap items-baseline gap-x-2">
+                      <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
                         <span className="font-mono text-[11px] text-muted-foreground">{obligation.id}</span>
-                        <span className="min-w-0 flex-1 text-sm text-foreground">{obligation.title}</span>
-                        <span className="rounded-full border px-1.5 text-[11px]" style={{ borderColor: color, color }}>{RESULT_LABEL[result]}{stale ? ' (stale)' : ''}</span>
-                        {obligation.execution === 'deterministic' && (
-                          <Button variant="secondary" size="sm" className="h-6 text-xs" disabled={run.isPending} onClick={() => run.mutate(obligation.key)}>Run</Button>
+                        <span className="min-w-0 flex-1 basis-40 text-sm text-foreground">{obligation.title}</span>
+                        <span className="rounded-full border px-1.5 text-[11px]" style={{ borderColor: shown.color, color: shown.color }}>{shown.label}</span>
+                        {editable && edited === null && (
+                          <span className="flex gap-0.5">
+                            <Button variant="ghost" size="sm" className="h-6 w-6 p-0" aria-label={`Change ${obligation.id}`} onClick={() => setEditing(obligation)}><Pencil className="h-3 w-3" /></Button>
+                            <Button variant="ghost" size="sm" className="h-6 w-6 p-0" aria-label={`Remove ${obligation.id}`} disabled={removeObligation.isPending} onClick={() => removeObligation.mutate(obligation.key)}><Trash2 className="h-3 w-3" /></Button>
+                          </span>
                         )}
                       </div>
                       <p className="mt-0.5 font-mono text-[10px] text-muted-foreground">
@@ -227,26 +287,56 @@ export function PromiseDialog({ projectId, promiseId, references, scenarios, onC
                         )}
                         {obligation.kind}{obligation.execution === 'external-evidence' ? ' · a test plan: Vellum cannot run it; it needs a result from your CI' : obligation.execution === 'none' ? ' · Vellum cannot check this kind' : ''}
                       </p>
+                      <Recipe obligation={obligation} nameOf={nameOf} />
+                      {obligation.execution === 'deterministic' && (
+                        <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                          {source && (
+                            candidates.length === 0
+                              ? <span className="text-xs text-muted-foreground">No completed scan of {source.repository}. Import it, then run this check.</span>
+                              : (
+                                <select className={cn(smallSelect, 'h-6 w-auto max-w-full')} aria-label={`Scan that ${obligation.id} reads`} value={scanId ?? ''} onChange={(e) => setScanFor({ ...scanFor, [obligation.id]: e.target.value })}>
+                                  {candidates.map((s) => <option key={s.id} value={s.id}>{s.ref ?? s.trackedRef ?? 'default branch'} · {s.commitSha?.slice(0, 10)} · {s.kind}</option>)}
+                                </select>
+                              )
+                          )}
+                          <Button variant="secondary" size="sm" className="h-6 text-xs" disabled={run.isPending || (source !== null && source !== undefined && scanId === null)} onClick={() => run.mutate({ key: obligation.key, scanId: source ? scanId : null })}>
+                            {source ? 'Run against this scan' : 'Run'}
+                          </Button>
+                        </div>
+                      )}
                       {obligation.recipe.plan && (
                         <PlanEvidence
                           key={obligation.id + (obligation.recipe.plan.evidenceSource ? JSON.stringify(obligation.recipe.plan.evidenceSource) : '')}
-                          projectId={projectId} promiseId={promise.id} obligation={obligation} editable={editable && edited === null}
+                          projectId={projectId} promiseId={promise.id} obligation={obligation} editable={Boolean(editable) && edited === null}
                           revision={revision.status === 'draft' ? revision.revision : null} onStored={store} onRecorded={reload}
                         />
                       )}
-                      {status && status.result !== 'not-run' && (
+                      {status && (status.result !== 'not-run' || status.at) && (
                         <div className="mt-1.5 space-y-0.5 text-xs text-muted-foreground">
                           {stale && status.changed.length > 0 && (
-                            <div className="text-[var(--trace-retry)]">
+                            <div className="break-words text-[var(--trace-retry)]">
                               <p>This result is stale. It was made before these changes:</p>
                               <ul className="list-disc pl-4">{status.changed.map((change, i) => <li key={i}>{change}</li>)}</ul>
                             </div>
                           )}
                           {status.scope && <p><span className="text-foreground">Checked:</span> {status.scope}</p>}
-                          {status.environment && <p><span className="text-foreground">Against:</span> <span className="font-mono">{status.environment}</span>{status.at ? ` on ${new Date(status.at).toLocaleString()}` : ''}</p>}
+                          {status.environment && <p><span className="text-foreground">Against:</span> <span className="break-all font-mono">{status.environment}</span>{status.at ? ` on ${new Date(status.at).toLocaleString()}` : ''}</p>}
+                          {status.modelRevision && (
+                            <p><span className="text-foreground">Model:</span> version {status.modelRevision.version}{status.modelRevision.revisionName ? `, revision “${status.modelRevision.revisionName}”` : ''}</p>
+                          )}
+                          {status.commitSha && (
+                            <p>
+                              <span className="text-foreground">Commit:</span> <span className="font-mono">{status.commitSha.slice(0, 10)}</span>
+                              {status.inputs?.ref ? <> of ref <span className="font-mono">{status.inputs.ref}</span></> : null}
+                              {status.inputs?.scanKind ? `, a ${status.inputs.scanKind} scan` : ''}
+                            </p>
+                          )}
+                          {status.effectiveFaults && status.effectiveFaults.length > 0 && (
+                            <p><span className="text-foreground">Faults played:</span> {status.effectiveFaults.map((f) => `${f.kind} of ${nameOf(f.target)}${f.failFirst ? `, first ${f.failFirst} ${f.failFirst === 1 ? 'attempt' : 'attempts'}` : ', every attempt'}`).join('; ')}</p>
+                          )}
                           {status.detail && <p>{status.detail}</p>}
                           {status.evidence.map((e, i) => (
-                            <p key={i} className="font-mono text-[11px]">
+                            <p key={i} className="break-all font-mono text-[11px]">
                               {e.kind === 'trace' ? `trace ${e.hash?.slice(0, 12)}` : e.kind === 'source' ? e.pointer : `external · ${e.identity}`}
                               {e.url && <> · <a className="underline-offset-2 hover:underline" href={e.url} target="_blank" rel="noreferrer noopener">open</a></>}
                             </p>
@@ -273,8 +363,27 @@ export function PromiseDialog({ projectId, promiseId, references, scenarios, onC
         </div>
 
         {failure && <Failure error={failure} />}
+        {draft && (
+          <div id="approval-blockers" className="rounded-md border border-border px-3 py-2 text-xs">
+            {blockers.length > 0 ? (
+              <>
+                <p className="font-medium text-foreground">Approval is blocked:</p>
+                <ul className="mt-0.5 list-disc pl-4 text-muted-foreground">{blockers.map((blocker) => <li key={blocker}>{blocker}</li>)}</ul>
+              </>
+            ) : (
+              <p className="text-muted-foreground">
+                Nothing on this screen blocks approval. Only a workspace owner approves, in a signed-in session. An approval binds exactly the content shown here.
+              </p>
+            )}
+          </div>
+        )}
 
         <div className="flex flex-wrap items-center gap-2">
+          {promise && revision && (
+            <Button variant="ghost" size="sm" className="gap-1.5" disabled={show.isPending} onClick={() => show.mutate()}>
+              <Crosshair className="h-3.5 w-3.5" /> Show on canvas
+            </Button>
+          )}
           <div className="flex-1" />
           <Button variant="ghost" size="sm" onClick={onClose}>Close</Button>
           {editable && (
@@ -282,17 +391,68 @@ export function PromiseDialog({ projectId, promiseId, references, scenarios, onC
               {id ? 'Save draft' : 'Create draft'}
             </Button>
           )}
-          {promise && revision?.status === 'draft' && (
-            <Button size="sm" className={cn(edited && 'opacity-60')} disabled={approve.isPending || edited !== null} title={edited ? 'Save your changes first' : 'Only a workspace owner can approve'} onClick={() => approve.mutate()}>
-              Approve revision {revision.revision}
+          {draft && (
+            <Button size="sm" disabled={approve.isPending || blockers.length > 0} aria-describedby="approval-blockers" onClick={() => approve.mutate()}>
+              Approve revision {draft.revision}
             </Button>
           )}
-          {promise && revision?.status === 'approved' && (
-            <Button variant="secondary" size="sm" disabled={revise.isPending} onClick={() => revise.mutate()}>Start a new revision</Button>
+          {promise && revision?.status === 'approved' && promise.state !== 'retired' && (
+            <>
+              <Button variant="ghost" size="sm" disabled={revise.isPending} onClick={() => revise.mutate(true)} title="Starts a revision that retires this promise. It retires when an owner approves that revision.">
+                Retire
+              </Button>
+              <Button variant="secondary" size="sm" disabled={revise.isPending} onClick={() => revise.mutate(false)}>Start a new revision</Button>
+            </>
           )}
         </div>
+
+        {editing && promise && (
+          <ObligationDialog
+            projectId={projectId} promiseId={promise.id} obligation={editing === 'new' ? null : editing}
+            forbiddenEvents={form.forbiddenEvents} references={references} scenarios={scenarios} repositories={repositories}
+            onStored={store} onClose={() => setEditing(null)}
+          />
+        )}
       </DialogContent>
     </Dialog>
+  )
+}
+
+/** What an obligation checks, in words: the scenario and its faults, the pattern, or the plan. */
+function Recipe({ obligation, nameOf }: { obligation: Obligation; nameOf: (id: string) => string }) {
+  const { scenarioCheck, sourcePattern, plan, text } = obligation.recipe
+  return (
+    <div className="mt-1 space-y-0.5 text-xs text-muted-foreground">
+      <p>{text}</p>
+      {scenarioCheck && (
+        <p>
+          <span className="text-foreground">Faults:</span>{' '}
+          {scenarioCheck.faults.length === 0
+            ? 'none added to those of the scenario'
+            : scenarioCheck.faults.map((f) => `${f.kind} of ${nameOf(f.target)}, ${f.failFirst ? `first ${f.failFirst} ${f.failFirst === 1 ? 'attempt' : 'attempts'}` : 'every attempt'}`).join('; ')}
+          {' · '}<span className="text-foreground">{scenarioCheck.expect.length}</span> {scenarioCheck.expect.length === 1 ? 'assertion' : 'assertions'}
+        </p>
+      )}
+      {sourcePattern && (
+        <p>
+          <span className="text-foreground">Pattern:</span> <span className="font-mono">{sourcePattern.pattern}</span> in <span className="font-mono">{sourcePattern.repository}</span>
+          {sourcePattern.service ? `, service ${nameOf(sourcePattern.service)}` : ''}
+          {sourcePattern.requireUnconditional === false ? ' · a declaration under a compile-time condition is accepted' : ''}
+        </p>
+      )}
+      {plan && (
+        <details>
+          <summary className="cursor-pointer rounded text-foreground focus-visible:outline-2 focus-visible:outline-primary">
+            Plan: {plan.steps.length} {plan.steps.length === 1 ? 'step' : 'steps'}, {plan.expectedObservations.length} expected, {plan.forbiddenObservations.length} forbidden
+          </summary>
+          <ol className="mt-1 list-decimal pl-5">{plan.steps.map((step, i) => <li key={i}>{step}</li>)}</ol>
+          {plan.inputs.length > 0 && <p className="mt-1"><span className="text-foreground">Inputs:</span> {plan.inputs.join(' ')}</p>}
+          <p className="mt-1"><span className="text-foreground">Expected:</span> {plan.expectedObservations.join(' ')}</p>
+          {plan.forbiddenObservations.length > 0 && <p className="mt-1"><span className="text-foreground">Forbidden:</span> {plan.forbiddenObservations.join(' ')}</p>}
+          {plan.contractIds.length > 0 && <p className="mt-1"><span className="text-foreground">Contracts:</span> {plan.contractIds.map(nameOf).join(', ')}</p>}
+        </details>
+      )}
+    </div>
   )
 }
 

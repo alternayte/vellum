@@ -25,7 +25,22 @@ In a bundle, an approved promise is in `promises/`. A promise that is not approv
 
 You can export when blockers are open. The SDD lists every blocker, so an agent does not treat an open point as settled.
 
-The app exports the main model at its version now. To export a named revision or a branch, use HTTP or an agent. The app has no control for a brief.
+The app exports the main model at its version now. To export a named revision or a branch, use HTTP or an agent.
+
+## Export a brief in the app
+
+A brief holds only the part of the model that one change needs.
+
+1. Open **Build** in the left toolbar.
+2. Below **Brief for an agent**, select the scope.
+   - **A promise**: the brief holds the promise, what it links and its checks.
+   - **A change**: the brief holds what the impact of one scan names, and the impact report of that scan.
+   - **Elements**: the brief holds the elements that you select, with their operations, subscriptions and messages. The elements that are selected on the canvas are ticked.
+3. Select **Preview the brief**.
+4. Read the first box. It says **This scope is build ready**, or **This scope is not build ready** with each blocker.
+5. Select **Copy** or **Download**.
+
+A promise that is not approved is not a requirement. The preview names it, and the brief lists it under "do not implement".
 
 ## Export with an agent
 
@@ -101,7 +116,7 @@ curl -X POST "http://localhost:8080/api/projects/<project-id>/build/brief" \
   -d '{"promiseIds":["<promise-id>"]}'
 ```
 
-The body takes `promiseIds`, `scenarioIds` and `elementIds`, and optionally `revisionId` or `branchId`. A promise ID is the ID of the promise, not its requirement ID. Select at least one ID and at most 200.
+The body takes `promiseIds`, `scenarioIds` and `elementIds`, and optionally `revisionId` or `branchId`. A promise ID is the ID of the promise, not its requirement ID. Select at least one ID and at most 200. The body also takes `changeScanId`, the ID of a completed scan. The brief then selects what the change impact of that scan names and holds the impact report.
 
 The answer has `brief`, the Markdown, and `manifest`. In the manifest, `notApproved` lists promises that are not requirements, `retired` lists selected promises that are retired, and `unconfirmedFacts` lists facts that are inferred, unknown or stale.
 

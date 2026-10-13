@@ -101,6 +101,67 @@ export interface SourceWindow {
   lines: string[]
 }
 
+export type ImpactCertainty = 'definite' | 'possible' | 'unknown'
+
+/** One thing the source of a scan changes: a proposal, or a source pattern that the base snapshot and this one do not both hold. */
+export interface ImpactChange {
+  id: string
+  kind: 'contract' | 'source-pattern'
+  action: ProposalAction
+  entityKind: string
+  entityId: string | null
+  name: string
+  certainty: ImpactCertainty
+  /** What the certainty stands on. */
+  basis: string
+  diff: { field: string; from: string | null; to: string | null }[]
+  evidence: ProposalEvidence[]
+  /** The element that owns the changed thing, when the model has one. */
+  elementId: string | null
+  pattern: string | null
+}
+
+export interface ImpactReason {
+  certainty: ImpactCertainty
+  changeId: string
+  text: string
+}
+
+export interface ImpactFlow {
+  scenarioId: string
+  name: string
+  stepIds: string[]
+  certainty: ImpactCertainty
+  reasons: ImpactReason[]
+}
+
+export interface ImpactPromise {
+  id: string
+  requirementId: string
+  title: string
+  state: 'draft' | 'approved'
+  revision: number
+  /** `broken` only when a deterministic check failed against this scan. */
+  standing: 'broken' | 'at-risk' | 'possible' | 'unknown'
+  certainty: ImpactCertainty
+  reasons: ImpactReason[]
+  /** The source pattern checks of the promise, with their result against this scan. */
+  checks: { obligationId: string; key: string; title: string; result: 'passed' | 'failed' | 'not-run' | 'unsupported'; detail: string | null }[]
+}
+
+export interface ChangeImpact {
+  scanId: string
+  repository: string
+  kind: 'tracking' | 'comparison'
+  base: { scanId: string | null; ref: string | null; commitSha: string | null }
+  head: { scanId: string | null; ref: string | null; commitSha: string | null }
+  limits: string[]
+  changes: ImpactChange[]
+  flows: ImpactFlow[]
+  promises: ImpactPromise[]
+  promisesNotAffected: number
+}
+
 interface Page<T> {
   items: T[]
   cursor: string | null
@@ -131,6 +192,7 @@ export const importApi = {
   proposal: (projectId: string, id: string, proposalId: string) => api<Proposal>('GET', `${base(projectId)}/${id}/proposals/${proposalId}`),
   decide: (projectId: string, id: string, decision: { accept: string[]; reject: string[]; acknowledgeImpact: boolean; relink: { id: string; factKey: string | null }[] }) =>
     api<DecisionResult>('POST', `${base(projectId)}/${id}/proposals/decide`, decision),
+  impact: (projectId: string, id: string) => api<ChangeImpact>('GET', `${base(projectId)}/${id}/impact`),
   track: (projectId: string, id: string) => api<ScanDetail>('POST', `${base(projectId)}/${id}/track`),
   source: (projectId: string, id: string, evidence: Pick<ProposalEvidence, 'path' | 'startLine' | 'endLine'>) =>
     api<SourceWindow>(

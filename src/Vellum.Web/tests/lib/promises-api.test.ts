@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { describeCounts } from '../../src/lib/promises-api'
+import { describeCounts, describeResult } from '../../src/lib/promises-api'
 
 describe('promise status wording', () => {
   it('leads with failures and never says verified', () => {
@@ -10,5 +10,16 @@ describe('promise status wording', () => {
 
   it('says when a promise has no obligations', () => {
     expect(describeCounts({ passed: 0, failed: 0, stale: 0, notRun: 0, unsupported: 0 })).toBe('No obligations')
+  })
+
+  it('shows a result on inputs that moved as stale, never as passed', () => {
+    const stale = describeResult({ result: 'passed', current: false }, true)
+    expect(stale.label).toBe('Stale (passed on older inputs)')
+    expect(stale.color).not.toBe(describeResult({ result: 'passed', current: true }, true).color)
+  })
+
+  it('shows an obligation with no result as not run, and one of a kind Vellum cannot check as unsupported', () => {
+    expect(describeResult(undefined, true).label).toBe('Not run')
+    expect(describeResult(undefined, false).label).toBe('Unsupported')
   })
 })
