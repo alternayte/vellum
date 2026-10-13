@@ -13,6 +13,12 @@ public static class RevisionEndpoints
         group.MapPost("/", CreateRevision.Handle);
         group.MapGet("/", ListRevisions.Handle).AllowAgent(AgentScope.Read);
         group.MapGet("/{revisionId}", GetRevision.Handle).AllowAgent(AgentScope.Read);
+        group.MapGet("/{revisionId}/model", PinnedModelRead.RevisionModel).Produces<RevisionModelDto>();
+
+        app.MapGet("/api/projects/{projectId}/model/compare", PinnedModelRead.Compare)
+            .RequireAuthorization()
+            .WithTags("Revisions")
+            .Produces<ModelComparisonDto>();
 
         return app;
     }

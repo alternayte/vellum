@@ -1,6 +1,7 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useState } from 'react'
 import { useAuth } from '@/hooks/use-auth'
+import { useSignInMethods } from '@/hooks/use-sign-in-methods'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 
@@ -11,6 +12,7 @@ export const Route = createFileRoute('/_auth/register')({
 function RegisterPage() {
   const navigate = useNavigate()
   const { register, registerError } = useAuth()
+  const methods = useSignInMethods()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [displayName, setDisplayName] = useState('')
@@ -23,6 +25,21 @@ function RegisterPage() {
     } catch {
       // error surfaced via registerError
     }
+  }
+
+  // A form that the server refuses for everyone is not shown.
+  if (methods.data && !methods.data.registrationOpen) {
+    return (
+      <div className="w-full max-w-sm rounded-lg border border-border bg-card p-6">
+        <h1 className="mb-3 font-display text-2xl font-bold">Registration is closed</h1>
+        <p className="text-sm text-muted-foreground">
+          This instance does not let people create an account. Ask its administrator for an account.
+        </p>
+        <p className="mt-4 text-sm">
+          <a href="/login" className="text-primary hover:underline">Sign in</a>
+        </p>
+      </div>
+    )
   }
 
   return (

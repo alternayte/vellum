@@ -98,6 +98,48 @@ public class WorkspaceEndpointTests
         var response = await client.GetAsync("/api/workspaces");
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
+
+    [Fact]
+    public async Task An_owner_adds_a_member_by_email_and_changes_the_role_but_the_last_owner_stays_an_owner()
+    {
+        using var factory = CreateFactory();
+        using var owner = await CreateAuthenticatedClientAsync(factory);
+        var workspaceId = Guid.NewGuid();
+        await owner.PostAsJsonAsync("/api/workspaces", new { id = workspaceId, name = "Members" });
+        var ownerId = (await owner.GetFromJsonAsync<Vellum.Modules.Identity.UserInfoResponse>("/api/auth/me"))!.Id;
+
+        using var other = CreateClient(factory);
+        var email = $"member-{Guid.NewGuid():N}@vellum.local";
+        await other.PostAsJsonAsync("/api/auth/register", new { email, password = "Test12345!", displayName = "Second Person" });
+        var otherId = (await other.GetFromJsonAsync<Vellum.Modules.Identity.UserInfoResponse>("/api/auth/me"))!.Id;
+
+        // An address with no account is refused; the address of an account is found in any case.
+        var unknown = await owner.PostAsJsonAsync($"/api/workspaces/{workspaceId}/members", new { email = "nobody@vellum.local", role = "Viewer" });
+        Assert.Equal(HttpStatusCode.BadRequest, unknown.StatusCode);
+        var added = await owner.PostAsJsonAsync($"/api/workspaces/{workspaceId}/members", new { email = email.ToUpperInvariant(), role = "viewer" });
+        Assert.Equal(HttpStatusCode.Created, added.StatusCode);
+
+        // Each member reads the list. It names the role of the reader.
+        var seen = await other.GetFromJsonAsync<MembersResponse>($"/api/workspaces/{workspaceId}/members");
+        Assert.Equal("Viewer", seen!.YourRole);
+        Assert.Equal([(ownerId, "Owner"), (otherId, "Viewer")], seen.Members.Select(m => (m.UserId, m.Role)));
+        Assert.Equal(email, seen.Members[1].Email);
+
+        // Only an owner changes a role.
+        var refused = await other.PatchAsJsonAsync($"/api/workspaces/{workspaceId}/members/{ownerId}", new { role = "Viewer" });
+        Assert.Equal(HttpStatusCode.Forbidden, refused.StatusCode);
+
+        // The only owner cannot stop being an owner.
+        var last = await owner.PatchAsJsonAsync($"/api/workspaces/{workspaceId}/members/{ownerId}", new { role = "Editor" });
+        Assert.Equal(HttpStatusCode.Conflict, last.StatusCode);
+        Assert.Equal("last_owner", (await last.Content.ReadFromJsonAsync<Vellum.Shared.ErrorResponse>())!.Type);
+
+        // With a second owner, the first one can.
+        Assert.Equal(HttpStatusCode.OK, (await owner.PatchAsJsonAsync($"/api/workspaces/{workspaceId}/members/{otherId}", new { role = "Owner" })).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await owner.PatchAsJsonAsync($"/api/workspaces/{workspaceId}/members/{ownerId}", new { role = "Editor" })).StatusCode);
+        var after = await owner.GetFromJsonAsync<MembersResponse>($"/api/workspaces/{workspaceId}/members");
+        Assert.Equal("Editor", after!.YourRole);
+    }
 }
 
 file static class ServiceCollectionExtensions

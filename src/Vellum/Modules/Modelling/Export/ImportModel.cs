@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Text.Json;
 using Deedbox;
 using Microsoft.EntityFrameworkCore;
@@ -9,8 +10,32 @@ using Vellum.Modules.Workspaces;
 
 namespace Vellum.Modules.Modelling.Export;
 
+/// <summary>What an import does, or would do, with one entry of the document.</summary>
+/// <param name="Kind"><c>element</c>, <c>relationship</c>, <c>message</c>, <c>channel</c>, <c>operation</c>, <c>subscription</c>, <c>binding</c> or <c>schema</c>.</param>
+/// <param name="Change"><c>added</c>, <c>changed</c>, <c>unchanged</c> or <c>refused</c>.</param>
+/// <param name="Error">Why the entry is refused. Null for every other change.</param>
+/// <param name="ImportedAs">
+/// For a schema whose ID belongs to another project: the ID the schema has in this project.
+/// Every reference to the schema in the document is read as this ID.
+/// </param>
+public sealed record ImportItem(string Kind, Guid Id, string? Name, string Change, string? Error = null, Guid? ImportedAs = null);
+
+/// <summary>
+/// The result of an import or of its preview. <paramref name="Applied"/> is false for a
+/// preview (<c>dryRun=true</c>): nothing was written. <paramref name="ModelVersion"/> is the
+/// version of the main model that the entries were read against; an import that sends it as
+/// <c>expectedVersion</c> is refused when the model has changed since.
+/// </summary>
+public sealed record ImportResult(
+    bool Applied, long ModelVersion, int Added, int Changed, int Unchanged, int Refused, IReadOnlyList<ImportItem> Items);
+
 public static class ImportModel
 {
+    public const string Added = "added";
+    public const string Changed = "changed";
+    public const string Unchanged = "unchanged";
+    public const string Refused = "refused";
+
     private static readonly JsonSerializerOptions JsonOpts = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -31,6 +56,8 @@ public static class ImportModel
     public static async Task<IResult> Handle(
         Guid projectId,
         HttpRequest request,
+        bool dryRun,
+        long? expectedVersion,
         WorkspacesDbContext workspacesDb,
         CancellationToken ct)
     {
@@ -116,17 +143,61 @@ public static class ImportModel
             return Results.BadRequest(new ErrorResponse("invalid_export", $"Schema {repeated.Key} appears more than once"));
 
         // A schema stream must not take the ID of the project's model stream.
-        if (doc.Schemas.Any(s => s.Id == project.StreamId))
+        if (doc.Schemas.Any(s => s.Id == project.StreamId || SchemaIdIn(projectId, s.Id) == project.StreamId))
             return Results.BadRequest(new ErrorResponse("invalid_export", $"Schema {project.StreamId}: this ID is already in use"));
+
+        // A parent comes before its children, whatever the order of the document. An export
+        // orders elements by ID, so a child can stand before its parent there.
+        doc = doc with { Elements = ParentsFirst(doc.Elements) };
 
         // The whole import is one unit. A unit that fails with DBX038 or a deadlock wrote
         // nothing and runs again.
         return await SharedTransaction.RunAsync(request.HttpContext.RequestServices,
-            services => ImportAsync(services, projectId, project.StreamId, doc, ct), ct);
+            services => ImportAsync(services, projectId, project.StreamId, doc, dryRun, expectedVersion, ct), ct);
+    }
+
+    /// <summary>
+    /// The ID that a schema of another project gets in <paramref name="projectId"/>. A schema
+    /// stream belongs to one project, so a document that comes from another project of the
+    /// same instance cannot keep its schema IDs. The ID is a function of the project and of
+    /// the ID in the document: the same document gives the same schemas each time, and a
+    /// second import changes those schemas and adds none.
+    /// </summary>
+    public static Guid SchemaIdIn(Guid projectId, Guid documentSchemaId)
+    {
+        Span<byte> input = stackalloc byte[32];
+        projectId.TryWriteBytes(input, bigEndian: true, out _);
+        documentSchemaId.TryWriteBytes(input[16..], bigEndian: true, out _);
+        Span<byte> hash = stackalloc byte[32];
+        SHA256.HashData(input, hash);
+        // The layout of a name-based UUID (version 5, RFC 4122 variant), so the value reads as a UUID.
+        hash[6] = (byte)((hash[6] & 0x0F) | 0x50);
+        hash[8] = (byte)((hash[8] & 0x3F) | 0x80);
+        return new Guid(hash[..16], bigEndian: true);
+    }
+
+    /// <summary>The elements with each parent before its children. Entries of one depth keep the order of the document.</summary>
+    private static IReadOnlyList<ElementExport> ParentsFirst(IReadOnlyList<ElementExport> elements)
+    {
+        var parents = new Dictionary<Guid, Guid?>();
+        foreach (var element in elements)
+            parents.TryAdd(element.Id, element.ParentId);
+
+        // The kinds allow three levels. A longer chain or a cycle is refused by the decider; the bound ends the walk.
+        int Depth(ElementExport element)
+        {
+            var depth = 0;
+            for (var parent = element.ParentId; parent is { } id && depth < 8 && parents.TryGetValue(id, out var next); parent = next)
+                depth++;
+            return depth;
+        }
+
+        return [.. elements.Select((element, index) => (element, index)).OrderBy(e => Depth(e.element)).ThenBy(e => e.index).Select(e => e.element)];
     }
 
     private static async Task<IResult> ImportAsync(
-        IServiceProvider services, Guid projectId, Guid modelStreamId, ModelExportDocument doc, CancellationToken ct)
+        IServiceProvider services, Guid projectId, Guid modelStreamId, ModelExportDocument doc,
+        bool dryRun, long? expectedVersion, CancellationToken ct)
     {
         var modellingDb = services.GetRequiredService<ModellingDbContext>();
 
@@ -142,10 +213,14 @@ public static class ImportModel
         // counter. Here no stream lock is asked for after the first append, so that cycle
         // cannot form, and two imports (or an import and a merge) ask in the same order.
         // Execute with no events locks the stream and returns its state.
+        // A schema has two streams it can be written to: the one of its ID, and the one of
+        // the ID it gets in this project when its own ID belongs to another project. Which of
+        // the two is written is known only when both are read, so both are locked.
         var state = ModelState.Initial;
         long version = 0;
         var schemaStreams = new Dictionary<Guid, (SchemaState State, long Version)>();
-        foreach (var streamId in doc.Schemas.Select(s => s.Id).Append(modelStreamId).Order())
+        var lockIds = doc.Schemas.SelectMany(s => new[] { s.Id, SchemaIdIn(projectId, s.Id) }).Append(modelStreamId).Distinct().Order();
+        foreach (var streamId in lockIds)
         {
             if (streamId == modelStreamId)
             {
@@ -159,316 +234,301 @@ public static class ImportModel
             }
         }
 
+        if (expectedVersion is { } expected && expected != version)
+        {
+            return Results.Conflict(new ErrorResponse("conflict",
+                "The model has changed since the preview. Preview the import again."));
+        }
+
         // Step 2: decide everything against the locked states. Nothing is appended until the
-        // whole document is accepted.
+        // whole document is accepted. An entry that is refused is recorded and the next one
+        // is read, so the answer names every refused entry and not only the first.
+        var items = new List<ImportItem>();
+        void Refuse(string kind, Guid id, string? name, string? reason) =>
+            items.Add(new ImportItem(kind, id, name, Refused, reason));
+
+        // Where each schema of the document is written. A schema keeps its ID unless the ID
+        // belongs to another project; then it takes the ID that this project gives it, and so
+        // does every reference to it. A schema that was imported that way before is found
+        // under that ID again, whatever happened to the schema of the other project since.
+        var schemaTargets = new Dictionary<Guid, Guid>();
+        foreach (var schema in doc.Schemas)
+        {
+            var mapped = SchemaIdIn(projectId, schema.Id);
+            var own = schemaStreams[schema.Id].State.Schema;
+            schemaTargets[schema.Id] =
+                schemaStreams[mapped].State.Schema?.ProjectId == projectId || (own is not null && own.ProjectId != projectId)
+                    ? mapped
+                    : schema.Id;
+        }
+        Guid? Target(Guid? schemaId) =>
+            schemaId is { } id && schemaTargets.TryGetValue(id, out var target) ? target : schemaId;
+
         // A schema the document names is one the document carries, whose stream is locked
         // above, or one the project already has. The rows of the second kind are held until
         // the commit, so none of them can be deleted under the import (see SchemaReferences).
-        var knownSchemaIds = doc.Schemas.Select(s => s.Id).ToHashSet();
+        var knownSchemaIds = schemaTargets.Values.ToHashSet();
         var named = doc.Messages.Select(m => m.SchemaId)
             .Concat(doc.Operations.SelectMany(o => new[] { o.RequestSchemaId, o.ResponseSchemaId }))
             .OfType<Guid>()
-            .Where(id => !knownSchemaIds.Contains(id))
+            .Where(id => !schemaTargets.ContainsKey(id))
             .ToHashSet();
         var missing = await SchemaReferences.HoldAsync(modellingDb, projectId, named, ct);
         knownSchemaIds.UnionWith(named.Except(missing));
 
         var events = new List<object>();
 
-        // Import elements
-        foreach (var el in doc.Elements)
+        // One entry: all of its decisions count, or none of them does. `decide` returns the
+        // reason of a refusal, or null.
+        void Entry(string kind, Guid id, string? name, Func<ModelState, object?> find, Func<string?> decide)
         {
-            if (!TryReadFacts(el.FactStatus, el.Provenance, el.Stale, out var factStatus, out var provenance, out var stale, out var factError))
-                return Results.BadRequest(new ErrorResponse("invalid_export", $"Element {el.Id}: {factError}"));
-
-            if (!ModelEnum.TryParseDefined(el.Status, out ElementStatus status))
-                return Results.BadRequest(new ErrorResponse("invalid_export",
-                    $"Element {el.Id}: invalid status '{el.Status}'"));
-
-            if (!ModelEnum.TryParseDefined(el.Kind, out ElementKind kind))
-                return Results.BadRequest(new ErrorResponse("invalid_export",
-                    $"Element {el.Id}: invalid kind '{el.Kind}'"));
-
-            if (state.Elements.TryGetValue(el.Id, out var existingElement))
+            var (stateBefore, eventsBefore, before) = (state, events.Count, find(state));
+            if (decide() is { } reason)
             {
-                if (existingElement.Kind != kind)
-                    return Results.BadRequest(new ErrorResponse("invalid_export",
-                        $"Element {el.Id}: kind change from '{existingElement.Kind}' to '{kind}' is not supported"));
-
-                var updateCmd = new UpdateElementCommand(el.Id,
-                    Name: el.Name, SetName: true,
-                    Description: el.Description, SetDescription: true,
-                    Technology: el.Technology, SetTechnology: true,
-                    ParentId: el.ParentId, SetParentId: true,
-                    Status: status, Tags: el.Tags,
-                    Icon: el.Icon, SetIcon: true);
-                var result = ModelDecider.UpdateElement(state, updateCmd);
-                if (result is not CommandResult<IReadOnlyList<object>>.Success updateSuccess)
-                    return Results.BadRequest(new ErrorResponse("invalid_export",
-                        $"Element {el.Id}: {DeciderFailure(result)}"));
-
-                events.AddRange(updateSuccess.Value);
-                state = updateSuccess.Value.Aggregate(state, ModelState.Evolve);
-
-                Append(StaleDecider.Relabel(state, el.Id, factStatus, provenance, stale));
+                state = stateBefore;
+                events.RemoveRange(eventsBefore, events.Count - eventsBefore);
+                Refuse(kind, id, name, reason);
+                return;
             }
-            else
-            {
-                var addCmd = new AddElementCommand(el.Id, kind, el.Name, el.Description,
-                    el.Technology, null, status, el.ParentId, el.Tags);
-                var result = ModelDecider.AddElement(state, addCmd);
-                if (result is not CommandResult<IReadOnlyList<object>>.Success added)
-                    return Results.BadRequest(new ErrorResponse("invalid_export",
-                        $"Element {el.Id}: {DeciderFailure(result)}"));
 
-                events.AddRange(added.Value);
-                state = added.Value.Aggregate(state, ModelState.Evolve);
-
-                // Through the decider, so the icon is held to the same rule as on every other path.
-                if (el.Icon is not null
-                    && Apply($"Element {el.Id}", ModelDecider.UpdateElement(
-                        state, new UpdateElementCommand(el.Id, Icon: el.Icon, SetIcon: true))) is { } iconFailure)
-                {
-                    return iconFailure;
-                }
-
-                if (factStatus != FactStatus.Declared || provenance is not null || stale is not null)
-                    Append([new ModelEvent.ElementProvenanceRecorded(el.Id, factStatus, provenance, stale)]);
-            }
+            // The states compare by value and leave the stale mark out, so the mark is compared here.
+            var after = find(state);
+            var same = before is not null && before.Equals(after) && Equals(StaleOf(before), StaleOf(after));
+            items.Add(new ImportItem(kind, id, name, before is null ? Added : same ? Unchanged : Changed));
         }
 
-        // Import relationships
-        foreach (var rel in doc.Relationships)
-        {
-            if (!TryReadFacts(rel.FactStatus, rel.Provenance, rel.Stale, out var factStatus, out var provenance, out var stale, out var factError))
-                return Results.BadRequest(new ErrorResponse("invalid_export", $"Relationship {rel.Id}: {factError}"));
-
-            var kind = RelationshipKind.Structural;
-            if (!string.IsNullOrEmpty(rel.Kind) && !ModelEnum.TryParseDefined(rel.Kind, out kind))
-            {
-                return Results.BadRequest(new ErrorResponse("invalid_export",
-                    $"Relationship {rel.Id}: invalid kind '{rel.Kind}'"));
-            }
-
-            if (state.Relationships.ContainsKey(rel.Id))
-            {
-                var updateCmd = new UpdateRelationshipCommand(rel.Id,
-                    Label: rel.Label, SetLabel: true,
-                    Technology: rel.Technology, SetTechnology: true,
-                    LineShape: rel.LineShape, SetLineShape: true,
-                    Kind: kind, SetKind: true);
-                var result = ModelDecider.UpdateRelationship(state, updateCmd);
-                if (result is not CommandResult<IReadOnlyList<object>>.Success updateSuccess)
-                    return Results.BadRequest(new ErrorResponse("invalid_export",
-                        $"Relationship {rel.Id}: {DeciderFailure(result)}"));
-
-                events.AddRange(updateSuccess.Value);
-                state = updateSuccess.Value.Aggregate(state, ModelState.Evolve);
-
-                Append(StaleDecider.Relabel(state, rel.Id, factStatus, provenance, stale));
-            }
-            else
-            {
-                var addCmd = new AddRelationshipCommand(rel.Id, rel.FromId, rel.ToId, rel.Label, rel.Technology, kind);
-                var result = ModelDecider.AddRelationship(state, addCmd);
-                if (result is not CommandResult<IReadOnlyList<object>>.Success added)
-                    return Results.BadRequest(new ErrorResponse("invalid_export",
-                        $"Relationship {rel.Id}: {DeciderFailure(result)}"));
-
-                events.AddRange(added.Value);
-                state = added.Value.Aggregate(state, ModelState.Evolve);
-
-                if (rel.LineShape is not null
-                    && Apply($"Relationship {rel.Id}", ModelDecider.UpdateRelationship(
-                        state, new UpdateRelationshipCommand(rel.Id, LineShape: rel.LineShape, SetLineShape: true))) is { } shapeFailure)
-                {
-                    return shapeFailure;
-                }
-
-                if (factStatus != FactStatus.Declared || provenance is not null || stale is not null)
-                    Append([new ModelEvent.RelationshipProvenanceRecorded(rel.Id, factStatus, provenance, stale)]);
-            }
-        }
-
-        // Import messages
-        foreach (var msg in doc.Messages)
-        {
-            if (!TryReadFacts(msg.FactStatus, msg.Provenance, msg.Stale, out var factStatus, out var provenance, out var stale, out var factError))
-                return Results.BadRequest(new ErrorResponse("invalid_export", $"Message {msg.Id}: {factError}"));
-
-            if (msg.SchemaId is { } schemaId && !knownSchemaIds.Contains(schemaId))
-            {
-                return Results.BadRequest(new ErrorResponse("invalid_export",
-                    $"Message {msg.Id}: schema {schemaId} not found in this project or the document"));
-            }
-
-            if (state.Messages.ContainsKey(msg.Id))
-            {
-                var updateCmd = new UpdateMessageCommand(msg.Id,
-                    Name: msg.Name, SetName: true,
-                    Description: msg.Description, SetDescription: true,
-                    ProducerId: msg.ProducerId, SetProducerId: true,
-                    ConsumerIds: msg.ConsumerIds.ToElementIds(), SetConsumerIds: true,
-                    SchemaId: msg.SchemaId, SetSchemaId: true,
-                    Tags: msg.Tags);
-                var result = ModelDecider.UpdateMessage(state, updateCmd);
-                if (result is not CommandResult<IReadOnlyList<object>>.Success updateSuccess)
-                    return Results.BadRequest(new ErrorResponse("invalid_export",
-                        $"Message {msg.Id}: {DeciderFailure(result)}"));
-
-                events.AddRange(updateSuccess.Value);
-                state = updateSuccess.Value.Aggregate(state, ModelState.Evolve);
-
-                Append(StaleDecider.Relabel(state, msg.Id, factStatus, provenance, stale));
-            }
-            else
-            {
-                var addCmd = new AddMessageCommand(msg.Id, msg.Name, msg.Description,
-                    msg.ProducerId, msg.ConsumerIds.ToElementIds(), msg.SchemaId, msg.Tags);
-                var result = ModelDecider.AddMessage(state, addCmd);
-                if (result is not CommandResult<IReadOnlyList<object>>.Success added)
-                    return Results.BadRequest(new ErrorResponse("invalid_export",
-                        $"Message {msg.Id}: {DeciderFailure(result)}"));
-
-                events.AddRange(added.Value);
-                state = added.Value.Aggregate(state, ModelState.Evolve);
-
-                if (factStatus != FactStatus.Declared || provenance is not null || stale is not null)
-                    Append([new ModelEvent.MessageProvenanceRecorded(msg.Id, factStatus, provenance, stale)]);
-            }
-        }
-
-        // Import contracts. Channels come first: a subscription and a binding name their
-        // channels, and both operations and subscriptions name elements that are already in
-        // the state.
-        foreach (var channel in doc.Channels)
-        {
-            var label = $"Channel {channel.Id}";
-            if (!TryReadFacts(channel.FactStatus, channel.Provenance, channel.Stale, out var factStatus, out var provenance, out var stale, out var factError))
-                return Results.BadRequest(new ErrorResponse("invalid_export", $"{label}: {factError}"));
-
-            if (channel.Kind is null || !ModelEnum.TryParseDefined(channel.Kind, out ChannelKind kind))
-                return Results.BadRequest(new ErrorResponse("invalid_export", $"{label}: invalid kind '{channel.Kind}'"));
-
-            ChannelId id = channel.Id;
-            var decision = state.Channels.ContainsKey(id)
-                ? ContractDecider.UpdateChannel(state, new UpdateChannelCommand(id, channel.Name, kind))
-                : ContractDecider.AddChannel(state, new AddChannelCommand(id, channel.Name, kind));
-            if (Apply(label, decision.Then(state, after =>
-                    Relabelled(after, id.Value, factStatus, provenance, stale))) is { } failure)
-                return failure;
-        }
-
-        foreach (var operation in doc.Operations)
-        {
-            var label = $"Operation {operation.Id}";
-            if (!TryReadFacts(operation.FactStatus, operation.Provenance, operation.Stale, out var factStatus, out var provenance, out var stale, out var factError))
-                return Results.BadRequest(new ErrorResponse("invalid_export", $"{label}: {factError}"));
-
-            if (operation.Transport is null || !ModelEnum.TryParseDefined(operation.Transport, out Transport transport))
-                return Results.BadRequest(new ErrorResponse("invalid_export", $"{label}: invalid transport '{operation.Transport}'"));
-
-            foreach (var schemaId in new[] { operation.RequestSchemaId, operation.ResponseSchemaId })
-            {
-                if (schemaId is { } referenced && !knownSchemaIds.Contains(referenced))
-                {
-                    return Results.BadRequest(new ErrorResponse("invalid_export",
-                        $"{label}: schema {referenced} not found in this project or the document"));
-                }
-            }
-
-            OperationId id = operation.Id;
-            var retry = operation.Retry is { } r ? new RetryPolicy(r.MaxAttempts, r.BackoffMs) : RetryPolicy.None;
-            var decision = state.Operations.ContainsKey(id)
-                ? ContractDecider.UpdateOperation(state, new UpdateOperationCommand(
-                    id, operation.Name, new ElementId(operation.OwnerId), transport,
-                    operation.RequestSchemaId, true, operation.ResponseSchemaId, true,
-                    operation.TimeoutMs, retry))
-                : ContractDecider.AddOperation(state, new AddOperationCommand(
-                    id, operation.OwnerId, operation.Name, transport,
-                    operation.RequestSchemaId, operation.ResponseSchemaId, operation.TimeoutMs, retry));
-            if (Apply(label, decision.Then(state, after =>
-                    Relabelled(after, id.Value, factStatus, provenance, stale))) is { } failure)
-                return failure;
-        }
-
-        foreach (var subscription in doc.Subscriptions)
-        {
-            var label = $"Subscription {subscription.Id}";
-            if (!TryReadFacts(subscription.FactStatus, subscription.Provenance, subscription.Stale, out var factStatus, out var provenance, out var stale, out var factError))
-                return Results.BadRequest(new ErrorResponse("invalid_export", $"{label}: {factError}"));
-
-            SubscriptionId id = subscription.Id;
-            var retry = subscription.Retry is { } r ? new RetryPolicy(r.MaxAttempts, r.BackoffMs) : RetryPolicy.None;
-            ChannelId? deadLetter = subscription.DeadLetterChannelId is { } d ? new ChannelId(d) : null;
-            var decision = state.Subscriptions.ContainsKey(id)
-                ? ContractDecider.UpdateSubscription(state, new UpdateSubscriptionCommand(
-                    id, new ChannelId(subscription.ChannelId), new ElementId(subscription.ConsumerId), retry,
-                    deadLetter, SetDeadLetterChannelId: true))
-                : ContractDecider.AddSubscription(state, new AddSubscriptionCommand(
-                    id, subscription.ChannelId, subscription.ConsumerId, retry, deadLetter));
-            if (Apply(label, decision.Then(state, after =>
-                    Relabelled(after, id.Value, factStatus, provenance, stale))) is { } failure)
-                return failure;
-        }
-
-        foreach (var binding in doc.Bindings)
-        {
-            var label = $"Binding {binding.Id}";
-            if (!TryReadFacts(binding.FactStatus, binding.Provenance, binding.Stale, out var factStatus, out var provenance, out var stale, out var factError))
-                return Results.BadRequest(new ErrorResponse("invalid_export", $"{label}: {factError}"));
-
-            BindingId id = binding.Id;
-            var decision = state.Bindings.ContainsKey(id)
-                ? ContractDecider.UpdateBinding(state, new UpdateBindingCommand(
-                    id, new ChannelId(binding.SourceChannelId), new ChannelId(binding.TargetChannelId),
-                    binding.RoutingKey, SetRoutingKey: true))
-                : ContractDecider.AddBinding(state, new AddBindingCommand(
-                    id, binding.SourceChannelId, binding.TargetChannelId, binding.RoutingKey));
-            if (Apply(label, decision.Then(state, after =>
-                    Relabelled(after, id.Value, factStatus, provenance, stale))) is { } failure)
-                return failure;
-        }
-
-        // The label of a fact the document carries. An import is not a scan and not a person's
-        // statement about one fact, so it clears no mark: a fact that has a mark keeps it, and
-        // a fact that has none takes the mark of the document.
-        void Append(IReadOnlyList<object> decided)
-        {
-            events.AddRange(decided);
-            state = decided.Aggregate(state, ModelState.Evolve);
-        }
-
-        static CommandResult<IReadOnlyList<object>> Relabelled(
-            ModelState after, Guid id, FactStatus factStatus, Provenance? provenance, StaleMark? stale) =>
-            new CommandResult<IReadOnlyList<object>>.Success(StaleDecider.Relabel(after, id, factStatus, provenance, stale));
-
-        // Adds a decision's events to the import, or reports why the document is refused.
-        IResult? Apply(string label, CommandResult<IReadOnlyList<object>> decision)
+        // Adds a decision's events to the import, or gives the reason of the refusal.
+        string? Apply(CommandResult<IReadOnlyList<object>> decision)
         {
             if (decision is not CommandResult<IReadOnlyList<object>>.Success success)
-                return Results.BadRequest(new ErrorResponse("invalid_export", $"{label}: {DeciderFailure(decision)}"));
+                return DeciderFailure(decision);
 
             events.AddRange(success.Value);
             state = success.Value.Aggregate(state, ModelState.Evolve);
             return null;
         }
 
+        // The label of a fact the document carries. An import is not a scan and not a person's
+        // statement about one fact, so it clears no mark: a fact that has a mark keeps it, and
+        // a fact that has none takes the mark of the document.
+        string? Relabel(Guid id, FactStatus factStatus, Provenance? provenance, StaleMark? stale) =>
+            Apply(new CommandResult<IReadOnlyList<object>>.Success(StaleDecider.Relabel(state, id, factStatus, provenance, stale)));
+
+        string? Record(object recorded) =>
+            Apply(new CommandResult<IReadOnlyList<object>>.Success([recorded]));
+
+        foreach (var el in doc.Elements)
+        {
+            Entry("element", el.Id, el.Name, s => s.Elements.GetValueOrDefault(el.Id), () =>
+            {
+                if (!TryReadFacts(el.FactStatus, el.Provenance, el.Stale, out var factStatus, out var provenance, out var stale, out var factError))
+                    return factError;
+                if (!ModelEnum.TryParseDefined(el.Status, out ElementStatus status))
+                    return $"invalid status '{el.Status}'";
+                if (!ModelEnum.TryParseDefined(el.Kind, out ElementKind kind))
+                    return $"invalid kind '{el.Kind}'";
+
+                if (state.Elements.TryGetValue(el.Id, out var existingElement))
+                {
+                    if (existingElement.Kind != kind)
+                        return $"kind change from '{existingElement.Kind}' to '{kind}' is not supported";
+
+                    return Apply(ModelDecider.UpdateElement(state, new UpdateElementCommand(el.Id,
+                            Name: el.Name, SetName: true,
+                            Description: el.Description, SetDescription: true,
+                            Technology: el.Technology, SetTechnology: true,
+                            ParentId: el.ParentId, SetParentId: true,
+                            Status: status, Tags: el.Tags,
+                            Icon: el.Icon, SetIcon: true)))
+                        ?? Relabel(el.Id, factStatus, provenance, stale);
+                }
+
+                return Apply(ModelDecider.AddElement(state, new AddElementCommand(el.Id, kind, el.Name, el.Description,
+                        el.Technology, null, status, el.ParentId, el.Tags)))
+                    // Through the decider, so the icon is held to the same rule as on every other path.
+                    ?? (el.Icon is null ? null : Apply(ModelDecider.UpdateElement(
+                        state, new UpdateElementCommand(el.Id, Icon: el.Icon, SetIcon: true))))
+                    ?? (factStatus != FactStatus.Declared || provenance is not null || stale is not null
+                        ? Record(new ModelEvent.ElementProvenanceRecorded(el.Id, factStatus, provenance, stale))
+                        : null);
+            });
+        }
+
+        foreach (var rel in doc.Relationships)
+        {
+            Entry("relationship", rel.Id, rel.Label, s => s.Relationships.GetValueOrDefault(rel.Id), () =>
+            {
+                if (!TryReadFacts(rel.FactStatus, rel.Provenance, rel.Stale, out var factStatus, out var provenance, out var stale, out var factError))
+                    return factError;
+
+                var kind = RelationshipKind.Structural;
+                if (!string.IsNullOrEmpty(rel.Kind) && !ModelEnum.TryParseDefined(rel.Kind, out kind))
+                    return $"invalid kind '{rel.Kind}'";
+
+                if (state.Relationships.ContainsKey(rel.Id))
+                {
+                    return Apply(ModelDecider.UpdateRelationship(state, new UpdateRelationshipCommand(rel.Id,
+                            Label: rel.Label, SetLabel: true,
+                            Technology: rel.Technology, SetTechnology: true,
+                            LineShape: rel.LineShape, SetLineShape: true,
+                            Kind: kind, SetKind: true)))
+                        ?? Relabel(rel.Id, factStatus, provenance, stale);
+                }
+
+                return Apply(ModelDecider.AddRelationship(state,
+                        new AddRelationshipCommand(rel.Id, rel.FromId, rel.ToId, rel.Label, rel.Technology, kind)))
+                    ?? (rel.LineShape is null ? null : Apply(ModelDecider.UpdateRelationship(
+                        state, new UpdateRelationshipCommand(rel.Id, LineShape: rel.LineShape, SetLineShape: true))))
+                    ?? (factStatus != FactStatus.Declared || provenance is not null || stale is not null
+                        ? Record(new ModelEvent.RelationshipProvenanceRecorded(rel.Id, factStatus, provenance, stale))
+                        : null);
+            });
+        }
+
+        foreach (var msg in doc.Messages)
+        {
+            Entry("message", msg.Id, msg.Name, s => s.Messages.GetValueOrDefault(msg.Id), () =>
+            {
+                if (!TryReadFacts(msg.FactStatus, msg.Provenance, msg.Stale, out var factStatus, out var provenance, out var stale, out var factError))
+                    return factError;
+
+                var schemaId = Target(msg.SchemaId);
+                if (schemaId is { } referenced && !knownSchemaIds.Contains(referenced))
+                    return $"schema {msg.SchemaId} not found in this project or the document";
+
+                if (state.Messages.ContainsKey(msg.Id))
+                {
+                    return Apply(ModelDecider.UpdateMessage(state, new UpdateMessageCommand(msg.Id,
+                            Name: msg.Name, SetName: true,
+                            Description: msg.Description, SetDescription: true,
+                            ProducerId: msg.ProducerId, SetProducerId: true,
+                            ConsumerIds: msg.ConsumerIds.ToElementIds(), SetConsumerIds: true,
+                            SchemaId: schemaId, SetSchemaId: true,
+                            Tags: msg.Tags)))
+                        ?? Relabel(msg.Id, factStatus, provenance, stale);
+                }
+
+                return Apply(ModelDecider.AddMessage(state, new AddMessageCommand(msg.Id, msg.Name, msg.Description,
+                        msg.ProducerId, msg.ConsumerIds.ToElementIds(), schemaId, msg.Tags)))
+                    ?? (factStatus != FactStatus.Declared || provenance is not null || stale is not null
+                        ? Record(new ModelEvent.MessageProvenanceRecorded(msg.Id, factStatus, provenance, stale))
+                        : null);
+            });
+        }
+
+        // Contracts. Channels come first: a subscription and a binding name their channels,
+        // and both operations and subscriptions name elements that are already in the state.
+        foreach (var channel in doc.Channels)
+        {
+            ChannelId id = channel.Id;
+            Entry("channel", channel.Id, channel.Name, s => s.Channels.GetValueOrDefault(id), () =>
+            {
+                if (!TryReadFacts(channel.FactStatus, channel.Provenance, channel.Stale, out var factStatus, out var provenance, out var stale, out var factError))
+                    return factError;
+                if (channel.Kind is null || !ModelEnum.TryParseDefined(channel.Kind, out ChannelKind kind))
+                    return $"invalid kind '{channel.Kind}'";
+
+                return Apply(state.Channels.ContainsKey(id)
+                        ? ContractDecider.UpdateChannel(state, new UpdateChannelCommand(id, channel.Name, kind))
+                        : ContractDecider.AddChannel(state, new AddChannelCommand(id, channel.Name, kind)))
+                    ?? Relabel(id.Value, factStatus, provenance, stale);
+            });
+        }
+
+        foreach (var operation in doc.Operations)
+        {
+            OperationId id = operation.Id;
+            Entry("operation", operation.Id, operation.Name, s => s.Operations.GetValueOrDefault(id), () =>
+            {
+                if (!TryReadFacts(operation.FactStatus, operation.Provenance, operation.Stale, out var factStatus, out var provenance, out var stale, out var factError))
+                    return factError;
+                if (operation.Transport is null || !ModelEnum.TryParseDefined(operation.Transport, out Transport transport))
+                    return $"invalid transport '{operation.Transport}'";
+
+                foreach (var schemaId in new[] { operation.RequestSchemaId, operation.ResponseSchemaId })
+                {
+                    if (Target(schemaId) is { } referenced && !knownSchemaIds.Contains(referenced))
+                        return $"schema {schemaId} not found in this project or the document";
+                }
+
+                var (requestSchemaId, responseSchemaId) = (Target(operation.RequestSchemaId), Target(operation.ResponseSchemaId));
+                var retry = operation.Retry is { } r ? new RetryPolicy(r.MaxAttempts, r.BackoffMs) : RetryPolicy.None;
+                return Apply(state.Operations.ContainsKey(id)
+                        ? ContractDecider.UpdateOperation(state, new UpdateOperationCommand(
+                            id, operation.Name, new ElementId(operation.OwnerId), transport,
+                            requestSchemaId, true, responseSchemaId, true,
+                            operation.TimeoutMs, retry))
+                        : ContractDecider.AddOperation(state, new AddOperationCommand(
+                            id, operation.OwnerId, operation.Name, transport,
+                            requestSchemaId, responseSchemaId, operation.TimeoutMs, retry)))
+                    ?? Relabel(id.Value, factStatus, provenance, stale);
+            });
+        }
+
+        foreach (var subscription in doc.Subscriptions)
+        {
+            SubscriptionId id = subscription.Id;
+            Entry("subscription", subscription.Id, null, s => s.Subscriptions.GetValueOrDefault(id), () =>
+            {
+                if (!TryReadFacts(subscription.FactStatus, subscription.Provenance, subscription.Stale, out var factStatus, out var provenance, out var stale, out var factError))
+                    return factError;
+
+                var retry = subscription.Retry is { } r ? new RetryPolicy(r.MaxAttempts, r.BackoffMs) : RetryPolicy.None;
+                ChannelId? deadLetter = subscription.DeadLetterChannelId is { } d ? new ChannelId(d) : null;
+                return Apply(state.Subscriptions.ContainsKey(id)
+                        ? ContractDecider.UpdateSubscription(state, new UpdateSubscriptionCommand(
+                            id, new ChannelId(subscription.ChannelId), new ElementId(subscription.ConsumerId), retry,
+                            deadLetter, SetDeadLetterChannelId: true))
+                        : ContractDecider.AddSubscription(state, new AddSubscriptionCommand(
+                            id, subscription.ChannelId, subscription.ConsumerId, retry, deadLetter)))
+                    ?? Relabel(id.Value, factStatus, provenance, stale);
+            });
+        }
+
+        foreach (var binding in doc.Bindings)
+        {
+            BindingId id = binding.Id;
+            Entry("binding", binding.Id, binding.RoutingKey, s => s.Bindings.GetValueOrDefault(id), () =>
+            {
+                if (!TryReadFacts(binding.FactStatus, binding.Provenance, binding.Stale, out var factStatus, out var provenance, out var stale, out var factError))
+                    return factError;
+
+                return Apply(state.Bindings.ContainsKey(id)
+                        ? ContractDecider.UpdateBinding(state, new UpdateBindingCommand(
+                            id, new ChannelId(binding.SourceChannelId), new ChannelId(binding.TargetChannelId),
+                            binding.RoutingKey, SetRoutingKey: true))
+                        : ContractDecider.AddBinding(state, new AddBindingCommand(
+                            id, binding.SourceChannelId, binding.TargetChannelId, binding.RoutingKey)))
+                    ?? Relabel(id.Value, factStatus, provenance, stale);
+            });
+        }
+
         // Schemas: each is its own stream.
         var schemaAppends = new List<(Guid Id, long Version, IReadOnlyList<object> Events)>();
+        var written = new HashSet<Guid>();
         foreach (var schema in doc.Schemas.OrderBy(s => s.Id))
         {
-            var (schemaState, schemaVersion) = schemaStreams[schema.Id];
+            var target = schemaTargets[schema.Id];
+            Guid? importedAs = target == schema.Id ? null : target;
+            var (schemaState, schemaVersion) = schemaStreams[target];
+
+            // Two entries of the document that end in one stream: one names the ID that the other gets in this project.
+            if (!written.Add(target))
+            {
+                Refuse("schema", schema.Id, schema.Name, $"the document holds this schema two times, once as {target}");
+                continue;
+            }
+
             CommandResult<IReadOnlyList<object>> decision;
             if (schemaState.Schema is not null)
             {
                 if (schemaState.Schema.ProjectId != projectId)
                 {
-                    return Results.BadRequest(new ErrorResponse("invalid_export",
-                        $"Schema {schema.Id} belongs to another project"));
+                    Refuse("schema", schema.Id, schema.Name, "this ID belongs to another project");
+                    continue;
                 }
 
-                decision = SchemaDecider.Update(schemaState, new UpdateSchemaCommand(schema.Id,
+                decision = SchemaDecider.Update(schemaState, new UpdateSchemaCommand(target,
                     Name: schema.Name, SetName: true,
                     Description: schema.Description, SetDescription: true,
                     Content: schema.Content, SetContent: true));
@@ -476,17 +536,36 @@ public static class ImportModel
             else
             {
                 decision = SchemaDecider.Create(schemaState,
-                    new CreateSchemaCommand(schema.Id, schema.Name, schema.Description, schema.Content, projectId));
+                    new CreateSchemaCommand(target, schema.Name, schema.Description, schema.Content, projectId));
             }
 
             if (decision is not CommandResult<IReadOnlyList<object>>.Success decided)
             {
-                return Results.BadRequest(new ErrorResponse("invalid_export",
-                    $"Schema {schema.Id}: {DeciderFailure(decision)}"));
+                Refuse("schema", schema.Id, schema.Name, DeciderFailure(decision));
+                continue;
             }
 
+            items.Add(new ImportItem("schema", schema.Id, schema.Name,
+                schemaState.Schema is null ? Added : decided.Value.Count == 0 ? Unchanged : Changed, ImportedAs: importedAs));
             if (decided.Value.Count > 0)
-                schemaAppends.Add((schema.Id, schemaVersion, decided.Value));
+                schemaAppends.Add((target, schemaVersion, decided.Value));
+        }
+
+        var result = new ImportResult(
+            Applied: false, version,
+            items.Count(i => i.Change == Added), items.Count(i => i.Change == Changed),
+            items.Count(i => i.Change == Unchanged), items.Count(i => i.Change == Refused), items);
+
+        // A preview writes nothing. The transaction ends without a commit and gives the locks back.
+        if (dryRun)
+            return Results.Ok(result);
+
+        // One refused entry refuses the document. The title names the first one; `errors`
+        // names each, with the kind and the ID of the entry as the field.
+        if (items.FirstOrDefault(i => i.Change == Refused) is { } first)
+        {
+            return Results.BadRequest(new ErrorResponse("invalid_export", Describe(first),
+                Errors: [.. items.Where(i => i.Change == Refused).Select(i => new FieldError($"{i.Kind}:{i.Id}", i.Error!))]));
         }
 
         // Step 3: append. Deedbox has no append to several streams, so one transaction makes one
@@ -504,8 +583,24 @@ public static class ImportModel
             await store.Append(StreamId.From(schemaId), ExpectedVersion.Exact(schemaVersion), schemaEvents, ct);
 
         await transaction.CommitAsync(ct);
-        return Results.Ok();
+        return Results.Ok(result with { Applied = true });
     }
+
+    /// <summary>"Element {id}: {reason}", the text an import has always given for a refused entry.</summary>
+    private static string Describe(ImportItem item) =>
+        $"{char.ToUpperInvariant(item.Kind[0])}{item.Kind[1..]} {item.Id}: {item.Error}";
+
+    private static StaleMark? StaleOf(object? fact) => fact switch
+    {
+        ElementState e => e.Stale,
+        RelationshipState r => r.Stale,
+        MessageState m => m.Stale,
+        OperationState o => o.Stale,
+        ChannelState c => c.Stale,
+        SubscriptionState s => s.Stale,
+        BindingState b => b.Stale,
+        _ => null,
+    };
 
     private static string DeciderFailure(CommandResult<IReadOnlyList<object>> result) => result switch
     {

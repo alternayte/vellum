@@ -18,6 +18,8 @@ interface NodeContextMenuProps {
   onDrillInto: () => void
   onDuplicate: () => void
   onDelete: () => void
+  /** The model cannot be changed: the menu shows what looks and leaves out what writes. */
+  readOnly?: boolean
 }
 
 export function NodeContextMenu({
@@ -31,6 +33,7 @@ export function NodeContextMenu({
   onDrillInto,
   onDuplicate,
   onDelete,
+  readOnly = false,
 }: NodeContextMenuProps) {
   if (!open) return null
 
@@ -41,7 +44,7 @@ export function NodeContextMenu({
         className="fixed z-50 min-w-[180px] rounded-lg border border-border bg-popover p-1 shadow-lg"
         style={{ left: position.x, top: position.y }}
       >
-        <MenuItem icon={<Pencil className="h-3.5 w-3.5" />} label="Edit details" onClick={() => { onEditDetails(); onClose() }} />
+        <MenuItem icon={<Pencil className="h-3.5 w-3.5" />} label={readOnly ? 'Show details' : 'Edit details'} onClick={() => { onEditDetails(); onClose() }} />
         {hasChildren && (
           <>
             <div className="my-1 h-px bg-border" />
@@ -57,10 +60,14 @@ export function NodeContextMenu({
             />
           </>
         )}
-        <div className="my-1 h-px bg-border" />
-        <MenuItem icon={<Copy className="h-3.5 w-3.5" />} label="Duplicate" onClick={() => { onDuplicate(); onClose() }} />
-        <div className="my-1 h-px bg-border" />
-        <MenuItem icon={<Trash2 className="h-3.5 w-3.5" />} label="Delete" onClick={() => { onDelete(); onClose() }} destructive />
+        {!readOnly && (
+          <>
+            <div className="my-1 h-px bg-border" />
+            <MenuItem icon={<Copy className="h-3.5 w-3.5" />} label="Duplicate" onClick={() => { onDuplicate(); onClose() }} />
+            <div className="my-1 h-px bg-border" />
+            <MenuItem icon={<Trash2 className="h-3.5 w-3.5" />} label="Delete" onClick={() => { onDelete(); onClose() }} destructive />
+          </>
+        )}
       </div>
     </>
   )

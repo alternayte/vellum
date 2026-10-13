@@ -16,7 +16,7 @@ Each endpoint that names a workspace or a project checks the membership of the c
 Three rules complete this.
 
 - **The instance administrator role gives no access to a workspace.** An instance administrator manages the policy, the defaults, the keys and the diagnostics. To read a project, the administrator needs a membership like any other user.
-- **An ID from another workspace is refused, not used.** For example, a model import refuses a schema ID that belongs to another project.
+- **An ID from another workspace is not used.** For example, a model import never reads or changes a schema of another project. When a document carries the ID of such a schema, the import gives the schema a new ID in its own project.
 - **A credential is bound to its workspace.** The encrypted row of a credential does not decrypt under another workspace ID. See [Secrets](#secrets).
 
 Tests in the repository sign in as a user of a second workspace and call the endpoints of the first with its real IDs. Each call must be refused.

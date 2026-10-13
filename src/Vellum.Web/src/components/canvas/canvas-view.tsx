@@ -114,6 +114,12 @@ interface CanvasViewProps {
   onSelectionChange?: (ids: string[]) => void
   searchOpen?: boolean
   onSearchClose?: () => void
+  /**
+   * The model cannot be changed here: it is a named revision, or the person is a viewer.
+   * The canvas still pans, zooms, selects and drills in. It does not move, connect, rename,
+   * add or delete, and it opens no menu that only writes.
+   */
+  readOnly?: boolean
 }
 
 function minimapNodeColor(node: Node): string {
@@ -130,9 +136,19 @@ const fitMs = () => (prefersReducedMotion() ? 0 : 300)
 const fitAll = () => ({ ...FIT_INITIAL, duration: fitMs() })
 const fitOne = () => ({ maxZoom: 1.25, padding: 0.5, duration: fitMs() })
 export function CanvasView(props: CanvasViewProps) {
+  // A read-only canvas keeps the callbacks that look and gets none of the ones that write.
+  const shown: CanvasViewProps = props.readOnly
+    ? {
+        elements: props.elements, relationships: props.relationships, positions: props.positions,
+        diffStateMap: props.diffStateMap, isReviewMode: props.isReviewMode, messages: props.messages,
+        onNodeDoubleClick: props.onNodeDoubleClick, onFitViewReady: props.onFitViewReady,
+        onViewportCenterReady: props.onViewportCenterReady, onSelectionChange: props.onSelectionChange,
+        searchOpen: props.searchOpen, onSearchClose: props.onSearchClose, readOnly: true,
+      }
+    : props
   return (
     <ReactFlowProvider>
-      <CanvasViewInner {...props} />
+      <CanvasViewInner {...shown} />
     </ReactFlowProvider>
   )
 }
@@ -173,6 +189,7 @@ function CanvasViewInner({
   onSelectionChange,
   searchOpen,
   onSearchClose,
+  readOnly = false,
 }: CanvasViewProps) {
   const { currentRootId, zoomLevel, setZoom, activeLens, setLens, expandedNodeIds, toggleExpand } = useCanvasStore()
   const { fitView, screenToFlowPosition } = useReactFlow()
@@ -584,7 +601,7 @@ function CanvasViewInner({
   const handleConnectEnd: OnConnectEnd = useCallback(
     (event, connectionState) => {
       // Only open the popover when the connection was dropped on empty canvas (no target node)
-      if (connectionState.toNode !== null) return
+      if (readOnly || connectionState.toNode !== null) return
       // Must have had a source node to connect from
       const sourceNodeId = connectionState.fromHandle?.nodeId ?? null
       if (!sourceNodeId) return
@@ -599,14 +616,14 @@ function CanvasViewInner({
         sourceNodeId,
       })
     },
-    [screenToFlowPosition],
+    [screenToFlowPosition, readOnly],
   )
 
   const handlePaneDoubleClick = useCallback(
     (event: React.MouseEvent) => {
       // Only proceed when the click target is on the pane itself, excluding all overlays
       const target = event.target as HTMLElement
-      if (!target.closest('.react-flow__pane')) return
+      if (readOnly || !target.closest('.react-flow__pane')) return
 
       const flowPos = screenToFlowPosition({ x: event.clientX, y: event.clientY })
       setCreatePopover({
@@ -615,7 +632,7 @@ function CanvasViewInner({
         sourceNodeId: null,
       })
     },
-    [screenToFlowPosition],
+    [screenToFlowPosition, readOnly],
   )
 
   const handlePopoverSelect = useCallback(
@@ -668,6 +685,10 @@ function CanvasViewInner({
     },
     [],
   )
+  // The edge menu and the canvas menu hold actions that write and nothing else that the
+  // canvas does not already offer, so a read-only canvas opens neither. The node menu
+  // stays, without its actions that write: it shows the details, expands and drills in.
+  const noMenu = useCallback((event: React.MouseEvent | MouseEvent) => event.preventDefault(), [])
 
   const handleEdgeContextMenu = useCallback(
     (event: React.MouseEvent, edge: Edge) => {
@@ -691,18 +712,22 @@ function CanvasViewInner({
       <div className="flex h-full items-center justify-center">
         <div className="text-center">
           <p className="text-sm text-muted-foreground">
-            {isTopLevel
-              ? 'Start with a system. Draw a connection to add the next one.'
-              : 'Nothing here yet. Add an element to get started.'}
+            {readOnly
+              ? 'This model has no element here. It is read-only.'
+              : isTopLevel
+                ? 'Start with a system. Draw a connection to add the next one.'
+                : 'Nothing here yet. Add an element to get started.'}
           </p>
-          <Button
-            variant="outline"
-            size="sm"
-            className="mt-3"
-            onClick={() => onAddElement?.()}
-          >
-            {isTopLevel ? 'Add System' : 'Add Element'}
-          </Button>
+          {!readOnly && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-3"
+              onClick={() => onAddElement?.()}
+            >
+              {isTopLevel ? 'Add System' : 'Add Element'}
+            </Button>
+          )}
         </div>
       </div>
     )
@@ -729,9 +754,11 @@ function CanvasViewInner({
         onMoveEnd={(_event, viewport) => setZoom(viewport.zoom)}
         onSelectionChange={handleSelectionChange}
         onNodeContextMenu={handleNodeContextMenu}
-        onEdgeContextMenu={handleEdgeContextMenu}
-        onPaneContextMenu={handlePaneContextMenu}
-        deleteKeyCode={['Delete', 'Backspace']}
+        onEdgeContextMenu={readOnly ? noMenu : handleEdgeContextMenu}
+        onPaneContextMenu={readOnly ? noMenu : handlePaneContextMenu}
+        nodesDraggable={!readOnly}
+        nodesConnectable={!readOnly}
+        deleteKeyCode={readOnly ? null : ['Delete', 'Backspace']}
         onNodesDelete={handleNodesDelete}
         onEdgesDelete={handleEdgesDelete}
         selectionMode={SelectionMode.Partial}
@@ -767,12 +794,12 @@ function CanvasViewInner({
           maskColor="color-mix(in srgb, var(--background) 80%, transparent)"
           className="border-border! max-sm:hidden"
         />
-        <BulkActionsToolbar
+        {!readOnly && <BulkActionsToolbar
           selectedCount={selectedNodeIds.length}
           onDelete={() => onBulkDelete?.(selectedNodeIds)}
           onBulkStatusChange={onBulkStatusChange ? (status) => onBulkStatusChange(selectedNodeIds, status) : undefined}
           onBulkAddTag={onBulkAddTag ? (tag) => onBulkAddTag(selectedNodeIds, tag) : undefined}
-        />
+        />}
         {searchOpen && (
           <SearchOverlay
             nodes={rfNodes}
@@ -801,6 +828,7 @@ function CanvasViewInner({
               const { drillInto } = useCanvasStore.getState()
               drillInto({ elementId: el.id, name: el.name, kind: el.kind })
             }}
+            readOnly={readOnly}
             onDuplicate={() => onDuplicateElement?.(nodeId)}
             onDelete={() => onDeleteElement?.(nodeId)}
           />

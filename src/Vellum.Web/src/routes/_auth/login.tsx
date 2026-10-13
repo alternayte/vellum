@@ -1,6 +1,7 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useState } from 'react'
 import { useAuth } from '@/hooks/use-auth'
+import { useSignInMethods } from '@/hooks/use-sign-in-methods'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 
@@ -11,6 +12,10 @@ export const Route = createFileRoute('/_auth/login')({
 function LoginPage() {
   const navigate = useNavigate()
   const { login, loginError } = useAuth()
+  // Until the instance has answered, the screen shows the password form only: it offers no
+  // provider and no registration that the instance may not have.
+  const methods = useSignInMethods().data
+  const providers = methods?.providers ?? []
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
 
@@ -28,29 +33,30 @@ function LoginPage() {
     <div className="w-full max-w-sm rounded-lg border border-border bg-card p-6">
       <h1 className="mb-6 font-display text-2xl font-bold">Sign in to Vellum</h1>
 
-      <div className="mb-4 space-y-2">
-        <a
-          href="/api/auth/external/GitHub"
-          className="flex w-full items-center justify-center gap-2 rounded-md border border-border bg-background px-4 py-2 text-sm hover:bg-muted"
-        >
-          Sign in with GitHub
-        </a>
-        <a
-          href="/api/auth/external/Google"
-          className="flex w-full items-center justify-center gap-2 rounded-md border border-border bg-background px-4 py-2 text-sm hover:bg-muted"
-        >
-          Sign in with Google
-        </a>
-      </div>
+      {providers.length > 0 && (
+        <>
+          <div className="mb-4 space-y-2">
+            {providers.map((provider) => (
+              <a
+                key={provider}
+                href={`/api/auth/external/${encodeURIComponent(provider)}`}
+                className="flex w-full items-center justify-center gap-2 rounded-md border border-border bg-background px-4 py-2 text-sm hover:bg-muted focus-visible:outline-2 focus-visible:outline-primary"
+              >
+                Sign in with {provider}
+              </a>
+            ))}
+          </div>
 
-      <div className="relative mb-4">
-        <div className="absolute inset-0 flex items-center">
-          <span className="w-full border-t border-border" />
-        </div>
-        <div className="relative flex justify-center text-xs uppercase">
-          <span className="bg-card px-2 text-muted-foreground">or</span>
-        </div>
-      </div>
+          <div className="relative mb-4">
+            <div className="absolute inset-0 flex items-center">
+              <span className="w-full border-t border-border" />
+            </div>
+            <div className="relative flex justify-center text-xs uppercase">
+              <span className="bg-card px-2 text-muted-foreground">or</span>
+            </div>
+          </div>
+        </>
+      )}
 
       <form onSubmit={handleSubmit} className="space-y-3">
         <Input
@@ -77,12 +83,19 @@ function LoginPage() {
         </Button>
       </form>
 
-      <p className="mt-4 text-center text-sm text-muted-foreground">
-        No account?{' '}
-        <a href="/register" className="text-primary hover:underline">
-          Register
-        </a>
-      </p>
+      {methods?.registrationOpen && (
+        <p className="mt-4 text-center text-sm text-muted-foreground">
+          No account?{' '}
+          <a href="/register" className="text-primary hover:underline">
+            Register
+          </a>
+        </p>
+      )}
+      {methods && !methods.registrationOpen && (
+        <p className="mt-4 text-center text-xs text-muted-foreground">
+          Registration is closed on this instance. Ask its administrator for an account.
+        </p>
+      )}
     </div>
   )
 }

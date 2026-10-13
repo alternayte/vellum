@@ -332,6 +332,8 @@ public static class ModellingEndpoints
 
         project.MapPost("/import", async (
             Guid projectId,
+            bool? dryRun,
+            long? expectedVersion,
             HttpRequest request,
             ClaimsPrincipal user,
             WorkspaceAuthorizationService auth,
@@ -340,8 +342,9 @@ public static class ModellingEndpoints
         {
             var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
             await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
-            return await ImportModel.Handle(projectId, request, workspacesDb, ct);
+            return await ImportModel.Handle(projectId, request, dryRun == true, expectedVersion, workspacesDb, ct);
         })
+        .Produces<ImportResult>()
         .WithMetadata(new RequestBodyLimit(
             ImportModel.MaxBytes, "import_too_large", $"An import document holds at most {ImportModel.MaxBytes} bytes."))
         .WithTags("Import");

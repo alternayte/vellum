@@ -1,3 +1,4 @@
+using Vellum.Modules.Modelling.Export;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -426,6 +427,124 @@ public class ExportImportTests
         using var client = CreateClient(factory);
         var response = await client.GetAsync($"/api/projects/{Guid.NewGuid()}/export");
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task A_document_with_schemas_imports_into_a_second_project_with_schema_IDs_of_that_project()
+    {
+        using var factory = CreateFactory();
+        using var client = await CreateAuthenticatedClientAsync(factory);
+        var first = await SetupProjectAsync(client);
+        var second = await SetupProjectAsync(client);
+
+        // The child stands before its parent, as an export that orders by ID can write it.
+        var (systemId, appId) = (Guid.Parse("ffffffff-0000-4000-8000-000000000001"), Guid.Parse("00000000-0000-4000-8000-000000000002"));
+        var (schemaId, messageId, operationId) = (Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
+        var document = new
+        {
+            version = "1.0",
+            project = new { name = "Shop" },
+            elements = new object[]
+            {
+                new { id = appId, kind = "app", name = "Orders API", status = "current", parentId = (Guid?)systemId, tags = Array.Empty<string>() },
+                new { id = systemId, kind = "system", name = "Shop", status = "current", parentId = (Guid?)null, tags = Array.Empty<string>() },
+            },
+            relationships = Array.Empty<object>(),
+            messages = new[]
+            {
+                new { id = messageId, name = "OrderPlaced", producerId = appId, consumerIds = Array.Empty<Guid>(), schemaId, tags = Array.Empty<string>() },
+            },
+            schemas = new[]
+            {
+                new { id = schemaId, name = "OrderPlaced", description = (string?)null, content = "{\"type\":\"object\"}", version = 1 },
+            },
+            operations = new[]
+            {
+                new
+                {
+                    id = operationId, ownerId = appId, name = "POST /orders", transport = "http",
+                    requestSchemaId = (Guid?)schemaId, responseSchemaId = (Guid?)null, timeoutMs = 2000,
+                    retry = new { maxAttempts = 1, backoffMs = 0 },
+                },
+            },
+        };
+
+        async Task<ImportResult> ImportAsync(Guid projectId, string query = "")
+        {
+            var response = await client.PostAsJsonAsync($"/api/projects/{projectId}/import{query}", document);
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            return (await response.Content.ReadFromJsonAsync<ImportResult>())!;
+        }
+        async Task<IReadOnlyList<Guid>> SchemaIdsAsync(Guid projectId) =>
+            [.. (await client.GetFromJsonAsync<Page<SchemaDto>>($"/api/projects/{projectId}/schemas"))!.Items.Select(s => s.Id)];
+
+        // The project that owns the schema ID keeps it.
+        Assert.True((await ImportAsync(first)).Applied);
+        Assert.Equal([schemaId], await SchemaIdsAsync(first));
+
+        // A preview writes nothing and names the ID the schema gets in the second project.
+        var mapped = ImportModel.SchemaIdIn(second, schemaId);
+        Assert.NotEqual(schemaId, mapped);
+        var preview = await ImportAsync(second, "?dryRun=true");
+        Assert.False(preview.Applied);
+        Assert.Equal(0, preview.Refused);
+        Assert.Equal(mapped, Assert.Single(preview.Items, i => i.Kind == "schema").ImportedAs);
+        Assert.Empty(await SchemaIdsAsync(second));
+        Assert.Empty((await client.GetFromJsonAsync<Page<ElementDto>>($"/api/projects/{second}/elements"))!.Items);
+
+        // The import gives the schema that ID and writes every reference with it.
+        var imported = await ImportAsync(second, $"?expectedVersion={preview.ModelVersion}");
+        Assert.True(imported.Applied);
+        Assert.Equal(5, imported.Added);
+        Assert.Equal([mapped], await SchemaIdsAsync(second));
+        var messages = await client.GetFromJsonAsync<Page<MessageDto>>($"/api/projects/{second}/messages");
+        Assert.Equal(mapped, Assert.Single(messages!.Items).SchemaId);
+        var operations = await client.GetFromJsonAsync<Page<Vellum.Modules.Modelling.Contracts.OperationDto>>($"/api/projects/{second}/operations");
+        Assert.Equal(mapped, Assert.Single(operations!.Items).RequestSchemaId);
+        Assert.Equal(2, (await client.GetFromJsonAsync<Page<ElementDto>>($"/api/projects/{second}/elements"))!.Items.Count);
+
+        // An import that names the version of the preview is refused once the model has moved.
+        var late = await client.PostAsJsonAsync($"/api/projects/{second}/import?expectedVersion={preview.ModelVersion}", document);
+        Assert.Equal(HttpStatusCode.Conflict, late.StatusCode);
+
+        // The same document again changes nothing and adds no second schema, in either project.
+        var again = await ImportAsync(second);
+        Assert.Equal((0, 0, 5), (again.Added, again.Changed, again.Unchanged));
+        Assert.Equal([mapped], await SchemaIdsAsync(second));
+        Assert.Equal((0, 5), ((await ImportAsync(first)).Added, (await ImportAsync(first)).Unchanged));
+        Assert.Equal([schemaId], await SchemaIdsAsync(first));
+    }
+
+    [Fact]
+    public async Task A_refused_import_names_every_refused_entry_and_writes_nothing()
+    {
+        using var factory = CreateFactory();
+        using var client = await CreateAuthenticatedClientAsync(factory);
+        var projectId = await SetupProjectAsync(client);
+
+        var (good, noParent, badStatus) = (Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
+        var document = new
+        {
+            elements = new object[]
+            {
+                new { id = good, kind = "system", name = "Shop", status = "current", tags = Array.Empty<string>() },
+                new { id = noParent, kind = "app", name = "Orphan", status = "current", parentId = Guid.NewGuid(), tags = Array.Empty<string>() },
+                new { id = badStatus, kind = "system", name = "Odd", status = "sideways", tags = Array.Empty<string>() },
+            },
+        };
+
+        var preview = await (await client.PostAsJsonAsync($"/api/projects/{projectId}/import?dryRun=true", document))
+            .Content.ReadFromJsonAsync<ImportResult>();
+        Assert.Equal((1, 2), (preview!.Added, preview.Refused));
+        Assert.All(preview.Items.Where(i => i.Change == ImportModel.Refused), i => Assert.False(string.IsNullOrEmpty(i.Error)));
+
+        var response = await client.PostAsJsonAsync($"/api/projects/{projectId}/import", document);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        var error = await response.Content.ReadFromJsonAsync<ErrorResponse>();
+        Assert.Equal("invalid_export", error!.Type);
+        Assert.StartsWith($"Element {noParent}:", error.Title);
+        Assert.Equal([$"element:{noParent}", $"element:{badStatus}"], error.Errors!.Select(e => e.Field));
+        Assert.Empty((await client.GetFromJsonAsync<Page<ElementDto>>($"/api/projects/{projectId}/elements"))!.Items);
     }
 }
 
