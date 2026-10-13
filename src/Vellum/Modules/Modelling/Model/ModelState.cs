@@ -157,11 +157,11 @@ public sealed record ModelState(
                 e.Id, e.Kind, e.Name, e.Description, e.Technology,
                 e.OwnerId, e.Status, e.ParentId, e.Tags, Icon: null))
         },
-        ModelEvent.ElementRenamed e => state.WithElement(e.ElementId, el => el with { Name = e.Name, Stale = null }),
+        ModelEvent.ElementRenamed e => state.WithElement(e.ElementId, el => el with { Name = e.Name }),
         ModelEvent.ElementDescriptionChanged e => state.WithElement(e.ElementId, el => el with { Description = e.Description }),
-        ModelEvent.ElementTechnologyChanged e => state.WithElement(e.ElementId, el => el with { Technology = e.Technology, Stale = null }),
+        ModelEvent.ElementTechnologyChanged e => state.WithElement(e.ElementId, el => el with { Technology = e.Technology }),
         ModelEvent.ElementOwnerChanged e => state.WithElement(e.ElementId, el => el with { OwnerId = e.OwnerId }),
-        ModelEvent.ElementReparented e => state.WithElement(e.ElementId, el => el with { ParentId = e.ParentId, Stale = null }),
+        ModelEvent.ElementReparented e => state.WithElement(e.ElementId, el => el with { ParentId = e.ParentId }),
         ModelEvent.ElementStatusChanged e => state.WithElement(e.ElementId, el => el with { Status = e.Status }),
         ModelEvent.ElementRetagged e => state.WithElement(e.ElementId, el => el with { Tags = e.Tags }),
         ModelEvent.ElementIconChanged e => state.WithElement(e.ElementId, el => el with { Icon = e.Icon }),
@@ -174,10 +174,10 @@ public sealed record ModelState(
             Relationships = state.Relationships.SetItem(e.Id, new RelationshipState(
                 e.Id, e.FromId, e.ToId, e.Label, e.Technology, e.MessageId, null, e.Kind))
         },
-        ModelEvent.RelationshipLabelChanged e => state.WithRelationship(e.RelationshipId, r => r with { Label = e.Label, Stale = null }),
-        ModelEvent.RelationshipTechnologyChanged e => state.WithRelationship(e.RelationshipId, r => r with { Technology = e.Technology, Stale = null }),
+        ModelEvent.RelationshipLabelChanged e => state.WithRelationship(e.RelationshipId, r => r with { Label = e.Label }),
+        ModelEvent.RelationshipTechnologyChanged e => state.WithRelationship(e.RelationshipId, r => r with { Technology = e.Technology }),
         ModelEvent.RelationshipLineShapeChanged e => state.WithRelationship(e.RelationshipId, r => r with { LineShape = e.LineShape }),
-        ModelEvent.RelationshipKindChanged e => state.WithRelationship(e.RelationshipId, r => r with { Kind = e.Kind, Stale = null }),
+        ModelEvent.RelationshipKindChanged e => state.WithRelationship(e.RelationshipId, r => r with { Kind = e.Kind }),
         ModelEvent.RelationshipRemoved e => state with { Relationships = state.Relationships.Remove(e.RelationshipId) },
         ModelEvent.RelationshipProvenanceRecorded e => state.WithRelationship(e.RelationshipId,
             r => r with { FactStatus = e.Status, Provenance = e.Provenance, Stale = e.Stale }),
@@ -189,7 +189,7 @@ public sealed record ModelState(
         },
         ModelEvent.MessageUpdated m => state.WithMessage(m.MessageId, msg =>
         {
-            var updated = msg with { Stale = null };
+            var updated = msg;
             if (m.Name is not null) updated = updated with { Name = m.Name };
             if (m.Description is not null) updated = updated with { Description = m.Description };
             if (m.ProducerId is not null) updated = updated with { ProducerId = m.ProducerId.Value };
@@ -211,7 +211,7 @@ public sealed record ModelState(
         {
             OwnerId = e.OwnerId, Name = e.Name, Transport = e.Transport,
             RequestSchemaId = e.RequestSchemaId, ResponseSchemaId = e.ResponseSchemaId,
-            TimeoutMs = e.TimeoutMs, Retry = e.Retry, Stale = null,
+            TimeoutMs = e.TimeoutMs, Retry = e.Retry,
         }),
         ModelEvent.OperationRemoved e => state with { Operations = state.Operations.Remove(e.OperationId) },
         ModelEvent.OperationProvenanceRecorded e => state.WithOperation(e.OperationId,
@@ -221,7 +221,7 @@ public sealed record ModelState(
         {
             Channels = state.Channels.SetItem(e.Id, new ChannelState(e.Id, e.Name, e.Kind))
         },
-        ModelEvent.ChannelChanged e => state.WithChannel(e.ChannelId, c => c with { Name = e.Name, Kind = e.Kind, Stale = null }),
+        ModelEvent.ChannelChanged e => state.WithChannel(e.ChannelId, c => c with { Name = e.Name, Kind = e.Kind }),
         ModelEvent.ChannelRemoved e => state with { Channels = state.Channels.Remove(e.ChannelId) },
         ModelEvent.ChannelProvenanceRecorded e => state.WithChannel(e.ChannelId,
             c => c with { FactStatus = e.Status, Provenance = e.Provenance, Stale = e.Stale }),
@@ -234,7 +234,7 @@ public sealed record ModelState(
         ModelEvent.SubscriptionChanged e => state.WithSubscription(e.SubscriptionId, s => s with
         {
             ChannelId = e.ChannelId, ConsumerId = e.ConsumerId,
-            Retry = e.Retry, DeadLetterChannelId = e.DeadLetterChannelId, Stale = null,
+            Retry = e.Retry, DeadLetterChannelId = e.DeadLetterChannelId,
         }),
         ModelEvent.SubscriptionRemoved e => state with { Subscriptions = state.Subscriptions.Remove(e.SubscriptionId) },
         ModelEvent.SubscriptionProvenanceRecorded e => state.WithSubscription(e.SubscriptionId,

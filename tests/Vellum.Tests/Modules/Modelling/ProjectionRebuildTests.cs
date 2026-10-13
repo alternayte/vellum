@@ -207,7 +207,7 @@ public class ProjectionRebuildTests
     }
 
     /// <summary>Queues the rebuild, then waits until the projection runs inline again.</summary>
-    private static async Task RebuildAsync(IEventStoreAdmin admin, string projection)
+    internal static async Task RebuildAsync(IEventStoreAdmin admin, string projection)
     {
         var jobId = await admin.RebuildAsync(projection);
 

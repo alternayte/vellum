@@ -35,21 +35,37 @@ public sealed record ProvenanceExport(
     public Provenance ToDomain() => new(Source, Revision, Confidence, AcceptedBy, AcceptedAt);
 }
 
+/// <summary>
+/// The stale mark of a fact. The member is optional on every fact kind: a fact without it,
+/// and every fact of a document written before the member existed, has no mark. The members
+/// are nullable because a document is untrusted; <see cref="ImportModel"/> requires both.
+/// </summary>
+public sealed record StaleExport(string? SinceRevision, string? Reason)
+{
+    public static StaleExport? From(StaleMark? mark) => mark is null ? null : new(mark.SinceRevision, mark.Reason);
+
+    public static StaleExport? From(string? sinceRevision, string? reason) =>
+        sinceRevision is null || reason is null ? null : new(sinceRevision, reason);
+}
+
 public sealed record ElementExport(
     Guid Id, string Kind, string Name, string? Description,
     string? Technology, string Status, Guid? ParentId, string[] Tags,
     string? Icon = null,
-    string FactStatus = "declared", ProvenanceExport? Provenance = null);
+    string FactStatus = "declared", ProvenanceExport? Provenance = null,
+    StaleExport? Stale = null);
 
 public sealed record RelationshipExport(
     Guid Id, Guid FromId, Guid ToId, string? Label, string? Technology,
     string Kind = "structural", string? LineShape = null,
-    string FactStatus = "declared", ProvenanceExport? Provenance = null);
+    string FactStatus = "declared", ProvenanceExport? Provenance = null,
+    StaleExport? Stale = null);
 
 public sealed record MessageExport(
     Guid Id, string Name, string? Description,
     Guid ProducerId, Guid[] ConsumerIds, Guid? SchemaId, string[] Tags,
-    string FactStatus = "declared", ProvenanceExport? Provenance = null);
+    string FactStatus = "declared", ProvenanceExport? Provenance = null,
+    StaleExport? Stale = null);
 
 public sealed record SchemaExport(
     Guid Id, string Name, string? Description, string Content, int Version);
@@ -60,13 +76,16 @@ public sealed record OperationExport(
     Guid Id, Guid OwnerId, string Name, string Transport,
     Guid? RequestSchemaId, Guid? ResponseSchemaId,
     int TimeoutMs, RetryExport? Retry,
-    string FactStatus = "declared", ProvenanceExport? Provenance = null);
+    string FactStatus = "declared", ProvenanceExport? Provenance = null,
+    StaleExport? Stale = null);
 
 public sealed record ChannelExport(
     Guid Id, string Name, string Kind,
-    string FactStatus = "declared", ProvenanceExport? Provenance = null);
+    string FactStatus = "declared", ProvenanceExport? Provenance = null,
+    StaleExport? Stale = null);
 
 public sealed record SubscriptionExport(
     Guid Id, Guid ChannelId, Guid ConsumerId,
     RetryExport? Retry, Guid? DeadLetterChannelId,
-    string FactStatus = "declared", ProvenanceExport? Provenance = null);
+    string FactStatus = "declared", ProvenanceExport? Provenance = null,
+    StaleExport? Stale = null);

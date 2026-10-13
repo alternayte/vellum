@@ -38,6 +38,8 @@ public static class ModelEvent
     // which keeps them at shape version 1: an event stored without it reads as null and means
     // "not stale". A provenance event therefore always states the whole truth label of a
     // fact: status, provenance and stale mark. Recording provenance without a mark clears it.
+    // It is the only event that changes a mark: no edit of a value sets or clears one, in
+    // ModelState.Evolve and in ModelProjection alike (see StaleDecider).
 
     // Element events
     public sealed record ElementAdded(

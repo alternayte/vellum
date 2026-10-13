@@ -174,7 +174,7 @@ public static class ImportModel
         // Import elements
         foreach (var el in doc.Elements)
         {
-            if (!TryReadFacts(el.FactStatus, el.Provenance, out var factStatus, out var provenance, out var factError))
+            if (!TryReadFacts(el.FactStatus, el.Provenance, el.Stale, out var factStatus, out var provenance, out var stale, out var factError))
                 return Results.BadRequest(new ErrorResponse("invalid_export", $"Element {el.Id}: {factError}"));
 
             if (!ModelEnum.TryParseDefined(el.Status, out ElementStatus status))
@@ -206,17 +206,7 @@ public static class ImportModel
                 events.AddRange(updateSuccess.Value);
                 state = updateSuccess.Value.Aggregate(state, ModelState.Evolve);
 
-                if (existingElement.FactStatus != factStatus ||
-                    !ProvenanceEquivalent(existingElement.Provenance, provenance))
-                {
-                    var provenanceResult = ModelDecider.RecordElementProvenance(state, el.Id, factStatus, provenance);
-                    if (provenanceResult is not CommandResult<IReadOnlyList<object>>.Success provenanceSuccess)
-                        return Results.BadRequest(new ErrorResponse("invalid_export",
-                            $"Element {el.Id}: {DeciderFailure(provenanceResult)}"));
-
-                    events.AddRange(provenanceSuccess.Value);
-                    state = provenanceSuccess.Value.Aggregate(state, ModelState.Evolve);
-                }
+                Append(StaleDecider.Relabel(state, el.Id, factStatus, provenance, stale));
             }
             else
             {
@@ -238,18 +228,15 @@ public static class ImportModel
                     return iconFailure;
                 }
 
-                if (factStatus != FactStatus.Declared || provenance is not null)
-                {
-                    events.Add(new ModelEvent.ElementProvenanceRecorded(el.Id, factStatus, provenance));
-                    state = ModelState.Evolve(state, events[^1]);
-                }
+                if (factStatus != FactStatus.Declared || provenance is not null || stale is not null)
+                    Append([new ModelEvent.ElementProvenanceRecorded(el.Id, factStatus, provenance, stale)]);
             }
         }
 
         // Import relationships
         foreach (var rel in doc.Relationships)
         {
-            if (!TryReadFacts(rel.FactStatus, rel.Provenance, out var factStatus, out var provenance, out var factError))
+            if (!TryReadFacts(rel.FactStatus, rel.Provenance, rel.Stale, out var factStatus, out var provenance, out var stale, out var factError))
                 return Results.BadRequest(new ErrorResponse("invalid_export", $"Relationship {rel.Id}: {factError}"));
 
             var kind = RelationshipKind.Structural;
@@ -259,7 +246,7 @@ public static class ImportModel
                     $"Relationship {rel.Id}: invalid kind '{rel.Kind}'"));
             }
 
-            if (state.Relationships.TryGetValue(rel.Id, out var existingRelationship))
+            if (state.Relationships.ContainsKey(rel.Id))
             {
                 var updateCmd = new UpdateRelationshipCommand(rel.Id,
                     Label: rel.Label, SetLabel: true,
@@ -274,17 +261,7 @@ public static class ImportModel
                 events.AddRange(updateSuccess.Value);
                 state = updateSuccess.Value.Aggregate(state, ModelState.Evolve);
 
-                if (existingRelationship.FactStatus != factStatus ||
-                    !ProvenanceEquivalent(existingRelationship.Provenance, provenance))
-                {
-                    var provenanceResult = ModelDecider.RecordRelationshipProvenance(state, rel.Id, factStatus, provenance);
-                    if (provenanceResult is not CommandResult<IReadOnlyList<object>>.Success provenanceSuccess)
-                        return Results.BadRequest(new ErrorResponse("invalid_export",
-                            $"Relationship {rel.Id}: {DeciderFailure(provenanceResult)}"));
-
-                    events.AddRange(provenanceSuccess.Value);
-                    state = provenanceSuccess.Value.Aggregate(state, ModelState.Evolve);
-                }
+                Append(StaleDecider.Relabel(state, rel.Id, factStatus, provenance, stale));
             }
             else
             {
@@ -304,18 +281,15 @@ public static class ImportModel
                     return shapeFailure;
                 }
 
-                if (factStatus != FactStatus.Declared || provenance is not null)
-                {
-                    events.Add(new ModelEvent.RelationshipProvenanceRecorded(rel.Id, factStatus, provenance));
-                    state = ModelState.Evolve(state, events[^1]);
-                }
+                if (factStatus != FactStatus.Declared || provenance is not null || stale is not null)
+                    Append([new ModelEvent.RelationshipProvenanceRecorded(rel.Id, factStatus, provenance, stale)]);
             }
         }
 
         // Import messages
         foreach (var msg in doc.Messages)
         {
-            if (!TryReadFacts(msg.FactStatus, msg.Provenance, out var factStatus, out var provenance, out var factError))
+            if (!TryReadFacts(msg.FactStatus, msg.Provenance, msg.Stale, out var factStatus, out var provenance, out var stale, out var factError))
                 return Results.BadRequest(new ErrorResponse("invalid_export", $"Message {msg.Id}: {factError}"));
 
             if (msg.SchemaId is { } schemaId && !knownSchemaIds.Contains(schemaId))
@@ -324,7 +298,7 @@ public static class ImportModel
                     $"Message {msg.Id}: schema {schemaId} not found in this project or the document"));
             }
 
-            if (state.Messages.TryGetValue(msg.Id, out var existingMessage))
+            if (state.Messages.ContainsKey(msg.Id))
             {
                 var updateCmd = new UpdateMessageCommand(msg.Id,
                     Name: msg.Name, SetName: true,
@@ -341,17 +315,7 @@ public static class ImportModel
                 events.AddRange(updateSuccess.Value);
                 state = updateSuccess.Value.Aggregate(state, ModelState.Evolve);
 
-                if (existingMessage.FactStatus != factStatus ||
-                    !ProvenanceEquivalent(existingMessage.Provenance, provenance))
-                {
-                    var provenanceResult = ModelDecider.RecordMessageProvenance(state, msg.Id, factStatus, provenance);
-                    if (provenanceResult is not CommandResult<IReadOnlyList<object>>.Success provenanceSuccess)
-                        return Results.BadRequest(new ErrorResponse("invalid_export",
-                            $"Message {msg.Id}: {DeciderFailure(provenanceResult)}"));
-
-                    events.AddRange(provenanceSuccess.Value);
-                    state = provenanceSuccess.Value.Aggregate(state, ModelState.Evolve);
-                }
+                Append(StaleDecider.Relabel(state, msg.Id, factStatus, provenance, stale));
             }
             else
             {
@@ -365,11 +329,8 @@ public static class ImportModel
                 events.AddRange(added.Value);
                 state = added.Value.Aggregate(state, ModelState.Evolve);
 
-                if (factStatus != FactStatus.Declared || provenance is not null)
-                {
-                    events.Add(new ModelEvent.MessageProvenanceRecorded(msg.Id, factStatus, provenance));
-                    state = ModelState.Evolve(state, events[^1]);
-                }
+                if (factStatus != FactStatus.Declared || provenance is not null || stale is not null)
+                    Append([new ModelEvent.MessageProvenanceRecorded(msg.Id, factStatus, provenance, stale)]);
             }
         }
 
@@ -378,7 +339,7 @@ public static class ImportModel
         foreach (var channel in doc.Channels)
         {
             var label = $"Channel {channel.Id}";
-            if (!TryReadFacts(channel.FactStatus, channel.Provenance, out var factStatus, out var provenance, out var factError))
+            if (!TryReadFacts(channel.FactStatus, channel.Provenance, channel.Stale, out var factStatus, out var provenance, out var stale, out var factError))
                 return Results.BadRequest(new ErrorResponse("invalid_export", $"{label}: {factError}"));
 
             if (channel.Kind is null || !ModelEnum.TryParseDefined(channel.Kind, out ChannelKind kind))
@@ -389,14 +350,14 @@ public static class ImportModel
                 ? ContractDecider.UpdateChannel(state, new UpdateChannelCommand(id, channel.Name, kind))
                 : ContractDecider.AddChannel(state, new AddChannelCommand(id, channel.Name, kind));
             if (Apply(label, decision.Then(state, after =>
-                    ContractDecider.RecordChannelProvenance(after, id, factStatus, provenance))) is { } failure)
+                    Relabelled(after, id.Value, factStatus, provenance, stale))) is { } failure)
                 return failure;
         }
 
         foreach (var operation in doc.Operations)
         {
             var label = $"Operation {operation.Id}";
-            if (!TryReadFacts(operation.FactStatus, operation.Provenance, out var factStatus, out var provenance, out var factError))
+            if (!TryReadFacts(operation.FactStatus, operation.Provenance, operation.Stale, out var factStatus, out var provenance, out var stale, out var factError))
                 return Results.BadRequest(new ErrorResponse("invalid_export", $"{label}: {factError}"));
 
             if (operation.Transport is null || !ModelEnum.TryParseDefined(operation.Transport, out Transport transport))
@@ -422,14 +383,14 @@ public static class ImportModel
                     id, operation.OwnerId, operation.Name, transport,
                     operation.RequestSchemaId, operation.ResponseSchemaId, operation.TimeoutMs, retry));
             if (Apply(label, decision.Then(state, after =>
-                    ContractDecider.RecordOperationProvenance(after, id, factStatus, provenance))) is { } failure)
+                    Relabelled(after, id.Value, factStatus, provenance, stale))) is { } failure)
                 return failure;
         }
 
         foreach (var subscription in doc.Subscriptions)
         {
             var label = $"Subscription {subscription.Id}";
-            if (!TryReadFacts(subscription.FactStatus, subscription.Provenance, out var factStatus, out var provenance, out var factError))
+            if (!TryReadFacts(subscription.FactStatus, subscription.Provenance, subscription.Stale, out var factStatus, out var provenance, out var stale, out var factError))
                 return Results.BadRequest(new ErrorResponse("invalid_export", $"{label}: {factError}"));
 
             SubscriptionId id = subscription.Id;
@@ -442,9 +403,22 @@ public static class ImportModel
                 : ContractDecider.AddSubscription(state, new AddSubscriptionCommand(
                     id, subscription.ChannelId, subscription.ConsumerId, retry, deadLetter));
             if (Apply(label, decision.Then(state, after =>
-                    ContractDecider.RecordSubscriptionProvenance(after, id, factStatus, provenance))) is { } failure)
+                    Relabelled(after, id.Value, factStatus, provenance, stale))) is { } failure)
                 return failure;
         }
+
+        // The label of a fact the document carries. An import is not a scan and not a person's
+        // statement about one fact, so it clears no mark: a fact that has a mark keeps it, and
+        // a fact that has none takes the mark of the document.
+        void Append(IReadOnlyList<object> decided)
+        {
+            events.AddRange(decided);
+            state = decided.Aggregate(state, ModelState.Evolve);
+        }
+
+        static CommandResult<IReadOnlyList<object>> Relabelled(
+            ModelState after, Guid id, FactStatus factStatus, Provenance? provenance, StaleMark? stale) =>
+            new CommandResult<IReadOnlyList<object>>.Success(StaleDecider.Relabel(after, id, factStatus, provenance, stale));
 
         // Adds a decision's events to the import, or reports why the document is refused.
         IResult? Apply(string label, CommandResult<IReadOnlyList<object>> decision)
@@ -520,11 +494,12 @@ public static class ImportModel
     };
 
     private static bool TryReadFacts(
-        string? factStatusText, ProvenanceExport? provenanceExport,
-        out FactStatus factStatus, out Provenance? provenance, out string? error)
+        string? factStatusText, ProvenanceExport? provenanceExport, StaleExport? staleExport,
+        out FactStatus factStatus, out Provenance? provenance, out StaleMark? stale, out string? error)
     {
         factStatus = FactStatus.Declared;
         provenance = provenanceExport?.ToDomain();
+        stale = null;
         error = null;
 
         if (!string.IsNullOrEmpty(factStatusText) && !FactStatusFormat.TryParseApiString(factStatusText, out factStatus))
@@ -540,9 +515,20 @@ public static class ImportModel
             return false;
         }
 
-        return true;
-    }
+        if (staleExport is null)
+            return true;
 
-    private static bool ProvenanceEquivalent(Provenance? a, Provenance? b) =>
-        a?.Source == b?.Source && a?.Revision == b?.Revision && a?.Confidence == b?.Confidence;
+        // The mark is text from the document: both members are required, bounded and plain.
+        if (string.IsNullOrWhiteSpace(staleExport.SinceRevision))
+            error = "stale.sinceRevision: A stale mark requires the revision it dates from";
+        else if (string.IsNullOrWhiteSpace(staleExport.Reason))
+            error = "stale.reason: A stale mark requires a reason";
+        else if ((TextRule.Line("stale.sinceRevision", staleExport.SinceRevision)
+                ?? TextRule.Line("stale.reason", staleExport.Reason, TextRule.MaxIdentifier)) is { } textError)
+            error = $"{textError.Field}: {textError.Message}";
+        else
+            stale = new StaleMark(staleExport.SinceRevision, staleExport.Reason);
+
+        return error is null;
+    }
 }

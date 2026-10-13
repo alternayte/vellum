@@ -122,6 +122,9 @@ public static class ExecuteMerge
     private static IResult MainChanged() =>
         Results.Conflict(new ErrorResponse("conflict", "Main has changed since preview. Please re-preview."));
 
+    // A value that the preview resolved to carries the stale mark main has for that fact, or
+    // none when main does not have the fact (see ThreeWayMerge.Compute). Every provenance
+    // event below writes that mark, so a merge leaves the marks on main as they were.
     private static List<object> BuildMergeEvents(
         MergePreviewResult preview,
         IReadOnlyList<MergeResolution> resolutions,
@@ -257,7 +260,7 @@ public static class ExecuteMerge
         }
 
         if (FactChanged(current?.FactStatus, current?.Provenance, target.FactStatus, target.Provenance))
-            events.Add(new ModelEvent.OperationProvenanceRecorded(target.Id, target.FactStatus, target.Provenance));
+            events.Add(new ModelEvent.OperationProvenanceRecorded(target.Id, target.FactStatus, target.Provenance, target.Stale));
         return events;
     }
 
@@ -271,7 +274,7 @@ public static class ExecuteMerge
             events.Add(new ModelEvent.ChannelChanged(target.Id, target.Name, target.Kind));
 
         if (FactChanged(current?.FactStatus, current?.Provenance, target.FactStatus, target.Provenance))
-            events.Add(new ModelEvent.ChannelProvenanceRecorded(target.Id, target.FactStatus, target.Provenance));
+            events.Add(new ModelEvent.ChannelProvenanceRecorded(target.Id, target.FactStatus, target.Provenance, target.Stale));
         return events;
     }
 
@@ -291,7 +294,7 @@ public static class ExecuteMerge
         }
 
         if (FactChanged(current?.FactStatus, current?.Provenance, target.FactStatus, target.Provenance))
-            events.Add(new ModelEvent.SubscriptionProvenanceRecorded(target.Id, target.FactStatus, target.Provenance));
+            events.Add(new ModelEvent.SubscriptionProvenanceRecorded(target.Id, target.FactStatus, target.Provenance, target.Stale));
         return events;
     }
 
@@ -312,7 +315,7 @@ public static class ExecuteMerge
         };
         if (el.Icon is not null) events.Add(new ModelEvent.ElementIconChanged(el.Id, el.Icon));
         if (el.FactStatus != FactStatus.Declared || el.Provenance is not null)
-            events.Add(new ModelEvent.ElementProvenanceRecorded(el.Id, el.FactStatus, el.Provenance));
+            events.Add(new ModelEvent.ElementProvenanceRecorded(el.Id, el.FactStatus, el.Provenance, el.Stale));
         return events;
     }
 
@@ -325,7 +328,7 @@ public static class ExecuteMerge
         };
         if (rel.LineShape is not null) events.Add(new ModelEvent.RelationshipLineShapeChanged(rel.Id, rel.LineShape));
         if (rel.FactStatus != FactStatus.Declared || rel.Provenance is not null)
-            events.Add(new ModelEvent.RelationshipProvenanceRecorded(rel.Id, rel.FactStatus, rel.Provenance));
+            events.Add(new ModelEvent.RelationshipProvenanceRecorded(rel.Id, rel.FactStatus, rel.Provenance, rel.Stale));
         return events;
     }
 
@@ -342,7 +345,7 @@ public static class ExecuteMerge
             };
             if (target.Icon is not null) addEvents.Add(new ModelEvent.ElementIconChanged(target.Id, target.Icon));
             if (target.FactStatus != FactStatus.Declared || target.Provenance is not null)
-                addEvents.Add(new ModelEvent.ElementProvenanceRecorded(target.Id, target.FactStatus, target.Provenance));
+                addEvents.Add(new ModelEvent.ElementProvenanceRecorded(target.Id, target.FactStatus, target.Provenance, target.Stale));
             return addEvents;
         }
 
@@ -355,7 +358,7 @@ public static class ExecuteMerge
         if (!current.Tags.SequenceEqual(target.Tags)) events.Add(new ModelEvent.ElementRetagged(id, target.Tags));
         if (current.Icon != target.Icon) events.Add(new ModelEvent.ElementIconChanged(id, target.Icon));
         if (ProvenanceChanged(current, target))
-            events.Add(new ModelEvent.ElementProvenanceRecorded(id, target.FactStatus, target.Provenance));
+            events.Add(new ModelEvent.ElementProvenanceRecorded(id, target.FactStatus, target.Provenance, target.Stale));
 
         return events;
     }
@@ -373,7 +376,7 @@ public static class ExecuteMerge
             };
             if (target.LineShape is not null) addEvents.Add(new ModelEvent.RelationshipLineShapeChanged(target.Id, target.LineShape));
             if (target.FactStatus != FactStatus.Declared || target.Provenance is not null)
-                addEvents.Add(new ModelEvent.RelationshipProvenanceRecorded(target.Id, target.FactStatus, target.Provenance));
+                addEvents.Add(new ModelEvent.RelationshipProvenanceRecorded(target.Id, target.FactStatus, target.Provenance, target.Stale));
             return addEvents;
         }
 
@@ -382,7 +385,7 @@ public static class ExecuteMerge
         if (current.LineShape != target.LineShape) events.Add(new ModelEvent.RelationshipLineShapeChanged(id, target.LineShape));
         if (current.Kind != target.Kind) events.Add(new ModelEvent.RelationshipKindChanged(id, target.Kind));
         if (ProvenanceChanged(current, target))
-            events.Add(new ModelEvent.RelationshipProvenanceRecorded(id, target.FactStatus, target.Provenance));
+            events.Add(new ModelEvent.RelationshipProvenanceRecorded(id, target.FactStatus, target.Provenance, target.Stale));
 
         return events;
     }
@@ -395,7 +398,7 @@ public static class ExecuteMerge
                 msg.ProducerId, msg.ConsumerIds, msg.SchemaId, msg.Tags)
         };
         if (msg.FactStatus != FactStatus.Declared || msg.Provenance is not null)
-            events.Add(new ModelEvent.MessageProvenanceRecorded(msg.Id, msg.FactStatus, msg.Provenance));
+            events.Add(new ModelEvent.MessageProvenanceRecorded(msg.Id, msg.FactStatus, msg.Provenance, msg.Stale));
         return events;
     }
 
@@ -410,7 +413,7 @@ public static class ExecuteMerge
                     target.ProducerId, target.ConsumerIds, target.SchemaId, target.Tags)
             };
             if (target.FactStatus != FactStatus.Declared || target.Provenance is not null)
-                addEvents.Add(new ModelEvent.MessageProvenanceRecorded(target.Id, target.FactStatus, target.Provenance));
+                addEvents.Add(new ModelEvent.MessageProvenanceRecorded(target.Id, target.FactStatus, target.Provenance, target.Stale));
             return addEvents;
         }
 
@@ -437,7 +440,7 @@ public static class ExecuteMerge
         }
 
         if (ProvenanceChanged(current, target))
-            events.Add(new ModelEvent.MessageProvenanceRecorded(id, target.FactStatus, target.Provenance));
+            events.Add(new ModelEvent.MessageProvenanceRecorded(id, target.FactStatus, target.Provenance, target.Stale));
 
         return events;
     }

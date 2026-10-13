@@ -1,12 +1,22 @@
 // src/Vellum/Modules/Drafts/Merge/ThreeWayMerge.cs
+using System.Collections.Immutable;
 using Vellum.Modules.Modelling.Model;
 
 namespace Vellum.Modules.Drafts.Merge;
 
 public static class ThreeWayMerge
 {
+    /// <summary>
+    /// The changes that bring the draft (<paramref name="theirs"/>) to main
+    /// (<paramref name="ours"/>). The stale mark is state that main owns: a draft can neither
+    /// set nor clear it. So the comparison leaves it out, and every value in the result
+    /// carries the mark that main has for that fact, or none when main does not have the fact.
+    /// </summary>
     public static MergePreviewResult Compute(ModelState baseState, ModelState ours, ModelState theirs)
     {
+        baseState = WithMarksOf(ours, baseState);
+        theirs = WithMarksOf(ours, theirs);
+
         var changes = new List<MergeChange>();
         var conflicts = new List<MergeConflict>();
 
@@ -30,6 +40,22 @@ public static class ThreeWayMerge
 
         return new MergePreviewResult(changes, conflicts);
     }
+
+    private static ModelState WithMarksOf(ModelState main, ModelState state) => state with
+    {
+        Elements = state.Elements.ToImmutableDictionary(
+            e => e.Key, e => e.Value with { Stale = main.Elements.GetValueOrDefault(e.Key)?.Stale }),
+        Relationships = state.Relationships.ToImmutableDictionary(
+            r => r.Key, r => r.Value with { Stale = main.Relationships.GetValueOrDefault(r.Key)?.Stale }),
+        Messages = state.Messages.ToImmutableDictionary(
+            m => m.Key, m => m.Value with { Stale = main.Messages.GetValueOrDefault(m.Key)?.Stale }),
+        Operations = state.Operations.ToImmutableDictionary(
+            o => o.Key, o => o.Value with { Stale = main.Operations.GetValueOrDefault(o.Key)?.Stale }),
+        Channels = state.Channels.ToImmutableDictionary(
+            c => c.Key, c => c.Value with { Stale = main.Channels.GetValueOrDefault(c.Key)?.Stale }),
+        Subscriptions = state.Subscriptions.ToImmutableDictionary(
+            s => s.Key, s => s.Value with { Stale = main.Subscriptions.GetValueOrDefault(s.Key)?.Stale }),
+    };
 
     private static void MergeEntities<TKey, T>(
         IReadOnlyDictionary<TKey, T> baseEntities,

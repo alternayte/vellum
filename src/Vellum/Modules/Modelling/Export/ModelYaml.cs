@@ -16,7 +16,7 @@ namespace Vellum.Modules.Modelling.Export;
 /// </summary>
 public static class ModelYaml
 {
-    // The export document nests five levels (document, list, entity, provenance, value).
+    // The export document nests five levels (document, list, entity, provenance or stale mark, value).
     private const int MaxDepth = 16;
 
     private static readonly ISerializer Serializer = new SerializerBuilder()

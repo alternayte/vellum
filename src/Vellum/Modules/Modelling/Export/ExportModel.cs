@@ -35,7 +35,8 @@ public static class ExportModel
             e.Id, e.Kind, e.Name, e.Description, e.Technology, e.Status, e.ParentId, e.Tags,
             e.Icon, e.FactStatus,
             ProvenanceExport.From(e.ProvenanceSource, e.ProvenanceRevision, e.ProvenanceConfidence,
-                e.ProvenanceAcceptedBy, e.ProvenanceAcceptedAt))).ToList();
+                e.ProvenanceAcceptedBy, e.ProvenanceAcceptedAt),
+            StaleExport.From(e.StaleSinceRevision, e.StaleReason))).ToList();
 
         var relationshipEntities = await modellingDb.Relationships.AsNoTracking()
             .Where(r => r.ProjectId == projectId && r.Branch == project.StreamId)
@@ -44,7 +45,8 @@ public static class ExportModel
         var relationships = relationshipEntities.Select(r => new RelationshipExport(
             r.Id, r.FromId, r.ToId, r.Label, r.Technology, r.Kind, r.LineShape, r.FactStatus,
             ProvenanceExport.From(r.ProvenanceSource, r.ProvenanceRevision, r.ProvenanceConfidence,
-                r.ProvenanceAcceptedBy, r.ProvenanceAcceptedAt))).ToList();
+                r.ProvenanceAcceptedBy, r.ProvenanceAcceptedAt),
+            StaleExport.From(r.StaleSinceRevision, r.StaleReason))).ToList();
 
         var messageEntities = await modellingDb.Messages.AsNoTracking()
             .Where(m => m.ProjectId == projectId && m.Branch == project.StreamId)
@@ -54,7 +56,8 @@ public static class ExportModel
             m.Id, m.Name, m.Description, m.ProducerId, m.ConsumerIds, m.SchemaId, m.Tags,
             m.FactStatus,
             ProvenanceExport.From(m.ProvenanceSource, m.ProvenanceRevision, m.ProvenanceConfidence,
-                m.ProvenanceAcceptedBy, m.ProvenanceAcceptedAt))).ToList();
+                m.ProvenanceAcceptedBy, m.ProvenanceAcceptedAt),
+            StaleExport.From(m.StaleSinceRevision, m.StaleReason))).ToList();
 
         var schemas = await schemasDb.Schemas.AsNoTracking()
             .Where(s => s.ProjectId == projectId)
@@ -72,14 +75,14 @@ public static class ExportModel
                 o.Id, o.OwnerId, o.Name, o.Transport.ToString().ToLowerInvariant(),
                 o.RequestSchemaId, o.ResponseSchemaId, o.TimeoutMs,
                 new RetryExport(o.Retry.MaxAttempts, o.Retry.BackoffMs),
-                o.FactStatus.ToApiString(), ProvenanceExport.From(o.Provenance)))
+                o.FactStatus.ToApiString(), ProvenanceExport.From(o.Provenance), StaleExport.From(o.Stale)))
             .ToList();
 
         var channels = state.Channels.Values
             .OrderBy(c => c.Id.Value)
             .Select(c => new ChannelExport(
                 c.Id, c.Name, c.Kind.ToString().ToLowerInvariant(),
-                c.FactStatus.ToApiString(), ProvenanceExport.From(c.Provenance)))
+                c.FactStatus.ToApiString(), ProvenanceExport.From(c.Provenance), StaleExport.From(c.Stale)))
             .ToList();
 
         var subscriptions = state.Subscriptions.Values
@@ -87,7 +90,7 @@ public static class ExportModel
             .Select(s => new SubscriptionExport(
                 s.Id, s.ChannelId, s.ConsumerId,
                 new RetryExport(s.Retry.MaxAttempts, s.Retry.BackoffMs), s.DeadLetterChannelId,
-                s.FactStatus.ToApiString(), ProvenanceExport.From(s.Provenance)))
+                s.FactStatus.ToApiString(), ProvenanceExport.From(s.Provenance), StaleExport.From(s.Stale)))
             .ToList();
 
         var doc = new ModelExportDocument("1.0",
