@@ -200,5 +200,6 @@ internal static class Blockers
             .Concat(view.Messages.Select(m => (m.Id.Value, "message", m.Name, m.FactStatus, m.Stale)))
             .Concat(view.Operations.Select(o => (o.Id.Value, "operation", o.Name, o.FactStatus, o.Stale)))
             .Concat(view.Channels.Select(c => (c.Id.Value, "channel", c.Name, c.FactStatus, c.Stale)))
-            .Concat(view.Subscriptions.Select(s => (s.Id.Value, "subscription", view.Name(s.Id), s.FactStatus, s.Stale)));
+            .Concat(view.Subscriptions.Select(s => (s.Id.Value, "subscription", view.Name(s.Id), s.FactStatus, s.Stale)))
+            .Concat(view.Bindings.Select(b => (b.Id.Value, "binding", view.Name(b.Id), b.FactStatus, b.Stale)));
 }

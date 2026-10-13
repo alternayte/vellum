@@ -132,7 +132,14 @@ internal static class Vacuity
                     if (publishFails)
                         emitted.Add(new(TraceEventKind.PublishFailed, from, null, channel));
 
-                    foreach (var subscription in model.Subscriptions.Values.Where(s => s.ChannelId == publish.Channel))
+                    var reached = ChannelRouting.Reachable(model, publish.Channel);
+                    foreach (var binding in model.Bindings.Values.Where(b => reached.Contains(b.SourceChannelId)))
+                    {
+                        Guid source = binding.SourceChannelId, bound = binding.TargetChannelId, route = binding.Id;
+                        emitted.Add(new(TraceEventKind.Routed, source, bound, route));
+                        emitted.Add(new(TraceEventKind.NotRouted, source, bound, route));
+                    }
+                    foreach (var subscription in model.Subscriptions.Values.Where(s => reached.Contains(s.ChannelId)))
                     {
                         Guid consumer = subscription.ConsumerId, target = subscription.Id;
                         emitted.Add(new(TraceEventKind.Delivered, from, consumer, target));

@@ -29,6 +29,7 @@ internal sealed class BuildView
         Operations = [.. Model.Operations.Values.OrderBy(o => Name(o.OwnerId), StringComparer.Ordinal).ThenBy(o => o.Name, StringComparer.Ordinal).ThenBy(o => o.Id.Value)];
         Channels = [.. Model.Channels.Values.OrderBy(c => c.Name, StringComparer.Ordinal).ThenBy(c => c.Id.Value)];
         Subscriptions = [.. Model.Subscriptions.Values.OrderBy(s => Name(s.ChannelId), StringComparer.Ordinal).ThenBy(s => Name(s.ConsumerId), StringComparer.Ordinal).ThenBy(s => s.Id.Value)];
+        Bindings = [.. Model.Bindings.Values.OrderBy(b => Name(b.SourceChannelId), StringComparer.Ordinal).ThenBy(b => Name(b.TargetChannelId), StringComparer.Ordinal).ThenBy(b => b.Id.Value)];
         Messages = [.. Model.Messages.Values.OrderBy(m => m.Name, StringComparer.Ordinal).ThenBy(m => m.Id.Value)];
         Relationships = [.. Model.Relationships.Values.OrderBy(r => r.Id.Value)];
         Schemas = [.. input.Schemas.OrderBy(s => s.Name, StringComparer.Ordinal).ThenBy(s => s.Id)];
@@ -52,6 +53,7 @@ internal sealed class BuildView
     public IReadOnlyList<OperationState> Operations { get; }
     public IReadOnlyList<ChannelState> Channels { get; }
     public IReadOnlyList<SubscriptionState> Subscriptions { get; }
+    public IReadOnlyList<BindingState> Bindings { get; }
     public IReadOnlyList<MessageState> Messages { get; }
     public IReadOnlyList<RelationshipState> Relationships { get; }
     public IReadOnlyList<BuildSchema> Schemas { get; }
@@ -77,6 +79,7 @@ internal sealed class BuildView
         if (Model.Channels.TryGetValue(id, out var channel)) return channel.Name;
         if (Model.Messages.TryGetValue(id, out var message)) return message.Name;
         if (Model.Subscriptions.TryGetValue(id, out var subscription)) return ContractDecider.SubscriptionLabel(Model, subscription);
+        if (Model.Bindings.TryGetValue(id, out var binding)) return ContractDecider.BindingLabel(Model, binding);
         if (SchemasById is not null && SchemasById.TryGetValue(id, out var schema)) return schema.Name;
         return Input.Scenarios.FirstOrDefault(s => s.Id.Value == id)?.Name ?? id.ToString();
     }
@@ -206,5 +209,26 @@ internal static class BuildText
         var list = items.OrderBy(i => i.Id).ToList();
         var shared = list.GroupBy(i => Key(i.Name), StringComparer.Ordinal).Where(g => g.Count() > 1).Select(g => g.Key).ToHashSet(StringComparer.Ordinal);
         return list.ToDictionary(i => i.Id, i => shared.Contains(Key(i.Name)) ? $"{Key(i.Name)}.{i.Id}" : Key(i.Name));
+    }
+
+    /// <summary>
+    /// The channel and every channel a message published to it can reach through bindings.
+    /// Routing keys are not read here, as in <c>ChannelRouting.Reachable</c>.
+    /// </summary>
+    public static IReadOnlySet<ChannelId> Reachable(ModelState model, ChannelId channel)
+    {
+        var targets = model.Bindings.Values.ToLookup(b => b.SourceChannelId, b => b.TargetChannelId);
+        var reached = new HashSet<ChannelId> { channel };
+        var open = new Queue<ChannelId>([channel]);
+        while (open.TryDequeue(out var current))
+        {
+            foreach (var target in targets[current])
+            {
+                if (reached.Add(target))
+                    open.Enqueue(target);
+            }
+        }
+
+        return reached;
     }
 }

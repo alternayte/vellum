@@ -92,6 +92,7 @@ internal static class SddDocument
             [Md.Raw("Operations"), Int(view.Operations.Count)],
             [Md.Raw("Channels"), Int(view.Channels.Count)],
             [Md.Raw("Subscriptions"), Int(view.Subscriptions.Count)],
+            [Md.Raw("Bindings"), Int(view.Bindings.Count)],
             [Md.Raw("Messages"), Int(view.Messages.Count)],
             [Md.Raw("Schemas"), Int(view.Schemas.Count)],
             [Md.Raw("Scenarios"), Int(view.Scenarios.Count)],
@@ -234,6 +235,21 @@ internal static class SddDocument
                     Int(s.Retry.MaxAttempts), Int(s.Retry.BackoffMs),
                     s.DeadLetterChannelId is { } dlq ? Ref(view, dlq.Value) : Md.Raw("none: a message that fails every attempt is lost"),
                     Truth(s.FactStatus, s.Stale), Provenance(s.Provenance),
+                }));
+        }
+
+        md.Heading(3, $"Bindings");
+        if (view.Bindings.Count == 0)
+            md.Line($"The model has no binding. A message reaches only the subscriptions on the channel it is published to.").Blank();
+        else
+        {
+            md.Line($"A message published to the source channel goes on to the target channel. A binding with a routing key carries a message only when the publish step states a key that matches it (`*` is one word, `#` is zero or more words).").Blank();
+            md.Table(["ID", "Source channel", "Target channel", "Routing key", "Truth", "Provenance"],
+                view.Bindings.Select(b => new[]
+                {
+                    Md.Code(b.Id.Value), Ref(view, b.SourceChannelId.Value), Ref(view, b.TargetChannelId.Value),
+                    b.RoutingKey is { } key ? Md.Code(key) : Md.Raw("none: every message"),
+                    Truth(b.FactStatus, b.Stale), Provenance(b.Provenance),
                 }));
         }
 

@@ -83,6 +83,9 @@ internal static partial class ContractDocuments
             subscriptions = model.Subscriptions.Values.OrderBy(s => s.Id.Value).Select(s => new SubscriptionExport(
                 s.Id, s.ChannelId, s.ConsumerId, new RetryExport(s.Retry.MaxAttempts, s.Retry.BackoffMs), s.DeadLetterChannelId,
                 s.FactStatus.ToApiString(), ProvenanceExport.From(s.Provenance))),
+            bindings = model.Bindings.Values.OrderBy(b => b.Id.Value).Select(b => new BindingExport(
+                b.Id, b.SourceChannelId, b.TargetChannelId, b.RoutingKey,
+                b.FactStatus.ToApiString(), ProvenanceExport.From(b.Provenance))),
             // An operation that is not a routed HTTP operation has no OpenAPI document. Its whole contract is here.
             operationContracts = model.Operations.Values.Where(o => !routed.Contains(o.Id)).OrderBy(o => o.Id.Value).Select(o => new
             {
@@ -121,6 +124,7 @@ internal static partial class ContractDocuments
             .Concat(model.Operations.Values.Where(o => o.Stale is not null).Select(o => (Id: o.Id.Value, Kind: "operation", o.Stale)))
             .Concat(model.Channels.Values.Where(c => c.Stale is not null).Select(c => (Id: c.Id.Value, Kind: "channel", c.Stale)))
             .Concat(model.Subscriptions.Values.Where(s => s.Stale is not null).Select(s => (Id: s.Id.Value, Kind: "subscription", s.Stale)))
+            .Concat(model.Bindings.Values.Where(b => b.Stale is not null).Select(b => (Id: b.Id.Value, Kind: "binding", b.Stale)))
             .OrderBy(f => f.Id)
             .Select(f => (object)new { id = f.Id, kind = f.Kind, sinceRevision = f.Stale!.SinceRevision, reason = f.Stale.Reason });
 
@@ -242,6 +246,17 @@ internal static partial class ContractDocuments
                 messages[messageKeys[message]] = BuildText.Map(("$ref", $"#/components/messages/{messageKeys[message]}"));
             if (messages.Count > 0)
                 entry["messages"] = messages;
+            // AsyncAPI has no vendor-neutral place for a route between two channels.
+            var routes = view.Bindings.Where(b => b.SourceChannelId == channel.Id && channelKeys.ContainsKey(b.TargetChannelId.Value))
+                .OrderBy(b => b.Id.Value)
+                .Select(b => (object?)BuildText.Map(
+                    ("id", b.Id.Value.ToString()),
+                    ("to", BuildText.Map(("$ref", $"#/channels/{channelKeys[b.TargetChannelId.Value]}"))),
+                    ("routingKey", b.RoutingKey),
+                    ("truth", b.FactStatus.ToApiString())))
+                .ToList();
+            if (routes.Count > 0)
+                entry["x-vellum-bindings"] = routes;
             entry["x-vellum-channel-id"] = channel.Id.Value.ToString();
             entry["x-vellum-kind"] = channel.Kind.ToString().ToLowerInvariant();
             entry["x-vellum-truth"] = channel.FactStatus.ToApiString();

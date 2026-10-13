@@ -136,6 +136,9 @@ public static class Brief
                 if (model.Elements.ContainsKey(subscription.ConsumerId)) elements.Add(subscription.ConsumerId);
                 if (subscription.DeadLetterChannelId is { } deadLetter && model.Channels.ContainsKey(deadLetter)) channels.Add(deadLetter);
             }
+            // A route belongs to the channel it starts from: the brief takes the channels it leads to.
+            foreach (var binding in model.Bindings.Values.Where(b => channels.Contains(b.SourceChannelId)))
+                channels.Add(binding.TargetChannelId);
             channels.IntersectWith(model.Channels.Keys.Select(id => id.Value));
             subscriptions.UnionWith(model.Subscriptions.Values.Where(s => channels.Contains(s.ChannelId)).Select(s => s.Id.Value));
             foreach (var message in messages.Select(id => model.Messages[id]).ToList())
@@ -170,6 +173,7 @@ public static class Brief
             Operations = model.Operations.Where(o => operations.Contains(o.Key)).ToImmutableDictionary(),
             Channels = model.Channels.Where(c => channels.Contains(c.Key)).ToImmutableDictionary(),
             Subscriptions = model.Subscriptions.Where(s => subscriptions.Contains(s.Key)).ToImmutableDictionary(),
+            Bindings = model.Bindings.Where(b => channels.Contains(b.Value.SourceChannelId) && channels.Contains(b.Value.TargetChannelId)).ToImmutableDictionary(),
         };
         var scopedInput = input with
         {
@@ -192,6 +196,7 @@ public static class Brief
                 Operations = scoped.Operations.Where(o => Confirmed(o.Value.FactStatus, o.Value.Stale)).ToImmutableDictionary(),
                 Channels = scoped.Channels.Where(c => Confirmed(c.Value.FactStatus, c.Value.Stale)).ToImmutableDictionary(),
                 Subscriptions = scoped.Subscriptions.Where(s => Confirmed(s.Value.FactStatus, s.Value.Stale)).ToImmutableDictionary(),
+                Bindings = scoped.Bindings.Where(b => Confirmed(b.Value.FactStatus, b.Value.Stale)).ToImmutableDictionary(),
             },
             Scenarios = [],
         });

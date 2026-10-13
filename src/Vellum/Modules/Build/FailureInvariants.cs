@@ -69,7 +69,8 @@ internal static class FailureInvariants
                     return Hits(publish.From.Value, publish.Channel.Value);
                 if (forbidden.Kind == TraceEventKind.StepSkipped)
                     return forbidden.Target is null;
-                foreach (var subscription in model.Subscriptions.Values.Where(s => s.ChannelId == publish.Channel))
+                var reached = BuildText.Reachable(model, publish.Channel);
+                foreach (var subscription in model.Subscriptions.Values.Where(s => reached.Contains(s.ChannelId)))
                 {
                     Guid consumer = subscription.ConsumerId, id = subscription.Id;
                     var deadLetter = subscription.DeadLetterChannelId?.Value;

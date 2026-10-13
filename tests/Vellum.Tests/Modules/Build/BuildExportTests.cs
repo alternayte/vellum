@@ -488,6 +488,40 @@ public class BuildExportTests(IntegrationFixture fixture)
     }
 
     [Fact]
+    public async Task A_binding_is_in_the_sdd_the_model_document_and_the_asyncapi_document_and_an_inferred_one_blocks()
+    {
+        using var factory = TestHost.Create(fixture);
+        var s = await SeedAsync(factory);
+        var orders = s.Orders;
+        var binding = Guid.NewGuid();
+        await TestHost.Created(s.Owner.PostAsJsonAsync(orders.Url("bindings"),
+            new { id = binding, sourceChannelId = OrdersReference.OrderEvents, targetChannelId = OrdersReference.DeadLetters, routingKey = "order.#" }));
+
+        var files = Unzip(await ExportAsync(s, new { format = "bundle" }));
+        var sdd = Encoding.UTF8.GetString(files["SDD.md"]);
+        Assert.Contains("\n### Bindings\n", sdd);
+        var row = sdd.Split('\n').Single(line => line.StartsWith($"| `{binding}` |", StringComparison.Ordinal));
+        Assert.Contains($"(`{OrdersReference.OrderEvents}`)", row);
+        Assert.Contains($"(`{OrdersReference.DeadLetters}`)", row);
+        Assert.Contains("`order.#`", row);
+
+        var model = JsonNode.Parse(files["architecture.json"])!;
+        var exported = Assert.Single(model["bindings"]!.AsArray())!;
+        Assert.Equal((binding, OrdersReference.OrderEvents, OrdersReference.DeadLetters, "order.#"),
+            (exported["id"]!.GetValue<Guid>(), exported["sourceChannelId"]!.GetValue<Guid>(), exported["targetChannelId"]!.GetValue<Guid>(), exported["routingKey"]!.GetValue<string>()));
+
+        var asyncApi = Encoding.UTF8.GetString(files["asyncapi.yaml"]);
+        Assert.Contains("x-vellum-bindings:", asyncApi);
+        Assert.Contains(binding.ToString(), asyncApi);
+
+        // A route that no person confirmed is not built from.
+        var inferred = await s.Owner.PatchAsJsonAsync(orders.Url($"bindings/{binding}"), new { factStatus = "inferred", setProvenance = true, provenance = new { source = "github.com/acme/orders@abc:topology.go:4-4", revision = "abc", confidence = 0.5 } });
+        Assert.True(inferred.StatusCode == HttpStatusCode.OK, await inferred.Content.ReadAsStringAsync());
+        var blockers = (await ManifestAsync(s))["blockers"]!.AsArray();
+        Assert.Contains(blockers, b => b!["code"]!.GetValue<string>() == "fact-inferred" && b["subject"]!.GetValue<string>().Contains(binding.ToString()));
+    }
+
+    [Fact]
     public async Task A_viewer_exports_and_an_outsider_does_not_and_an_export_has_a_size_bound()
     {
         using var factory = TestHost.Create(fixture);
