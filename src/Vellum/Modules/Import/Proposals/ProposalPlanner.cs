@@ -78,6 +78,9 @@ internal static class ProposalPlanner
 {
     public const string ObservedInSource = "observed-in-source";
     public const string RelinkPending = "relink-pending";
+
+    /// <summary>The fact matches an entity whose accepted fact this scan did not look at. It may be that fact, seen with less of the repository.</summary>
+    public const string AcceptedNotCovered = "accepted-not-covered";
     private const int MaxChangeText = 2000;
 
     private sealed record Resolution(Guid? EntityId, Guid? AddProposalId, string? Name, string? Blocked);
@@ -113,6 +116,15 @@ internal static class ProposalPlanner
         // Change proposals with the entity's values before and after: a change can be what
         // stops pointing at an entity that another proposal removes.
         var releases = new List<Release>();
+
+        // The entities whose accepted fact is absent from this scan and was not looked at.
+        // A scan of some folders gives a fact another key when a type it names is outside
+        // them, so a fact that matches such an entity is not a new thing.
+        var presentKeys = mapping.Candidates.Select(c => c.FactKey).ToHashSet(StringComparer.Ordinal);
+        var notJudged = links.Values
+            .Where(l => !presentKeys.Contains(l.FactKey) && input.Coverage.GapFor(l.Evidence) is not null)
+            .Select(l => (l.EntityKind, l.EntityId))
+            .ToHashSet();
 
         foreach (var candidate in mapping.Candidates)
         {
@@ -172,6 +184,8 @@ internal static class ProposalPlanner
                 var count = 0;
                 foreach (var match in input.Model.Matching(candidate.EntityKind, ModelIndex.MatchKey(candidate.EntityKind, matched)))
                 {
+                    if (notJudged.Contains((candidate.EntityKind, match.Id)))
+                        blocked ??= AcceptedNotCovered;
                     if (input.TakenEntityIds.Contains(match.Id) || claimed.Contains(match.Id))
                         continue;
                     only = match;

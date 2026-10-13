@@ -25,6 +25,7 @@ export function ImportFlyout({ projectId }: { projectId: string }) {
   const queryClient = useQueryClient()
   const [repository, setRepository] = useState('')
   const [ref, setRef] = useState('')
+  const [folders, setFolders] = useState('')
   const [reviewing, setReviewing] = useState<ScanSummary | null>(null)
 
   const scans = useQuery({
@@ -35,8 +36,11 @@ export function ImportFlyout({ projectId }: { projectId: string }) {
   })
   const refresh = () => queryClient.invalidateQueries({ queryKey: ['projects', projectId, 'imports'] })
   const start = useMutation({
-    mutationFn: () => importApi.start(projectId, { repository: repository.trim(), ref: ref.trim() || undefined }),
-    onSuccess: () => { setRepository(''); setRef(''); return refresh() },
+    mutationFn: () => {
+      const includePaths = folders.split(/[,\n]/).map((f) => f.trim()).filter(Boolean)
+      return importApi.start(projectId, { repository: repository.trim(), ref: ref.trim() || undefined, includePaths: includePaths.length > 0 ? includePaths : undefined })
+    },
+    onSuccess: () => { setRepository(''); setRef(''); setFolders(''); return refresh() },
     onError: shownInline,
   })
   const cancel = useMutation({ mutationFn: (id: string) => importApi.cancel(projectId, id), onSuccess: refresh, onError: shownInline })
@@ -63,6 +67,10 @@ export function ImportFlyout({ projectId }: { projectId: string }) {
         <label className="block text-[11px] font-medium text-muted-foreground">
           Branch, tag or commit
           <Input className="mt-1" value={ref} onChange={(e) => setRef(e.target.value)} placeholder="The default branch" spellCheck={false} />
+        </label>
+        <label className="block text-[11px] font-medium text-muted-foreground">
+          Only these folders
+          <Input className="mt-1" value={folders} onChange={(e) => setFolders(e.target.value)} placeholder="All folders. Separate with commas." spellCheck={false} />
         </label>
         <Button type="submit" size="sm" className="w-full" disabled={start.isPending || !repository.trim()}>
           {start.isPending ? 'Starting…' : 'Scan repository'}
@@ -95,7 +103,7 @@ export function ImportFlyout({ projectId }: { projectId: string }) {
               <div className="mt-2 flex items-center gap-1.5">
                 {scan.status === 'completed' && (
                   <Button size="sm" variant="secondary" className="h-6 px-2 text-xs" onClick={() => setReviewing(scan)}>
-                    {scan.proposalCounts.pending > 0 ? `Review ${scan.proposalCounts.pending} proposals` : 'Open review'}
+                    {scan.proposalCounts.pending > 0 ? `Review ${scan.proposalCounts.pending} ${scan.proposalCounts.pending === 1 ? 'proposal' : 'proposals'}` : 'Open review'}
                   </Button>
                 )}
                 {scan.status === 'completed' && scan.kind === 'comparison' && scan.ref && (

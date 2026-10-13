@@ -88,7 +88,7 @@ export function ProposalReview({ projectId, scan, onClose }: { projectId: string
 
         {!scan.canDecide && (
           <p role="status" className="rounded-md border border-border px-3 py-2 text-xs text-foreground">
-            This is a comparison with <span className="font-mono">{scan.trackedRef || 'the tracked ref'}</span>, which the model follows. You can read it, and you cannot accept from it. {scan.canDecideReason}
+            This is a comparison with <span className="font-mono">{scan.trackedRef || 'the tracked ref'}</span>, which the model follows. You can read it, and you cannot accept from it. To accept from this ref, close this review and select Follow this ref.
           </p>
         )}
         {notCovered && <p role="status" className="rounded-md border border-border px-3 py-2 text-xs text-muted-foreground">{notCovered}</p>}
@@ -196,7 +196,7 @@ export function ProposalReview({ projectId, scan, onClose }: { projectId: string
             Reject selected
           </Button>
           <Button size="sm" disabled={(selected.size === 0 && linkCount === 0) || decide.isPending || !scan.canDecide || (breaking.length > 0 && !acknowledged)} onClick={() => decide.mutate({ accept: [...accepting], reject: [] })}>
-            {decide.isPending ? 'Applying…' : selected.size === 0 ? 'Apply matches' : `Accept ${accepting.size || ''}`.trim()}
+            {decide.isPending ? 'Applying…' : selected.size === 0 && linkCount > 0 ? 'Apply matches' : `Accept ${accepting.size || ''}`.trim()}
           </Button>
         </div>
       </DialogContent>

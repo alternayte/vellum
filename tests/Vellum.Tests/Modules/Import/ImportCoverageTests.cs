@@ -64,17 +64,19 @@ public class ImportCoverageTests(ImportHost import) : IClassFixture<ImportHost>
         // them looked at the files of most accepted facts.
         var included = await s.ScanAsync(body: new { repository = "acme/orders", includePaths = new[] { "orders-api" } });
         var excluded = await s.ScanAsync(body: new { repository = "acme/orders", excludePaths = new[] { "billing", "inventory-worker" } });
+        // The consumer in billing names a message type that is declared outside billing.
+        var consumerOnly = await s.ScanAsync(body: new { repository = "acme/orders", includePaths = new[] { "billing" } });
         await SettingsAsync(s, new JsonObject { ["excludeGlobs"] = new JsonArray("billing/**", "contracts/**") });
         var globbed = await s.ScanAsync();
         await SettingsAsync(s);
 
-        foreach (var scan in new[] { included, excluded, globbed })
+        foreach (var scan in new[] { included, excluded, consumerOnly, globbed })
         {
             Assert.Equal(("completed", true), (scan.Text("status"), scan["isComplete"]!.GetValue<bool>()));
             Assert.True(Linked(scan, "scope") > 0);
             Assert.Equal(Linked(scan, "scope"), Linked(scan, "notCovered"));
             Assert.True(scan["coverage"]!["filesExtracted"]!.GetValue<int>() < scan["coverage"]!["filesListed"]!.GetValue<int>());
-            Assert.DoesNotContain(await s.ProposalsAsync(scan.Id()), p => p.Text("action") == "remove");
+            Assert.DoesNotContain(await s.ProposalsAsync(scan.Id()), p => p.Text("action") is "remove" or "add");
 
             // The proposal list says how many accepted facts were not judged, and why.
             var page = (await s.Owner.GetFromJsonAsync<JsonObject>(s.Url($"/{scan.Id()}/proposals")))!;
