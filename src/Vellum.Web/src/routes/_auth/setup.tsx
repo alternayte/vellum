@@ -40,7 +40,7 @@ function SetupPage() {
         password: form.password,
         displayName: form.displayName,
         workspaceName: form.workspaceName,
-        setupToken: status.requiresSetupToken ? form.setupToken : null,
+        setupToken: status.requiresSetupToken ? form.setupToken.trim() : null,
       })
       await queryClient.invalidateQueries()
       navigate({ to: '/' })
@@ -73,16 +73,21 @@ function SetupPage() {
           <>
             <Labelled label="Your name"><Input value={form.displayName} onChange={set('displayName')} required autoFocus autoComplete="name" /></Labelled>
             <Labelled label="Email"><Input type="email" value={form.email} onChange={set('email')} required autoComplete="email" /></Labelled>
-            <Labelled label="Password" hint="At least 6 characters, with an upper-case letter and a digit.">
-              <Input type="password" value={form.password} onChange={set('password')} required minLength={6} autoComplete="new-password" />
+            <Labelled label="Password" hint="At least 10 characters, with an upper-case letter, a lower-case letter and a digit.">
+              <Input type="password" value={form.password} onChange={set('password')} required minLength={10} autoComplete="new-password" />
             </Labelled>
           </>
         ) : (
           <>
             <Labelled label="Workspace name"><Input value={form.workspaceName} onChange={set('workspaceName')} required autoFocus /></Labelled>
             {status.requiresSetupToken && (
-              <Labelled label="Setup token" hint="The value of Vellum__SetupToken that the operator set for this deployment.">
-                <Input type="password" value={form.setupToken} onChange={set('setupToken')} required autoComplete="off" />
+              <Labelled
+                label="Setup code"
+                hint={status.setupTokenHint === 'log'
+                  ? 'Vellum wrote a one-time code to its log when it started. Read it with `docker compose logs vellum`, or open the file `setup-code` in the data directory.'
+                  : 'The value of Vellum__SetupToken that the operator set for this deployment.'}
+              >
+                <Input className="font-mono" value={form.setupToken} onChange={set('setupToken')} required autoComplete="off" spellCheck={false} />
               </Labelled>
             )}
           </>

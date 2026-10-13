@@ -4,6 +4,8 @@ export interface SetupStatus {
   needsSetup: boolean
   profile: 'local' | 'hosted'
   requiresSetupToken: boolean
+  /** Where the setup code comes from: the server log, or the operator who configured it. */
+  setupTokenHint: 'log' | 'operator' | null
 }
 
 export interface InstanceInfo {
@@ -47,10 +49,19 @@ export interface SettingsDocument {
 export type SettingsSection = keyof SettingsDocument
 export type SettingsOverrides = { [S in SettingsSection]?: Partial<SettingsDocument[S]> }
 
+export interface PolicyViolation {
+  field: string
+  message: string
+}
+
 export interface WorkspaceSettings {
   effective: SettingsDocument
   overrides: SettingsOverrides
   defaults: SettingsDocument
+  /** Values the instance policy refuses now. The effective document already leaves them out. */
+  policyViolations: PolicyViolation[]
+  /** Sent back as If-Match, so a save cannot overwrite a change it did not see. */
+  version: number
 }
 
 export interface InstanceSettings {
@@ -61,6 +72,8 @@ export interface InstanceSettings {
     allowSendingPrivateCodeToAi: boolean
   }
   defaults: SettingsDocument
+  version: number
+  workspacesWithPolicyViolations: number
 }
 
 export interface SecretStatus {
@@ -69,6 +82,62 @@ export interface SecretStatus {
   updatedAt: string | null
   updatedBy: string | null
   fingerprint: string | null
+  /** The host the value was saved for. Vellum sends it to that host only. */
+  boundOrigin: string | null
+  matchesCurrentUrl: boolean
+}
+
+export interface ConnectionTestError {
+  code: string
+  message: string
+}
+
+export interface ProviderTestResult {
+  ok: boolean
+  latencyMs: number
+  model: string
+  reportedModel: string | null
+  supportsStructuredOutput: boolean | null
+  error: ConnectionTestError | null
+}
+
+export interface GitHubTestResult {
+  ok: boolean
+  authenticatedAs: string | null
+  rateLimitRemaining: number | null
+  error: ConnectionTestError | null
+}
+
+export interface AiUsageTotal {
+  providerId: string
+  providerKind: ProviderKind
+  model: string
+  task: string
+  calls: number
+  inputTokens: number | null
+  outputTokens: number | null
+  costUsd: number | null
+  costKnown: boolean
+}
+
+export interface AiUsage {
+  from: string
+  to: string
+  totals: AiUsageTotal[]
+}
+
+export interface ModelPrice {
+  providerKind: ProviderKind
+  model: string
+  inputUsdPerMillionTokens: number
+  outputUsdPerMillionTokens: number
+  effectiveFrom: string
+}
+
+export interface RotateKeysResult {
+  rewrapped: number
+  remaining: number
+  message: string
 }
 
 export interface AuditEntry {
@@ -95,10 +164,13 @@ export class ApiError extends Error {
   }
 }
 
-export async function api<T>(method: string, url: string, body?: unknown): Promise<T> {
+export async function api<T>(method: string, url: string, body?: unknown, options?: { ifMatch?: number }): Promise<T> {
+  const headers: Record<string, string> = {}
+  if (body !== undefined) headers['Content-Type'] = 'application/json'
+  if (options?.ifMatch !== undefined) headers['If-Match'] = `"${options.ifMatch}"`
   const response = await fetch(url, {
     method,
-    headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
+    headers,
     body: body === undefined ? undefined : JSON.stringify(body),
   })
   const text = await response.text()

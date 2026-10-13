@@ -40,9 +40,14 @@ export function SecretControl({ workspaceId, name, label, status, canEdit }: Sec
           <p className="text-sm text-foreground">{label}</p>
           <p className="text-xs text-muted-foreground">
             {status?.isSet
-              ? <>Set{status.updatedAt ? ` on ${new Date(status.updatedAt).toLocaleDateString()}` : ''} · fingerprint <span className="font-mono">{status.fingerprint}</span></>
+              ? <>Set{status.updatedAt ? ` on ${new Date(status.updatedAt).toLocaleDateString()}` : ''}{status.fingerprint && <> · fingerprint <span className="font-mono">{status.fingerprint}</span></>}{status.boundOrigin && <> · for <span className="font-mono">{status.boundOrigin}</span></>}</>
               : 'Not set'}
           </p>
+          {status?.isSet && !status.matchesCurrentUrl && (
+            <p role="status" className="mt-1 text-xs text-[var(--trace-retry)]">
+              This value was saved for another host, so Vellum does not send it to the current URL. Enter it again to use it here.
+            </p>
+          )}
         </div>
         {canEdit && !editing && (
           <>

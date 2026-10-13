@@ -1,14 +1,15 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
-import { ArrowLeft, Plus, Trash2 } from 'lucide-react'
+import { ArrowLeft, CircleCheck, CircleX, Plus, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import { shownInline } from '@/lib/mutation-errors'
 import {
   ApiError, PROVIDER_PRESETS, api, countOverrides, effectiveSection, setOverride,
-  type AiProvider, type AuditEntry, type InstanceInfo, type InstanceSettings, type ProviderKind,
+  type AiProvider, type AiUsage, type AuditEntry, type GitHubTestResult, type InstanceInfo, type InstanceSettings,
+  type ModelPrice, type ProviderKind, type ProviderTestResult, type RotateKeysResult,
   type SecretStatus, type SettingsDocument, type SettingsOverrides, type SettingsSection, type WorkspaceSettings,
 } from '@/lib/settings-api'
 import { NumberField, SectionHeading, SelectField, TextField, Toggle, ToggleField, selectClass } from '@/components/settings/fields'
@@ -65,7 +66,8 @@ function SettingsPage() {
     setEdited((current) => change(current ?? saved ?? {}))
 
   const save = useMutation({
-    mutationFn: (overrides: SettingsOverrides) => api<WorkspaceSettings>('PUT', `${base}/settings`, overrides),
+    mutationFn: (overrides: SettingsOverrides) =>
+      api<WorkspaceSettings>('PUT', `${base}/settings`, overrides, { ifMatch: settings.data?.version ?? 0 }),
     onSuccess: (data) => {
       queryClient.setQueryData(['workspaces', workspaceId, 'settings'], data)
       queryClient.invalidateQueries({ queryKey: ['workspaces', workspaceId, 'audit'] })
@@ -76,6 +78,7 @@ function SettingsPage() {
 
   const dirty = useMemo(() => edited !== null && JSON.stringify(edited) !== JSON.stringify(saved ?? {}), [edited, saved])
   const fieldErrors = save.error instanceof ApiError ? save.error.fields : []
+  const changedElsewhere = save.error instanceof ApiError && save.error.status === 409
   const errorFor = (path: string) => fieldErrors.find((e) => e.field.toLowerCase() === path.toLowerCase())?.message
   // Secrets are readable only by a settings admin, so access to them tells us the role.
   const canEdit = secrets.isSuccess
@@ -135,6 +138,17 @@ function SettingsPage() {
 
         <main className="min-w-0 flex-1 overflow-y-auto px-4 py-6 pb-28 md:px-8">
           <div className="mx-auto max-w-3xl">
+            {data.policyViolations.length > 0 && (
+              <div role="status" className="mb-6 rounded-lg border border-[var(--trace-retry)]/60 px-4 py-3 text-sm">
+                <p className="font-medium text-foreground">The instance policy refuses {data.policyViolations.length === 1 ? 'one value' : `${data.policyViolations.length} values`} of this workspace.</p>
+                <ul className="mt-1.5 space-y-1 text-xs text-muted-foreground">
+                  {data.policyViolations.map((violation) => (
+                    <li key={violation.field}><span className="font-mono text-foreground">{violation.field}</span> · {violation.message}</li>
+                  ))}
+                </ul>
+                <p className="mt-1.5 text-xs text-muted-foreground">Vellum does not use these values. Change them, or ask the instance administrator.</p>
+              </div>
+            )}
             {section === 'ai' && (
               <>
                 <SectionHeading title="AI providers" description="Vellum works without an AI provider. Add one to get proposals, reviews and explanations. Each task uses the provider you select for it." />
@@ -144,9 +158,18 @@ function SettingsPage() {
                   onChange={(providers) => setDraft((d) => setOverride(d, 'ai', 'providers', providers))}
                   onReset={() => setDraft((d) => setOverride(d, 'ai', 'providers', undefined))}
                   errorFor={errorFor}
-                  renderSecret={(provider) => (
-                    <SecretControl workspaceId={workspaceId} name={`ai:${provider.id}:apiKey`} label="API key" status={secretFor(`ai:${provider.id}:apiKey`)} canEdit={canEdit} />
-                  )}
+                  renderSecret={(provider) => {
+                    // A key belongs to a saved provider; a test runs against saved settings.
+                    const isSaved = data.effective.ai.providers.some((p) => p.id === provider.id)
+                    return isSaved ? (
+                      <>
+                        <SecretControl workspaceId={workspaceId} name={`ai:${provider.id}:apiKey`} label="API key" status={secretFor(`ai:${provider.id}:apiKey`)} canEdit={canEdit} />
+                        {canEdit && <ConnectionTest url={`${base}/ai/providers/${provider.id}/test`} blocked={dirty} kind="provider" />}
+                      </>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">Save your changes. Then you can store the API key and test the connection.</p>
+                    )
+                  }}
                 />
                 <h3 className="mt-8 text-sm font-medium text-foreground">Task routing</h3>
                 {TASKS.map((task) => (
@@ -175,6 +198,7 @@ function SettingsPage() {
                 <TextField label="Default ref" hint="The branch or tag an import reads when you give none. Empty uses the default branch of the repository." {...bind('github', 'defaultRef')} />
                 <div className="mt-4">
                   <SecretControl workspaceId={workspaceId} name="github:token" label="Fine-grained access token (read-only)" status={secretFor('github:token')} canEdit={canEdit} />
+                  {canEdit && <ConnectionTest url={`${base}/github/test`} blocked={dirty} kind="github" />}
                 </div>
               </>
             )}
@@ -231,6 +255,7 @@ function SettingsPage() {
                 <SectionHeading title="Usage limits" description="Vellum stops a task that would pass a limit and says which limit it reached." />
                 <NumberField label="AI budget per month" min={0} step={1} nullable suffix="USD" {...bind('usage', 'monthlyAiBudgetUsd')} />
                 <NumberField label="Repository scans per day" min={0} {...bind('usage', 'maxScansPerDay')} />
+                <UsageTable workspaceId={workspaceId} providers={data.effective.ai.providers} />
               </>
             )}
 
@@ -263,13 +288,18 @@ function SettingsPage() {
           <div className="mx-auto flex max-w-3xl flex-wrap items-center gap-3">
             <p className={cn('min-w-0 flex-1 text-sm', save.isError ? 'text-destructive' : 'text-foreground')} role={save.isError ? 'alert' : undefined}>
               {save.isError
-                ? fieldErrors.length > 0
-                  ? `${fieldErrors.length} ${fieldErrors.length === 1 ? 'value was' : 'values were'} refused. ${fieldErrors[0].message}`
-                  : save.error.message
+                ? changedElsewhere
+                  ? 'Someone else saved these settings while you edited. Load their version, then make your change again.'
+                  : fieldErrors.length > 0
+                    ? `${fieldErrors.length} ${fieldErrors.length === 1 ? 'value was' : 'values were'} refused. ${fieldErrors[0].message}`
+                    : save.error.message
                 : 'You have unsaved changes.'}
             </p>
+            {changedElsewhere && (
+              <Button variant="secondary" size="sm" onClick={() => { setEdited(null); save.reset(); settings.refetch() }}>Load their version</Button>
+            )}
             <Button variant="ghost" size="sm" onClick={() => { setEdited(null); save.reset() }}>Discard</Button>
-            <Button size="sm" disabled={save.isPending || !dirty} onClick={() => save.mutate(draft)}>
+            <Button size="sm" disabled={save.isPending || !dirty || changedElsewhere} onClick={() => save.mutate(draft)}>
               {save.isPending ? 'Saving…' : 'Save changes'}
             </Button>
           </div>
@@ -424,7 +454,9 @@ function InstancePanel({ info }: { info: InstanceInfo }) {
   const settings = useQuery({ queryKey: ['instance', 'settings'], queryFn: () => api<InstanceSettings>('GET', '/api/instance/settings') })
   const diagnostics = useQuery({ queryKey: ['instance', 'diagnostics'], queryFn: () => api<Record<string, unknown>>('GET', '/api/instance/diagnostics') })
   const savePolicy = useMutation({
-    mutationFn: (next: InstanceSettings) => api<InstanceSettings>('PUT', '/api/instance/settings', next),
+    // The body is exactly the policy and the defaults; the other fields are read-only.
+    mutationFn: (next: InstanceSettings) =>
+      api<InstanceSettings>('PUT', '/api/instance/settings', { policy: next.policy, defaults: next.defaults }, { ifMatch: next.version }),
     onSuccess: (data) => {
       queryClient.setQueryData(['instance', 'settings'], data)
       queryClient.invalidateQueries({ queryKey: ['instance'] })
@@ -432,7 +464,7 @@ function InstancePanel({ info }: { info: InstanceInfo }) {
     },
     onError: shownInline,
   })
-  const rotate = useMutation({ mutationFn: () => api<{ rewrapped: number }>('POST', '/api/instance/keys/rotate'), onError: shownInline })
+  const rotate = useMutation({ mutationFn: () => api<RotateKeysResult>('POST', '/api/instance/keys/rotate'), onError: shownInline })
   const policy = settings.data?.policy
   const setPolicy = (patch: Partial<InstanceSettings['policy']>) => {
     if (settings.data) savePolicy.mutate({ ...settings.data, policy: { ...settings.data.policy, ...patch } })
@@ -448,7 +480,20 @@ function InstancePanel({ info }: { info: InstanceInfo }) {
           <ToggleField label="Let workspaces send private code to AI" hint="A workspace must also turn this on for itself." value={policy.allowSendingPrivateCodeToAi} onChange={(v) => setPolicy({ allowSendingPrivateCodeToAi: v })} />
         </>
       )}
-      {savePolicy.isError && <p role="alert" className="mt-2 text-sm text-destructive">{savePolicy.error.message}</p>}
+      {savePolicy.isError && (
+        <p role="alert" className="mt-2 text-sm text-destructive">
+          {savePolicy.error instanceof ApiError && savePolicy.error.status === 409
+            ? 'The instance settings changed while this page was open. Reload the page, then make your change again.'
+            : savePolicy.error.message}
+        </p>
+      )}
+      {settings.data && settings.data.workspacesWithPolicyViolations > 0 && (
+        <p role="status" className="mt-3 text-xs text-[var(--trace-retry)]">
+          {settings.data.workspacesWithPolicyViolations} {settings.data.workspacesWithPolicyViolations === 1 ? 'workspace has' : 'workspaces have'} values that this policy refuses. Vellum does not use those values.
+        </p>
+      )}
+
+      <ModelPrices />
 
       <h3 className="mt-8 text-sm font-medium text-foreground">Encryption key</h3>
       <p className="mt-1 max-w-prose text-xs leading-relaxed text-muted-foreground">
@@ -458,7 +503,11 @@ function InstancePanel({ info }: { info: InstanceInfo }) {
         <Button variant="secondary" size="sm" disabled={rotate.isPending} onClick={() => rotate.mutate()}>
           {rotate.isPending ? 'Re-encrypting…' : 'Re-encrypt with the current key'}
         </Button>
-        {rotate.isSuccess && <span className="text-xs text-muted-foreground" role="status">{rotate.data.rewrapped} stored keys now use the current key.</span>}
+        {rotate.isSuccess && (
+          <span className={cn('text-xs', rotate.data.remaining > 0 ? 'text-[var(--trace-retry)]' : 'text-muted-foreground')} role="status">
+            {rotate.data.rewrapped} changed, {rotate.data.remaining} still on an older key. {rotate.data.message}
+          </span>
+        )}
         {rotate.isError && <span className="text-xs text-destructive" role="alert">{rotate.error.message}</span>}
       </div>
 
@@ -469,6 +518,162 @@ function InstancePanel({ info }: { info: InstanceInfo }) {
         </pre>
       )}
       {diagnostics.isError && <p className="mt-2 text-sm text-destructive">{diagnostics.error.message}</p>}
+    </>
+  )
+}
+
+/** A real call through the same path a task uses. The result says what to fix. */
+function ConnectionTest({ url, blocked, kind }: { url: string; blocked: boolean; kind: 'provider' | 'github' }) {
+  const test = useMutation({
+    mutationFn: () => api<ProviderTestResult | GitHubTestResult>('POST', url),
+    onError: shownInline,
+  })
+  const result = test.data
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1.5">
+      <Button variant="secondary" size="sm" disabled={blocked || test.isPending} onClick={() => test.mutate()}>
+        {test.isPending ? 'Testing…' : 'Test connection'}
+      </Button>
+      {blocked && <span className="text-xs text-muted-foreground">Save your changes first. The test uses the saved settings.</span>}
+      {!blocked && result && (
+        <p role="status" className={cn('flex min-w-0 items-start gap-1.5 text-xs', result.ok ? 'text-[var(--trace-request)]' : 'text-[var(--trace-failure)]')}>
+          {result.ok ? <CircleCheck className="mt-px h-3.5 w-3.5 shrink-0" /> : <CircleX className="mt-px h-3.5 w-3.5 shrink-0" />}
+          <span>
+            {result.ok
+              ? kind === 'provider'
+                ? describeProviderTest(result as ProviderTestResult)
+                : describeGitHubTest(result as GitHubTestResult)
+              : result.error?.message ?? 'The connection did not work.'}
+          </span>
+        </p>
+      )}
+      {!blocked && test.isError && <p role="alert" className="text-xs text-destructive">{test.error.message}</p>}
+    </div>
+  )
+}
+
+function describeProviderTest(result: ProviderTestResult): string {
+  const model = result.reportedModel && result.reportedModel !== result.model ? `${result.model} (the provider reports ${result.reportedModel})` : result.model
+  const structured = result.supportsStructuredOutput === false ? ' It does not return structured output; turn that capability off.' : ''
+  return `${model} answered in ${result.latencyMs} ms.${structured}`
+}
+
+function describeGitHubTest(result: GitHubTestResult): string {
+  const who = result.authenticatedAs ? `Signed in as ${result.authenticatedAs}.` : 'Connected without a token: public repositories only.'
+  return result.rateLimitRemaining === null ? who : `${who} ${result.rateLimitRemaining} requests remain in this hour.`
+}
+
+function UsageTable({ workspaceId, providers }: { workspaceId: string; providers: AiProvider[] }) {
+  const usage = useQuery({
+    queryKey: ['workspaces', workspaceId, 'ai-usage'],
+    queryFn: () => api<AiUsage>('GET', `/api/workspaces/${workspaceId}/ai/usage`),
+  })
+  const nameOf = (id: string) => providers.find((p) => p.id === id)?.name ?? 'Removed provider'
+  const tokens = (count: number | null) => (count === null ? 'not reported' : count.toLocaleString())
+
+  return (
+    <section className="mt-8" aria-labelledby="usage-heading">
+      <h3 id="usage-heading" className="text-sm font-medium text-foreground">AI use this month</h3>
+      {usage.data?.totals.length === 0 && <p className="mt-2 text-sm text-muted-foreground">No AI call was made this month.</p>}
+      {usage.isError && <p className="mt-2 text-sm text-destructive">{usage.error.message}</p>}
+      {usage.data && usage.data.totals.length > 0 && (
+        <div className="mt-2 overflow-x-auto rounded-lg border border-border">
+          <table className="w-full text-left text-sm">
+            <thead className="border-b border-border text-xs text-muted-foreground">
+              <tr>
+                <th className="px-3 py-2 font-medium">Provider</th><th className="px-3 py-2 font-medium">Model</th><th className="px-3 py-2 font-medium">Task</th>
+                <th className="px-3 py-2 text-right font-medium">Calls</th><th className="px-3 py-2 text-right font-medium">Tokens in</th>
+                <th className="px-3 py-2 text-right font-medium">Tokens out</th><th className="px-3 py-2 text-right font-medium">Estimated cost</th>
+              </tr>
+            </thead>
+            <tbody>
+              {usage.data.totals.map((row) => (
+                <tr key={`${row.providerId}-${row.model}-${row.task}`} className="border-b border-border last:border-b-0">
+                  <td className="px-3 py-2">{nameOf(row.providerId)}</td>
+                  <td className="px-3 py-2 font-mono text-xs">{row.model}</td>
+                  <td className="px-3 py-2">{row.task}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">{row.calls}</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">{tokens(row.inputTokens)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">{tokens(row.outputTokens)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">
+                    {row.costUsd === null ? 'unknown' : `${row.costKnown ? '' : 'at least '}$${row.costUsd.toFixed(4)}`}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <p className="mt-2 text-xs text-muted-foreground">
+        A cost is an estimate from the price table of this instance. It is unknown when the model has no price or the provider reports no token count.
+      </p>
+    </section>
+  )
+}
+
+function ModelPrices() {
+  const queryClient = useQueryClient()
+  const prices = useQuery({ queryKey: ['instance', 'ai-prices'], queryFn: () => api<ModelPrice[]>('GET', '/api/instance/ai/prices') })
+  const [form, setForm] = useState({ providerKind: 'openai' as ProviderKind, model: '', input: '', output: '' })
+  const add = useMutation({
+    mutationFn: () => api<ModelPrice>('POST', '/api/instance/ai/prices', {
+      providerKind: form.providerKind,
+      model: form.model.trim(),
+      inputUsdPerMillionTokens: Number(form.input),
+      outputUsdPerMillionTokens: Number(form.output),
+      effectiveFrom: null,
+    }),
+    onSuccess: () => {
+      setForm((current) => ({ ...current, model: '', input: '', output: '' }))
+      queryClient.invalidateQueries({ queryKey: ['instance', 'ai-prices'] })
+    },
+    onError: shownInline,
+  })
+  const fieldError = add.error instanceof ApiError ? add.error.fields[0]?.message : undefined
+
+  return (
+    <>
+      <h3 className="mt-8 text-sm font-medium text-foreground">Model prices</h3>
+      <p className="mt-1 max-w-prose text-xs leading-relaxed text-muted-foreground">
+        Vellum ships no price. Enter the price your provider charges, in USD for one million tokens. Without a price a cost shows as unknown, and a call under a budget is refused.
+      </p>
+      {prices.data && prices.data.length > 0 && (
+        <div className="mt-3 overflow-x-auto rounded-lg border border-border">
+          <table className="w-full text-left text-sm">
+            <thead className="border-b border-border text-xs text-muted-foreground">
+              <tr>
+                <th className="px-3 py-2 font-medium">Provider</th><th className="px-3 py-2 font-medium">Model</th>
+                <th className="px-3 py-2 text-right font-medium">Input</th><th className="px-3 py-2 text-right font-medium">Output</th>
+                <th className="px-3 py-2 font-medium">In effect from</th>
+              </tr>
+            </thead>
+            <tbody>
+              {prices.data.map((price) => (
+                <tr key={`${price.providerKind}-${price.model}-${price.effectiveFrom}`} className="border-b border-border last:border-b-0">
+                  <td className="px-3 py-2">{PROVIDER_PRESETS[price.providerKind]?.label.split(' (')[0] ?? price.providerKind}</td>
+                  <td className="px-3 py-2 font-mono text-xs">{price.model}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">${price.inputUsdPerMillionTokens}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">${price.outputUsdPerMillionTokens}</td>
+                  <td className="px-3 py-2 text-muted-foreground">{new Date(price.effectiveFrom).toLocaleDateString()}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <form className="mt-3 grid items-end gap-2 sm:grid-cols-[10rem_minmax(0,1fr)_7rem_7rem_auto]" onSubmit={(e) => { e.preventDefault(); add.mutate() }}>
+        <label className="block text-xs font-medium text-muted-foreground">
+          Provider
+          <select className={cn(selectClass, 'mt-1')} value={form.providerKind} onChange={(e) => setForm({ ...form, providerKind: e.target.value as ProviderKind })}>
+            {(Object.keys(PROVIDER_PRESETS) as ProviderKind[]).map((kind) => <option key={kind} value={kind}>{PROVIDER_PRESETS[kind].label.split(' (')[0]}</option>)}
+          </select>
+        </label>
+        <LabelledInput label="Model" value={form.model} onChange={(model) => setForm({ ...form, model })} />
+        <LabelledInput label="Input (USD)" type="number" value={form.input} onChange={(input) => setForm({ ...form, input })} />
+        <LabelledInput label="Output (USD)" type="number" value={form.output} onChange={(output) => setForm({ ...form, output })} />
+        <Button type="submit" size="sm" variant="secondary" disabled={add.isPending || !form.model.trim() || form.input === '' || form.output === ''}>Add price</Button>
+      </form>
+      {add.isError && <p role="alert" className="mt-2 text-xs text-destructive">{fieldError ?? add.error.message}</p>}
     </>
   )
 }
