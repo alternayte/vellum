@@ -82,4 +82,38 @@ describe('canvas store', () => {
     useCanvasStore.getState().reset()
     expect(useCanvasStore.getState().expandedNodeIds.size).toBe(0)
   })
+
+  describe('showInside', () => {
+    const system = { elementId: 's1', name: 'Orders', kind: 'system' }
+    const app = { elementId: 'a1', name: 'API', kind: 'app' }
+
+    it('expands an element of the current level in place', () => {
+      useCanvasStore.getState().showInside([system])
+      const state = useCanvasStore.getState()
+      expect(state.expandedNodeIds.has('s1')).toBe(true)
+      expect(state.currentRootId).toBeNull()
+    })
+
+    it('keeps an expanded element expanded', () => {
+      useCanvasStore.getState().toggleExpand('s1')
+      useCanvasStore.getState().showInside([system])
+      expect(useCanvasStore.getState().expandedNodeIds.has('s1')).toBe(true)
+    })
+
+    it('goes into an element that is not on the current level', () => {
+      useCanvasStore.getState().showInside([system, app])
+      const state = useCanvasStore.getState()
+      expect(state.currentRootId).toBe('a1')
+      expect(state.drillPath.map((segment) => segment.elementId)).toEqual(['s1', 'a1'])
+    })
+
+    it('changes nothing for the element the canvas is in', () => {
+      useCanvasStore.getState().drillInto(system)
+      useCanvasStore.getState().showInside([system])
+      const state = useCanvasStore.getState()
+      expect(state.currentRootId).toBe('s1')
+      expect(state.drillPath).toHaveLength(1)
+      expect(state.expandedNodeIds.size).toBe(0)
+    })
+  })
 })

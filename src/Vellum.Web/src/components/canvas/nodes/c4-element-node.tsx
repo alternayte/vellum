@@ -1,6 +1,8 @@
 import { memo, useCallback, useRef, useState } from 'react'
 import { Handle, Position, type Node, type NodeProps } from '@xyflow/react'
+import { Plus } from 'lucide-react'
 import { kindColor } from '@/lib/kind-colors'
+import { CONTAINMENT_RULES } from '@/lib/containment-rules'
 import { defaultIconForKind, getIconComponent } from '@/lib/default-icons'
 import { useCanvasStore } from '@/stores/canvas-store'
 import { cn } from '@/lib/utils'
@@ -23,6 +25,10 @@ export interface C4ElementData extends Record<string, unknown> {
   lod?: 'full' | 'compact' | 'chip'
   diffState?: DiffState
   onRename?: (newName: string) => void
+  /** How many elements this one holds. */
+  childCount?: number
+  /** Asks for a new element inside this one. Set for a system and an app. */
+  onAddChild?: () => void
 }
 
 export type C4ElementNodeType = Node<C4ElementData, 'c4-element'>
@@ -151,6 +157,18 @@ export const C4ElementNode = memo(function C4ElementNode({ data }: NodeProps<C4E
             )}
           </div>
           <div className="flex items-center gap-1">
+            {d.onAddChild && (d.childCount ?? 0) > 0 && (
+              <button
+                type="button"
+                aria-label={`Add an element inside ${d.name}`}
+                title={`Add an element inside ${d.name}`}
+                className="nodrag nopan flex h-5 w-5 items-center justify-center rounded text-muted-foreground opacity-0 hover:bg-muted hover:text-foreground focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-primary group-hover/node:opacity-100 pointer-coarse:opacity-100"
+                onClick={(e) => { e.stopPropagation(); d.onAddChild?.() }}
+                onDoubleClick={(e) => e.stopPropagation()}
+              >
+                <Plus className="h-3.5 w-3.5" aria-hidden="true" />
+              </button>
+            )}
             {diff === 'conflict' && (
               <span className="text-[12px]" title="Conflict">⚠</span>
             )}
@@ -183,6 +201,18 @@ export const C4ElementNode = memo(function C4ElementNode({ data }: NodeProps<C4E
           <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
             {d.description}
           </p>
+        )}
+
+        {d.onAddChild && d.childCount === 0 && (
+          <button
+            type="button"
+            className="nodrag nopan mt-2 flex w-full items-center gap-1.5 rounded-md border border-dashed border-border px-2 py-1 text-left text-xs text-muted-foreground hover:border-primary hover:text-foreground focus-visible:outline-2 focus-visible:outline-primary"
+            onClick={(e) => { e.stopPropagation(); d.onAddChild?.() }}
+            onDoubleClick={(e) => e.stopPropagation()}
+          >
+            <Plus className="h-3 w-3 shrink-0" aria-hidden="true" />
+            Add {(CONTAINMENT_RULES[d.kind] ?? []).map((kind) => (/^[aeiou]/.test(kind) ? `an ${kind}` : `a ${kind}`)).join(' or ')} inside
+          </button>
         )}
 
         {showMetadata && d.technology && !compact && (

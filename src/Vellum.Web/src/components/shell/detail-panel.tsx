@@ -5,8 +5,10 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Plus } from 'lucide-react'
 import { kindColor } from '@/lib/kind-colors'
 import { ARCHITECTURE_ICONS, defaultIconForKind } from '@/lib/default-icons'
+import { CONTAINMENT_RULES } from '@/lib/containment-rules'
 import { DiffDetail } from '@/components/review/diff-detail'
 import { ConflictResolver } from '@/components/review/conflict-resolver'
 import { CommentList } from '@/components/comments/comment-list'
@@ -62,6 +64,8 @@ interface DetailPanelProps {
   onUpdateRelationship?: (id: string, fields: Partial<RelationshipData>) => void
   onDeleteElement?: (id: string) => void
   onDeleteRelationship?: (id: string) => void
+  /** Opens the Add Element dialog for a child of this kind inside the element. */
+  onAddChild?: (parentId: string, kind: string) => void
 }
 
 export function DetailPanel({
@@ -74,6 +78,7 @@ export function DetailPanel({
   onUpdateRelationship,
   onDeleteElement,
   onDeleteRelationship,
+  onAddChild,
 }: DetailPanelProps) {
   const { detailPanelOpen, selectedElementId, selectedRelationshipId, selectedMessageId, selectElement, selectRelationship, selectMessage } =
     useShellStore()
@@ -320,6 +325,51 @@ export function DetailPanel({
                     ))}
                   </div>
                 </div>
+                {(CONTAINMENT_RULES[selectedElement.kind]?.length ?? 0) > 0 && (
+                  <div>
+                    <p className="mb-1 text-xs text-muted-foreground" id="detail-inside-label">Inside this {selectedElement.kind}</p>
+                    {(() => {
+                      const children = elements.filter((e) => e.parentId === selectedElement.id)
+                      return children.length === 0 ? (
+                        <p className="text-xs leading-relaxed text-muted-foreground">
+                          Nothing yet. A {selectedElement.kind} holds {CONTAINMENT_RULES[selectedElement.kind].map((k) => `${k}s`).join(' and ')}.
+                        </p>
+                      ) : (
+                        <ul aria-labelledby="detail-inside-label" className="flex flex-col gap-0.5">
+                          {children.map((child) => (
+                            <li key={child.id}>
+                              <button
+                                type="button"
+                                className="flex w-full items-center gap-2 rounded px-1 py-1 text-left text-sm text-foreground hover:bg-muted focus-visible:outline-2 focus-visible:outline-primary"
+                                onClick={() => selectElement(child.id)}
+                              >
+                                <span aria-hidden="true" className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: kindColor(child.kind) }} />
+                                <span className="min-w-0 flex-1 truncate">{child.name}</span>
+                                <span className="font-mono text-[10px] uppercase text-muted-foreground">{child.kind}</span>
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      )
+                    })()}
+                    {onAddChild && (
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {CONTAINMENT_RULES[selectedElement.kind].map((kind) => (
+                          <Button
+                            key={kind}
+                            variant="outline"
+                            size="sm"
+                            className="h-7 gap-1 px-2 text-xs"
+                            onClick={() => onAddChild(selectedElement.id, kind)}
+                          >
+                            <Plus className="h-3 w-3" aria-hidden="true" />
+                            Add {kind}
+                          </Button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
                 <div className="pt-2 border-t border-border">
                   <Button
                     variant="ghost"

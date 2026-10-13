@@ -10,7 +10,7 @@ import {
 import '@/api/client'
 import { shownInline } from '@/lib/mutation-errors'
 import type { TraceRun } from '@/lib/trace'
-import { apiErrorMessage } from './use-contracts'
+import { unwrap } from './use-contracts'
 
 export interface ScenarioSummary {
   id: string
@@ -24,11 +24,6 @@ export interface ScenarioDocument {
   steps: unknown[]
   faults: unknown[]
   assertions: unknown[]
-}
-
-function unwrap<T>(result: { data?: unknown; error?: unknown }, fallback: string): T {
-  if (result.error !== undefined) throw new Error(apiErrorMessage(result.error, fallback))
-  return result.data as T
 }
 
 export function useScenarios(projectId: string) {

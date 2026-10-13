@@ -7,6 +7,7 @@ import { StatusBar } from '@/components/shell/status-bar'
 import { FilesFlyout } from '@/components/shell/files-flyout'
 import { CatalogFlyout } from '@/components/shell/catalog-flyout'
 import { CreateFlyout } from '@/components/shell/create-flyout'
+import { AddElementDialog } from '@/components/shell/add-element-dialog'
 import { ReviewBar } from '@/components/review/review-bar'
 import { CanvasView } from '@/components/canvas/canvas-view'
 import { DocEditor } from '@/components/docs/doc-editor'
@@ -40,19 +41,11 @@ import { useUndoStore } from '@/stores/undo-store'
 import type { DiffState } from '@/stores/draft-store'
 import { useMergePreview } from '@/hooks/use-merge'
 import { computeLayout } from '@/lib/layout'
-import { validKindsForContext } from '@/lib/containment-rules'
+import { canContain, pathTo, validKindsForContext } from '@/lib/containment-rules'
+import { isPlainShortcut } from '@/lib/shortcuts'
 import { buildDuplicateSet } from '@/lib/duplicate'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from '@/components/ui/dialog'
 
 export const Route = createFileRoute('/_app/projects/$projectId')({
   component: ProjectWorkspace,
@@ -109,9 +102,8 @@ function ProjectWorkspace() {
   const mergePreview = useMergePreview(projectId)
   const autoViewRef = useRef(false)
 
-  const [showCreateElement, setShowCreateElement] = useState(false)
-  const [newElementName, setNewElementName] = useState('')
-  const [newElementKind, setNewElementKind] = useState('system')
+  // The Add Element dialog, with the parent and the kind it starts with. Null when it is closed.
+  const [addElementRequest, setAddElementRequest] = useState<{ parentId: string | null; kind?: string } | null>(null)
   const [searchOpen, setSearchOpen] = useState(false)
 
   const fitViewRef = useRef<(() => void) | null>(null)
@@ -167,21 +159,25 @@ function ProjectWorkspace() {
     saveLayout(newPositions)
   }
 
-  const handleCreateElement = (name: string, kind: string) => {
-    const { currentRootId } = useCanvasStore.getState()
+  // The parent is a fact of the model: the command carries it. Showing the parent's inside
+  // is view state only, so the new child is on the canvas when the command returns.
+  const handleCreateElement = (name: string, kind: string, parentId: string | null) => {
     const id = crypto.randomUUID()
     useUndoStore.getState().execute({
       label: `Add ${kind}`,
-      execute: () => addElement.mutate({ id, kind, name, parentId: currentRootId ?? undefined }),
+      execute: () => addElement.mutate({ id, kind, name, parentId: parentId ?? undefined }),
       undo: () => removeElement.mutate(id),
     })
+    if (parentId) {
+      useCanvasStore.getState().showInside(
+        pathTo(elements ?? [], parentId).map((e) => ({ elementId: e.id, name: e.name, kind: e.kind })),
+      )
+    }
   }
 
-  const handleOpenCreateDialog = () => {
-    const { currentRootId } = useCanvasStore.getState()
-    setNewElementKind(currentRootId ? 'app' : 'system')
-    setNewElementName('')
-    setShowCreateElement(true)
+  // Without a parent the dialog starts on the level the canvas shows.
+  const handleOpenCreateDialog = (parentId?: string | null, kind?: string) => {
+    setAddElementRequest({ parentId: parentId === undefined ? useCanvasStore.getState().currentRootId : parentId, kind })
   }
 
   const handleConnect = (source: string, target: string) => {
@@ -345,19 +341,8 @@ function ProjectWorkspace() {
     })
   }
 
-  const handleAddElementAtPosition = (kind: string) => {
-    const { currentRootId } = useCanvasStore.getState()
-    const id = crypto.randomUUID()
-    useUndoStore.getState().execute({
-      label: `Add ${kind}`,
-      execute: () => addElement.mutate({
-        id,
-        kind,
-        name: `New ${kind}`,
-        parentId: currentRootId ?? undefined,
-      }),
-      undo: () => removeElement.mutate(id),
-    })
+  const handleAddElementAtPosition = (kind: string, parentId?: string | null) => {
+    handleCreateElement(`New ${kind}`, kind, parentId === undefined ? useCanvasStore.getState().currentRootId : parentId)
   }
 
   const handleConnectToBlank = (kind: string, position: { x: number; y: number }, sourceId: string) => {
@@ -543,36 +528,24 @@ function ProjectWorkspace() {
           handleSmartDuplicate(ids)
         }
       }
-      if (e.key === '1' && !inInput) {
-        useCanvasStore.getState().toggleLens('status')
-      }
-      if (e.key === '2' && !inInput) {
-        useCanvasStore.getState().toggleLens('metadata')
-      }
-      if (e.key === '3' && !inInput) {
-        useCanvasStore.getState().toggleLens('messages')
-      }
-      if (e.key === '4' && !inInput) {
-        useCanvasStore.getState().toggleLens('facts')
-      }
-      if (e.key === 't' && !inInput) {
-        handleTidy()
-      }
-      if (e.key === 'n' && !inInput) {
-        handleOpenCreateDialog()
-      }
-      if (e.shiftKey && !meta && !inInput) {
-        const shortcutMap: Record<string, string> = {
-          S: 'system',
-          P: 'actor',
-          A: 'app',
-          D: 'store',
-          X: 'component',
-        }
-        const kind = shortcutMap[e.key]
-        if (kind) {
+      // A key without Ctrl, Cmd or Alt. It runs only when no field, dialog or menu reads the
+      // key, and it is marked as used: N opens a dialog whose name field takes the focus
+      // before the key is typed, and the letter would go into it.
+      if (isPlainShortcut(e)) {
+        const lenses = { '1': 'status', '2': 'metadata', '3': 'messages', '4': 'facts' } as const
+        const kinds: Record<string, string> = { S: 'system', P: 'actor', A: 'app', D: 'store', X: 'component' }
+        if (e.key in lenses) {
           e.preventDefault()
-          handleShortcutCreate(kind)
+          useCanvasStore.getState().toggleLens(lenses[e.key as keyof typeof lenses])
+        } else if (e.key === 't') {
+          e.preventDefault()
+          handleTidy()
+        } else if (e.key === 'n') {
+          e.preventDefault()
+          handleOpenCreateDialog()
+        } else if (e.shiftKey && kinds[e.key]) {
+          e.preventDefault()
+          handleShortcutCreate(kinds[e.key])
         }
       }
       // Escape takes one layer. A dialog, the palette or an inline editor that used the key
@@ -631,7 +604,7 @@ function ProjectWorkspace() {
           )}
           {activeFlyout === 'catalog' && (
             <CatalogFlyout
-              elements={(elements ?? []).map((e) => ({ id: e.id, kind: e.kind }))}
+              elements={(elements ?? []).map((e) => ({ id: e.id, kind: e.kind, name: e.name }))}
               onAddElement={handleAddElementAtPosition}
             />
           )}
@@ -639,6 +612,7 @@ function ProjectWorkspace() {
             <CreateFlyout
               onCreateDiagram={handleCreateDiagram}
               onCreateDoc={handleCreateDoc}
+              onAddElement={() => handleOpenCreateDialog()}
             />
           )}
           {activeFlyout === 'contracts' && (
@@ -691,7 +665,8 @@ function ProjectWorkspace() {
               messages={messages ?? []}
               onFitViewReady={handleFitViewReady}
               onViewportCenterReady={handleViewportCenterReady}
-              onAddElement={handleOpenCreateDialog}
+              onAddElement={() => handleOpenCreateDialog()}
+              onAddChild={handleOpenCreateDialog}
               onConnect={handleConnect}
               onNodeDragStop={handleNodeDragStop}
               onNodeResize={handleNodeResize}
@@ -712,8 +687,8 @@ function ProjectWorkspace() {
               onNodeDoubleClick={(elementId) => {
                 const el = elements?.find((e) => e.id === elementId)
                 if (!el) return
-                const children = elements?.filter((e) => e.parentId === elementId)
-                if (children && children.length > 0) {
+                // An empty system or app opens too: its level is where the first child is added.
+                if (canContain(el.kind)) {
                   useCanvasStore.getState().drillInto({
                     elementId: el.id,
                     name: el.name,
@@ -736,6 +711,7 @@ function ProjectWorkspace() {
           onUpdateRelationship={(id, fields) => updateRelationship.mutate({ id, ...fields })}
           onDeleteElement={(id) => removeElement.mutate(id)}
           onDeleteRelationship={(id) => removeRelationship.mutate(id)}
+          onAddChild={handleOpenCreateDialog}
         />
       </div>
       {!activeDocId && <TraceDock />}
@@ -748,58 +724,24 @@ function ProjectWorkspace() {
       )}
       <CommandPalette
         elements={elements ?? []}
-        onAddElement={handleOpenCreateDialog}
+        onAddElement={() => handleOpenCreateDialog()}
         onTidy={handleTidy}
         onZoomToFit={() => fitViewRef.current?.()}
       />
 
-      <Dialog open={showCreateElement} onOpenChange={setShowCreateElement}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Add Element</DialogTitle>
-            <DialogDescription>Choose the kind and give the element a name.</DialogDescription>
-          </DialogHeader>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault()
-              if (newElementName.trim()) {
-                handleCreateElement(newElementName.trim(), newElementKind)
-                setShowCreateElement(false)
-              }
-            }}
-          >
-            <div className="space-y-3">
-              <div>
-                <label htmlFor="new-element-kind" className="mb-1 block text-xs font-medium text-muted-foreground">Kind</label>
-                <select
-                  id="new-element-kind"
-                  value={newElementKind}
-                  onChange={(e) => setNewElementKind(e.target.value)}
-                  className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
-                >
-                  <option value="actor">Actor</option>
-                  <option value="system">System</option>
-                  <option value="app">App</option>
-                  <option value="store">Store</option>
-                  <option value="component">Component</option>
-                </select>
-              </div>
-              <Input
-                aria-label="Element name"
-                placeholder="Element name"
-                value={newElementName}
-                onChange={(e) => setNewElementName(e.target.value)}
-                data-autofocus
-              />
-            </div>
-            <DialogFooter className="mt-4">
-              <Button type="submit" disabled={!newElementName.trim() || addElement.isPending}>
-                {addElement.isPending ? 'Adding...' : 'Add'}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
+      {addElementRequest && (
+        <AddElementDialog
+          parentId={addElementRequest.parentId}
+          kind={addElementRequest.kind}
+          elements={elements ?? []}
+          pending={addElement.isPending}
+          onClose={() => setAddElementRequest(null)}
+          onAdd={(name, kind, parentId) => {
+            handleCreateElement(name, kind, parentId)
+            setAddElementRequest(null)
+          }}
+        />
+      )}
     </div>
   )
 }

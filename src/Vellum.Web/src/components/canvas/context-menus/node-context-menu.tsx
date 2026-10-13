@@ -4,6 +4,7 @@ import {
   Maximize2,
   Minimize2,
   Pencil,
+  Plus,
   Trash2,
 } from 'lucide-react'
 
@@ -12,6 +13,11 @@ interface NodeContextMenuProps {
   position: { x: number; y: number }
   hasChildren: boolean
   isExpanded: boolean
+  /** The kinds this element can hold. Empty for an element that holds none. */
+  childKinds: string[]
+  /** False for a node that is shown inside an expanded parent: it expands on its own level only. */
+  canExpand: boolean
+  onAddChild: (kind: string) => void
   onClose: () => void
   onEditDetails: () => void
   onExpand: () => void
@@ -25,6 +31,9 @@ export function NodeContextMenu({
   position,
   hasChildren,
   isExpanded,
+  childKinds,
+  canExpand,
+  onAddChild,
   onClose,
   onEditDetails,
   onExpand,
@@ -42,14 +51,24 @@ export function NodeContextMenu({
         style={{ left: position.x, top: position.y }}
       >
         <MenuItem icon={<Pencil className="h-3.5 w-3.5" />} label="Edit details" onClick={() => { onEditDetails(); onClose() }} />
-        {hasChildren && (
+        {childKinds.length > 0 && (
           <>
             <div className="my-1 h-px bg-border" />
-            <MenuItem
-              icon={isExpanded ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
-              label={isExpanded ? 'Collapse' : 'Expand'}
-              onClick={() => { onExpand(); onClose() }}
-            />
+            {childKinds.map((kind) => (
+              <MenuItem
+                key={kind}
+                icon={<Plus className="h-3.5 w-3.5" />}
+                label={`Add ${kind} inside`}
+                onClick={() => { onAddChild(kind); onClose() }}
+              />
+            ))}
+            {hasChildren && canExpand && (
+              <MenuItem
+                icon={isExpanded ? <Minimize2 className="h-3.5 w-3.5" /> : <Maximize2 className="h-3.5 w-3.5" />}
+                label={isExpanded ? 'Collapse' : 'Expand'}
+                onClick={() => { onExpand(); onClose() }}
+              />
+            )}
             <MenuItem
               icon={<ChevronRight className="h-3.5 w-3.5" />}
               label="Drill into"

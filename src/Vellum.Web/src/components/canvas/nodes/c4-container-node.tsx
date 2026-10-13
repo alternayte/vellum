@@ -1,5 +1,6 @@
 import { memo } from 'react'
 import { Handle, Position, NodeResizer, type Node, type NodeProps } from '@xyflow/react'
+import { Plus } from 'lucide-react'
 import { kindColor } from '@/lib/kind-colors'
 
 export interface C4ContainerData extends Record<string, unknown> {
@@ -7,6 +8,7 @@ export interface C4ContainerData extends Record<string, unknown> {
   kind: string
   name: string
   onResize?: (width: number, height: number) => void
+  onAddChild?: () => void
 }
 
 export type C4ContainerNodeType = Node<C4ContainerData, 'c4-container'>
@@ -52,6 +54,18 @@ export const C4ContainerNode = memo(function C4ContainerNode({
         <span className="text-xs font-medium text-muted-foreground">
           {data.name}
         </span>
+        {data.onAddChild && (
+          <button
+            type="button"
+            aria-label={`Add an element inside ${data.name}`}
+            title={`Add an element inside ${data.name}`}
+            className="nodrag nopan ml-1 flex h-5 w-5 items-center justify-center rounded border border-border bg-card text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-primary"
+            onClick={(e) => { e.stopPropagation(); data.onAddChild?.() }}
+            onDoubleClick={(e) => e.stopPropagation()}
+          >
+            <Plus className="h-3 w-3" aria-hidden="true" />
+          </button>
+        )}
       </div>
     </div>
   )

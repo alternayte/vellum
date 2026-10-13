@@ -2,12 +2,14 @@ import { useState, useEffect } from 'react'
 import { useShellStore } from '@/stores/shell-store'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { LayoutDashboard, FileText } from 'lucide-react'
+import { Box, LayoutDashboard, FileText } from 'lucide-react'
 import { loadTemplates, type DocTemplate } from '@/lib/doc-templates'
 
 interface CreateFlyoutProps {
   onCreateDiagram: (name: string) => void
   onCreateDoc: (title: string, content: string, type?: string) => void
+  /** Opens the Add Element dialog, where the element's place and kind are chosen. */
+  onAddElement?: () => void
 }
 
 type Mode = 'menu' | 'diagram' | 'doc-templates' | 'doc-title'
@@ -18,7 +20,7 @@ const FALLBACK_TEMPLATES = [
   { id: 'prd', name: 'PRD', type: 'prd', content: '' },
 ]
 
-export function CreateFlyout({ onCreateDiagram, onCreateDoc }: CreateFlyoutProps) {
+export function CreateFlyout({ onCreateDiagram, onCreateDoc, onAddElement }: CreateFlyoutProps) {
   const closeFlyout = useShellStore((s) => s.closeFlyout)
   const [mode, setMode] = useState<Mode>('menu')
   const [name, setName] = useState('')
@@ -58,6 +60,15 @@ export function CreateFlyout({ onCreateDiagram, onCreateDoc }: CreateFlyoutProps
       <div className="flex-1 overflow-y-auto p-2">
         {mode === 'menu' && (
           <div className="space-y-1">
+            {onAddElement && (
+              <button
+                className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm hover:bg-muted"
+                onClick={() => { closeFlyout(); onAddElement() }}
+              >
+                <Box className="h-4 w-4 text-muted-foreground" />
+                New Element
+              </button>
+            )}
             <button
               className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm hover:bg-muted"
               onClick={() => { setMode('diagram'); setName('') }}
