@@ -83,6 +83,7 @@ internal sealed record MappingResult(
 /// <item><term>Message</term><description>A message. Its producer is the one service that a Publication fact names; its consumers are the services whose subscriptions name the message; its schema is its payload schema. A consumer that only a queue binding connects to the message is not added: that is a chain of two facts, not a statement of the source.</description></item>
 /// <item><term>Publication</term><description>Not an entity: it gives a message its producer. The model's relationships join two elements and a channel is not an element, so there is no producer-to-channel edge to write. A pattern fact and a contract-only publication stay evidence.</description></item>
 /// <item><term>Schema</term><description>A schema, when the fact holds a JSON Schema body. A contract document as a whole stays evidence.</description></item>
+/// <item><term>Code and contract</term><description>One thing has one entity. A message that a contract file declares (it has a <c>contract</c> attribute) is the code message with exactly the same name (ordinal) that a Publication names, when there is exactly one: the contract fact is then folded into that message's proposal, with its evidence, its payload schema and its attributes under <c>contract.*</c>. A channel that a contract file declares is the code channel of the same kind whose name is exactly the contract's <c>address</c>, in the same way. With no such code fact the contract fact maps by itself; with several it stays evidence. Names that differ in case or form (a Go struct <c>orderCreated</c>) are other facts.</description></item>
 /// <item><term>Every other kind</term><description>Evidence only: the model has no home for it yet.</description></item>
 /// </list>
 /// </summary>
@@ -172,8 +173,49 @@ internal static class FactMapping
             .Where(f => IsConsumerSubscription(f) && f.Attributes.ContainsKey("message"))
             .ToLookup(f => f.Attributes["message"], StringComparer.Ordinal);
 
+        // A contract file and the code can declare the same message or the same channel.
+        // The extractors keep them as two facts. Here they become one entity, by an exact rule.
+        var messageOf = facts
+            .Where(f => f.Kind == FactKind.Message && !IsContractDeclared(f) && producers[f.Key].Any())
+            .ToLookup(f => f.Name, StringComparer.Ordinal);
+        var channelOf = facts
+            .Where(f => f.Kind == FactKind.Channel && !IsContractDeclared(f) && ChannelKind(f.Attributes.GetValueOrDefault("kind")) is not null)
+            .ToLookup(f => (f.Attributes["kind"], f.Name));
+        var contractsOf = new Dictionary<string, List<ExtractedFact>>(StringComparer.Ordinal);
+        var severalOwners = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var fact in facts.Where(IsContractDeclared))
+        {
+            var owners = fact.Kind switch
+            {
+                FactKind.Message => messageOf[fact.Name].ToList(),
+                FactKind.Channel when fact.Attributes.TryGetValue("address", out var address) && fact.Attributes.TryGetValue("kind", out var kind)
+                    => channelOf[(kind, address)].ToList(),
+                _ => [],
+            };
+            if (owners.Count == 1)
+            {
+                if (!contractsOf.TryGetValue(owners[0].Key, out var contracts))
+                    contractsOf[owners[0].Key] = contracts = [];
+                contracts.Add(fact);
+            }
+            else if (owners.Count > 1)
+                severalOwners.Add(fact.Key);
+        }
+        var foldedContracts = contractsOf.Values.SelectMany(c => c).Select(f => f.Key).ToHashSet(StringComparer.Ordinal);
+
         foreach (var fact in facts)
         {
+            if (foldedContracts.Contains(fact.Key) && fact.Kind is FactKind.Message or FactKind.Channel)
+            {
+                mapped.Add(new MappedFact(fact, FactDisposition.Folded, fact.Kind == FactKind.Message ? "contract-of-message" : "contract-of-channel"));
+                continue;
+            }
+            if (severalOwners.Contains(fact.Key) && fact.Kind is FactKind.Message or FactKind.Channel)
+            {
+                Evidence(fact, "several-code-declarations");
+                continue;
+            }
+
             switch (fact.Kind)
             {
                 case FactKind.Service:
@@ -206,9 +248,14 @@ internal static class FactMapping
                     if (ChannelKind(fact.Attributes.GetValueOrDefault("kind")) is not { } channelKind)
                         Evidence(fact, "unsupported-channel-kind");
                     else
+                    {
+                        var declared = contractsOf.GetValueOrDefault(fact.Key) ?? [];
                         Add(fact, EntityKinds.Channel, fact.Attributes.GetValueOrDefault("address") ?? fact.Name, 2,
                             Fields((Field.Name, fact.Attributes.GetValueOrDefault("address") ?? fact.Name), (Field.Kind, channelKind)),
-                            [], consumed: ["address", "kind"]);
+                            [], consumed: ["address", "kind"],
+                            evidence: fact.Evidence.Concat(declared.SelectMany(c => c.Evidence)),
+                            attributes: WithContracts(fact, declared, "address", "kind"));
+                    }
                     break;
 
                 case FactKind.Subscription:
@@ -245,7 +292,16 @@ internal static class FactMapping
                     var publications = producers[fact.Key].ToList();
                     var services = publications.Select(p => p.Attributes["service"]).Distinct(StringComparer.Ordinal).ToList();
                     var subscriptions = consumers[fact.Key].ToList();
+                    // The payload schema is the message's own, else the one schema that its
+                    // contract declarations name. Two contracts with two schemas name none.
+                    var declared = contractsOf.GetValueOrDefault(fact.Key) ?? [];
                     var schema = fact.Attributes.GetValueOrDefault("payloadSchema");
+                    if (schema is null)
+                    {
+                        var named = declared.Select(c => c.Attributes.GetValueOrDefault("payloadSchema"))
+                            .Where(s => s is not null).Distinct(StringComparer.Ordinal).ToList();
+                        schema = named.Count == 1 ? named[0] : null;
+                    }
                     if (schema is not null && !(byKey.TryGetValue(schema, out var schemaFact) && HasBody(schemaFact)))
                         schema = null;
 
@@ -258,6 +314,7 @@ internal static class FactMapping
                         _ => "several-producers",
                     };
                     var evidence = fact.Evidence
+                        .Concat(declared.SelectMany(c => c.Evidence))
                         .Concat(services.Count == 1 ? publications.SelectMany(p => p.Evidence) : [])
                         .Concat(subscriptions.SelectMany(s => s.Evidence));
                     Add(fact, EntityKinds.Message, fact.Name, 6, Fields((Field.Name, fact.Name)),
@@ -265,6 +322,7 @@ internal static class FactMapping
                         new Reference(Field.ProducerId, services.Count == 1 ? services[0] : null, RequiredToAdd: true),
                         new Reference(Field.SchemaId, schema, RequiredToAdd: false),
                     ], consumed: ["payloadSchema"], evidence: evidence, notAddable: notAddable,
+                        attributes: WithContracts(fact, declared, "payloadSchema", "name"),
                         consumerKeys: subscriptions.Select(s => s.Attributes["service"]).Distinct(StringComparer.Ordinal)
                             .OrderBy(k => k, StringComparer.Ordinal).ToList());
                     break;
@@ -304,23 +362,51 @@ internal static class FactMapping
             ExtractedFact fact, string entityKind, string name, int rank,
             SortedDictionary<string, string?> fields, IReadOnlyList<Reference> references, string[] consumed,
             IEnumerable<SourceEvidence>? evidence = null, string? notAddable = null, IReadOnlyList<string>? consumerKeys = null,
-            string? matchRoute = null)
+            string? matchRoute = null, IReadOnlyDictionary<string, string>? attributes = null)
         {
+            attributes ??= fact.Attributes;
             var observed = new SortedDictionary<string, string>(StringComparer.Ordinal);
-            foreach (var (attribute, value) in fact.Attributes)
+            foreach (var (attribute, value) in attributes)
             {
                 if (!consumed.Contains(attribute))
                     observed[attribute] = value;
             }
 
             candidates.Add(new Candidate(
-                fact.Key, entityKind, name, rank, fields, references, consumerKeys ?? [], observed, fact.Attributes,
+                fact.Key, entityKind, name, rank, fields, references, consumerKeys ?? [], observed, attributes,
                 [.. (evidence ?? fact.Evidence).Select(Ref).Distinct().Take(EvidenceCap)], notAddable, matchRoute));
             mapped.Add(new MappedFact(fact, FactDisposition.Mapped, null));
         }
 
         void Evidence(ExtractedFact fact, string reason) =>
             mapped.Add(new MappedFact(fact, FactDisposition.EvidenceOnly, reason));
+    }
+
+    /// <summary>True for a message or a channel that a contract file declares (AsyncAPI), as opposed to one the code declares.</summary>
+    private static bool IsContractDeclared(ExtractedFact fact) =>
+        fact.Kind is FactKind.Message or FactKind.Channel && fact.Attributes.ContainsKey("contract");
+
+    /// <summary>
+    /// The attributes of a code fact with those of the contract declarations of the same
+    /// thing next to them, each under <c>contract.&lt;name&gt;</c>. Two declarations that
+    /// disagree on one attribute show the first, in key order; the others stay readable as
+    /// evidence. No value of the code is replaced by a value of a contract.
+    /// </summary>
+    private static IReadOnlyDictionary<string, string> WithContracts(
+        ExtractedFact fact, List<ExtractedFact> declared, params string[] structural)
+    {
+        if (declared.Count == 0)
+            return fact.Attributes;
+        var attributes = new Dictionary<string, string>(fact.Attributes, StringComparer.Ordinal);
+        foreach (var contract in declared.OrderBy(c => c.Key, StringComparer.Ordinal))
+        {
+            foreach (var (attribute, value) in contract.Attributes)
+            {
+                if (!structural.Contains(attribute))
+                    attributes.TryAdd("contract." + attribute, value);
+            }
+        }
+        return attributes;
     }
 
     public static EvidenceRef Ref(SourceEvidence evidence) =>

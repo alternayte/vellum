@@ -364,8 +364,9 @@ internal sealed class FixtureFacts
             [.. s.GitHub.Files(commit).Select(f => new SourceFile(f.Key, System.Text.Encoding.UTF8.GetString(f.Value)))]));
         var mapping = FactMapping.Map(repository, Result.Facts);
         // As a proposal shows them: the repository itself has an empty fact key.
-        MappedKeys = [.. mapping.Candidates.Select(c => FactMapping.StoredKey(c.FactKey)).Order(StringComparer.Ordinal)];
-        EvidenceOnly = mapping.Facts.Count(f => f.Disposition == FactDisposition.EvidenceOnly);
+        // A candidate that cannot be added (a message with no producer) is evidence when the model has no entity for it.
+        MappedKeys = [.. mapping.Candidates.Where(c => c.NotAddable is null).Select(c => FactMapping.StoredKey(c.FactKey)).Order(StringComparer.Ordinal)];
+        EvidenceOnly = mapping.Facts.Count(f => f.Disposition == FactDisposition.EvidenceOnly) + mapping.Candidates.Count(c => c.NotAddable is not null);
         Folded = mapping.Facts.Count(f => f.Disposition == FactDisposition.Folded);
     }
 

@@ -52,7 +52,13 @@ public class OrdersImportTests(ImportHost import) : IClassFixture<ImportHost>
         Assert.All(proposals, p => Assert.Equal(("add", "pending", false), (p.Text("action"), p.Text("status"), p["partial"]!.GetValue<bool>())));
         Assert.Equal(20, proposals.Count);
         Assert.Equal(facts.EvidenceOnly, evidence.Count);
-        Assert.Equal(1, facts.Folded);
+        // Folded: the publication that gives the message its producer, and the AsyncAPI
+        // declarations of the message and of the exchange that the code also declares.
+        Assert.Equal(3, facts.Folded);
+        var orderCreated = proposals.Proposal("message", "OrderCreated");
+        Assert.Contains(orderCreated["evidence"]!.AsArray(), e => e!["path"]!.GetValue<string>() == "asyncapi.yaml");
+        Assert.Contains(orderCreated["evidence"]!.AsArray(), e => e!["path"]!.GetValue<string>() == "contracts/OrderCreated.cs");
+        Assert.Single(proposals, p => p.Text("entityKind") == "message");
         Assert.Equal(facts.Result.Facts.Count, proposals.Count - 1 + evidence.Count + facts.Folded);
         Assert.Equal(facts.Count(FactKind.Deployment), evidence.Count(e => e.Text("kind") == "Deployment"));
         Assert.Equal(facts.Count(FactKind.Dependency), evidence.Count(e => e.Text("kind") == "Dependency"));

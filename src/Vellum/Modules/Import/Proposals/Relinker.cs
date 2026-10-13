@@ -28,7 +28,8 @@ internal sealed record RelinkResult(
 /// kind and normalised name for an element, owner and method with route template for an
 /// operation, normalised name for a channel, a message or a schema, channel and consumer
 /// for a subscription. The owner, channel and consumer are entities, so "within the same
-/// service" is part of the key.</item>
+/// service" is part of the key. This rule is asked only for a link that shares evidence
+/// with no candidate.</item>
 /// </list>
 /// <para>A link moves only when the rule names one candidate for the link and one link for
 /// the candidate. The link of the repository itself moves to the repository's candidate.
@@ -75,6 +76,11 @@ internal static class Relinker
         // Rank by rank: a later rank's match key holds the entity of an earlier rank's link.
         foreach (var rank in candidates.Where(c => c.FactKey != FactMapping.RepositoryKey).GroupBy(c => c.Rank).OrderBy(g => g.Key))
         {
+          // Shared evidence first. The match key is asked only for a link that shares
+          // evidence with no fact: a name can fit several facts, a line of a file cannot.
+          var sharesEvidence = new HashSet<Guid>();
+          for (var phase = 1; phase <= 2; phase++)
+          {
             var pairs = new Dictionary<string, HashSet<Guid>>(StringComparer.Ordinal);
             var reverse = new Dictionary<Guid, List<Candidate>>();
             var byId = new Dictionary<Guid, LinkInfo>();
@@ -85,7 +91,7 @@ internal static class Relinker
                     continue;
 
                 var found = new HashSet<Guid>();
-                foreach (var evidence in candidate.Evidence)
+                foreach (var evidence in phase == 1 ? candidate.Evidence : [])
                 {
                     if (!byEvidence.TryGetValue((candidate.EntityKind, evidence.Path, evidence.Rule), out var sharing))
                         continue;
@@ -101,9 +107,9 @@ internal static class Relinker
                     }
                 }
 
-                if (byMatchKey.TryGetValue((candidate.EntityKind, MatchKey(candidate, effective)), out var sameKey))
+                if (phase == 2 && byMatchKey.TryGetValue((candidate.EntityKind, MatchKey(candidate, effective)), out var sameKey))
                 {
-                    foreach (var link in sameKey.Where(l => !resolved.Contains(l.LinkId)))
+                    foreach (var link in sameKey.Where(l => !resolved.Contains(l.LinkId) && !sharesEvidence.Contains(l.LinkId)))
                     {
                         found.Add(link.LinkId);
                         byId[link.LinkId] = link;
@@ -127,6 +133,8 @@ internal static class Relinker
                 else
                     Bucket(options, linkId).AddRange(matching);
             }
+            sharesEvidence.UnionWith(reverse.Keys);
+          }
         }
 
         var unresolved = new List<UnresolvedLink>();

@@ -5036,6 +5036,75 @@
                 }
               }
             }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/imports/{importId}/track": {
+      "post": {
+        "tags": [
+          "Imports"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "importId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanDetailDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -5111,7 +5180,65 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PageOfProposalDto"
+                  "$ref": "#/components/schemas/ProposalPage"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/imports/{importId}/proposals/{proposalId}": {
+      "get": {
+        "tags": [
+          "Imports"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "importId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "proposalId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProposalDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -5320,8 +5447,28 @@
               }
             }
           },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "404": {
             "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
             "content": {
               "application/json": {
                 "schema": {
@@ -6712,6 +6859,19 @@
               "type": "string",
               "format": "uuid"
             }
+          },
+          "relink": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/RelinkChoice"
+            }
+          },
+          "acknowledgeImpact": {
+            "type": "boolean",
+            "default": false
           }
         }
       },
@@ -6719,7 +6879,8 @@
         "required": [
           "accepted",
           "rejected",
-          "failed"
+          "failed",
+          "relinked"
         ],
         "type": "object",
         "properties": {
@@ -6741,6 +6902,13 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/DecisionFailure"
+            }
+          },
+          "relinked": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
             }
           }
         }
@@ -7540,6 +7708,49 @@
           }
         }
       },
+      "ImpactEntityDto": {
+        "required": [
+          "entityKind",
+          "id",
+          "name"
+        ],
+        "type": "object",
+        "properties": {
+          "entityKind": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "ImpactScenarioDto": {
+        "required": [
+          "id",
+          "name",
+          "stepIds"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "stepIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
       "ImportSettings": {
         "required": [
           "maxFiles",
@@ -7682,6 +7893,67 @@
       "JsonElement": { },
       "JsonObject": {
         "type": "object"
+      },
+      "LinkedFactCoverageDto": {
+        "required": [
+          "covered",
+          "notCovered",
+          "scope",
+          "limit",
+          "withheld",
+          "failed"
+        ],
+        "type": "object",
+        "properties": {
+          "covered": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "notCovered": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "scope": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "limit": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "withheld": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "failed": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          }
+        }
       },
       "LoginRequest": {
         "required": [
@@ -7978,27 +8250,6 @@
           }
         }
       },
-      "PageOfProposalDto": {
-        "required": [
-          "items",
-          "cursor"
-        ],
-        "type": "object",
-        "properties": {
-          "items": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/ProposalDto"
-            }
-          },
-          "cursor": {
-            "type": [
-              "null",
-              "string"
-            ]
-          }
-        }
-      },
       "PageOfProposalSummary": {
         "required": [
           "items",
@@ -8174,6 +8425,7 @@
           "action",
           "entityKind",
           "entityId",
+          "subject",
           "factKey",
           "name",
           "proposed",
@@ -8182,7 +8434,11 @@
           "evidence",
           "dependsOn",
           "status",
-          "partial"
+          "partial",
+          "canDecide",
+          "canDecideReason",
+          "impact",
+          "truncated"
         ],
         "type": "object",
         "properties": {
@@ -8199,6 +8455,9 @@
           "entityId": {
             "type": "string",
             "format": "uuid"
+          },
+          "subject": {
+            "type": "string"
           },
           "factKey": {
             "type": "string"
@@ -8250,6 +8509,52 @@
           },
           "partial": {
             "type": "boolean"
+          },
+          "canDecide": {
+            "type": "boolean"
+          },
+          "canDecideReason": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "impact": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ProposalImpactDto"
+              }
+            ]
+          },
+          "truncated": {
+            "type": "boolean"
+          }
+        }
+      },
+      "ProposalImpactDto": {
+        "required": [
+          "scenarios",
+          "entities"
+        ],
+        "type": "object",
+        "properties": {
+          "scenarios": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ImpactScenarioDto"
+            }
+          },
+          "entities": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ImpactEntityDto"
+            }
+          },
+          "isEmpty": {
+            "type": "boolean"
           }
         }
       },
@@ -8288,6 +8593,38 @@
             "items": {
               "$ref": "#/components/schemas/ProposalItemFailure"
             }
+          }
+        }
+      },
+      "ProposalPage": {
+        "required": [
+          "items",
+          "cursor",
+          "notCovered"
+        ],
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProposalDto"
+            }
+          },
+          "cursor": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "notCovered": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/LinkedFactCoverageDto"
+              }
+            ]
           }
         }
       },
@@ -8641,6 +8978,25 @@
           }
         }
       },
+      "RelinkChoice": {
+        "required": [
+          "id",
+          "factKey"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "factKey": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
       "RetryDto": {
         "required": [
           "maxAttempts",
@@ -8869,14 +9225,59 @@
           }
         }
       },
+      "ScanCoverageDto": {
+        "required": [
+          "filesListed",
+          "filesExtracted",
+          "linkedFacts"
+        ],
+        "type": "object",
+        "properties": {
+          "filesListed": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "filesExtracted": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "linkedFacts": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/LinkedFactCoverageDto"
+              }
+            ]
+          }
+        }
+      },
       "ScanDetailDto": {
         "required": [
           "id",
           "repository",
+          "repositoryName",
           "ref",
+          "resolvedRef",
           "commitSha",
           "status",
           "isComplete",
+          "kind",
+          "trackedRef",
+          "canDecide",
+          "canDecideReason",
+          "coverage",
+          "relinked",
+          "needsReview",
           "progress",
           "proposalCounts",
           "error",
@@ -8885,7 +9286,9 @@
           "createdAt",
           "completedAt",
           "notes",
-          "ruleVersions"
+          "ruleVersions",
+          "trackedBy",
+          "trackedAt"
         ],
         "type": "object",
         "properties": {
@@ -8896,7 +9299,19 @@
           "repository": {
             "type": "string"
           },
+          "repositoryName": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
           "ref": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "resolvedRef": {
             "type": [
               "null",
               "string"
@@ -8913,6 +9328,43 @@
           },
           "isComplete": {
             "type": "boolean"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "trackedRef": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "canDecide": {
+            "type": "boolean"
+          },
+          "canDecideReason": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "coverage": {
+            "$ref": "#/components/schemas/ScanCoverageDto"
+          },
+          "relinked": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "needsReview": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
           },
           "progress": {
             "$ref": "#/components/schemas/ScanProgressDto"
@@ -8962,6 +9414,19 @@
             "items": {
               "$ref": "#/components/schemas/RuleVersion"
             }
+          },
+          "trackedBy": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "trackedAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
           }
         }
       },
@@ -8969,10 +9434,19 @@
         "required": [
           "id",
           "repository",
+          "repositoryName",
           "ref",
+          "resolvedRef",
           "commitSha",
           "status",
           "isComplete",
+          "kind",
+          "trackedRef",
+          "canDecide",
+          "canDecideReason",
+          "coverage",
+          "relinked",
+          "needsReview",
           "progress",
           "proposalCounts",
           "error",
@@ -8990,7 +9464,19 @@
           "repository": {
             "type": "string"
           },
+          "repositoryName": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
           "ref": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "resolvedRef": {
             "type": [
               "null",
               "string"
@@ -9007,6 +9493,43 @@
           },
           "isComplete": {
             "type": "boolean"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "trackedRef": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "canDecide": {
+            "type": "boolean"
+          },
+          "canDecideReason": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "coverage": {
+            "$ref": "#/components/schemas/ScanCoverageDto"
+          },
+          "relinked": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "needsReview": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
           },
           "progress": {
             "$ref": "#/components/schemas/ScanProgressDto"
