@@ -6759,6 +6759,464 @@
           }
         }
       }
+    },
+    "/api/projects/{projectId}/stress/requirements": {
+      "get": {
+        "tags": [
+          "Stress"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "scenarioId",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "branchId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StressRequirements"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/stress/profiles": {
+      "get": {
+        "tags": [
+          "Stress"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/StressProfileSummaryDto"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Stress"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StressProfile"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StressProfileDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/stress/profiles/{profileId}": {
+      "get": {
+        "tags": [
+          "Stress"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "profileId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StressProfileDto"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Stress"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "profileId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StressProfile"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StressProfileDto"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Stress"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "profileId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/stress/profiles/{profileId}/runs": {
+      "post": {
+        "tags": [
+          "Stress"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "profileId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "branchId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StressRunDto"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Unprocessable Entity",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StressRefusedResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Stress"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "profileId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/StressRunSummaryDto"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/stress/runs/{runId}": {
+      "get": {
+        "tags": [
+          "Stress"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "runId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StressRunDto"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Stress"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "runId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/stress/compare": {
+      "get": {
+        "tags": [
+          "Stress"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "left",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "right",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StressComparisonDto"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -7712,6 +8170,81 @@
           }
         }
       },
+      "ArrivalKind": {
+        "enum": [
+          "constant",
+          "poisson",
+          "ramp",
+          "burst"
+        ]
+      },
+      "Arrivals": {
+        "required": [
+          "kind",
+          "ratePerSecond",
+          "toRatePerSecond",
+          "bursts",
+          "durationSeconds",
+          "warmUpSeconds"
+        ],
+        "type": "object",
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/ArrivalKind"
+          },
+          "ratePerSecond": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "toRatePerSecond": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "bursts": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/BurstWindow"
+            }
+          },
+          "durationSeconds": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "warmUpSeconds": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "label": {
+            "$ref": "#/components/schemas/AssumptionLabel"
+          },
+          "measurementRef": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
       "Assertion": {
         "required": [
           "type"
@@ -7810,6 +8343,59 @@
           },
           "detail": {
             "type": "string"
+          }
+        }
+      },
+      "AssumptionLabel": {
+        "enum": [
+          "declared",
+          "measured"
+        ],
+        "default": "declared"
+      },
+      "AssumptionRow": {
+        "required": [
+          "group",
+          "target",
+          "name",
+          "field",
+          "value",
+          "unit",
+          "label",
+          "measurementRef"
+        ],
+        "type": "object",
+        "properties": {
+          "group": {
+            "type": "string"
+          },
+          "target": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "field": {
+            "type": "string"
+          },
+          "value": {
+            "type": "string"
+          },
+          "unit": {
+            "type": "string"
+          },
+          "label": {
+            "$ref": "#/components/schemas/AssumptionLabel"
+          },
+          "measurementRef": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -7925,6 +8511,121 @@
           },
           "message": {
             "type": "string"
+          }
+        }
+      },
+      "Bottleneck": {
+        "required": [
+          "label",
+          "found",
+          "id",
+          "name",
+          "kind",
+          "utilisation",
+          "meanDepthByQuarter",
+          "depthAtEndOfArrivals",
+          "growthPerSecond",
+          "rule"
+        ],
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "found": {
+            "type": "boolean"
+          },
+          "id": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "name": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "kind": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "utilisation": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "meanDepthByQuarter": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+              "type": [
+                "number",
+                "string"
+              ],
+              "format": "double"
+            }
+          },
+          "depthAtEndOfArrivals": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "growthPerSecond": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "rule": {
+            "type": "string"
+          }
+        }
+      },
+      "BranchAssumption": {
+        "required": [
+          "stepId",
+          "probability"
+        ],
+        "type": "object",
+        "properties": {
+          "stepId": {
+            "type": "string"
+          },
+          "probability": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "label": {
+            "$ref": "#/components/schemas/AssumptionLabel"
+          },
+          "measurementRef": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -8228,6 +8929,40 @@
           }
         }
       },
+      "BurstWindow": {
+        "required": [
+          "fromSeconds",
+          "toSeconds",
+          "ratePerSecond"
+        ],
+        "type": "object",
+        "properties": {
+          "fromSeconds": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "toSeconds": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "ratePerSecond": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          }
+        }
+      },
       "ChannelDto": {
         "required": [
           "id",
@@ -8277,6 +9012,66 @@
         "type": "string",
         "format": "uuid"
       },
+      "ChannelStats": {
+        "required": [
+          "label",
+          "id",
+          "name",
+          "published",
+          "publishFailed"
+        ],
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "published": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "publishFailed": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          }
+        }
+      },
+      "Confidence": {
+        "required": [
+          "level",
+          "rule",
+          "reasons"
+        ],
+        "type": "object",
+        "properties": {
+          "level": {
+            "type": "string"
+          },
+          "rule": {
+            "type": "string"
+          },
+          "reasons": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
       "ConnectionTestError": {
         "required": [
           "code",
@@ -8308,6 +9103,67 @@
           },
           "currency": {
             "type": "string"
+          }
+        }
+      },
+      "Counts": {
+        "required": [
+          "completed",
+          "failed",
+          "rejected",
+          "timedOut",
+          "dropped",
+          "deadLettered"
+        ],
+        "type": "object",
+        "properties": {
+          "completed": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "failed": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "rejected": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "timedOut": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "dropped": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "deadLettered": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
           }
         }
       },
@@ -8802,6 +9658,113 @@
             "items": {
               "$ref": "#/components/schemas/MasterKeyInUse"
             }
+          }
+        }
+      },
+      "Distribution": {
+        "required": [
+          "kind"
+        ],
+        "type": "object",
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/DistributionKind"
+          },
+          "ms": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "meanMs": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "medianMs": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "p95Ms": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "minMs": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "maxMs": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ],
+            "format": "double"
+          }
+        }
+      },
+      "DistributionKind": {
+        "enum": [
+          "fixed",
+          "exponential",
+          "lognormal",
+          "uniform"
+        ]
+      },
+      "DrainStats": {
+        "required": [
+          "label",
+          "drained",
+          "timeToDrainMs",
+          "leftInSystem"
+        ],
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "drained": {
+            "type": "boolean"
+          },
+          "timeToDrainMs": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "leftInSystem": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
           }
         }
       },
@@ -9753,6 +10716,43 @@
           }
         }
       },
+      "FlowStats": {
+        "required": [
+          "label",
+          "arrivals",
+          "counts",
+          "throughputPerSecond",
+          "latency"
+        ],
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "arrivals": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "counts": {
+            "$ref": "#/components/schemas/Counts"
+          },
+          "throughputPerSecond": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "latency": {
+            "$ref": "#/components/schemas/LatencySummary"
+          }
+        }
+      },
       "ForbiddenEvent": {
         "required": [
           "kind",
@@ -9950,6 +10950,43 @@
           }
         }
       },
+      "InputDifference": {
+        "required": [
+          "input",
+          "target",
+          "name",
+          "left",
+          "right"
+        ],
+        "type": "object",
+        "properties": {
+          "input": {
+            "type": "string"
+          },
+          "target": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "left": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "right": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
       "InstanceInfoResponse": {
         "required": [
           "profile",
@@ -10051,6 +11088,109 @@
       "JsonElement": { },
       "JsonObject": {
         "type": "object"
+      },
+      "LatencySummary": {
+        "required": [
+          "label",
+          "count",
+          "kept",
+          "reservoir",
+          "minMs",
+          "meanMs",
+          "p50Ms",
+          "p90Ms",
+          "p95Ms",
+          "p99Ms",
+          "maxMs"
+        ],
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "count": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "kept": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "reservoir": {
+            "type": "boolean"
+          },
+          "minMs": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "meanMs": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "p50Ms": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "p90Ms": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "p95Ms": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "p99Ms": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "maxMs": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ],
+            "format": "double"
+          }
+        }
       },
       "LinkedFactCoverageDto": {
         "required": [
@@ -10184,6 +11324,67 @@
       "MessageId": {
         "type": "string",
         "format": "uuid"
+      },
+      "MetricDelta": {
+        "required": [
+          "scope",
+          "target",
+          "name",
+          "metric",
+          "unit",
+          "left",
+          "right",
+          "delta"
+        ],
+        "type": "object",
+        "properties": {
+          "scope": {
+            "type": "string"
+          },
+          "target": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "metric": {
+            "type": "string"
+          },
+          "unit": {
+            "type": "string"
+          },
+          "left": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "right": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "delta": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ],
+            "format": "double"
+          }
+        }
       },
       "MissingLinkDto": {
         "required": [
@@ -10617,6 +11818,210 @@
         "type": "string",
         "format": "uuid"
       },
+      "OperationStats": {
+        "required": [
+          "label",
+          "id",
+          "name",
+          "ownerId",
+          "timeoutMs",
+          "maxAttempts",
+          "backoffMs",
+          "attempts",
+          "counts",
+          "retries",
+          "exhausted",
+          "wasted",
+          "throughputPerSecond",
+          "latency"
+        ],
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "ownerId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "timeoutMs": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "maxAttempts": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "backoffMs": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "attempts": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "counts": {
+            "$ref": "#/components/schemas/Counts"
+          },
+          "retries": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "exhausted": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "wasted": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "throughputPerSecond": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "latency": {
+            "$ref": "#/components/schemas/LatencySummary"
+          }
+        }
+      },
+      "Outage": {
+        "required": [
+          "target",
+          "fromSeconds",
+          "toSeconds"
+        ],
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "fromSeconds": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "toSeconds": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          }
+        }
+      },
+      "OutageTarget": {
+        "required": [
+          "id",
+          "kind",
+          "name"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "OverrideRow": {
+        "required": [
+          "target",
+          "name",
+          "field",
+          "modelValue",
+          "profileValue",
+          "label",
+          "measurementRef"
+        ],
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "field": {
+            "type": "string"
+          },
+          "modelValue": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "profileValue": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "label": {
+            "$ref": "#/components/schemas/AssumptionLabel"
+          },
+          "measurementRef": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
       "PageOfBindingDto": {
         "required": [
           "items",
@@ -10858,6 +12263,57 @@
               "string"
             ],
             "format": "uuid"
+          }
+        }
+      },
+      "PolicyOverride": {
+        "required": [
+          "target",
+          "timeoutMs",
+          "maxAttempts",
+          "backoffMs"
+        ],
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "timeoutMs": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "maxAttempts": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "backoffMs": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "label": {
+            "$ref": "#/components/schemas/AssumptionLabel"
+          },
+          "measurementRef": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -11970,6 +13426,52 @@
           }
         }
       },
+      "QueueStats": {
+        "required": [
+          "meanDepth",
+          "meanDepthByQuarter",
+          "maxDepth",
+          "depthAtEndOfArrivals"
+        ],
+        "type": "object",
+        "properties": {
+          "meanDepth": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "meanDepthByQuarter": {
+            "type": "array",
+            "items": {
+              "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+              "type": [
+                "number",
+                "string"
+              ],
+              "format": "double"
+            }
+          },
+          "maxDepth": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "depthAtEndOfArrivals": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          }
+        }
+      },
       "RecordEvidenceRequest": {
         "required": [
           "result",
@@ -12084,6 +13586,110 @@
           }
         }
       },
+      "RequiredResource": {
+        "required": [
+          "elementId",
+          "name"
+        ],
+        "type": "object",
+        "properties": {
+          "elementId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
+      "RequiredServiceTime": {
+        "required": [
+          "target",
+          "kind",
+          "name",
+          "timeoutMs",
+          "maxAttempts",
+          "backoffMs"
+        ],
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "timeoutMs": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "maxAttempts": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "backoffMs": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          }
+        }
+      },
+      "RequiredSubscription": {
+        "required": [
+          "subscriptionId",
+          "name",
+          "maxAttempts",
+          "backoffMs",
+          "deadLetters"
+        ],
+        "type": "object",
+        "properties": {
+          "subscriptionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "maxAttempts": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "backoffMs": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "deadLetters": {
+            "type": "boolean"
+          }
+        }
+      },
       "ResolvedToExisting": {
         "required": [
           "alias",
@@ -12101,6 +13707,221 @@
           },
           "name": {
             "type": "string"
+          }
+        }
+      },
+      "ResourceAssumption": {
+        "required": [
+          "elementId",
+          "concurrency",
+          "queueCapacity"
+        ],
+        "type": "object",
+        "properties": {
+          "elementId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "concurrency": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "queueCapacity": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "label": {
+            "$ref": "#/components/schemas/AssumptionLabel"
+          },
+          "measurementRef": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "ResourceSeries": {
+        "required": [
+          "id",
+          "name",
+          "kind",
+          "queueDepth",
+          "inService"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "queueDepth": {
+            "type": "array",
+            "items": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": [
+                "integer",
+                "string"
+              ],
+              "format": "int32"
+            }
+          },
+          "inService": {
+            "type": "array",
+            "items": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": [
+                "integer",
+                "string"
+              ],
+              "format": "int32"
+            }
+          }
+        }
+      },
+      "ResourceStats": {
+        "required": [
+          "label",
+          "id",
+          "name",
+          "kind",
+          "workers",
+          "queueCapacity",
+          "arrived",
+          "waited",
+          "counts",
+          "retries",
+          "overflowed",
+          "wastedCount",
+          "wastedMs",
+          "utilisation",
+          "throughputPerSecond",
+          "queue",
+          "wait",
+          "latency"
+        ],
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "workers": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "queueCapacity": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "arrived": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "waited": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "counts": {
+            "$ref": "#/components/schemas/Counts"
+          },
+          "retries": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "overflowed": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "wastedCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "wastedMs": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "utilisation": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "throughputPerSecond": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "queue": {
+            "$ref": "#/components/schemas/QueueStats"
+          },
+          "wait": {
+            "$ref": "#/components/schemas/LatencySummary"
+          },
+          "latency": {
+            "$ref": "#/components/schemas/LatencySummary"
           }
         }
       },
@@ -13104,6 +14925,31 @@
           }
         }
       },
+      "ServiceTimeAssumption": {
+        "required": [
+          "target",
+          "time"
+        ],
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "time": {
+            "$ref": "#/components/schemas/Distribution"
+          },
+          "label": {
+            "$ref": "#/components/schemas/AssumptionLabel"
+          },
+          "measurementRef": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
       "SetModelPriceRequest": {
         "required": [
           "providerKind",
@@ -13750,6 +15596,779 @@
           }
         }
       },
+      "StressComparisonDto": {
+        "required": [
+          "label",
+          "left",
+          "right",
+          "metrics",
+          "inputs",
+          "note"
+        ],
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "left": {
+            "$ref": "#/components/schemas/StressRunSummaryDto"
+          },
+          "right": {
+            "$ref": "#/components/schemas/StressRunSummaryDto"
+          },
+          "metrics": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MetricDelta"
+            }
+          },
+          "inputs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/InputDifference"
+            }
+          },
+          "note": {
+            "type": "string"
+          }
+        }
+      },
+      "StressIssue": {
+        "required": [
+          "code",
+          "target",
+          "message"
+        ],
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "limit": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "StressMethods": {
+        "required": [
+          "percentiles",
+          "counting",
+          "sampling",
+          "time"
+        ],
+        "type": "object",
+        "properties": {
+          "percentiles": {
+            "type": "string"
+          },
+          "counting": {
+            "type": "string"
+          },
+          "sampling": {
+            "type": "string"
+          },
+          "time": {
+            "type": "string"
+          }
+        }
+      },
+      "StressProfile": {
+        "required": [
+          "name",
+          "scenarioId",
+          "seed",
+          "arrivals",
+          "resources",
+          "serviceTimes",
+          "subscriptions",
+          "branches",
+          "overrides",
+          "outages"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "scenarioId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "seed": {
+            "type": "string"
+          },
+          "arrivals": {
+            "$ref": "#/components/schemas/Arrivals"
+          },
+          "resources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResourceAssumption"
+            }
+          },
+          "serviceTimes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ServiceTimeAssumption"
+            }
+          },
+          "subscriptions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SubscriptionAssumption"
+            }
+          },
+          "branches": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BranchAssumption"
+            }
+          },
+          "overrides": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PolicyOverride"
+            }
+          },
+          "outages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Outage"
+            }
+          }
+        }
+      },
+      "StressProfileDto": {
+        "required": [
+          "id",
+          "version",
+          "updatedAt",
+          "profile"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "version": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "profile": {
+            "$ref": "#/components/schemas/StressProfile"
+          }
+        }
+      },
+      "StressProfileSummaryDto": {
+        "required": [
+          "id",
+          "name",
+          "scenarioId",
+          "version",
+          "updatedAt",
+          "runs"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "scenarioId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "version": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "runs": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          }
+        }
+      },
+      "StressRefusedResponse": {
+        "required": [
+          "type",
+          "title",
+          "issues"
+        ],
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "issues": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StressIssue"
+            }
+          }
+        }
+      },
+      "StressRequirements": {
+        "required": [
+          "scenarioIssues",
+          "resources",
+          "serviceTimes",
+          "subscriptions",
+          "branches",
+          "outageTargets",
+          "scenarioFaults"
+        ],
+        "type": "object",
+        "properties": {
+          "scenarioIssues": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ScenarioIssue"
+            }
+          },
+          "resources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RequiredResource"
+            }
+          },
+          "serviceTimes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RequiredServiceTime"
+            }
+          },
+          "subscriptions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RequiredSubscription"
+            }
+          },
+          "branches": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "outageTargets": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OutageTarget"
+            }
+          },
+          "scenarioFaults": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          }
+        }
+      },
+      "StressResult": {
+        "required": [
+          "engineVersion",
+          "label",
+          "seed",
+          "window",
+          "flow",
+          "elements",
+          "operations",
+          "subscriptions",
+          "channels",
+          "series",
+          "drain",
+          "bottleneck",
+          "assumptions",
+          "overrides",
+          "unmodelled",
+          "confidence",
+          "methods",
+          "hash"
+        ],
+        "type": "object",
+        "properties": {
+          "engineVersion": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "seed": {
+            "type": "string"
+          },
+          "window": {
+            "$ref": "#/components/schemas/StressWindow"
+          },
+          "flow": {
+            "$ref": "#/components/schemas/FlowStats"
+          },
+          "elements": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResourceStats"
+            }
+          },
+          "operations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OperationStats"
+            }
+          },
+          "subscriptions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResourceStats"
+            }
+          },
+          "channels": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ChannelStats"
+            }
+          },
+          "series": {
+            "$ref": "#/components/schemas/StressSeries"
+          },
+          "drain": {
+            "$ref": "#/components/schemas/DrainStats"
+          },
+          "bottleneck": {
+            "$ref": "#/components/schemas/Bottleneck"
+          },
+          "assumptions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AssumptionRow"
+            }
+          },
+          "overrides": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OverrideRow"
+            }
+          },
+          "unmodelled": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/UnmodelledEffect"
+            }
+          },
+          "confidence": {
+            "$ref": "#/components/schemas/Confidence"
+          },
+          "methods": {
+            "$ref": "#/components/schemas/StressMethods"
+          },
+          "hash": {
+            "type": "string"
+          }
+        }
+      },
+      "StressRunDto": {
+        "required": [
+          "run",
+          "profile",
+          "result"
+        ],
+        "type": "object",
+        "properties": {
+          "run": {
+            "$ref": "#/components/schemas/StressRunSummaryDto"
+          },
+          "profile": {
+            "$ref": "#/components/schemas/StressProfile"
+          },
+          "result": {
+            "$ref": "#/components/schemas/StressResult"
+          }
+        }
+      },
+      "StressRunSummary": {
+        "required": [
+          "label",
+          "arrivals",
+          "completed",
+          "failed",
+          "throughputPerSecond",
+          "p50Ms",
+          "p95Ms",
+          "p99Ms",
+          "bottleneck",
+          "confidence",
+          "drained"
+        ],
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "arrivals": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "completed": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "failed": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "throughputPerSecond": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "p50Ms": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "p95Ms": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "p99Ms": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "bottleneck": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "confidence": {
+            "type": "string"
+          },
+          "drained": {
+            "type": "boolean"
+          }
+        }
+      },
+      "StressRunSummaryDto": {
+        "required": [
+          "id",
+          "profileId",
+          "profileVersion",
+          "currentProfileVersion",
+          "modelStreamId",
+          "modelVersion",
+          "scenarioId",
+          "scenarioVersion",
+          "seed",
+          "engineVersion",
+          "hash",
+          "at",
+          "summary",
+          "outdated",
+          "outdatedBecause"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "profileId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "profileVersion": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "currentProfileVersion": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "modelStreamId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "modelVersion": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "scenarioId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "scenarioVersion": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "seed": {
+            "type": "string"
+          },
+          "engineVersion": {
+            "type": "string"
+          },
+          "hash": {
+            "type": "string"
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/StressRunSummary"
+          },
+          "outdated": {
+            "type": "boolean"
+          },
+          "outdatedBecause": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "StressSeries": {
+        "required": [
+          "label",
+          "intervalMs",
+          "points",
+          "truncated",
+          "arrivalsPerSecond",
+          "throughputPerSecond",
+          "failuresPerSecond",
+          "inFlight",
+          "resources"
+        ],
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "intervalMs": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "points": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "truncated": {
+            "type": "boolean"
+          },
+          "arrivalsPerSecond": {
+            "type": "array",
+            "items": {
+              "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+              "type": [
+                "number",
+                "string"
+              ],
+              "format": "double"
+            }
+          },
+          "throughputPerSecond": {
+            "type": "array",
+            "items": {
+              "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+              "type": [
+                "number",
+                "string"
+              ],
+              "format": "double"
+            }
+          },
+          "failuresPerSecond": {
+            "type": "array",
+            "items": {
+              "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+              "type": [
+                "number",
+                "string"
+              ],
+              "format": "double"
+            }
+          },
+          "inFlight": {
+            "type": "array",
+            "items": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": [
+                "integer",
+                "string"
+              ],
+              "format": "int32"
+            }
+          },
+          "resources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResourceSeries"
+            }
+          }
+        }
+      },
+      "StressWindow": {
+        "required": [
+          "warmUpMs",
+          "durationMs",
+          "endedAtMs"
+        ],
+        "type": "object",
+        "properties": {
+          "warmUpMs": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "durationMs": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "endedAtMs": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          }
+        }
+      },
+      "SubscriptionAssumption": {
+        "required": [
+          "subscriptionId",
+          "consumers",
+          "queueCapacity"
+        ],
+        "type": "object",
+        "properties": {
+          "subscriptionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "consumers": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "queueCapacity": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "label": {
+            "$ref": "#/components/schemas/AssumptionLabel"
+          },
+          "measurementRef": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
       "SubscriptionDto": {
         "required": [
           "id",
@@ -14011,6 +16630,25 @@
           "Routed",
           "NotRouted"
         ]
+      },
+      "UnmodelledEffect": {
+        "required": [
+          "code",
+          "kind",
+          "text"
+        ],
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          }
+        }
       },
       "UpdateBindingRequest": {
         "required": [
@@ -15086,6 +17724,9 @@
     },
     {
       "name": "Build"
+    },
+    {
+      "name": "Stress"
     }
   ]
 }
