@@ -153,40 +153,65 @@ jobs:
 
 Vellum stores the file only when it names a script that Vellum generated for this project. Vellum does not store a file that it refuses.
 
+Vellum also refuses a file in these cases:
+
+- The file has more than 256 KB.
+- The file states another scenario, version or target than the script was generated for.
+- The target of the script is not authorised now. The target was removed, its base URL or class changed, or its authorisation was revoked.
+- The run starts before the script was generated, or in the future.
+- The same file is imported already.
+
 An error names the member of the file that causes it. Select the member to go to its line in the text.
 
+A project holds 200 measured results at most. To remove a result, select the delete button on its row.
+
 You can also import the JSON that `k6 run --summary-export` writes. See [k6 result format and target rules](/reference/k6-results-and-targets/).
+
+An agent token with the `propose` scope can send a result file. The result records the token. See [k6 result format and target rules](/reference/k6-results-and-targets/).
 
 ## Compare the estimate with the measurement
 
 1. Select the measured result.
-2. Select a simulation run under **Estimated versus measured**.
+2. Under **Estimated versus measured**, select a run in **Simulation run**.
+
+The list holds the stored runs of the stress profile that the script was generated from. When the profile has no stored run, run it on the **Simulate** tab first.
 
 The table shows each number from the simulation beside the number from the k6 run. The column of the simulation has the label `Estimated`. The column of the k6 run has the label `Measured`.
 
-A step that the script did not drive has no measured value. The table shows `Unknown` for it. `Unknown` is not zero and it is not a match.
+An operation that the script did not drive has no measured value. The table shows `Unknown` for it. `Unknown` is not zero and it is not a match.
 
-The comparison gives no verdict.
+The notes above the table state what the two sides do not share, for example another model version or dropped iterations.
+
+The comparison gives no verdict. See [Estimates are not measurements](/concepts/estimates-are-not-measurements/).
 
 ## Find a regression between two runs
 
 1. Run the script again after a change of the system.
 2. Import the second result file.
 3. Select the second result.
-4. Select the first result under **Compare with a baseline run**.
+4. Under **Compare with a baseline run**, select the first result in **Baseline**.
 
 The table gives a verdict for each row: `Regressed`, `Improved`, `Unchanged` or `Unknown`. The rule for the verdict is below the table.
+
+A latency row is `Regressed` when the second run is more than 10 % and more than 1 ms above the baseline. An error rate row is `Regressed` when it is more than 0.1 percentage points above the baseline. A throughput row is `Regressed` when it is more than 10 % below the baseline.
 
 The two results must be of the same scenario and the same target.
 
 ## Use a measurement in a stress profile
 
-1. Open the stress profile under **Simulate**.
-2. Find the service time.
-3. Select the k6 run under **Source of this value**.
-4. Select **Save**.
+1. On the **Simulate** tab, select **Edit** on the stress profile.
+2. Find the service time under **Service times**.
+3. Enter the value that the k6 run measured. Vellum does not copy a number from the result into the profile.
+4. Select the k6 run in **Source of this value**. The field shows only when the project has an imported result.
+5. Select **Save**.
 
-The service time now has the label `measured` and names the result. Vellum refuses the label `measured` for a value that names no imported result of the project.
+The service time now has the label `measured` and names the result as `k6:<result ID>`. The result dialog shows this name under **Use in a stress profile**.
+
+Vellum refuses the label `measured` for a value that names no imported result of the project.
+
+Vellum does not delete a result while a stress profile names it. Set **Source of this value** back to **Declared: a person states it** first.
+
+A stress run reports the confidence `medium` when each service time on the path of the flow is `measured`. In all other cases it reports `low`.
 
 ## When a result is stale
 
@@ -200,4 +225,19 @@ Do not run a load test against a production system unless the owner of that syst
 
 A script for a production-class target leaves out every `POST`, `PUT`, `PATCH` and `DELETE` request. Vellum generates no script for a production-class target when the scenario declares faults.
 
-An owner can set an override on the target. See [k6 result format and target rules](/reference/k6-results-and-targets/).
+An owner can set an override on a production-class target:
+
+1. Select the target in the list under **Targets**.
+2. Under **Production override**, select what to allow: **Allow non-idempotent operations: POST, PUT, PATCH and DELETE requests** or **Allow failure injection: scripts for a scenario with faults**.
+3. Give the reason in **Reason**.
+4. Type the name of the target to confirm.
+5. Select **Set the override**.
+
+Vellum writes the override into the header of each script and into the audit log. To remove it, select **Clear the override**.
+
+## See also
+
+- [k6 result format and target rules](/reference/k6-results-and-targets/) for the file formats, the rules and the endpoints.
+- [Stress a flow](/how-to/stress-a-flow/) to make the stress profile and the simulation run.
+- [Stress model](/reference/stress-model/) for the confidence rule.
+- [Estimates are not measurements](/concepts/estimates-are-not-measurements/) for the difference between the two labels.
