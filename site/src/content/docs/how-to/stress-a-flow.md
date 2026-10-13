@@ -19,16 +19,18 @@ You need the Editor role to save a profile and to run it. A Viewer can read prof
 2. Select **New**.
 3. Give the profile a name.
 4. Select the scenario.
-5. Give a seed. The same seed gives the same result.
+5. Check the seed, or give another one. The same seed gives the same result.
 
 A project holds 50 stress profiles at most.
+
+A new profile starts with four values from the **Simulation** settings of the workspace: the seed, the duration, the warm-up and the arrival rate. On a new instance these are seed 1, 300 seconds, 5 seconds and 10 flows per second. The pattern of a new profile is **Poisson**. Change each value in the form as you need. The profile keeps the values that you save. A later change of the settings does not change the profile. A workspace owner changes the start values: see [Configure a workspace](/how-to/configure-settings/#set-the-start-values-of-a-stress-profile).
 
 ## State the arrivals
 
 1. Select a pattern: **Constant**, **Poisson**, **Ramp** or **Burst windows**.
 2. Give the rate in flows per second.
 3. Give the duration in seconds.
-4. Give the warm-up in seconds. Flows that start during the warm-up are simulated and left out of the statistics.
+4. Give the warm-up in seconds. It must be shorter than the duration. Flows that start during the warm-up are simulated and left out of the statistics.
 
 ## State the capacity
 
@@ -101,7 +103,7 @@ A stored run names its engine version too. [Stress model](/reference/stress-mode
 - **The scenario has issues.** Correct the scenario first.
 - **The run is over a limit.** Lower the rate or the duration. A run can have 200000 arrivals at most. A run must end in 20 seconds of real time. The [stress model](/reference/stress-model/) lists all limits.
 - **Too many stress runs.** The workspace is at its limit: 2 runs at the same time and 30 runs in one minute. Wait the stated number of seconds.
-- **The instance is busy with other stress runs.** The instance is at its limit for all workspaces: 4 runs at the same time. Wait the stated number of seconds.
+- **The instance is busy with other stress runs.** The instance is at its limit for all workspaces. The limit is 4 runs at the same time, unless the instance administrator changed it. Wait the stated number of seconds. The instance administrator changes the limit under **Settings → Instance → Stress runs at the same time**: see [Configure a workspace](/how-to/configure-settings/#bound-the-stress-runs-of-the-instance).
 
 A refused run stores nothing.
 

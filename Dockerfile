@@ -21,6 +21,11 @@ COPY --from=web /src/Vellum/wwwroot/ src/Vellum/wwwroot/
 RUN dotnet publish src/Vellum/Vellum.csproj -c Release -o /app --no-restore
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0
+# The Postgres driver loads the GSSAPI library when it opens a connection. Without the
+# library it writes "Cannot load library libgssapi_krb5.so.2" to the log at each start.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libgssapi-krb5-2 \
+    && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=api /app ./
 # The local profile writes its generated master key and its setup code here. The non-root app user owns the

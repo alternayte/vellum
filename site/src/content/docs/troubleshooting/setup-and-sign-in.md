@@ -58,13 +58,13 @@ If the operator set `Vellum__SetupToken`, the log has no code. The screen then s
 
 **Symptom:** `POST /api/setup` or `POST /api/auth/login` answers `429`. The answer has a `Retry-After` header. The sign-in screen shows **Invalid email or password**, because it shows this text for each failed sign-in.
 
-**Cause:** These two endpoints accept 10 calls in one minute from one client address.
+**Cause:** Setup, sign-in and the two steps of a sign-in with a provider each accept 10 calls in one minute from one client address. Registration accepts 10 new accounts in one minute from one client address.
 
 **Fix:**
 
 1. Wait for the number of seconds in `Retry-After`.
 2. Try again.
-3. If all users get `429` behind a reverse proxy, Vellum sees the address of the proxy as the client. Set `ASPNETCORE_FORWARDEDHEADERS_ENABLED=true` and start again.
+3. If all users get `429` behind a reverse proxy, Vellum sees the address of the proxy as the client. Set `Vellum__TrustedProxies` to the address of the proxy and start again. See [The reverse proxy is not trusted](#the-reverse-proxy-is-not-trusted).
 
 ## The password is refused
 
@@ -103,17 +103,40 @@ Vellum has no password reset by email.
 **Cause:** The browser does not send the session cookie. The cookie is `HttpOnly` and `SameSite=Strict`.
 
 - With `Vellum__SecureCookies=true`, or in the hosted profile, the cookie is always Secure. A browser does not send a Secure cookie over plain `http`, except to `localhost`.
-- Behind a reverse proxy without `ASPNETCORE_FORWARDEDHEADERS_ENABLED=true`, Vellum sees each request as plain `http`.
+- Behind a reverse proxy that `Vellum__TrustedProxies` does not name, Vellum sees each request as plain `http`.
 - A page on another site that calls the API does not get the cookie, because of `SameSite=Strict`.
 
 **Fix:**
 
 1. Open the app over `https`.
-2. Behind a reverse proxy, set `ASPNETCORE_FORWARDEDHEADERS_ENABLED=true`. Make the proxy send the `X-Forwarded-Proto` and `X-Forwarded-For` headers.
+2. Behind a reverse proxy, set `Vellum__TrustedProxies` to the address of the proxy. Make the proxy send the `X-Forwarded-Proto` and `X-Forwarded-For` headers. See [The reverse proxy is not trusted](#the-reverse-proxy-is-not-trusted).
 3. In the local profile on a trusted network with plain `http`, remove `Vellum__SecureCookies` or set it to `false`.
 4. For `curl`, keep the cookie in a file and send it with each request: [Use the HTTP API](/how-to/use-the-http-api/). An agent uses an agent token and not the cookie: [Connect a coding agent](/how-to/connect-a-coding-agent/).
 
 A session ends 7 days after the last request.
+
+## The reverse proxy is not trusted
+
+**Symptom:** Behind a reverse proxy, one or more of these occur.
+
+- All users share one rate limit, and all get `429` together.
+- In the hosted profile, the responses have no `Strict-Transport-Security` header.
+- In the local profile, the session cookie is not Secure although the browser uses `https`.
+
+**Cause:** Vellum reads `X-Forwarded-For` and `X-Forwarded-Proto` only from a sender that `Vellum__TrustedProxies` names. Without the value, or when the proxy has another address, Vellum ignores the two headers. It then sees the address of the proxy as the client and `http` as the scheme.
+
+Do not set `ASPNETCORE_FORWARDEDHEADERS_ENABLED`. Vellum does not need it. The web framework reads it and then trusts the two headers from every sender.
+
+**Fix:**
+
+1. Find the address that Vellum sees for the proxy. For a proxy on the Docker host, that is the gateway of the Compose network. With `docker-compose.hosted.example.yml` the gateway is `172.30.250.1`.
+2. Set `Vellum__TrustedProxies` to that address, or to the narrowest CIDR range that holds the proxy. Separate more than one entry with `;`, for example `10.0.0.5;172.20.0.0/16`.
+3. Make the proxy set `X-Forwarded-Proto`, and set or append `X-Forwarded-For`.
+4. Start again.
+
+Vellum reads only the last hop of `X-Forwarded-For`. That is the value that your proxy wrote. With two proxies in a row, Vellum sees the address of the first proxy as the client.
+
+An entry that is no address and no range stops the start. So does a range that holds every address, such as `0.0.0.0/0`. See [Vellum does not start](/troubleshooting/start-up-refusals/#the-trusted-proxies-value-is-not-valid).
 
 ## Registration fails
 
@@ -137,7 +160,7 @@ Limit: when registration is closed, nobody can add an account. Vellum has no end
 
 ## Sign-in with GitHub or Google answers 409
 
-**Symptom:** After the provider page, `GET /api/auth/external/callback` answers `409` with the type `account_exists` and the title `An account with this email address already exists`.
+**Symptom:** After the provider page, `GET /api/auth/external/complete` answers `409` with the type `account_exists` and the title `An account with this email address already exists`.
 
 **Cause:** An account with a password has the same email address. Vellum does not link a provider to an existing account.
 
@@ -149,12 +172,20 @@ Limit: when registration is closed, nobody can add an account. Vellum has no end
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `400` with `Email not provided by external provider` | The provider gave no email address. | Sign in with a password. |
+| `404` with the type `not_found` and the title `This sign-in provider is not configured`, after you select **Sign in with GitHub** or **Sign in with Google** | The instance has no client ID and no client secret for the provider. The sign-in screen shows the two buttons on each instance. | Set `Authentication__GitHub__ClientId` and `Authentication__GitHub__ClientSecret`, or the two `Authentication__Google__…` values, and start again. |
+| `400` with the type `validation_error` and the title `The provider gave no verified email address` | Vellum accepts only the primary email address of the GitHub account, and only when GitHub verified it. The account has no such address. | Verify a primary email address at GitHub. Then sign in again. |
+| `400` with the type `external_sign_in_failed` and the title `The sign-in with GitHub did not complete` | You refused the request at GitHub, the answer came to another browser than the one that started the sign-in, or GitHub refused the code. | Start the sign-in again from the sign-in screen of Vellum. |
+| GitHub shows that the redirect URI does not match | The callback URL of the OAuth app at GitHub is not the callback URL of this instance. | At GitHub, set the callback URL to `https://<your-host>/api/auth/external/callback`. |
+| `401` from `GET /api/auth/external/complete` | The browser opened the address directly, with no sign-in at the provider before it. | Start the sign-in from the sign-in screen. |
 | `403` with the type `registration_closed` | A first sign-in with a provider creates an account, and registration is closed. | Ask the instance administrator to open registration. |
 | `403` with the type `setup_required` | A provider sign-in never creates the first account. | Complete first-run setup. |
-| The button does nothing useful | The provider is not configured. | Set `Authentication__GitHub__ClientId` and `Authentication__GitHub__ClientSecret`, or the two `Authentication__Google__…` values. |
+| `429` with the type `rate_limited` | The start and the completion of a provider sign-in each accept 10 calls in one minute from one client address. | Wait for the number of seconds in `Retry-After`. |
 
-Limit: sign-in with GitHub is not tested and is expected to fail with `Email not provided by external provider`. The GitHub registration uses the path of the callback route of the app as its own callback path, and it maps no email address.
+A sign-in with GitHub uses two paths. GitHub sends the browser to `/api/auth/external/callback`. Vellum checks the answer there and then sends the browser to `/api/auth/external/complete`, which creates the session. Register only the first path at GitHub.
+
+Vellum does not take the public email address of a GitHub profile. The owner of the profile types that text, and GitHub does not verify it.
+
+Limit: the automated tests run the sign-in with GitHub against a stand-in for GitHub, not against GitHub itself. Sign-in with Google has no test.
 
 ## See also
 

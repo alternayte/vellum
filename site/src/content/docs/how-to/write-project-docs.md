@@ -66,9 +66,42 @@ When the diagram does not exist, the card shows **View not found**.
 
 ## Know what the text can contain
 
-- The text is Markdown with two tags: `ElementLink` and `LiveView`.
-- Vellum removes JavaScript expressions in braces and `import` and `export` lines before it shows the text. They do not run.
-- Text that Vellum cannot show gives **MDX render error** and the reason in the **Read** mode. A tag that is not closed is a frequent cause. Go to **Edit** and correct the text.
+Vellum reads the text with an MDX parser and builds the page from the parsed tree. It generates no program from the text and evaluates nothing. A document is text that an editor, an import or an AI wrote, so it is shown as a document and never run.
+
+The **Read** mode shows these parts.
+
+| Part | Support |
+|---|---|
+| Markdown | Headings, paragraphs, emphasis, links, images, lists, block quotes, inline code, code blocks and horizontal rules. |
+| GitHub Flavored Markdown | Tables, task lists, strikethrough, footnotes and plain URLs as links. |
+| Code blocks | A block with a language name has syntax colours. |
+| The two tags of Vellum | `<ElementLink id="..."/>` and `<LiveView id="..."/>`. The `id` must be plain text in quotation marks. |
+| HTML tags | A tag in lower case, for example `<kbd>`, `<sub>`, `<sup>` or `<br/>`, with attributes that are plain text. |
+
+The **Read** mode leaves these parts out. It shows no message for them.
+
+| Part | Example |
+|---|---|
+| An expression in braces | `{1 + 1}`, `{fetch("https://example.com")}` |
+| An `import` or an `export` line | `import X from "y"` |
+| An attribute with an expression as its value | `id={someId}` |
+| An event handler attribute | `onclick="..."` |
+| A tag that loads or runs something, with its content | `script`, `style`, `iframe`, `object`, `embed`, `link`, `meta`, `base`, `form`, `frame`, `frameset`, `template`, `svg`, `math` |
+| A component tag that is not `ElementLink` or `LiveView`, with its content | `<Chart/>` |
+| A link or an image address with another scheme than `http`, `https` or `mailto` | `javascript:...`, `data:...` |
+| A style value that loads something | `url(...)` |
+| A comment in braces | `{/* note */}` |
+
+A relative address, an address that starts with `/` and an address that starts with `#` are shown.
+
+The parser still reads the text as MDX. So these rules apply in the **Edit** mode.
+
+- To show a brace or a `<` as text, put it in inline code or in a code block, or write `\{` or `\<`.
+- Close each tag. Write `<br/>`, not `<br>`.
+- Do not write an HTML comment (`<!-- note -->`). The parser refuses it. Write `{/* note */}`.
+- Text that the parser cannot read gives **MDX render error** and the reason in the **Read** mode. A tag that is not closed, a brace that is not closed and an HTML comment are frequent causes. Go to **Edit** and correct the text.
+
+The page of Vellum loads images from its own origin only. An image with an address on another host has a place in the page, and the browser does not load it. See [Security model](/concepts/security-model/#the-browser).
 
 ## Manage documents through the API
 

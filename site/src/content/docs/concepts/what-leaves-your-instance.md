@@ -1,6 +1,6 @@
 ---
 title: What leaves your instance
-description: Which data Vellum sends to GitHub and to AI providers, and the controls on it.
+description: Which data Vellum sends to GitHub, to AI providers and to a telemetry collector, and the controls on it.
 ---
 
 This page explains which data leaves a Vellum instance and what controls it.
@@ -10,6 +10,8 @@ This page explains which data leaves a Vellum instance and what controls it.
 Vellum sends a request to another service only for these functions: a GitHub read, an AI task and an Azure price search. Modelling, tracing, review rules, cost estimates, stress runs and export run on your instance.
 
 Vellum generates a k6 script. It does not run the script and it sends no load to a system.
+
+Vellum sends no telemetry by default. See [Telemetry](#telemetry).
 
 ## GitHub
 
@@ -41,8 +43,26 @@ The instance policy **Allow URLs on private networks** controls addresses on pri
 
 Vellum ignores the proxy settings of the machine. An instance that can reach the internet only through a proxy cannot reach a provider.
 
+## Telemetry
+
+Telemetry is the traces, the metrics and the logs of the program. It leaves the instance only when the operator sets the environment variable `OTEL_EXPORTER_OTLP_ENDPOINT`. Vellum then sends it to the OTLP collector at that address, and to no other place. With no value, Vellum sends no telemetry to another machine.
+
+The operator selects the collector. Vellum has no collector of its own, and no telemetry goes to the makers of Vellum.
+
+No screen and no API call turns telemetry on. The instance administrator reads the state under **Settings → Instance → Telemetry**. The panel shows **Off. This instance sends no traces, metrics or logs to another machine.** or **On. Traces, metrics and logs go to** with the host name of the collector.
+
+Vellum removes these things before telemetry leaves the process:
+
+- The query string of each request and of each URL in a log line.
+- The path of each outbound address. The scheme, the host and the port stay.
+- Text that looks like a credential, in each text value of a span and of a log record.
+
+A span holds no request header and no request body. The tags of the counters are short fixed words. They hold no workspace, no user and no text from a request.
+
+Telemetry holds no prompt, no reply and no model data on purpose. But a log line can hold a name from your model, for example in an error message, and the credential filter does not find a secret that has no known shape. Send telemetry only to a collector that you trust. [Diagnostics and logs](/runbooks/diagnostics-and-logs/#telemetry) lists the signals and the counters.
+
 ## What Vellum keeps
 
-Vellum records each AI call without the prompt and without the reply. See [AI usage and prices](/reference/ai-usage-and-prices/). The logs and the telemetry of an outbound request hold a provider label, an operation label, the status class and the duration. They hold no address, no header and no body.
+Vellum records each AI call without the prompt and without the reply. See [AI usage and prices](/reference/ai-usage-and-prices/). The log lines, the span and the metrics that Vellum writes for an outbound request hold a provider label, an operation label, the status class and the duration. They hold no address, no header and no body. With telemetry on, the HTTP client of the framework also writes a span for the request. That span holds the scheme, the host and the port of the address, and no path.
 
 See [Security model](/concepts/security-model/) for the controls on what comes in.

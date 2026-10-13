@@ -206,6 +206,32 @@ A second message is for the setup code: `The setup code file '<path>' cannot be 
 2. Start again.
 3. Give the token to the person who does the setup.
 
+## The trusted proxies value is not valid
+
+**Message:** `Vellum__TrustedProxies is not valid. Set it to the addresses or CIDR ranges of your reverse proxies, separated by ';', for example '10.0.0.5;172.20.0.0/16'. A range that holds every address is not accepted.`
+
+**Cause:** One entry of `Vellum__TrustedProxies` is no IP address and no CIDR range. Or it is a range with the prefix length 0, such as `0.0.0.0/0`. A host name is not accepted.
+
+**Fix:**
+
+1. Set each entry to the address that Vellum sees for a reverse proxy, or to the narrowest range that holds it.
+2. Separate the entries with `;`.
+3. With no reverse proxy, remove the variable.
+4. Start again.
+
+With `docker-compose.hosted.example.yml` you set `VELLUM_TRUSTED_PROXIES`. See [Run in hosted mode](/how-to/run-in-hosted-mode/#configure-the-reverse-proxy).
+
+## The telemetry endpoint is not valid
+
+**Message:** `OTEL_EXPORTER_OTLP_ENDPOINT is not valid. Set it to the http or https address of an OTLP collector, for example http://otel-collector:4317, or remove it to turn telemetry off.`
+
+**Cause:** The value is not an absolute URL with the scheme `http` or `https`. A frequent cause is a value with no scheme, such as `otel-collector:4317`.
+
+**Fix:**
+
+1. Set the value to the address of the collector with its scheme, or remove the variable.
+2. Start again.
+
 ## The database cannot be reached
 
 **Message, local profile with no key file:** `Vellum has no master key file yet and cannot reach the database to check that no row is encrypted under another key (<error>). Start the database, or check ConnectionStrings__DefaultConnection, and start again.`

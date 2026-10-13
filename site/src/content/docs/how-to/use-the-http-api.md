@@ -64,6 +64,44 @@ The last command prints:
 
 A create answers `201` with the new thing. A change is a `PATCH` or a `PUT` on the path of the thing, and a removal is a `DELETE`.
 
+## Know the rule for writes with the cookie
+
+Vellum checks where each request that can change state comes from. That is each request with a method other than `GET`, `HEAD`, `OPTIONS` and `TRACE`. The check stops a page of another origin that uses the session of a person in a browser.
+
+| The request has | Vellum |
+|---|---|
+| No `Sec-Fetch-Site` header and no `Origin` header | Accepts it. |
+| `Sec-Fetch-Site: same-origin` or `Sec-Fetch-Site: none` | Accepts it. |
+| `Sec-Fetch-Site` with another value, for example `cross-site` or `same-site` | Refuses it with `403`. An `Origin` header does not change this. |
+| No `Sec-Fetch-Site` header, and an `Origin` header with the host and the port of the request | Accepts it. The scheme is not compared. |
+| No `Sec-Fetch-Site` header, and an `Origin` header with another host or port | Refuses it with `403`. |
+| An agent token in the `Authorization` header | Does not check it. |
+
+`curl` sends neither header. So the examples on this page need no extra header, and this command creates a project:
+
+```sh
+curl -sS -b vellum.cookies -H 'content-type: application/json' \
+  -d '{"id": "00000000-0000-4000-8000-000000000101", "name": "API example"}' \
+  -w '\n%{http_code}\n' "$VELLUM_URL/api/workspaces/$WORKSPACE/projects"
+```
+
+Do not copy the headers of a browser into a script. If your tool adds an `Origin` header, make its value the address of your instance:
+
+```sh
+curl -sS -b vellum.cookies -H 'content-type: application/json' -H "Origin: $VELLUM_URL" \
+  -d '{"id": "00000000-0000-4000-8000-000000000102", "name": "API example"}' \
+  -w '\n%{http_code}\n' "$VELLUM_URL/api/workspaces/$WORKSPACE/projects"
+```
+
+Behind a reverse proxy, the `Origin` value must have the host name that Vellum sees in the `Host` header. That is the public host name when the proxy passes `Host` on unchanged.
+
+A refused request gets this answer, and Vellum changes nothing:
+
+```text
+{"type":"cross_site_request","title":"The request does not come from this app","detail":"A page of another origin sent it. Open Vellum and do it there.","errors":null}
+403
+```
+
 ## Read an error
 
 An error has a JSON body with a `type`, a `title` and, for some errors, a `detail` or a list `errors` with one entry for each field.
@@ -99,7 +137,7 @@ Read the `type` in a script, not the `title`. [Conflicts and refused requests](/
 |---|---|
 | `400` | The request is not valid. `errors` names each field. |
 | `401` | No session, or the session ended. Sign in again. |
-| `403` | The account has no access to the workspace, the role is too low, or an agent token called an endpoint for people. |
+| `403` | The account has no access to the workspace, the role is too low, or an agent token called an endpoint for people. With the type `cross_site_request`, a write has a `Sec-Fetch-Site` or an `Origin` header that names another origin. |
 | `404` | The thing does not exist. |
 | `409` | The request conflicts with the stored state. Read the state again, then decide. |
 | `413` | The body is larger than the limit of the endpoint. |
@@ -158,7 +196,9 @@ An instance serves the document at `/openapi/v1.json` only when it runs in the `
 
 - The API has no version in its path. Vellum has no tagged release yet, and an endpoint can change between commits.
 - The OpenAPI document has no description for an endpoint or a field. The how-to and reference pages of each feature give the meaning.
-- The paths `/health`, `/mcp`, `/llms.txt`, `/llms-full.txt` and `/skills/vellum/SKILL.md` are not in the OpenAPI document.
+- The paths `/health`, `/health/live`, `/health/ready`, `/mcp`, `/llms.txt`, `/llms-full.txt` and `/skills/vellum/SKILL.md` are not in the OpenAPI document. The path `/api/auth/external/callback` is not in it either: the sign-in with GitHub answers it, and only GitHub sends a browser there.
+- A caller with no valid credential gets 300 calls in one minute from one address to `/api`, `/mcp`, `/llms.txt`, `/llms-full.txt` and `/skills` together. After that the answer is `429`. A call with a valid session cookie or a valid agent token does not count.
+- Each answer of `/api` and `/mcp` has the header `Cache-Control: no-store`.
 
 ## See also
 
