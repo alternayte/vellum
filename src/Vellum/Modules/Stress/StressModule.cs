@@ -41,6 +41,7 @@ public static class StressModule
 
         stress.MapGet("/requirements", StressProfiles.Requirements).Produces<StressRequirements>();
 
+        stress.MapGet("/defaults", StressProfiles.Defaults).Produces<StressProfileDefaults>();
         stress.MapGet("/profiles", StressProfiles.List).Produces<IReadOnlyList<StressProfileSummaryDto>>();
         stress.MapPost("/profiles", StressProfiles.Create)
             .Accepts<StressProfile>("application/json")

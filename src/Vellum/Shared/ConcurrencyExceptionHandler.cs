@@ -1,6 +1,7 @@
 using Deedbox;
 using Microsoft.AspNetCore.Diagnostics;
 using Npgsql;
+using Vellum.Shared.Telemetry;
 
 namespace Vellum.Shared;
 
@@ -36,6 +37,8 @@ public sealed class ConcurrencyExceptionHandler : IExceptionHandler
         };
         if (status == 0)
             return false;
+        if (exception is ConcurrencyException)
+            VellumMetrics.AppendConflict();
 
         if (status == StatusCodes.Status503ServiceUnavailable)
             httpContext.Response.Headers.RetryAfter = "1";

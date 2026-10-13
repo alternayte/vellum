@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Vellum.Modules.Views.Entities;
 using Vellum.Modules.Workspaces.Authorization;
+using Vellum.Shared;
 
 namespace Vellum.Modules.Views;
 
@@ -18,6 +19,9 @@ public static class CreateView
     {
         var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
+
+        if (ResultExtensions.Refusal(ResultExtensions.Required("name", request.Name), TextRule.Line("name", request.Name)) is { } refusal)
+            return refusal;
 
         var existing = await db.Views.FindAsync([request.Id], ct);
         if (existing is not null)

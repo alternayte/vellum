@@ -201,7 +201,7 @@ public class IdentityEndpointTests
         var signIn = await client.GetAsync($"/test/external-sign-in?sub={subject}&email={Uri.EscapeDataString(email)}");
         Assert.Equal(HttpStatusCode.OK, signIn.StatusCode);
         Assert.True(signIn.Headers.Contains("Set-Cookie"), "The stand-in provider set no cookie.");
-        return await client.GetAsync("/api/auth/external/callback");
+        return await client.GetAsync("/api/auth/external/complete");
     }
 
     [Fact]

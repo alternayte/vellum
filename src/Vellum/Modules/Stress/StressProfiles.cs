@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Vellum.Modules.LoadTests;
 using Vellum.Modules.Modelling;
 using Vellum.Modules.Schemas;
+using Vellum.Modules.Settings.Document;
 using Vellum.Modules.Stress.Engine;
 using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Shared;
@@ -12,6 +13,9 @@ using Vellum.Shared;
 namespace Vellum.Modules.Stress;
 
 public sealed record StressProfileSummaryDto(Guid Id, string Name, Guid ScenarioId, int Version, DateTimeOffset UpdatedAt, int Runs);
+
+/// <summary>The seed, the window and the arrival rate that the form of a new profile shows first.</summary>
+public sealed record StressProfileDefaults(string Seed, double DurationSeconds, double WarmUpSeconds, double ArrivalRatePerSecond);
 
 /// <param name="Measurements">
 /// The measured service times of the profile, each with <c>measurementStale</c>: whether the
@@ -65,6 +69,24 @@ public static class StressProfiles
                 ? StressAccess.NotFound("Scenario")
                 : Results.Ok(StressEngine.Requirements(world.Model, world.Scenario));
         }, ct);
+
+    /// <summary>
+    /// What a new profile of this project starts with: the workspace's simulation settings,
+    /// held inside the limits of a run.
+    /// </summary>
+    public static async Task<IResult> Defaults(
+        Guid projectId, ClaimsPrincipal user, WorkspaceAuthorizationService auth, SettingsResolver settings, StressLimits limits, CancellationToken ct)
+    {
+        await auth.RequireProjectRoleAsync(projectId, StressAccess.UserId(user), WorkspaceRole.Viewer, ct);
+
+        var simulation = (await settings.GetWorkspaceAsync(await auth.GetProjectWorkspaceIdAsync(projectId, ct), ct)).Effective.Simulation;
+        var duration = Math.Min(simulation.DurationSeconds, limits.MaxDurationSeconds);
+        return Results.Ok(new StressProfileDefaults(
+            simulation.Seed.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            duration,
+            Math.Min(simulation.WarmUpSeconds, Math.Max(0, duration - 1)),
+            simulation.ArrivalRatePerSecond));
+    }
 
     public static async Task<IResult> Create(
         Guid projectId, HttpContext http, ClaimsPrincipal user, WorkspaceAuthorizationService auth,

@@ -9,7 +9,9 @@ using Vellum.Modules.Modelling.Model;
 using Vellum.Modules.Schemas;
 using Vellum.Modules.Stress.Engine;
 using Vellum.Modules.Workspaces.Authorization;
+using Vellum.Modules.Settings.Document;
 using Vellum.Shared;
+using Vellum.Shared.Telemetry;
 
 namespace Vellum.Modules.Stress;
 
@@ -47,7 +49,7 @@ public static class StressRuns
     public static Task<IResult> Run(
         Guid projectId, Guid profileId, Guid? branchId,
         HttpContext http, IEventStore store, SchemasDbContext schemasDb, StressDbContext db, LoadTestsDbContext loadTestsDb,
-        WorkspaceAuthorizationService auth, StressRunGate gate, StressLimits limits, StressRunPolicy policy, TimeProvider time,
+        WorkspaceAuthorizationService auth, StressRunGate gate, StressLimits limits, StressRunPolicy policy, SettingsResolver settings, TimeProvider time,
         CancellationToken ct) =>
         ModelBranches.RunAsync(http, projectId, branchId, WorkspaceRole.Editor, async (streamId, userId) =>
         {
@@ -56,9 +58,13 @@ public static class StressRuns
                 return StressAccess.NotFound("Stress profile");
             var profile = StressProfiles.Read(row.Document);
 
-            using var place = gate.TryEnter(await auth.GetProjectWorkspaceIdAsync(projectId, ct), out var refusal);
+            // Read for each run, so a change of the instance policy applies with no restart.
+            var instancePolicy = (await settings.GetInstanceAsync(ct)).Policy;
+            using var place = gate.TryEnter(
+                await auth.GetProjectWorkspaceIdAsync(projectId, ct), instancePolicy.MaxConcurrentStressRuns, out var refusal);
             if (place is null)
             {
+                VellumMetrics.StressRunEnded(refusal!.Code);
                 var seconds = Math.Max(1, (int)Math.Ceiling(refusal!.RetryAfter.TotalSeconds));
                 http.Response.Headers.RetryAfter = seconds.ToString(CultureInfo.InvariantCulture);
                 return Results.Json(
@@ -87,7 +93,10 @@ public static class StressRuns
             var outcome = await Task.Run(() => StressEngine.Run(world.Model, world.Scenario, profile, limits, budget.Token, doubts), CancellationToken.None);
             ct.ThrowIfCancellationRequested();
             if (outcome.Result is not { } result)
+            {
+                VellumMetrics.StressRunEnded(outcome.Issues.Any(i => i.Code == "stress-too-large") ? "too_large" : "refused");
                 return Refused(outcome.Issues);
+            }
 
             var run = new StressRunEntity
             {
@@ -114,6 +123,7 @@ public static class StressRuns
                 .Take(policy.MaxRunsPerProfile).Select(r => r.Id);
             await db.Runs.Where(r => r.ProfileId == profileId && !keep.Contains(r.Id)).ExecuteDeleteAsync(ct);
             await transaction.CommitAsync(ct);
+            VellumMetrics.StressRunEnded("stored");
 
             return Results.Created($"/api/projects/{projectId}/stress/runs/{run.Id}",
                 new StressRunDto(Dto(run, held[0].Version, world.ModelVersion, world.ScenarioVersion), profile, result));

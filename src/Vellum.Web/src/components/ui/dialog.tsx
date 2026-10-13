@@ -51,15 +51,45 @@ function DialogContent({
   className,
   children,
   showCloseButton = true,
+  onOpenAutoFocus,
+  onCloseAutoFocus,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
   showCloseButton?: boolean
 }) {
+  // The control that had the focus when the dialog opened. The primitive gives the focus
+  // back only to a DialogTrigger; most dialogs here are opened from state (a menu item, a
+  // key, a row), and they give it back to this control.
+  const opener = React.useRef<HTMLElement | null>(null)
   return (
     <DialogPortal>
       <DialogOverlay />
       <DialogPrimitive.Content
         data-slot="dialog-content"
+        // The field that takes the focus first is marked with data-autofocus, not with
+        // autoFocus: React focuses an autoFocus field before the dialog has noted which
+        // control had the focus, and the focus then has no place to go back to on close.
+        onCloseAutoFocus={(event) => {
+          onCloseAutoFocus?.(event)
+          const target = opener.current
+          if (event.defaultPrevented || !target?.isConnected) return
+          event.preventDefault()
+          target.focus()
+        }}
+        onOpenAutoFocus={(event) => {
+          // A second mount of the same dialog (React's strict mode in development) finds the
+          // focus inside the dialog already, and keeps the control it noted first.
+          const active = document.activeElement
+          const inside = (event.currentTarget as HTMLElement | null)?.contains(active) ?? false
+          if (active instanceof HTMLElement && active !== document.body && !inside) opener.current = active
+          onOpenAutoFocus?.(event)
+          if (event.defaultPrevented) return
+          const first = (event.currentTarget as HTMLElement | null)?.querySelector<HTMLElement>('[data-autofocus]')
+          if (first) {
+            event.preventDefault()
+            first.focus()
+          }
+        }}
         className={cn(
           "fixed top-1/2 left-1/2 z-50 grid w-full max-w-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl bg-popover p-4 text-sm text-popover-foreground ring-1 ring-foreground/10 duration-100 outline-none sm:max-w-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
           className

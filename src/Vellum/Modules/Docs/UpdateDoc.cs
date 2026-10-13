@@ -13,6 +13,9 @@ public sealed record UpdateDocRequest(
 
 public static class UpdateDoc
 {
+    /// <summary>A page of Markdown. The request body limit (<see cref="RequestBodyLimit.Document"/>) is the bound in bytes.</summary>
+    public const int MaxContentChars = 1_000_000;
+
     public static async Task<IResult> Handle(
         Guid projectId, Guid docId,
         UpdateDocRequest request,
@@ -23,6 +26,13 @@ public static class UpdateDoc
     {
         var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
+
+        if (ResultExtensions.Refusal(
+                request.Title is null ? null : ResultExtensions.Required("title", request.Title),
+                TextRule.Line("title", request.Title),
+                TextRule.Lines("content", request.Content, UpdateDoc.MaxContentChars),
+                TextRule.Line("type", request.Type, TextRule.MaxIdentifier)) is { } refusal)
+            return refusal;
 
         var doc = await db.Documents.FindAsync([docId], ct);
         if (doc is null || doc.ProjectId != projectId)

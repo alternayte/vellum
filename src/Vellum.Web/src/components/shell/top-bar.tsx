@@ -72,6 +72,7 @@ export function TopBar({ projectId, projectName, activeDoc }: TopBarProps) {
       <button
         className="flex h-7 w-7 items-center justify-center rounded-full bg-primary text-[10px] font-medium text-primary-foreground"
         onClick={handleLogout}
+        aria-label={`Log out (signed in as ${initials})`}
         title="Log out"
       >
         {initials}

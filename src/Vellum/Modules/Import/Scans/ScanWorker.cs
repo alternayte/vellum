@@ -8,6 +8,7 @@ using Vellum.Modules.Import.Extraction;
 using Vellum.Modules.Import.Proposals;
 using Vellum.Modules.Settings.Document;
 using Vellum.Modules.Workspaces;
+using Vellum.Shared.Telemetry;
 
 namespace Vellum.Modules.Import.Scans;
 
@@ -670,6 +671,7 @@ public sealed class ScanWorker(
         }
 
         var waiting = stop.Status == ScanStatus.Waiting;
+        VellumMetrics.ImportScanEnded(stop.Status);
         DateTimeOffset? retryAt = !waiting ? null : stop.Error is null ? RetryAt(stop.RetryAt) : stop.RetryAt;
         DateTimeOffset? completedAt = waiting ? null : now;
 

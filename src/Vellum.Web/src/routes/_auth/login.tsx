@@ -55,6 +55,7 @@ function LoginPage() {
       <form onSubmit={handleSubmit} className="space-y-3">
         <Input
           type="email"
+          aria-label="Email"
           placeholder="Email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
@@ -62,6 +63,7 @@ function LoginPage() {
         />
         <Input
           type="password"
+          aria-label="Password"
           placeholder="Password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}

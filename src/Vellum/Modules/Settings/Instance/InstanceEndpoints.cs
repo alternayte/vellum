@@ -181,7 +181,8 @@ public static class UpdateInstanceSettings
             // The message of a JsonException can quote the input, so it is not passed on.
             var path = ex.Path is { Length: > 2 } p && p.StartsWith("$.", StringComparison.Ordinal) ? $"{PolicyField}.{p[2..]}" : PolicyField;
             errors.Add(new(path,
-                "The policy must state allowSelfRegistration, allowPrivateNetworkUrls, allowedAiProviderKinds and allowSendingPrivateCodeToAi, each with the right type, and no other field."));
+                "The policy must state allowSelfRegistration, allowPrivateNetworkUrls, allowedAiProviderKinds and allowSendingPrivateCodeToAi, each with the right type. " +
+                "It may state maxConcurrentStressRuns as a whole number. It holds no other field."));
             return null;
         }
 
@@ -190,6 +191,13 @@ public static class UpdateInstanceSettings
         {
             errors.Add(new("policy.allowedAiProviderKinds",
                 $"Must be a list with no repeats of: {string.Join(", ", AiProviderKinds.All)}."));
+            return null;
+        }
+
+        if (policy.MaxConcurrentStressRuns is < InstancePolicy.MinConcurrentStressRuns or > InstancePolicy.MaxConcurrentStressRunsLimit)
+        {
+            errors.Add(new("policy.maxConcurrentStressRuns",
+                $"Must be from {InstancePolicy.MinConcurrentStressRuns} to {InstancePolicy.MaxConcurrentStressRunsLimit}."));
             return null;
         }
 

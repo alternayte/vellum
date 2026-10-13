@@ -556,12 +556,14 @@ public class AgentTokenTests(IntegrationFixture fixture)
     private static readonly string[] Anonymous =
     [
         "* /health",
+        "* /health/live",
+        "* /health/ready",
         "GET /api/setup/status",
         "POST /api/setup/",
         "POST /api/auth/register",
         "POST /api/auth/login",
         "GET /api/auth/external/{provider}",
-        "GET /api/auth/external/callback",
+        "GET /api/auth/external/complete",
         "GET /llms.txt",
         "GET /llms-full.txt",
         "GET /skills/vellum/SKILL.md",

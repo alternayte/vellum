@@ -48,6 +48,7 @@ import { Input } from '@/components/ui/input'
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogFooter,
@@ -574,8 +575,10 @@ function ProjectWorkspace() {
           handleShortcutCreate(kind)
         }
       }
-      if (e.key === 'Escape') {
-        useShellStore.getState().closeCommandPalette()
+      // Escape takes one layer. A dialog, the palette or an inline editor that used the key
+      // marked it as handled, and an open flyout closes first (LeftToolbar). Only an Escape
+      // that nothing above used clears the selection.
+      if (e.key === 'Escape' && !e.defaultPrevented && !useShellStore.getState().activeFlyout) {
         useShellStore.getState().selectElement(null)
       }
     }
@@ -754,6 +757,7 @@ function ProjectWorkspace() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Add Element</DialogTitle>
+            <DialogDescription>Choose the kind and give the element a name.</DialogDescription>
           </DialogHeader>
           <form
             onSubmit={(e) => {
@@ -766,8 +770,9 @@ function ProjectWorkspace() {
           >
             <div className="space-y-3">
               <div>
-                <label className="mb-1 block text-xs font-medium text-muted-foreground">Kind</label>
+                <label htmlFor="new-element-kind" className="mb-1 block text-xs font-medium text-muted-foreground">Kind</label>
                 <select
+                  id="new-element-kind"
                   value={newElementKind}
                   onChange={(e) => setNewElementKind(e.target.value)}
                   className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm"
@@ -780,10 +785,11 @@ function ProjectWorkspace() {
                 </select>
               </div>
               <Input
+                aria-label="Element name"
                 placeholder="Element name"
                 value={newElementName}
                 onChange={(e) => setNewElementName(e.target.value)}
-                autoFocus
+                data-autofocus
               />
             </div>
             <DialogFooter className="mt-4">

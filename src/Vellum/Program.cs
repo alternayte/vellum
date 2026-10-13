@@ -7,6 +7,7 @@ using Microsoft.OpenApi;
 using Scalar.AspNetCore;
 using Vellum.Shared;
 using Vellum.Shared.Outbound;
+using Vellum.Shared.Telemetry;
 using Vellum.Modules.Ai;
 using Vellum.Modules.GitHub;
 using Vellum.Modules.Identity;
@@ -81,6 +82,9 @@ builder.Services.AddExceptionHandler<ConcurrencyExceptionHandler>();
 builder.Services.AddExceptionHandler<InvalidCursorExceptionHandler>();
 builder.Services.AddRequestLimits();
 
+// Operator telemetry. Nothing is exported unless OTEL_EXPORTER_OTLP_ENDPOINT names a collector.
+builder.Services.AddTelemetry(builder.Configuration, GetInstance.Version);
+
 // Event store. Each module registers its own streams and projections. The connection
 // string is read when the host starts, so configuration that a test host overrides applies.
 var servicesBeforeDeedbox = builder.Services.Count;
@@ -147,11 +151,18 @@ if (app.Environment.IsDevelopment())
     app.MapScalarApiReference();
 }
 
+// The address and the scheme of the client, from the proxies the operator names. First, so
+// everything below sees them.
+app.UseTrustedProxies();
 app.UseExceptionHandler();
+app.UseSecurityHeaders();
+app.UseSameOriginWrites();
 app.UseAuthentication();
+// After authentication, so a caller with a valid credential is known; before authorization
+// and the agent boundary, so a refused credential counts against its address.
+app.UseRateLimiter();
 app.UseAuthorization();
 app.UseAgentBoundary();
-app.UseRateLimiter();
 app.UseBodyLimits();
 app.UseRequestBodyLimits();
 

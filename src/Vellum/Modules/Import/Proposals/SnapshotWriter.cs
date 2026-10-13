@@ -259,6 +259,7 @@ internal static class SnapshotWriter
                     .SetProperty(s => s.LeaseExpiresAt, (DateTimeOffset?)null), ct);
             if (completed == 0)
                 return SnapshotOutcome.LeaseLost;
+            Vellum.Shared.Telemetry.VellumMetrics.ImportScanEnded(ScanStatus.Completed);
         }
 
         var events = new List<object>();

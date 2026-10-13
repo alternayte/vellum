@@ -51,17 +51,33 @@ public sealed record CostSettings(
 {
     public const string AzureRetailPrices = "https://prices.azure.com";
 }
-public sealed record SimulationSettings(int Seed, int DurationSeconds, double ArrivalRatePerSecond);
+/// <summary>
+/// What a new stress profile starts with. A profile keeps its own values after that; a change
+/// here does not change a profile that exists.
+/// </summary>
+/// <param name="WarmUpSeconds">Flows that start before this instant are left out of the statistics. Less than <paramref name="DurationSeconds"/>.</param>
+public sealed record SimulationSettings(int Seed, int DurationSeconds, double ArrivalRatePerSecond, int WarmUpSeconds = 5);
 public sealed record PrivacySettings(bool SendPrivateCodeToAi);
 public sealed record UsageSettings(decimal? MonthlyAiBudgetUsd, int MaxScansPerDay);
 public sealed record NotificationSettings(string? WebhookUrl);
 
 /// <summary>What the instance admin allows every workspace to choose.</summary>
+/// <param name="MaxConcurrentStressRuns">
+/// How many stress runs of all workspaces together one app process does at the same time. One
+/// run holds a thread and memory until it ends, so this number bounds what stress runs take
+/// from the instance. A body that leaves it out gets <see cref="DefaultMaxConcurrentStressRuns"/>.
+/// </param>
 public sealed record InstancePolicy(
     bool AllowSelfRegistration,
     bool AllowPrivateNetworkUrls,
     IReadOnlyList<string> AllowedAiProviderKinds,
-    bool AllowSendingPrivateCodeToAi);
+    bool AllowSendingPrivateCodeToAi,
+    int MaxConcurrentStressRuns = InstancePolicy.DefaultMaxConcurrentStressRuns)
+{
+    public const int DefaultMaxConcurrentStressRuns = 4;
+    public const int MinConcurrentStressRuns = 1;
+    public const int MaxConcurrentStressRunsLimit = 64;
+}
 
 public static class AiProviderKinds
 {

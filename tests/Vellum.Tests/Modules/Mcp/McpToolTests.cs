@@ -234,7 +234,7 @@ public class McpToolTests(IntegrationFixture fixture)
         Assert.DoesNotContain(Projects(await DataAsync(outside, "list_projects", [])), p => p!["id"]!.GetValue<Guid>() == projectA || p["id"]!.GetValue<Guid>() == projectB);
 
         // The nothing-of-the-other-workspace of a write: the stranger's calls created nothing.
-        Assert.Equal(0, (await owner.GetFromJsonAsync<JsonObject>($"/api/projects/{projectB}/promises"))!["items"]!.AsArray().Count);
+        Assert.Empty((await owner.GetFromJsonAsync<JsonObject>($"/api/projects/{projectB}/promises"))!["items"]!.AsArray());
     }
 
     [Fact]

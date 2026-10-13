@@ -41,8 +41,20 @@ services:
       Vellum__MasterKey: ${VELLUM_MASTER_KEY:-}
       Vellum__PreviousMasterKey: ${VELLUM_PREVIOUS_MASTER_KEY:-}
       Vellum__SetupToken: ${VELLUM_SETUP_TOKEN:-}
+      # Optional. Empty means "off": Vellum sends no traces, metrics or logs to another
+      # machine. Set it to the address of an OTLP collector to turn the export on.
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
     volumes:
       - vellum-data:/data
+    # The app writes to /data and to a temporary directory in memory, and to nothing else:
+    # the image is read-only, the process is not root and it has no Linux capability.
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     # The app answers /health when it reaches its database.
     healthcheck:
       test: ["CMD", "dotnet", "Vellum.dll", "health"]

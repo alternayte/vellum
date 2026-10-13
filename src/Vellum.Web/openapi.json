@@ -95,7 +95,7 @@
         }
       }
     },
-    "/api/auth/external/callback": {
+    "/api/auth/external/complete": {
       "get": {
         "tags": [
           "Auth"
@@ -7215,6 +7215,36 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/StressRequirements"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/stress/defaults": {
+      "get": {
+        "tags": [
+          "Stress"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StressProfileDefaults"
                 }
               }
             }
@@ -15061,7 +15091,8 @@
           "eventStore",
           "masterKeyId",
           "previousMasterKeyLoaded",
-          "masterKeysInUse"
+          "masterKeysInUse",
+          "telemetry"
         ],
         "type": "object",
         "properties": {
@@ -15094,6 +15125,9 @@
             "items": {
               "$ref": "#/components/schemas/MasterKeyInUse"
             }
+          },
+          "telemetry": {
+            "$ref": "#/components/schemas/TelemetryDiagnostics"
           }
         }
       },
@@ -17581,6 +17615,15 @@
           },
           "allowSendingPrivateCodeToAi": {
             "type": "boolean"
+          },
+          "maxConcurrentStressRuns": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32",
+            "default": 4
           }
         }
       },
@@ -24334,6 +24377,15 @@
               "string"
             ],
             "format": "double"
+          },
+          "warmUpSeconds": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32",
+            "default": 5
           }
         }
       },
@@ -25037,6 +25089,44 @@
             "items": {
               "$ref": "#/components/schemas/Outage"
             }
+          }
+        }
+      },
+      "StressProfileDefaults": {
+        "required": [
+          "seed",
+          "durationSeconds",
+          "warmUpSeconds",
+          "arrivalRatePerSecond"
+        ],
+        "type": "object",
+        "properties": {
+          "seed": {
+            "type": "string"
+          },
+          "durationSeconds": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "warmUpSeconds": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "arrivalRatePerSecond": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
           }
         }
       },
@@ -26002,6 +26092,24 @@
               "string"
             ],
             "format": "uuid"
+          }
+        }
+      },
+      "TelemetryDiagnostics": {
+        "required": [
+          "enabled",
+          "endpointHost"
+        ],
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "endpointHost": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },

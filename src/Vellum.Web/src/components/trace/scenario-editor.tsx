@@ -128,7 +128,7 @@ export function ScenarioEditor({ projectId, branchId, scenario, isNew, reference
 
         <label className="block text-xs font-medium text-muted-foreground">
           Name
-          <Input className="mt-1" value={name} onChange={(e) => setName(e.target.value)} placeholder="Place an order" autoFocus />
+          <Input className="mt-1" value={name} onChange={(e) => setName(e.target.value)} placeholder="Place an order" data-autofocus />
         </label>
 
         <div className="grid min-h-0 flex-1 gap-3 md:grid-cols-[minmax(0,1fr)_15rem]">

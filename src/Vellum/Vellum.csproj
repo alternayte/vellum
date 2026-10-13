@@ -13,7 +13,6 @@
     <PackageReference Include="EFCore.NamingConventions" Version="10.0.1" />
     <PackageReference Include="JsonSchema.Net" Version="9.4.1" />
     <PackageReference Include="Microsoft.AspNetCore.Authentication.Google" Version="10.0.9" />
-    <PackageReference Include="Microsoft.AspNetCore.Authentication.OAuth" Version="2.3.11" />
     <PackageReference Include="Microsoft.AspNetCore.Identity.EntityFrameworkCore" Version="10.0.9" />
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.9" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.4">
@@ -24,16 +23,23 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
+    <!-- Pinned: Microsoft.AspNetCore.OpenApi asks for 2.0.0, which has GHSA-v5pm-xwqc-g5wc. 2.7.5 is the first fixed 2.x. -->
+    <PackageReference Include="Microsoft.OpenApi" Version="2.7.5" />
     <PackageReference Include="ModelContextProtocol" Version="1.4.0" />
     <PackageReference Include="ModelContextProtocol.AspNetCore" Version="1.4.0" />
     <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.2" />
+    <PackageReference Include="Npgsql.OpenTelemetry" Version="10.0.3" />
+    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.19.1" />
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" Version="1.19.1" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.19.0" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.Http" Version="1.19.0" />
     <PackageReference Include="Refit" Version="16.3.0" />
     <PackageReference Include="Refit.HttpClientFactory" Version="16.3.0" />
     <PackageReference Include="Refit.Reflection" Version="16.3.0" />
     <PackageReference Include="Scalar.AspNetCore" Version="2.16.4" />
     <PackageReference Include="Scrutor" Version="7.0.0" />
-<PackageReference Include="Thinktecture.Runtime.Extensions" Version="10.3.0" />
-<PackageReference Include="YamlDotNet" Version="18.0.0" />
+    <PackageReference Include="Thinktecture.Runtime.Extensions" Version="10.3.0" />
+    <PackageReference Include="YamlDotNet" Version="18.0.0" />
   </ItemGroup>
 
   <ItemGroup>

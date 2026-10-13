@@ -588,7 +588,7 @@ public class OutboundHardeningTests
             clock.Advance(TimeSpan.FromSeconds(50));
             try
             {
-                await body.ReadAsync(buffer);
+                await body.ReadAtLeastAsync(buffer, 1, throwOnEndOfStream: false);
                 reads++;
             }
             catch (OutboundException ex)
@@ -617,7 +617,7 @@ public class OutboundHardeningTests
         Assert.Equal(16, await body.ReadAsync(buffer));
         clock.Advance(TimeSpan.FromSeconds(61));
 
-        var timedOut = await Assert.ThrowsAsync<OutboundException>(async () => await body.ReadAsync(buffer));
+        var timedOut = await Assert.ThrowsAsync<OutboundException>(async () => await body.ReadAtLeastAsync(buffer, 1, throwOnEndOfStream: false));
         Assert.Equal(OutboundFailure.Timeout, timedOut.Failure);
     }
 

@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useMemo, useState } from 'react'
+import { useId, useMemo, useState } from 'react'
 import { ArrowLeft, CircleCheck, CircleX, Plus, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -9,7 +9,7 @@ import { shownInline } from '@/lib/mutation-errors'
 import {
   ApiError, PROVIDER_PRESETS, api, countOverrides, effectiveSection, setOverride,
   type AiProvider, type AiUsage, type AuditEntry, type GitHubTestResult, type InstanceInfo, type InstanceSettings,
-  type ModelPrice, type ProviderKind, type ProviderTestResult, type RotateKeysResult,
+  type InstanceDiagnostics, type ModelPrice, type ProviderKind, type ProviderTestResult, type RotateKeysResult,
   type SecretStatus, type SettingsDocument, type SettingsOverrides, type SettingsSection, type WorkspaceSettings,
 } from '@/lib/settings-api'
 import { NumberField, SectionHeading, SelectField, TextField, Toggle, ToggleField, selectClass } from '@/components/settings/fields'
@@ -247,10 +247,11 @@ function SettingsPage() {
 
             {section === 'simulation' && (
               <>
-                <SectionHeading title="Simulation" description="The defaults for a new stress model. A run records its seed, so the same seed gives the same result." />
+                <SectionHeading title="Simulation" description="What a new stress profile starts with. A profile keeps its own values after that. A run records its seed, so the same seed gives the same result." />
                 <NumberField label="Seed" min={0} {...bind('simulation', 'seed')} />
-                <NumberField label="Duration" min={1} suffix="seconds of model time" {...bind('simulation', 'durationSeconds')} />
-                <NumberField label="Arrival rate" min={0} step={0.1} suffix="requests per second" {...bind('simulation', 'arrivalRatePerSecond')} />
+                <NumberField label="Duration" min={1} max={3600} suffix="seconds of model time" {...bind('simulation', 'durationSeconds')} />
+                <NumberField label="Warm-up" hint="Flows that start before this time are left out of the statistics." min={0} suffix="seconds, less than the duration" {...bind('simulation', 'warmUpSeconds')} />
+                <NumberField label="Arrival rate" min={0} step={0.1} suffix="flows per second" {...bind('simulation', 'arrivalRatePerSecond')} />
               </>
             )}
 
@@ -423,11 +424,12 @@ function ProviderList({
 }
 
 function LabelledInput({ label, value, onChange, error, ...input }: { label: string; value: string; onChange: (value: string) => void; error?: string; type?: string; placeholder?: string }) {
+  const errorId = useId()
   return (
     <label className="block text-xs font-medium text-muted-foreground">
       {label}
-      <Input className="mt-1" value={value} aria-invalid={error ? true : undefined} onChange={(e) => onChange(e.target.value)} {...input} />
-      {error && <span role="alert" className="mt-1 block font-normal text-destructive">{error}</span>}
+      <Input className="mt-1" value={value} aria-invalid={error ? true : undefined} aria-describedby={error ? errorId : undefined} onChange={(e) => onChange(e.target.value)} {...input} />
+      {error && <span id={errorId} role="alert" className="mt-1 block font-normal text-destructive">{error}</span>}
     </label>
   )
 }
@@ -573,7 +575,7 @@ function AuditLog({ workspaceId }: { workspaceId: string }) {
 function InstancePanel({ info }: { info: InstanceInfo }) {
   const queryClient = useQueryClient()
   const settings = useQuery({ queryKey: ['instance', 'settings'], queryFn: () => api<InstanceSettings>('GET', '/api/instance/settings') })
-  const diagnostics = useQuery({ queryKey: ['instance', 'diagnostics'], queryFn: () => api<Record<string, unknown>>('GET', '/api/instance/diagnostics') })
+  const diagnostics = useQuery({ queryKey: ['instance', 'diagnostics'], queryFn: () => api<InstanceDiagnostics>('GET', '/api/instance/diagnostics') })
   const savePolicy = useMutation({
     // The body is exactly the policy and the defaults; the other fields are read-only.
     mutationFn: (next: InstanceSettings) =>
@@ -599,6 +601,12 @@ function InstancePanel({ info }: { info: InstanceInfo }) {
           <ToggleField label="Let people register themselves" hint="With this off, only an administrator adds accounts." value={policy.allowSelfRegistration} onChange={(v) => setPolicy({ allowSelfRegistration: v })} />
           <ToggleField label="Allow URLs on private networks" hint="Needed for a local model server such as Ollama. Keep it off when people you do not know can change settings." value={policy.allowPrivateNetworkUrls} onChange={(v) => setPolicy({ allowPrivateNetworkUrls: v })} />
           <ToggleField label="Let workspaces send private code to AI" hint="A workspace must also turn this on for itself." value={policy.allowSendingPrivateCodeToAi} onChange={(v) => setPolicy({ allowSendingPrivateCodeToAi: v })} />
+          <StressRunBound
+            key={policy.maxConcurrentStressRuns}
+            value={policy.maxConcurrentStressRuns}
+            saving={savePolicy.isPending}
+            onSave={(v) => setPolicy({ maxConcurrentStressRuns: v })}
+          />
         </>
       )}
       {savePolicy.isError && (
@@ -632,6 +640,16 @@ function InstancePanel({ info }: { info: InstanceInfo }) {
         {rotate.isError && <span className="text-xs text-destructive" role="alert">{rotate.error.message}</span>}
       </div>
 
+      <h3 className="mt-8 text-sm font-medium text-foreground">Telemetry</h3>
+      {diagnostics.data && (
+        <p className="mt-1 max-w-prose text-xs leading-relaxed text-muted-foreground" data-testid="telemetry-state">
+          {diagnostics.data.telemetry.enabled
+            ? <>On. Traces, metrics and logs go to <span className="font-mono text-foreground">{diagnostics.data.telemetry.endpointHost}</span>.</>
+            : 'Off. This instance sends no traces, metrics or logs to another machine.'}
+          {' '}Set the environment variable <span className="font-mono">OTEL_EXPORTER_OTLP_ENDPOINT</span> and restart Vellum to change this.
+        </p>
+      )}
+
       <h3 className="mt-8 text-sm font-medium text-foreground">Diagnostics</h3>
       {diagnostics.data && (
         <pre tabIndex={0} className="mt-2 max-h-96 overflow-auto rounded-lg border border-border bg-background p-3 font-mono text-xs leading-relaxed focus-visible:outline-2 focus-visible:outline-primary">
@@ -640,6 +658,34 @@ function InstancePanel({ info }: { info: InstanceInfo }) {
       )}
       {diagnostics.isError && <p className="mt-2 text-sm text-destructive">{diagnostics.error.message}</p>}
     </>
+  )
+}
+
+const STRESS_RUN_BOUND = { min: 1, max: 64 }
+
+/**
+ * The number is saved with its own button: every other policy is a switch that saves at
+ * once, and a number that saved on each key press would save "1" on the way to "16".
+ */
+function StressRunBound({ value, saving, onSave }: { value: number; saving: boolean; onSave: (value: number) => void }) {
+  const [draft, setDraft] = useState<number | null>(value)
+  const valid = draft !== null && Number.isInteger(draft) && draft >= STRESS_RUN_BOUND.min && draft <= STRESS_RUN_BOUND.max
+  return (
+    <div className="flex items-start gap-2">
+      <div className="min-w-0 flex-1">
+        <NumberField<number | null>
+          label="Stress runs at the same time"
+          hint="For all workspaces together, in each app process. One run holds a processor thread until it ends. A change applies to the next run."
+          min={STRESS_RUN_BOUND.min} max={STRESS_RUN_BOUND.max} step={1} nullable
+          value={draft}
+          onChange={setDraft}
+          error={valid ? undefined : `Enter a whole number from ${STRESS_RUN_BOUND.min} to ${STRESS_RUN_BOUND.max}.`}
+        />
+      </div>
+      <Button variant="secondary" size="sm" className="mt-4" disabled={!valid || draft === value || saving} onClick={() => valid && onSave(draft)}>
+        Save
+      </Button>
+    </div>
   )
 }
 

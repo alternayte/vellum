@@ -94,6 +94,55 @@ public class InstancePolicyTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task The_stress_run_bound_is_a_policy_setting_that_is_checked_audited_and_applies_with_no_restart()
+    {
+        Assert.Equal(InstancePolicy.DefaultMaxConcurrentStressRuns, (int)_initial["policy"]!["maxConcurrentStressRuns"]!);
+
+        await RefusedAsync(PutInstanceAsync((policy, _) => policy["maxConcurrentStressRuns"] = 0), "policy.maxConcurrentStressRuns");
+        await RefusedAsync(PutInstanceAsync((policy, _) => policy["maxConcurrentStressRuns"] = 65), "policy.maxConcurrentStressRuns");
+        await RefusedAsync(PutInstanceAsync((policy, _) => policy["maxConcurrentStressRuns"] = 1.5), "policy.maxConcurrentStressRuns");
+
+        var saved = await OkAsync(PutInstanceAsync((policy, _) => policy["maxConcurrentStressRuns"] = 1));
+        Assert.Equal(1, (int)saved["policy"]!["maxConcurrentStressRuns"]!);
+        var audit = await _admin.GetFromJsonAsync<JsonArray>("/api/instance/audit");
+        Assert.Contains(audit!, entry => entry!.ToJsonString().Contains("policy.maxConcurrentStressRuns", StringComparison.Ordinal));
+
+        // A profile of a project of this instance. Its scenario does not exist, so a run that gets a place is refused with 422.
+        var (_, projectId) = await TestHost.CreateProjectAsync(_admin);
+        var profileId = Guid.NewGuid();
+        await using (var scope = _factory.Services.CreateAsyncScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<Vellum.Modules.Stress.StressDbContext>();
+            db.Profiles.Add(new Vellum.Modules.Stress.StressProfileEntity
+            {
+                Id = profileId, ProjectId = projectId, ScenarioId = Guid.NewGuid(), Name = "P", Version = 1,
+                Document = $$"""
+                    { "name": "P", "scenarioId": "{{Guid.NewGuid()}}", "seed": "1",
+                      "arrivals": { "kind": "poisson", "ratePerSecond": 1, "durationSeconds": 10, "warmUpSeconds": 1 },
+                      "resources": [], "serviceTimes": [], "subscriptions": [], "branches": [], "overrides": [], "outages": [] }
+                    """,
+                UpdatedAt = DateTimeOffset.UtcNow, UpdatedBy = "test",
+            });
+            await db.SaveChangesAsync();
+        }
+
+        // Another workspace holds one place. With a bound of 1 the instance is full.
+        var gate = _factory.Services.GetRequiredService<Vellum.Modules.Stress.StressRunGate>();
+        using var held = gate.TryEnter(Guid.NewGuid(), 64, out _);
+        Assert.NotNull(held);
+        var run = $"/api/projects/{projectId}/stress/profiles/{profileId}/runs";
+        var busy = await _admin.PostAsync(run, null);
+        Assert.Equal(HttpStatusCode.TooManyRequests, busy.StatusCode);
+        Assert.Equal("busy", (string)(await busy.Content.ReadFromJsonAsync<JsonObject>())!["type"]!);
+
+        // The same running app, a higher bound: the next run gets a place.
+        _initial = (await _admin.GetFromJsonAsync<JsonObject>("/api/instance/settings"))!;
+        await OkAsync(PutInstanceAsync((policy, _) => policy["maxConcurrentStressRuns"] = 2));
+        var placed = await _admin.PostAsync(run, null);
+        Assert.Equal(HttpStatusCode.UnprocessableEntity, placed.StatusCode);
+    }
+
+    [Fact]
     public async Task The_policy_limits_the_provider_kinds_a_workspace_can_use()
     {
         await OkAsync(PutInstanceAsync((_, _) => { }));

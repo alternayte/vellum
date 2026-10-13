@@ -296,6 +296,7 @@ const branch = (branchId?: string | null, first = true) => (branchId ? `${first 
 
 export const stressApi = {
   profiles: (projectId: string) => call<StressProfileSummary[]>('GET', `${base(projectId)}/profiles`),
+  defaults: (projectId: string) => call<StressProfileDefaults>('GET', `${base(projectId)}/defaults`),
   profile: (projectId: string, id: string) => call<StressProfileDetail>('GET', `${base(projectId)}/profiles/${id}`),
   requirements: (projectId: string, scenarioId: string, branchId?: string | null) =>
     call<StressRequirements>('GET', `${base(projectId)}/requirements?scenarioId=${scenarioId}${branch(branchId, false)}`),
@@ -309,13 +310,27 @@ export const stressApi = {
   compare: (projectId: string, left: string, right: string) => call<StressComparison>('GET', `${base(projectId)}/compare?left=${left}&right=${right}`),
 }
 
-/** A profile for a scenario with no input filled in: the form asks for each one. */
-export function emptyProfile(scenarioId: string): StressProfile {
+/** What a new profile starts with: the workspace's simulation settings (Settings, Simulation). */
+export interface StressProfileDefaults {
+  seed: string
+  durationSeconds: number
+  warmUpSeconds: number
+  arrivalRatePerSecond: number
+}
+
+/**
+ * A profile for a scenario with no input filled in: the form asks for each one. The seed,
+ * the window and the arrival rate come from the workspace's simulation settings.
+ */
+export function emptyProfile(scenarioId: string, defaults: StressProfileDefaults): StressProfile {
   return {
     name: '',
     scenarioId,
-    seed: '1',
-    arrivals: { kind: 'poisson', ratePerSecond: 10, toRatePerSecond: null, bursts: null, durationSeconds: 60, warmUpSeconds: 5 },
+    seed: defaults.seed,
+    arrivals: {
+      kind: 'poisson', ratePerSecond: defaults.arrivalRatePerSecond, toRatePerSecond: null, bursts: null,
+      durationSeconds: defaults.durationSeconds, warmUpSeconds: defaults.warmUpSeconds,
+    },
     resources: [],
     serviceTimes: [],
     subscriptions: [],

@@ -205,7 +205,7 @@ function WorkspacePicker() {
       </div>
 
       <Dialog open={showCreateWorkspace} onOpenChange={setShowCreateWorkspace}>
-        <DialogContent>
+        <DialogContent aria-describedby={undefined}>
           <DialogHeader>
             <DialogTitle>Create Workspace</DialogTitle>
           </DialogHeader>
@@ -219,7 +219,7 @@ function WorkspacePicker() {
               placeholder="Workspace name"
               value={workspaceName}
               onChange={(e) => setWorkspaceName(e.target.value)}
-              autoFocus
+              data-autofocus
             />
             <DialogFooter className="mt-4">
               <Button type="submit" disabled={!workspaceName.trim() || createWorkspace.isPending}>
@@ -231,7 +231,7 @@ function WorkspacePicker() {
       </Dialog>
 
       <Dialog open={showCreateProject} onOpenChange={setShowCreateProject}>
-        <DialogContent>
+        <DialogContent aria-describedby={undefined}>
           <DialogHeader>
             <DialogTitle>Create Project</DialogTitle>
           </DialogHeader>
@@ -245,7 +245,7 @@ function WorkspacePicker() {
               placeholder="Project name"
               value={projectName}
               onChange={(e) => setProjectName(e.target.value)}
-              autoFocus
+              data-autofocus
             />
             <DialogFooter className="mt-4">
               <Button type="submit" disabled={!projectName.trim() || createProject.isPending}>

@@ -35,6 +35,7 @@ import type { C4ContainerData } from './nodes/c4-container-node'
 import type { DiffState } from '@/stores/draft-store'
 import type { Provenance, StaleMark } from '@/lib/fact-status'
 import { kindColor } from '@/lib/kind-colors'
+import { prefersReducedMotion } from '@/lib/utils'
 import { traceEdgeLabel, traceFamily } from '@/lib/trace'
 import { currentTraceEvent, useTraceStore } from '@/stores/trace-store'
 import { TraceEdgeMarkers } from './edges/trace-edge'
@@ -124,8 +125,10 @@ function minimapNodeColor(node: Node): string {
 // A fit never enlarges nodes past their designed size: a model with two nodes would
 // otherwise fill the screen at the highest zoom.
 const FIT_INITIAL = { maxZoom: 1, padding: 0.2 }
-const FIT_ALL = { ...FIT_INITIAL, duration: 300 }
-const FIT_ONE = { maxZoom: 1.25, padding: 0.5, duration: 300 }
+// The move of the viewport is an animation of position only. With reduced motion the viewport jumps.
+const fitMs = () => (prefersReducedMotion() ? 0 : 300)
+const fitAll = () => ({ ...FIT_INITIAL, duration: fitMs() })
+const fitOne = () => ({ maxZoom: 1.25, padding: 0.5, duration: fitMs() })
 export function CanvasView(props: CanvasViewProps) {
   return (
     <ReactFlowProvider>
@@ -184,13 +187,13 @@ function CanvasViewInner({
   const { selectElement, selectRelationship, selectMessage, focusElementId, clearFocusElement } = useShellStore()
 
   useEffect(() => {
-    onFitViewReady?.(() => fitView(FIT_ALL))
+    onFitViewReady?.(() => fitView(fitAll()))
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fitView])
 
   useEffect(() => {
     if (focusElementId) {
-      fitView({ nodes: [{ id: focusElementId }], ...FIT_ONE })
+      fitView({ nodes: [{ id: focusElementId }], ...fitOne() })
       clearFocusElement()
     }
   }, [focusElementId, fitView, clearFocusElement])
@@ -516,7 +519,7 @@ function CanvasViewInner({
 
   const handleSearchFocusNode = useCallback(
     (nodeId: string) => {
-      fitView({ nodes: [{ id: nodeId }], ...FIT_ONE })
+      fitView({ nodes: [{ id: nodeId }], ...fitOne() })
     },
     [fitView],
   )
@@ -825,7 +828,7 @@ function CanvasViewInner({
           onClose={() => setContextMenu(null)}
           onAddElement={(kind) => onAddElementAtPosition?.(kind)}
           onTidy={() => onTidy?.()}
-          onZoomToFit={() => fitView(FIT_ALL)}
+          onZoomToFit={() => fitView(fitAll())}
         />
       )}
 

@@ -8,6 +8,7 @@ using Vellum.Modules.Settings.Audit;
 using Vellum.Modules.Settings.Crypto;
 using Vellum.Modules.Settings.Secrets;
 using Vellum.Shared;
+using Vellum.Shared.Telemetry;
 
 namespace Vellum.Modules.Settings.Instance;
 
@@ -165,7 +166,15 @@ public sealed record DiagnosticsResponse(
     EventStoreDiagnostics EventStore,
     string MasterKeyId,
     bool PreviousMasterKeyLoaded,
-    IReadOnlyList<MasterKeyInUse> MasterKeysInUse);
+    IReadOnlyList<MasterKeyInUse> MasterKeysInUse,
+    TelemetryDiagnostics Telemetry);
+
+/// <summary>
+/// Whether this instance exports traces, metrics and logs. <paramref name="EndpointHost"/> is
+/// the host name of the collector and nothing else of its address. The export is set with the
+/// environment variable <c>OTEL_EXPORTER_OTLP_ENDPOINT</c> and needs a restart.
+/// </summary>
+public sealed record TelemetryDiagnostics(bool Enabled, string? EndpointHost);
 
 public sealed record MasterKeyInUse(string MasterKeyId, long Secrets, long DataProtectionKeys, bool IsCurrent, bool IsLoaded);
 public sealed record DatabaseDiagnostics(bool Reachable);
@@ -182,6 +191,7 @@ public static class GetDiagnostics
         IConfiguration configuration,
         IServiceProvider services,
         IEventStoreAdmin eventStore,
+        TelemetryState telemetry,
         ILoggerFactory loggers,
         CancellationToken ct)
     {
@@ -236,7 +246,8 @@ public static class GetDiagnostics
             store,
             bootstrap.Keys.Current.Id,
             bootstrap.Keys.HasPrevious,
-            keysInUse));
+            keysInUse,
+            new TelemetryDiagnostics(telemetry.Enabled, telemetry.EndpointHost)));
     }
 }
 

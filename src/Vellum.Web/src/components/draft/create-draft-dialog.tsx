@@ -35,7 +35,7 @@ export function CreateDraftDialog({ projectId, open, onOpenChange }: CreateDraft
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent aria-describedby={undefined}>
         <DialogHeader>
           <DialogTitle>New Draft</DialogTitle>
         </DialogHeader>
@@ -44,7 +44,7 @@ export function CreateDraftDialog({ projectId, open, onOpenChange }: CreateDraft
             placeholder="Draft name"
             value={name}
             onChange={(e) => setName(e.target.value)}
-            autoFocus
+            data-autofocus
           />
           <DialogFooter>
             <Button

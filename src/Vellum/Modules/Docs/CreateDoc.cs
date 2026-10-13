@@ -2,6 +2,7 @@
 using System.Security.Claims;
 using Vellum.Modules.Docs.Entities;
 using Vellum.Modules.Workspaces.Authorization;
+using Vellum.Shared;
 
 namespace Vellum.Modules.Docs;
 
@@ -19,6 +20,12 @@ public static class CreateDoc
     {
         var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
+
+        if (ResultExtensions.Refusal(
+                ResultExtensions.Required("title", request.Title),
+                TextRule.Line("title", request.Title),
+                TextRule.Line("type", request.Type, TextRule.MaxIdentifier)) is { } refusal)
+            return refusal;
 
         var existing = await db.Documents.FindAsync([request.Id], ct);
         if (existing is not null)

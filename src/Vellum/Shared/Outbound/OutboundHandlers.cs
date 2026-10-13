@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using System.Net;
 using System.Net.Sockets;
+using Vellum.Shared.Telemetry;
 
 namespace Vellum.Shared.Outbound;
 
@@ -33,6 +34,8 @@ public sealed class OutboundTelemetryHandler(ILogger<OutboundTelemetryHandler> l
         catch (OutboundException ex)
         {
             outcome = ex.Failure.ToString();
+            if (ex.Failure == OutboundFailure.UrlRefused)
+                VellumMetrics.OutboundRequestBlocked(call.Provider);
             throw;
         }
         catch (OperationCanceledException)

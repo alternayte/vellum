@@ -40,7 +40,7 @@ export interface SettingsDocument {
   github: { apiBaseUrl: string; defaultRef: string }
   import: { maxFiles: number; maxFileBytes: number; maxTotalBytes: number; excludeGlobs: string[] }
   cost: { provider: string; region: string; currency: string; azureRetailPricesBaseUrl: string; stalePriceAfterDays: number }
-  simulation: { seed: number; durationSeconds: number; arrivalRatePerSecond: number }
+  simulation: { seed: number; durationSeconds: number; arrivalRatePerSecond: number; warmUpSeconds: number }
   privacy: { sendPrivateCodeToAi: boolean }
   usage: { monthlyAiBudgetUsd: number | null; maxScansPerDay: number }
   notifications: { webhookUrl: string | null }
@@ -70,10 +70,19 @@ export interface InstanceSettings {
     allowPrivateNetworkUrls: boolean
     allowedAiProviderKinds: ProviderKind[]
     allowSendingPrivateCodeToAi: boolean
+    /** Stress runs of all workspaces together that one app process does at the same time. */
+    maxConcurrentStressRuns: number
   }
   defaults: SettingsDocument
   version: number
   workspacesWithPolicyViolations: number
+}
+
+/** What the instance reports about itself. The panel shows the parts an operator acts on and the whole as text. */
+export interface InstanceDiagnostics {
+  /** Whether traces, metrics and logs are exported, and to which host. Set with OTEL_EXPORTER_OTLP_ENDPOINT at start-up. */
+  telemetry: { enabled: boolean; endpointHost: string | null }
+  [part: string]: unknown
 }
 
 export interface SecretStatus {

@@ -2,6 +2,7 @@ using System.Net;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.DataProtection.KeyManagement;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
@@ -89,6 +90,10 @@ public static class SettingsModule
     {
         // Liveness and readiness in one probe. The body is the status word and nothing else.
         app.MapHealthChecks("/health").AllowAnonymous();
+        // For an orchestrator that asks the two questions apart. Live: the process answers; a
+        // database outage must not restart it. Ready: the app reaches its database.
+        app.MapHealthChecks("/health/live", new HealthCheckOptions { Predicate = _ => false }).AllowAnonymous();
+        app.MapHealthChecks("/health/ready").AllowAnonymous();
 
         var setup = app.MapGroup("/api/setup").WithTags("Setup").AllowAnonymous();
         setup.MapGet("/status", GetSetupStatus.Handle).Produces<SetupStatusResponse>();

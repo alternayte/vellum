@@ -7,6 +7,7 @@ using Vellum.Modules.Ai.Usage;
 using Vellum.Modules.Settings.Document;
 using Vellum.Modules.Settings.Secrets;
 using Vellum.Shared.Outbound;
+using Vellum.Shared.Telemetry;
 
 namespace Vellum.Modules.Ai;
 
@@ -495,6 +496,8 @@ public sealed class AiClient(
             outcome, errorCode, reply?.InputTokens, reply?.OutputTokens, reply?.ReportedModel, progress.MayHaveGenerated(reply?.Error), note));
         if (reply is not null)
             totals.Add(cost, reply.ReportedModel);
+
+        VellumMetrics.AiCallEnded(route.Provider.Kind, outcome, reply?.InputTokens, reply?.OutputTokens);
 
         // Labels and counts only. No prompt text, no answer text and no credential is logged.
         logger.Log(outcome == "succeeded" ? LogLevel.Information : LogLevel.Warning,
