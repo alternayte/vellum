@@ -4,3 +4,4 @@ dist/
 
 # Written by scripts/gen-api-reference.mjs from src/Vellum.Web/openapi.json on each build.
 src/content/docs/reference/http-api/
+.wrangler/
