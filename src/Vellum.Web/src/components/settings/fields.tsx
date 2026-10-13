@@ -121,7 +121,7 @@ export function Toggle({ id, checked, onChange, disabled, label }: { id?: string
         checked ? 'border-primary bg-primary' : 'border-border bg-muted',
       )}
     >
-      <span className={cn('absolute top-0.5 h-3.5 w-3.5 rounded-full bg-white transition-[left]', checked ? 'left-[1.125rem]' : 'left-0.5')} />
+      <span className={cn('absolute top-0.5 h-3.5 w-3.5 rounded-full transition-[left]', checked ? 'left-[1.125rem] bg-primary-foreground' : 'left-0.5 bg-foreground')} />
     </button>
   )
 }

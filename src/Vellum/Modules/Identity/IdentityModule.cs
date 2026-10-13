@@ -1,3 +1,5 @@
+using System.Security.Claims;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Vellum.Modules.Identity.AgentTokens;
@@ -7,6 +9,8 @@ namespace Vellum.Modules.Identity;
 public static class IdentityModule
 {
     public const int MinimumPasswordLength = 10;
+    public const string GitHubScheme = "GitHub";
+    public const string GitHubCallbackPath = "/api/auth/external/callback";
 
     public static IServiceCollection AddIdentityModule(this IServiceCollection services, IConfiguration config)
     {
@@ -57,15 +61,22 @@ public static class IdentityModule
         var githubSection = config.GetSection("Authentication:GitHub");
         if (githubSection.Exists())
         {
-            authBuilder.AddOAuth("GitHub", options =>
+            authBuilder.AddOAuth(GitHubScheme, options =>
             {
                 options.ClientId = githubSection["ClientId"]!;
                 options.ClientSecret = githubSection["ClientSecret"]!;
                 options.AuthorizationEndpoint = "https://github.com/login/oauth/authorize";
                 options.TokenEndpoint = "https://github.com/login/oauth/access_token";
                 options.UserInformationEndpoint = "https://api.github.com/user";
-                options.CallbackPath = "/api/auth/external/callback";
+                // The handler owns this path: GitHub sends the browser here with the code. It
+                // is the callback URL that the operator registered at GitHub, so it keeps its
+                // value. The app's own endpoint is IdentityEndpoints.ExternalCompletePath.
+                options.CallbackPath = GitHubCallbackPath;
                 options.Scope.Add("user:email");
+                options.ClaimActions.MapJsonKey(ClaimTypes.NameIdentifier, "id");
+                options.ClaimActions.MapJsonKey(ClaimTypes.Name, "name");
+                options.Events.OnCreatingTicket = GitHubSignIn.CreateTicketAsync;
+                options.Events.OnRemoteFailure = GitHubSignIn.RefuseAsync;
             });
         }
 

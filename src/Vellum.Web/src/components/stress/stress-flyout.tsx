@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Pencil, Play, Plus, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { shownInline } from '@/lib/mutation-errors'
-import { formatMs, formatNumber, stressApi, StressRefused, type StressIssue, type StressProfileDetail, type StressRun } from '@/lib/stress-api'
+import { formatMs, formatNumber, stressApi, StressRefused, type StressIssue, type StressProfileDefaults, type StressProfileDetail, type StressRun } from '@/lib/stress-api'
 import { StressProfileDialog } from './stress-profile-dialog'
 import { StressResultDialog } from './stress-result-dialog'
 import { LoadTestsPanel } from './load-tests-panel'
@@ -30,7 +30,7 @@ export function StressFlyout({ projectId, branchId, scenarios }: StressFlyoutPro
     staleTime: 0,
   })
 
-  const [editing, setEditing] = useState<{ existing: StressProfileDetail | null } | null>(null)
+  const [editing, setEditing] = useState<{ existing: StressProfileDetail | null; defaults: StressProfileDefaults } | null>(null)
   const [shown, setShown] = useState<StressRun | null>(null)
   const [refusal, setRefusal] = useState<{ profileId: string; title: string; issues: StressIssue[] } | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -80,7 +80,7 @@ export function StressFlyout({ projectId, branchId, scenarios }: StressFlyoutPro
           <Button
             variant="ghost" size="sm" className="h-6 gap-1 px-1.5 text-xs" disabled={scenarios.length === 0}
             title={scenarios.length === 0 ? 'Create a scenario first' : undefined}
-            onClick={() => setEditing({ existing: null })}
+            onClick={() => open(async () => setEditing({ existing: null, defaults: await stressApi.defaults(projectId) }))}
           >
             <Plus className="h-3 w-3" />
             New
@@ -144,7 +144,10 @@ export function StressFlyout({ projectId, branchId, scenarios }: StressFlyoutPro
                   </Button>
                   <Button
                     variant="ghost" size="sm" className="h-6 gap-1 px-2 text-xs"
-                    onClick={() => open(async () => setEditing({ existing: await stressApi.profile(projectId, profile.id) }))}
+                    onClick={() => open(async () => {
+                      const [existing, defaults] = await Promise.all([stressApi.profile(projectId, profile.id), stressApi.defaults(projectId)])
+                      setEditing({ existing, defaults })
+                    })}
                   >
                     <Pencil className="h-3 w-3" /> Edit
                   </Button>
@@ -203,7 +206,7 @@ export function StressFlyout({ projectId, branchId, scenarios }: StressFlyoutPro
 
       {editing && (
         <StressProfileDialog
-          projectId={projectId} branchId={branchId} scenarios={scenarios} existing={editing.existing}
+          projectId={projectId} branchId={branchId} scenarios={scenarios} existing={editing.existing} defaults={editing.defaults}
           onClose={() => setEditing(null)}
           onSaved={(saved, andRun) => {
             setEditing(null)

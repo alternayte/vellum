@@ -105,7 +105,8 @@ public sealed class SettingsResolver(SettingsDbContext db, Bootstrap bootstrap)
         bool? AllowSelfRegistration,
         bool? AllowPrivateNetworkUrls,
         IReadOnlyList<string>? AllowedAiProviderKinds,
-        bool? AllowSendingPrivateCodeToAi);
+        bool? AllowSendingPrivateCodeToAi,
+        int? MaxConcurrentStressRuns = null);
 
     /// <summary>
     /// A hosted instance is open to other networks, so a URL that receives a credential
@@ -115,7 +116,9 @@ public sealed class SettingsResolver(SettingsDbContext db, Bootstrap bootstrap)
     public bool RequireHttps => bootstrap.Profile == OperatingProfile.Hosted;
 
     public static string Serialize(InstancePolicy policy) => JsonSerializer.Serialize(
-        new StoredPolicy(policy.AllowSelfRegistration, policy.AllowPrivateNetworkUrls, policy.AllowedAiProviderKinds, policy.AllowSendingPrivateCodeToAi),
+        new StoredPolicy(
+            policy.AllowSelfRegistration, policy.AllowPrivateNetworkUrls, policy.AllowedAiProviderKinds, policy.AllowSendingPrivateCodeToAi,
+            policy.MaxConcurrentStressRuns),
         JsonSerializerOptions.Web);
 
     public async Task<InstanceSettings> GetInstanceAsync(CancellationToken ct)
@@ -131,7 +134,8 @@ public sealed class SettingsResolver(SettingsDbContext db, Bootstrap bootstrap)
                 stored.AllowSelfRegistration ?? policy.AllowSelfRegistration,
                 stored.AllowPrivateNetworkUrls ?? policy.AllowPrivateNetworkUrls,
                 stored.AllowedAiProviderKinds ?? policy.AllowedAiProviderKinds,
-                stored.AllowSendingPrivateCodeToAi ?? policy.AllowSendingPrivateCodeToAi);
+                stored.AllowSendingPrivateCodeToAi ?? policy.AllowSendingPrivateCodeToAi,
+                stored.MaxConcurrentStressRuns ?? policy.MaxConcurrentStressRuns);
         }
 
         var defaultsJson = SettingsJson.ToJson(SettingsDefaults.BuiltIn);

@@ -44,12 +44,19 @@ public static class DesignModule
         services.AddSingleton<ProposalSubmitRate>();
 
         // The limiter runs for every request and limits only an endpoint that carries
-        // AiGenerationLimit. It runs after authorization, so the user is known.
-        services.Configure<RateLimiterOptions>(options => options.GlobalLimiter = PartitionedRateLimiter.CreateChained(
-            PartitionedRateLimiter.Create<HttpContext, string>(http => Bucket(
-                http, "user:" + http.User.FindFirstValue(ClaimTypes.NameIdentifier), AiGenerationLimit.PerUser)),
-            PartitionedRateLimiter.Create<HttpContext, string>(http => Bucket(
-                http, "project:" + http.GetRouteValue("projectId"), AiGenerationLimit.PerProject))));
+        // AiGenerationLimit. It runs after authentication, so the user is known. It is added
+        // to the limiter that is there already (RequestLimits), never put in its place.
+        services.Configure<RateLimiterOptions>(options =>
+        {
+            var generation = PartitionedRateLimiter.CreateChained(
+                PartitionedRateLimiter.Create<HttpContext, string>(http => Bucket(
+                    http, "user:" + http.User.FindFirstValue(ClaimTypes.NameIdentifier), AiGenerationLimit.PerUser)),
+                PartitionedRateLimiter.Create<HttpContext, string>(http => Bucket(
+                    http, "project:" + http.GetRouteValue("projectId"), AiGenerationLimit.PerProject)));
+            options.GlobalLimiter = options.GlobalLimiter is { } before
+                ? PartitionedRateLimiter.CreateChained(before, generation)
+                : generation;
+        });
         return services;
     }
 

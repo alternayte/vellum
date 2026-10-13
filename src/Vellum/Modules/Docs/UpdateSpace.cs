@@ -20,6 +20,11 @@ public static class UpdateSpace
         var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
 
+        if (ResultExtensions.Refusal(
+                request.Name is null ? null : ResultExtensions.Required("name", request.Name),
+                TextRule.Line("name", request.Name)) is { } refusal)
+            return refusal;
+
         var space = await db.Spaces.FindAsync([spaceId], ct);
         if (space is null || space.ProjectId != projectId)
             return Results.NotFound(new ErrorResponse("not_found", "Space not found"));

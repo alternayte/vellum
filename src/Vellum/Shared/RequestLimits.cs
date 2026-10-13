@@ -1,11 +1,20 @@
 using System.Globalization;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace Vellum.Shared;
 
 /// <summary>Endpoint metadata: the request body has at most <paramref name="Bytes"/> bytes.</summary>
 public sealed record BodyLimitMetadata(int Bytes);
+
+/// <summary>
+/// The limits for callers with no credential, for each client address in each minute. Tests
+/// that register many accounts from one address replace it.
+/// </summary>
+/// <param name="RegistrationsPerMinute">New accounts through <c>POST /api/auth/register</c>.</param>
+/// <param name="RequestsPerMinute">Every request to the API, the MCP endpoint and the agent documents that carries no valid credential.</param>
+public sealed record AnonymousRateLimits(int RegistrationsPerMinute = 10, int RequestsPerMinute = 300);
 
 /// <summary>
 /// Body size limits and per-client rate limits for endpoints that an attacker can call
@@ -21,13 +30,48 @@ public static class RequestLimits
     public static TBuilder WithBodyLimit<TBuilder>(this TBuilder builder, int bytes) where TBuilder : IEndpointConventionBuilder =>
         builder.WithMetadata(new BodyLimitMetadata(bytes));
 
-    public static IServiceCollection AddRequestLimits(this IServiceCollection services) =>
-        services.AddRateLimiter(options =>
+    /// <summary>The rate limit policy for new accounts.</summary>
+    public const string RegistrationPolicy = "registration";
+
+    private static readonly string[] LimitedWithoutCredential = ["/api", "/mcp", "/llms.txt", "/llms-full.txt", "/skills"];
+
+    private static string Client(HttpContext http) => http.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+
+    public static IServiceCollection AddRequestLimits(this IServiceCollection services)
+    {
+        services.TryAddSingleton(new AnonymousRateLimits());
+        return services.AddRateLimiter(options =>
         {
+            // A caller with no valid credential gets a bounded number of requests, whatever
+            // the endpoint: a wrong bearer token, a probe of the API, the open documents. The
+            // health probes and the files of the app are not counted. This limit and the
+            // limit of an endpoint both apply.
+            options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(http =>
+            {
+                var path = http.Request.Path;
+                if (http.User.Identity is { IsAuthenticated: true } || !LimitedWithoutCredential.Any(prefix => path.StartsWithSegments(prefix)))
+                    return RateLimitPartition.GetNoLimiter("");
+
+                var limits = http.RequestServices.GetRequiredService<AnonymousRateLimits>();
+                return RateLimitPartition.GetFixedWindowLimiter(Client(http), _ => new FixedWindowRateLimiterOptions
+                {
+                    PermitLimit = limits.RequestsPerMinute,
+                    Window = CredentialWindow,
+                    QueueLimit = 0,
+                });
+            });
+            options.AddPolicy(RegistrationPolicy, http => RateLimitPartition.GetFixedWindowLimiter(
+                Client(http),
+                _ => new FixedWindowRateLimiterOptions
+                {
+                    PermitLimit = http.RequestServices.GetRequiredService<AnonymousRateLimits>().RegistrationsPerMinute,
+                    Window = CredentialWindow,
+                    QueueLimit = 0,
+                }));
             // One fixed window for each client address. A proxy must pass the client address
-            // on (ASPNETCORE_FORWARDEDHEADERS_ENABLED), or all its clients share one window.
+            // on (Vellum__TrustedProxies), or all its clients share one window.
             options.AddPolicy(CredentialPolicy, http => RateLimitPartition.GetFixedWindowLimiter(
-                http.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+                Client(http),
                 _ => new FixedWindowRateLimiterOptions
                 {
                     PermitLimit = CredentialPermits,
@@ -44,6 +88,7 @@ public static class RequestLimits
                     new ErrorResponse("rate_limited", "Too many attempts", $"Wait {seconds} seconds and try again."), ct);
             };
         });
+    }
 
     /// <summary>
     /// Reads the body of an endpoint that has a <see cref="BodyLimitMetadata"/> into memory,

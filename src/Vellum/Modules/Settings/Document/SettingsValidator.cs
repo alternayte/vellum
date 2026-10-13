@@ -9,6 +9,9 @@ public sealed class SettingsValidator(OutboundUrlPolicy urls, Bootstrap bootstra
     public const int MaxExcludeGlobs = 100;
     private const decimal MaxBudgetUsd = 1_000_000m;
 
+    /// <summary>The longest window a stress run accepts (<c>StressLimits.MaxDurationSeconds</c>).</summary>
+    public const int MaxSimulationSeconds = 3_600;
+
     public async Task<List<FieldError>> ValidateAsync(SettingsDocument document, InstancePolicy policy, CancellationToken ct)
     {
         var errors = new List<FieldError>();
@@ -41,7 +44,9 @@ public sealed class SettingsValidator(OutboundUrlPolicy urls, Bootstrap bootstra
         Range("cost.stalePriceAfterDays", document.Cost.StalePriceAfterDays, 1, 3650, errors);
 
         Range("simulation.seed", document.Simulation.Seed, 0, int.MaxValue, errors);
-        Range("simulation.durationSeconds", document.Simulation.DurationSeconds, 1, 86_400, errors);
+        Range("simulation.durationSeconds", document.Simulation.DurationSeconds, 1, MaxSimulationSeconds, errors);
+        if (document.Simulation.WarmUpSeconds < 0 || document.Simulation.WarmUpSeconds >= document.Simulation.DurationSeconds)
+            errors.Add(new("simulation.warmUpSeconds", "Must be from 0 to less than simulation.durationSeconds."));
         if (document.Simulation.ArrivalRatePerSecond is not (> 0 and <= 100_000))
             errors.Add(new("simulation.arrivalRatePerSecond", "Must be more than 0 and at most 100000."));
 

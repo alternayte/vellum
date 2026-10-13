@@ -50,6 +50,8 @@ internal static class TestHost
                 Replace<DraftsDbContext>(services, cs);
                 Replace<SchemasDbContext>(services, cs);
                 Replace<ReviewDbContext>(services, cs);
+                // Every test client has one address, and tests register accounts freely.
+                services.AddSingleton(new AnonymousRateLimits(RegistrationsPerMinute: 100_000, RequestsPerMinute: 1_000_000));
                 configure?.Invoke(services);
             });
         });

@@ -22,6 +22,12 @@ public static class UpdateView
         var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
 
+        if (ResultExtensions.Refusal(
+                request.Name is null ? null : ResultExtensions.Required("name", request.Name),
+                TextRule.Line("name", request.Name),
+                TextRule.Line("activeLens", request.ActiveLens, TextRule.MaxIdentifier)) is { } refusal)
+            return refusal;
+
         var view = await db.Views.FindAsync([viewId], ct);
         if (view is null || view.ProjectId != projectId)
             return Results.NotFound(new ErrorResponse("not_found", "View not found"));

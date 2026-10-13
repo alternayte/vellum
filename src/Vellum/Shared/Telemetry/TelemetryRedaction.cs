@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text.RegularExpressions;
 using OpenTelemetry;
 using OpenTelemetry.Logs;
 using Vellum.Modules.Ai;
@@ -41,7 +42,7 @@ public sealed class RedactingActivityProcessor : BaseProcessor<Activity>
 
         // The display name of a server span is the method and the route template. A request
         // that matches no route has its raw path there.
-        var name = SecretRedactor.Redact(activity.DisplayName);
+        var name = TelemetryText.Redact(activity.DisplayName);
         if (!ReferenceEquals(name, activity.DisplayName))
             activity.DisplayName = name;
     }
@@ -57,38 +58,55 @@ public sealed class RedactingLogProcessor : BaseProcessor<LogRecord>
 {
     public override void OnEnd(LogRecord record)
     {
-        var attributes = new List<KeyValuePair<string, object?>>(record.Attributes?.Count ?? 0 + 3);
+        var attributes = new List<KeyValuePair<string, object?>>((record.Attributes?.Count ?? 0) + 3);
         foreach (var (key, value) in record.Attributes ?? [])
-            attributes.Add(new(key, TelemetryText.Clean(value) ?? value));
+        {
+            // The request log of the framework has the query string as a value of its own.
+            attributes.Add(key == "QueryString" && value is string { Length: > 0 }
+                ? new(key, "?[query]")
+                : new(key, TelemetryText.Clean(value) ?? value));
+        }
 
         if (record.Exception is { } exception)
         {
             attributes.Add(new("exception.type", exception.GetType().FullName));
-            attributes.Add(new("exception.message", SecretRedactor.Redact(exception.Message)));
+            attributes.Add(new("exception.message", TelemetryText.Redact(exception.Message)));
             if (exception.StackTrace is { } stack)
-                attributes.Add(new("exception.stacktrace", SecretRedactor.Redact(stack)));
+                attributes.Add(new("exception.stacktrace", TelemetryText.Redact(stack)));
             record.Exception = null;
         }
 
         record.Attributes = attributes;
         if (record.FormattedMessage is { } message)
-            record.FormattedMessage = SecretRedactor.Redact(message);
+            record.FormattedMessage = TelemetryText.Redact(message);
         if (record.Body is { } body)
-            record.Body = SecretRedactor.Redact(body);
+            record.Body = TelemetryText.Redact(body);
     }
 }
 
-internal static class TelemetryText
+internal static partial class TelemetryText
 {
+    /// <summary>
+    /// <see cref="SecretRedactor"/>, and before it the query string of every URL and of every
+    /// path is cut off: a query value has no shape that the redactor knows (an OAuth code, a
+    /// search text), and no reader of telemetry needs it.
+    /// </summary>
+    public static string Redact(string text) =>
+        string.IsNullOrEmpty(text) ? text : SecretRedactor.Redact(Query().Replace(text, "$1?[query]"));
+
+    // A URL, or a path that starts with "/", up to its "?", and then the query to the next space or quote.
+    [GeneratedRegex(@"((?:[A-Za-z][A-Za-z0-9+.-]*://|/)[^\s?""'<>]*)\?[^\s""'<>]*", RegexOptions.NonBacktracking | RegexOptions.CultureInvariant)]
+    private static partial Regex Query();
+
     /// <returns>The redacted text of <paramref name="value"/>, or null when the value is a number, a flag or null and stays as it is.</returns>
     public static object? Clean(object? value) => value switch
     {
         null or bool or byte or short or int or long or float or double or decimal => null,
-        string text => SecretRedactor.Redact(text),
+        string text => TelemetryText.Redact(text),
         string[] texts => Array.ConvertAll(texts, SecretRedactor.Redact),
         Array => null,
         // A value of another type is written with ToString by the exporter, so it is text.
-        _ => SecretRedactor.Redact(value.ToString() ?? ""),
+        _ => TelemetryText.Redact(value.ToString() ?? ""),
     };
 
     /// <summary>Scheme, host and port. Text that is not an absolute URL gives a fixed word.</summary>

@@ -78,6 +78,7 @@ export function CreateFlyout({ onCreateDiagram, onCreateDoc }: CreateFlyoutProps
         {mode === 'diagram' && (
           <form onSubmit={(e) => { e.preventDefault(); handleCreateDiagram() }}>
             <Input
+              aria-label="Diagram name"
               placeholder="Diagram name"
               value={name}
               onChange={(e) => setName(e.target.value)}
@@ -122,6 +123,7 @@ export function CreateFlyout({ onCreateDiagram, onCreateDoc }: CreateFlyoutProps
         {mode === 'doc-title' && (
           <form onSubmit={(e) => { e.preventDefault(); handleCreateDoc() }}>
             <Input
+              aria-label="Document title"
               placeholder="Document title"
               value={name}
               onChange={(e) => setName(e.target.value)}

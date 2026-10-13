@@ -15,7 +15,7 @@ export const FACT_STATUS_COLORS: Record<string, string> = {
   'observed-in-source': '#2dd4bf',
   inferred: '#f59e0b',
   measured: '#22c55e',
-  unknown: '#ef4444',
+  unknown: '#f87171',
 }
 
 export function factStatusColor(status: string): string {

@@ -35,7 +35,7 @@ export function CreateDraftDialog({ projectId, open, onOpenChange }: CreateDraft
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent aria-describedby={undefined}>
         <DialogHeader>
           <DialogTitle>New Draft</DialogTitle>
         </DialogHeader>

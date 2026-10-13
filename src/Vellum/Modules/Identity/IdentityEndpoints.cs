@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Identity;
 using Vellum.Modules.Identity.AgentTokens;
 using Vellum.Modules.Settings.Setup;
 using Vellum.Shared;
+using Vellum.Shared.Telemetry;
 
 namespace Vellum.Modules.Identity;
 
@@ -14,6 +15,9 @@ public static class IdentityEndpoints
 {
     /// <summary>An email address and a password.</summary>
     public const int MaxLoginBodyBytes = 4 * 1024;
+
+    /// <summary>Where a provider's handler sends the browser after it signed the external identity in.</summary>
+    public const string ExternalCompletePath = "/api/auth/external/complete";
 
     public static WebApplication MapIdentityEndpoints(this WebApplication app)
     {
@@ -47,7 +51,9 @@ public static class IdentityEndpoints
 
             await signInManager.SignInAsync(user, isPersistent: true);
             return Results.Created($"/api/auth/me", new UserInfoResponse(user.Id, user.Email!, user.DisplayName));
-        });
+        })
+        .WithBodyLimit(MaxLoginBodyBytes)
+        .RequireRateLimiting(RequestLimits.RegistrationPolicy);
 
         group.MapPost("/login", async (
             LoginRequest request,
@@ -58,7 +64,10 @@ public static class IdentityEndpoints
                 request.Email, request.Password, isPersistent: true, lockoutOnFailure: true);
 
             if (!result.Succeeded)
+            {
+                VellumMetrics.LoginFailed(result.IsLockedOut ? "locked_out" : "invalid_credentials");
                 return Results.Unauthorized();
+            }
 
             return Results.Ok();
         })
@@ -80,16 +89,26 @@ public static class IdentityEndpoints
             return Results.Ok(new UserInfoResponse(user.Id, user.Email!, user.DisplayName));
         }).RequireAuthorization();
 
-        group.MapGet("/external/{provider}", (
+        // Starts a sign-in with a provider. The provider sends the browser back to the
+        // callback path of its handler (IdentityModule), which the handler answers itself; the
+        // handler then sends the browser to ExternalCompletePath below. The two paths differ:
+        // a handler that owns the path of the endpoint would take its own redirect for a
+        // second answer of the provider and fail.
+        group.MapGet("/external/{provider}", async (
             string provider,
             SignInManager<ApplicationUser> signInManager) =>
         {
-            var properties = signInManager.ConfigureExternalAuthenticationProperties(
-                provider, "/api/auth/external/callback");
-            return Results.Challenge(properties, [provider]);
-        });
+            // Only a provider that this instance has configured. Any other name is no page.
+            var configured = (await signInManager.GetExternalAuthenticationSchemesAsync())
+                .FirstOrDefault(s => string.Equals(s.Name, provider, StringComparison.OrdinalIgnoreCase));
+            if (configured is null)
+                return Results.NotFound(new ErrorResponse("not_found", "This sign-in provider is not configured"));
 
-        group.MapGet("/external/callback", async (
+            var properties = signInManager.ConfigureExternalAuthenticationProperties(configured.Name, ExternalCompletePath);
+            return Results.Challenge(properties, [configured.Name]);
+        }).RequireRateLimiting(RequestLimits.CredentialPolicy);
+
+        group.MapGet("/external/complete", async (
             SignInManager<ApplicationUser> signInManager,
             UserManager<ApplicationUser> userManager,
             RegistrationPolicy registration,
@@ -105,9 +124,11 @@ public static class IdentityEndpoints
             if (signInResult.Succeeded)
                 return Results.Redirect("/");
 
+            // The provider's handler adds an email claim only for an address the provider verified.
             var email = info.Principal.FindFirstValue(ClaimTypes.Email);
             if (email is null)
-                return Results.BadRequest(new ErrorResponse("validation_error", "Email not provided by external provider"));
+                return Results.BadRequest(new ErrorResponse("validation_error", "The provider gave no verified email address",
+                    $"Verify a primary email address at {info.LoginProvider} and sign in again."));
 
             // An email address from a provider does not prove who owns the account here. A
             // provider that lets a person claim any address would otherwise hand over that
@@ -144,7 +165,7 @@ public static class IdentityEndpoints
                     title: "Failed to link the external account");
             await signInManager.SignInAsync(user, isPersistent: true);
             return Results.Redirect("/");
-        });
+        }).RequireRateLimiting(RequestLimits.CredentialPolicy);
 
         app.MapAgentTokenEndpoints();
         return app;

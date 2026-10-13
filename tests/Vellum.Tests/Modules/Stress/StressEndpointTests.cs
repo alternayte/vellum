@@ -4,6 +4,7 @@ using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Vellum.Modules.Settings.Document;
 using Vellum.Modules.Stress;
 using Vellum.Modules.Stress.Engine;
 using Vellum.Tests.Modules.Promises;
@@ -523,16 +524,16 @@ public class StressEndpointTests(IntegrationFixture fixture)
         using var gate = new StressRunGate(new StressRunPolicy(MaxConcurrentPerWorkspace: 2));
         Guid workspace = Guid.NewGuid(), other = Guid.NewGuid();
 
-        var first = gate.TryEnter(workspace, out _);
-        var second = gate.TryEnter(workspace, out _);
+        var first = gate.TryEnter(workspace, 4, out _);
+        var second = gate.TryEnter(workspace, 4, out _);
         Assert.NotNull(first);
         Assert.NotNull(second);
-        Assert.Null(gate.TryEnter(workspace, out _));
-        using (var elsewhere = gate.TryEnter(other, out _))
+        Assert.Null(gate.TryEnter(workspace, 4, out _));
+        using (var elsewhere = gate.TryEnter(other, 4, out _))
             Assert.NotNull(elsewhere);
 
         first!.Dispose();
-        using var third = gate.TryEnter(workspace, out _);
+        using var third = gate.TryEnter(workspace, 4, out _);
         Assert.NotNull(third);
         second!.Dispose();
     }
@@ -540,23 +541,30 @@ public class StressEndpointTests(IntegrationFixture fixture)
     [Fact]
     public void The_instance_runs_a_bounded_number_of_stress_runs_at_the_same_time_over_all_workspaces()
     {
-        using var gate = new StressRunGate(new StressRunPolicy(MaxConcurrentPerWorkspace: 2, MaxConcurrentPerInstance: 3));
+        using var gate = new StressRunGate(new StressRunPolicy(MaxConcurrentPerWorkspace: 2));
 
-        var places = new[] { Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid() }.Select(workspace => gate.TryEnter(workspace, out _)).ToList();
+        var places = new[] { Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid() }.Select(workspace => gate.TryEnter(workspace, 3, out _)).ToList();
         Assert.All(places, Assert.NotNull);
 
         // A fourth workspace has run nothing, and the instance is full: the answer is 'busy', not the rate of the workspace.
         var fourth = Guid.NewGuid();
-        Assert.Null(gate.TryEnter(fourth, out var refusal));
+        Assert.Null(gate.TryEnter(fourth, 3, out var refusal));
         Assert.Equal("busy", refusal!.Code);
         Assert.True(refusal.RetryAfter > TimeSpan.Zero);
 
         // The refusal took no place of the workspace and no place of the instance.
         places[0]!.Dispose();
-        using var afterwards = gate.TryEnter(fourth, out refusal);
+        using var afterwards = gate.TryEnter(fourth, 3, out refusal);
         Assert.NotNull(afterwards);
         Assert.Null(refusal);
-        Assert.Null(gate.TryEnter(Guid.NewGuid(), out refusal));
+        Assert.Null(gate.TryEnter(Guid.NewGuid(), 3, out refusal));
+        Assert.Equal("busy", refusal!.Code);
+
+        // The limit comes with each call: a higher one gives a place at once, and a lower one
+        // takes no place away from a run that has it.
+        using var raised = gate.TryEnter(Guid.NewGuid(), 4, out refusal);
+        Assert.NotNull(raised);
+        Assert.Null(gate.TryEnter(Guid.NewGuid(), 1, out refusal));
         Assert.Equal("busy", refusal!.Code);
         places[1]!.Dispose();
         places[2]!.Dispose();
@@ -565,14 +573,16 @@ public class StressEndpointTests(IntegrationFixture fixture)
     [Fact]
     public async Task A_run_on_a_full_instance_gets_429_busy_and_a_time_to_wait()
     {
-        var (factory, owner, _, orders) = await SeedAsync(services =>
-            services.AddSingleton(new StressRunPolicy(MaxConcurrentPerInstance: 1)));
+        var (factory, owner, _, orders) = await SeedAsync();
         using var _f = factory;
         var profileId = await CreateAsync(owner, orders.ProjectId, Profile(orders));
 
-        // Another workspace holds the one place of the instance.
-        using var held = factory.Services.GetRequiredService<StressRunGate>().TryEnter(Guid.NewGuid(), out _);
-        Assert.NotNull(held);
+        // Other workspaces hold every place of the instance. The limit is the instance policy, which starts at its default.
+        const int limit = InstancePolicy.DefaultMaxConcurrentStressRuns;
+        var gate = factory.Services.GetRequiredService<StressRunGate>();
+        var places = Enumerable.Range(0, limit).Select(i => gate.TryEnter(Guid.NewGuid(), limit, out _)).ToList();
+        Assert.All(places, Assert.NotNull);
+        var held = places[0];
 
         var busy = await owner.PostAsync(Url(orders.ProjectId, $"profiles/{profileId}/runs"), null);
         Assert.Equal(HttpStatusCode.TooManyRequests, busy.StatusCode);
@@ -583,5 +593,7 @@ public class StressEndpointTests(IntegrationFixture fixture)
 
         held!.Dispose();
         await RunAsync(owner, orders.ProjectId, profileId);
+        foreach (var place in places)
+            place!.Dispose();
     }
 }

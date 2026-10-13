@@ -8,7 +8,7 @@ import { shownInline } from '@/lib/mutation-errors'
 import { ApiError } from '@/lib/settings-api'
 import { loadTestsApi, measurementRef } from '@/lib/load-tests-api'
 import {
-  emptyProfile, stressApi,
+  emptyProfile, stressApi, type StressProfileDefaults,
   type ArrivalKind, type Distribution, type DistributionKind, type StressProfile, type StressProfileDetail, type StressRequirements,
 } from '@/lib/stress-api'
 
@@ -18,6 +18,8 @@ interface Props {
   scenarios: { id: string; name: string }[]
   /** Null for a new profile. */
   existing: StressProfileDetail | null
+  /** What a new profile starts with. Not read for an existing profile. */
+  defaults: StressProfileDefaults
   onClose: () => void
   /** Called with the saved profile; `run` asks the caller to run it at once. */
   onSaved: (saved: StressProfileDetail, run: boolean) => void
@@ -138,10 +140,12 @@ function toProfile(draft: Draft, needs: StressRequirements | undefined): StressP
 /**
  * The form of one stress profile. The scenario decides which inputs exist: every element
  * that does work, every service time, every reached subscription and every branch step.
- * Nothing has a default; an empty field stays empty and the run says that it is missing.
+ * No input of the scenario has a default; an empty field stays empty and the run says that it
+ * is missing. The seed, the window and the arrival rate of a new profile start from the
+ * workspace's simulation settings.
  */
-export function StressProfileDialog({ projectId, branchId, scenarios, existing, onClose, onSaved }: Props) {
-  const [draft, setDraft] = useState<Draft>(() => toDraft(existing?.profile ?? emptyProfile(scenarios[0]?.id ?? '')))
+export function StressProfileDialog({ projectId, branchId, scenarios, existing, defaults, onClose, onSaved }: Props) {
+  const [draft, setDraft] = useState<Draft>(() => toDraft(existing?.profile ?? emptyProfile(scenarios[0]?.id ?? '', defaults)))
   const set = <K extends keyof Draft>(field: K, value: Draft[K]) => setDraft((d) => ({ ...d, [field]: value }))
   const arrivals = draft.arrivals
   const setArrivals = (change: Partial<Draft['arrivals']>) => set('arrivals', { ...arrivals, ...change })

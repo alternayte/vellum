@@ -6,7 +6,7 @@
 @import "@fontsource/inter/latin-500.css";
 @import "@fontsource/jetbrains-mono/latin-400.css";
 @import "tw-animate-css";
-@import "shadcn/tailwind.css";
+@import "./shadcn-variants.css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -65,16 +65,19 @@
     --foreground: hsl(180 4% 96%);
     --card: hsl(212 17% 14%);
     --card-foreground: hsl(180 4% 96%);
-    --primary: hsl(217 91% 60%);
-    --primary-foreground: hsl(0 0% 100%);
+    /* Text tokens are set for WCAG AA (4.5:1) on --background, --card and --muted. The label on a
+       primary fill is dark: white does not reach 4.5:1 on a blue that is also readable as text. */
+    --primary: hsl(217 91% 68%);
+    --primary-foreground: hsl(215 30% 8%);
     --muted: hsl(215 20% 21%);
-    --muted-foreground: hsl(210 17% 60%);
+    --muted-foreground: hsl(210 17% 66%);
     --border: hsl(213 18% 23%);
-    --input: hsl(213 18% 23%);
-    --ring: hsl(217 91% 60%);
+    /* The boundary of a field: 3:1 on the surfaces a field stands on. Dividers keep --border. */
+    --input: hsl(213 14% 48%);
+    --ring: hsl(217 91% 68%);
     --radius: 0.5rem;
-    --destructive: hsl(0 60% 48%);
-    --destructive-foreground: hsl(0 0% 100%);
+    --destructive: hsl(0 84% 71%);
+    --destructive-foreground: hsl(215 30% 8%);
     --accent: hsl(215 20% 21%);
     --accent-foreground: hsl(180 4% 96%);
     --popover: hsl(212 17% 14%);
@@ -83,23 +86,23 @@
     --secondary-foreground: hsl(180 4% 96%);
 
     --status-current: transparent;
-    --status-planned: hsl(217 66% 54%);
+    --status-planned: hsl(217 66% 58%);
     --status-deprecated: hsl(38 70% 42%);
-    --status-removed: hsl(6 50% 47%);
+    --status-removed: hsl(6 55% 56%);
 
-    --kind-actor: hsl(215 16% 47%);
-    --kind-system: hsl(217 91% 60%);
+    --kind-actor: hsl(215 16% 56%);
+    --kind-system: hsl(217 91% 68%);
     --kind-app: hsl(160 84% 39%);
     --kind-store: hsl(38 92% 50%);
-    --kind-component: hsl(258 90% 66%);
+    --kind-component: hsl(258 90% 72%);
 
     /* Trace semantics (SDD §3): teal requests, violet events, cyan data, amber retries, red failures. */
     --trace-request: hsl(172 66% 50%);
-    --trace-event: hsl(258 90% 72%);
+    --trace-event: hsl(258 90% 78%);
     --trace-data: hsl(190 90% 55%);
     --trace-retry: hsl(38 92% 55%);
-    --trace-failure: hsl(0 84% 64%);
-    --trace-control: hsl(210 17% 60%);
+    --trace-failure: hsl(0 84% 71%);
+    --trace-control: hsl(210 17% 66%);
 
     /* Chart series, in a fixed order. Each step is chosen for this surface; the light theme has its own steps. */
     --chart-1: #3987e5;
@@ -111,12 +114,12 @@
 
     --sidebar: hsl(212 17% 14%);
     --sidebar-foreground: hsl(180 4% 96%);
-    --sidebar-primary: hsl(217 91% 60%);
-    --sidebar-primary-foreground: hsl(0 0% 100%);
+    --sidebar-primary: hsl(217 91% 68%);
+    --sidebar-primary-foreground: hsl(215 30% 8%);
     --sidebar-accent: hsl(215 20% 21%);
     --sidebar-accent-foreground: hsl(180 4% 96%);
     --sidebar-border: hsl(213 18% 23%);
-    --sidebar-ring: hsl(217 91% 60%);
+    --sidebar-ring: hsl(217 91% 68%);
   }
 
   .light {
@@ -177,6 +180,37 @@
   }
   body {
     @apply bg-background text-foreground font-body;
+  }
+
+  /* Keyboard focus is visible on every control, whether a primitive or a hand-written button.
+     A component that draws its own ring (outline-none with a ring utility) overrides this,
+     because utilities come after the base layer. */
+  :where(a[href], button, input, select, textarea, summary, [role="button"], [role="tab"], [role="switch"],
+    [role="menuitem"], [role="option"], [role="checkbox"], [role="radio"], [role="slider"], [tabindex]:not([tabindex="-1"])):focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+
+  /* A placeholder is text a person reads. */
+  ::placeholder {
+    color: var(--muted-foreground);
+    opacity: 1;
+  }
+}
+
+/* Reduced motion, for the whole app: no animation and no transition plays. Each state is
+   reached at once, so nothing that an animation ends in is lost: a dialog is open, a row is
+   expanded, a spinner stands still beside its text. Scripted motion asks prefersReducedMotion(). */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-delay: 0s !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    transition-delay: 0s !important;
+    scroll-behavior: auto !important;
   }
 }
 

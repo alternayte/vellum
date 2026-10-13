@@ -131,7 +131,7 @@ public partial class K6ScriptTests
 
         // The hash is the SHA-256 of the script with the hash constant set to zeros.
         var hashLine = $"{K6ScriptGenerator.HashLinePrefix}{first.Hash}\";\n";
-        Assert.Equal(1, Regex.Matches(first.Content, Regex.Escape(first.Hash)).Count);
+        Assert.Single(Regex.Matches(first.Content, Regex.Escape(first.Hash)));
         var zeroed = first.Content.Replace(hashLine, $"{K6ScriptGenerator.HashLinePrefix}{new string('0', 64)}\";\n");
         Assert.Equal(first.Hash, Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(zeroed))));
 

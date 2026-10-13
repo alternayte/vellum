@@ -1,4 +1,5 @@
 import { Command } from 'cmdk'
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import { useShellStore } from '@/stores/shell-store'
 import { useCanvasStore } from '@/stores/canvas-store'
 import { kindColor } from '@/lib/kind-colors'
@@ -23,21 +24,24 @@ export function CommandPalette({ elements, onAddElement, onTidy, onZoomToFit }: 
   const { commandPaletteOpen, closeCommandPalette, selectElement } = useShellStore()
   const { toggleLens, drillTo } = useCanvasStore()
 
-  if (!commandPaletteOpen) return null
-
+  // The dialog primitive holds the focus inside the palette, gives it back to the control
+  // that had it, and closes on Escape as the top layer only.
   return (
-    <div role="dialog" aria-modal="true" aria-label="Command palette" className="fixed inset-0 z-50 flex items-start justify-center px-4 pt-[20vh]">
-      <div className="fixed inset-0 bg-background/80" onClick={closeCommandPalette} />
+    <Dialog open={commandPaletteOpen} onOpenChange={(open) => { if (!open) closeCommandPalette() }}>
+      <DialogContent
+        showCloseButton={false}
+        aria-describedby={undefined}
+        className="top-[20vh] block w-full max-w-lg translate-y-0 gap-0 border-0 bg-transparent p-0 ring-0 sm:max-w-lg"
+      >
+        <DialogTitle className="sr-only">Command palette</DialogTitle>
       <Command
         label="Command palette"
         className="relative w-full max-w-lg rounded-lg border border-border bg-card shadow-2xl"
-        onKeyDown={(e) => {
-          if (e.key === 'Escape') closeCommandPalette()
-        }}
       >
         <Command.Input
           placeholder="Search elements, actions..."
           className="w-full border-b border-border bg-transparent px-4 py-3 text-sm outline-none placeholder:text-muted-foreground"
+          aria-label="Search elements and actions"
           autoFocus
         />
         <Command.List className="max-h-80 overflow-y-auto p-2">
@@ -62,6 +66,7 @@ export function CommandPalette({ elements, onAddElement, onTidy, onZoomToFit }: 
                 className="flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm aria-selected:bg-muted"
               >
                 <span
+                  aria-hidden="true"
                   className="h-2 w-2 rounded-full"
                   style={{ backgroundColor: kindColor(el.kind) }}
                 />
@@ -142,6 +147,7 @@ export function CommandPalette({ elements, onAddElement, onTidy, onZoomToFit }: 
           </Command.Group>
         </Command.List>
       </Command>
-    </div>
+      </DialogContent>
+    </Dialog>
   )
 }

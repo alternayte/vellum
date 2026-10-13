@@ -205,7 +205,7 @@ function WorkspacePicker() {
       </div>
 
       <Dialog open={showCreateWorkspace} onOpenChange={setShowCreateWorkspace}>
-        <DialogContent>
+        <DialogContent aria-describedby={undefined}>
           <DialogHeader>
             <DialogTitle>Create Workspace</DialogTitle>
           </DialogHeader>
@@ -231,7 +231,7 @@ function WorkspacePicker() {
       </Dialog>
 
       <Dialog open={showCreateProject} onOpenChange={setShowCreateProject}>
-        <DialogContent>
+        <DialogContent aria-describedby={undefined}>
           <DialogHeader>
             <DialogTitle>Create Project</DialogTitle>
           </DialogHeader>
