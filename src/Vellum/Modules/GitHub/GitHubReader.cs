@@ -64,7 +64,17 @@ public sealed record GitHubPullRequest(
 
 /// <param name="Status"><c>queued</c>, <c>in_progress</c>, <c>completed</c> and the other words GitHub uses.</param>
 /// <param name="Conclusion">Null until the run is completed. Then <c>success</c>, <c>failure</c>, <c>cancelled</c> and so on.</param>
-public sealed record GitHubWorkflowRun(long Id, string HeadSha, string Status, string? Conclusion, string? Name);
+/// <param name="Repository">The <c>owner/name</c> GitHub says the run belongs to, in lower case. Null when the answer holds none.</param>
+/// <param name="Path">The path of the workflow file, such as <c>.github/workflows/ci.yml</c>. Null when the answer holds none.</param>
+public sealed record GitHubWorkflowRun(
+    long Id, string HeadSha, string Status, string? Conclusion, string? Name, string? Repository = null, string? Path = null);
+
+/// <param name="Status"><c>queued</c>, <c>in_progress</c>, <c>completed</c> and the other words GitHub uses.</param>
+/// <param name="Conclusion">Null until the job is completed.</param>
+public sealed record GitHubWorkflowJob(long Id, string Name, string Status, string? Conclusion, string? HeadSha);
+
+/// <param name="Incomplete">True when the run has more jobs than one read returns. A job that is not in the list may then still exist.</param>
+public sealed record GitHubWorkflowJobs(IReadOnlyList<GitHubWorkflowJob> Jobs, bool Incomplete);
 
 public sealed record GitHubRateLimit(int Limit, int Remaining, DateTimeOffset ResetAt);
 
@@ -132,6 +142,8 @@ public sealed partial class GitHubConnection
     private const int MaxWordChars = 40;
     private const int MaxLoginChars = 100;
     private const long MaxEpochSeconds = 253402300799;
+    private const int JobsPerPage = 100;
+    private const int MaxJobPages = 5;
     private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan SecondaryLimitWait = TimeSpan.FromMinutes(1);
 
@@ -263,8 +275,52 @@ public sealed partial class GitHubConnection
             : SendAsync<GitHubWorkflowRun>("get-workflow-run", call => _api.GetWorkflowRun(owner, repo, runId, call, ct), async response =>
                 await OutboundBody.ReadJsonAsync<WorkflowRunDto>(response, ct) is { HeadSha: { } headSha } dto
                 && dto.Id == runId && IsSha(headSha) && Clean(dto.Status, MaxWordChars) is { } status
-                    ? new GitHubWorkflowRun(dto.Id, headSha, status, Clean(dto.Conclusion, MaxWordChars), Clean(dto.Name, MaxNameChars))
+                    ? new GitHubWorkflowRun(dto.Id, headSha, status, Clean(dto.Conclusion, MaxWordChars), Clean(dto.Name, MaxNameChars),
+                        Clean(dto.Repository?.FullName, MaxNameChars)?.ToLowerInvariant(), WorkflowPath(Clean(dto.Path, MaxNameChars)))
                     : Unexpected, ct);
+
+    /// <summary>
+    /// The jobs of the latest attempt of a run, up to <see cref="MaxJobPages"/> pages. A job
+    /// GitHub lists for another run is an unexpected answer, not a job of this run.
+    /// </summary>
+    public async Task<GitHubResult<GitHubWorkflowJobs>> GetWorkflowRunJobsAsync(string owner, string repo, long runId, CancellationToken ct = default)
+    {
+        if (!IsName(owner) || !IsName(repo) || runId < 1)
+            return new GitHubFailure.NotFound();
+
+        var jobs = new List<GitHubWorkflowJob>();
+        var total = 0;
+        for (var page = 1; page <= MaxJobPages; page++)
+        {
+            var current = page;
+            var read = await SendAsync<(int Total, List<GitHubWorkflowJob> Jobs)>("list-workflow-run-jobs",
+                call => _api.ListWorkflowRunJobs(owner, repo, runId, JobsPerPage, current, call, ct), async response =>
+                {
+                    if (await OutboundBody.ReadJsonAsync<WorkflowJobsDto>(response, ct) is not { Jobs: { } listed } dto || dto.TotalCount < 0)
+                        return Unexpected;
+                    var cleaned = new List<GitHubWorkflowJob>(listed.Count);
+                    foreach (var job in listed)
+                    {
+                        if (job is null || job.RunId != runId || Clean(job.Name, MaxNameChars) is not { } name || Clean(job.Status, MaxWordChars) is not { } status)
+                            return Unexpected;
+                        cleaned.Add(new GitHubWorkflowJob(job.Id, name, status, Clean(job.Conclusion, MaxWordChars), ShaOrNull(job.HeadSha)));
+                    }
+                    return (dto.TotalCount, cleaned);
+                }, ct, TreeMaxBytes);
+            if (read.Failure is { } failure)
+                return failure;
+
+            total = read.Value.Total;
+            jobs.AddRange(read.Value.Jobs);
+            if (read.Value.Jobs.Count < JobsPerPage || jobs.Count >= total)
+                break;
+        }
+        return new GitHubWorkflowJobs(jobs, jobs.Count < total);
+    }
+
+    /// <summary>The path of a workflow file without the <c>@ref</c> that some answers append to it.</summary>
+    private static string? WorkflowPath(string? path) =>
+        path is null ? null : path.IndexOf('@', StringComparison.Ordinal) is > 0 and var at ? path[..at] : path;
 
     public Task<GitHubResult<GitHubRateLimit>> GetRateLimitAsync(CancellationToken ct = default) =>
         SendAsync<GitHubRateLimit>("rate-limit", call => _api.GetRateLimit(call, ct), async response =>

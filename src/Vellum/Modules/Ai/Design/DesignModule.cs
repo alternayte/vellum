@@ -2,6 +2,7 @@ using System.Security.Claims;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
+using Vellum.Modules.Identity.AgentTokens;
 using Vellum.Shared;
 
 namespace Vellum.Modules.Ai.Design;
@@ -69,7 +70,7 @@ public static class DesignModule
         var generates = new AiGenerationLimit();
 
         var flows = ai.MapGroup("/flow-proposals");
-        flows.MapPost("/", FlowProposals.Create)
+        flows.MapPost("/", FlowProposals.Create).RequireHuman()
             .WithMetadata(generates)
             .Produces<FlowProposalDto>(StatusCodes.Status201Created)
             .Produces<AiUnavailable>()
@@ -85,7 +86,7 @@ public static class DesignModule
             .Produces(StatusCodes.Status204NoContent)
             .Produces<ErrorResponse>(StatusCodes.Status404NotFound)
             .Produces<ErrorResponse>(StatusCodes.Status409Conflict);
-        flows.MapPost("/{proposalId}/accept", FlowProposals.Accept)
+        flows.MapPost("/{proposalId}/accept", FlowProposals.Accept).RequireHuman()
             .Produces<AcceptFlowProposalResponse>()
             .Produces<ErrorResponse>(StatusCodes.Status400BadRequest)
             .Produces<ErrorResponse>(StatusCodes.Status404NotFound)
@@ -94,14 +95,14 @@ public static class DesignModule
             .Produces<FlowProposalDto>()
             .Produces<ErrorResponse>(StatusCodes.Status404NotFound)
             .Produces<ErrorResponse>(StatusCodes.Status409Conflict);
-        flows.MapPost("/{proposalId}/missing/{alias}/create", FlowProposals.CreateMissing)
+        flows.MapPost("/{proposalId}/missing/{alias}/create", FlowProposals.CreateMissing).RequireHuman()
             .Produces<FlowProposalDto>()
             .Produces<ErrorResponse>(StatusCodes.Status400BadRequest)
             .Produces<ErrorResponse>(StatusCodes.Status404NotFound)
             .Produces<ErrorResponse>(StatusCodes.Status409Conflict);
 
         var architecture = ai.MapGroup("/architecture-proposals");
-        architecture.MapPost("/", ArchitectureProposals.Create)
+        architecture.MapPost("/", ArchitectureProposals.Create).RequireHuman()
             .WithMetadata(generates)
             .Produces<ArchitectureProposalDto>(StatusCodes.Status201Created)
             .Produces<AiUnavailable>()
@@ -116,7 +117,7 @@ public static class DesignModule
             .Produces(StatusCodes.Status204NoContent)
             .Produces<ErrorResponse>(StatusCodes.Status404NotFound)
             .Produces<ErrorResponse>(StatusCodes.Status409Conflict);
-        architecture.MapPost("/{proposalId}/decide", ArchitectureProposals.Decide)
+        architecture.MapPost("/{proposalId}/decide", ArchitectureProposals.Decide).RequireHuman()
             .Produces<ArchitectureProposalDto>()
             .Produces<ErrorResponse>(StatusCodes.Status400BadRequest)
             .Produces<ErrorResponse>(StatusCodes.Status404NotFound)

@@ -35,4 +35,37 @@ internal static class PromiseJson
             CanonicalJson.Write(writer, JsonSerializer.SerializeToElement(value, Options));
         return Convert.ToHexStringLower(SHA256.HashData(buffer.GetBuffer().AsSpan(0, (int)buffer.Length)));
     }
+
+    /// <summary>
+    /// SHA-256 of the canonical JSON of a value with every null member left out. A hash that
+    /// is stored and compared later (the content a person approved, the obligation a run was
+    /// made for) uses this form, so a member that is added later and is null for old content
+    /// does not change the hash of that content.
+    /// </summary>
+    public static string StableHash<T>(T value)
+    {
+        var node = JsonSerializer.SerializeToNode(value, Options);
+        DropNulls(node);
+        using var buffer = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(buffer))
+            CanonicalJson.Write(writer, JsonSerializer.SerializeToElement(node, Options));
+        return Convert.ToHexStringLower(SHA256.HashData(buffer.GetBuffer().AsSpan(0, (int)buffer.Length)));
+    }
+
+    private static void DropNulls(System.Text.Json.Nodes.JsonNode? node)
+    {
+        switch (node)
+        {
+            case System.Text.Json.Nodes.JsonObject obj:
+                foreach (var name in obj.Where(p => p.Value is null).Select(p => p.Key).ToList())
+                    obj.Remove(name);
+                foreach (var (_, value) in obj)
+                    DropNulls(value);
+                break;
+            case System.Text.Json.Nodes.JsonArray array:
+                foreach (var item in array)
+                    DropNulls(item);
+                break;
+        }
+    }
 }

@@ -21,6 +21,11 @@ public class PromiseEntity
     public string Document { get; set; } = null!;
     /// <summary>A JSON object: the newest run of each obligation of each revision, by <c>revision:obligation ID</c>.</summary>
     public string LatestRuns { get; set; } = "{}";
+    /// <summary>
+    /// The version of the promise stream that this row is the fold of. 0 in a row written
+    /// before the column existed: a reader that needs the version then folds the stream.
+    /// </summary>
+    public long Version { get; set; }
 }
 
 /// <summary>One verification run. Rows are added and never changed.</summary>

@@ -1,3 +1,5 @@
+using Vellum.Modules.Identity.AgentTokens;
+
 namespace Vellum.Modules.Workspaces;
 
 public static class WorkspaceEndpoints
@@ -13,8 +15,8 @@ public static class WorkspaceEndpoints
         group.MapPatch("/{id}", UpdateWorkspace.Handle);
 
         var members = group.MapGroup("/{workspaceId}/members").WithTags("Members");
-        members.MapPost("/", InviteMember.Handle);
-        members.MapDelete("/{memberUserId}", RemoveMember.Handle);
+        members.MapPost("/", InviteMember.Handle).RequireHuman();
+        members.MapDelete("/{memberUserId}", RemoveMember.Handle).RequireHuman();
 
         var projects = group.MapGroup("/{workspaceId}/projects").WithTags("Projects");
         projects.MapPost("/", CreateProject.Handle);

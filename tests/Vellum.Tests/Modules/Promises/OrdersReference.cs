@@ -173,13 +173,22 @@ internal sealed class OrdersReference
         return (await edited.Content.ReadFromJsonAsync<JsonObject>())!;
     }
 
+    /// <summary>Approves a revision as a person does: reads it, then names its number and the content hash that was read.</summary>
     public async Task<JsonObject> ApproveAsync(Guid promiseId, int revision = 1)
     {
-        var response = await Client.PostAsJsonAsync(Url($"promises/{promiseId}/approve"), new { revision });
+        var response = await Client.PostAsync(Url($"promises/{promiseId}/approve"), Json(await ApprovalAsync(promiseId, revision)));
         Assert.True(response.StatusCode == HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
         return (await response.Content.ReadFromJsonAsync<JsonObject>())!;
     }
 
+    /// <summary>The body of an approval of <paramref name="revision"/> as it is now.</summary>
+    public async Task<JsonObject> ApprovalAsync(Guid promiseId, int revision = 1)
+    {
+        var read = (await GetAsync(promiseId))["revisions"]!.AsArray().Single(r => r!["revision"]!.GetValue<int>() == revision)!;
+        return new JsonObject { ["revision"] = revision, ["contentHash"] = read["contentHash"]?.GetValue<string>() };
+    }
+
+    /// <summary>Runs an obligation of the approved revision in force, or of the revision that <paramref name="body"/> names.</summary>
     public async Task<JsonObject> RunAsync(Guid promiseId, string key, object? body = null)
     {
         var response = await Client.PostAsJsonAsync(Url($"promises/{promiseId}/obligations/{key}/run"), body ?? new { });

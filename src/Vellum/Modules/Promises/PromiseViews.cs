@@ -1,8 +1,12 @@
 using System.Globalization;
+using Vellum.Modules.Trace.Engine;
 
 namespace Vellum.Modules.Promises;
 
-public sealed record EvidenceCountsDto(int Passed, int Failed, int NotRun, int Unsupported);
+/// <param name="Passed">Obligations whose newest run passed and is current. A pass whose input moved is in <paramref name="Stale"/>.</param>
+/// <param name="Failed">Obligations whose newest run failed and is current.</param>
+/// <param name="Stale">Obligations whose newest run passed or failed on inputs that are no longer the current ones.</param>
+public sealed record EvidenceCountsDto(int Passed, int Failed, int NotRun, int Unsupported, int Stale);
 
 /// <param name="Key">The last part of the ID (<c>O2</c>): what a URL names the obligation by.</param>
 /// <param name="Supported">True for the kinds Vellum checks by itself. Derived from the kind.</param>
@@ -22,10 +26,20 @@ public sealed record ObligationDto(
 /// obligation with no run that applies is <c>not-run</c>, and one of a kind Vellum does not
 /// know is <c>unsupported</c>.
 /// </summary>
+/// <param name="Current">
+/// For <c>passed</c> and <c>failed</c>: true when every input the run recorded is still the
+/// current one. False means the result is for inputs that moved; <paramref name="Changed"/>
+/// names each. Null when there is no result to be current.
+/// </param>
+/// <param name="Inputs">Everything the run read, at the version it read it.</param>
+/// <param name="Assertions">For a scenario check: each assertion, with whether it is vacuous.</param>
+/// <param name="EffectiveFaults">For a scenario check: the faults that were played.</param>
 public sealed record ObligationStatusDto(
-    string ObligationId, string Result, Guid? RunId, DateTimeOffset? At, string? Environment,
+    string ObligationId, string Result, bool? Current, Guid? RunId, DateTimeOffset? At, string? Environment,
     ModelPin? ModelRevision, string? CommitSha, Guid? ScanId, string? Scope,
-    IReadOnlyList<EvidenceItem> Evidence, IReadOnlyList<string> Limitations, string? Detail);
+    IReadOnlyList<EvidenceItem> Evidence, IReadOnlyList<string> Limitations, string? Detail,
+    RunInputs? Inputs, IReadOnlyList<string> Changed,
+    IReadOnlyList<AssertionOutcome>? Assertions, IReadOnlyList<Fault>? EffectiveFaults);
 
 /// <summary>
 /// What the evidence of a revision establishes, and what it does not. It is computed on every
@@ -44,14 +58,18 @@ public sealed record MissingLinkDto(string Kind, Guid Id);
 
 /// <param name="Status"><c>draft</c> or <c>approved</c>.</param>
 /// <param name="Retires">True when approving this revision retires the promise.</param>
+/// <param name="RetiresRevision">For a revision that retires: the revision it retires. Its text is shown here; it holds none of its own.</param>
 /// <param name="InForce">True for the newest approved revision.</param>
+/// <param name="ContentHash">The hash of everything an approval of this revision binds. Send it with <c>approve</c>.</param>
+/// <param name="ApprovedContentHash">The hash the approver sent. Null for a draft, and for an approval stored before the hash existed.</param>
 public sealed record PromiseRevisionDto(
-    int Revision, string Status, bool Retires, bool InForce,
+    int Revision, string Status, bool Retires, int? RetiresRevision, bool InForce,
     string Title, string Claim, string? Scope, string? Preconditions, string? ExpectedOutcome,
     string? ForbiddenOutcome, string? EvidenceCriteria,
     IReadOnlyList<ForbiddenEvent> ForbiddenEvents, RequiredPattern? RequiresPattern, PromiseLinks Links,
     IReadOnlyList<ObligationDto> Obligations,
     string CreatedBy, DateTimeOffset CreatedAt, string? ApprovedBy, DateTimeOffset? ApprovedAt, long? ApprovedModelVersion,
+    string ContentHash, string? ApprovedContentHash,
     EvidenceStatusDto EvidenceStatus);
 
 /// <param name="State"><c>draft</c>, <c>approved</c> or <c>retired</c>.</param>
@@ -64,10 +82,12 @@ public sealed record PromiseDto(
     PromiseRevisionDto Current, PromiseRevisionDto? Draft, IReadOnlyList<PromiseRevisionDto> Revisions,
     string CreatedBy, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
 
+/// <param name="Counts">The same counts as <c>current.evidenceStatus.counts</c> of the promise.</param>
+/// <param name="HasGaps">True when <c>current.evidenceStatus.gaps</c> of the promise is not empty.</param>
 public sealed record PromiseSummaryDto(
     Guid Id, string RequirementId, string Title, string State, string Origin,
     int LatestRevision, int? InForceRevision, bool HasDraft, bool NeedsReview,
-    EvidenceCountsDto Counts, DateTimeOffset UpdatedAt);
+    EvidenceCountsDto Counts, bool HasGaps, DateTimeOffset UpdatedAt);
 
 public sealed record PrefixDto(string? Prefix, int? NextNumber);
 
@@ -77,7 +97,7 @@ public static class PromiseViews
     {
         var inForce = state.InForce;
         var current = inForce ?? state.Latest!;
-        var revisions = state.Revisions.Select(r => Revision(r, r == inForce, latestRuns, world)).ToList();
+        var revisions = state.Revisions.Select(r => Revision(state, r, r == inForce, latestRuns, world)).ToList();
         var missing = Missing(current, state.Draft, world);
 
         return new PromiseDto(
@@ -91,12 +111,12 @@ public static class PromiseViews
     public static PromiseSummaryDto ToSummary(Guid id, PromiseState state, IReadOnlyDictionary<string, VerificationRun> latestRuns, PromiseWorld world)
     {
         var current = state.InForce ?? state.Latest!;
+        var evidence = Evidence(state, current, latestRuns, world);
         return new PromiseSummaryDto(
             id, state.RequirementId!, current.Content.Title, state.Lifecycle, state.Origin!,
             state.Latest!.Revision, state.InForce?.Revision, state.Draft is not null,
             Missing(current, state.Draft, world).Count > 0,
-            Counts(current.Obligations.Select(o => Status(o, current.Revision, latestRuns, world, null))),
-            state.UpdatedAt!.Value);
+            evidence.Counts, evidence.Gaps.Count > 0, state.UpdatedAt!.Value);
     }
 
     private static List<MissingLinkDto> Missing(PromiseRevisionState current, PromiseRevisionState? draft, PromiseWorld world) =>
@@ -107,37 +127,45 @@ public static class PromiseViews
             .ToList();
 
     private static PromiseRevisionDto Revision(
-        PromiseRevisionState revision, bool inForce, IReadOnlyDictionary<string, VerificationRun> latestRuns, PromiseWorld world)
+        PromiseState state, PromiseRevisionState revision, bool inForce, IReadOnlyDictionary<string, VerificationRun> latestRuns, PromiseWorld world)
     {
-        var content = revision.Content;
+        // A revision that retires holds no text of its own: the reader sees what it retires.
+        var content = state.Shown(revision).Content;
         return new PromiseRevisionDto(
-            revision.Revision, revision.Status, revision.Retires, inForce,
+            revision.Revision, revision.Status, revision.Retires, revision.RetiresRevision, inForce,
             content.Title, content.Claim, content.Scope, content.Preconditions, content.ExpectedOutcome,
             content.ForbiddenOutcome, content.EvidenceCriteria,
             content.ForbiddenEvents, content.RequiresPattern, content.Links,
             revision.Obligations.Select(ObligationDto.From).ToList(),
             revision.CreatedBy, revision.CreatedAt, revision.ApprovedBy, revision.ApprovedAt, revision.ApprovedModelVersion,
-            Evidence(revision, latestRuns, world));
+            PromiseContentHash.Of(state.RequirementId, revision), revision.ApprovedContentHash,
+            Evidence(state, revision, latestRuns, world));
     }
 
     /// <summary>The evidence status of one revision. Every sentence in <c>Gaps</c> names what is not established.</summary>
     public static EvidenceStatusDto Evidence(
-        PromiseRevisionState revision, IReadOnlyDictionary<string, VerificationRun> latestRuns, PromiseWorld world)
+        PromiseState state, PromiseRevisionState revision, IReadOnlyDictionary<string, VerificationRun> latestRuns, PromiseWorld world)
     {
         var gaps = new List<string>();
         if (revision.IsDraft)
             gaps.Add(string.Create(CultureInfo.InvariantCulture, $"Revision {revision.Revision} is a draft. It is not approved and is not in force."));
-        if (revision.Obligations.Count == 0)
+        else if (revision.ApprovedContentHash is { } approved
+                 && (revision.ApprovalIntact == false || approved != PromiseContentHash.Of(state.RequirementId, revision)))
+        {
+            gaps.Add(string.Create(CultureInfo.InvariantCulture,
+                $"The content of revision {revision.Revision} is not the content that was approved: the approval names the hash {approved}. Review the promise and approve a new revision."));
+        }
+        if (revision.Obligations.Count == 0 && !revision.Retires)
             gaps.Add("No proof obligation exists for this revision.");
 
-        var statuses = revision.Obligations.Select(o => Status(o, revision.Revision, latestRuns, world, gaps)).ToList();
+        var statuses = revision.Obligations.Select(o => Status(o, revision, latestRuns, world, gaps)).ToList();
 
         foreach (var (kind, id) in revision.Content.Links.All())
         {
             if (!world.Known.Has(kind, id))
                 gaps.Add($"The linked {kind} {id} no longer exists.");
-            else if (revision.ApprovedLinks is { } approved
-                     && approved.TryGetValue(PromiseWorld.LinkKey(kind, id), out var then)
+            else if (revision.ApprovedLinks is { } approvedLinks
+                     && approvedLinks.TryGetValue(PromiseWorld.LinkKey(kind, id), out var then)
                      && world.LinkHash(kind, id) is { } now && now != then)
                 gaps.Add($"The linked {world.Describe(kind, id)} changed after this revision was approved.");
         }
@@ -155,88 +183,152 @@ public static class PromiseViews
         ? string.Create(CultureInfo.InvariantCulture, $"revision '{pin.RevisionName}' ({revisionId}): stream {pin.StreamId} at version {pin.Version}")
         : string.Create(CultureInfo.InvariantCulture, $"stream {pin.StreamId} at version {pin.Version}");
 
+    /// <summary>A result counts as passed or failed only while it is current. A result on inputs that moved is stale and nothing else.</summary>
     private static EvidenceCountsDto Counts(IEnumerable<ObligationStatusDto> statuses)
     {
-        int passed = 0, failed = 0, notRun = 0, unsupported = 0;
+        int passed = 0, failed = 0, notRun = 0, unsupported = 0, stale = 0;
         foreach (var status in statuses)
         {
             switch (status.Result)
             {
+                case RunResult.Passed or RunResult.Failed when status.Current != true: stale++; break;
                 case RunResult.Passed: passed++; break;
                 case RunResult.Failed: failed++; break;
                 case RunResult.Unsupported: unsupported++; break;
                 default: notRun++; break;
             }
         }
-        return new EvidenceCountsDto(passed, failed, notRun, unsupported);
+        return new EvidenceCountsDto(passed, failed, notRun, unsupported, stale);
     }
 
     private static ObligationStatusDto Status(
-        Obligation obligation, int revision, IReadOnlyDictionary<string, VerificationRun> latestRuns, PromiseWorld world, List<string>? gaps)
+        Obligation obligation, PromiseRevisionState revision, IReadOnlyDictionary<string, VerificationRun> latestRuns, PromiseWorld world, List<string> gaps)
     {
         ObligationStatusDto Without(string result, string detail) =>
-            new(obligation.Id, result, null, null, null, null, null, null, null, [], [], detail);
+            new(obligation.Id, result, null, null, null, null, null, null, null, null, [], [], detail, null, [], null, null);
 
         // A kind Vellum does not know is unsupported whatever was recorded for it. It never passes.
         if (!ObligationKind.IsDeterministic(obligation.Kind) && !ObligationKind.IsPlan(obligation.Kind))
         {
             var detail = $"Vellum cannot check an obligation of kind '{obligation.Kind}'.";
-            gaps?.Add($"{obligation.Id}: {detail} It is unsupported and does not count as evidence.");
+            gaps.Add($"{obligation.Id}: {detail} It is unsupported and does not count as evidence.");
             return Without(RunResult.Unsupported, detail);
         }
 
-        latestRuns.TryGetValue(PromiseProjection.LatestRunKey(revision, obligation.Id), out var run);
-        if (run is not null && run.ObligationHash != ObligationHash(obligation))
+        latestRuns.TryGetValue(PromiseState.RunKey(revision.Revision, obligation.Id), out var run);
+        // A run recorded before inputs were bound has a hash of another form; it is shown below as not current.
+        if (run is { Inputs: not null } && run.ObligationHash != ObligationHash(obligation))
         {
-            gaps?.Add($"{obligation.Id} was changed after its last run. That run does not apply to it.");
+            gaps.Add($"{obligation.Id} was changed after its last run. That run does not apply to it.");
+            run = null;
+        }
+        if (run is { Draft: true } && !revision.IsDraft)
+        {
+            gaps.Add(string.Create(CultureInfo.InvariantCulture,
+                $"{obligation.Id} was last run while revision {revision.Revision} was a draft. A run of a draft does not count for an approved revision; run it again."));
             run = null;
         }
 
         if (run is null)
         {
+            var noSource = obligation.Recipe.Plan is { EvidenceSource: null };
             var detail = ObligationKind.IsPlan(obligation.Kind)
-                ? "A test plan. Vellum cannot execute it, and no external evidence is recorded."
+                ? noSource
+                    ? "A test plan with no evidence source. Vellum cannot execute it, and it can receive no result until a revision names the workflow whose run is its evidence."
+                    : "A test plan. Vellum cannot execute it, and no external evidence is recorded."
                 : "Not run.";
-            gaps?.Add(ObligationKind.IsPlan(obligation.Kind)
-                ? $"{obligation.Id} is a test plan with no external evidence. A generated plan alone establishes nothing."
+            gaps.Add(ObligationKind.IsPlan(obligation.Kind)
+                ? noSource
+                    ? $"{obligation.Id} is a test plan with no evidence source. No result can be recorded for it."
+                    : $"{obligation.Id} is a test plan with no external evidence. A generated plan alone establishes nothing."
                 : $"{obligation.Id} has not been run.");
             return Without(RunResult.NotRun, detail);
         }
 
+        var changed = new List<string>();
         switch (run.Result)
         {
             case RunResult.NotRun:
-                gaps?.Add(run.Evidence.FirstOrDefault(e => e.Identity == EvidenceIdentity.Claimed) is { } claim
+                gaps.Add(run.Evidence.FirstOrDefault(e => e.Identity == EvidenceIdentity.Claimed) is { } claim
                     ? $"{obligation.Id} has only a claim of '{claim.ClaimedResult}' that Vellum could not check ({claim.IdentityReason}). It counts as not run."
                     : $"{obligation.Id} was not run: {run.Detail}");
                 break;
             case RunResult.Unsupported:
-                gaps?.Add($"{obligation.Id} is unsupported for the input it was given: {run.Detail}");
+                gaps.Add($"{obligation.Id} is unsupported for the input it was given: {run.Detail}");
                 break;
             default:
-                if (run.ModelRevision is { } pin)
-                {
-                    if (pin.StreamId != world.MainStreamId)
-                        gaps?.Add($"{obligation.Id} {run.Result} on model stream {pin.StreamId}, not on stream {world.MainStreamId} that this view is for.");
-                    else if (pin.Version < world.ModelVersion)
-                        gaps?.Add(string.Create(CultureInfo.InvariantCulture,
-                            $"{obligation.Id} {run.Result} on model version {pin.Version}. The model is now at version {world.ModelVersion}."));
-                    else if (pin.Version > world.ModelVersion)
-                        gaps?.Add(string.Create(CultureInfo.InvariantCulture,
-                            $"{obligation.Id} {run.Result} on model version {pin.Version}, which is later than version {world.ModelVersion} that this view is pinned to."));
-                }
-                if (run.CommitSha is { } commit && obligation.Recipe.SourcePattern is { } source
-                    && world.LatestCommits.TryGetValue(source.Repository, out var latest) && latest != commit)
-                    gaps?.Add($"{obligation.Id} {run.Result} at commit {commit}. The newest scan of {source.Repository} is at commit {latest}.");
+                changed = Changes(obligation, run, world);
+                foreach (var change in changed)
+                    gaps.Add($"{obligation.Id} {run.Result} (stale): {change}");
+                foreach (var assertion in (run.Assertions ?? []).Where(a => a.Vacuous))
+                    gaps.Add($"{obligation.Id}: assertion '{assertion.Id}' is vacuous. {assertion.VacuousReason}");
                 break;
         }
 
         return new ObligationStatusDto(
-            obligation.Id, run.Result, run.Id, run.At, run.Environment, run.ModelRevision, run.CommitSha, run.ScanId,
-            run.Scope, run.Evidence, run.Limitations, run.Detail);
+            obligation.Id, run.Result, run.Result is RunResult.Passed or RunResult.Failed ? changed.Count == 0 : null,
+            run.Id, run.At, run.Environment, run.ModelRevision, run.CommitSha, run.ScanId,
+            run.Scope, run.Evidence, run.Limitations, run.Detail, run.Inputs, changed, run.Assertions, run.EffectiveFaults);
+    }
+
+    /// <summary>
+    /// Every input of a run that is not the current one, as a sentence. A result is evidence
+    /// only for exactly what it read, so any difference makes it stale: the model stream and
+    /// its version, the scenario version and content, each schema version, and the commit.
+    /// </summary>
+    private static List<string> Changes(Obligation obligation, VerificationRun run, PromiseWorld world)
+    {
+        var changes = new List<string>();
+        if (run.Inputs is not { } inputs)
+        {
+            changes.Add("the run was recorded before results were bound to their inputs, so nothing shows what it read. Run it again.");
+            return changes;
+        }
+
+        if (inputs.ModelStreamId is { } streamId)
+        {
+            if (streamId != world.MainStreamId)
+                changes.Add($"it ran on model stream {streamId}, not on stream {world.MainStreamId} that this view is for.");
+            else if (inputs.ModelVersion != world.ModelVersion)
+            {
+                changes.Add(string.Create(CultureInfo.InvariantCulture,
+                    $"it ran on model version {inputs.ModelVersion}. The model is now at version {world.ModelVersion}."));
+            }
+        }
+
+        if (inputs.ScenarioId is { } scenarioId)
+        {
+            if (!world.Scenarios.TryGetValue(scenarioId, out var scenario))
+                changes.Add($"the scenario {scenarioId} it played no longer exists.");
+            else if (inputs.ScenarioVersion != scenario.Version || inputs.ScenarioHash != scenario.Hash)
+            {
+                changes.Add(string.Create(CultureInfo.InvariantCulture,
+                    $"it played scenario '{scenario.Document.Name}' ({scenarioId}) at version {inputs.ScenarioVersion}. The scenario is now at version {scenario.Version}{(inputs.ScenarioHash == scenario.Hash ? " with the same content" : " and its content changed")}."));
+            }
+        }
+
+        foreach (var schema in inputs.Schemas ?? [])
+        {
+            if (!world.SchemaVersions.TryGetValue(schema.Id, out var version))
+                changes.Add($"the schema {schema.Id} it validated against no longer exists.");
+            else if (version != schema.Version)
+            {
+                changes.Add(string.Create(CultureInfo.InvariantCulture,
+                    $"it validated against schema {schema.Id} at version {schema.Version}. The schema is now at version {version}."));
+            }
+        }
+
+        if (inputs is { Repository: { } repository, CommitSha: { } commit } && world.Followed(repository) is { } followed && followed.Commit != commit)
+        {
+            changes.Add(followed.Accepted
+                ? $"evidence is for {commit}; the model follows {followed.Commit}."
+                : $"evidence is for {commit}; the newest scan of {repository} is at {followed.Commit}.");
+        }
+
+        return changes;
     }
 
     /// <summary>What a run is bound to: the kind and the recipe. A new title does not unbind a run.</summary>
     public static string ObligationHash(Obligation obligation) =>
-        PromiseJson.Hash(new { obligation.Kind, obligation.Recipe });
+        PromiseJson.StableHash(new { obligation.Kind, obligation.Recipe });
 }

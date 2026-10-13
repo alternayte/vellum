@@ -1,9 +1,9 @@
 using System.ComponentModel;
+using System.Security.Claims;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using ModelContextProtocol.Server;
 using Vellum.Modules.Modelling;
-using Vellum.Modules.Workspaces;
 
 namespace Vellum.Modules.Mcp.Tools;
 
@@ -18,13 +18,11 @@ public class FindElementsTool
         [Description("Optional tag to filter by")] string? tag,
         [Description("Optional status to filter by (e.g. current, planned, deprecated)")] string? status,
         ModellingDbContext db,
-        WorkspacesDbContext workspacesDb,
+        McpProjects projects,
+        ClaimsPrincipal user,
         CancellationToken ct)
     {
-        var proj = await workspacesDb.Projects.AsNoTracking()
-            .FirstOrDefaultAsync(p => p.Id == projectId, ct);
-        if (proj is null)
-            return """{"error":"Project not found"}""";
+        var proj = await projects.ReadAsync(user, projectId, ct);
 
         var query = db.Elements.AsNoTracking()
             .Where(e => e.ProjectId == projectId && e.Branch == proj.StreamId);

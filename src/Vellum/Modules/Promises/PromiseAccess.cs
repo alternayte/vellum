@@ -2,11 +2,37 @@ using System.Security.Claims;
 using System.Text.Json;
 using Deedbox;
 using Microsoft.AspNetCore.Http.Json;
-using Microsoft.AspNetCore.Identity;
 using Microsoft.Extensions.Options;
+using Vellum.Modules.Identity.AgentTokens;
 using Vellum.Shared;
 
 namespace Vellum.Modules.Promises;
+
+/// <summary>The bounds on verification runs. A test host gives smaller ones.</summary>
+/// <param name="MaxRunsPerObligation">The most runs one obligation of one revision holds. Every run is an event of the promise stream.</param>
+/// <param name="RunsPerMinute">The most runs and pieces of evidence one caller records in a minute.</param>
+public sealed record PromiseLimits(int MaxRunsPerObligation = 1_000, int RunsPerMinute = 120)
+{
+    public static readonly PromiseLimits Default = new();
+
+    /// <summary>The rate limit policy of the run and evidence endpoints.</summary>
+    public const string RunPolicy = "promise-run";
+}
+
+/// <summary>The result of a write to a promise stream. <paramref name="TooLarge"/>: the write was refused because the revision would pass its size limit.</summary>
+internal readonly record struct PromiseWrite(CommandResult<PromiseState> Result, bool TooLarge)
+{
+    public bool Succeeded => !TooLarge && Result is CommandResult<PromiseState>.Success;
+
+    /// <summary>The answer for a write that did not succeed.</summary>
+    public IResult Refusal() => TooLarge
+        ? Results.Json(
+            new ErrorResponse("promise_too_large",
+                $"The revision would hold more than {PromiseRules.MaxRevisionChars} characters",
+                "The content and the obligations of one revision have this limit as JSON. Shorten the text or remove an obligation. A promise at the limit can still be revised and retired."),
+            statusCode: StatusCodes.Status413PayloadTooLarge)
+        : Result.ToHttpResult();
+}
 
 /// <summary>What the promise handlers share: who calls, how a body is read and how a promise stream is reached.</summary>
 internal static class PromiseAccess
@@ -14,19 +40,16 @@ internal static class PromiseAccess
     public static string UserId(ClaimsPrincipal user) => user.FindFirstValue(ClaimTypes.NameIdentifier)!;
 
     /// <summary>
-    /// True for a person signed in through the app's own session cookie. An API key, an agent
-    /// token or any other way to authenticate is not a person at a screen, and such a caller
-    /// never approves a promise (SDD guarantee 12, and §6: only a human-authorized revision
-    /// changes an approved promise).
+    /// The origin of a new promise, from who calls. An agent token always gives
+    /// <c>agent-suggested</c>, whatever the body says: an agent cannot say that a person
+    /// wrote the promise. A person gives <c>human</c>, or <c>ai-suggested</c> when the body
+    /// says so. Null for a person whose body names any other origin.
     /// </summary>
-    public static bool IsInteractive(ClaimsPrincipal user) =>
-        user.Identity is { IsAuthenticated: true } identity && identity.AuthenticationType == IdentityConstants.ApplicationScheme;
-
-    public static IResult InteractiveSessionRequired() => Results.Json(
-        new ErrorResponse("interactive_session_required",
-            "Only a person signed in to Vellum approves a promise",
-            "Sign in to the app and approve the promise there. An API key or an agent identity cannot approve."),
-        statusCode: StatusCodes.Status403Forbidden);
+    public static string? Origin(ClaimsPrincipal user, string? requested) =>
+        AgentPrincipal.IsAgent(user) ? PromiseOrigin.AgentSuggested
+        : requested is null or PromiseOrigin.Human ? PromiseOrigin.Human
+        : requested == PromiseOrigin.AiSuggested ? PromiseOrigin.AiSuggested
+        : null;
 
     /// <summary>
     /// Reads a JSON body with the app's options. A body that is not the expected document gets
@@ -57,20 +80,20 @@ internal static class PromiseAccess
     }
 
     /// <summary>
-    /// Refuses a change that would make the stored promise larger than
-    /// <see cref="PromiseRules.MaxDocumentChars"/>. Every revision is kept, so the size of a
-    /// promise is the sum of its revisions; the bound keeps one read and one write finite.
+    /// True when a decision adds content that would make the revision it changes larger than
+    /// <see cref="PromiseRules.MaxRevisionChars"/>. Only a write that adds content is measured:
+    /// a new revision copies content that was inside the limit, a revision that retires copies
+    /// nothing, and an approval, a delete and a run add no content. So a promise at the limit
+    /// can always be revised, retired and deleted.
     /// </summary>
-    private static CommandResult<IReadOnlyList<object>> Bounded(PromiseState state, CommandResult<IReadOnlyList<object>> decision)
+    internal static bool PassesRevisionLimit(PromiseState state, IReadOnlyList<object> events)
     {
-        if (decision is not CommandResult<IReadOnlyList<object>>.Success { Value.Count: > 0 } success
-            || success.Value.All(e => e is PromiseEvent.VerificationRunRecorded or PromiseEvent.PromiseDeleted or PromiseEvent.PromiseApproved))
-            return decision;
+        if (!events.Any(e => e is PromiseEvent.PromiseCreated or PromiseEvent.PromiseDraftChanged
+                or PromiseEvent.ObligationAdded or PromiseEvent.ObligationChanged))
+            return false;
 
-        return PromiseJson.Write(success.Value.Aggregate(state, PromiseState.Evolve)).Length > PromiseRules.MaxDocumentChars
-            ? new CommandResult<IReadOnlyList<object>>.Conflict(
-                $"The promise with all its revisions would be larger than {PromiseRules.MaxDocumentChars} characters. Remove obligations, or retire this promise and write a new one.")
-            : decision;
+        var changed = events.Aggregate(state, PromiseState.Evolve).Latest!;
+        return PromiseJson.Write(new { changed.Content, changed.Obligations }).Length > PromiseRules.MaxRevisionChars;
     }
 
     public static IResult Invalid(string field, string message) =>
@@ -82,16 +105,24 @@ internal static class PromiseAccess
     /// Runs a decision on a promise stream. Every stream type shares one space of IDs, so an
     /// ID that names a model, a schema or a scenario is not a promise: the write finds nothing.
     /// </summary>
-    public static async Task<CommandResult<PromiseState>> DecideAsync(
+    public static async Task<PromiseWrite> DecideAsync(
         IEventStore store, Guid promiseId, Func<PromiseState, CommandResult<IReadOnlyList<object>>> decide, CancellationToken ct)
     {
+        var tooLarge = false;
         try
         {
-            return await store.Decide<PromiseState, PromiseState>(promiseId, state => Bounded(state, decide(state)), state => state, ct);
+            var result = await store.Decide<PromiseState, PromiseState>(promiseId, state =>
+            {
+                var decision = decide(state);
+                tooLarge = decision is CommandResult<IReadOnlyList<object>>.Success success && PassesRevisionLimit(state, success.Value);
+                return tooLarge ? new CommandResult<IReadOnlyList<object>>.Conflict("The revision would pass its size limit.") : decision;
+            }, state => state, ct);
+            return new PromiseWrite(result, tooLarge);
         }
-        catch (DeedboxException e) when (e.Code == DeedboxError.StreamTypeMismatch)
+        // The stream of a promise of a deleted project is deleted with it.
+        catch (DeedboxException e) when (e.Code is DeedboxError.StreamTypeMismatch or DeedboxError.StreamDeleted)
         {
-            return new CommandResult<PromiseState>.NotFound("Promise not found");
+            return new PromiseWrite(new CommandResult<PromiseState>.NotFound("Promise not found"), false);
         }
     }
 }

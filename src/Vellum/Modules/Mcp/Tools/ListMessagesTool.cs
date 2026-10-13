@@ -1,9 +1,9 @@
 using System.ComponentModel;
+using System.Security.Claims;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using ModelContextProtocol.Server;
 using Vellum.Modules.Modelling;
-using Vellum.Modules.Workspaces;
 
 namespace Vellum.Modules.Mcp.Tools;
 
@@ -14,13 +14,11 @@ public class ListMessagesTool
     public static async Task<string> Execute(
         [Description("Project ID")] Guid projectId,
         ModellingDbContext db,
-        WorkspacesDbContext workspacesDb,
+        McpProjects projects,
+        ClaimsPrincipal user,
         CancellationToken ct)
     {
-        var proj = await workspacesDb.Projects.AsNoTracking()
-            .FirstOrDefaultAsync(p => p.Id == projectId, ct);
-        if (proj is null)
-            return """{"error":"Project not found"}""";
+        var proj = await projects.ReadAsync(user, projectId, ct);
 
         var messages = await db.Messages.AsNoTracking()
             .Where(m => m.ProjectId == projectId && m.Branch == proj.StreamId)

@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Vellum.Modules.Identity.AgentTokens;
 
 namespace Vellum.Modules.Identity;
 
@@ -51,7 +52,7 @@ public static class IdentityModule
             };
         });
 
-        var authBuilder = services.AddAuthentication();
+        var authBuilder = services.AddAuthentication().AddAgentTokens();
 
         var githubSection = config.GetSection("Authentication:GitHub");
         if (githubSection.Exists())

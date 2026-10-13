@@ -22,7 +22,14 @@ public sealed record PromiseRequest(
 public sealed record ReviseRequest(bool Retire = false);
 
 /// <param name="Revision">The draft revision the approver read.</param>
-public sealed record ApproveRequest(int Revision);
+/// <param name="ContentHash">The <c>contentHash</c> of that revision as the approver read it. The approval binds exactly that content.</param>
+public sealed record ApproveRequest(int Revision, string ContentHash);
+
+/// <summary>409 for an approval of a draft that is not the one the approver read. It holds the draft as it is now.</summary>
+/// <param name="Type"><c>revision_changed</c>.</param>
+/// <param name="Revision">The number of the draft as it is now.</param>
+/// <param name="ContentHash">The content hash of the draft as it is now.</param>
+public sealed record RevisionChangedResponse(string Type, string Title, string Detail, int Revision, string ContentHash);
 
 /// <param name="StartAt">The first number, for a project that already issued lower ones elsewhere. Default 1.</param>
 public sealed record SetPrefixRequest(string Prefix, int? StartAt = null);
@@ -63,10 +70,9 @@ public static class PromiseWrites
         if (request is null)
             return error!;
 
-        // A caller that is not a person at a screen cannot say that a person wrote the promise.
-        var origin = request.Origin ?? PromiseOrigin.Human;
-        if (origin == PromiseOrigin.Human && !PromiseAccess.IsInteractive(http.User))
-            return PromiseAccess.Invalid("origin", "Only a signed-in person creates a promise with the origin human");
+        // The origin comes from who calls, not from what the body says.
+        if (PromiseAccess.Origin(http.User, request.Origin) is not { } origin)
+            return PromiseAccess.Invalid("origin", "The origin of a promise a person creates is human or ai-suggested");
 
         var content = request.ToContent();
         var promiseId = Guid.NewGuid();
@@ -76,6 +82,7 @@ public static class PromiseWrites
         // The number and the promise commit together. The UPDATE locks the project's numbering
         // row until the commit, so creates of one project take turns and each gets its own
         // number. The lock is taken before the stream lock and nothing asks for it later.
+        var tooLarge = false;
         var result = await SharedTransaction.RunAsync(http.RequestServices, async services =>
         {
             var db = services.GetRequiredService<PromisesDbContext>();
@@ -95,9 +102,14 @@ public static class PromiseWrites
             var created = await services.GetRequiredService<IEventStore>().UseDbContext(db)
                 .DecideInTransaction<PromiseState, PromiseState>(
                     promiseId,
-                    state => PromiseDecider.Create(
-                        state, projectId, PromiseRules.RequirementId(numbering.Prefix, numbering.Number), numbering.Number,
-                        origin, content, world.Known, userId, now),
+                    state =>
+                    {
+                        var decision = PromiseDecider.Create(
+                            state, projectId, PromiseRules.RequirementId(numbering.Prefix, numbering.Number), numbering.Number,
+                            origin, content, world.Known, userId, now);
+                        tooLarge = decision is CommandResult<IReadOnlyList<object>>.Success success && PromiseAccess.PassesRevisionLimit(state, success.Value);
+                        return tooLarge ? new CommandResult<IReadOnlyList<object>>.Conflict("The revision would pass its size limit.") : decision;
+                    },
                     state => state,
                     ct);
 
@@ -109,7 +121,7 @@ public static class PromiseWrites
 
         return result is CommandResult<PromiseState>.Success
             ? Results.Created($"/api/projects/{projectId}/promises/{promiseId}", await reader.GetAsync(projectId, promiseId, ct))
-            : result.ToHttpResult();
+            : new PromiseWrite(result, tooLarge).Refusal();
     }
 
     public static async Task<IResult> Update(
@@ -147,19 +159,24 @@ public static class PromiseWrites
 
     /// <summary>
     /// Approval needs the Owner role and a person in an interactive session. No other call
-    /// approves: not an import, not an AI call, not an agent and not a check run.
+    /// approves: not an import, not an AI call, not an agent and not a check run. The
+    /// approval names the revision and its content hash, so it binds exactly the content the
+    /// approver read: any other content is refused with 409 <c>revision_changed</c> and the
+    /// hash of the draft as it is now. The stream is locked from the check to the append, so
+    /// of an edit and an approval at the same time one is first, and the approval that comes
+    /// after the edit gets the 409.
     /// </summary>
     public static async Task<IResult> Approve(
         Guid projectId, Guid promiseId, HttpContext http,
         WorkspaceAuthorizationService auth, IEventStore store, PromisesDbContext db, PromiseReader reader, TimeProvider time, CancellationToken ct)
     {
         var userId = PromiseAccess.UserId(http.User);
-        if (!PromiseAccess.IsInteractive(http.User))
-            return PromiseAccess.InteractiveSessionRequired();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Owner, ct);
         var (request, error) = await PromiseAccess.ReadAsync<ApproveRequest>(http);
         if (request is null)
             return error!;
+        if (string.IsNullOrEmpty(request.ContentHash))
+            return PromiseAccess.Invalid("contentHash", "The content hash of the revision is required. Read the promise and send the contentHash of the draft you approve.");
 
         var row = await db.Promises.AsNoTracking().FirstOrDefaultAsync(p => p.Id == promiseId && p.ProjectId == projectId, ct);
         if (row is null)
@@ -169,10 +186,23 @@ public static class PromiseWrites
         // The hashes record what the approver saw. A link that changes later shows as a gap.
         var world = await PromiseWorld.LoadAsync(http.RequestServices, projectId, links.ScenarioIds, ct);
         var now = time.GetUtcNow();
-        var result = await PromiseAccess.DecideAsync(store, promiseId,
-            state => PromiseDecider.Approve(
-                state, projectId, request.Revision, world.Known, world.ModelVersion,
-                world.LinkHashes(state.Draft?.Content.Links ?? PromiseLinks.None), userId, now), ct);
+        (int Revision, string ContentHash)? changed = null;
+        var result = await PromiseAccess.DecideAsync(store, promiseId, state =>
+        {
+            changed = PromiseDecider.Changed(state, projectId, request.Revision, request.ContentHash);
+            return PromiseDecider.Approve(
+                state, projectId, request.Revision, request.ContentHash, world.Known, world.ModelVersion,
+                world.LinkHashes(state.Draft?.Content.Links ?? PromiseLinks.None), userId, now);
+        }, ct);
+        if (!result.Succeeded && changed is { } current)
+        {
+            return Results.Conflict(new RevisionChangedResponse(
+                "revision_changed", "The draft is not the one that was read",
+                current.Revision == request.Revision
+                    ? $"Revision {request.Revision} changed after it was read. Read the promise again and approve what you read."
+                    : $"The draft is revision {current.Revision}, not {request.Revision}. Read the promise again and approve what you read.",
+                current.Revision, current.ContentHash));
+        }
         return await RespondAsync(result, reader, projectId, promiseId, ct);
     }
 
@@ -185,14 +215,14 @@ public static class PromiseWrites
 
         var now = time.GetUtcNow();
         var result = await PromiseAccess.DecideAsync(store, promiseId, state => PromiseDecider.Delete(state, projectId, userId, now), ct);
-        return result is CommandResult<PromiseState>.Success ? Results.NoContent() : result.ToHttpResult();
+        return result.Succeeded ? Results.NoContent() : result.Refusal();
     }
 
     internal static async Task<IResult> RespondAsync(
-        CommandResult<PromiseState> result, PromiseReader reader, Guid projectId, Guid promiseId, CancellationToken ct) =>
-        result is CommandResult<PromiseState>.Success
+        PromiseWrite result, PromiseReader reader, Guid projectId, Guid promiseId, CancellationToken ct) =>
+        result.Succeeded
             ? Results.Ok(await reader.GetAsync(projectId, promiseId, ct))
-            : result.ToHttpResult();
+            : result.Refusal();
 
     private sealed class AllocatedNumber
     {

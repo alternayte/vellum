@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Vellum.Modules.Import;
+using Vellum.Modules.Import.Extraction;
 using Vellum.Modules.Import.Proposals;
 using Vellum.Modules.Import.Scans;
 
@@ -12,6 +13,14 @@ namespace Vellum.Modules.Promises.Checks;
 /// a fact whose <c>pattern</c> attribute has the value the obligation names. A fact is found
 /// by that attribute alone: fact keys and fact kinds are the importer's own and are not read
 /// here, except that a service is matched by the key an accepted import linked to the element.
+/// <para>
+/// Finding the pattern is a statement about the commit of the scan. Not finding it is a
+/// statement only when the scan could have found it: the scan is a tracking scan (the import
+/// module's <see cref="ScanKind"/>), and its coverage (the import module's
+/// <see cref="ScanCoverage"/>) includes every place the pattern was found before and every
+/// place it would be found: the project directory of the service, or the whole repository
+/// when the obligation names no service. Else the result is <c>unsupported</c> with the reason.
+/// </para>
 /// </summary>
 public static class SourcePatternCheck
 {
@@ -19,7 +28,10 @@ public static class SourcePatternCheck
 
     private const string PatternAttribute = "pattern";
     private const string ServiceAttribute = "service";
+    private const string ProjectAttribute = "project";
+    private const string ConditionalAttribute = "conditional";
     private const int MaxEvidence = 50;
+    public const string Covered = "covered";
 
     /// <summary>The scan to look at, or why the request cannot name it.</summary>
     public static async Task<(ScanEntity? Scan, string? Refusal)> FindScanAsync(
@@ -33,12 +45,13 @@ public static class SourcePatternCheck
             : (null, $"The scan is of {scan.Repository}; the obligation names {recipe.Repository}");
     }
 
-    public static CheckOutcome NoSnapshotGiven(SourcePatternRecipe recipe) => new(
+    public static CheckOutcome NoSnapshotGiven(SourcePatternRecipe recipe, string obligationHash) => new(
         RunResult.NotRun, "source", $"Pattern '{recipe.Pattern}' in {recipe.Repository}.",
-        "No import snapshot was given. Name a completed scan of the repository in scanId.", [], []);
+        "No import snapshot was given. Name a completed scan of the repository in scanId.", [], [],
+        Inputs: new RunInputs(obligationHash));
 
     public static async Task<CheckOutcome> RunAsync(
-        ImportDbContext importDb, PromisesDbContext promisesDb, Guid projectId, Guid promiseId, string obligationId,
+        ImportDbContext importDb, PromisesDbContext promisesDb, Guid projectId, Guid promiseId, string obligationId, string obligationHash,
         SourcePatternRecipe recipe, ScanEntity scan, CancellationToken ct)
     {
         var snapshot = await importDb.Snapshots.AsNoTracking().FirstOrDefaultAsync(s => s.ScanId == scan.Id, ct);
@@ -46,7 +59,8 @@ public static class SourcePatternCheck
         {
             return new CheckOutcome(
                 RunResult.NotRun, "source", $"Pattern '{recipe.Pattern}' in {recipe.Repository}, scan {scan.Id}.",
-                $"The scan has no snapshot (status '{scan.Status}'). Only a completed scan has one.", [], [], ScanId: scan.Id);
+                $"The scan has no snapshot (status '{scan.Status}'). Only a completed scan has one.", [], [], ScanId: scan.Id,
+                Inputs: new RunInputs(obligationHash, ScanId: scan.Id));
         }
 
         var repository = $"{snapshot.Host}/{snapshot.Repository}";
@@ -56,21 +70,30 @@ public static class SourcePatternCheck
             "A source fact shows that the code declares the pattern at the cited lines of this commit. It does not show that the pattern works at run time.",
         };
 
-        HashSet<string>? serviceKeys = null;
+        var tracked = await importDb.TrackedRefs.AsNoTracking()
+            .FirstOrDefaultAsync(t => t.ProjectId == projectId && t.Host == snapshot.Host && t.Repository == snapshot.Repository, ct);
+        var kind = ScanKindInfo.Of(scan, tracked);
+        var refText = scan.ResolvedRef is { Length: > 0 } resolved ? $"ref '{resolved}'" : "no ref (a bare commit)";
+
+        List<FactLinkEntity>? serviceLinks = null;
         var serviceText = "";
         if (recipe.Service is { } service)
         {
             serviceText = $" for service element {service}";
-            serviceKeys = (await importDb.FactLinks.AsNoTracking()
-                    .Where(l => l.ProjectId == projectId && l.Host == snapshot.Host && l.Repository == snapshot.Repository && l.EntityId == service)
-                    .Select(l => l.FactKey)
-                    .ToListAsync(ct))
-                .ToHashSet(StringComparer.Ordinal);
+            serviceLinks = await importDb.FactLinks.AsNoTracking()
+                .Where(l => l.ProjectId == projectId && l.Host == snapshot.Host && l.Repository == snapshot.Repository && l.EntityId == service)
+                .OrderBy(l => l.Id)
+                .ToListAsync(ct);
         }
+        var serviceKeys = serviceLinks?.Select(l => l.FactKey).ToHashSet(StringComparer.Ordinal);
 
-        var scope = $"Pattern '{recipe.Pattern}'{serviceText} in {repository} at commit {snapshot.CommitSha} (scan {snapshot.ScanId}).";
+        var scope = $"Pattern '{recipe.Pattern}'{serviceText} in {repository} at {refText}, commit {snapshot.CommitSha} (scan {snapshot.ScanId}, a {kind.Kind} scan).";
+        var coverageText = (string?)null;
         CheckOutcome Outcome(string result, string detail, IReadOnlyList<EvidenceItem> evidence) =>
-            new(result, environment, scope, detail, evidence, limitations, CommitSha: snapshot.CommitSha, ScanId: snapshot.ScanId);
+            new(result, environment, scope, CheckOutcome.Bounded(detail), evidence, limitations, CommitSha: snapshot.CommitSha, ScanId: snapshot.ScanId,
+                Inputs: new RunInputs(
+                    obligationHash, Repository: repository, ScanId: snapshot.ScanId, CommitSha: snapshot.CommitSha,
+                    Ref: scan.ResolvedRef, ScanKind: kind.Kind, Coverage: coverageText));
 
         if (serviceKeys is { Count: 0 })
         {
@@ -85,57 +108,170 @@ public static class SourcePatternCheck
             .ToListAsync(ct);
 
         var evidence = new List<EvidenceItem>();
+        var conditions = new List<string>();
+        var unconditional = 0;
+        var projects = new SortedSet<string>(StringComparer.Ordinal);
         foreach (var fact in facts)
         {
             var attributes = Attributes(fact.Attributes);
-            if (attributes.GetValueOrDefault(PatternAttribute) != recipe.Pattern)
+            var ofService = serviceKeys is null || (attributes.TryGetValue(ServiceAttribute, out var owner) && serviceKeys.Contains(owner));
+            if (ofService && serviceKeys is not null && attributes.TryGetValue(ProjectAttribute, out var project))
+                projects.Add(project);
+            if (!ofService || attributes.GetValueOrDefault(PatternAttribute) != recipe.Pattern)
                 continue;
-            if (serviceKeys is not null && (!attributes.TryGetValue(ServiceAttribute, out var owner) || !serviceKeys.Contains(owner)))
-                continue;
+
+            if (attributes.TryGetValue(ConditionalAttribute, out var condition))
+                conditions.Add(condition);
+            else
+                unconditional++;
 
             // A run keeps at most MaxEvidence pointers; they are enough to find the declaration.
             foreach (var reference in (JsonSerializer.Deserialize<List<EvidenceRef>>(fact.Evidence, Json) ?? []).Take(MaxEvidence - evidence.Count))
                 evidence.Add(new EvidenceItem(EvidenceKind.Source, Pointer: Pointer(repository, snapshot.CommitSha, reference), Url: Url(repository, snapshot.CommitSha, reference)));
         }
 
-        if (evidence.Count > 0)
+        var found = unconditional + conditions.Count;
+        if (conditions.Count > 0)
+        {
+            limitations.Add(string.Create(CultureInfo.InvariantCulture,
+                $"{conditions.Count} of {found} declaration(s) are declared under #if {string.Join(" / #if ", conditions.Distinct(StringComparer.Ordinal))}. The scan does not evaluate the condition, so they are in a build only when it holds."));
+        }
+
+        if (unconditional > 0 || (found > 0 && !recipe.NeedsUnconditional))
         {
             return Outcome(RunResult.Passed,
-                string.Create(CultureInfo.InvariantCulture, $"The pattern is declared at {evidence.Count} place(s) of this commit."), evidence);
+                string.Create(CultureInfo.InvariantCulture, $"The pattern is declared at {evidence.Count} place(s) of this commit.")
+                + (unconditional == 0 ? " Every declaration is under a compile-time condition, which this obligation accepts." : ""),
+                evidence);
         }
 
-        var before = await PreviouslyFoundAsync(promisesDb, promiseId, obligationId, ct);
-        if (!EstablishesAbsence(snapshot, scan))
+        // From here the result needs absence: of the pattern, or of an unconditional declaration of it.
+        var (previousText, previousPaths) = await PreviouslyFoundAsync(promisesDb, promiseId, obligationId, ct);
+        var missing = found == 0
+            ? "The snapshot has no such fact"
+            : $"The snapshot declares the pattern only under #if {string.Join(" / #if ", conditions.Distinct(StringComparer.Ordinal))}, and the obligation requires an unconditional declaration";
+
+        if (!kind.Tracking)
         {
+            coverageText = "comparison";
             return Outcome(RunResult.Unsupported,
-                "The snapshot has no such fact, and it cannot establish absence: the scan was limited to some paths or did not read everything." + before, []);
+                $"{missing}, and this scan cannot establish absence: it is a comparison scan ({(kind.Reason == "bare-commit" ? "it read a commit and no ref" : $"it read another ref than the tracked ref '{tracked?.RefName}'")}). Only a tracking scan of the tracked ref can.{previousText}",
+                found == 0 ? [] : evidence);
         }
 
+        var gap = await CoverageGapAsync(importDb, scan, serviceLinks, projects, previousPaths, ct);
+        if (gap is not null)
+        {
+            coverageText = gap.Value.Class;
+            return Outcome(RunResult.Unsupported,
+                $"{missing}, and this scan cannot establish absence: {gap.Value.Sentence}{previousText}", found == 0 ? [] : evidence);
+        }
+
+        coverageText = Covered;
         limitations.Add("Absence is established for the files the scan read at this commit, under the extraction rules of this snapshot.");
-        return Outcome(RunResult.Failed, "A complete scan of the whole repository at this commit found no such fact." + before, []);
+        return Outcome(RunResult.Failed,
+            (found == 0
+                ? $"A tracking scan that covers {(serviceKeys is null ? "the whole repository" : "the project directory of the service")} at this commit found no such fact."
+                : $"{missing}. A tracking scan that covers {(serviceKeys is null ? "the whole repository" : "the project directory of the service")} found no unconditional declaration.")
+            + previousText,
+            found == 0 ? [] : evidence);
     }
 
     /// <summary>
-    /// SnapshotCoverage: whether a snapshot can establish that a fact is absent from the
-    /// repository. The import module has no coverage record of its own yet, so the rule is
-    /// decided here and nowhere else: the scan is complete and was not scoped. A scan with
-    /// include or exclude paths, or one that reached a bound, did not look everywhere, so a
-    /// missing fact proves nothing.
+    /// Null when the scan looked everywhere the pattern would be: the whole repository, or
+    /// the project directories of the service, and every path where it was found before.
+    /// Else the class of the first reason it did not, with a sentence that names the place.
     /// </summary>
-    internal static bool EstablishesAbsence(SnapshotEntity snapshot, ScanEntity scan) =>
-        snapshot.IsComplete && scan is { IsComplete: true, Partial: false, IncludePaths.Length: 0, ExcludePaths.Length: 0 };
+    private static async Task<(string Class, string Sentence)?> CoverageGapAsync(
+        ImportDbContext importDb, ScanEntity scan, List<FactLinkEntity>? serviceLinks,
+        IReadOnlyCollection<string> projects, IReadOnlyList<string> previousPaths, CancellationToken ct)
+    {
+        if (scan.ExtractionGap is { } global)
+            return (global, $"the extraction left facts out ({global}).");
+        if (!scan.TreeListed)
+            return (CoverageGap.Failed, "the file list of the commit was not read in full.");
+
+        var rows = await importDb.ScanFiles.AsNoTracking().Where(f => f.ScanId == scan.Id)
+            .Select(f => new { f.Path, f.State, f.Reason }).ToListAsync(ct);
+        var files = rows.ToDictionary(
+            f => f.Path, f => f.State == ScanFileEntity.Read ? null : f.Reason ?? CoverageGap.ParseFailure, StringComparer.Ordinal);
+        var coverage = new ScanCoverage(
+            files, ScanScope.AbsentGap(ScanLimits.FromJson(scan.Limits), scan.IncludePaths, scan.ExcludePaths), scan.ExtractionGap);
+
+        // Where the pattern was found before: the scan must have looked at exactly those files.
+        foreach (var path in previousPaths)
+        {
+            if (coverage.GapFor([new EvidenceRef(path, 0, 0, "", 0)]) is { } before)
+                return (before, $"it did not look at {path}, where the pattern was found before ({before}).");
+        }
+
+        // Where the pattern would be found.
+        IReadOnlyList<string> directories;
+        if (serviceLinks is null)
+            directories = [""];
+        else
+        {
+            // The project file of the service in this snapshot; when the service has no fact
+            // in it, the files that the accepted link cites.
+            var places = projects.Count > 0
+                ? projects.ToList()
+                : serviceLinks.SelectMany(l => ProposalJson.ReadEvidence(l.Evidence)).Select(e => e.Path).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToList();
+            if (places.Count == 0)
+                return (CoverageGap.Failed, "the accepted link of the service cites no file, so there is no place to look.");
+            foreach (var place in places)
+            {
+                if (coverage.GapFor([new EvidenceRef(place, 0, 0, "", 0)]) is { } around)
+                    return (around, $"it did not look at {place} of the service ({around}).");
+            }
+            directories = [.. places.Select(p => files.ContainsKey(p) || p.Contains('.', StringComparison.Ordinal) ? DirectoryOf(p) : p).Distinct(StringComparer.Ordinal)];
+        }
+
+        foreach (var directory in directories)
+        {
+            var prefix = directory.Length == 0 ? "" : directory + "/";
+            foreach (var (path, reason) in files.Where(f => f.Value is not null && f.Key.StartsWith(prefix, StringComparison.Ordinal)).OrderBy(f => f.Key, StringComparer.Ordinal))
+            {
+                // A file that no extractor reads under any rules hides nothing.
+                if (PathFilter.SkipReason(path, out _) is not null || !PathFilter.IsRelevant(path[(path.LastIndexOf('/') + 1)..]))
+                    continue;
+                var gapClass = CoverageGap.Of(reason);
+                return (gapClass, $"it did not read {path} ({gapClass}: {reason}), which is in {(directory.Length == 0 ? "the repository" : $"the directory {directory}")} where the pattern would be.");
+            }
+        }
+        return null;
+    }
+
+    private static string DirectoryOf(string path)
+    {
+        var slash = path.LastIndexOf('/');
+        return slash < 0 ? "" : path[..slash];
+    }
 
     /// <summary>Where the newest passed run of this obligation found the pattern. An obligation ID is unique inside its promise only.</summary>
-    private static async Task<string> PreviouslyFoundAsync(PromisesDbContext promisesDb, Guid promiseId, string obligationId, CancellationToken ct)
+    private static async Task<(string Text, IReadOnlyList<string> Paths)> PreviouslyFoundAsync(
+        PromisesDbContext promisesDb, Guid promiseId, string obligationId, CancellationToken ct)
     {
         var last = await promisesDb.Runs.AsNoTracking()
             .Where(r => r.PromiseId == promiseId && r.ObligationId == obligationId && r.Result == RunResult.Passed)
             .OrderByDescending(r => r.Version)
             .Select(r => r.Document)
             .FirstOrDefaultAsync(ct);
-        return last is not null && PromiseJson.Read<VerificationRun>(last).Evidence.FirstOrDefault(e => e.Pointer is not null) is { } found
-            ? $" It was found before at {found.Pointer}."
-            : "";
+        if (last is null)
+            return ("", []);
+
+        var pointers = PromiseJson.Read<VerificationRun>(last).Evidence.Select(e => e.Pointer).OfType<string>().ToList();
+        return pointers.Count == 0
+            ? ("", [])
+            : ($" It was found before at {pointers[0]}.", [.. pointers.Select(PathOf).OfType<string>().Distinct(StringComparer.Ordinal)]);
+    }
+
+    /// <summary>The path of a pointer <c>host/owner/name@sha:path:start-end</c>. A path may hold a colon; a SHA and a line range do not.</summary>
+    private static string? PathOf(string pointer)
+    {
+        var at = pointer.IndexOf('@', StringComparison.Ordinal);
+        var first = at < 0 ? -1 : pointer.IndexOf(':', at);
+        var last = pointer.LastIndexOf(':');
+        return first >= 0 && last > first ? pointer[(first + 1)..last] : null;
     }
 
     private static Dictionary<string, string> Attributes(string json)

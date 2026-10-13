@@ -20,7 +20,7 @@ public sealed class PromiseReader(IServiceProvider services, PromisesDbContext d
             return null;
 
         var state = PromiseJson.Read<PromiseState>(row.Document);
-        var world = await PromiseWorld.LoadAsync(services, projectId, ScenarioIds([state]), ct);
+        var world = await PromiseWorld.LoadAsync(services, projectId, PromiseWorld.ScenarioIds([state]), ct);
         return PromiseViews.ToDto(row.Id, state, Runs(row), world);
     }
 
@@ -37,19 +37,18 @@ public sealed class PromiseReader(IServiceProvider services, PromisesDbContext d
             .OrderBy(p => p.Number).ThenBy(p => p.Id)
             .ToListAsync(ct);
         var states = rows.Select(r => PromiseJson.Read<PromiseState>(r.Document)).ToList();
-        var world = await PromiseWorld.LoadAsync(services, projectId, ScenarioIds(states), ct, pinned);
+        var world = await PromiseWorld.LoadAsync(services, projectId, PromiseWorld.ScenarioIds(states), ct, pinned);
         return rows.Select((row, i) => PromiseViews.ToDto(row.Id, states[i], Runs(row), world)).ToList();
     }
 
     internal static Dictionary<string, VerificationRun> Runs(PromiseEntity row) =>
         PromiseJson.Read<Dictionary<string, VerificationRun>>(row.LatestRuns);
-
-    private static IEnumerable<Guid> ScenarioIds(IEnumerable<PromiseState> states) =>
-        states.SelectMany(s => s.Revisions).SelectMany(r => r.Content.Links.ScenarioIds);
 }
 
 public static class PromiseReads
 {
+    private const int MaxObligationFilterChars = 100;
+
     public static async Task<IResult> List(
         Guid projectId, string? cursor, int? limit,
         ClaimsPrincipal user, WorkspaceAuthorizationService auth, PromisesDbContext db, IServiceProvider services, CancellationToken ct)
@@ -70,11 +69,12 @@ public static class PromiseReads
             next = CursorEncoder.Encode(rows[^1].Number.ToString(CultureInfo.InvariantCulture), rows[^1].Id);
         }
 
-        // A list shows counts and missing links. It reads no scenario document, so "changed
-        // after approval" is on the single read only.
-        var world = await PromiseWorld.LoadAsync(services, projectId, [], ct);
+        // A summary holds the same counts as the promise itself, and whether it has a gap. So
+        // it is computed from the same inputs: the scenarios the promises of the page name.
+        var states = rows.Select(row => PromiseJson.Read<PromiseState>(row.Document)).ToList();
+        var world = await PromiseWorld.LoadAsync(services, projectId, PromiseWorld.ScenarioIds(states), ct);
         var items = rows
-            .Select(row => PromiseViews.ToSummary(row.Id, PromiseJson.Read<PromiseState>(row.Document), PromiseReader.Runs(row), world))
+            .Select((row, i) => PromiseViews.ToSummary(row.Id, states[i], PromiseReader.Runs(row), world))
             .ToList();
         return Results.Ok(new Page<PromiseSummaryDto>(items, next));
     }
@@ -95,6 +95,9 @@ public static class PromiseReads
         await auth.RequireProjectRoleAsync(projectId, PromiseAccess.UserId(user), WorkspaceRole.Viewer, ct);
         if (!await db.Promises.AsNoTracking().AnyAsync(p => p.Id == promiseId && p.ProjectId == projectId, ct))
             return PromiseAccess.NotFound();
+
+        if (obligation is { Length: > MaxObligationFilterChars })
+            return PromiseAccess.Invalid("obligation", $"An obligation is named by its ID or its key, at most {MaxObligationFilterChars} characters");
 
         var pageSize = Math.Clamp(limit ?? 50, 1, 200);
         var query = db.Runs.AsNoTracking().Where(r => r.PromiseId == promiseId);

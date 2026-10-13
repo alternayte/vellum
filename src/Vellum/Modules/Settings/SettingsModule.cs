@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.DataProtection.KeyManagement;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
+using Vellum.Modules.Identity.AgentTokens;
 using Vellum.Modules.Settings.Audit;
 using Vellum.Modules.Settings.Crypto;
 using Vellum.Modules.Settings.Document;
@@ -104,7 +105,7 @@ public static class SettingsModule
         var instance = app.MapGroup("/api/instance").WithTags("Instance").RequireAuthorization();
         instance.MapGet("/", GetInstance.Handle).Produces<InstanceInfoResponse>();
         instance.MapGet("/settings", GetInstanceSettings.Handle).Produces<InstanceSettingsResponse>();
-        instance.MapPut("/settings", UpdateInstanceSettings.Handle)
+        instance.MapPut("/settings", UpdateInstanceSettings.Handle).RequireHuman()
             .WithBodyLimit(UpdateInstanceSettings.MaxBodyBytes)
             .Accepts<UpdateInstanceSettingsRequest>("application/json")
             .Produces<InstanceSettingsResponse>()
@@ -113,14 +114,14 @@ public static class SettingsModule
             .Produces<ErrorResponse>(StatusCodes.Status413PayloadTooLarge)
             .Produces<ErrorResponse>(StatusCodes.Status428PreconditionRequired);
         instance.MapGet("/audit", ListInstanceAudit.Handle).Produces<List<AuditEntryDto>>();
-        instance.MapPost("/keys/rotate", RotateKeys.Handle)
+        instance.MapPost("/keys/rotate", RotateKeys.Handle).RequireHuman()
             .Produces<RotateKeysResponse>()
             .Produces<ErrorResponse>(StatusCodes.Status409Conflict);
         instance.MapGet("/diagnostics", GetDiagnostics.Handle).Produces<DiagnosticsResponse>();
 
         var workspace = app.MapGroup("/api/workspaces/{workspaceId}").WithTags("Settings").RequireAuthorization();
         workspace.MapGet("/settings", GetWorkspaceSettings.Handle).Produces<WorkspaceSettingsResponse>();
-        workspace.MapPut("/settings", UpdateWorkspaceSettings.Handle)
+        workspace.MapPut("/settings", UpdateWorkspaceSettings.Handle).RequireHuman()
             .WithBodyLimit(SettingsJson.MaxBodyBytes)
             .Produces<WorkspaceSettingsResponse>()
             .Produces<ErrorResponse>(StatusCodes.Status400BadRequest)
@@ -128,12 +129,12 @@ public static class SettingsModule
             .Produces<ErrorResponse>(StatusCodes.Status413PayloadTooLarge)
             .Produces<ErrorResponse>(StatusCodes.Status428PreconditionRequired);
         workspace.MapGet("/secrets", ListSecrets.Handle).Produces<List<SecretStatusDto>>();
-        workspace.MapPut("/secrets/{name}", SetSecret.Handle)
+        workspace.MapPut("/secrets/{name}", SetSecret.Handle).RequireHuman()
             .WithBodyLimit(SetSecret.MaxBodyBytes)
             .Produces<ErrorResponse>(StatusCodes.Status413PayloadTooLarge)
             .Produces(StatusCodes.Status204NoContent)
             .Produces<ErrorResponse>(StatusCodes.Status400BadRequest);
-        workspace.MapDelete("/secrets/{name}", DeleteSecret.Handle)
+        workspace.MapDelete("/secrets/{name}", DeleteSecret.Handle).RequireHuman()
             .Produces(StatusCodes.Status204NoContent)
             .Produces<ErrorResponse>(StatusCodes.Status400BadRequest);
         workspace.MapGet("/audit", ListAudit.Handle).Produces<List<AuditEntryDto>>();

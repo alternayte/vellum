@@ -85,6 +85,17 @@ public sealed class MasterKeyRing
     public bool IsLoaded(string masterKeyId) => masterKeyId == Current.Id || masterKeyId == _previous?.Id;
 
     /// <summary>
+    /// The keyed digest of <paramref name="value"/> under the loaded key that
+    /// <paramref name="masterKeyId"/> names, or null when that key is not loaded. A digest
+    /// cannot be wrapped again like a sealed value: its owner computes it again under the
+    /// current key the next time it sees the value.
+    /// </summary>
+    internal byte[]? Digest(string masterKeyId, ReadOnlySpan<byte> context, ReadOnlySpan<byte> value) =>
+        masterKeyId == Current.Id ? Current.Digest(context, value)
+        : masterKeyId == _previous?.Id ? _previous.Digest(context, value)
+        : null;
+
+    /// <summary>
     /// Encrypts <paramref name="plaintext"/> with a new random data key. The associated data
     /// binds the value to its place: a sealed value opens only with the same associated data.
     /// </summary>

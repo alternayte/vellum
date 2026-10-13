@@ -49,6 +49,15 @@ internal interface IGitHubApi
     Task<HttpResponseMessage> GetWorkflowRun(string owner, string repo, long runId,
         [Property(OutboundCall.PropertyName)] OutboundCall call, CancellationToken ct);
 
+    /// <summary>
+    /// The jobs of the latest attempt of a run, one page. <c>filter=latest</c> leaves out the
+    /// jobs of earlier attempts, so a job that failed and was run again shows once.
+    /// </summary>
+    [Get("/repos/{owner}/{repo}/actions/runs/{runId}/jobs?filter=latest")]
+    Task<HttpResponseMessage> ListWorkflowRunJobs(string owner, string repo, long runId,
+        [AliasAs("per_page")] int perPage, int page,
+        [Property(OutboundCall.PropertyName)] OutboundCall call, CancellationToken ct);
+
     [Get("/rate_limit")]
     Task<HttpResponseMessage> GetRateLimit([Property(OutboundCall.PropertyName)] OutboundCall call, CancellationToken ct);
 
@@ -124,7 +133,23 @@ internal sealed record WorkflowRunDto(
     [property: JsonPropertyName("head_sha")] string? HeadSha,
     [property: JsonPropertyName("status")] string? Status,
     [property: JsonPropertyName("conclusion")] string? Conclusion,
-    [property: JsonPropertyName("name")] string? Name);
+    [property: JsonPropertyName("name")] string? Name,
+    [property: JsonPropertyName("path")] string? Path,
+    [property: JsonPropertyName("repository")] RunRepositoryDto? Repository);
+
+internal sealed record RunRepositoryDto([property: JsonPropertyName("full_name")] string? FullName);
+
+internal sealed record WorkflowJobsDto(
+    [property: JsonPropertyName("total_count")] int TotalCount,
+    [property: JsonPropertyName("jobs")] List<WorkflowJobDto?>? Jobs);
+
+internal sealed record WorkflowJobDto(
+    [property: JsonPropertyName("id")] long Id,
+    [property: JsonPropertyName("run_id")] long RunId,
+    [property: JsonPropertyName("head_sha")] string? HeadSha,
+    [property: JsonPropertyName("name")] string? Name,
+    [property: JsonPropertyName("status")] string? Status,
+    [property: JsonPropertyName("conclusion")] string? Conclusion);
 
 internal sealed record RateLimitDto([property: JsonPropertyName("resources")] RateResourcesDto? Resources);
 
