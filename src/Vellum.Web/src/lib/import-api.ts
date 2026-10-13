@@ -2,9 +2,27 @@ import { api } from '@/lib/settings-api'
 
 export type ScanStatus = 'queued' | 'running' | 'waiting' | 'completed' | 'failed' | 'cancelled'
 
+/** How many accepted facts this scan could judge, and why it could not judge the rest. */
+export interface LinkedFactCoverage {
+  covered: number
+  notCovered: number
+  scope: number
+  limit: number
+  withheld: number
+  failed: number
+}
+
 export interface ScanSummary {
   id: string
   repository: string
+  /** A tracking scan follows the ref the model was accepted from. A comparison scan is a preview. */
+  kind: 'tracking' | 'comparison'
+  trackedRef: string | null
+  canDecide: boolean
+  canDecideReason: string | null
+  coverage: { filesListed: number; filesExtracted: number; linkedFacts: LinkedFactCoverage | null } | null
+  relinked: number
+  needsReview: number
   ref: string | null
   commitSha: string | null
   status: ScanStatus
@@ -30,7 +48,12 @@ export interface ScanDetail extends ScanSummary {
   ruleVersions: { rule: string; version: number }[]
 }
 
-export type ProposalAction = 'add' | 'change' | 'remove' | 'conflict'
+export type ProposalAction = 'add' | 'change' | 'remove' | 'conflict' | 'relink'
+
+export interface ProposalImpact {
+  scenarios: { id: string; name: string; stepIds: string[] }[]
+  entities: { entityKind: string; id: string; name: string }[]
+}
 export type ProposalStatus = 'pending' | 'accepted' | 'rejected' | 'superseded'
 
 export interface ProposalEvidence {
@@ -56,6 +79,12 @@ export interface Proposal {
   dependsOn: string[]
   status: ProposalStatus
   partial: boolean
+  canDecide: boolean
+  canDecideReason: string | null
+  /** What an accepted removal or change breaks. Accepting needs an explicit acknowledgement. */
+  impact: ProposalImpact | null
+  /** Large bodies are cut in the list. `importApi.proposal` returns the whole item. */
+  truncated: boolean
 }
 
 export interface DecisionResult {
@@ -99,8 +128,10 @@ export const importApi = {
   cancel: (projectId: string, id: string) => api<void>('POST', `${base(projectId)}/${id}/cancel`),
   resume: (projectId: string, id: string) => api<void>('POST', `${base(projectId)}/${id}/resume`),
   proposals: (projectId: string, id: string) => allPages<Proposal>(`${base(projectId)}/${id}/proposals`),
-  decide: (projectId: string, id: string, accept: string[], reject: string[]) =>
-    api<DecisionResult>('POST', `${base(projectId)}/${id}/proposals/decide`, { accept, reject }),
+  proposal: (projectId: string, id: string, proposalId: string) => api<Proposal>('GET', `${base(projectId)}/${id}/proposals/${proposalId}`),
+  decide: (projectId: string, id: string, decision: { accept: string[]; reject: string[]; acknowledgeImpact: boolean; relink: { id: string; factKey: string | null }[] }) =>
+    api<DecisionResult>('POST', `${base(projectId)}/${id}/proposals/decide`, decision),
+  track: (projectId: string, id: string) => api<ScanDetail>('POST', `${base(projectId)}/${id}/track`),
   source: (projectId: string, id: string, evidence: Pick<ProposalEvidence, 'path' | 'startLine' | 'endLine'>) =>
     api<SourceWindow>(
       'GET',
@@ -113,6 +144,18 @@ export function isActive(status: ScanStatus): boolean {
 }
 
 /** One sentence for the state of a scan. A partial scan is never called complete. */
+/** Why some accepted facts were not judged, in words. Empty when all were. */
+export function describeNotCovered(coverage: LinkedFactCoverage | null | undefined): string | null {
+  if (!coverage || coverage.notCovered === 0) return null
+  const reasons = [
+    coverage.scope > 0 && `${coverage.scope} outside the paths of this scan`,
+    coverage.limit > 0 && `${coverage.limit} past a limit`,
+    coverage.withheld > 0 && `${coverage.withheld} in files that Vellum does not read`,
+    coverage.failed > 0 && `${coverage.failed} in files that failed`,
+  ].filter(Boolean)
+  return `This scan did not look at the source of ${coverage.notCovered} accepted ${coverage.notCovered === 1 ? 'fact' : 'facts'} (${reasons.join(', ')}). It says nothing about them.`
+}
+
 export function describeScan(scan: ScanSummary): string {
   switch (scan.status) {
     case 'queued':

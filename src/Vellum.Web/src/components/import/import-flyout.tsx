@@ -41,7 +41,8 @@ export function ImportFlyout({ projectId }: { projectId: string }) {
   })
   const cancel = useMutation({ mutationFn: (id: string) => importApi.cancel(projectId, id), onSuccess: refresh, onError: shownInline })
   const resume = useMutation({ mutationFn: (id: string) => importApi.resume(projectId, id), onSuccess: refresh, onError: shownInline })
-  const failure = start.error ?? cancel.error ?? resume.error
+  const track = useMutation({ mutationFn: (id: string) => importApi.track(projectId, id), onSuccess: refresh, onError: shownInline })
+  const failure = start.error ?? cancel.error ?? resume.error ?? track.error
 
   const submit = (e: FormEvent) => {
     e.preventDefault()
@@ -82,7 +83,8 @@ export function ImportFlyout({ projectId }: { projectId: string }) {
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm text-foreground">{scan.repository}</p>
                   <p className="truncate font-mono text-[10px] text-muted-foreground">
-                    {scan.commitSha ? scan.commitSha.slice(0, 10) : scan.ref ?? 'default branch'}
+                    {scan.ref ?? scan.trackedRef ?? 'default branch'}{scan.commitSha ? ` · ${scan.commitSha.slice(0, 10)}` : ''}
+                    {scan.kind === 'comparison' && ' · comparison'}
                   </p>
                 </div>
               </div>
@@ -94,6 +96,15 @@ export function ImportFlyout({ projectId }: { projectId: string }) {
                 {scan.status === 'completed' && (
                   <Button size="sm" variant="secondary" className="h-6 px-2 text-xs" onClick={() => setReviewing(scan)}>
                     {scan.proposalCounts.pending > 0 ? `Review ${scan.proposalCounts.pending} proposals` : 'Open review'}
+                  </Button>
+                )}
+                {scan.status === 'completed' && scan.kind === 'comparison' && scan.ref && (
+                  <Button
+                    size="sm" variant="ghost" className="h-6 px-2 text-xs" disabled={track.isPending}
+                    title="Make this ref the one the model follows. Its proposals can then be accepted."
+                    onClick={() => track.mutate(scan.id)}
+                  >
+                    Follow this ref
                   </Button>
                 )}
                 {isActive(scan.status) && (

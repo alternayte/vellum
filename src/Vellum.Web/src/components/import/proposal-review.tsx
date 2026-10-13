@@ -5,13 +5,14 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 import { shownInline } from '@/lib/mutation-errors'
-import { importApi, withDependencies, type Proposal, type ProposalAction, type ProposalEvidence, type ScanSummary } from '@/lib/import-api'
+import { describeNotCovered, importApi, withDependencies, type Proposal, type ProposalAction, type ProposalEvidence, type ScanSummary } from '@/lib/import-api'
 
 const ACTION: Record<ProposalAction, { label: string; color: string; sign: string }> = {
   add: { label: 'Add', color: 'var(--trace-request)', sign: '+' },
   change: { label: 'Change', color: 'var(--trace-retry)', sign: '~' },
   remove: { label: 'Remove', color: 'var(--trace-failure)', sign: '−' },
   conflict: { label: 'Conflict', color: 'var(--trace-event)', sign: '!' },
+  relink: { label: 'Match', color: 'var(--trace-data)', sign: '?' },
 }
 
 function show(value: unknown): string {
@@ -33,6 +34,8 @@ export function ProposalReview({ projectId, scan, onClose }: { projectId: string
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [open, setOpen] = useState<string | null>(null)
   const [failed, setFailed] = useState<{ id: string; reason: string }[]>([])
+  const [acknowledged, setAcknowledged] = useState(false)
+  const [links, setLinks] = useState<Record<string, string | null>>({})
 
   const all = useMemo(() => proposals.data ?? [], [proposals.data])
   const pending = all.filter((p) => p.status === 'pending')
@@ -43,10 +46,16 @@ export function ProposalReview({ projectId, scan, onClose }: { projectId: string
   }, [all])
 
   const decide = useMutation({
-    mutationFn: ({ accept, reject }: { accept: string[]; reject: string[] }) => importApi.decide(projectId, scan.id, accept, reject),
+    mutationFn: ({ accept, reject }: { accept: string[]; reject: string[] }) =>
+      importApi.decide(projectId, scan.id, {
+        accept, reject, acknowledgeImpact: acknowledged,
+        relink: Object.entries(links).map(([id, factKey]) => ({ id, factKey })),
+      }),
     onSuccess: (result) => {
       setFailed(result.failed)
       setSelected(new Set(result.failed.map((f) => f.id)))
+      if (result.failed.length === 0) { setLinks({}); setAcknowledged(false) }
+      queryClient.invalidateQueries({ queryKey: ['projects', projectId, 'imports', scan.id, 'proposals'] })
       // Accepted proposals changed the model: every model query is stale.
       queryClient.invalidateQueries({ queryKey: ['projects', projectId] })
     },
@@ -62,6 +71,10 @@ export function ProposalReview({ projectId, scan, onClose }: { projectId: string
     })
   const accepting = withDependencies(selected, all)
   const added = accepting.size - selected.size
+  // Accepting something that breaks a scenario or another part needs a deliberate tick.
+  const breaking = all.filter((p) => accepting.has(p.id) && p.impact && (p.impact.scenarios.length > 0 || p.impact.entities.length > 0))
+  const notCovered = describeNotCovered(scan.coverage?.linkedFacts)
+  const linkCount = Object.keys(links).length
 
   return (
     <Dialog open onOpenChange={(isOpen) => { if (!isOpen) onClose() }}>
@@ -73,6 +86,12 @@ export function ProposalReview({ projectId, scan, onClose }: { projectId: string
           </DialogDescription>
         </DialogHeader>
 
+        {!scan.canDecide && (
+          <p role="status" className="rounded-md border border-border px-3 py-2 text-xs text-foreground">
+            This is a comparison with <span className="font-mono">{scan.trackedRef || 'the tracked ref'}</span>, which the model follows. You can read it, and you cannot accept from it. {scan.canDecideReason}
+          </p>
+        )}
+        {notCovered && <p role="status" className="rounded-md border border-border px-3 py-2 text-xs text-muted-foreground">{notCovered}</p>}
         {!scan.isComplete && (
           <p role="status" className="rounded-md border border-[var(--trace-retry)]/60 px-3 py-2 text-xs text-foreground">
             This scan is partial. A limit stopped it before every file was read, so it proposes no removals and missing items prove nothing.
@@ -83,7 +102,7 @@ export function ProposalReview({ projectId, scan, onClose }: { projectId: string
           <span>{pending.length} pending of {all.length}</span>
           <div className="flex-1" />
           <button type="button" className="rounded underline-offset-2 hover:text-foreground hover:underline focus-visible:outline-2 focus-visible:outline-primary"
-            onClick={() => setSelected(new Set(pending.filter((p) => p.action !== 'conflict').map((p) => p.id)))}>
+            onClick={() => setSelected(new Set(pending.filter((p) => p.action !== 'conflict' && p.action !== 'relink' && p.canDecide).map((p) => p.id)))}>
             Select all without conflicts
           </button>
           <button type="button" className="rounded underline-offset-2 hover:text-foreground hover:underline focus-visible:outline-2 focus-visible:outline-primary" onClick={() => setSelected(new Set())}>
@@ -114,7 +133,7 @@ export function ProposalReview({ projectId, scan, onClose }: { projectId: string
                           type="checkbox"
                           className="mt-1 h-3.5 w-3.5 accent-[var(--primary)]"
                           checked={accepting.has(proposal.id)}
-                          disabled={!isPending || (accepting.has(proposal.id) && !selected.has(proposal.id))}
+                          disabled={!isPending || !proposal.canDecide || proposal.action === 'relink' || (accepting.has(proposal.id) && !selected.has(proposal.id))}
                           onChange={() => toggle(proposal.id)}
                           aria-label={`Select ${action.label.toLowerCase()} ${proposal.name}`}
                         />
@@ -136,7 +155,13 @@ export function ProposalReview({ projectId, scan, onClose }: { projectId: string
                             </span>
                           </button>
                           {problem && <p role="alert" className="mt-1 text-xs text-destructive">{problem.reason}</p>}
-                          {open === proposal.id && <ProposalDetail projectId={projectId} scanId={scan.id} proposal={proposal} />}
+                          {open === proposal.id && (
+                            <ProposalDetail
+                              projectId={projectId} scanId={scan.id} proposal={proposal}
+                              link={links[proposal.id]}
+                              onLink={(factKey) => setLinks((current) => ({ ...current, [proposal.id]: factKey }))}
+                            />
+                          )}
                         </div>
                       </div>
                     </li>
@@ -149,18 +174,29 @@ export function ProposalReview({ projectId, scan, onClose }: { projectId: string
 
         {decide.isError && <p role="alert" className="text-xs text-destructive">{decide.error.message}</p>}
 
+        {breaking.length > 0 && (
+          <label className="flex items-start gap-2 rounded-md border border-[var(--trace-failure)]/60 px-3 py-2 text-xs text-foreground">
+            <input type="checkbox" className="mt-0.5 h-3.5 w-3.5 accent-[var(--primary)]" checked={acknowledged} onChange={(e) => setAcknowledged(e.target.checked)} />
+            <span>
+              {breaking.length === 1 ? 'One selected proposal breaks' : `${breaking.length} selected proposals break`} something that exists:{' '}
+              {[...new Set(breaking.flatMap((p) => [...p.impact!.scenarios.map((s) => `scenario “${s.name}”`), ...p.impact!.entities.map((e) => `${e.entityKind} ${e.name}`)]))].slice(0, 6).join(', ')}.
+              I accept that.
+            </span>
+          </label>
+        )}
+
         <div className="flex flex-wrap items-center gap-2">
           <p className="min-w-0 flex-1 text-xs text-muted-foreground" aria-live="polite">
             {selected.size === 0
-              ? 'Select proposals to accept or reject.'
+              ? linkCount > 0 ? `${linkCount} ${linkCount === 1 ? 'match' : 'matches'} chosen.` : 'Select proposals to accept or reject.'
               : `${selected.size} selected.${added > 0 ? ` Accepting also takes ${added} that ${added === 1 ? 'it depends' : 'they depend'} on.` : ''}`}
           </p>
           <Button variant="ghost" size="sm" onClick={onClose}>Close</Button>
           <Button variant="secondary" size="sm" disabled={selected.size === 0 || decide.isPending} onClick={() => decide.mutate({ accept: [], reject: [...selected] })}>
             Reject selected
           </Button>
-          <Button size="sm" disabled={selected.size === 0 || decide.isPending} onClick={() => decide.mutate({ accept: [...accepting], reject: [] })}>
-            {decide.isPending ? 'Applying…' : `Accept ${accepting.size || ''}`.trim()}
+          <Button size="sm" disabled={(selected.size === 0 && linkCount === 0) || decide.isPending || !scan.canDecide || (breaking.length > 0 && !acknowledged)} onClick={() => decide.mutate({ accept: [...accepting], reject: [] })}>
+            {decide.isPending ? 'Applying…' : selected.size === 0 ? 'Apply matches' : `Accept ${accepting.size || ''}`.trim()}
           </Button>
         </div>
       </DialogContent>
@@ -185,7 +221,19 @@ function readable(proposed: Record<string, unknown>): { field: string; from: unk
   return rows
 }
 
-function ProposalDetail({ projectId, scanId, proposal }: { projectId: string; scanId: string; proposal: Proposal }) {
+function ProposalDetail({ projectId, scanId, proposal: listed, link, onLink }: {
+  projectId: string; scanId: string; proposal: Proposal
+  link: string | null | undefined; onLink: (factKey: string | null) => void
+}) {
+  // The list cuts large bodies; the detail loads the whole proposal when it was cut.
+  const whole = useQuery({
+    queryKey: ['projects', projectId, 'imports', scanId, 'proposal', listed.id],
+    queryFn: () => importApi.proposal(projectId, scanId, listed.id),
+    enabled: listed.truncated,
+    staleTime: Infinity,
+  })
+  const proposal = whole.data ?? listed
+  if (proposal.action === 'relink') return <RelinkChoice proposal={proposal} link={link} onLink={onLink} />
   const fields = proposal.changes.length > 0 ? proposal.changes : readable(proposal.proposed ?? {})
   return (
     <div className="mt-2 space-y-3 pb-1">
@@ -209,6 +257,16 @@ function ProposalDetail({ projectId, scanId, proposal }: { projectId: string; sc
           </tbody>
         </table>
       )}
+      {proposal.impact && (proposal.impact.scenarios.length > 0 || proposal.impact.entities.length > 0) && (
+        <div className="rounded-md border border-[var(--trace-failure)]/60 px-2.5 py-2 text-xs">
+          <p className="font-medium text-foreground">Accepting this breaks:</p>
+          <ul className="mt-1 space-y-0.5 text-muted-foreground">
+            {proposal.impact.scenarios.map((s) => <li key={s.id}>Scenario “{s.name}”, {s.stepIds.length === 1 ? 'step' : 'steps'} <span className="font-mono">{s.stepIds.join(', ')}</span></li>)}
+            {proposal.impact.entities.map((e) => <li key={e.id}>{e.entityKind} {e.name}</li>)}
+          </ul>
+        </div>
+      )}
+      {!proposal.canDecide && proposal.canDecideReason && <p className="text-xs text-muted-foreground">{proposal.canDecideReason}</p>}
       {proposal.action === 'conflict' && (
         <p className="text-xs text-muted-foreground">
           A person set the value in the model. Accept to replace it with the value in the source. Reject to keep the model as it is.
@@ -252,5 +310,33 @@ function SourceLines({ projectId, scanId, evidence }: { projectId: string; scanI
         </pre>
       )}
     </figure>
+  )
+}
+
+/**
+ * The extraction rules changed, and Vellum cannot tell by an exact rule which fact of this
+ * scan is the thing the model already holds. A person chooses; until then nothing is
+ * removed, added or marked stale for it.
+ */
+function RelinkChoice({ proposal, link, onLink }: { proposal: Proposal; link: string | null | undefined; onLink: (factKey: string | null) => void }) {
+  const candidates = ((proposal.proposed as { candidates?: { factKey: string; name: string; evidence: ProposalEvidence[] }[] } | null)?.candidates) ?? []
+  const name = `relink-${proposal.id}`
+  return (
+    <fieldset className="mt-2 space-y-1.5 pb-1 text-xs">
+      <legend className="text-muted-foreground">Which fact of this scan is “{proposal.name}”?</legend>
+      {candidates.map((candidate) => (
+        <label key={candidate.factKey} className="flex items-start gap-2 rounded-md border border-border px-2.5 py-1.5">
+          <input type="radio" name={name} className="mt-0.5 accent-[var(--primary)]" checked={link === candidate.factKey} onChange={() => onLink(candidate.factKey)} />
+          <span className="min-w-0">
+            <span className="text-foreground">{candidate.name}</span>
+            {candidate.evidence[0] && <span className="block font-mono text-[10px] text-muted-foreground">{candidate.evidence[0].path}:{candidate.evidence[0].startLine}-{candidate.evidence[0].endLine}</span>}
+          </span>
+        </label>
+      ))}
+      <label className="flex items-start gap-2 rounded-md border border-border px-2.5 py-1.5">
+        <input type="radio" name={name} className="mt-0.5 accent-[var(--primary)]" checked={link === null} onChange={() => onLink(null)} />
+        <span className="text-foreground">None of these. The source no longer has it.</span>
+      </label>
+    </fieldset>
   )
 }
