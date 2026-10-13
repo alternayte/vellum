@@ -25,6 +25,18 @@ public static class MergedModel
             merged = ModelState.Evolve(merged, @event);
         }
 
+        (string Kind, int Count)[] contracts =
+        [
+            ("operations", merged.Operations.Count),
+            ("channels", merged.Channels.Count),
+            ("subscriptions", merged.Subscriptions.Count),
+        ];
+        foreach (var (kind, count) in contracts)
+        {
+            if (count > ContractDecider.MaxPerKind)
+                return $"The merge would give main {count} {kind}. A model holds at most {ContractDecider.MaxPerKind}. Remove some on the draft or on main.";
+        }
+
         var dangling = DanglingReferences(merged).Except(DanglingReferences(main)).ToList();
         return dangling.Count == 0
             ? null
@@ -66,7 +78,7 @@ public static class MergedModel
 
     private static string? Misfit(ModelState state, object @event) => @event switch
     {
-        ModelEvent.ElementAdded e => Absent(state.Elements.ContainsKey(e.Id), "element", e.Id.Value),
+        ModelEvent.ElementAdded e => Unused(state, "element", e.Id.Value),
         ModelEvent.ElementRenamed e => Present(state.Elements.ContainsKey(e.ElementId), "element", e.ElementId.Value),
         ModelEvent.ElementDescriptionChanged e => Present(state.Elements.ContainsKey(e.ElementId), "element", e.ElementId.Value),
         ModelEvent.ElementTechnologyChanged e => Present(state.Elements.ContainsKey(e.ElementId), "element", e.ElementId.Value),
@@ -78,7 +90,7 @@ public static class MergedModel
         ModelEvent.ElementProvenanceRecorded e => Present(state.Elements.ContainsKey(e.ElementId), "element", e.ElementId.Value),
         ModelEvent.ElementRemoved e => Present(state.Elements.ContainsKey(e.ElementId), "element", e.ElementId.Value),
 
-        ModelEvent.RelationshipAdded e => Absent(state.Relationships.ContainsKey(e.Id), "relationship", e.Id.Value),
+        ModelEvent.RelationshipAdded e => Unused(state, "relationship", e.Id.Value),
         ModelEvent.RelationshipLabelChanged e => Present(state.Relationships.ContainsKey(e.RelationshipId), "relationship", e.RelationshipId.Value),
         ModelEvent.RelationshipTechnologyChanged e => Present(state.Relationships.ContainsKey(e.RelationshipId), "relationship", e.RelationshipId.Value),
         ModelEvent.RelationshipLineShapeChanged e => Present(state.Relationships.ContainsKey(e.RelationshipId), "relationship", e.RelationshipId.Value),
@@ -86,22 +98,22 @@ public static class MergedModel
         ModelEvent.RelationshipProvenanceRecorded e => Present(state.Relationships.ContainsKey(e.RelationshipId), "relationship", e.RelationshipId.Value),
         ModelEvent.RelationshipRemoved e => Present(state.Relationships.ContainsKey(e.RelationshipId), "relationship", e.RelationshipId.Value),
 
-        ModelEvent.MessageAdded e => Absent(state.Messages.ContainsKey(e.Id), "message", e.Id.Value),
+        ModelEvent.MessageAdded e => Unused(state, "message", e.Id.Value),
         ModelEvent.MessageUpdated e => Present(state.Messages.ContainsKey(e.MessageId), "message", e.MessageId.Value),
         ModelEvent.MessageProvenanceRecorded e => Present(state.Messages.ContainsKey(e.MessageId), "message", e.MessageId.Value),
         ModelEvent.MessageRemoved e => Present(state.Messages.ContainsKey(e.MessageId), "message", e.MessageId.Value),
 
-        ModelEvent.OperationAdded e => Absent(state.Operations.ContainsKey(e.Id), "operation", e.Id.Value),
+        ModelEvent.OperationAdded e => Unused(state, "operation", e.Id.Value),
         ModelEvent.OperationChanged e => Present(state.Operations.ContainsKey(e.OperationId), "operation", e.OperationId.Value),
         ModelEvent.OperationProvenanceRecorded e => Present(state.Operations.ContainsKey(e.OperationId), "operation", e.OperationId.Value),
         ModelEvent.OperationRemoved e => Present(state.Operations.ContainsKey(e.OperationId), "operation", e.OperationId.Value),
 
-        ModelEvent.ChannelAdded e => Absent(state.Channels.ContainsKey(e.Id), "channel", e.Id.Value),
+        ModelEvent.ChannelAdded e => Unused(state, "channel", e.Id.Value),
         ModelEvent.ChannelChanged e => Present(state.Channels.ContainsKey(e.ChannelId), "channel", e.ChannelId.Value),
         ModelEvent.ChannelProvenanceRecorded e => Present(state.Channels.ContainsKey(e.ChannelId), "channel", e.ChannelId.Value),
         ModelEvent.ChannelRemoved e => Present(state.Channels.ContainsKey(e.ChannelId), "channel", e.ChannelId.Value),
 
-        ModelEvent.SubscriptionAdded e => Absent(state.Subscriptions.ContainsKey(e.Id), "subscription", e.Id.Value),
+        ModelEvent.SubscriptionAdded e => Unused(state, "subscription", e.Id.Value),
         ModelEvent.SubscriptionChanged e => Present(state.Subscriptions.ContainsKey(e.SubscriptionId), "subscription", e.SubscriptionId.Value),
         ModelEvent.SubscriptionProvenanceRecorded e => Present(state.Subscriptions.ContainsKey(e.SubscriptionId), "subscription", e.SubscriptionId.Value),
         ModelEvent.SubscriptionRemoved e => Present(state.Subscriptions.ContainsKey(e.SubscriptionId), "subscription", e.SubscriptionId.Value),
@@ -110,8 +122,10 @@ public static class MergedModel
         _ => throw new InvalidOperationException($"A merge has no rule for the event {@event.GetType().Name}."),
     };
 
-    private static string? Absent(bool exists, string kind, Guid id) =>
-        exists ? $"it adds {kind} {id}, which main already has" : null;
+    // One ID names one entity of any kind. A draft and main can each give the same ID to
+    // different kinds; the merged model must not hold both.
+    private static string? Unused(ModelState state, string kind, Guid id) =>
+        state.KindOf(id) is { } owner ? $"it adds {kind} {id}, but main already uses that ID for {owner}" : null;
 
     private static string? Present(bool exists, string kind, Guid id) =>
         exists ? null : $"it changes {kind} {id}, which main does not have";

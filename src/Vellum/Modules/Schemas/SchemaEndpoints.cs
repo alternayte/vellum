@@ -10,6 +10,7 @@ public static class SchemaEndpoints
     {
         var schemas = app.MapGroup("/api/projects/{projectId}/schemas")
             .RequireAuthorization()
+            .WithBodyLimit(RequestBodyLimit.Document)
             .WithTags("Schemas");
 
         schemas.MapPost("/", async (

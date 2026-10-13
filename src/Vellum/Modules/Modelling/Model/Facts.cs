@@ -55,9 +55,10 @@ public static class ModelEnum
     /// Parses an enum member name (hyphens/underscores ignored, case-insensitive) and rejects
     /// numeric strings and undefined members, so closed label sets stay closed.
     /// </summary>
-    public static bool TryParseDefined<T>(string value, out T parsed) where T : struct, Enum
+    public static bool TryParseDefined<T>(string? value, out T parsed) where T : struct, Enum
     {
         parsed = default;
+        if (value is null) return false;
 
         var normalized = value.Replace("-", "").Replace("_", "");
         if (string.IsNullOrWhiteSpace(normalized)) return false;
@@ -115,6 +116,11 @@ public static class FactRules
 
         if (provenance.Revision is not null && string.IsNullOrWhiteSpace(provenance.Revision))
             return new ValidationError("provenance.revision", "Revision must not be blank");
+
+        var textError = TextRule.Line("provenance.source", provenance.Source, TextRule.MaxPointer)
+            ?? TextRule.Line("provenance.revision", provenance.Revision);
+        if (textError is not null)
+            return textError;
 
         if (provenance.Confidence is < 0 or > 1)
             return new ValidationError("provenance.confidence", "Confidence must be between 0 and 1");

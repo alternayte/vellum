@@ -1,9 +1,10 @@
 using System.Security.Claims;
-using System.Text.Json;
 using Deedbox;
 using Microsoft.EntityFrameworkCore;
 using Vellum.Modules.Modelling.Entities;
 using Vellum.Modules.Modelling.Model;
+using Vellum.Modules.Modelling.Revisions;
+using Vellum.Modules.Schemas;
 using Vellum.Modules.Workspaces;
 using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Shared;
@@ -19,11 +20,6 @@ public sealed record VariantDto(
 
 public static class CreateVariant
 {
-    private static readonly JsonSerializerOptions JsonOpts = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-    };
-
     public static async Task<IResult> Handle(
         Guid projectId,
         CreateVariantRequest request,
@@ -35,8 +31,12 @@ public static class CreateVariant
         var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
 
+        if (request.Id == Guid.Empty)
+            return Invalid("id", "An ID is required");
         if (string.IsNullOrWhiteSpace(request.Name))
             return Results.BadRequest(new ErrorResponse("validation_error", "Variant name is required"));
+        if (TextRule.Line("name", request.Name) is { } textError)
+            return Invalid(textError.Field, textError.Message);
 
         // The variant row, the fork event and the branch read-model rows commit together.
         return await SharedTransaction.RunAsync(http.RequestServices, async services =>
@@ -64,6 +64,11 @@ public static class CreateVariant
                 return Results.Conflict(new ErrorResponse("conflict", "A variant with this name already exists"));
             }
 
+            // One transaction: the variant row, the fork event, the branch read-model rows and
+            // the hold on the schemas the fork names (see SchemaReferences).
+            await using var transaction = await modellingDb.Database.BeginTransactionAsync(ct);
+            var branches = store.ForProject(projectId).UseDbContext(modellingDb);
+
             ModelState sourceState;
             Guid baseStreamId;
             long forkVersion;
@@ -75,15 +80,21 @@ public static class CreateVariant
                 if (revision is null)
                     return Results.NotFound(new ErrorResponse("not_found", "Base revision not found"));
 
-                sourceState = JsonSerializer.Deserialize<ModelState>(revision.State, JsonOpts)!;
+                sourceState = CreateRevision.ReadState(revision.State);
                 baseStreamId = revision.StreamId;
                 forkVersion = revision.Version;
             }
             else
             {
-                (sourceState, forkVersion) = await store.Load<ModelState>(StreamId.From(project.StreamId), ct);
+                // The stream lock gives the newest model, in which every schema reference
+                // points at a schema that exists.
+                var main = await branches.Execute<ModelState>(StreamId.From(project.StreamId), _ => [], ct);
+                (sourceState, forkVersion) = (main.State, main.Version);
                 baseStreamId = project.StreamId;
             }
+
+            await SchemaReferences.HoldAsync(
+                modellingDb, projectId, ContractDecider.ReferencedSchemaIds(sourceState), ct);
 
             var variant = new VariantEntity
             {
@@ -100,11 +111,12 @@ public static class CreateVariant
             };
             modellingDb.Variants.Add(variant);
 
-            // One append in a transaction that Deedbox opens on the DbContext and commits. Deedbox
-            // saves the variant row, and the inline projection writes the branch rows, in it.
-            await store.ForProject(projectId).UseDbContext(modellingDb).Append(
+            // One append. Deedbox saves the variant row in the transaction, and the inline
+            // projection writes the branch rows in it.
+            await branches.Append(
                 StreamId.From(variant.StreamId), ExpectedVersion.NoStream,
                 [ModelStore.Fork(sourceState, baseStreamId, forkVersion)], ct);
+            await transaction.CommitAsync(ct);
 
             return Results.Created(
                 $"/api/projects/{projectId}/variants/{variant.Id}",
@@ -116,4 +128,7 @@ public static class CreateVariant
         variant.Id, variant.ProjectId, variant.Name,
         variant.StreamId, variant.BaseStreamId, variant.BaseRevisionId,
         variant.ForkVersion, variant.Status, variant.CreatedBy, variant.CreatedAt);
+
+    private static IResult Invalid(string field, string message) =>
+        Results.BadRequest(new ErrorResponse("validation_error", "Validation failed", Errors: [new FieldError(field, message)]));
 }

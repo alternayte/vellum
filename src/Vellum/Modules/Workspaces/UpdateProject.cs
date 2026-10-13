@@ -20,6 +20,9 @@ public static class UpdateProject
         var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
 
+        if (WorkspaceText.Refusal(request.Name, nameRequired: false, request.Description) is { } refusal)
+            return refusal;
+
         var project = await db.Projects.FindAsync([projectId], ct);
         if (project is null)
             return Results.NotFound(new ErrorResponse("not_found", "Project not found"));

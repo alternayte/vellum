@@ -93,6 +93,7 @@ if (app.Environment.IsDevelopment())
 app.UseExceptionHandler();
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseRequestBodyLimits();
 
 // Every event a request appends records who caused it and which request it belongs to.
 app.Use(async (http, next) =>

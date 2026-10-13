@@ -5,6 +5,7 @@ using Deedbox;
 using Microsoft.EntityFrameworkCore;
 using Vellum.Modules.Drafts.Entities;
 using Vellum.Modules.Modelling.Model;
+using Vellum.Modules.Schemas;
 using Vellum.Modules.Workspaces;
 using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Shared;
@@ -31,6 +32,13 @@ public static class CreateDraft
         var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
 
+        if (request.Id == Guid.Empty)
+            return Invalid("id", "An ID is required");
+        if (string.IsNullOrWhiteSpace(request.Name))
+            return Invalid("name", "Name is required");
+        if (TextRule.Line("name", request.Name) is { } textError)
+            return Invalid(textError.Field, textError.Message);
+
         // The draft row, the fork event and the branch read-model rows commit together.
         return await SharedTransaction.RunAsync(http.RequestServices, async services =>
         {
@@ -51,7 +59,15 @@ public static class CreateDraft
             var proj = await workspacesDb.Projects.AsNoTracking()
                 .FirstAsync(p => p.Id == projectId, ct);
 
-            var (mainState, mainVersion) = await store.Load<ModelState>(StreamId.From(proj.StreamId), ct);
+            // The stream lock gives the newest model, in which every schema reference points at
+            // a schema that exists. Holding those schema rows until the commit keeps a delete
+            // from running between this read and the fork (see SchemaReferences).
+            await using var transaction = await draftsDb.Database.BeginTransactionAsync(ct);
+            var branches = store.ForProject(projectId).UseDbContext(draftsDb);
+            var main = await branches.Execute<ModelState>(StreamId.From(proj.StreamId), _ => [], ct);
+            var (mainState, mainVersion) = (main.State, main.Version);
+            await SchemaReferences.HoldAsync(
+                draftsDb, projectId, ContractDecider.ReferencedSchemaIds(mainState), ct);
 
             var draft = new DraftEntity
             {
@@ -66,12 +82,13 @@ public static class CreateDraft
             };
             draftsDb.Drafts.Add(draft);
 
-            // One append in a transaction that Deedbox opens on the DbContext and commits. Deedbox
-            // saves the draft row in it. The inline projection writes the branch rows in it, so
-            // the draft reads as a full model, not just the changes made on it.
-            await store.ForProject(projectId).UseDbContext(draftsDb).Append(
+            // One append. Deedbox saves the draft row in the transaction. The inline projection
+            // writes the branch rows in it, so the draft reads as a full model, not just the
+            // changes made on it.
+            await branches.Append(
                 StreamId.From(draft.StreamId), ExpectedVersion.NoStream,
                 [ModelStore.Fork(mainState, proj.StreamId, mainVersion)], ct);
+            await transaction.CommitAsync(ct);
 
             return Results.Created(
                 $"/api/projects/{projectId}/drafts/{draft.Id}",
@@ -83,4 +100,7 @@ public static class CreateDraft
         new(d.Id, d.ProjectId, d.Name, d.StreamId, d.BaseStreamId,
             d.ForkVersion, d.Status, d.CreatedBy, d.CreatedAt,
             d.MergedAt, d.AbandonedAt);
+
+    private static IResult Invalid(string field, string message) =>
+        Results.BadRequest(new ErrorResponse("validation_error", "Validation failed", Errors: [new FieldError(field, message)]));
 }

@@ -1,0 +1,140 @@
+scenario.scenario_saved v1
+{
+  "name": "Every type",
+  "document": {
+    "id": "00000000-0000-0000-0000-000000000100",
+    "name": "Every type",
+    "steps": [
+      {
+        "id": "call",
+        "from": "00000000-0000-0000-0000-000000000001",
+        "then": [
+          {
+            "by": "00000000-0000-0000-0000-000000000002",
+            "id": "write",
+            "type": "write",
+            "store": "00000000-0000-0000-0000-000000000003",
+            "change": {
+              "status": "accepted"
+            },
+            "dataset": "orders"
+          },
+          {
+            "id": "publish",
+            "from": "00000000-0000-0000-0000-000000000002",
+            "type": "publish",
+            "channel": "00000000-0000-0000-0000-000000000020",
+            "headers": {
+              "x-correlation-id": "c-1"
+            },
+            "message": "00000000-0000-0000-0000-000000000040",
+            "payload": {
+              "orderId": "o-1"
+            },
+            "handlers": {
+              "00000000-0000-0000-0000-000000000030": [
+                {
+                  "id": "branch",
+                  "is": 0,
+                  "else": [],
+                  "then": [
+                    {
+                      "by": "00000000-0000-0000-0000-000000000004",
+                      "id": "reserve",
+                      "type": "write",
+                      "store": "00000000-0000-0000-0000-000000000005",
+                      "change": null,
+                      "dataset": "stock"
+                    }
+                  ],
+                  "type": "branch",
+                  "whenStep": "write"
+                }
+              ]
+            }
+          }
+        ],
+        "type": "call",
+        "onError": [
+          {
+            "by": "00000000-0000-0000-0000-000000000002",
+            "id": "compensate",
+            "type": "write",
+            "store": "00000000-0000-0000-0000-000000000003",
+            "change": null,
+            "dataset": "orders"
+          }
+        ],
+        "request": {
+          "qty": 2,
+          "sku": "apple"
+        },
+        "response": {
+          "orderId": "o-1"
+        },
+        "operation": "00000000-0000-0000-0000-000000000010"
+      },
+      {
+        "id": "parallel",
+        "type": "parallel",
+        "branches": [
+          [
+            {
+              "by": "00000000-0000-0000-0000-000000000002",
+              "id": "left",
+              "type": "write",
+              "store": "00000000-0000-0000-0000-000000000003",
+              "change": [
+                1,
+                2.5,
+                true
+              ],
+              "dataset": "a"
+            }
+          ],
+          []
+        ]
+      }
+    ],
+    "faults": [
+      {
+        "kind": 0,
+        "target": "00000000-0000-0000-0000-000000000010",
+        "failFirst": 2
+      },
+      {
+        "kind": 1,
+        "target": "00000000-0000-0000-0000-000000000020",
+        "failFirst": null
+      },
+      {
+        "kind": 2,
+        "target": "00000000-0000-0000-0000-000000000004",
+        "failFirst": null
+      }
+    ],
+    "assertions": [
+      {
+        "id": "outcome",
+        "step": "call",
+        "type": "outcome",
+        "expected": 1
+      },
+      {
+        "id": "count",
+        "kind": 9,
+        "type": "event-count",
+        "target": "00000000-0000-0000-0000-000000000020",
+        "expected": 1
+      },
+      {
+        "id": "count-all",
+        "kind": 5,
+        "type": "event-count",
+        "target": null,
+        "expected": 0
+      }
+    ]
+  },
+  "projectId": "00000000-0000-0000-0000-000000000200"
+}

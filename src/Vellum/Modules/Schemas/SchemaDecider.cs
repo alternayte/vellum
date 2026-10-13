@@ -14,10 +14,22 @@ public sealed record UpdateSchemaCommand(
 
 public static class SchemaDecider
 {
+    /// <summary>
+    /// The most characters one schema document holds. Every change of the content stores the
+    /// whole document again, and a scenario run compiles it.
+    /// </summary>
+    public const int MaxContentLength = 256 * 1024;
+
     public static CommandResult<IReadOnlyList<object>> Create(SchemaState state, CreateSchemaCommand cmd)
     {
         if (string.IsNullOrWhiteSpace(cmd.Name))
             return new CommandResult<IReadOnlyList<object>>.Invalid([new ValidationError("name", "Name is required")]);
+
+        if (cmd.Id == Guid.Empty)
+            return new CommandResult<IReadOnlyList<object>>.Invalid([new ValidationError("id", "An ID is required")]);
+
+        if ((TextRule.Line("name", cmd.Name) ?? TextRule.Lines("description", cmd.Description)) is { } textError)
+            return new CommandResult<IReadOnlyList<object>>.Invalid([textError]);
 
         if (state.Schema is not null)
             return new CommandResult<IReadOnlyList<object>>.Conflict("Schema already exists in this stream");
@@ -37,6 +49,12 @@ public static class SchemaDecider
 
         if (cmd.SetName && string.IsNullOrWhiteSpace(cmd.Name))
             return new CommandResult<IReadOnlyList<object>>.Invalid([new ValidationError("name", "Name is required")]);
+
+        var textError =
+            (cmd.SetName ? TextRule.Line("name", cmd.Name) : null)
+            ?? (cmd.SetDescription ? TextRule.Lines("description", cmd.Description) : null);
+        if (textError is not null)
+            return new CommandResult<IReadOnlyList<object>>.Invalid([textError]);
 
         if (cmd.SetContent && cmd.Content is not null)
         {
@@ -77,6 +95,11 @@ public static class SchemaDecider
 
     private static ValidationError? ValidateJsonSchema(string content)
     {
+        if (content is null)
+            return new ValidationError("content", "Content is required");
+        if (content.Length > MaxContentLength)
+            return new ValidationError("content", $"A schema holds at most {MaxContentLength} characters; this one has {content.Length}");
+
         try
         {
             using var doc = JsonDocument.Parse(content);

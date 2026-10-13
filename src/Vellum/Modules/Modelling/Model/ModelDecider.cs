@@ -59,8 +59,15 @@ public static class ModelDecider
         if (string.IsNullOrWhiteSpace(cmd.Name))
             return new CommandResult<IReadOnlyList<object>>.Invalid([new ValidationError("name", "Name is required")]);
 
-        if (state.Elements.ContainsKey(cmd.Id))
-            return new CommandResult<IReadOnlyList<object>>.Conflict("Element with this ID already exists");
+        var textError = TextRule.Line("name", cmd.Name)
+            ?? TextRule.Lines("description", cmd.Description)
+            ?? TextRule.Line("technology", cmd.Technology)
+            ?? TextRule.Tags("tags", cmd.Tags);
+        if (textError is not null)
+            return new CommandResult<IReadOnlyList<object>>.Invalid([textError]);
+
+        if (state.RefuseNewId(cmd.Id) is { } idRefusal)
+            return idRefusal;
 
         var parentError = ValidateContainment(state, cmd.Kind, cmd.ParentId);
         if (parentError is not null)
@@ -75,6 +82,15 @@ public static class ModelDecider
     {
         if (!state.Elements.TryGetValue(cmd.ElementId, out var element))
             return new CommandResult<IReadOnlyList<object>>.NotFound("Element not found");
+
+        var textError =
+            (cmd.SetName ? TextRule.Line("name", cmd.Name) : null)
+            ?? (cmd.SetDescription ? TextRule.Lines("description", cmd.Description) : null)
+            ?? (cmd.SetTechnology ? TextRule.Line("technology", cmd.Technology) : null)
+            ?? TextRule.Tags("tags", cmd.Tags)
+            ?? (cmd.SetIcon ? TextRule.Line("icon", cmd.Icon) : null);
+        if (textError is not null)
+            return new CommandResult<IReadOnlyList<object>>.Invalid([textError]);
 
         var events = new List<object>();
 
@@ -146,8 +162,11 @@ public static class ModelDecider
 
     public static CommandResult<IReadOnlyList<object>> AddRelationship(ModelState state, AddRelationshipCommand cmd)
     {
-        if (state.Relationships.ContainsKey(cmd.Id))
-            return new CommandResult<IReadOnlyList<object>>.Conflict("Relationship with this ID already exists");
+        if ((TextRule.Line("label", cmd.Label) ?? TextRule.Line("technology", cmd.Technology)) is { } textError)
+            return new CommandResult<IReadOnlyList<object>>.Invalid([textError]);
+
+        if (state.RefuseNewId(cmd.Id) is { } idRefusal)
+            return idRefusal;
 
         if (!state.Elements.ContainsKey(cmd.FromId))
             return new CommandResult<IReadOnlyList<object>>.Invalid([new ValidationError("fromId", "Source element not found")]);
@@ -163,6 +182,13 @@ public static class ModelDecider
     {
         if (!state.Relationships.TryGetValue(cmd.RelationshipId, out var rel))
             return new CommandResult<IReadOnlyList<object>>.NotFound("Relationship not found");
+
+        var textError =
+            (cmd.SetLabel ? TextRule.Line("label", cmd.Label) : null)
+            ?? (cmd.SetTechnology ? TextRule.Line("technology", cmd.Technology) : null)
+            ?? (cmd.SetLineShape ? TextRule.Line("lineShape", cmd.LineShape, TextRule.MaxIdentifier) : null);
+        if (textError is not null)
+            return new CommandResult<IReadOnlyList<object>>.Invalid([textError]);
 
         var events = new List<object>();
 
@@ -195,8 +221,14 @@ public static class ModelDecider
         if (string.IsNullOrWhiteSpace(cmd.Name))
             return new CommandResult<IReadOnlyList<object>>.Invalid([new ValidationError("name", "Name is required")]);
 
-        if (state.Messages.ContainsKey(cmd.Id))
-            return new CommandResult<IReadOnlyList<object>>.Conflict("Message with this ID already exists");
+        var textError = TextRule.Line("name", cmd.Name)
+            ?? TextRule.Lines("description", cmd.Description)
+            ?? TextRule.Tags("tags", cmd.Tags);
+        if (textError is not null)
+            return new CommandResult<IReadOnlyList<object>>.Invalid([textError]);
+
+        if (state.RefuseNewId(cmd.Id) is { } idRefusal)
+            return idRefusal;
 
         if (!state.Elements.ContainsKey(cmd.ProducerId))
             return new CommandResult<IReadOnlyList<object>>.Invalid([new ValidationError("producerId", "Producer element not found")]);
@@ -219,6 +251,13 @@ public static class ModelDecider
 
         if (cmd.SetName && string.IsNullOrWhiteSpace(cmd.Name))
             return new CommandResult<IReadOnlyList<object>>.Invalid([new ValidationError("name", "Name is required")]);
+
+        var textError =
+            (cmd.SetName ? TextRule.Line("name", cmd.Name) : null)
+            ?? (cmd.SetDescription ? TextRule.Lines("description", cmd.Description) : null)
+            ?? TextRule.Tags("tags", cmd.Tags);
+        if (textError is not null)
+            return new CommandResult<IReadOnlyList<object>>.Invalid([textError]);
 
         if (cmd.SetProducerId && cmd.ProducerId.HasValue && !state.Elements.ContainsKey(cmd.ProducerId.Value))
             return new CommandResult<IReadOnlyList<object>>.Invalid([new ValidationError("producerId", "Producer element not found")]);

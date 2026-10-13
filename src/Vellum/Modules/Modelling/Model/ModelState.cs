@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using Deedbox;
 using Vellum.Modules.Trace.Engine;
+using Vellum.Shared;
 
 namespace Vellum.Modules.Modelling.Model;
 
@@ -193,6 +194,36 @@ public sealed record ModelState(
 
         _ => state
     };
+
+    /// <summary>
+    /// What <paramref name="id"/> names in this model ("an element", "a channel"), or null when
+    /// the ID is free. A fault or an assertion in a scenario names its target by ID alone, and a
+    /// trace labels events by ID, so one ID names one entity of any kind.
+    /// </summary>
+    public string? KindOf(Guid id)
+    {
+        if (Elements.ContainsKey(id)) return "an element";
+        if (Relationships.ContainsKey(id)) return "a relationship";
+        if (Messages.ContainsKey(id)) return "a message";
+        if (Operations.ContainsKey(id)) return "an operation";
+        if (Channels.ContainsKey(id)) return "a channel";
+        if (Subscriptions.ContainsKey(id)) return "a subscription";
+        return null;
+    }
+
+    /// <summary>
+    /// Why a new entity cannot take <paramref name="id"/>, or null when it can. The empty GUID
+    /// is what a request without an ID reads as, so it never names anything.
+    /// </summary>
+    public CommandResult<IReadOnlyList<object>>? RefuseNewId(Guid id)
+    {
+        if (id == Guid.Empty)
+            return new CommandResult<IReadOnlyList<object>>.Invalid([new ValidationError("id", "An ID is required")]);
+
+        return KindOf(id) is { } owner
+            ? new CommandResult<IReadOnlyList<object>>.Conflict($"ID {id} is already used by {owner}")
+            : null;
+    }
 
     private ModelState WithOperation(OperationId id, Func<OperationState, OperationState> update) =>
         Operations.TryGetValue(id, out var operation)

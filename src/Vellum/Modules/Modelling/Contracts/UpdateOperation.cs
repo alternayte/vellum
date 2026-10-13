@@ -1,6 +1,4 @@
-using Deedbox;
 using Vellum.Modules.Modelling.Model;
-using Vellum.Modules.Schemas;
 using Vellum.Modules.Trace.Engine;
 using Vellum.Shared;
 
@@ -20,7 +18,7 @@ public sealed record UpdateOperationRequest(
 public sealed record UpdateOperationCommandEnvelope(
     Guid ProjectId, Guid StreamId, Guid OperationId, string UserId, UpdateOperationRequest Request);
 
-public sealed class UpdateOperationHandler(IEventStore store, SchemasDbContext schemasDb)
+public sealed class UpdateOperationHandler(IServiceProvider services)
     : ICommandHandler<UpdateOperationCommandEnvelope, CommandResult<OperationDto>>
 {
     public async Task<CommandResult<OperationDto>> HandleAsync(UpdateOperationCommandEnvelope cmd, CancellationToken ct = default)
@@ -39,12 +37,6 @@ public sealed class UpdateOperationHandler(IEventStore store, SchemasDbContext s
         if (!ContractRequests.TryReadFactStatus(request.FactStatus, out var requestedStatus, out var statusError))
             return new CommandResult<OperationDto>.Invalid([statusError!]);
 
-        var schemaError =
-            await ContractRequests.CheckSchemaAsync(schemasDb, cmd.ProjectId, "requestSchemaId", request.RequestSchemaId, ct)
-            ?? await ContractRequests.CheckSchemaAsync(schemasDb, cmd.ProjectId, "responseSchemaId", request.ResponseSchemaId, ct);
-        if (schemaError is not null)
-            return new CommandResult<OperationDto>.Invalid([schemaError]);
-
         var update = new UpdateOperationCommand(
             id, request.Name, request.OwnerId is { } ownerId ? new ElementId(ownerId) : null, transport,
             request.RequestSchemaId, request.SetRequestSchemaId || request.RequestSchemaId is not null,
@@ -56,8 +48,9 @@ public sealed class UpdateOperationHandler(IEventStore store, SchemasDbContext s
             ? ProvenanceMapper.ToDomain(request.Provenance, Guid.Parse(cmd.UserId))
             : null;
 
-        return await store.ForProject(cmd.ProjectId).Decide<ModelState, OperationDto>(
-            cmd.StreamId,
+        return await SchemaBoundWrite.DecideAsync(
+            services, cmd.ProjectId, cmd.StreamId,
+            [("requestSchemaId", request.RequestSchemaId), ("responseSchemaId", request.ResponseSchemaId)],
             state => ContractDecider.UpdateOperation(state, update).Then(state, after =>
                 requestedStatus is null && !request.SetProvenance
                     ? new CommandResult<IReadOnlyList<object>>.Success([])

@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
+using Vellum.Shared;
 
 namespace Vellum.Modules.Mcp;
 
@@ -15,7 +16,7 @@ public static class McpModule
 
     public static WebApplication MapMcpEndpoints(this WebApplication app)
     {
-        app.MapMcp("/mcp").RequireAuthorization();
+        app.MapMcp("/mcp").RequireAuthorization().WithBodyLimit(RequestBodyLimit.Document);
         return app;
     }
 }

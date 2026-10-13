@@ -6,8 +6,6 @@ using Vellum.Modules.Modelling.Model;
 using Vellum.Modules.Schemas;
 using Vellum.Modules.Trace.Engine;
 using Vellum.Modules.Workspaces;
-using YamlDotNet.Serialization;
-using YamlDotNet.Serialization.NamingConventions;
 
 namespace Vellum.Modules.Modelling.Export;
 
@@ -18,10 +16,6 @@ public static class ImportModel
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
     };
 
-    private static readonly IDeserializer YamlDeserializer = new DeserializerBuilder()
-        .WithNamingConvention(CamelCaseNamingConvention.Instance)
-        .Build();
-
     // Any Editor can post an import, and one import is one transaction that keeps its streams
     // locked. The limits bound the memory, the lock time and the number of schema appends.
     public const int MaxBytes = 16 * 1024 * 1024;
@@ -29,9 +23,9 @@ public static class ImportModel
     public const int MaxRelationships = 10_000;
     public const int MaxMessages = 5_000;
     public const int MaxSchemas = 200;
-    public const int MaxOperations = 5_000;
-    public const int MaxChannels = 5_000;
-    public const int MaxSubscriptions = 5_000;
+    public const int MaxOperations = ContractDecider.MaxPerKind;
+    public const int MaxChannels = ContractDecider.MaxPerKind;
+    public const int MaxSubscriptions = ContractDecider.MaxPerKind;
 
     public static async Task<IResult> Handle(
         Guid projectId,
@@ -43,30 +37,25 @@ public static class ImportModel
             .FirstOrDefaultAsync(p => p.Id == projectId, ct);
         if (project is null) return Results.NotFound();
 
-        var body = request.ContentLength > MaxBytes ? null : await ReadBodyAsync(request.Body, ct);
-        if (body is null)
-        {
-            return Results.Json(
-                new ErrorResponse("import_too_large", $"An import document holds at most {MaxBytes} bytes."),
-                statusCode: StatusCodes.Status413PayloadTooLarge);
-        }
+        // The endpoint's body limit is MaxBytes; a larger body never reaches this line.
+        string body;
+        using (var reader = new StreamReader(request.Body))
+            body = await reader.ReadToEndAsync(ct);
 
         ModelExportDocument? doc;
 
-        var contentType = request.ContentType ?? "application/json";
+        var isYaml = (request.ContentType ?? "application/json").Contains("yaml");
         try
         {
-            doc = contentType.Contains("yaml")
-                ? YamlDeserializer.Deserialize<ModelExportDocument>(body)
+            doc = isYaml
+                ? ModelYaml.Read(body)
                 : JsonSerializer.Deserialize<ModelExportDocument>(body, JsonOpts);
         }
-        catch (JsonException)
+        // The YAML reader ends in the JSON reader, so YAML that is no export document fails there.
+        catch (Exception ex) when (ex is JsonException or YamlDotNet.Core.YamlException)
         {
-            return Results.BadRequest(new ErrorResponse("invalid_export", "Document is not valid JSON"));
-        }
-        catch (YamlDotNet.Core.YamlException)
-        {
-            return Results.BadRequest(new ErrorResponse("invalid_export", "Document is not valid YAML"));
+            return Results.BadRequest(new ErrorResponse("invalid_export",
+                isYaml ? "Document is not valid YAML" : "Document is not valid JSON"));
         }
 
         if (doc is null)
@@ -82,6 +71,20 @@ public static class ImportModel
             Operations = doc.Operations ?? [],
             Channels = doc.Channels ?? [],
             Subscriptions = doc.Subscriptions ?? [],
+        };
+
+        // A document is untrusted: a list can hold `null`, and an entry can leave a list out.
+        var hasEmptyEntry = doc.Elements.Any(e => e is null) || doc.Relationships.Any(r => r is null)
+            || doc.Messages.Any(m => m is null) || doc.Schemas.Any(s => s is null)
+            || doc.Operations.Any(o => o is null) || doc.Channels.Any(c => c is null)
+            || doc.Subscriptions.Any(s => s is null);
+        if (hasEmptyEntry)
+            return Results.BadRequest(new ErrorResponse("invalid_export", "A list in the document holds an empty entry"));
+
+        doc = doc with
+        {
+            Elements = [.. doc.Elements.Select(e => e with { Tags = e.Tags ?? [] })],
+            Messages = [.. doc.Messages.Select(m => m with { Tags = m.Tags ?? [], ConsumerIds = m.ConsumerIds ?? [] })],
         };
 
         (string Name, int Count, int Max)[] sizes =
@@ -122,7 +125,6 @@ public static class ImportModel
         IServiceProvider services, Guid projectId, Guid modelStreamId, ModelExportDocument doc, CancellationToken ct)
     {
         var modellingDb = services.GetRequiredService<ModellingDbContext>();
-        var schemasDb = services.GetRequiredService<SchemasDbContext>();
 
         // Every lock, append and read-model write below runs in this transaction. A return
         // before the commit rolls all of it back, so a reader sees the whole import or none of it.
@@ -155,11 +157,17 @@ public static class ImportModel
 
         // Step 2: decide everything against the locked states. Nothing is appended until the
         // whole document is accepted.
-        var knownSchemaIds = await schemasDb.Schemas.AsNoTracking()
-            .Where(s => s.ProjectId == projectId)
-            .Select(s => s.Id)
-            .ToHashSetAsync(ct);
-        knownSchemaIds.UnionWith(doc.Schemas.Select(s => s.Id));
+        // A schema the document names is one the document carries, whose stream is locked
+        // above, or one the project already has. The rows of the second kind are held until
+        // the commit, so none of them can be deleted under the import (see SchemaReferences).
+        var knownSchemaIds = doc.Schemas.Select(s => s.Id).ToHashSet();
+        var named = doc.Messages.Select(m => m.SchemaId)
+            .Concat(doc.Operations.SelectMany(o => new[] { o.RequestSchemaId, o.ResponseSchemaId }))
+            .OfType<Guid>()
+            .Where(id => !knownSchemaIds.Contains(id))
+            .ToHashSet();
+        var missing = await SchemaReferences.HoldAsync(modellingDb, projectId, named, ct);
+        knownSchemaIds.UnionWith(named.Except(missing));
 
         var events = new List<object>();
 
@@ -222,10 +230,12 @@ public static class ImportModel
                 events.AddRange(added.Value);
                 state = added.Value.Aggregate(state, ModelState.Evolve);
 
-                if (el.Icon is not null)
+                // Through the decider, so the icon is held to the same rule as on every other path.
+                if (el.Icon is not null
+                    && Apply($"Element {el.Id}", ModelDecider.UpdateElement(
+                        state, new UpdateElementCommand(el.Id, Icon: el.Icon, SetIcon: true))) is { } iconFailure)
                 {
-                    events.Add(new ModelEvent.ElementIconChanged(el.Id, el.Icon));
-                    state = ModelState.Evolve(state, events[^1]);
+                    return iconFailure;
                 }
 
                 if (factStatus != FactStatus.Declared || provenance is not null)
@@ -287,10 +297,11 @@ public static class ImportModel
                 events.AddRange(added.Value);
                 state = added.Value.Aggregate(state, ModelState.Evolve);
 
-                if (rel.LineShape is not null)
+                if (rel.LineShape is not null
+                    && Apply($"Relationship {rel.Id}", ModelDecider.UpdateRelationship(
+                        state, new UpdateRelationshipCommand(rel.Id, LineShape: rel.LineShape, SetLineShape: true))) is { } shapeFailure)
                 {
-                    events.Add(new ModelEvent.RelationshipLineShapeChanged(rel.Id, rel.LineShape));
-                    state = ModelState.Evolve(state, events[^1]);
+                    return shapeFailure;
                 }
 
                 if (factStatus != FactStatus.Declared || provenance is not null)
@@ -497,24 +508,6 @@ public static class ImportModel
 
         await transaction.CommitAsync(ct);
         return Results.Ok();
-    }
-
-    /// <summary>The body as text, or null when it holds more than <see cref="MaxBytes"/> bytes.</summary>
-    private static async Task<string?> ReadBodyAsync(Stream body, CancellationToken ct)
-    {
-        using var buffer = new MemoryStream();
-        var chunk = new byte[81920];
-        int read;
-        while ((read = await body.ReadAsync(chunk, ct)) > 0)
-        {
-            if (buffer.Length + read > MaxBytes)
-                return null;
-            buffer.Write(chunk, 0, read);
-        }
-
-        buffer.Position = 0;
-        using var reader = new StreamReader(buffer);
-        return await reader.ReadToEndAsync(ct);
     }
 
     private static string DeciderFailure(CommandResult<IReadOnlyList<object>> result) => result switch

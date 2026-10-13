@@ -1,6 +1,4 @@
-using Microsoft.EntityFrameworkCore;
 using Vellum.Modules.Modelling.Model;
-using Vellum.Modules.Schemas;
 using Vellum.Modules.Trace.Engine;
 using Vellum.Shared;
 
@@ -47,7 +45,7 @@ public sealed record SubscriptionDto(
         subscription.FactStatus.ToApiString(), ProvenanceMapper.ToDto(subscription.Provenance));
 }
 
-/// <summary>What the contract requests share: reading a fact status label and checking a schema reference.</summary>
+/// <summary>What the contract requests share: reading a fact status label.</summary>
 internal static class ContractRequests
 {
     public static bool TryReadFactStatus(string? text, out FactStatus? status, out ValidationError? error)
@@ -65,17 +63,5 @@ internal static class ContractRequests
 
         status = parsed;
         return true;
-    }
-
-    /// <summary>The same rule messages use: a referenced schema exists in the project.</summary>
-    public static async Task<ValidationError?> CheckSchemaAsync(
-        SchemasDbContext schemasDb, Guid projectId, string field, Guid? schemaId, CancellationToken ct)
-    {
-        if (schemaId is not { } id)
-            return null;
-
-        return await schemasDb.Schemas.AsNoTracking().AnyAsync(s => s.Id == id && s.ProjectId == projectId, ct)
-            ? null
-            : new ValidationError(field, "Schema not found in this project");
     }
 }

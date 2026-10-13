@@ -340,7 +340,10 @@ public static class ModellingEndpoints
             var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
             await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
             return await ImportModel.Handle(projectId, request, workspacesDb, ct);
-        }).WithTags("Import");
+        })
+        .WithMetadata(new RequestBodyLimit(
+            ImportModel.MaxBytes, "import_too_large", $"An import document holds at most {ImportModel.MaxBytes} bytes."))
+        .WithTags("Import");
 
         return app;
     }
