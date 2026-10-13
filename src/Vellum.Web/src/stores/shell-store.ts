@@ -12,6 +12,8 @@ interface ShellState {
   activeDocId: string | null
   commandPaletteOpen: boolean
   focusElementId: string | null
+  /** Elements to show on the canvas for a promise or an affected flow. The canvas rings them and dims the rest. */
+  canvasHighlight: { title: string; elementIds: string[] } | null
 
   openFlyout: (flyout: Flyout) => void
   closeFlyout: () => void
@@ -26,6 +28,8 @@ interface ShellState {
   closeCommandPalette: () => void
   focusElement: (id: string) => void
   clearFocusElement: () => void
+  showOnCanvas: (highlight: { title: string; elementIds: string[] }) => void
+  clearCanvasHighlight: () => void
   reset: () => void
 }
 
@@ -39,6 +43,7 @@ export const useShellStore = create<ShellState>((set) => ({
   activeDocId: null,
   commandPaletteOpen: false,
   focusElementId: null,
+  canvasHighlight: null,
 
   openFlyout: (flyout) => set({ activeFlyout: flyout }),
   closeFlyout: () => set({ activeFlyout: null }),
@@ -83,6 +88,9 @@ export const useShellStore = create<ShellState>((set) => ({
 
   focusElement: (id) => set({ focusElementId: id }),
   clearFocusElement: () => set({ focusElementId: null }),
+  // The canvas shows the highlight: not a doc, and with no flyout over it.
+  showOnCanvas: (highlight) => set({ canvasHighlight: highlight, activeDocId: null, activeFlyout: null }),
+  clearCanvasHighlight: () => set({ canvasHighlight: null }),
 
   reset: () =>
     set({
@@ -95,5 +103,6 @@ export const useShellStore = create<ShellState>((set) => ({
       activeDocId: null,
       commandPaletteOpen: false,
       focusElementId: null,
+      canvasHighlight: null,
     }),
 }))

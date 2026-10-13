@@ -31,9 +31,13 @@ namespace Vellum.Modules.Build;
 /// </param>
 public sealed record ExportRequest(Guid? RevisionId = null, Guid? BranchId = null, string Format = "bundle", PinnedState? Pinned = null);
 
+/// <param name="ChangeScanId">
+/// A completed scan of the project. The brief then also selects every promise, scenario and
+/// element that the change impact of the scan names, and holds that impact as a section.
+/// </param>
 public sealed record BriefRequest(
     IReadOnlyList<Guid>? PromiseIds = null, IReadOnlyList<Guid>? ScenarioIds = null, IReadOnlyList<Guid>? ElementIds = null,
-    Guid? RevisionId = null, Guid? BranchId = null);
+    Guid? RevisionId = null, Guid? BranchId = null, Guid? ChangeScanId = null);
 
 /// <summary>A manifest to check against what its pinned state generates.</summary>
 public sealed record VerifyRequest(BuildManifest Manifest);
@@ -215,10 +219,8 @@ public static partial class BuildModule
         await auth.RequireProjectRoleAsync(projectId, UserId(http.User), WorkspaceRole.Viewer, ct);
         var selection = new BriefSelection(
             [.. (request.PromiseIds ?? []).Distinct()], [.. (request.ScenarioIds ?? []).Distinct()], [.. (request.ElementIds ?? []).Distinct()]);
-        if (selection.PromiseIds.Count + selection.ScenarioIds.Count + selection.ElementIds.Count == 0)
-            return Invalid("promiseIds", "Select at least one promise, scenario or element");
-        if (selection.PromiseIds.Count + selection.ScenarioIds.Count + selection.ElementIds.Count > BuildLimits.MaxBriefSelection)
-            return Invalid("promiseIds", $"Select at most {BuildLimits.MaxBriefSelection} things");
+        if (request.ChangeScanId is null && selection.PromiseIds.Count + selection.ScenarioIds.Count + selection.ElementIds.Count == 0)
+            return Invalid("promiseIds", "Select at least one promise, scenario or element, or name a scan in changeScanId");
 
         var (pinned, refusal) = await PinnedModel.ResolveAsync(http.RequestServices, projectId, request.RevisionId, request.BranchId, ct);
         if (pinned is null)
@@ -233,6 +235,23 @@ public static partial class BuildModule
             return TooLarge(tooLarge);
         }
 
+        // A change selects what its impact names, of the things the pinned state holds.
+        ChangeImpactDto? change = null;
+        if (request.ChangeScanId is { } scanId)
+        {
+            (change, var noImpact) = await ChangeImpact.ComputeAsync(http.RequestServices, projectId, scanId, ct);
+            if (change is null)
+                return noImpact!;
+            selection = new BriefSelection(
+                [.. selection.PromiseIds.Union(change.Promises.Select(p => p.Id).Where(id => input.Promises.Any(p => p.Id == id)))],
+                [.. selection.ScenarioIds.Union(change.Flows.Select(f => f.ScenarioId).Where(id => input.Scenarios.Any(s => s.Id.Value == id)))],
+                [.. selection.ElementIds.Union(change.Changes.Select(c => c.ElementId).OfType<Guid>().Where(id => input.Model.Elements.ContainsKey(id)))]);
+            if (selection.PromiseIds.Count + selection.ScenarioIds.Count + selection.ElementIds.Count == 0)
+                return Invalid("changeScanId", "The change of this scan touches no promise, scenario or element of the model, so there is nothing to brief");
+        }
+        if (selection.PromiseIds.Count + selection.ScenarioIds.Count + selection.ElementIds.Count > BuildLimits.MaxBriefSelection)
+            return Invalid("promiseIds", $"Select at most {BuildLimits.MaxBriefSelection} things");
+
         if (selection.PromiseIds.FirstOrDefault(id => input.Promises.All(p => p.Id != id)) is var promise && promise != Guid.Empty)
             return Invalid("promiseIds", $"No promise with ID {promise} exists in the project");
         if (selection.ScenarioIds.FirstOrDefault(id => input.Scenarios.All(s => s.Id.Value != id)) is var scenario && scenario != Guid.Empty)
@@ -242,7 +261,7 @@ public static partial class BuildModule
 
         try
         {
-            return Results.Ok(Brief.Build(input, selection, limits));
+            return Results.Ok(Brief.Build(input, selection, limits, change));
         }
         catch (BundleTooLargeException tooLarge)
         {

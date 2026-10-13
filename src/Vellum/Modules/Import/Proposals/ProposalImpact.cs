@@ -88,6 +88,9 @@ internal sealed class ProposalImpact
         return targets.Count == 0 ? ProposalImpactDto.None : new ProposalImpactDto(Scenarios(targets), []);
     }
 
+    /// <summary>The stored scenarios with a step, an assertion or a fault that names one of <paramref name="targets"/>.</summary>
+    public IReadOnlyList<ImpactScenarioDto> Naming(IReadOnlyCollection<Guid> targets) => Scenarios(targets);
+
     private List<ImpactScenarioDto> Scenarios(IReadOnlyCollection<Guid> targets, BindingId? removedBinding = null)
     {
         var found = new List<ImpactScenarioDto>();

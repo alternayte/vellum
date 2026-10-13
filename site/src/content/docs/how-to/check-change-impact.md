@@ -7,7 +7,7 @@ This guide shows you how to see what a change in the code does to the model befo
 
 ## Know what is available
 
-Vellum compares one ref of a repository with the model. The comparison is a list of proposals that you can read and cannot accept.
+Vellum compares one ref of a repository with the model. The comparison is a list of proposals that you can read and cannot accept, and an impact report.
 
 These parts of change impact are not available.
 
@@ -15,7 +15,7 @@ These parts of change impact are not available.
 - A scan does not accept a base commit and a head commit. It reads one ref and compares it with the model, not with another commit.
 - Vellum posts no report to a pull request.
 - Vellum sets no commit status and blocks no merge in CI.
-- The canvas shows no overlay of the change. The proposals are in the review dialog only.
+- The canvas plays no animation of the change. **Show on canvas** in the impact report rings the parts of an affected flow or promise.
 
 ## Scan the other ref
 
@@ -83,6 +83,34 @@ Vellum computes the list from the model and the scenarios as they are now.
 
 If the scan shows **The source matches the model. This scan proposes no change.**, the other ref changes nothing that the extraction rules read.
 
+## Read the impact
+
+1. On the completed scan, select **Impact**.
+2. Read **Changed in the source**. It lists each proposal of the scan, and each source pattern that the scan and the base snapshot do not both have. The base is the scan that the model follows.
+3. Read **Affected flows** and **Affected promises**.
+4. On a source pattern check of a promise, select **Run against this scan**.
+5. Select **Brief for this change** to export a brief for an agent.
+
+Each entry has one label.
+
+| Label | Meaning |
+|---|---|
+| **Definite** | The entry stands on a contract diff or on source lines that the report cites. |
+| **Possible** | The entry is reached only through a flow or a service. Nothing shows that it depends on the change. |
+| **Unknown** | The scan did not look where the answer is. |
+
+A promise has one more label.
+
+| Label | Meaning |
+|---|---|
+| **Broken** | A check of the promise failed against this scan. |
+| **At risk** | The change touches something that the promise names. No check failed against this scan. |
+| **Possibly affected** | The promise is reached only through an affected flow. |
+
+The report reads the source. It runs no check and it changes nothing. A promise that names nothing that changed is not in the report.
+
+The request is `GET /api/projects/{projectId}/imports/{importId}/impact`.
+
 ## Example: a branch that removes the outbox
 
 The model follows `main` of `acme/orders`. On `main`, `orders-api` registers a transactional outbox. Vellum holds the accepted fact **Transactional outbox** from the rule `dotnet.masstransit-outbox`.
@@ -90,10 +118,10 @@ The model follows `main` of `acme/orders`. On `main`, `orders-api` registers a t
 The branch `remove-outbox` deletes the outbox registration and publishes `OrderCreated` directly to the broker.
 
 1. Scan `remove-outbox`. The scan is a comparison.
-2. Open the review. It has a **Remove** proposal for **Transactional outbox**.
-3. Select the proposal.
-4. Read **Accepting this breaks:** to see the scenarios and the model items that name the outbox.
-5. Open **Promises**. Find the promises that have a source pattern check for the outbox. That check can fail when the model follows the branch.
+2. Select **Impact**. **Changed in the source** has the line **Removed Transactional outbox** with the label **Definite** and the source lines of `main` where the registration was.
+3. Read **Affected flows**. A flow that runs in `orders-api` has the label **Possible** for the outbox.
+4. Read **Affected promises**. A promise that requires the pattern has the label **At risk**.
+5. Select **Run against this scan** on its source pattern check. The result is **Unsupported**: a comparison scan cannot establish that a pattern is absent. The check can fail when the model follows the branch.
 
 The comparison shows that the registration is gone from the source. It does not show that an order is lost when the broker is down. Only a test in the repository can show that.
 

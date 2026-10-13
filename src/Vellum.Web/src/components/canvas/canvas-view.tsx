@@ -3,6 +3,7 @@ import {
   ReactFlow,
   ReactFlowProvider,
   MiniMap,
+  Panel,
   Background,
   BackgroundVariant,
   type Node,
@@ -451,15 +452,17 @@ function CanvasViewInner({
   const traceEvent = useTraceStore(currentTraceEvent)
   const traceLabels = useTraceStore((s) => s.run?.labels)
   const traceSpeed = useTraceStore((s) => s.speed)
-  const traceOverlay = useMemo(() => {
-    if (!traceEvent || !traceLabels) return null
+  const onCanvas = useMemo(() => {
     const byId = new Map(elements.map((e) => [e.id, e]))
-    const onCanvas = (id: string | null): string | null => {
+    return (id: string | null): string | null => {
       for (let current = id ? byId.get(id) : undefined; current; current = current.parentId ? byId.get(current.parentId) : undefined) {
         if (visibleIds.has(current.id)) return current.id
       }
       return null
     }
+  }, [elements, visibleIds])
+  const traceOverlay = useMemo(() => {
+    if (!traceEvent || !traceLabels) return null
     const from = onCanvas(traceEvent.from)
     const to = onCanvas(traceEvent.to)
     const family = traceFamily(traceEvent.kind)
@@ -479,18 +482,41 @@ function CanvasViewInner({
           }
         : null,
     }
-  }, [traceEvent, traceLabels, traceSpeed, elements, visibleIds])
+  }, [traceEvent, traceLabels, traceSpeed, onCanvas])
+
+  // The parts of a promise or of an affected flow, shown from the Promises and the Import
+  // flyouts. A part on another level shows as its nearest ancestor here, like a trace end.
+  const canvasHighlight = useShellStore((s) => s.canvasHighlight)
+  const clearCanvasHighlight = useShellStore((s) => s.clearCanvasHighlight)
+  const highlight = useMemo(() => {
+    if (!canvasHighlight) return null
+    const shown = canvasHighlight.elementIds.map(onCanvas)
+    return { nodeIds: new Set(shown.filter((id): id is string => id !== null)), elsewhere: shown.filter((id) => id === null).length }
+  }, [canvasHighlight, onCanvas])
+  useEffect(() => {
+    if (highlight && highlight.nodeIds.size > 0) fitView({ nodes: [...highlight.nodeIds].map((id) => ({ id })), ...(highlight.nodeIds.size === 1 ? fitOne() : fitAll()) })
+  // Only a new highlight moves the viewport, not a change of the model under it.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canvasHighlight, fitView])
 
   // Derive the combined node/edge arrays from domain data (same as before)
   const derivedNodes = useMemo(() => {
     const all = [...nodes, ...messageNodes]
-    if (!traceOverlay) return all
+    // A playback shows one event at a time, so it takes the rings while it runs.
+    if (traceOverlay) {
+      return all.map((n) =>
+        traceOverlay.nodeIds.has(n.id)
+          ? { ...n, className: 'vellum-trace-node', style: { ...n.style, '--vellum-trace': `var(--trace-${traceOverlay.family})` } }
+          : n,
+      )
+    }
+    if (!highlight) return all
     return all.map((n) =>
-      traceOverlay.nodeIds.has(n.id)
-        ? { ...n, className: 'vellum-trace-node', style: { ...n.style, '--vellum-trace': `var(--trace-${traceOverlay.family})` } }
-        : n,
+      highlight.nodeIds.has(n.id)
+        ? { ...n, className: 'vellum-trace-node', style: { ...n.style, '--vellum-trace': 'var(--primary)' } }
+        : { ...n, className: 'vellum-dimmed-node' },
     )
-  }, [nodes, messageNodes, traceOverlay])
+  }, [nodes, messageNodes, traceOverlay, highlight])
   const derivedEdges = useMemo(
     () => (traceOverlay?.edge ? [...edges, ...messageEdges, traceOverlay.edge] : [...edges, ...messageEdges]),
     [edges, messageEdges, traceOverlay],
@@ -773,6 +799,19 @@ function CanvasViewInner({
           />
         )}
         <TraceEdgeMarkers />
+        {canvasHighlight && highlight && (
+          <Panel position="top-center" className="flex max-w-[calc(100%-1.5rem)] items-center gap-3 rounded-lg border border-border bg-card/95 px-3 py-1.5 text-xs shadow-md backdrop-blur">
+            <p role="status" className="min-w-0 text-muted-foreground">
+              <span className="block truncate text-foreground">{canvasHighlight.title}</span>
+              {highlight.nodeIds.size === 0
+                ? 'No part of it is on this level of the canvas.'
+                : `${highlight.nodeIds.size} ${highlight.nodeIds.size === 1 ? 'part is' : 'parts are'} ringed.${highlight.elsewhere > 0 ? ` ${highlight.elsewhere} more ${highlight.elsewhere === 1 ? 'is' : 'are'} not on this level.` : ''}`}
+            </p>
+            <button type="button" className="shrink-0 rounded px-1.5 py-0.5 text-foreground hover:bg-muted focus-visible:outline-2 focus-visible:outline-primary" onClick={clearCanvasHighlight}>
+              Clear
+            </button>
+          </Panel>
+        )}
         <MiniMap
           nodeColor={minimapNodeColor}
           nodeStrokeColor="var(--border)"

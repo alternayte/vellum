@@ -1,4 +1,5 @@
 import { api } from '@/lib/settings-api'
+import type { TraceEventKind } from '@/lib/trace'
 
 export interface PromiseLinks {
   scenarioIds: string[]
@@ -30,19 +31,64 @@ export interface EvidenceSource {
   job: string | null
 }
 
+export const FAULT_KINDS = ['Outage', 'Error', 'Timeout'] as const
+export const STEP_OUTCOMES = ['Succeeded', 'Failed', 'Skipped'] as const
+export const SOURCE_PATTERNS = ['transactional-outbox', 'in-memory-outbox'] as const
+
+/** Makes attempts against a target fail. `failFirst` null fails every attempt. */
+export interface Fault {
+  target: string
+  kind: (typeof FAULT_KINDS)[number]
+  failFirst: number | null
+}
+
+export type Assertion =
+  | { type: 'outcome'; id: string; step: string; expected: (typeof STEP_OUTCOMES)[number] }
+  | { type: 'event-count'; id: string; kind: TraceEventKind; target: string | null; expected: number }
+
+export interface ScenarioCheckRecipe {
+  scenarioId: string
+  faults: Fault[]
+  expect: Assertion[]
+}
+
+export interface SourcePatternRecipe {
+  repository: string
+  pattern: string
+  service: string | null
+  /** Null and true: the pattern must be declared with no compile-time condition. */
+  requireUnconditional?: boolean | null
+}
+
+export interface PlanRecipe {
+  steps: string[]
+  inputs: string[]
+  expectedObservations: string[]
+  forbiddenObservations: string[]
+  contractIds: string[]
+  evidenceSource: EvidenceSource | null
+}
+
 export interface ObligationRecipe {
   text: string
-  scenarioCheck?: unknown
-  sourcePattern?: unknown
-  plan?: {
-    steps: string[]
-    inputs: string[]
-    expectedObservations: string[]
-    forbiddenObservations: string[]
-    contractIds: string[]
-    evidenceSource: EvidenceSource | null
-  } | null
+  scenarioCheck?: ScenarioCheckRecipe | null
+  sourcePattern?: SourcePatternRecipe | null
+  plan?: PlanRecipe | null
 }
+
+export interface ObligationInput {
+  kind: string
+  title: string
+  recipe: ObligationRecipe
+}
+
+export const OBLIGATION_KINDS: { kind: string; label: string; help: string }[] = [
+  { kind: 'scenario-check', label: 'Scenario check', help: 'Vellum plays a scenario with the faults you add and evaluates the assertions.' },
+  { kind: 'source-pattern-check', label: 'Source pattern check', help: 'Vellum looks at one scan of a repository for a pattern that the source declares.' },
+  { kind: 'contract-test', label: 'Contract test plan', help: 'A test plan. Vellum cannot run it. Its result comes from your CI.' },
+  { kind: 'integration-test', label: 'Integration test plan', help: 'A test plan. Vellum cannot run it. Its result comes from your CI.' },
+  { kind: 'failure-test', label: 'Failure test plan', help: 'A test plan. Vellum cannot run it. Its result comes from your CI.' },
+]
 
 export interface Obligation {
   id: string
@@ -75,9 +121,15 @@ export interface ObligationStatus {
   /** One sentence for each input that changed. */
   changed: string[]
   assertions: AssertionRecord[] | null
+  /** For a scenario check: the faults that were played, the scenario's and the obligation's. */
+  effectiveFaults: Fault[] | null
   at: string | null
   environment: string | null
+  /** The model the check ran on. */
+  modelRevision: { streamId: string; version: number; revisionId: string | null; revisionName: string | null } | null
   commitSha: string | null
+  scanId: string | null
+  inputs: { ref?: string | null; scanKind?: string | null } | null
   scope: string | null
   evidence: Evidence[]
   limitations: string[]
@@ -116,6 +168,8 @@ export interface PromiseRevision {
   /** Who changed the revision last: `user:<id>` for a person, `agent-token:<id>` for an agent token. Absent when it was not recorded. */
   lastChangedBy?: string | null
   lastChangedAt?: string | null
+  /** For a revision that retires: the revision it retires. */
+  retiresRevision?: number | null
   evidenceStatus: { counts: PromiseCounts; obligations: ObligationStatus[]; gaps: string[] }
 }
 
@@ -183,20 +237,59 @@ export interface BuildManifest {
   selfCheck: { passed: boolean; notes: string[] }
 }
 
+/** What a brief is for: promises, the change of one scan, or elements. */
+export interface BriefScope {
+  promiseIds?: string[]
+  changeScanId?: string | null
+  elementIds?: string[]
+}
+
+export interface BriefResult {
+  /** The brief as Markdown. */
+  brief: string
+  manifest: {
+    format: string
+    pinned: BuildManifest['pinned']
+    included: {
+      elementIds: string[]; operationIds: string[]; channelIds: string[]; subscriptionIds: string[]
+      messageIds: string[]; schemaIds: string[]; scenarioIds: string[]; requirementIds: string[]
+    }
+    /** Promises in scope that no person approved. They are not requirements. */
+    notApproved: string[]
+    retired: string[]
+    /** Facts in scope that are inferred, unknown or stale. The brief leaves them out of its fact tables. */
+    unconfirmedFacts: string[]
+    sha256: string
+    bytes: number
+    buildReady: boolean
+    blockers: BuildManifest['blockers']
+    changeScanId?: string | null
+  }
+}
+
 const base = (projectId: string) => `/api/projects/${projectId}`
 
 export const promisesApi = {
   list: async (projectId: string) => (await api<{ items: PromiseSummary[] }>('GET', `${base(projectId)}/promises?limit=200`)).items,
   get: (projectId: string, id: string) => api<PromiseDetail>('GET', `${base(projectId)}/promises/${id}`),
   prefix: (projectId: string) => api<{ prefix: string | null; nextNumber: number }>('GET', `${base(projectId)}/promises/prefix`),
-  setPrefix: (projectId: string, prefix: string) => api<{ prefix: string }>('PUT', `${base(projectId)}/promises/prefix`, { prefix, startAt: null }),
+  /** `startAt` is the number of the first promise. Null starts at 1. */
+  setPrefix: (projectId: string, prefix: string, startAt: number | null) =>
+    api<{ prefix: string; nextNumber: number }>('PUT', `${base(projectId)}/promises/prefix`, { prefix, startAt }),
   create: (projectId: string, input: PromiseInput) => api<PromiseDetail>('POST', `${base(projectId)}/promises`, { ...input, origin: 'human' }),
   update: (projectId: string, id: string, input: PromiseInput) => api<PromiseDetail>('PUT', `${base(projectId)}/promises/${id}`, input),
-  revise: (projectId: string, id: string) => api<PromiseDetail>('POST', `${base(projectId)}/promises/${id}/revise`, { retire: false }),
+  /** `retire` true starts a revision that retires the promise when an owner approves it. */
+  revise: (projectId: string, id: string, retire = false) => api<PromiseDetail>('POST', `${base(projectId)}/promises/${id}/revise`, { retire }),
   approve: (projectId: string, id: string, revision: number, contentHash: string) =>
     api<PromiseDetail>('POST', `${base(projectId)}/promises/${id}/approve`, { revision, contentHash }),
   updateObligation: (projectId: string, id: string, obligation: Obligation, recipe: ObligationRecipe) =>
     api<PromiseDetail>('PUT', `${base(projectId)}/promises/${id}/obligations/${obligation.key}`, { kind: obligation.kind, title: obligation.title, recipe }),
+  addObligation: (projectId: string, id: string, input: ObligationInput) =>
+    api<PromiseDetail>('POST', `${base(projectId)}/promises/${id}/obligations`, input),
+  changeObligation: (projectId: string, id: string, key: string, input: ObligationInput) =>
+    api<PromiseDetail>('PUT', `${base(projectId)}/promises/${id}/obligations/${key}`, input),
+  removeObligation: (projectId: string, id: string, key: string) =>
+    api<PromiseDetail>('DELETE', `${base(projectId)}/promises/${id}/obligations/${key}`),
   recordEvidence: (projectId: string, id: string, key: string, runUrl: string, commitSha: string | null, revision: number | null) =>
     api<unknown>('POST', `${base(projectId)}/promises/${id}/obligations/${key}/evidence`, {
       result: 'passed', source: { system: 'github-actions', runUrl, commitSha, conclusion: null }, artifactDigest: null, revision,
@@ -206,8 +299,13 @@ export const promisesApi = {
     api<{ promise: PromiseDetail; added: string[]; skipped: { key: string; reason: string }[] }>('POST', `${base(projectId)}/promises/${id}/obligations/generate`),
   /** `revision` null runs the approved revision in force. A draft is run only by its number, and that run never counts after approval. */
   run: (projectId: string, id: string, key: string, scanId: string | null, revision: number | null) =>
-    api<unknown>('POST', `${base(projectId)}/promises/${id}/obligations/${key}/run`, { modelRevisionId: null, branchId: null, scanId, revision }),
+    api<{ result: ObligationResult; detail: string }>('POST', `${base(projectId)}/promises/${id}/obligations/${key}/run`, { modelRevisionId: null, branchId: null, scanId, revision }),
   manifest: (projectId: string) => api<BuildManifest>('GET', `${base(projectId)}/build/manifest`),
+  brief: (projectId: string, scope: BriefScope) =>
+    api<BriefResult>('POST', `${base(projectId)}/build/brief`, {
+      promiseIds: scope.promiseIds ?? [], scenarioIds: [], elementIds: scope.elementIds ?? [],
+      revisionId: null, branchId: null, changeScanId: scope.changeScanId ?? null,
+    }),
 }
 
 /** Asks the server whether a bundle file is what Vellum generates for the versions the bundle names. */
@@ -247,6 +345,16 @@ export function isAgentActor(actor: string | null | undefined): actor is string 
 /** The start of a token ID, enough to find the token in the list of agent tokens. */
 export function shortAgent(actor: string): string {
   return actor.slice(AGENT_ACTOR.length, AGENT_ACTOR.length + 8)
+}
+
+/**
+ * The result of an obligation as words and one colour. A passed or failed result on inputs
+ * that moved is stale: it is shown as stale and never as a pass.
+ */
+export function describeResult(status: Pick<ObligationStatus, 'result' | 'current'> | undefined, supported: boolean): { label: string; color: string } {
+  const result = status?.result ?? (supported ? 'not-run' : 'unsupported')
+  if (status?.current === false) return { label: `Stale (${RESULT_LABEL[result].toLowerCase()} on older inputs)`, color: 'var(--trace-retry)' }
+  return { label: RESULT_LABEL[result], color: RESULT_COLOR[result] }
 }
 
 export const RESULT_LABEL: Record<ObligationResult, string> = {

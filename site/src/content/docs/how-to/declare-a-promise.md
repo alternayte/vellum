@@ -10,18 +10,23 @@ This guide shows you how to declare a promise. A promise is a requirement with a
 Each project has one prefix for its requirement IDs. You set it one time. It cannot change, because issued IDs contain it.
 
 1. Open **Promises** in the left toolbar.
-2. Select **Set the prefix**.
-3. Enter 2 to 6 upper-case letters, for example `ORD`.
+2. In **Prefix (2 to 6 letters)**, enter the letters, for example `ORD`.
+3. In **First number**, enter the number of the first promise. Use a number above `1` when lower numbers are issued in another system. The line below the fields shows the first ID.
+4. Select **Set the prefix**.
 
 ## Write the draft
 
-1. Select **New promise**.
+1. Select **New**.
 2. Enter a **Title**.
 3. Enter the **Claim**. Write one statement that a check can show to be true or false.
 4. Enter the **Scope**, the **Preconditions**, the **Expected outcome** and the **Forbidden outcome**.
-5. In **What counts as evidence**, say what result you accept.
-6. Below **Linked to**, select the scenarios, operations, channels, subscriptions, messages and elements that the promise is about.
-7. Select **Create draft**.
+5. Below **Forbidden events**, select **Add a forbidden event** for each trace event that must not occur. Select the event, and select where it must not occur. A generated scenario check asserts that the event occurs zero times. The text of the forbidden outcome alone is not checked.
+6. In **What counts as evidence**, say what result you accept.
+7. If the source must declare a pattern, select **The source of a repository must declare a pattern.** below **Required source pattern**. Select the **Repository**, the **Pattern** and, for one service, the **Service**.
+8. Below **Linked to**, select the scenarios, operations, channels, subscriptions, messages and elements that the promise is about.
+9. Select **Create draft**.
+
+You select each part of the model by its name. If the server refuses a value, the message shows below the field of that value.
 
 Vellum gives the draft the next requirement ID. The ID never changes and is never used again.
 
@@ -33,8 +38,11 @@ An obligation is one check that gives evidence for the promise. A promise with n
 
 1. Open the draft.
 2. Select **Generate from the links**. Vellum calls no AI for this.
-3. Edit each obligation. Add the faults and the assertions that the claim needs.
-4. For a test plan, name the evidence source: the repository, the workflow and, if needed, the job. A test plan with no evidence source can get no result.
+3. Select the pencil button of an obligation to change it. Select **Add an obligation** to write one, and select its **Kind**.
+4. For a scenario check, select the **Scenario**. Below **Faults**, select **Add a fault** and select the target, the kind and the number of first attempts that fail. The list of targets has the parts that the steps of the scenario name. Below **Assertions**, add or change each assertion.
+5. For a source pattern check, select the **Repository**, the **Pattern** and the **Service**.
+6. For a test plan, name the evidence source: the repository, the workflow and, if needed, the job. A test plan with no evidence source can get no result.
+7. Select **Save the obligation** or **Add the obligation**.
 
 **Generate from the links** adds these obligations.
 
@@ -50,7 +58,8 @@ An obligation is one check that gives evidence for the promise. A promise with n
 ## Approve
 
 1. Read the draft.
-2. Select **Approve revision 1**.
+2. Read the box above the buttons. When it says **Approval is blocked:**, it gives each cause: a change that is not saved, an empty field that an approved promise needs, or a link to a part that no longer exists.
+3. Select **Approve revision 1**.
 
 Only a workspace owner approves, and only in the app. An agent token cannot approve, whatever scopes it has.
 
@@ -61,10 +70,15 @@ After approval, the text and the obligations of the revision do not change.
 ## Check the promise
 
 1. Open the promise.
-2. Select **Run** next to a scenario check or a source pattern check.
-3. For a test plan, run the test in your CI. Then enter the URL of the workflow run and select **Record run**.
+2. Select **Run** on a scenario check.
+3. On a source pattern check, select the scan in the list and select **Run against this scan**.
+4. For a test plan, run the test in your CI. Then enter the URL of the workflow run and select **Record run**.
 
-The promise shows the result of each obligation and a list of **Evidence gaps**. Vellum never shows a promise as verified. Read the counts and the gaps.
+Each obligation shows one label: **Passed**, **Failed**, **Not run**, **Unsupported** or **Stale**. A stale result was made on inputs that changed. It does not count as passed. Below the label you read what the check read: the scope, the model version, the commit, the faults and the limits.
+
+The promise also shows a list of **Evidence gaps**. Vellum never shows a promise as verified. Read the counts and the gaps.
+
+To see the promise on the canvas, select **Show on canvas**. The canvas rings the elements that the promise links and the elements of its flows. Select **Clear** on the canvas to remove the rings.
 
 ## Change an approved promise
 

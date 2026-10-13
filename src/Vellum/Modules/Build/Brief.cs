@@ -20,7 +20,9 @@ public sealed record BriefIncluded(
 public sealed record BriefManifest(
     string Format, GeneratorInfo Generator, PinnedState Pinned, BriefSelection Selection, BriefIncluded Included,
     IReadOnlyList<string> NotApproved, IReadOnlyList<string> Retired, IReadOnlyList<Guid> UnconfirmedFacts,
-    string Sha256, long Bytes, bool BuildReady, IReadOnlyList<Blocker> Blockers);
+    string Sha256, long Bytes, bool BuildReady, IReadOnlyList<Blocker> Blockers,
+    // A member that is null is not written, so a brief of a selection alone is the bytes it was.
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] Guid? ChangeScanId = null);
 
 public sealed record BriefResult(string Brief, BriefManifest Manifest);
 
@@ -43,12 +45,17 @@ public sealed record BriefResult(string Brief, BriefManifest Manifest);
 /// </list>
 /// A promise with no approved revision is never a requirement: it is listed under "not
 /// approved". Only the approved revision of a promise is shown, never a draft of it.
+/// <para>
+/// With a change (the impact report of a scan), the brief also holds that report as its last
+/// section: what the source changes, and which flows and promises it reaches, each with its
+/// certainty. The report is a statement about the source. It is never a requirement.
+/// </para>
 /// </summary>
 public static class Brief
 {
     public const string Format = "vellum-brief/1";
 
-    public static BriefResult Build(BuildInput input, BriefSelection selection, BuildLimits limits)
+    public static BriefResult Build(BuildInput input, BriefSelection selection, BuildLimits limits, ChangeImpactDto? change = null)
     {
         var model = input.Model;
         var promises = input.Promises.ToDictionary(p => p.Id);
@@ -276,6 +283,8 @@ public static class Brief
         }
 
         SddDocument.BlockerSection(md, "7. Blockers in scope", blockers);
+        if (change is not null)
+            ChangeSection(md, change);
 
         var bytes = Encoding.UTF8.GetBytes(md.ToString());
         if (bytes.Length > limits.MaxFileBytes)
@@ -293,7 +302,52 @@ public static class Brief
             [.. drafts.Select(p => p.RequirementId)],
             [.. retired.Select(p => p.RequirementId).Order(StringComparer.Ordinal)],
             [.. unconfirmed.Select(f => f.Id)],
-            BuildText.Sha256(bytes), bytes.Length, blockers.Count == 0, blockers);
+            BuildText.Sha256(bytes), bytes.Length, blockers.Count == 0, blockers, change?.ScanId);
         return new BriefResult(md.ToString(), manifest);
+    }
+
+    /// <summary>The impact report of a scan. Every name and path in it is text of a repository, so it is written as data.</summary>
+    private static void ChangeSection(Markdown md, ChangeImpactDto change)
+    {
+        md.Heading(2, $"8. Change under review");
+        md.Line($"Scan {Md.Code(change.ScanId)} of {Md.Code(change.Repository)}: ref {Md.Code(change.Head.Ref ?? "none")} at commit {Md.Code(change.Head.CommitSha)}, a {Md.Raw(change.Kind)} scan, compared with ref {Md.Code(change.Base.Ref ?? "none")} at commit {Md.Code(change.Base.CommitSha ?? "none")}.").Blank();
+        md.Line($"This section states what the source of that commit changes. It is not a requirement. `definite` stands on the cited diff or source lines; `possible` is reached only through a flow or a service; `unknown` means the scan did not look.").Blank();
+        foreach (var limit in change.Limits)
+            md.Line($"- {limit}");
+        md.Blank();
+
+        static Md Lines(ImpactChangeDto c) => c.Evidence.Count == 0 ? Md.Text("none") : Md.Join(", ", c.Evidence.Take(5).Select(e => Md.Code(e.Pointer)));
+        if (change.Changes.Count == 0)
+            md.Line($"The scan changes nothing.").Blank();
+        else
+        {
+            md.Table(["Change", "Kind", "Name", "Certainty", "Basis", "Source lines"], change.Changes.Select(c => new[]
+            {
+                Md.Raw(c.Action), Md.Text(c.EntityKind), Md.Text(c.Name), Md.Raw(c.Certainty), Md.Text(c.Basis), Lines(c),
+            }));
+        }
+        // One row for each reason, so a possible reason never stands under a definite heading.
+        if (change.Flows.Count > 0)
+        {
+            md.Line($"Affected scenarios:").Blank();
+            md.Table(["Scenario", "Certainty", "Why"], change.Flows.SelectMany(f => f.Reasons.Select(r => new[]
+            {
+                Md.Of($"{Md.Text(f.Name)} ({Md.Code(f.ScenarioId)})"), Md.Raw(r.Certainty), Md.Text(r.Text),
+            })));
+        }
+        if (change.Promises.Count > 0)
+        {
+            md.Line($"Affected promises. `broken`: a check of the promise failed against this scan. `at-risk`: the change touches something the promise names, and no check failed against this scan.").Blank();
+            md.Table(["Requirement ID", "Standing", "Certainty", "Why"], change.Promises.SelectMany(p => p.Reasons.Select(r => new[]
+            {
+                Md.Code(p.RequirementId), Md.Raw(p.Standing), Md.Raw(r.Certainty), Md.Text(r.Text),
+            })));
+            var checks = change.Promises.SelectMany(p => p.Checks).ToList();
+            if (checks.Count > 0)
+            {
+                md.Line($"Source pattern checks against this scan:").Blank();
+                md.Table(["Obligation", "Result", "Detail"], checks.Select(c => new[] { Md.Code(c.ObligationId), Md.Raw(c.Result), Md.Text(c.Detail) }));
+            }
+        }
     }
 }

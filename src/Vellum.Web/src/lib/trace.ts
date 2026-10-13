@@ -81,6 +81,9 @@ const FAMILY: Record<TraceEventKind, TraceFamily> = {
   NotRouted: 'control',
 }
 
+/** Every event kind of the engine, in the order of the list above. */
+export const TRACE_EVENT_KINDS = Object.keys(FAMILY) as TraceEventKind[]
+
 export function traceFamily(kind: TraceEventKind): TraceFamily {
   return FAMILY[kind]
 }

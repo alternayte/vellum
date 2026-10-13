@@ -1,16 +1,33 @@
-import { useRef } from 'react'
+import { useRef, useState } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { CircleCheck, CircleX, Download } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { shownInline } from '@/lib/mutation-errors'
-import { downloadBuild, promisesApi, verifyBundle } from '@/lib/promises-api'
+import { selectClass } from '@/components/settings/fields'
+import { cn } from '@/lib/utils'
+import { importApi } from '@/lib/import-api'
+import { downloadBuild, promisesApi, verifyBundle, type BriefScope } from '@/lib/promises-api'
+import { BriefDialog } from './brief-dialog'
+
+type ScopeKind = 'promise' | 'change' | 'elements'
+
+const SCOPES: { kind: ScopeKind; label: string }[] = [
+  { kind: 'promise', label: 'A promise' },
+  { kind: 'change', label: 'A change' },
+  { kind: 'elements', label: 'Elements' },
+]
 
 /**
  * The handoff to an implementation agent: a standalone SDD and a bundle of contracts,
  * scenarios and promises, generated from the model as it is now. The same model always
  * gives the same files and the same hashes.
  */
-export function BuildFlyout({ projectId }: { projectId: string }) {
+export function BuildFlyout({ projectId, elements, selection }: {
+  projectId: string
+  elements: { id: string; name: string }[]
+  /** The elements selected on the canvas when the flyout opens. They start the element scope of a brief. */
+  selection: () => string[]
+}) {
   const manifest = useQuery({ queryKey: ['projects', projectId, 'build', 'manifest'], queryFn: () => promisesApi.manifest(projectId), staleTime: 0 })
   const download = useMutation({ mutationFn: (format: 'sdd' | 'bundle') => downloadBuild(projectId, format), onError: shownInline })
   const verify = useMutation({ mutationFn: (file: File) => verifyBundle(projectId, file), onError: shownInline })
@@ -46,6 +63,8 @@ export function BuildFlyout({ projectId }: { projectId: string }) {
             </div>
             {download.isError && <p role="alert" className="text-xs text-destructive">{download.error.message}</p>}
 
+            <BriefScopeForm projectId={projectId} elements={elements} selection={selection} />
+
             {data.blockers.length > 0 && (
               <section aria-labelledby="build-blockers">
                 <h3 id="build-blockers" className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Blockers</h3>
@@ -53,7 +72,7 @@ export function BuildFlyout({ projectId }: { projectId: string }) {
                   {data.blockers.map((blocker, i) => (
                     <li key={i} className="rounded-md border border-border px-2.5 py-1.5">
                       <p className="font-mono text-[10px] text-[var(--trace-retry)]">{blocker.code}</p>
-                      <p className="text-xs text-foreground">{blocker.message}</p>
+                      <p className="break-words text-xs text-foreground">{blocker.message}</p>
                     </li>
                   ))}
                 </ul>
@@ -124,5 +143,110 @@ export function BuildFlyout({ projectId }: { projectId: string }) {
         )}
       </div>
     </div>
+  )
+}
+
+/**
+ * A brief holds only the part of the model that one change needs. The scope is one
+ * promise, the change of one scan, or a set of elements.
+ */
+function BriefScopeForm({ projectId, elements, selection }: { projectId: string; elements: { id: string; name: string }[]; selection: () => string[] }) {
+  const promises = useQuery({ queryKey: ['projects', projectId, 'promises'], queryFn: () => promisesApi.list(projectId) })
+  const scans = useQuery({ queryKey: ['projects', projectId, 'imports'], queryFn: () => importApi.list(projectId) })
+  const completed = (scans.data ?? []).filter((s) => s.status === 'completed')
+  const [kind, setKind] = useState<ScopeKind>('promise')
+  const [promiseId, setPromiseId] = useState('')
+  const [scanId, setScanId] = useState('')
+  const [elementIds, setElementIds] = useState(() => selection().filter((id) => elements.some((e) => e.id === id)))
+  const [preview, setPreview] = useState<{ scope: BriefScope; subject: string; fileName: string } | null>(null)
+
+  // The first of each list stands until the person chooses another. The newest scan is first.
+  const promise = promises.data?.find((p) => p.id === promiseId) ?? promises.data?.[0]
+  const scan = completed.find((s) => s.id === scanId) ?? completed[0]
+  const scanRef = scan ? (scan.ref ?? scan.trackedRef ?? 'default branch') : ''
+  const chosen = kind === 'promise'
+    ? promise && { scope: { promiseIds: [promise.id] }, subject: promise.requirementId, fileName: `brief-${promise.requirementId}.md` }
+    : kind === 'change'
+      ? scan && { scope: { changeScanId: scan.id }, subject: `the change of ${scanRef}`, fileName: `brief-${scan.repository.replace(/[^a-z0-9]+/gi, '-')}-${scan.commitSha?.slice(0, 10)}.md` }
+      : elementIds.length > 0 && {
+          scope: { elementIds }, fileName: 'brief-elements.md',
+          subject: elementIds.length === 1 ? (elements.find((e) => e.id === elementIds[0])?.name ?? 'one element') : `${elementIds.length} elements`,
+        }
+  const missing = kind === 'promise'
+    ? 'This project has no promise. Declare one in Promises.'
+    : kind === 'change'
+      ? 'This project has no completed scan. Scan a repository in Import from GitHub.'
+      : 'Select at least one element.'
+
+  return (
+    <section aria-labelledby="build-brief">
+      <h3 id="build-brief" className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Brief for an agent</h3>
+      <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+        A brief holds only what one change needs: approved facts, contracts, linked promises, required checks and blockers.
+      </p>
+      <fieldset className="mt-2">
+        <legend className="text-[11px] font-medium text-muted-foreground">Scope</legend>
+        <div className="mt-1 grid grid-cols-3 gap-1 rounded-lg border border-border p-0.5">
+          {SCOPES.map((scope) => (
+            <label key={scope.kind} className={cn('cursor-pointer rounded-md px-1.5 py-1 text-center text-xs has-focus-visible:outline-2 has-focus-visible:outline-primary', kind === scope.kind ? 'bg-muted text-foreground' : 'text-muted-foreground hover:text-foreground')}>
+              <input type="radio" name="brief-scope" className="sr-only" checked={kind === scope.kind} onChange={() => setKind(scope.kind)} />
+              {scope.label}
+            </label>
+          ))}
+        </div>
+      </fieldset>
+
+      {kind === 'promise' && promise && (
+        <label className="mt-2 block text-[11px] font-medium text-muted-foreground">
+          Promise
+          <select className={cn(selectClass, 'mt-1 text-xs font-normal')} value={promise.id} onChange={(e) => setPromiseId(e.target.value)} aria-describedby="brief-promise-note">
+            {promises.data!.map((p) => <option key={p.id} value={p.id}>{p.requirementId} · {p.title}</option>)}
+          </select>
+          <span id="brief-promise-note" className="mt-1 block font-normal leading-relaxed">
+            {promise.state === 'approved'
+              ? 'The brief holds the approved revision, what it links and its checks.'
+              : promise.state === 'retired'
+                ? 'This promise is retired. The brief lists it and holds no requirement for it.'
+                : 'This promise is not approved. The brief lists it under “do not implement” and holds no requirement for it.'}
+          </span>
+        </label>
+      )}
+      {kind === 'change' && scan && (
+        <label className="mt-2 block text-[11px] font-medium text-muted-foreground">
+          Scan
+          <select className={cn(selectClass, 'mt-1 text-xs font-normal')} value={scan.id} onChange={(e) => setScanId(e.target.value)} aria-describedby="brief-scan-note">
+            {completed.map((s) => <option key={s.id} value={s.id}>{s.repository} · {s.ref ?? s.trackedRef ?? 'default branch'} · {s.commitSha?.slice(0, 10)} · {s.kind}</option>)}
+          </select>
+          <span id="brief-scan-note" className="mt-1 block font-normal leading-relaxed">
+            The brief selects every promise, scenario and element that the impact of this scan names, and holds the impact report.
+          </span>
+        </label>
+      )}
+      {kind === 'elements' && (
+        <fieldset className="mt-2">
+          <legend className="text-[11px] font-medium text-muted-foreground">Elements <span className="font-mono">{elementIds.length}</span></legend>
+          <ul className="mt-1 max-h-36 space-y-0.5 overflow-y-auto rounded-md border border-border p-1.5">
+            {elements.map((element) => (
+              <li key={element.id}>
+                <label className="flex items-center gap-1.5 text-xs text-foreground">
+                  <input
+                    type="checkbox" className="h-3 w-3 accent-[var(--primary)]" checked={elementIds.includes(element.id)}
+                    onChange={() => setElementIds(elementIds.includes(element.id) ? elementIds.filter((id) => id !== element.id) : [...elementIds, element.id])}
+                  />
+                  <span className="truncate">{element.name}</span>
+                </label>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">The elements that are selected on the canvas are ticked when this panel opens. An element brings its operations, subscriptions and messages.</p>
+        </fieldset>
+      )}
+      {!chosen && <p className="mt-2 text-xs text-muted-foreground">{missing}</p>}
+
+      <Button size="sm" variant="secondary" className="mt-2 w-full" disabled={!chosen} onClick={() => chosen && setPreview(chosen)}>
+        Preview the brief
+      </Button>
+      {preview && <BriefDialog projectId={projectId} {...preview} onClose={() => setPreview(null)} />}
+    </section>
   )
 }

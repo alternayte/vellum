@@ -279,7 +279,8 @@ function ProposalDetail({ projectId, scanId, proposal: listed, link, onLink }: {
   )
 }
 
-function SourceLines({ projectId, scanId, evidence }: { projectId: string; scanId: string; evidence: ProposalEvidence }) {
+/** The cited lines of one file at the commit of a scan, as text. */
+export function SourceLines({ projectId, scanId, evidence }: { projectId: string; scanId: string; evidence: ProposalEvidence }) {
   const source = useQuery({
     queryKey: ['projects', projectId, 'imports', scanId, 'source', evidence.path, evidence.startLine, evidence.endLine],
     queryFn: () => importApi.source(projectId, scanId, evidence),

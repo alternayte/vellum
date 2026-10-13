@@ -621,12 +621,12 @@ function ProjectWorkspace() {
           {activeFlyout === 'scenarios' && (
             <ScenariosFlyout projectId={projectId} branchId={contractBranchId} references={scenarioReferences} />
           )}
-          {activeFlyout === 'import' && <ImportFlyout projectId={projectId} />}
-          {activeFlyout === 'promises' && <PromisesFlyout projectId={projectId} references={scenarioReferences} scenarios={scenarioList ?? []} />}
+          {activeFlyout === 'import' && <ImportFlyout projectId={projectId} owners={reviewOwners} />}
+          {activeFlyout === 'promises' && <PromisesFlyout projectId={projectId} references={scenarioReferences} scenarios={scenarioList ?? []} owners={reviewOwners} />}
           {activeFlyout === 'review' && (
             <ReviewFlyout projectId={projectId} branchId={contractBranchId} references={scenarioReferences} elementIds={reviewElementIds} owners={reviewOwners} />
           )}
-          {activeFlyout === 'build' && <BuildFlyout projectId={projectId} />}
+          {activeFlyout === 'build' && <BuildFlyout projectId={projectId} elements={elements ?? []} selection={() => selectedNodeIdsRef.current} />}
           {activeFlyout === 'stress' && <StressFlyout projectId={projectId} branchId={contractBranchId} scenarios={scenarioList ?? []} />}
           {activeFlyout === 'costs' && <CostsFlyout projectId={projectId} branchId={contractBranchId} references={scenarioReferences} />}
           {activeFlyout === 'assistant' && (
