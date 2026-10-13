@@ -73,6 +73,10 @@ docs:
 docs-build:
     cd site && npm ci && npm run build
 
+# Publishes the documentation site to the Cloudflare Pages project vellum-docs. Needs a wrangler login.
+docs-deploy:
+    cd site && npm ci && VELLUM_DOCS_SITE=https://vellum-docs-5fy.pages.dev npm run build && npx wrangler pages deploy dist --project-name vellum-docs --branch main
+
 # The docs checks that need no running Vellum: API paths against openapi.json, and the snippets.
 docs-check:
     cd site && npm run check
