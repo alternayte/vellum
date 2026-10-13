@@ -77,6 +77,8 @@ internal static class ScanFailures
             "The stored token cannot be decrypted with the loaded master key. Save the token again (github:token)." + ResumeHint),
         GitHubFailure.Unavailable { Reason: "token_saved_for_another_host" } => new("token_saved_for_another_host",
             "The stored token was saved for another GitHub host. Save it again for the current github.apiBaseUrl." + ResumeHint),
+        GitHubFailure.Unavailable { Reason: "invalid_setting" } => new("invalid_setting",
+            "The stored token or the GitHub API base URL holds a character that cannot be sent. Nothing was sent. Save the token again (github:token) and check github.apiBaseUrl." + ResumeHint),
         GitHubFailure.Unavailable { Reason: "redirect_refused" } => new("redirect_refused",
             "GitHub redirected the request to another host, which Vellum does not follow. Set github.apiBaseUrl to the final address." + ResumeHint),
         GitHubFailure.Unavailable { Reason: "timeout" } => new("network",

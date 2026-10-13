@@ -5,6 +5,8 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json.Nodes;
 using Microsoft.Extensions.DependencyInjection;
+using Vellum.Modules.Import.Extraction;
+using Vellum.Modules.Import.Proposals;
 using Vellum.Modules.Import.Scans;
 using Vellum.Tests.Shared.Outbound;
 
@@ -39,8 +41,11 @@ internal sealed class FixtureGitHub
     /// <summary>GitHub refuses the token.</summary>
     public bool Unauthorized { get; set; }
     public bool Truncated { get; set; }
-    /// <summary>Called with the path before a blob is served. A response it returns is served instead.</summary>
-    public Func<string, Task<HttpResponseMessage?>>? OnBlob { get; set; }
+    /// <summary>
+    /// Called with the path before a blob is served. A response it returns is served instead.
+    /// The token is the request's: a gate that waits on it ends when the caller gives up.
+    /// </summary>
+    public Func<string, CancellationToken, Task<HttpResponseMessage?>>? OnBlob { get; set; }
 
     /// <summary>What was asked for, in order: <c>repository</c>, <c>ref:main</c>, <c>tree:&lt;sha&gt;</c>, <c>blob:&lt;path&gt;</c>.</summary>
     public IReadOnlyList<string> Requests => [.. _requests];
@@ -95,12 +100,15 @@ internal sealed class FixtureGitHub
             }.ToJsonString());
         }
 
-        if (segments[3] == "commits")
+        if (segments is [_, _, _, "commits"])
         {
-            var reference = string.Join('/', segments[4..]);
+            // "List commits" with ?sha=<ref>&per_page=1: the newest commit of the ref, or 404 for no such ref.
+            var reference = System.Web.HttpUtility.ParseQueryString(sent.Uri.Query)["sha"] ?? "";
             _requests.Enqueue($"ref:{reference}");
-            var sha = _commits.ContainsKey(reference) ? reference : reference is "main" or "heads/main" ? Head : null;
-            return sha is null ? NotFound() : new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(sha + "\n") };
+            var sha = _commits.ContainsKey(reference) ? reference : reference == "main" ? Head : null;
+            return sha is null
+                ? NotFound()
+                : Json(HttpStatusCode.OK, new JsonArray(new JsonObject { ["sha"] = sha }).ToJsonString());
         }
 
         if (segments is [_, _, _, "git", "trees", var treeSha])
@@ -129,7 +137,7 @@ internal sealed class FixtureGitHub
             _requests.Enqueue($"blob:{found.Key ?? blobSha}");
             if (found.Key is null)
                 return NotFound();
-            if (OnBlob is not null && await OnBlob(found.Key) is { } instead)
+            if (OnBlob is not null && await OnBlob(found.Key, sent.Cancellation) is { } instead)
                 return instead;
 
             var base64 = Convert.ToBase64String(found.Value);
@@ -170,7 +178,14 @@ public sealed class ImportHost : IDisposable
     public OutboundHost Host { get; }
     public IntegrationFixture Fixture { get; }
 
-    public ImportHost(IntegrationFixture fixture)
+    public ImportHost(IntegrationFixture fixture) : this(fixture, runWorker: false)
+    {
+    }
+
+    /// <summary>An app whose own worker loop runs, as it does outside tests.</summary>
+    internal static ImportHost WithWorker(IntegrationFixture fixture) => new(fixture, runWorker: true);
+
+    private ImportHost(IntegrationFixture fixture, bool runWorker)
     {
         Fixture = fixture;
         Host = new OutboundHost(fixture, configure: services =>
@@ -178,7 +193,8 @@ public sealed class ImportHost : IDisposable
             services.AddSingleton<TimeProvider>(Time);
             services.AddSingleton(ScanWorkerOptions.Default with
             {
-                Enabled = false, WatchInterval = TimeSpan.FromMilliseconds(50), LeaseDuration = TimeSpan.FromSeconds(60),
+                Enabled = runWorker, PollInterval = TimeSpan.FromMilliseconds(100),
+                WatchInterval = TimeSpan.FromMilliseconds(50), LeaseDuration = TimeSpan.FromSeconds(60),
             });
         });
     }
@@ -285,8 +301,54 @@ internal sealed record ImportScenario(
     public Task<List<JsonObject>> ElementsAsync() => AllAsync(Model("elements"));
 }
 
+/// <summary>
+/// The facts of a fixture commit, extracted at run time with the app's own extractors and
+/// mapping. Tests take fact keys from here and never spell one: a key is an opaque string.
+/// </summary>
+internal sealed class FixtureFacts
+{
+    public ExtractionResult Result { get; }
+    public string[] MappedKeys { get; }
+    public int EvidenceOnly { get; }
+    public int Folded { get; }
+
+    public FixtureFacts(ImportScenario s, string commit)
+    {
+        var repository = $"{s.GitHubHost}/acme/orders";
+        Result = EvidenceExtractor.Extract(new ExtractionInput(repository, commit,
+            [.. s.GitHub.Files(commit).Select(f => new SourceFile(f.Key, System.Text.Encoding.UTF8.GetString(f.Value)))]));
+        var mapping = FactMapping.Map(repository, Result.Facts);
+        MappedKeys = [.. mapping.Candidates.Select(c => c.FactKey).Order(StringComparer.Ordinal)];
+        EvidenceOnly = mapping.Facts.Count(f => f.Disposition == FactDisposition.EvidenceOnly);
+        Folded = mapping.Facts.Count(f => f.Disposition == FactDisposition.Folded);
+    }
+
+    public int Count(FactKind kind) => Result.Facts.Count(f => f.Kind == kind);
+}
+
 internal static class ImportJson
 {
+    /// <summary>The one proposal for an entity of this kind with this name.</summary>
+    public static JsonObject Proposal(this IEnumerable<JsonObject> proposals, string entityKind, string name)
+    {
+        var found = proposals.Where(p => p.Text("entityKind") == entityKind && p.Text("name") == name).ToList();
+        Assert.True(found.Count == 1, $"Expected one {entityKind} proposal named '{name}', found {found.Count}.");
+        return found[0];
+    }
+
+    /// <summary>The proposal of this kind whose proposed or current value of <paramref name="field"/> is <paramref name="value"/>.</summary>
+    public static JsonObject ProposalWith(this IEnumerable<JsonObject> proposals, string entityKind, string field, string value)
+    {
+        var found = proposals.Where(p => p.Text("entityKind") == entityKind
+            && ((p["proposed"] ?? p["current"])?[field]?.GetValue<string>() == value)).ToList();
+        Assert.True(found.Count == 1, $"Expected one {entityKind} proposal with {field} = '{value}', found {found.Count}.");
+        return found[0];
+    }
+
+    /// <summary>Kind and name of each proposal, sorted: what a test compares in place of fact keys.</summary>
+    public static string[] Subjects(this IEnumerable<JsonObject> proposals) =>
+        [.. proposals.Select(p => $"{p.Text("entityKind")} {p.Text("name")}").Order(StringComparer.Ordinal)];
+
     public static Guid Id(this JsonObject json, string field = "id") => json[field]!.GetValue<Guid>();
 
     public static string? Text(this JsonObject json, string field) => json[field]?.GetValue<string>();

@@ -99,16 +99,33 @@ internal sealed class ModelIndex
         string.Join(' ', (name ?? "").Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)).ToUpperInvariant();
 
     /// <summary>
-    /// <c>post  /orders/</c> and <c>POST /orders</c> are one route: the method in upper case,
-    /// one space, the path as written without a trailing slash. The path keeps its case.
+    /// <c>post  /orders/{id:guid}/</c> and <c>POST /orders/{orderId}</c> are one route: the
+    /// method in upper case, one space, and the path without a trailing slash, with every
+    /// parameter as <c>{}</c>. The name of a parameter and its constraint say nothing about
+    /// which route it is. The rest of the path keeps its case.
     /// </summary>
     public static string NormalRoute(string? name)
     {
         var parts = (name ?? "").Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries);
         if (parts.Length != 2)
             return string.Join(' ', parts);
-        var path = parts[1].Length > 1 ? parts[1].TrimEnd('/') : parts[1];
-        return $"{parts[0].ToUpperInvariant()} {(path.Length == 0 ? "/" : path)}";
+
+        var path = new System.Text.StringBuilder();
+        var depth = 0;
+        foreach (var c in parts[1])
+        {
+            if (c == '{')
+            {
+                if (depth++ == 0)
+                    path.Append("{}");
+            }
+            else if (c == '}')
+                depth = Math.Max(0, depth - 1);
+            else if (depth == 0)
+                path.Append(c);
+        }
+        var route = path.Length > 1 ? path.ToString().TrimEnd('/') : path.ToString();
+        return $"{parts[0].ToUpperInvariant()} {(route.Length == 0 ? "/" : route)}";
     }
 
     /// <summary>One entity of the model stream, read without building an index. A schema is not in the stream.</summary>

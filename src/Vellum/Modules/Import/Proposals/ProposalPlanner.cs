@@ -116,7 +116,11 @@ internal static class ProposalPlanner
             var linked = entity is not null;
             if (entity is null && blocked is null)
             {
-                var key = ModelIndex.MatchKey(candidate.EntityKind, values);
+                // An operation is matched on its route, which its attributes state more exactly than its name.
+                var matched = candidate.MatchRoute is null
+                    ? values
+                    : new SortedDictionary<string, string?>(values, StringComparer.Ordinal) { [Field.Name] = candidate.MatchRoute };
+                var key = ModelIndex.MatchKey(candidate.EntityKind, matched);
                 var matches = input.Model.OfKind(candidate.EntityKind)
                     .Where(e => !input.TakenEntityIds.Contains(e.Id) && !claimed.Contains(e.Id)
                         && ModelIndex.MatchKey(e.EntityKind, e.Values) == key)

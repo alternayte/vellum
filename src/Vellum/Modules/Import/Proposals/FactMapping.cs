@@ -47,6 +47,7 @@ internal sealed record Reference(string Field, string? FactKey, bool RequiredToA
 /// <param name="ConsumerKeys">For a message: the services whose subscriptions name it.</param>
 /// <param name="Observed">The fact's attributes that no model field holds. They stay visible on the proposal and the link.</param>
 /// <param name="NotAddable">Why the candidate cannot become a new entity, or null. A linked entity is still compared.</param>
+/// <param name="MatchRoute">For an operation: the method and route that a hand-made operation is matched on.</param>
 internal sealed record Candidate(
     string FactKey, string EntityKind, string Name, int Rank,
     SortedDictionary<string, string?> Fields,
@@ -55,7 +56,8 @@ internal sealed record Candidate(
     SortedDictionary<string, string> Observed,
     IReadOnlyDictionary<string, string> Attributes,
     IReadOnlyList<EvidenceRef> Evidence,
-    string? NotAddable);
+    string? NotAddable,
+    string? MatchRoute = null);
 
 /// <summary>A fact of the snapshot with what the mapping decided for it.</summary>
 internal sealed record MappedFact(ExtractedFact Fact, string Disposition, string? Reason);
@@ -135,7 +137,8 @@ internal static class FactMapping
                     else
                         Add(fact, EntityKinds.Operation, fact.Name, 4,
                             Fields((Field.Name, fact.Name), (Field.Transport, transport)),
-                            [new Reference(Field.OwnerId, owner, RequiredToAdd: true)], consumed: ["service", "transport"]);
+                            [new Reference(Field.OwnerId, owner, RequiredToAdd: true)], consumed: ["service", "transport"],
+                            matchRoute: Route(fact));
                     break;
 
                 case FactKind.Channel:
@@ -239,7 +242,8 @@ internal static class FactMapping
         void Add(
             ExtractedFact fact, string entityKind, string name, int rank,
             SortedDictionary<string, string?> fields, IReadOnlyList<Reference> references, string[] consumed,
-            IEnumerable<SourceEvidence>? evidence = null, string? notAddable = null, IReadOnlyList<string>? consumerKeys = null)
+            IEnumerable<SourceEvidence>? evidence = null, string? notAddable = null, IReadOnlyList<string>? consumerKeys = null,
+            string? matchRoute = null)
         {
             // The services whose subscriptions name a message are kept with its attributes.
             // A later complete scan that no longer finds one of them can then say so.
@@ -256,7 +260,7 @@ internal static class FactMapping
 
             candidates.Add(new Candidate(
                 fact.Key, entityKind, name, rank, fields, references, consumerKeys ?? [], observed, attributes,
-                [.. (evidence ?? fact.Evidence).Select(Ref).Distinct().Take(EvidenceCap)], notAddable));
+                [.. (evidence ?? fact.Evidence).Select(Ref).Distinct().Take(EvidenceCap)], notAddable, matchRoute));
             mapped.Add(new MappedFact(fact, FactDisposition.Mapped, null));
         }
 
@@ -271,6 +275,19 @@ internal static class FactMapping
     private static bool IsConsumerSubscription(ExtractedFact fact) =>
         fact.Kind == FactKind.Subscription && !fact.Attributes.ContainsKey("exchange")
         && fact.Attributes.ContainsKey("queue") && fact.Attributes.ContainsKey("service");
+
+    /// <summary>
+    /// The method and route of an operation fact, from its attributes: the route template
+    /// when the extractor gives one, else the path. A template that already starts with the
+    /// method is taken as it is. Null when the fact has neither, and the name is then used.
+    /// </summary>
+    private static string? Route(ExtractedFact fact)
+    {
+        var route = fact.Attributes.GetValueOrDefault("routeTemplate") ?? fact.Attributes.GetValueOrDefault("path");
+        if (route is null)
+            return null;
+        return route.Contains(' ') || !fact.Attributes.TryGetValue("method", out var method) ? route : $"{method} {route}";
+    }
 
     private static bool HasBody(ExtractedFact fact) =>
         fact.Kind == FactKind.Schema && fact.Attributes.ContainsKey("schema");

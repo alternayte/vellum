@@ -81,7 +81,6 @@ public class ImportStalenessTests(ImportHost import) : IClassFixture<ImportHost>
         Assert.Equal(("failed", false, "tree_truncated"), (cut.Text("status"), cut["isComplete"]!.GetValue<bool>(), cut["error"]!["code"]!.GetValue<string>()));
         Assert.Contains("No file was read", cut["error"]!["message"]!.GetValue<string>());
         Assert.Empty(await s.ProposalsAsync(cut.Id()));
-        Assert.Empty(s.GitHub.BlobRequests.Skip(partial["progress"]!["filesRead"]!.GetValue<int>() + 28).Take(0));
         Assert.Equal(accepted, await ModelAsync(s));
         Assert.DoesNotContain("\"stale\":{", accepted);
     }
@@ -107,18 +106,18 @@ public class ImportStalenessTests(ImportHost import) : IClassFixture<ImportHost>
 
         var proposals = await s.ProposalsAsync(scan.Id());
         var removals = proposals.Where(p => p.Text("action") == "remove").ToList();
-        Assert.Equal(["channel:billing.order-created", "service:billing", "subscription:billing:OrderCreatedConsumer:OrderCreated"], removals.Values("factKey"));
+        Assert.Equal(["channel", "element", "subscription"], removals.Values("entityKind"));
         Assert.All(proposals, p => Assert.Equal(("pending", false), (p.Text("status"), p["partial"]!.GetValue<bool>())));
         var message = Assert.Single(proposals, p => p.Text("action") != "remove");
-        Assert.Equal(("message:OrderCreated", "change"), (message.Text("factKey"), message.Text("action")));
+        Assert.Equal(("message", "OrderCreated", "change"), (message.Text("entityKind"), message.Text("name"), message.Text("action")));
         Assert.Empty(message["proposed"]!["consumerIds"]!.AsArray());
 
         // The evidence of a removal is what the fact was accepted with, at the commit it came from.
-        var removal = removals.Single("factKey", "service:billing");
+        var removal = removals.Single("entityKind", "element");
         Assert.Null(removal["proposed"]);
         Assert.Equal("Billing", removal["current"]!["name"]!.GetValue<string>());
         Assert.Contains($"@{ImportScenario.Commit1}:billing/Billing.csproj:1-1", removal["evidence"]![0]!["pointer"]!.GetValue<string>());
-        Assert.Contains(removals.Single("factKey", "subscription:billing:OrderCreatedConsumer:OrderCreated").Id(),
+        Assert.Contains(removals.Single("entityKind", "subscription").Id(),
             removal["dependsOn"]!.AsArray().Select(d => d!.GetValue<Guid>()));
         Assert.Contains(message.Id(), removal["dependsOn"]!.AsArray().Select(d => d!.GetValue<Guid>()));
 

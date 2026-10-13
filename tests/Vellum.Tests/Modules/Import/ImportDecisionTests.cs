@@ -36,17 +36,17 @@ public class ImportDecisionTests(ImportHost import) : IClassFixture<ImportHost>
 
         var second = await s.ScanAsync();
         var conflicts = await s.ProposalsAsync(second.Id());
-        Assert.Equal(["service:billing", "service:orders-api"], conflicts.Values("factKey"));
+        Assert.Equal(["element Billing", "element Orders.Api"], conflicts.Subjects());
         Assert.All(conflicts, c => Assert.Equal(("conflict", "pending"), (c.Text("action"), c.Text("status"))));
 
         // Both values and both sources are shown; intent fields are never part of a proposal.
-        var apiConflict = conflicts.Single("factKey", "service:orders-api");
+        var apiConflict = conflicts.Proposal("element", "Orders.Api");
         Assert.Equal(["name"], Fields(apiConflict));
         Assert.Equal(("Orders API", "Orders.Api", "observed-in-source"),
             (apiConflict["current"]!["name"]!.GetValue<string>(), apiConflict["proposed"]!["name"]!.GetValue<string>(), apiConflict["current"]!["factStatus"]!.GetValue<string>()));
         Assert.Equal("orders-api/Orders.Api.csproj", apiConflict["evidence"]![0]!["path"]!.GetValue<string>());
         Assert.DoesNotContain("Takes orders", apiConflict.ToJsonString());
-        var billingConflict = conflicts.Single("factKey", "service:billing");
+        var billingConflict = conflicts.Proposal("element", "Billing");
         Assert.Equal(["factStatus", "technology"], Fields(billingConflict));
         Assert.Equal(("java", "dotnet", "declared"),
             (billingConflict["current"]!["technology"]!.GetValue<string>(), billingConflict["proposed"]!["technology"]!.GetValue<string>(), billingConflict["current"]!["factStatus"]!.GetValue<string>()));
@@ -58,15 +58,15 @@ public class ImportDecisionTests(ImportHost import) : IClassFixture<ImportHost>
         var rejected = await s.DecideAsync(second.Id(), reject: [apiConflict.Id()]);
         Assert.Equal([apiConflict.Id()], rejected["rejected"]!.AsArray().Select(r => r!.GetValue<Guid>()));
         var third = await s.ScanAsync();
-        Assert.Equal(["service:billing"], (await s.ProposalsAsync(third.Id())).Values("factKey"));
-        Assert.Equal("superseded", (await s.ProposalsAsync(second.Id())).Single("factKey", "service:billing").Text("status"));
+        Assert.Equal(["element Billing"], (await s.ProposalsAsync(third.Id())).Subjects());
+        Assert.Equal("superseded", (await s.ProposalsAsync(second.Id())).Proposal("element", "Billing").Text("status"));
         Assert.Equal((0, 0, 1), Counts(await s.GetAsync(second.Id())));
 
         // A changed fact is proposed again: here the person edits the entity once more.
         await PatchAsync(s, $"elements/{api.Id()}", new { name = "Orders HTTP API" });
         var fourth = await s.ScanAsync();
         var again = await s.ProposalsAsync(fourth.Id());
-        Assert.Equal(["service:billing", "service:orders-api"], again.Values("factKey"));
+        Assert.Equal(["element Billing", "element Orders.Api"], again.Subjects());
 
         // Accepting a conflict is an explicit act for that item. It writes the observed
         // values and the source label, and leaves the intent a person wrote.
@@ -102,21 +102,21 @@ public class ImportDecisionTests(ImportHost import) : IClassFixture<ImportHost>
 
         // A match is a proposal to link, never a silent link, and only for the same kind:
         // the hand-made system "Billing" is not the app "Billing".
-        var repository = proposals.Single("factKey", $"repository:{s.GitHubHost}/acme/orders");
+        var repository = proposals.Proposal("element", "orders");
         Assert.Equal(("conflict", system.ToString()), (repository.Text("action"), repository.Text("entityId")));
         Assert.Equal(["factStatus", "name"], Fields(repository));
         Assert.Equal((" ORDERS ", "orders"), (repository["current"]!["name"]!.GetValue<string>(), repository["proposed"]!["name"]!.GetValue<string>()));
-        var events = proposals.Single("factKey", "channel:order-events");
+        var events = proposals.Proposal("channel", "order-events");
         Assert.Equal(("conflict", channel.ToString()), (events.Text("action"), events.Text("entityId")));
         Assert.Equal(["factStatus", "kind"], Fields(events));
-        Assert.Equal("add", proposals.Single("factKey", "service:billing").Text("action"));
-        var service = proposals.Single("factKey", "service:orders-api");
+        Assert.Equal("add", proposals.Proposal("element", "Billing").Text("action"));
+        var service = proposals.Proposal("element", "Orders.Api");
         Assert.Equal(system.ToString(), service["proposed"]!["parentId"]!.GetValue<string>());
         Assert.Empty(service["dependsOn"]!.AsArray());
         var before = await s.Owner.GetStringAsync(s.Model("elements")) + await s.Owner.GetStringAsync(s.Model("channels"));
 
         // An operation cannot be accepted before its service.
-        var operation = proposals.Single("factKey", "operation:orders-api:POST /orders");
+        var operation = proposals.Proposal("operation", "POST /orders");
         var alone = await s.DecideAsync(scan.Id(), accept: [operation.Id()]);
         Assert.Empty(alone["accepted"]!.AsArray());
         var failure = Assert.Single(alone["failed"]!.AsArray())!;
@@ -130,7 +130,7 @@ public class ImportDecisionTests(ImportHost import) : IClassFixture<ImportHost>
         Assert.Contains("which this decision rejects", Assert.Single(contradiction["failed"]!.AsArray())!["reason"]!.GetValue<string>());
 
         // The model refuses one item: its ID was taken after the scan. Nothing of the decision is applied.
-        var billing = proposals.Single("factKey", "service:billing");
+        var billing = proposals.Proposal("element", "Billing");
         await TestHost.Created(s.Owner.PostAsJsonAsync(s.Model("channels"), new { id = billing.Id("entityId"), name = "squatter", kind = "queue" }));
         var refused = await s.DecideAsync(scan.Id(), accept: proposals.Select(p => p.Id()));
         Assert.Empty(refused["accepted"]!.AsArray());
@@ -172,7 +172,9 @@ public class ImportDecisionTests(ImportHost import) : IClassFixture<ImportHost>
         var s = await ImportScenario.CreateAsync(import);
         var scan = await s.ScanAsync();
         var proposals = await s.ProposalsAsync(scan.Id());
-        var worker = proposals.Single("factKey", "service:inventory-worker");
+        var worker = proposals.Proposal("element", "inventory-worker");
+        var dependents = proposals.Where(p => p["dependsOn"]!.AsArray().Any(d => d!.GetValue<Guid>() == worker.Id())).Values("factKey");
+        Assert.Equal(2, dependents.Length);
         Assert.Equal([worker.Id()], (await s.DecideAsync(scan.Id(), reject: [worker.Id()]))["rejected"]!.AsArray().Select(r => r!.GetValue<Guid>()));
         Assert.Empty(await s.ElementsAsync());
 
@@ -181,8 +183,9 @@ public class ImportDecisionTests(ImportHost import) : IClassFixture<ImportHost>
         var next = await s.ScanAsync();
         var keys = (await s.ProposalsAsync(next.Id())).Values("factKey");
         Assert.Equal(17, keys.Length);
-        Assert.DoesNotContain(keys, key => key.Contains("inventory-worker", StringComparison.Ordinal));
+        Assert.DoesNotContain(worker.Text("factKey"), keys);
         var blocked = (await s.EvidenceAsync(next.Id())).Where(e => e.Text("reason") == "dependency-rejected").ToList();
-        Assert.Equal(["operation:inventory-worker:GET /healthz", "subscription:inventory-worker:amqp:inventory.order-created"], blocked.Values("factKey"));
+        Assert.Equal(dependents, blocked.Values("factKey"));
+        Assert.Equal(["Operation", "Subscription"], blocked.Values("kind"));
     }
 }
