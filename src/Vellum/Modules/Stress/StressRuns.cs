@@ -55,13 +55,16 @@ public static class StressRuns
                 return StressAccess.NotFound("Stress profile");
             var profile = StressProfiles.Read(row.Document);
 
-            using var place = gate.TryEnter(await auth.GetProjectWorkspaceIdAsync(projectId, ct), out var retryAfter);
+            using var place = gate.TryEnter(await auth.GetProjectWorkspaceIdAsync(projectId, ct), out var refusal);
             if (place is null)
             {
-                var seconds = Math.Max(1, (int)Math.Ceiling(retryAfter.TotalSeconds));
+                var seconds = Math.Max(1, (int)Math.Ceiling(refusal!.RetryAfter.TotalSeconds));
                 http.Response.Headers.RetryAfter = seconds.ToString(CultureInfo.InvariantCulture);
                 return Results.Json(
-                    new ErrorResponse("rate_limited", "Too many stress runs", $"Wait {seconds} seconds and try again."),
+                    new ErrorResponse(
+                        refusal.Code,
+                        refusal.Code == "busy" ? "The instance is busy with other stress runs" : "Too many stress runs",
+                        $"Wait {seconds} seconds and try again."),
                     statusCode: StatusCodes.Status429TooManyRequests);
             }
 

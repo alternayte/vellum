@@ -99,8 +99,10 @@ public sealed record Outage(Guid Target, double FromSeconds, double ToSeconds);
 
 /// <summary>
 /// Bounds on one run. A profile is a document that a person or an import wrote, so it is
-/// untrusted input: retries multiply work, and the limits keep a run finite. A run that
-/// passes a limit stops with <c>stress-too-large</c> and has no result.
+/// untrusted input: retries multiply work, and the limits keep a run finite and its memory
+/// bounded. A run that passes a limit stops with <c>stress-too-large</c> and has no result.
+/// Every limit of virtual time and of count is in the result and in its hash
+/// (<see cref="EffectiveLimits"/>); <see cref="WallClock"/> is not, because it is real time.
 /// </summary>
 public sealed record StressLimits
 {
@@ -114,7 +116,12 @@ public sealed record StressLimits
     /// <summary>Scheduled events of every kind, including timers that find nothing to do.</summary>
     public long MaxEvents { get; init; } = 5_000_000;
     /// <summary>Calls, writes and messages that wait at the same instant, over all queues.</summary>
-    public int MaxQueued { get; init; } = 500_000;
+    public int MaxQueued { get; init; } = 250_000;
+    /// <summary>
+    /// Scheduled events that have not run yet, at the same instant of the run: work in service,
+    /// backoffs and timeout timers. With <see cref="MaxQueued"/> it bounds the memory of one run.
+    /// </summary>
+    public int MaxPendingEvents { get; init; } = 250_000;
     /// <summary>The most samples one latency summary keeps. Above it the summary keeps a uniform reservoir of this size.</summary>
     public int MaxSamples { get; init; } = 50_000;
     /// <summary>The most points of one time series.</summary>

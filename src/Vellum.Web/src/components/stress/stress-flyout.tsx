@@ -160,7 +160,7 @@ export function StressFlyout({ projectId, branchId, scenarios }: StressFlyoutPro
                               {stored.summary.failed > 0 ? ` · ${formatNumber(stored.summary.failed)} failed` : ''}
                             </p>
                             <p className="truncate text-[10px] text-muted-foreground">
-                              estimated · {stored.summary.bottleneck ? `bottleneck: ${stored.summary.bottleneck}` : 'no bottleneck found'}
+                              estimated · {stored.summary.bottleneck ? `bottleneck: ${stored.summary.bottleneck}` : `no bottleneck by the rule of engine ${stored.engineVersion}`}
                             </p>
                           </button>
                         </li>

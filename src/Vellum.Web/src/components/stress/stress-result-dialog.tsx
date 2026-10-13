@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import {
   formatMs, formatNumber, formatPercent, stressApi,
-  type LatencySummary, type ResourceStats, type StressComparison, type StressRun, type StressRunSummary,
+  type LatencySummary, type ResourceStats, type StressComparison, type StressResult, type StressRun, type StressRunSummary,
 } from '@/lib/stress-api'
 import { LineChart, type ChartSeries } from './line-chart'
 
@@ -77,6 +77,82 @@ const METRIC_NAMES: Record<string, string> = {
   deadLettered: 'Dead-lettered', throughput: 'Throughput, per second', latencyMean: 'Latency, mean', latencyP50: 'Latency, p50', latencyP90: 'Latency, p90',
   latencyP95: 'Latency, p95', latencyP99: 'Latency, p99', latencyMax: 'Latency, max', timeToDrain: 'Time to drain', utilisation: 'Utilisation',
   meanQueueDepth: 'Mean queue depth', waitMean: 'Wait, mean', retries: 'Retries',
+  wasted: 'Wasted calls', failedInside: 'Calls that failed inside',
+}
+
+/** Virtual time of a run, in seconds. */
+const at = (ms: number) => `${formatNumber(ms / 1000, 1)} s`
+
+/**
+ * What the rules of the engine found, and nothing else. A resource is named when the
+ * saturation rule names it. Whether its queue grows is the outcome of another rule, so it
+ * is a sentence of its own.
+ */
+function BottleneckStatement({ result, resources }: { result: StressResult; resources: ResourceStats[] }) {
+  const bottleneck = result.bottleneck
+  const box = 'rounded-md border px-3 py-2 text-sm text-foreground'
+
+  // A result of engine version 1. Its rule is not the rule of this page, so its outcome is shown as what that engine stored.
+  if (bottleneck.saturated === null) {
+    return (
+      <p className={`${box} border-border`}>
+        {bottleneck.found
+          ? <><span className="font-medium">{bottleneck.name}</span> ({bottleneck.kind}) is the resource that engine version {result.engineVersion} named: utilisation {formatPercent(bottleneck.utilisation)}.</>
+          : <>Engine version {result.engineVersion} named no resource.</>}
+        <span className="mt-0.5 block text-xs text-muted-foreground">
+          {bottleneck.found && <>Mean queue depth by quarter of the measured window: {bottleneck.meanDepthByQuarter?.map((q) => formatNumber(q, 1)).join(' → ')}. Depth when the arrivals stop: {formatNumber(bottleneck.depthAtEndOfArrivals)}. </>}
+          The rule of that version looked for a queue whose mean depth rises in every quarter. It did not read rejected work, and it did not read a backlog that shrinks again. Run the profile again to apply the current rule.
+        </span>
+      </p>
+    )
+  }
+
+  const named = bottleneck.saturated.map((id) => resources.find((r) => r.id === id)).filter((r): r is ResourceStats => !!r?.saturation)
+  if (named.length === 0) {
+    const deepest = resources.reduce<ResourceStats | null>((best, r) => (r.queue.maxDepth > (best?.queue.maxDepth ?? 0) ? r : best), null)
+    return (
+      <p className={`${box} border-border`}>
+        No resource is saturated by the rule. No work was turned away after the warm-up, and no queue reached its noise bound in the measured window.
+        {deepest?.saturation && (
+          <span className="mt-0.5 block text-xs text-muted-foreground">
+            The deepest queue is {formatNumber(deepest.queue.maxDepth)} at {deepest.name}. Its noise bound is {formatNumber(deepest.saturation.noiseBound)}.
+          </span>
+        )}
+      </p>
+    )
+  }
+
+  return (
+    <ul className="space-y-2">
+      {named.map((r, i) => {
+        const s = r.saturation!
+        return (
+          <li key={r.id} className={`${box} ${i === 0 ? 'border-[var(--trace-retry)]/60' : 'border-border'}`}>
+            <span className="font-medium">{r.name}</span> ({r.kind}) is saturated{i === 0 ? ' and is the bottleneck' : ''}: utilisation {formatPercent(r.utilisation)}.
+            <span className="mt-0.5 block space-y-0.5 text-xs text-muted-foreground">
+              {s.turnedAway > 0 && (
+                <span className="block">
+                  It turned away {formatNumber(s.turnedAway)} {s.turnedAway === 1 ? 'piece' : 'pieces'} of work because its queue was full, from {at(s.firstTurnedAwayMs ?? 0)} to {at(s.lastTurnedAwayMs ?? 0)}.
+                </span>
+              )}
+              {s.windows.map((w, k) => (
+                <span key={k} className="block">
+                  Work waited without a break from {at(w.fromMs)} to {w.toMs === null ? 'the end of the run' : at(w.toMs)}. The queue reached {formatNumber(w.peakDepth)} at {at(w.peakAtMs)}; the noise bound is {formatNumber(s.noiseBound)}.
+                </span>
+              ))}
+              {s.moreWindows && <span className="block">The list holds the {s.windows.length} windows with the deepest queue. The run can have more.</span>}
+              <span className="block">
+                {s.queueGrows
+                  ? <>Its queue grows by about {formatNumber(s.growthPerSecond, 2)} each second at the end of the arrivals: </>
+                  : <>Its queue does not grow at the end of the arrivals: </>}
+                {formatNumber(s.depthAtMidWindow)} wait at the middle of the measured window and {formatNumber(r.queue.depthAtEndOfArrivals)} when the arrivals stop.
+              </span>
+            </span>
+          </li>
+        )
+      })}
+    </ul>
+  )
 }
 
 function Comparison({ comparison }: { comparison: StressComparison }) {
@@ -88,9 +164,13 @@ function Comparison({ comparison }: { comparison: StressComparison }) {
       </p>
       <div>
         <p className="text-xs font-medium text-foreground">Inputs that differ</p>
-        {comparison.inputs.length === 0
-          ? <p className="mt-1 text-xs text-muted-foreground">No input differs. The two runs have the same result.</p>
-          : (
+        <p className="mt-1 text-xs text-muted-foreground">
+          {comparison.sameResult
+            ? 'The result hashes are equal. The two runs have the same result.'
+            : 'The result hashes differ. The two runs do not have the same result.'}
+          {comparison.inputs.length === 0 && ' No listed input differs.'}
+        </p>
+        {comparison.inputs.length > 0 && (
             <div className="mt-1 overflow-x-auto rounded-md border border-border">
               <table className="w-full border-collapse text-xs text-muted-foreground">
                 <thead><tr><th scope="col" className={th}>Input</th><th scope="col" className={th}>Left</th><th scope="col" className={th}>Right</th></tr></thead>
@@ -165,6 +245,8 @@ export function StressResultDialog({ projectId, profileName, run, runs, onClose 
   const hidden = series.resources.length - depths.length
   const others = runs.filter((r) => r.id !== pin.id)
   const bottleneck = result.bottleneck
+  // A result of engine version 1 has no saturation data and counts completed work in another way.
+  const olderEngine = bottleneck.saturated === null
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose() }}>
@@ -199,17 +281,14 @@ export function StressResultDialog({ projectId, profileName, run, runs, onClose 
             />
           </div>
 
-          <Section id="stress-bottleneck" title="Bottleneck" note={bottleneck.rule}>
-            {bottleneck.found ? (
-              <p className="rounded-md border border-[var(--trace-retry)]/60 px-3 py-2 text-sm text-foreground">
-                <span className="font-medium">{bottleneck.name}</span> ({bottleneck.kind}): utilisation {formatPercent(bottleneck.utilisation)}, and its queue grows by about {formatNumber(bottleneck.growthPerSecond, 2)} each second.
-                <span className="mt-0.5 block text-xs text-muted-foreground">
-                  Mean queue depth by quarter of the measured window: {bottleneck.meanDepthByQuarter?.map((q) => formatNumber(q, 1)).join(' → ')}. Depth when the arrivals stop: {formatNumber(bottleneck.depthAtEndOfArrivals)}.
-                </span>
-              </p>
-            ) : (
-              <p className="rounded-md border border-border px-3 py-2 text-sm text-foreground">None found. No queue grows through the measured window.</p>
-            )}
+          {olderEngine && (
+            <p role="status" className="rounded-md border border-[var(--trace-retry)]/60 px-3 py-2 text-xs text-foreground">
+              This run is from engine version {result.engineVersion}. In that version the completed work and the throughput of an element include calls that failed and calls that nobody waited for, and the bottleneck rule is another one. The numbers below are the numbers that it stored.
+            </p>
+          )}
+
+          <Section id="stress-bottleneck" title="Bottleneck" note={[bottleneck.rule, bottleneck.growthRule].filter(Boolean).join(' ')}>
+            <BottleneckStatement result={result} resources={resources} />
           </Section>
 
           <Section id="stress-latency" title="Latency" note={`${result.methods.percentiles} ${result.flow.latency.reservoir || resources.some((r) => r.latency.reservoir) ? `* ${result.methods.sampling}` : ''}`}>
@@ -227,11 +306,11 @@ export function StressResultDialog({ projectId, profileName, run, runs, onClose 
             </div>
           </Section>
 
-          <Section id="stress-resources" title="Utilisation and queues" note="Utilisation and queue depth cover the time from the end of the warm-up to the end of the arrivals.">
+          <Section id="stress-resources" title="Utilisation and queues" note="Utilisation and queue depth cover the time from the end of the warm-up to the end of the arrivals. Completed is work that ended with success. Wasted is calls that an element finished after their caller had given up. Failed inside is calls that held a worker and failed because a step inside them failed.">
             <div className="overflow-x-auto rounded-md border border-border">
               <table className="w-full border-collapse text-xs text-muted-foreground">
                 <thead>
-                  <tr>{['', 'Workers', 'Utilisation', 'Mean wait', 'Mean queue', 'Max queue', 'Rejected', 'Dropped', 'Dead-lettered', 'Wasted'].map((h, i) => <th key={i} scope="col" className={th}>{h}</th>)}</tr>
+                  <tr>{['', 'Workers', 'Utilisation', 'Mean wait', 'Mean queue', 'Max queue', 'Noise bound', 'Completed', 'Rejected', 'Dropped', 'Dead-lettered', 'Wasted', 'Failed inside'].map((h, i) => <th key={i} scope="col" className={th}>{h}</th>)}</tr>
                 </thead>
                 <tbody>
                   {resources.map((r) => (
@@ -239,7 +318,9 @@ export function StressResultDialog({ projectId, profileName, run, runs, onClose 
                       <th scope="row" className={`${td} font-normal text-foreground`}>
                         {r.name}
                         <span className="ml-1.5 text-[10px] text-muted-foreground">{r.kind === 'subscription' ? 'consumers' : 'element'}</span>
-                        {bottleneck.id === r.id && <span className="ml-1.5 rounded-full border border-[var(--trace-retry)] px-1.5 text-[10px] text-[var(--trace-retry)]">bottleneck</span>}
+                        {bottleneck.id === r.id
+                          ? <span className="ml-1.5 rounded-full border border-[var(--trace-retry)] px-1.5 text-[10px] text-[var(--trace-retry)]">bottleneck</span>
+                          : r.saturation?.saturated && <span className="ml-1.5 rounded-full border border-border px-1.5 text-[10px] text-muted-foreground">saturated</span>}
                       </th>
                       <td className={td}>{r.workers}</td>
                       <td className={`${td} text-foreground`}>
@@ -251,10 +332,13 @@ export function StressResultDialog({ projectId, profileName, run, runs, onClose 
                       <td className={td}>{formatMs(r.wait.meanMs)}</td>
                       <td className={td}>{formatNumber(r.queue.meanDepth, 1)}</td>
                       <td className={td}>{formatNumber(r.queue.maxDepth)}{r.queueCapacity !== null ? ` of ${r.queueCapacity}` : ''}</td>
+                      <td className={td}>{formatNumber(r.saturation?.noiseBound)}</td>
+                      <td className={td}>{formatNumber(r.counts.completed)}</td>
                       <td className={td}>{r.kind === 'element' ? formatNumber(r.counts.rejected) : '–'}</td>
                       <td className={td}>{r.kind === 'subscription' ? formatNumber(r.counts.dropped) : '–'}</td>
                       <td className={td}>{r.kind === 'subscription' ? formatNumber(r.counts.deadLettered) : '–'}</td>
                       <td className={td}>{r.kind === 'element' ? formatNumber(r.wastedCount) : '–'}</td>
+                      <td className={td}>{r.kind === 'element' ? formatNumber(r.failedInside) : '–'}</td>
                     </tr>
                   ))}
                 </tbody>

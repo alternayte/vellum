@@ -82,6 +82,26 @@ export interface LatencySummary {
   maxMs: number | null
 }
 
+/** A time in which work waited at a resource without a break. `toMs` is null when work still waited at the end of the run. */
+export interface BacklogWindow { fromMs: number; toMs: number | null; peakDepth: number; peakAtMs: number }
+
+/** What the saturation rule found for one resource. `queueGrows` is a statement of its own. */
+export interface Saturation {
+  saturated: boolean
+  turnedAway: number
+  firstTurnedAwayMs: number | null
+  lastTurnedAwayMs: number | null
+  arrivals: number
+  arrivalVariation: number
+  serviceVariation: number
+  noiseBound: number
+  windows: BacklogWindow[]
+  moreWindows: boolean
+  depthAtMidWindow: number
+  queueGrows: boolean
+  growthPerSecond: number | null
+}
+
 export interface ResourceStats {
   label: string
   id: string
@@ -101,6 +121,10 @@ export interface ResourceStats {
   queue: { meanDepth: number; meanDepthByQuarter: number[]; maxDepth: number; depthAtEndOfArrivals: number }
   wait: LatencySummary
   latency: LatencySummary
+  /** Calls that held a worker and failed because a step inside them failed. Null in a result of engine version 1. */
+  failedInside: number | null
+  /** Null in a result of engine version 1. */
+  saturation: Saturation | null
 }
 
 export interface OperationStats {
@@ -151,16 +175,32 @@ export interface StressResult {
     name: string | null
     kind: string | null
     utilisation: number | null
-    meanDepthByQuarter: number[] | null
-    depthAtEndOfArrivals: number | null
-    growthPerSecond: number | null
+    /** Every saturated resource in the order of the rule. Null in a result of engine version 1. */
+    saturated: string[] | null
     rule: string
+    growthRule: string | null
+    /** Only a result of engine version 1 has the next three. */
+    meanDepthByQuarter?: number[] | null
+    depthAtEndOfArrivals?: number | null
+    growthPerSecond?: number | null
   }
   assumptions: { group: string; target: string | null; name: string; field: string; value: string; unit: string; label: AssumptionLabel; measurementRef: string | null }[]
   overrides: { target: string; name: string; field: string; modelValue: number; profileValue: number; label: AssumptionLabel; measurementRef: string | null }[]
   unmodelled: { code: string; kind: 'fixed' | 'run'; text: string }[]
   confidence: { level: 'low' | 'medium'; rule: string; reasons: string[] }
   methods: { percentiles: string; counting: string; sampling: string; time: string }
+  /** The limits that the run used. They are inputs of the result. Null in a result of engine version 1. */
+  limits: {
+    maxDurationSeconds: number
+    maxDrainSeconds: number
+    maxArrivals: number
+    maxEvents: number
+    maxQueued: number
+    maxPendingEvents: number
+    maxSamples: number
+    maxSeriesPoints: number
+    maxTargets: number
+  } | null
   hash: string
 }
 
@@ -205,6 +245,8 @@ export interface StressComparison {
   metrics: { scope: string; target: string | null; name: string; metric: string; unit: string; left: number | null; right: number | null; delta: number | null }[]
   inputs: { input: string; target: string | null; name: string; left: string | null; right: string | null }[]
   note: string
+  /** True only when the two runs have the same result hash. */
+  sameResult: boolean
 }
 
 /** A run that was refused or that passed a limit. Nothing was stored; the issues say why. */

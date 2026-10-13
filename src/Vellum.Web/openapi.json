@@ -11473,6 +11473,50 @@
           }
         }
       },
+      "BacklogWindow": {
+        "required": [
+          "fromMs",
+          "toMs",
+          "peakDepth",
+          "peakAtMs"
+        ],
+        "type": "object",
+        "properties": {
+          "fromMs": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "toMs": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "peakDepth": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "peakAtMs": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          }
+        }
+      },
       "BindingDto": {
         "required": [
           "id",
@@ -11572,10 +11616,9 @@
           "name",
           "kind",
           "utilisation",
-          "meanDepthByQuarter",
-          "depthAtEndOfArrivals",
-          "growthPerSecond",
-          "rule"
+          "saturated",
+          "rule",
+          "growthRule"
         ],
         "type": "object",
         "properties": {
@@ -11613,6 +11656,25 @@
             ],
             "format": "double"
           },
+          "saturated": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "rule": {
+            "type": "string"
+          },
+          "growthRule": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
           "meanDepthByQuarter": {
             "type": [
               "null",
@@ -11644,9 +11706,6 @@
               "string"
             ],
             "format": "double"
-          },
-          "rule": {
-            "type": "string"
           }
         }
       },
@@ -13815,6 +13874,94 @@
               "string"
             ],
             "format": "int64"
+          }
+        }
+      },
+      "EffectiveLimits": {
+        "required": [
+          "maxDurationSeconds",
+          "maxDrainSeconds",
+          "maxArrivals",
+          "maxEvents",
+          "maxQueued",
+          "maxPendingEvents",
+          "maxSamples",
+          "maxSeriesPoints",
+          "maxTargets"
+        ],
+        "type": "object",
+        "properties": {
+          "maxDurationSeconds": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "maxDrainSeconds": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "maxArrivals": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "maxEvents": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "maxQueued": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "maxPendingEvents": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "maxSamples": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "maxSeriesPoints": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "maxTargets": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
           }
         }
       },
@@ -19318,7 +19465,9 @@
           "throughputPerSecond",
           "queue",
           "wait",
-          "latency"
+          "latency",
+          "failedInside",
+          "saturation"
         ],
         "type": "object",
         "properties": {
@@ -19427,6 +19576,25 @@
           },
           "latency": {
             "$ref": "#/components/schemas/LatencySummary"
+          },
+          "failedInside": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "saturation": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/Saturation"
+              }
+            ]
           }
         }
       },
@@ -19837,6 +20005,116 @@
             "additionalProperties": {
               "type": "string"
             }
+          }
+        }
+      },
+      "Saturation": {
+        "required": [
+          "saturated",
+          "turnedAway",
+          "firstTurnedAwayMs",
+          "lastTurnedAwayMs",
+          "arrivals",
+          "arrivalVariation",
+          "serviceVariation",
+          "noiseBound",
+          "windows",
+          "moreWindows",
+          "depthAtMidWindow",
+          "queueGrows",
+          "growthPerSecond"
+        ],
+        "type": "object",
+        "properties": {
+          "saturated": {
+            "type": "boolean"
+          },
+          "turnedAway": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "firstTurnedAwayMs": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "lastTurnedAwayMs": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "arrivals": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "arrivalVariation": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "serviceVariation": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "noiseBound": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "windows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BacklogWindow"
+            }
+          },
+          "moreWindows": {
+            "type": "boolean"
+          },
+          "depthAtMidWindow": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "queueGrows": {
+            "type": "boolean"
+          },
+          "growthPerSecond": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ],
+            "format": "double"
           }
         }
       },
@@ -21720,7 +21998,8 @@
           "right",
           "metrics",
           "inputs",
-          "note"
+          "note",
+          "sameResult"
         ],
         "type": "object",
         "properties": {
@@ -21747,6 +22026,9 @@
           },
           "note": {
             "type": "string"
+          },
+          "sameResult": {
+            "type": "boolean"
           }
         }
       },
@@ -22037,6 +22319,7 @@
           "unmodelled",
           "confidence",
           "methods",
+          "limits",
           "hash"
         ],
         "type": "object",
@@ -22112,6 +22395,16 @@
           },
           "methods": {
             "$ref": "#/components/schemas/StressMethods"
+          },
+          "limits": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/EffectiveLimits"
+              }
+            ]
           },
           "hash": {
             "type": "string"

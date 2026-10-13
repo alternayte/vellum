@@ -209,8 +209,11 @@ public class StressEngineTests
         Near(0.1260, (double)server.Counts.Rejected / server.Arrived, 0.01);
         Assert.Equal(server.Counts.Rejected, result.Flow.Counts.Failed);
         Assert.True(server.Queue.MaxDepth <= 4);
-        // A full queue does not grow, so the rule names no bottleneck. The rejections say what happens.
-        Assert.False(result.Bottleneck.Found);
+        // The server turned work away, so it is saturated. Its queue is full and does not grow: the two statements are apart.
+        Assert.True(result.Bottleneck.Found);
+        Assert.Equal(Server.Value, result.Bottleneck.Id);
+        Assert.True(server.Saturation!.TurnedAway >= server.Counts.Rejected && server.Counts.Rejected > 0);
+        Assert.False(server.Saturation.QueueGrows);
     }
 
     [Fact]
@@ -227,14 +230,119 @@ public class StressEngineTests
         Assert.True(result.Bottleneck.Found);
         Assert.Equal(Server.Value, result.Bottleneck.Id);
         Assert.Equal("element", result.Bottleneck.Kind);
-        Near(20, result.Bottleneck.GrowthPerSecond, 3);
+        Assert.Equal([Server.Value], result.Bottleneck.Saturated);
+        // The growth statement: 1 000 more wait at 100 s than at 50 s. The difference of the two depths has
+        // a deviation near sqrt(220 * 50) = 105, so the rate has one near 2 per second.
+        var saturation = server.Saturation!;
+        Assert.True(saturation.QueueGrows);
+        Near(20, saturation.GrowthPerSecond, 6);
+        Near(1000, saturation.DepthAtMidWindow, 300);
+        // One backlog window: work waits from the first moments to the end of the drain, and the peak is at the end of the arrivals.
+        var window = Assert.Single(saturation.Windows);
+        Assert.True(window.FromMs < 5_000 && window.ToMs > 100_000, $"window {window}");
+        Near(2000, window.PeakDepth, 300);
+        Assert.Equal(0, saturation.TurnedAway);
         // The quarters of a line through zero are in the ratio 1 : 3 : 5 : 7.
-        var quarters = result.Bottleneck.MeanDepthByQuarter!;
+        var quarters = server.Queue.MeanDepthByQuarter;
         Near(7, quarters[3] / quarters[0], 2.5);
         // 2 000 waiting calls at 100 per second take about 20 s to drain.
         Assert.True(result.Drain.Drained);
         Near(20_000, result.Drain.TimeToDrainMs, 3_500);
         Assert.Equal("estimated", result.Bottleneck.Label);
+    }
+
+    // ---- The saturation rule ----
+
+    [Fact]
+    public void A_burst_that_ends_inside_the_run_is_reported_as_saturation_with_its_window()
+    {
+        // 50 per second against 100 per second of capacity, and 300 per second from 100 s to 200 s.
+        // The queue grows by 200 per second for 100 s, to 20 000 (deviation sqrt(400 * 100) = 200). Then it
+        // falls by 50 per second: 10 000 are left when the arrivals stop at 400 s, and the server needs
+        // 100 s more for them. The mean utilisation of the window is 0.875: the old rule saw no bottleneck.
+        var arrivals = new Arrivals(ArrivalKind.Burst, 50, null, [new BurstWindow(100, 200, 300)], 400, 0);
+        var result = Run(Model(), Flow(CallServe()), Profile(arrivals, Exponential(10)));
+        var server = Assert.Single(result.Elements);
+        var saturation = server.Saturation!;
+
+        Assert.True(result.Bottleneck.Found);
+        Assert.Equal(Server.Value, result.Bottleneck.Id);
+        Near(0.875, server.Utilisation, 0.02);
+        Assert.True(saturation.Saturated);
+        var window = Assert.Single(saturation.Windows);
+        Near(100_000, window.FromMs, 1_000);
+        Near(500_000, window.ToMs, 20_000);
+        Near(20_000, window.PeakDepth, 1_000);
+        Near(200_000, window.PeakAtMs, 2_000);
+        Assert.True(window.PeakDepth >= saturation.NoiseBound && saturation.NoiseBound < 2_000, $"bound {saturation.NoiseBound}");
+        Near(10_000, server.Queue.DepthAtEndOfArrivals, 1_000);
+        // The backlog shrinks at the end of the arrivals: saturated, and the queue does not grow.
+        Assert.False(saturation.QueueGrows);
+        Assert.Null(saturation.GrowthPerSecond);
+        Assert.Equal(0, saturation.TurnedAway);
+    }
+
+    [Fact]
+    public void A_full_bounded_queue_that_rejects_half_of_the_work_is_saturated_and_does_not_grow()
+    {
+        // 200 per second against 100 per second and 10 waiting places: about half of the calls find the queue full.
+        var result = Run(Model(), Flow(CallServe()), Profile(Poisson(200, 300, 10), Exponential(10), queue: 10));
+        var server = Assert.Single(result.Elements);
+        var saturation = server.Saturation!;
+
+        Assert.True(server.Utilisation > 0.99, $"utilisation {server.Utilisation}");
+        Near(0.5, (double)server.Counts.Rejected / server.Arrived, 0.02);
+        Assert.True(result.Bottleneck.Found);
+        Assert.Equal(Server.Value, result.Bottleneck.Id);
+        Assert.True(saturation.Saturated);
+        Assert.True(saturation.TurnedAway >= server.Counts.Rejected);
+        Assert.True(saturation.FirstTurnedAwayMs >= 10_000 && saturation.LastTurnedAwayMs > 299_000, $"{saturation.FirstTurnedAwayMs} to {saturation.LastTurnedAwayMs}");
+        Assert.True(server.Queue.MaxDepth <= 10);
+        Assert.False(saturation.QueueGrows);
+    }
+
+    [Theory]
+    // A steady M/M/1 queue has spare capacity: the rule must not name it. The rule has three parts with a
+    // chance of at most 1 % each (the upper point of the utilisation, the depth of a steady queue, the depth at
+    // full load), so a run names the server with a chance of at most 3 %: 6 of 200 runs on average. The test
+    // allows 10 of 200, which is 5 %. The unions and the ratio s are on the safe side, so the measured count is
+    // far below it: 0 of 200 in each of the three cases.
+    [InlineData(80, 60)]
+    [InlineData(90, 60)]
+    [InlineData(95, 600)]
+    public void A_steady_M_M_1_queue_is_named_in_at_most_10_of_200_seeds(double lambda, double duration)
+    {
+        var named = 0;
+        var growing = 0;
+        for (var seed = 1; seed <= 200; seed++)
+        {
+            var result = Run(Model(), Flow(CallServe()), Profile(Poisson(lambda, duration), Exponential(10), seed: seed.ToString()));
+            if (result.Bottleneck.Found) named++;
+            if (result.Elements[0].Saturation!.QueueGrows) growing++;
+        }
+
+        Assert.True(named <= 10, $"named in {named} of 200 seeds");
+        // The growth statement needs the same bound, so it is not made more often.
+        Assert.True(growing <= named, $"growing in {growing} of 200 seeds");
+    }
+
+    [Fact]
+    public void The_noise_bound_follows_its_formula()
+    {
+        // v = 1, u = 0.9, n = 5 400: w = 0.9 (1 + 2.326 sqrt(2 / 5 400)) = 0.940294, s = exp(-0.059706) = 0.942041,
+        // n (1 - s) + 1 / (1 - s) = 313.0 + 17.3 = 330.2, allowed = 0.01 / 330.2 = 3.028e-5.
+        // (1 - s) s^(d - 1) / (1 - s^d) is 3.134e-5 at d = 127 and 2.953e-5 at d = 128. At full load: 2.576 sqrt(10 800) = 268.
+        Assert.Equal(128, StressEngine.NoiseBound(5_400, 0.9, 1, 1_000_000));
+        // At a utilisation of 1 only the depth at full load has a value: 2.576 sqrt(40 000) = 515.2.
+        Assert.Equal(516, StressEngine.NoiseBound(20_000, 1, 1, 1_000_000));
+        // Few arrivals at a low utilisation: w = 0.5 (1 + 2.326 sqrt(2 / 50)) = 0.7326, and the depth of the steady queue, 24,
+        // is below the depth at full load, 2.576 sqrt(100) = 25.8.
+        Assert.Equal(24, StressEngine.NoiseBound(50, 0.5, 1, 1_000_000));
+        // No variation: a queue with spare capacity is empty, and the bound is its least value.
+        Assert.Equal(2, StressEngine.NoiseBound(20, 1, 0, 1_000_000));
+        // More variation gives a higher bound, and no bound is above the cap.
+        Assert.Equal(273, StressEngine.NoiseBound(5_400, 0.9, 2, 1_000_000));
+        Assert.Equal(50, StressEngine.NoiseBound(5_400, 0.9, 1, 50));
     }
 
     // ---- Determinism ----
@@ -314,9 +422,48 @@ public class StressEngineTests
         Assert.Equal(10, operation.Wasted);
         Assert.Equal(10, server.WastedCount);
         Assert.Equal(3000.0, server.WastedMs);
+        // The server finished ten calls that nobody waited for. None of them is completed work or throughput.
+        Assert.Equal(0, server.Counts.Completed);
+        Assert.Equal(0.0, server.ThroughputPerSecond);
+        Assert.Equal(0, server.FailedInside);
         // The worker did the work: 300 ms of each second.
         Assert.Equal(0.3, server.Utilisation, 12);
         Assert.Equal(200, operation.TimeoutMs);
+    }
+
+    [Fact]
+    public void A_call_that_fails_inside_holds_a_worker_and_is_not_completed_work()
+    {
+        // Each call does 50 ms of service and then writes to a store that is down for the whole run.
+        var scenario = Flow(CallServe(new WriteStep("save", Server, Store, "orders", null)));
+        var profile = new StressProfile("Nested", G(99), "1", Constant(1, 10),
+            [new(Server, 1, null), new(Store, 1, null)],
+            [new(Serve, Fixed(50)), new(Store, Fixed(150))], [], [], [], [new Outage(Store, 0, 100)]);
+        var result = Run(Model(), scenario, profile);
+        var server = result.Elements.Single(e => e.Id == Server.Value);
+
+        Assert.Equal(new Counts(0, 10, 0, 0, 0, 0), result.Flow.Counts);
+        Assert.Equal(0, server.Counts.Completed);
+        Assert.Equal(0.0, server.ThroughputPerSecond);
+        Assert.Equal(10, server.FailedInside);
+        Assert.Equal(0, server.WastedCount);
+        // The worker was busy all the same.
+        Assert.Equal(0.05, server.Utilisation, 12);
+    }
+
+    [Fact]
+    public void The_run_ends_at_the_last_instant_with_open_work_not_at_a_timer_that_found_nothing_to_do()
+    {
+        // Two calls of 100 ms, at 0 s and at 1 s, with a timeout of one minute. Both timers fire long after the calls ended.
+        var result = Run(Model(timeoutMs: 60_000), Flow(CallServe()), Profile(Constant(1, 2), Fixed(100)));
+
+        Assert.Equal(1_100.0, result.Window.EndedAtMs);
+        Assert.True(result.Drain.Drained);
+        Assert.Equal(0.0, result.Drain.TimeToDrainMs);
+
+        // Work that is left at the drain limit: the run ends at that limit.
+        var cut = Run(Model(), Flow(CallServe()), Profile(Constant(10, 5), Fixed(1000)), StressLimits.Default with { MaxDrainSeconds = 1 });
+        Assert.Equal(6_000.0, cut.Window.EndedAtMs);
     }
 
     [Fact]
@@ -338,6 +485,21 @@ public class StressEngineTests
         Assert.Equal(60 + 39, operation.Attempts);
         Assert.Equal(18, operation.Exhausted);
         Assert.Contains(result.Assumptions, a => a.Group == "outage" && a.Target == Server.Value);
+    }
+
+    [Fact]
+    public void Every_assumption_row_has_a_key_of_its_own_also_with_two_outage_windows_on_one_target()
+    {
+        var (model, scenario, profile) = FanOut();
+        var result = Run(model, scenario, profile with
+        {
+            Outages = [new Outage(Server, 20, 21), new Outage(Server, 2, 4), new Outage(BillingSub, 2, 4), new Outage(Server, 2, 3)],
+        });
+
+        Assert.Equal(result.Assumptions.Count, result.Assumptions.Select(a => (a.Group, a.Target, a.Name, a.Field)).Distinct().Count());
+        Assert.Equal(
+            ["window[0]: from 2 s to 3 s", "window[1]: from 2 s to 4 s", "window[2]: from 20 s to 21 s"],
+            result.Assumptions.Where(a => a.Group == "outage" && a.Target == Server.Value).Select(a => $"{a.Field}: {a.Value}"));
     }
 
     [Fact]
@@ -501,7 +663,7 @@ public class StressEngineTests
 
         Assert.Equal(StressEngine.AlwaysUnmodelled, result.Unmodelled.Where(u => u.Kind == "fixed"));
         Assert.Contains(result.Unmodelled, u => u.Code == "scenario-faults" && u.Kind == "run");
-        foreach (var code in new[] { "network", "runtime", "autoscaling", "locks", "pools", "caches", "payload-size", "back-pressure", "correlated-failures", "clocks" })
+        foreach (var code in new[] { "network", "runtime", "autoscaling", "locks", "pools", "caches", "payload-size", "back-pressure", "correlated-failures", "clocks", "cancellation" })
             Assert.Contains(result.Unmodelled, u => u.Code == code);
 
         // Every number of the profile is a row with a label.
@@ -581,11 +743,13 @@ public class StressEngineTests
     [InlineData("arrivals-during-the-run")]
     [InlineData("events")]
     [InlineData("queued")]
+    [InlineData("pending")]
     [InlineData("targets")]
     [InlineData("wall-clock")]
     public void A_run_over_a_limit_stops_with_stress_too_large_and_names_the_limit(string which)
     {
         var limits = StressLimits.Default;
+        var model = Model();
         var profile = Profile(Poisson(100, 60), Exponential(1));
         using var cancelled = new CancellationTokenSource();
         var expected = which;
@@ -597,13 +761,37 @@ public class StressEngineTests
             case "arrivals-during-the-run": limits = limits with { MaxArrivals = 6_000 }; profile = profile with { Seed = "5" }; expected = "arrivals"; break;
             case "events": limits = limits with { MaxEvents = 10_000 }; break;
             case "queued": limits = limits with { MaxQueued = 50 }; profile = Profile(Poisson(100, 60), Fixed(1000)); break;
+            // Each call leaves a timer for ten seconds: a thousand are scheduled at the same instant, with no work in a queue.
+            case "pending": limits = limits with { MaxPendingEvents = 500 }; model = Model(timeoutMs: 10_000); break;
             case "targets": limits = limits with { MaxTargets = 1 }; break;
             default: cancelled.Cancel(); break;
         }
 
-        var issue = Refused(Model(), Flow(CallServe()), profile, limits, cancelled.Token);
+        var issue = Refused(model, Flow(CallServe()), profile, limits, cancelled.Token);
 
         Assert.Equal(("stress-too-large", expected), (issue.Code, issue.Limit));
+    }
+
+    [Fact]
+    public void The_limits_of_a_run_are_in_its_result_and_in_its_hash()
+    {
+        var profile = Profile(Poisson(20, 20), Exponential(10));
+        var result = Run(Model(), Flow(CallServe()), profile);
+        var defaults = StressLimits.Default;
+
+        Assert.Equal(
+            new EffectiveLimits(defaults.MaxDurationSeconds, defaults.MaxDrainSeconds, defaults.MaxArrivals, defaults.MaxEvents,
+                defaults.MaxQueued, defaults.MaxPendingEvents, defaults.MaxSamples, defaults.MaxSeriesPoints, defaults.MaxTargets),
+            result.Limits);
+
+        // A limit that changes the numbers and a limit that only decides whether there is a result: both change the hash.
+        var fewerPoints = Run(Model(), Flow(CallServe()), profile, defaults with { MaxSeriesPoints = 60 });
+        var moreEvents = Run(Model(), Flow(CallServe()), profile, defaults with { MaxEvents = defaults.MaxEvents + 1 });
+        Assert.NotEqual(result.Hash, fewerPoints.Hash);
+        Assert.NotEqual(result.Hash, moreEvents.Hash);
+        Assert.Equal(result.Flow.Latency, moreEvents.Flow.Latency);
+        // Real time decides whether there is a result and is no part of it.
+        Assert.Equal(result.Hash, Run(Model(), Flow(CallServe()), profile, defaults with { WallClock = TimeSpan.FromSeconds(5) }).Hash);
     }
 
     [Fact]
@@ -656,6 +844,11 @@ public class StressEngineTests
             (good with { Branches = [new BranchAssumption("b", 1.5)] }, "branches[0].probability"),
             (good with { Overrides = [new PolicyOverride(Serve, null, 11, null)] }, "overrides[0].maxAttempts"),
             (good with { Outages = [new Outage(Server, 5, 5)] }, "outages[0]"),
+            // A measured window that rounds to less than a millisecond has no rate and no utilisation.
+            (good with { Arrivals = Poisson(10, 1e-10) }, "arrivals.durationSeconds"),
+            (good with { Arrivals = Poisson(10, 0.0004) }, "arrivals.durationSeconds"),
+            (good with { Arrivals = Poisson(10, 60, 59.9999999999) }, "arrivals.warmUpSeconds"),
+            (good with { Arrivals = Poisson(10, 60, 59.9995) }, "arrivals.warmUpSeconds"),
         ];
 
         foreach (var (profile, field) in cases)
