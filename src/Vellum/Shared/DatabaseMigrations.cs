@@ -11,6 +11,7 @@ using Vellum.Modules.Promises;
 using Vellum.Modules.Schemas;
 using Vellum.Modules.Scoring;
 using Vellum.Modules.Settings;
+using Vellum.Modules.Stress;
 using Vellum.Modules.Trace.Scenarios;
 using Vellum.Modules.Views;
 using Vellum.Modules.Workspaces;
@@ -46,6 +47,7 @@ public static class DatabaseMigrations
         ("import", typeof(ImportDbContext)),
         ("ai-design", typeof(AiDesignDbContext)),
         ("promises", typeof(PromisesDbContext)),
+        ("stress", typeof(StressDbContext)),
     ];
 
     public static async Task ApplyAsync(IServiceProvider services, string connectionString, CancellationToken ct = default)

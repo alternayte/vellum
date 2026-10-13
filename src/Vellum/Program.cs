@@ -29,6 +29,7 @@ using Vellum.Modules.Settings.Crypto;
 using Vellum.Modules.Settings.Instance;
 using Vellum.Modules.Settings.Entities;
 using Vellum.Modules.Settings.Setup;
+using Vellum.Modules.Stress;
 using Vellum.Modules.Trace.Scenarios;
 using Vellum.Modules.Views;
 using Vellum.Modules.Workspaces;
@@ -117,6 +118,7 @@ builder.Services.AddAiModule();
 builder.Services.AddImportModule(runWorker: !generatingOpenApi);
 builder.Services.AddPromisesModule();
 builder.Services.AddBuildModule();
+builder.Services.AddStressModule();
 
 // Command handlers (Scrutor scan)
 builder.Services.Scan(s => s.FromAssemblyOf<Program>()
@@ -180,6 +182,7 @@ app.MapAiEndpoints();
 app.MapImportEndpoints();
 app.MapPromiseEndpoints();
 app.MapBuildEndpoints();
+app.MapStressEndpoints();
 
 if (!generatingOpenApi && app.Configuration.GetValue("Database:MigrateOnStartup", true))
 {
