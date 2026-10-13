@@ -95,6 +95,8 @@ A scan reads one commit. It runs no code from the repository. It does not change
 5. Select **Select all without conflicts**.
 6. Select **Accept 21**.
 
+![The dialog Review acme/orders with the proposal POST /orders open. A table lists the fields that the source gives. Below it are lines 40 to 49 of orders-api/Program.cs and the rule dotnet.minimal-api-route.](../../../assets/screenshots/import-proposal-review.png)
+
 Vellum writes the 21 facts to the model. Each fact gets the label `observed-in-source`, the commit, the file and the lines, and your account as the person who accepted it.
 
 To refuse a proposal, select it and select **Reject selected**. A later scan does not propose a rejected fact again while the source stays the same.
@@ -106,6 +108,8 @@ The link **GitHub** on a source line opens the file on the web address of the re
 1. Close the dialog and the flyout. The canvas shows the system `orders`.
 2. Right-click `orders` and select **Drill into**. The canvas shows `Orders.Api`, `Billing`, `inventory-worker` and `postgres`.
 3. Select **Contracts** in the left toolbar. **Operations**, **Channels** and **Subscriptions** list what you accepted.
+
+![The canvas at the level Context, orders. It shows the apps Billing, inventory-worker and Orders.Api and the store postgres. No line connects them.](../../../assets/screenshots/canvas-orders-system.png)
 
 Three things are true about this model:
 
