@@ -20,6 +20,7 @@ public static class OutboundServices
     public static IServiceCollection AddOutbound(this IServiceCollection services)
     {
         services.TryAddSingleton(OutboundLimits.Default);
+        services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton<SocketDialer>(PinnedConnector.DialSocketAsync);
         services.TryAddSingleton<PinnedConnector>();
         services.TryAddSingleton<OutboundPrimaryHandlerFactory>(provider =>

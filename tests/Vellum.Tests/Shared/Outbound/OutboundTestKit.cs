@@ -157,6 +157,8 @@ public sealed class OutboundHost : IDisposable
     internal RoutedTransport Transport { get; } = new();
     internal LogCapture Logs { get; } = new();
     internal ConcurrentQueue<TimeSpan> Waits { get; } = new();
+    /// <summary>The address of a host name that is not on the public internet.</summary>
+    internal ConcurrentDictionary<string, string> Addresses { get; } = new(StringComparer.OrdinalIgnoreCase);
 
     public WebApplicationFactory<Program> Factory { get; }
 
@@ -165,6 +167,10 @@ public sealed class OutboundHost : IDisposable
         Factory = TestHost.Create(fixture.ConnectionString, settings, services =>
         {
             services.AddSingleton<OutboundPrimaryHandlerFactory>(_ => () => Transport);
+            // The pipeline resolves every host name once. No test reaches DNS: a name has a
+            // public address unless a test puts another one into Addresses.
+            services.AddSingleton<Vellum.Shared.HostResolver>(_ => (host, _) =>
+                Task.FromResult(new[] { IPAddress.Parse(Addresses.GetValueOrDefault(host, "93.184.216.34")) }));
             services.AddSingleton(OutboundLimits.Default with
             {
                 Delay = (wait, _) =>
@@ -172,6 +178,8 @@ public sealed class OutboundHost : IDisposable
                     Waits.Enqueue(wait);
                     return Task.CompletedTask;
                 },
+                // No jitter, so a backoff has its full length.
+                Jitter = () => 0,
             });
             services.AddLogging(logging => logging.AddProvider(Logs).SetMinimumLevel(LogLevel.Debug));
             configure?.Invoke(services);

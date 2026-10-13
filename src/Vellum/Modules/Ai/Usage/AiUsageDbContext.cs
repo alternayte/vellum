@@ -19,25 +19,34 @@ public class UsageRecordEntity
     public string Task { get; set; } = null!;
     public string Purpose { get; set; } = null!;
     public string PromptTemplateVersion { get; set; } = null!;
-    /// <summary>Null when the provider did not report it.</summary>
+    /// <summary>Null when the provider did not report it, or reported a number that is not a sane count.</summary>
     public int? InputTokens { get; set; }
     public int? OutputTokens { get; set; }
     /// <summary>
-    /// Null when unknown: a token count is missing or the model has no price. Zero when the
-    /// provider rejected the request before it generated anything.
+    /// Never negative. Null when the model has no price. Zero when the provider refused the
+    /// request before it generated anything. An estimate, with <see cref="UsageNote"/> set,
+    /// when the provider may have generated output and a token count is missing or not sane.
     /// </summary>
     public decimal? CostUsd { get; set; }
     /// <summary>
     /// The most the call can cost, set when the model has a price. It counts against a
-    /// budget while the cost is unknown and is cleared when the cost is known.
+    /// budget only while the call runs: every end of a call clears it.
     /// </summary>
     public decimal? ReservedUsd { get; set; }
     public int? DurationMs { get; set; }
     /// <summary>
     /// <c>started</c>, then one of <c>succeeded</c>, <c>invalid_output</c>, <c>truncated</c>,
-    /// <c>refused</c>, <c>provider_error</c>, <c>rate_limited</c>, <c>timed_out</c>, <c>cancelled</c>.
+    /// <c>refused</c>, <c>provider_error</c>, <c>rate_limited</c>, <c>timed_out</c>,
+    /// <c>cancelled</c>, <c>failed</c> (an exception inside Vellum), or <c>abandoned</c> (the
+    /// process died during the call and a later admission released the row).
     /// </summary>
     public string Outcome { get; set; } = null!;
+    /// <summary>
+    /// Null, or why the cost and the counts are not the provider's own: <c>cost_estimated</c>
+    /// (a count was missing), <c>usage_out_of_range</c> (a count was negative or absurd and
+    /// was dropped) or <c>reaped</c> (the row was abandoned).
+    /// </summary>
+    public string? UsageNote { get; set; }
     public string? ErrorCode { get; set; }
     public DateTimeOffset StartedAt { get; set; }
     public string? ActorId { get; set; }
@@ -83,6 +92,7 @@ public class AiUsageDbContext : DbContext
             b.Property(r => r.ReservedUsd).HasPrecision(18, 8);
             b.Property(r => r.Outcome).HasMaxLength(40);
             b.Property(r => r.ErrorCode).HasMaxLength(60);
+            b.Property(r => r.UsageNote).HasMaxLength(40);
             b.HasIndex(r => new { r.WorkspaceId, r.StartedAt });
             b.HasIndex(r => new { r.WorkspaceId, r.ProviderId, r.StartedAt });
         });

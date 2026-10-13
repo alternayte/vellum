@@ -22,7 +22,7 @@ public class OutboundPipelineTests
         services.AddLogging();
         services.AddSingleton(resolver);
         services.AddSingleton<OutboundUrlPolicy>();
-        services.AddSingleton(OutboundLimits.Default with { Delay = (_, _) => Task.CompletedTask });
+        services.AddSingleton(OutboundLimits.Default with { Delay = (_, _) => Task.CompletedTask, Jitter = () => 0 });
         configure?.Invoke(services);
         services.AddOutbound();
         services.AddOutboundClient<IGitHubApi>();
@@ -31,7 +31,7 @@ public class OutboundPipelineTests
     }
 
     private static OutboundCall Call(string baseUrl, bool allowPrivateNetwork) =>
-        new("github", "rate-limit", new Uri(baseUrl), allowPrivateNetwork, TimeSpan.FromSeconds(60))
+        new("github", "rate-limit", new Uri(baseUrl), allowPrivateNetwork, RequireHttps: false, TimeSpan.FromSeconds(60))
         {
             Credential = new OutboundCredential("Authorization", "Bearer", "pipeline-test-secret"),
         };
@@ -42,7 +42,7 @@ public class OutboundPipelineTests
     [InlineData("https://mixed.example", "93.184.216.34,192.168.1.10")]
     [InlineData("http://127.0.0.1:5432", null)]
     [InlineData("http://[::1]:8080", null)]
-    [InlineData("http://localhost:5195", null)]
+    [InlineData("http://localhost:5195", "127.0.0.1")]
     public async Task A_hosted_instance_refuses_a_base_url_that_reaches_a_private_address(string baseUrl, string? resolvesTo)
     {
         var stub = new StubTransport().Json("{}");
