@@ -596,7 +596,9 @@ function UsageTable({ workspaceId, providers }: { workspaceId: string; providers
                   <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">{tokens(row.inputTokens)}</td>
                   <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">{tokens(row.outputTokens)}</td>
                   <td className="px-3 py-2 text-right tabular-nums">
-                    {row.costUsd === null ? 'unknown' : `${row.costKnown ? '' : 'at least '}$${row.costUsd.toFixed(4)}`}
+                    {row.costUsd === null
+                      ? 'unknown'
+                      : `${row.costKnown ? '' : 'at least '}${row.costEstimated ? 'up to ' : ''}$${row.costUsd.toFixed(4)}`}
                   </td>
                 </tr>
               ))}
@@ -605,7 +607,7 @@ function UsageTable({ workspaceId, providers }: { workspaceId: string; providers
         </div>
       )}
       <p className="mt-2 text-xs text-muted-foreground">
-        A cost is an estimate from the price table of this instance. It is unknown when the model has no price or the provider reports no token count.
+        A cost is an estimate from the price table of this instance. It is unknown when the model has no price. “Up to” means the provider reported no token count, so Vellum counts the most the call could cost.
       </p>
     </section>
   )

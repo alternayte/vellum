@@ -118,6 +118,8 @@ export interface AiUsageTotal {
   outputTokens: number | null
   costUsd: number | null
   costKnown: boolean
+  /** Part of the cost comes from a ceiling, because the provider reported no token count. */
+  costEstimated: boolean
 }
 
 export interface AiUsage {
