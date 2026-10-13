@@ -57,4 +57,39 @@ public class PromiseLimitTests(IntegrationFixture fixture)
         Assert.Equal(3, (await owner.GetFromJsonAsync<JsonObject>(Url(projectId, $"/{id}/runs")))!["items"]!.AsArray().Count);
     }
 
+    [Fact]
+    public async Task Draft_writes_of_a_person_and_of_the_tokens_of_that_person_share_one_rate_window()
+    {
+        using var factory = TestHost.Create(fixture.ConnectionString,
+            configure: services => services.AddSingleton(new PromiseLimits(DraftWritesPerMinute: 4)));
+        var owner = await TestHost.SignInAsync(factory);
+        var (workspaceId, projectId) = await TestHost.CreateProjectAsync(owner);
+        var orders = await OrdersReference.SeedAsync(owner, projectId);
+        Assert.Equal(HttpStatusCode.OK, (await owner.PutAsJsonAsync(Url(projectId, "/prefix"), new { prefix = "ORD" })).StatusCode);
+        var agent = await TestHost.CreateAgentAsync(factory, owner, workspaceId, ["propose"]);
+
+        // A create and a change by the person, a create and a generation by the token: the window is full.
+        var created = await TestHost.Created(Post(owner, Url(projectId), orders.Ord014(requiresPattern: false)));
+        var id = (await created.Content.ReadFromJsonAsync<JsonObject>())!["id"]!.GetValue<Guid>();
+        Assert.Equal(HttpStatusCode.OK, (await owner.PutAsync(Url(projectId, $"/{id}"), OrdersReference.Json(orders.Ord014(requiresPattern: false)))).StatusCode);
+        await TestHost.Created(Post(agent.Client, Url(projectId), orders.Ord014(requiresPattern: false)));
+        Assert.Equal(HttpStatusCode.OK, (await Post(agent.Client, Url(projectId, $"/{id}/obligations/generate"))).StatusCode);
+
+        // Every draft write is refused then, for the token and for the person, and nothing is written.
+        foreach (var refused in new[]
+        {
+            await Post(agent.Client, Url(projectId), orders.Ord014(requiresPattern: false)),
+            await agent.Client.PutAsync(Url(projectId, $"/{id}"), OrdersReference.Json(orders.Ord014(requiresPattern: false))),
+            await Post(agent.Client, Url(projectId, $"/{id}/obligations/generate")),
+            await Post(owner, Url(projectId, $"/{id}/obligations"), new JsonObject { ["kind"] = "contract-test", ["title"] = "A test", ["recipe"] = new JsonObject { ["text"] = "Run it." } }),
+            await Post(owner, Url(projectId), orders.Ord014(requiresPattern: false)),
+        })
+        {
+            Assert.Equal(HttpStatusCode.TooManyRequests, refused.StatusCode);
+            Assert.Equal("rate_limited", (await refused.Content.ReadFromJsonAsync<JsonObject>())!["type"]!.GetValue<string>());
+            Assert.NotNull(refused.Headers.RetryAfter);
+        }
+        Assert.Equal(2, (await owner.GetFromJsonAsync<JsonObject>(Url(projectId)))!["items"]!.AsArray().Count);
+    }
+
 }

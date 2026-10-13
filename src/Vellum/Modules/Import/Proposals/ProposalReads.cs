@@ -242,10 +242,9 @@ public static class ProposalReads
     }
 
     private static int? After(string? cursor) =>
-        CursorEncoder.Decode(cursor) is { } decoded
-        && int.TryParse(decoded.SortKey, NumberStyles.None, CultureInfo.InvariantCulture, out var seq)
-            ? seq
-            : null;
+        CursorEncoder.DecodeNumber(cursor) is not { } decoded ? null
+        : decoded.Number <= int.MaxValue ? (int)decoded.Number
+        : throw new InvalidCursorException();
 
     private static List<EvidenceDto> Evidence(string repository, string commitSha, string json) =>
         [.. ProposalJson.ReadEvidence(json).Select(e => new EvidenceDto(

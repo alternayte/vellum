@@ -106,6 +106,106 @@ public class AgentTokenTests(IntegrationFixture fixture)
         Assert.Equal("approved", approved["state"]!.GetValue<string>());
     }
 
+    private static JsonObject Plan(string title) => new()
+    {
+        ["kind"] = "failure-test",
+        ["title"] = title,
+        ["recipe"] = new JsonObject
+        {
+            ["text"] = "Stop the broker, place an order, start the broker.",
+            ["plan"] = new JsonObject
+            {
+                ["steps"] = new JsonArray("Stop the broker."), ["inputs"] = new JsonArray(), ["expectedObservations"] = new JsonArray("The event is published."),
+                ["forbiddenObservations"] = new JsonArray(), ["contractIds"] = new JsonArray(),
+            },
+        },
+    };
+
+    /// <summary>
+    /// What a token writes names the token, and a token deletes, changes and removes only
+    /// what agent tokens alone wrote. The origin of a promise says who wrote it first; the
+    /// draft says who changed it last, so the person who approves sees a change by an agent.
+    /// </summary>
+    [Fact]
+    public async Task A_change_by_a_token_names_the_token_and_a_token_removes_only_what_agents_alone_wrote()
+    {
+        var (factory, owner, workspaceId, projectId) = await StartAsync();
+        using var _ = factory;
+        var agent = await TestHost.CreateAgentAsync(factory, owner, workspaceId, ["read", "propose"]);
+        var token = $"agent-token:{agent.TokenId}";
+        var person = "user:" + (await owner.GetFromJsonAsync<JsonObject>("/api/auth/me"))!["id"]!.GetValue<string>();
+        async Task<JsonObject> Draft(Guid id) => (await Json(owner.GetAsync(Promises(projectId, $"/{id}")), HttpStatusCode.OK))["current"]!.AsObject();
+        JsonObject Obligation(JsonObject draft, string key) => draft["obligations"]!.AsArray().Single(o => o!["key"]!.GetValue<string>() == key)!.AsObject();
+
+        // A person writes a draft. A token rewrites it: the origin stays, and the draft names the token.
+        var human = (await Json(owner.PostAsJsonAsync(Promises(projectId), Promise()), HttpStatusCode.Created))["id"]!.GetValue<Guid>();
+        Assert.Equal(person, (await Draft(human))["lastChangedBy"]!.GetValue<string>());
+        var rewritten = Promise();
+        rewritten["claim"] = "Something else must hold.";
+        var changed = await Json(agent.Client.PutAsJsonAsync(Promises(projectId, $"/{human}"), rewritten), HttpStatusCode.OK);
+        Assert.Equal(("human", token), (changed["origin"]!.GetValue<string>(), changed["current"]!["lastChangedBy"]!.GetValue<string>()));
+        Assert.NotNull(changed["current"]!["lastChangedAt"]);
+        var summary = (await Json(owner.GetAsync(Promises(projectId)), HttpStatusCode.OK))["items"]!.AsArray().Single(p => p!["id"]!.GetValue<Guid>() == human)!;
+        Assert.Equal(token, summary["draftLastChangedBy"]!.GetValue<string>());
+
+        // The token does not delete what a person wrote.
+        await Refused(agent.Client.DeleteAsync(Promises(projectId, $"/{human}")), AgentBoundary.HumanOnlyError);
+        await Json(owner.GetAsync(Promises(projectId, $"/{human}")), HttpStatusCode.OK);
+
+        // Obligations: O1 by the person, O2 and O3 by the token.
+        await Json(owner.PostAsJsonAsync(Promises(projectId, $"/{human}/obligations"), Plan("By a person")), HttpStatusCode.Created);
+        await Json(agent.Client.PostAsJsonAsync(Promises(projectId, $"/{human}/obligations"), Plan("By a token")), HttpStatusCode.Created);
+        await Json(agent.Client.PostAsJsonAsync(Promises(projectId, $"/{human}/obligations"), Plan("By a token, to remove")), HttpStatusCode.Created);
+        var draft = await Draft(human);
+        Assert.Equal(("manual", person), (Obligation(draft, "O1")["source"]!.GetValue<string>(), Obligation(draft, "O1")["addedBy"]!.GetValue<string>()));
+        Assert.Equal(("agent", token), (Obligation(draft, "O2")["source"]!.GetValue<string>(), Obligation(draft, "O2")["addedBy"]!.GetValue<string>()));
+
+        // The person's obligation is closed to the token. Its own is open, until a person changes it.
+        await Refused(agent.Client.PutAsJsonAsync(Promises(projectId, $"/{human}/obligations/O1"), Plan("Weakened")), AgentBoundary.HumanOnlyError);
+        await Refused(agent.Client.DeleteAsync(Promises(projectId, $"/{human}/obligations/O1")), AgentBoundary.HumanOnlyError);
+        await Json(agent.Client.PutAsJsonAsync(Promises(projectId, $"/{human}/obligations/O2"), Plan("By a token, changed")), HttpStatusCode.OK);
+        await Json(agent.Client.DeleteAsync(Promises(projectId, $"/{human}/obligations/O3")), HttpStatusCode.OK);
+        await Json(owner.PutAsJsonAsync(Promises(projectId, $"/{human}/obligations/O2"), Plan("Reviewed by a person")), HttpStatusCode.OK);
+        await Refused(agent.Client.PutAsJsonAsync(Promises(projectId, $"/{human}/obligations/O2"), Plan("Weakened")), AgentBoundary.HumanOnlyError);
+        await Refused(agent.Client.DeleteAsync(Promises(projectId, $"/{human}/obligations/O2")), AgentBoundary.HumanOnlyError);
+        draft = await Draft(human);
+        Assert.Equal(["By a person", "Reviewed by a person"], draft["obligations"]!.AsArray().Select(o => o!["title"]!.GetValue<string>()));
+        Assert.Equal(("agent", token, person),
+            (Obligation(draft, "O2")["source"]!.GetValue<string>(), Obligation(draft, "O2")["addedBy"]!.GetValue<string>(), Obligation(draft, "O2")["lastChangedBy"]!.GetValue<string>()));
+        // An obligation that does not exist is not found, for a token too.
+        Assert.Equal(HttpStatusCode.NotFound, (await agent.Client.DeleteAsync(Promises(projectId, $"/{human}/obligations/O9"))).StatusCode);
+
+        // A promise that tokens alone wrote: the token deletes it. One that a person changed: it does not.
+        var alone = (await Json(agent.Client.PostAsJsonAsync(Promises(projectId), Promise()), HttpStatusCode.Created))["id"]!.GetValue<Guid>();
+        Assert.Equal(token, (await Draft(alone))["lastChangedBy"]!.GetValue<string>());
+        Assert.Equal(HttpStatusCode.NoContent, (await agent.Client.DeleteAsync(Promises(projectId, $"/{alone}"))).StatusCode);
+        var touched = (await Json(agent.Client.PostAsJsonAsync(Promises(projectId), Promise()), HttpStatusCode.Created))["id"]!.GetValue<Guid>();
+        var afterPerson = await Json(owner.PutAsJsonAsync(Promises(projectId, $"/{touched}"), rewritten), HttpStatusCode.OK);
+        Assert.Equal(("agent-suggested", person), (afterPerson["origin"]!.GetValue<string>(), afterPerson["current"]!["lastChangedBy"]!.GetValue<string>()));
+        await Refused(agent.Client.DeleteAsync(Promises(projectId, $"/{touched}")), AgentBoundary.HumanOnlyError);
+        Assert.Equal(HttpStatusCode.NotFound, (await agent.Client.DeleteAsync(Promises(projectId, $"/{Guid.NewGuid()}"))).StatusCode);
+
+        // A token starts a revision that retires an approved promise. It is a draft that names
+        // the token; the approved revision stays in force until a person approves the draft.
+        var read = await Json(owner.GetAsync(Promises(projectId, $"/{touched}")), HttpStatusCode.OK);
+        await Json(owner.PostAsJsonAsync(Promises(projectId, $"/{touched}/approve"),
+            new { revision = 1, contentHash = read["current"]!["contentHash"]!.GetValue<string>() }), HttpStatusCode.OK);
+        var retiring = await Json(agent.Client.PostAsJsonAsync(Promises(projectId, $"/{touched}/revise"), new { retire = true }), HttpStatusCode.OK);
+        Assert.Equal(("approved", 1, true, token),
+            (retiring["state"]!.GetValue<string>(), retiring["inForceRevision"]!.GetValue<int>(),
+                retiring["draft"]!["retires"]!.GetValue<bool>(), retiring["draft"]!["lastChangedBy"]!.GetValue<string>()));
+        await Refused(agent.Client.DeleteAsync(Promises(projectId, $"/{touched}")), AgentBoundary.HumanOnlyError);
+
+        // The read model is folded from the events alone: a rebuild gives the same promises, so the events hold every actor.
+        var urls = new[] { Promises(projectId), Promises(projectId, $"/{human}"), Promises(projectId, $"/{touched}") };
+        var rows = new List<string>();
+        foreach (var url in urls)
+            rows.Add(await owner.GetStringAsync(url));
+        await Vellum.Tests.Modules.Modelling.ProjectionRebuildTests.RebuildAsync(factory.Services.GetRequiredService<IEventStoreAdmin>(), "promise_read_model");
+        for (var i = 0; i < urls.Length; i++)
+            Assert.Equal(rows[i], await owner.GetStringAsync(urls[i]));
+    }
+
     [Fact]
     public async Task A_bearer_request_is_an_agent_request_whatever_cookie_comes_with_it()
     {
@@ -570,8 +670,13 @@ public class AgentTokenTests(IntegrationFixture fixture)
         ["GET /api/projects/{projectId}/load-tests/results/{resultId:guid}"] = "read",
         ["GET /api/projects/{projectId}/load-tests/compare/estimate"] = "read",
         ["GET /api/projects/{projectId}/load-tests/compare/results"] = "read",
+        ["POST /api/projects/{projectId}/ai/flow-proposals/submit"] = "propose",
+        ["POST /api/projects/{projectId}/ai/architecture-proposals/submit"] = "propose",
         ["GET /api/agent/capabilities"] = "",
         ["POST /mcp/"] = "",
+        // A stateless server offers no stream and no session: these two answer 405 with Allow: POST.
+        ["GET /mcp"] = "",
+        ["DELETE /mcp"] = "",
         ["GET /llms.txt"] = "",
         ["GET /llms-full.txt"] = "",
         ["GET /skills/vellum/SKILL.md"] = "",

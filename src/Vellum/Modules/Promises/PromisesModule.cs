@@ -1,6 +1,3 @@
-using System.Globalization;
-using System.Security.Claims;
-using System.Threading.RateLimiting;
 using Deedbox;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -28,6 +25,7 @@ public static class PromisesModule
         services.TryAddSingleton(PromiseLimits.Default);
 
         services.TryAddSingleton<PromiseRunRate>();
+        services.TryAddSingleton<PromiseDraftRate>();
         return services;
     }
 
@@ -48,7 +46,9 @@ public static class PromisesModule
         promises.MapPost("/", PromiseWrites.Create).AllowAgent(AgentScope.Propose)
             .Accepts<PromiseRequest>("application/json")
             .Produces<PromiseDto>(StatusCodes.Status201Created)
-            .Produces<ErrorResponse>(StatusCodes.Status413PayloadTooLarge);
+            .Produces<ErrorResponse>(StatusCodes.Status413PayloadTooLarge)
+            .Produces<ErrorResponse>(StatusCodes.Status429TooManyRequests)
+            .AddEndpointFilter(CallerRate.Filter<PromiseDraftRate>);
 
         promises.MapGet("/prefix", PromiseReads.Prefix).AllowAgent(AgentScope.Read).Produces<PrefixDto>();
         promises.MapPut("/prefix", PromiseWrites.SetPrefix).RequireHuman()
@@ -60,9 +60,15 @@ public static class PromisesModule
         promises.MapPut("/{promiseId:guid}", PromiseWrites.Update).AllowAgent(AgentScope.Propose)
             .Accepts<PromiseRequest>("application/json")
             .Produces<PromiseDto>()
-            .Produces<ErrorResponse>(StatusCodes.Status413PayloadTooLarge);
-        promises.MapDelete("/{promiseId:guid}", PromiseWrites.Delete).AllowAgent(AgentScope.Propose).Produces(StatusCodes.Status204NoContent);
+            .Produces<ErrorResponse>(StatusCodes.Status413PayloadTooLarge)
+            .Produces<ErrorResponse>(StatusCodes.Status429TooManyRequests)
+            .AddEndpointFilter(CallerRate.Filter<PromiseDraftRate>);
+        // An agent token deletes only a draft promise that agent tokens alone wrote (403 human_only otherwise).
+        promises.MapDelete("/{promiseId:guid}", PromiseWrites.Delete).AllowAgent(AgentScope.Propose)
+            .Produces(StatusCodes.Status204NoContent)
+            .Produces<ErrorResponse>(StatusCodes.Status403Forbidden);
 
+        // A new revision is a draft, also one that retires: it does nothing until a person approves it.
         promises.MapPost("/{promiseId:guid}/revise", PromiseWrites.Revise).AllowAgent(AgentScope.Propose)
             .Accepts<ReviseRequest>("application/json")
             .Produces<PromiseDto>();
@@ -77,22 +83,34 @@ public static class PromisesModule
         var obligations = promises.MapGroup("/{promiseId:guid}/obligations");
         obligations.MapPost("/", ObligationWrites.Add).AllowAgent(AgentScope.Propose)
             .Accepts<ObligationRequest>("application/json")
-            .Produces<PromiseDto>(StatusCodes.Status201Created);
-        obligations.MapPost("/generate", ObligationWrites.Generate).AllowAgent(AgentScope.Propose).Produces<GenerateObligationsResponse>();
+            .Produces<PromiseDto>(StatusCodes.Status201Created)
+            .Produces<ErrorResponse>(StatusCodes.Status429TooManyRequests)
+            .AddEndpointFilter(CallerRate.Filter<PromiseDraftRate>);
+        obligations.MapPost("/generate", ObligationWrites.Generate).AllowAgent(AgentScope.Propose)
+            .Produces<GenerateObligationsResponse>()
+            .Produces<ErrorResponse>(StatusCodes.Status429TooManyRequests)
+            .AddEndpointFilter(CallerRate.Filter<PromiseDraftRate>);
+        // An agent token changes or removes only an obligation that an agent token added to the
+        // draft and that no person changed since (403 human_only otherwise).
         obligations.MapPut("/{obligationKey}", ObligationWrites.Change).AllowAgent(AgentScope.Propose)
             .Accepts<ObligationRequest>("application/json")
-            .Produces<PromiseDto>();
-        obligations.MapDelete("/{obligationKey}", ObligationWrites.Remove).AllowAgent(AgentScope.Propose).Produces<PromiseDto>();
+            .Produces<PromiseDto>()
+            .Produces<ErrorResponse>(StatusCodes.Status403Forbidden)
+            .Produces<ErrorResponse>(StatusCodes.Status429TooManyRequests)
+            .AddEndpointFilter(CallerRate.Filter<PromiseDraftRate>);
+        obligations.MapDelete("/{obligationKey}", ObligationWrites.Remove).AllowAgent(AgentScope.Propose)
+            .Produces<PromiseDto>()
+            .Produces<ErrorResponse>(StatusCodes.Status403Forbidden);
         obligations.MapPost("/{obligationKey}/run", ObligationWrites.Run).AllowAgent(AgentScope.Propose)
             .Accepts<RunObligationRequest>("application/json")
             .Produces<VerificationRun>()
             .Produces<ErrorResponse>(StatusCodes.Status429TooManyRequests)
-            .AddEndpointFilter(PromiseRunRate.Filter);
+            .AddEndpointFilter(CallerRate.Filter<PromiseRunRate>);
         obligations.MapPost("/{obligationKey}/evidence", ObligationWrites.Evidence).AllowAgent(AgentScope.Propose)
             .Accepts<RecordEvidenceRequest>("application/json")
             .Produces<VerificationRun>()
             .Produces<ErrorResponse>(StatusCodes.Status429TooManyRequests)
-            .AddEndpointFilter(PromiseRunRate.Filter);
+            .AddEndpointFilter(CallerRate.Filter<PromiseRunRate>);
 
         return app;
     }
@@ -101,36 +119,14 @@ public static class PromisesModule
 /// <summary>
 /// The rate limit of runs and evidence. Every run and every piece of evidence is an event of
 /// a promise stream, so one caller records a bounded number of them in a minute, whichever
-/// promise they are for. It is a filter of the endpoint and not a policy of the rate limiting
-/// middleware: a call that reaches the endpoint without that middleware (an MCP tool) counts
-/// in the same window as a call over HTTP.
+/// promise they are for.
 /// </summary>
-internal sealed class PromiseRunRate(PromiseLimits limits) : IDisposable
-{
-    private readonly PartitionedRateLimiter<string> _limiter = PartitionedRateLimiter.Create<string, string>(caller =>
-        RateLimitPartition.GetFixedWindowLimiter(caller, _ => new FixedWindowRateLimiterOptions
-        {
-            PermitLimit = limits.RunsPerMinute,
-            Window = TimeSpan.FromMinutes(1),
-            QueueLimit = 0,
-        }));
+internal sealed class PromiseRunRate(PromiseLimits limits) : CallerRate(limits.RunsPerMinute);
 
-    public static async ValueTask<object?> Filter(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
-    {
-        var http = context.HttpContext;
-        var caller = http.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? http.Connection.RemoteIpAddress?.ToString() ?? "unknown";
-        using var lease = http.RequestServices.GetRequiredService<PromiseRunRate>()._limiter.AttemptAcquire(caller);
-        if (lease.IsAcquired)
-            return await next(context);
-
-        // The same answer as the rate limiting middleware gives (RequestLimits).
-        var wait = lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfter) ? retryAfter : TimeSpan.FromMinutes(1);
-        var seconds = Math.Max(1, (int)Math.Ceiling(wait.TotalSeconds));
-        http.Response.Headers.RetryAfter = seconds.ToString(CultureInfo.InvariantCulture);
-        return Results.Json(
-            new ErrorResponse("rate_limited", "Too many attempts", $"Wait {seconds} seconds and try again."),
-            statusCode: StatusCodes.Status429TooManyRequests);
-    }
-
-    public void Dispose() => _limiter.Dispose();
-}
+/// <summary>
+/// The rate limit of draft writes: creating a promise, changing a draft, adding an obligation
+/// and generating obligations. Each is an event of a promise stream, and a draft holds no
+/// bound on how often it changes, so one caller makes a bounded number of them in a minute,
+/// a person and an agent token alike.
+/// </summary>
+internal sealed class PromiseDraftRate(PromiseLimits limits) : CallerRate(limits.DraftWritesPerMinute);

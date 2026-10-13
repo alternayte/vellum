@@ -1,3 +1,4 @@
+using Vellum.Modules.Identity.AgentTokens;
 using Vellum.Shared;
 using Decision = Vellum.Shared.CommandResult<System.Collections.Generic.IReadOnlyList<object>>;
 
@@ -17,7 +18,7 @@ public static class PromiseDecider
 
     public static Decision Create(
         PromiseState state, Guid projectId, string requirementId, int number, string origin,
-        PromiseContent content, KnownThings known, string userId, DateTimeOffset now)
+        PromiseContent content, KnownThings known, string userId, string actor, DateTimeOffset now)
     {
         if (state.Revisions.Count > 0 || state.Deleted)
             return new Decision.Conflict(IdInUse);
@@ -27,11 +28,11 @@ public static class PromiseDecider
         content = PromiseRules.Normalize(content);
         return PromiseRules.Check(content, known) is { Count: > 0 } errors
             ? new Decision.Invalid(errors)
-            : new Decision.Success([new PromiseEvent.PromiseCreated(projectId, requirementId, number, origin, content, userId, now)]);
+            : new Decision.Success([new PromiseEvent.PromiseCreated(projectId, requirementId, number, origin, content, userId, now, actor)]);
     }
 
     public static Decision ChangeDraft(
-        PromiseState state, Guid projectId, PromiseContent content, KnownThings known, string userId, DateTimeOffset now)
+        PromiseState state, Guid projectId, PromiseContent content, KnownThings known, string userId, string actor, DateTimeOffset now)
     {
         if (Draft(state, projectId, out var draft) is { } refusal)
             return refusal;
@@ -39,10 +40,10 @@ public static class PromiseDecider
         content = PromiseRules.Normalize(content);
         return PromiseRules.Check(content, known) is { Count: > 0 } errors
             ? new Decision.Invalid(errors)
-            : new Decision.Success([new PromiseEvent.PromiseDraftChanged(draft.Revision, content, userId, now)]);
+            : new Decision.Success([new PromiseEvent.PromiseDraftChanged(draft.Revision, content, userId, now, actor)]);
     }
 
-    public static Decision Revise(PromiseState state, Guid projectId, bool retires, string userId, DateTimeOffset now)
+    public static Decision Revise(PromiseState state, Guid projectId, bool retires, string userId, string actor, DateTimeOffset now)
     {
         if (!state.ExistsIn(projectId))
             return new Decision.NotFound(NotFoundMessage);
@@ -53,7 +54,7 @@ public static class PromiseDecider
         if (state.Revisions.Count >= PromiseRules.MaxRevisions)
             return new Decision.Conflict($"A promise has at most {PromiseRules.MaxRevisions} revisions.");
 
-        return new Decision.Success([new PromiseEvent.PromiseRevised(state.Latest!.Revision + 1, retires, userId, now)]);
+        return new Decision.Success([new PromiseEvent.PromiseRevised(state.Latest!.Revision + 1, retires, userId, now, actor)]);
     }
 
     /// <summary>
@@ -97,18 +98,31 @@ public static class PromiseDecider
         return new Decision.Success([new PromiseEvent.PromiseApproved(draft.Revision, userId, now, modelVersion, linkHashes, contentHash)]);
     }
 
-    public static Decision Delete(PromiseState state, Guid projectId, string userId, DateTimeOffset now)
+    /// <summary>
+    /// True when an agent token may delete the promise: it exists, agent tokens alone wrote
+    /// it, and no person changed or approved it. Everything else is for a person.
+    /// </summary>
+    public static bool AgentAlone(PromiseState state) => state.Origin == PromiseOrigin.AgentSuggested && state.AgentOnly;
+
+    /// <summary>
+    /// True when an agent token may change or remove the obligation <paramref name="key"/>
+    /// of the draft: an agent token added it to this draft and no person changed it since.
+    /// </summary>
+    public static bool AgentAlone(PromiseState state, string key) =>
+        state.Draft is { } draft && draft.Find(key) is { } obligation && draft.ActorsOf(obligation.Id) is { AgentAlone: true };
+
+    public static Decision Delete(PromiseState state, Guid projectId, string userId, string actor, DateTimeOffset now)
     {
         if (!state.ExistsIn(projectId))
             return new Decision.NotFound(NotFoundMessage);
         if (state.InForce is not null)
             return new Decision.Conflict("An approved promise is not deleted. Approve a revision that retires it.");
 
-        return new Decision.Success([new PromiseEvent.PromiseDeleted(userId, now)]);
+        return new Decision.Success([new PromiseEvent.PromiseDeleted(userId, now, actor)]);
     }
 
     public static Decision AddObligation(
-        PromiseState state, Guid projectId, PromiseRules.ObligationInput input, KnownThings known, string userId, DateTimeOffset now)
+        PromiseState state, Guid projectId, PromiseRules.ObligationInput input, KnownThings known, string userId, string actor, DateTimeOffset now)
     {
         if (Draft(state, projectId, out var draft) is { } refusal)
             return refusal;
@@ -118,11 +132,14 @@ public static class PromiseDecider
             return invalid;
 
         return new Decision.Success(
-            [new PromiseEvent.ObligationAdded(draft.Revision, New(state, state.NextObligation, checkedInput, Obligation.Manual, null), userId, now)]);
+            [new PromiseEvent.ObligationAdded(
+                draft.Revision,
+                New(state, state.NextObligation, checkedInput, AgentPrincipal.IsAgentActor(actor) ? Obligation.Agent : Obligation.Manual, null),
+                userId, now, actor)]);
     }
 
     public static Decision ChangeObligation(
-        PromiseState state, Guid projectId, string key, PromiseRules.ObligationInput input, KnownThings known, string userId, DateTimeOffset now)
+        PromiseState state, Guid projectId, string key, PromiseRules.ObligationInput input, KnownThings known, string userId, string actor, DateTimeOffset now)
     {
         if (Draft(state, projectId, out var draft) is { } refusal)
             return refusal;
@@ -132,16 +149,16 @@ public static class PromiseDecider
             return invalid;
 
         return new Decision.Success([new PromiseEvent.ObligationChanged(
-            draft.Revision, existing with { Kind = checkedInput.Kind, Title = checkedInput.Title, Recipe = checkedInput.Recipe }, userId, now)]);
+            draft.Revision, existing with { Kind = checkedInput.Kind, Title = checkedInput.Title, Recipe = checkedInput.Recipe }, userId, now, actor)]);
     }
 
-    public static Decision RemoveObligation(PromiseState state, Guid projectId, string key, string userId, DateTimeOffset now)
+    public static Decision RemoveObligation(PromiseState state, Guid projectId, string key, string userId, string actor, DateTimeOffset now)
     {
         if (Draft(state, projectId, out var draft) is { } refusal)
             return refusal;
 
         return draft.Find(key) is { } existing
-            ? new Decision.Success([new PromiseEvent.ObligationRemoved(draft.Revision, existing.Id, userId, now)])
+            ? new Decision.Success([new PromiseEvent.ObligationRemoved(draft.Revision, existing.Id, userId, now, actor)])
             : new Decision.NotFound("Obligation not found");
     }
 
@@ -153,7 +170,7 @@ public static class PromiseDecider
     /// </summary>
     public static Decision AddGenerated(
         PromiseState state, Guid projectId, Func<PromiseRevisionState, IReadOnlyList<ObligationGenerator.Candidate>> generate,
-        string userId, DateTimeOffset now)
+        string userId, string actor, DateTimeOffset now)
     {
         if (Draft(state, projectId, out var draft) is { } refusal)
             return refusal;
@@ -166,7 +183,7 @@ public static class PromiseDecider
             if (draft.Obligations.Count + events.Count >= PromiseRules.MaxObligations)
                 return new Decision.Conflict($"A revision has at most {PromiseRules.MaxObligations} obligations.");
             events.Add(new PromiseEvent.ObligationAdded(
-                draft.Revision, New(state, number++, candidate.Input, Obligation.Generated, candidate.Key), userId, now));
+                draft.Revision, New(state, number++, candidate.Input, Obligation.Generated, candidate.Key), userId, now, actor));
         }
 
         return new Decision.Success(events);
