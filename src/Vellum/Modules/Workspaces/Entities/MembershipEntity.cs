@@ -6,5 +6,9 @@ public class MembershipEntity
     public Guid WorkspaceId { get; set; }
     public string UserId { get; set; } = null!;
     public string Role { get; set; } = null!;
-    public DateTimeOffset CreatedAt { get; set; }
+    /// <summary>
+    /// When the membership was made. No writer set this before the member list showed it,
+    /// so a row from that time holds the zero date; the list reads that as not recorded.
+    /// </summary>
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }

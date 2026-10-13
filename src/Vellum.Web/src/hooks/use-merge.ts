@@ -1,9 +1,6 @@
 // src/Vellum.Web/src/hooks/use-merge.ts
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import {
-  postApiProjectsByProjectIdDraftsByDraftIdMergePreview,
-  postApiProjectsByProjectIdDraftsByDraftIdMergeExecute,
-} from '@/api/generated'
+import { postApiProjectsByProjectIdDraftsByDraftIdMergeExecute } from '@/api/generated'
 import '@/api/client'
 import { shownInline } from '@/lib/mutation-errors'
 
@@ -34,17 +31,6 @@ export interface MergePreviewResponse {
 export interface MergeResolution {
   entityId: string
   resolution: string
-}
-
-export function useMergePreview(projectId: string) {
-  return useMutation({
-    mutationFn: async (draftId: string) => {
-      const result = await postApiProjectsByProjectIdDraftsByDraftIdMergePreview({
-        path: { projectId, draftId },
-      })
-      return result.data as MergePreviewResponse
-    },
-  })
 }
 
 export function useExecuteMerge(projectId: string) {

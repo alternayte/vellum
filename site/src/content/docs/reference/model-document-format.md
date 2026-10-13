@@ -5,6 +5,25 @@ description: The JSON and YAML document that the model export returns and the mo
 
 A model document holds the model of one project: the elements, the relationships, the messages, the schemas and the contracts. `GET /api/projects/{projectId}/export` writes it. `POST /api/projects/{projectId}/import` reads it.
 
+## Export and import in the app
+
+1. Open the project.
+2. Select **Project files** in the left toolbar.
+3. Below **Model document**, select **Export JSON** or **Export YAML**. The browser saves the file.
+
+To import, you need the editor role.
+
+1. Below **Model document**, select **Import a document…**.
+2. Select the file for **Model document (JSON or YAML)**.
+3. Read the preview. The server reads each entry and writes nothing. The list shows each entry that the import adds or changes. Select **Show the unchanged entries** to see the rest.
+4. Select **Import <n> changes into main**.
+
+When the server refuses an entry, the list shows **Refused** and the reason for that entry, and the dialog offers no import. Correct the document and select it again.
+
+When main changes after the preview, the import is refused and the dialog offers **Preview again**.
+
+The export and the import use main. They do not use the draft, the variant or the revision that the workbench shows.
+
 This document is not the bundle. [Bundle and SDD format](/reference/bundle-and-sdd-format/) describes the export for a coding agent.
 
 ## Endpoints
@@ -12,7 +31,10 @@ This document is not the bundle. [Bundle and SDD format](/reference/bundle-and-s
 | Endpoint | Role | Behaviour |
 |---|---|---|
 | `GET /api/projects/{projectId}/export` | Viewer | Returns the main model of the project. The query parameter `format` is `json` (the default) or `yaml`. |
-| `POST /api/projects/{projectId}/import` | Editor | Reads a document and writes its content into the main model of the project. Answers `200` with an empty body. |
+| `POST /api/projects/{projectId}/import` | Editor | Reads a document and writes its content into the main model of the project. Answers `200` with the [import result](#import-result). |
+| `POST /api/projects/{projectId}/import?dryRun=true` | Editor | Reads a document and writes nothing. Answers `200` with the import result, also when an entry is refused. |
+
+The query parameter `expectedVersion` is optional. Give it the `modelVersion` of a preview. The import then answers `409` when main has changed since that preview.
 
 ## Formats
 
@@ -189,10 +211,12 @@ A document that was written before bindings existed has no `bindings` field. The
 
 ## ID rules
 
-- Each ID is a GUID. The document gives the ID. The import does not make new IDs.
+- Each ID is a GUID. The document gives the ID. The import keeps each ID, with one exception for schemas.
 - An ID identifies one object across export and import. The import uses it to decide between an add and an update.
 - A schema ID that appears two times in `schemas` is refused.
-- A schema ID that a schema of another project uses is refused with `belongs to another project`. To copy schemas into a second project of the same instance, give them new IDs and change each `schemaId`, `requestSchemaId` and `responseSchemaId` that refers to them.
+- A schema ID belongs to one project of an instance. When a schema of another project uses the ID, the import gives the schema a new ID in this project. It writes each `schemaId`, `requestSchemaId` and `responseSchemaId` of the document that refers to the schema with the new ID. It does not read or change the schema of the other project.
+- The new ID is a function of the project ID and of the schema ID in the document. The same document gives the same IDs each time, so a second import changes those schemas and adds none.
+- An import into the project that owns the schema ID keeps the ID.
 - A schema ID must not be the ID of the model stream of the project.
 
 ## Import behaviour
@@ -208,15 +232,30 @@ The import is an upsert by ID.
 - A fact that has a stale mark keeps it. A fact that has no mark takes the mark of the document.
 - A `schemaId` must name a schema in the document or a schema that the project has.
 
-The import reads the sections in this order: elements, relationships, messages, channels, operations, subscriptions, bindings, schemas. In each section it reads the entries in document order.
+The import reads the sections in this order: elements, relationships, messages, channels, operations, subscriptions, bindings, schemas. In each section it reads the entries in document order, with one exception: it reads an element after its parent. The export orders elements by ID, so a child can stand before its parent in a document.
 
-The import is one transaction. If one entry is refused, nothing is written.
+The import is one transaction. If one entry is refused, nothing is written. The import reads the entries that follow a refused entry, so the answer names each refused entry.
+
+## Import result
+
+| Field | Type | Meaning |
+|---|---|---|
+| `applied` | boolean | `true` when the import wrote. `false` for a preview. |
+| `modelVersion` | integer | The version of main that the entries were read against. |
+| `added`, `changed`, `unchanged`, `refused` | integer | The number of entries of each kind. |
+| `items` | list | One item for each entry of the document. |
+| `items[].kind` | string | `element`, `relationship`, `message`, `channel`, `operation`, `subscription`, `binding` or `schema`. |
+| `items[].id` | GUID | The ID in the document. |
+| `items[].name` | string or `null` | The name of the entry, or the label of a relationship. |
+| `items[].change` | string | `added`, `changed`, `unchanged` or `refused`. |
+| `items[].error` | string or `null` | Why the entry is refused. |
+| `items[].importedAs` | GUID or `null` | For a schema whose ID belongs to another project: the ID that the schema has in this project. |
 
 The import writes to the main model directly. It does not make a proposal. The repository import is a different feature that makes proposals: see [Import a repository](/how-to/import-a-repository/).
 
 ## Errors
 
-Each error has a `type` and a `title`. The `title` names the entry, for example `Element <id>: parentId: Parent element not found`.
+Each error has a `type` and a `title`. The `title` names the first refused entry, for example `Element <id>: parentId: Parent element not found`. The list `errors` has one item for each refused entry: `field` is the kind and the ID, for example `element:<id>`, and `message` is the reason.
 
 | Status | `type` | Cause |
 |---|---|---|
@@ -225,7 +264,8 @@ Each error has a `type` and a `title`. The `title` names the entry, for example 
 | `400` | `invalid_export` | A label is not in its set: `kind`, `status`, `transport`, `factStatus`. |
 | `400` | `invalid_export` | A reference names an object that is not in the model: a parent, a source, a target, a producer, a consumer, an owner, a channel or a schema. |
 | `400` | `invalid_export` | A model rule refuses an entry: a parent of the wrong kind, a name that is empty, a provenance that the label requires. |
-| `400` | `invalid_export` | A schema ID repeats, belongs to another project or is in use. |
+| `400` | `invalid_export` | A schema ID repeats or is in use. |
+| `409` | `conflict` | The request has `expectedVersion` and main has another version. |
 | `400` | `import_too_large` | A list has more entries than its limit. |
 | `413` | `import_too_large` | The body has more than 16777216 bytes. |
 | `401` | | The request has no valid sign-in. |
@@ -244,14 +284,6 @@ Each error has a `type` and a `title`. The `title` names the entry, for example 
 | `channels` | 5000 |
 | `subscriptions` | 5000 |
 | `bindings` | 5000 |
-
-## Known limit: parent order
-
-The import adds elements in document order. It does not sort them. An element whose parent comes later in the document, and is not in the model, is refused with `Parent element not found`.
-
-The export orders elements by ID, not by parent. An export can thus put a child before its parent. Such a document imports into the project that wrote it, because each parent is there. It does not import into an empty project.
-
-Before you import into an empty project, order `elements` so that each parent comes before its children: first the elements of the kinds `system` and `actor`, then `app` and `store`, then `component`.
 
 ## Example
 

@@ -11,6 +11,14 @@ public sealed record RegisterRequest(string Email, string Password, string? Disp
 public sealed record LoginRequest(string Email, string Password);
 public sealed record UserInfoResponse(string Id, string Email, string? DisplayName);
 
+/// <summary>
+/// What the sign-in screen of this instance offers. <paramref name="Providers"/> holds the
+/// names of the external providers that the instance has configured, as the path of
+/// <c>/api/auth/external/{provider}</c> takes them. <paramref name="RegistrationOpen"/> is
+/// false while the instance needs setup or the instance admin has closed registration.
+/// </summary>
+public sealed record SignInMethodsResponse(bool Password, IReadOnlyList<string> Providers, bool RegistrationOpen);
+
 public static class IdentityEndpoints
 {
     /// <summary>An email address and a password.</summary>
@@ -54,6 +62,21 @@ public static class IdentityEndpoints
         })
         .WithBodyLimit(MaxLoginBodyBytes)
         .RequireRateLimiting(RequestLimits.RegistrationPolicy);
+
+        // The sign-in screen asks this before anyone has signed in. It says nothing that the
+        // other anonymous endpoints do not: a provider that is not configured answers 404,
+        // and a closed registration answers 403.
+        group.MapGet("/methods", async (
+            SignInManager<ApplicationUser> signInManager,
+            RegistrationPolicy registration,
+            CancellationToken ct) =>
+        {
+            var providers = (await signInManager.GetExternalAuthenticationSchemesAsync())
+                .Select(s => s.Name)
+                .Order(StringComparer.Ordinal)
+                .ToList();
+            return Results.Ok(new SignInMethodsResponse(true, providers, await registration.RefusalAsync(ct) is null));
+        }).Produces<SignInMethodsResponse>();
 
         group.MapPost("/login", async (
             LoginRequest request,

@@ -156,7 +156,7 @@ An entry that is no address and no range stops the start. So does a range that h
 2. For `setup_required`, complete the setup.
 3. For `validation_error`, read `errors` and correct the value.
 
-Limit: when registration is closed, nobody can add an account. Vellum has no endpoint that lets an administrator create an account for another person. The hint of the setting says **With this off, only an administrator adds accounts.** That is not possible at this time. Switch the setting on for the time that the person needs to register, then switch it off.
+Limit: when registration is closed, nobody can create an account. Vellum has no function that lets an administrator create an account for another person. Switch the setting on for the time that the person needs to register, then switch it off. The sign-in screen shows **Register** only while registration is open.
 
 ## Sign-in with GitHub or Google answers 409
 

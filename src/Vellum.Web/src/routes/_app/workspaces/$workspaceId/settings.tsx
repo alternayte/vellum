@@ -15,12 +15,13 @@ import {
 import { NumberField, SectionHeading, SelectField, TextField, Toggle, ToggleField, selectClass } from '@/components/settings/fields'
 import { SecretControl } from '@/components/settings/secret-control'
 import { PriceBook } from '@/components/settings/price-book'
+import { Members } from '@/components/settings/members'
 
 export const Route = createFileRoute('/_app/workspaces/$workspaceId/settings')({
   component: SettingsPage,
 })
 
-type SectionId = SettingsSection | 'prices' | 'agents' | 'audit' | 'instance'
+type SectionId = SettingsSection | 'prices' | 'members' | 'agents' | 'audit' | 'instance'
 
 const SECTIONS: { id: SectionId; label: string; adminOnly?: boolean }[] = [
   { id: 'ai', label: 'AI providers' },
@@ -32,6 +33,7 @@ const SECTIONS: { id: SectionId; label: string; adminOnly?: boolean }[] = [
   { id: 'privacy', label: 'Privacy' },
   { id: 'usage', label: 'Usage limits' },
   { id: 'notifications', label: 'Notifications' },
+  { id: 'members', label: 'Members' },
   { id: 'agents', label: 'Agent tokens' },
   { id: 'audit', label: 'Audit log' },
   { id: 'instance', label: 'Instance', adminOnly: true },
@@ -293,6 +295,7 @@ function SettingsPage() {
               </>
             )}
 
+            {section === 'members' && <Members workspaceId={workspaceId} registrationOpen={instance.data?.allowSelfRegistration} />}
             {section === 'agents' && <AgentTokens workspaceId={workspaceId} />}
             {section === 'prices' && <PriceBook workspaceId={workspaceId} currency={data.effective.cost.currency} />}
             {section === 'audit' && <AuditLog workspaceId={workspaceId} />}
@@ -301,7 +304,7 @@ function SettingsPage() {
         </main>
       </div>
 
-      {(dirty || save.isError) && section !== 'prices' && section !== 'agents' && section !== 'audit' && section !== 'instance' && (
+      {(dirty || save.isError) && section !== 'prices' && section !== 'members' && section !== 'agents' && section !== 'audit' && section !== 'instance' && (
         <div role="region" aria-label="Unsaved changes" className="fixed inset-x-0 bottom-0 z-20 border-t border-border bg-card/95 px-4 py-3 backdrop-blur">
           <div className="mx-auto flex max-w-3xl flex-wrap items-center gap-3">
             <p className={cn('min-w-0 flex-1 text-sm', save.isError ? 'text-destructive' : 'text-foreground')} role={save.isError ? 'alert' : undefined}>
@@ -598,7 +601,7 @@ function InstancePanel({ info }: { info: InstanceInfo }) {
       <SectionHeading title="Instance" description={`This Vellum instance runs the ${info.profile === 'hosted' ? 'hosted' : 'self-hosted'} profile, version ${info.version}. These policies apply to every workspace.`} />
       {policy && (
         <>
-          <ToggleField label="Let people register themselves" hint="With this off, only an administrator adds accounts." value={policy.allowSelfRegistration} onChange={(v) => setPolicy({ allowSelfRegistration: v })} />
+          <ToggleField label="Let people register themselves" hint="With this off, nobody can create an account, and the sign-in screen shows no link to register. Turn it on while a new person registers." value={policy.allowSelfRegistration} onChange={(v) => setPolicy({ allowSelfRegistration: v })} />
           <ToggleField label="Allow URLs on private networks" hint="Needed for a local model server such as Ollama. Keep it off when people you do not know can change settings." value={policy.allowPrivateNetworkUrls} onChange={(v) => setPolicy({ allowPrivateNetworkUrls: v })} />
           <ToggleField label="Let workspaces send private code to AI" hint="A workspace must also turn this on for itself." value={policy.allowSendingPrivateCodeToAi} onChange={(v) => setPolicy({ allowSendingPrivateCodeToAi: v })} />
           <StressRunBound

@@ -8,7 +8,7 @@ interface ReviewBarProps {
 }
 
 export function ReviewBar({ projectId, onMergeSuccess }: ReviewBarProps) {
-  const { activeDraftId, reviewData, resolutions, exitReviewMode, setActiveDraft } = useDraftStore()
+  const { activeDraftId, reviewData, resolutions, leaveReviewMode, select } = useDraftStore()
   const executeMerge = useExecuteMerge(projectId)
 
   if (!reviewData) return null
@@ -37,13 +37,12 @@ export function ReviewBar({ projectId, onMergeSuccess }: ReviewBarProps) {
       // Nothing was merged. The draft stays open and the reason is shown in the bar.
       return
     }
-    exitReviewMode()
-    setActiveDraft(null, null)
+    select({ kind: 'main' })
     onMergeSuccess?.()
   }
 
   const handleCancel = () => {
-    exitReviewMode()
+    leaveReviewMode()
   }
 
   return (
@@ -74,7 +73,7 @@ export function ReviewBar({ projectId, onMergeSuccess }: ReviewBarProps) {
         onClick={handleCancel}
         disabled={executeMerge.isPending}
       >
-        Cancel
+        Close the diff
       </Button>
       <Button
         size="sm"

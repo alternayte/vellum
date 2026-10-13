@@ -21,6 +21,7 @@ public static class AuditLog
     public const string KeysRotated = "keys.rotated";
     public const string MemberAdded = "member.added";
     public const string MemberRemoved = "member.removed";
+    public const string MemberRoleChanged = "member.role-changed";
 
     private const int MaxFieldsInTarget = 40;
 

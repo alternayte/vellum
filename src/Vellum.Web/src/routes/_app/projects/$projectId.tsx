@@ -9,6 +9,7 @@ import { CatalogFlyout } from '@/components/shell/catalog-flyout'
 import { CreateFlyout } from '@/components/shell/create-flyout'
 import { AddElementDialog } from '@/components/shell/add-element-dialog'
 import { ReviewBar } from '@/components/review/review-bar'
+import { ScopeNote } from '@/components/branch/scope-note'
 import { CanvasView } from '@/components/canvas/canvas-view'
 import { DocEditor } from '@/components/docs/doc-editor'
 import { CommandPalette } from '@/components/command-palette/command-palette'
@@ -25,27 +26,24 @@ import { ReviewFlyout } from '@/components/design-review/review-flyout'
 import { useRunScenario, useScenarios } from '@/hooks/use-scenarios'
 import { useTraceStore } from '@/stores/trace-store'
 import type { ScenarioReference } from '@/components/trace/scenario-editor'
-import { useChannels, useOperations, useSubscriptions } from '@/hooks/use-contracts'
-import { useElements, useAddElement, useUpdateElement, useRemoveElement } from '@/hooks/use-elements'
-import { useRelationships, useAddRelationship, useUpdateRelationship, useRemoveRelationship } from '@/hooks/use-relationships'
+import { useAddElement, useUpdateElement, useRemoveElement } from '@/hooks/use-elements'
+import { useAddRelationship, useUpdateRelationship, useRemoveRelationship } from '@/hooks/use-relationships'
+import { refuseWrite, useModel, useProject, writeGuard } from '@/hooks/use-model'
 import { useViews, useView, useCreateView, useSaveLayout } from '@/hooks/use-views'
 import { useDocs, useCreateDoc } from '@/hooks/use-docs'
 import { patchApiProjectsByProjectIdDocsByDocId } from '@/api/generated'
 import { useSpaces } from '@/hooks/use-spaces'
-import { useMessages } from '@/hooks/use-messages'
 import { useSchemas } from '@/hooks/use-schemas'
 import { useShellStore } from '@/stores/shell-store'
 import { useCanvasStore } from '@/stores/canvas-store'
 import { useDraftStore } from '@/stores/draft-store'
 import { useUndoStore } from '@/stores/undo-store'
 import type { DiffState } from '@/stores/draft-store'
-import { useMergePreview } from '@/hooks/use-merge'
 import { computeLayout } from '@/lib/layout'
 import { canContain, pathTo, validKindsForContext } from '@/lib/containment-rules'
 import { isPlainShortcut } from '@/lib/shortcuts'
 import { buildDuplicateSet } from '@/lib/duplicate'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Button } from '@/components/ui/button'
 
 export const Route = createFileRoute('/_app/projects/$projectId')({
   component: ProjectWorkspace,
@@ -53,14 +51,15 @@ export const Route = createFileRoute('/_app/projects/$projectId')({
 
 function ProjectWorkspace() {
   const { projectId } = Route.useParams()
-  const { activeDraftId, activeDraftStreamId, isReviewMode, reviewData, enterReviewMode } = useDraftStore()
-  const { data: elements, isLoading: elementsLoading } = useElements(projectId, activeDraftStreamId ?? undefined)
-  const { data: relationships, isLoading: relsLoading } = useRelationships(projectId, activeDraftStreamId ?? undefined)
-  const { data: messages } = useMessages(projectId, activeDraftStreamId ?? undefined)
+  const { selection, activeDraftStreamId, isReviewMode, reviewData } = useDraftStore()
+  // The model of the selected branch or revision. Each tool panel gets the branch as branchId.
+  const { elements, relationships, messages, operations, channels, subscriptions, isLoading: modelLoading } = useModel(projectId)
   const contractBranchId = activeDraftStreamId ?? undefined
-  const { data: operations } = useOperations(projectId, contractBranchId)
-  const { data: channels } = useChannels(projectId, contractBranchId)
-  const { data: subscriptions } = useSubscriptions(projectId, contractBranchId)
+  const { data: project } = useProject(projectId)
+  // A named revision never changes, and a viewer changes nothing.
+  const readOnly = selection.kind === 'revision' || project?.yourRole === 'Viewer'
+  // The selected model belongs to this project. Another project starts on its own main.
+  useEffect(() => () => useDraftStore.getState().reset(), [projectId])
   const scenarioReferences = useMemo<ScenarioReference[]>(() => {
     const elementName = (id: string) => elements?.find((e) => e.id === id)?.name ?? 'Unknown element'
     const channelName = (id: string) => channels?.find((c) => c.id === id)?.name ?? 'Unknown channel'
@@ -86,20 +85,22 @@ function ProjectWorkspace() {
   const { data: schemas } = useSchemas(projectId)
   const { data: views } = useViews(projectId)
   const { data: docs } = useDocs(projectId)
-  const projectName = 'Project'
+  const projectName = project?.name ?? 'Project'
   const createDoc = useCreateDoc(projectId)
   const { data: spaces } = useSpaces(projectId)
   const { activeViewId, activeDocId } = useShellStore()
   const { data: activeView } = useView(projectId, activeViewId)
-  const addElement = useAddElement(projectId, activeDraftStreamId)
-  const updateElement = useUpdateElement(projectId, activeDraftStreamId)
-  const removeElement = useRemoveElement(projectId, activeDraftStreamId)
-  const addRelationship = useAddRelationship(projectId, activeDraftStreamId)
-  const updateRelationship = useUpdateRelationship(projectId, activeDraftStreamId)
-  const removeRelationship = useRemoveRelationship(projectId, activeDraftStreamId)
-  const { saveLayout } = useSaveLayout(projectId, activeViewId)
+  // Every write of this page goes through the guard: a read-only model takes none of them.
+  const guard = writeGuard(readOnly)
+  const addElement = guard(useAddElement(projectId, activeDraftStreamId))
+  const updateElement = guard(useUpdateElement(projectId, activeDraftStreamId))
+  const removeElement = guard(useRemoveElement(projectId, activeDraftStreamId))
+  const addRelationship = guard(useAddRelationship(projectId, activeDraftStreamId))
+  const updateRelationship = guard(useUpdateRelationship(projectId, activeDraftStreamId))
+  const removeRelationship = guard(useRemoveRelationship(projectId, activeDraftStreamId))
+  const { saveLayout: writeLayout } = useSaveLayout(projectId, activeViewId)
+  const saveLayout = useCallback<typeof writeLayout>((positions) => (readOnly ? refuseWrite() : writeLayout(positions)), [readOnly, writeLayout])
   const createView = useCreateView(projectId)
-  const mergePreview = useMergePreview(projectId)
   const autoViewRef = useRef(false)
 
   // The Add Element dialog, with the parent and the kind it starts with. Null when it is closed.
@@ -132,12 +133,6 @@ function ProjectWorkspace() {
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeViewId, activeDocId, views])
-
-  const handleReview = async () => {
-    if (!activeDraftId) return
-    const data = await mergePreview.mutateAsync(activeDraftId)
-    enterReviewMode(data)
-  }
 
   // Build a map from entityId -> DiffState for canvas diff colouring
   const diffStateMap = useMemo<Map<string, DiffState>>(() => {
@@ -493,6 +488,9 @@ function ProjectWorkspace() {
       const meta = e.metaKey || e.ctrlKey
       const target = e.target as HTMLElement | null
       const inInput = target?.closest?.('input, textarea, select, [contenteditable="true"]')
+      // A read-only model takes no key that writes: undo, redo, duplicate, tidy, new element.
+      const writes = (meta && (e.key === 'z' || e.key === 'd')) || (!meta && (e.key === 't' || e.key === 'n' || e.shiftKey))
+      if (readOnly && writes && !inInput) return
 
       if (meta && e.key === 'z' && !e.shiftKey && !inInput) {
         e.preventDefault()
@@ -559,7 +557,7 @@ function ProjectWorkspace() {
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [elements, relationships, handleShortcutCreate, handleSmartDuplicate])
+  }, [elements, relationships, handleShortcutCreate, handleSmartDuplicate, readOnly])
 
   const activeFlyout = useShellStore((s) => s.activeFlyout)
 
@@ -570,7 +568,7 @@ function ProjectWorkspace() {
     }
   }, [activeFlyout])
 
-  if (elementsLoading || relsLoading) {
+  if (modelLoading) {
     return (
       <div className="flex h-screen flex-col">
         <TopBar projectId={projectId} />
@@ -593,13 +591,18 @@ function ProjectWorkspace() {
 
   return (
     <div className="flex h-screen flex-col">
-      <TopBar projectId={projectId} projectName={projectName} activeDoc={activeDocForBreadcrumb} />
+      <TopBar projectId={projectId} projectName={projectName} project={project} activeDoc={activeDocForBreadcrumb} />
       <div className="flex flex-1 overflow-hidden">
         <LeftToolbar>
+          <div className="flex h-full flex-col">
+          {/* Says which model the open panel reads when the workbench shows another model than main. */}
+          <ScopeNote flyout={activeFlyout} />
+          <div className="min-h-0 flex-1">
           {activeFlyout === 'files' && (
             <FilesFlyout
               views={views ?? []}
               docs={(docs ?? []).map((d) => ({ id: d.id, title: d.title, type: d.type ?? null }))}
+              model={project && { projectId, projectName: project.name, canImport: project.yourRole !== 'Viewer' }}
             />
           )}
           {activeFlyout === 'catalog' && (
@@ -639,20 +642,10 @@ function ProjectWorkspace() {
             />
           )}
           {activeFlyout === 'search' && null /* ⌘K handles search for now */}
+          </div>
+          </div>
         </LeftToolbar>
         <main className="relative flex-1">
-          {activeDraftId && !isReviewMode && !activeDocId && (
-            <div className="absolute right-3 top-3 z-10">
-              <Button
-                size="sm"
-                className="h-7 text-xs"
-                onClick={handleReview}
-                disabled={mergePreview.isPending}
-              >
-                {mergePreview.isPending ? 'Loading…' : 'Review'}
-              </Button>
-            </div>
-          )}
           {activeDocId ? (
             <DocEditor projectId={projectId} docId={activeDocId} />
           ) : (
@@ -662,6 +655,7 @@ function ProjectWorkspace() {
               positions={positions}
               diffStateMap={diffStateMap}
               isReviewMode={isReviewMode}
+              readOnly={readOnly}
               messages={messages ?? []}
               onFitViewReady={handleFitViewReady}
               onViewportCenterReady={handleViewportCenterReady}
@@ -707,6 +701,7 @@ function ProjectWorkspace() {
           relationships={relationships ?? []}
           messages={messages ?? []}
           schemas={schemas ?? []}
+          readOnly={readOnly}
           onUpdateElement={(id, fields) => updateElement.mutate({ id, ...fields })}
           onUpdateRelationship={(id, fields) => updateRelationship.mutate({ id, ...fields })}
           onDeleteElement={(id) => removeElement.mutate(id)}

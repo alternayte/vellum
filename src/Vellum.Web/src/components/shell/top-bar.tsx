@@ -1,8 +1,8 @@
 import { useShellStore } from '@/stores/shell-store'
-import { useDraftStore } from '@/stores/draft-store'
 import { StrataBreadcrumb } from './strata-breadcrumb'
 import { Button } from '@/components/ui/button'
-import { DraftPill } from '@/components/draft/draft-pill'
+import { BranchSwitcher } from '@/components/branch/branch-switcher'
+import type { ProjectDetail } from '@/lib/branches-api'
 import { useAuth } from '@/hooks/use-auth'
 import { useNavigate } from '@tanstack/react-router'
 import { Menu } from 'lucide-react'
@@ -10,12 +10,13 @@ import { Menu } from 'lucide-react'
 interface TopBarProps {
   projectId?: string
   projectName?: string
+  /** The project with the role of the signed-in person. With it the bar shows the model switcher. */
+  project?: ProjectDetail
   activeDoc?: { id: string; title: string; spaceName?: string | null } | null
 }
 
-export function TopBar({ projectId, projectName, activeDoc }: TopBarProps) {
+export function TopBar({ projectId, projectName, project, activeDoc }: TopBarProps) {
   const { toggleCommandPalette } = useShellStore()
-  const { activeDraftId } = useDraftStore()
   const { logout, user } = useAuth()
   const navigate = useNavigate()
 
@@ -34,7 +35,7 @@ export function TopBar({ projectId, projectName, activeDoc }: TopBarProps) {
     : '?'
 
   return (
-    <header className="flex h-12 items-center gap-3 border-b border-border bg-card px-3">
+    <header className="flex h-12 items-center gap-2 border-b border-border bg-card px-3 sm:gap-3">
       <button
         className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
         onClick={() => navigate({ to: '/' })}
@@ -44,18 +45,22 @@ export function TopBar({ projectId, projectName, activeDoc }: TopBarProps) {
       </button>
 
       {projectName && (
-        <span className="text-sm font-medium">{projectName}</span>
+        <span className="min-w-0 truncate text-sm font-medium max-sm:hidden">{projectName}</span>
       )}
 
-      <div className="mx-2">
+      {projectId && project && (
+        <BranchSwitcher projectId={projectId} workspaceId={project.workspaceId} role={project.yourRole} />
+      )}
+      {project?.yourRole === 'Viewer' && (
+        <span className="shrink-0 rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground" title="Your role in this workspace is Viewer. You can read the project and you cannot change it.">
+          Viewer<span className="max-sm:hidden"> · read-only</span>
+        </span>
+      )}
+
+      {/* The breadcrumb takes the room that is left. A long path scrolls in its own box and pushes nothing off the bar. */}
+      <div className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap sm:mx-2">
         <StrataBreadcrumb activeDoc={activeDoc} />
       </div>
-
-      {activeDraftId && projectId && (
-        <DraftPill projectId={projectId} />
-      )}
-
-      <div className="flex-1" />
 
       <Button
         variant="outline"
@@ -64,7 +69,7 @@ export function TopBar({ projectId, projectName, activeDoc }: TopBarProps) {
         onClick={toggleCommandPalette}
       >
         <span>Search</span>
-        <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px]">
+        <kbd className="rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px] max-sm:hidden">
           ⌘K
         </kbd>
       </Button>

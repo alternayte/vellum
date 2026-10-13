@@ -56,7 +56,7 @@ curl -sS --fail-with-body -b vellum.cookies -H 'content-type: application/json' 
 
 For a YAML file, send the content type `application/yaml` and use `--data-binary` in place of `-d`.
 
-The answer is `200` with an empty body. The import is one transaction: on an error, Vellum writes nothing and the answer names the first problem.
+The answer is `200` with the import result: the number of entries that the import added, changed and left unchanged, and one item for each entry. The import is one transaction: on an error, Vellum writes nothing and the answer names each refused entry. To see what an import does before it writes, add `?dryRun=true`, or use the preview in the app: see [Model document format](/reference/model-document-format/#export-and-import-in-the-app).
 
 Know what an import does before you use it:
 
@@ -66,9 +66,8 @@ Know what an import does before you use it:
 
 ## Limits
 
-- **Another project of the same instance.** A schema ID belongs to one project of an instance. An import of a file with schemas into a second project of the same instance is refused with a message that the schema belongs to another project. A model with no schemas imports into any project.
+- **Another project of the same instance.** A schema ID belongs to one project of an instance. In a second project of the same instance, the import gives each such schema a new ID and writes each reference to it with the new ID. The other facts keep their IDs.
 - **Another instance.** The import works when the instance holds none of the IDs of the file. The repository directory `examples/orders` holds a model document that you can import in this way.
-- **Parent order.** The import adds elements in the order of the file, and the export orders them by ID. In an empty project, a child whose ID sorts before the ID of its parent is refused with "Parent element not found". Move the parent before the child in the file.
 - **Size.** A file has 16 MB at most.
 
 ## See also

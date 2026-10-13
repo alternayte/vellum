@@ -1,30 +1,134 @@
 ---
 title: Work in a draft
-description: Create a draft of the model through the API, change it, preview the merge, resolve conflicts and merge it into main.
+description: Create a draft of the model, change it, read the diff against main, resolve conflicts and merge it into main, in the app or through the API.
 ---
 
-This guide shows you how to change the model in a draft and how to merge the draft into main. You need the editor role.
+This guide shows you how to change the model in a draft and how to merge the draft into main. You need the editor role. A viewer can open a draft and read its diff.
 
-The `curl` examples use the session cookie of a signed-in person in the file `vellum.cookies`. [Use the HTTP API](/how-to/use-the-http-api/) shows how to sign in. An agent token cannot make these calls: these endpoints are not open to agent tokens and answer `403`.
+## Find the model switcher
 
-## Know the limit
+The model switcher is the button in the top bar of a project, to the right of the project name. It shows the model that the workbench shows: **main**, a draft, a variant or a revision.
 
-The app has no control that creates or opens a draft. Drafts work through the API only. The **Branch** list in the **Costs** flyout shows the open drafts, so you can edit the cost sheet of a draft in the app.
+1. Select the model switcher.
+2. Read the list **Model shown**. It has the groups **Drafts**, **Variants** and **Revisions · read-only**.
+3. Select a model to show it.
+
+The actions below the list start a draft, a revision, a variant and a comparison.
 
 ## Create the draft
 
 A draft is a copy of main at one version. Main can change while the draft is open.
 
-1. Send the request. The `id` is a new UUID that you make.
+1. Select the model switcher.
+2. Select **New draft from main…**.
+3. Enter a **Draft name**.
+4. Select **Create draft**.
 
-   ```sh
-   curl -X POST "http://localhost:8080/api/projects/<project-id>/drafts" \
-     -b vellum.cookies \
-     -H "Content-Type: application/json" \
-     -d '{"id":"<new-uuid>","name":"add-outbox"}'
-   ```
+The workbench then shows the draft. The model switcher shows **Draft** and the name.
 
-2. Read the answer. Keep `id` (the draft ID) and `streamId` (the branch ID).
+If the request fails, the dialog shows **No draft was created.** and the reason.
+
+## Change the draft
+
+Change the model as you do on main. Each change goes to the draft while the model switcher shows the draft.
+
+These parts of the workbench follow the draft:
+
+- The canvas, the detail panel and **Element catalog**.
+- **Contracts**.
+- **Costs**. The panel opens on the cost sheet of the draft.
+- **Review**. The findings are the findings of the draft.
+- **Scenarios** and **Stress**. A run uses the model of the draft.
+- **Assistant**.
+
+These parts do not follow the draft. Each of them says so in a note at the top of its panel.
+
+| Panel | What it shows |
+|---|---|
+| **Project files** | Views and documents belong to the project. The model document is the document of main. |
+| **Create new** | A diagram and a document belong to the project. |
+| **Import from GitHub** | An import reads main and its proposals change main. |
+| **Promises** | Promises belong to the project. A check that you run in the panel plays on main. |
+| **Build** | The build export and Build Ready read main. |
+
+To go back to main, select the model switcher, then **main**.
+
+## See the diff against main
+
+1. Show the draft.
+2. Select **Diff and merge** in the top bar. On a narrow screen, select the model switcher, then **Diff against main and merge…**.
+3. Read the list. It shows each element, relationship, message, operation, channel, subscription and binding that the merge adds, changes or removes in main.
+4. Select a row to see its fields in main and in the draft.
+
+The part **Cost sheet** says how many resources and assumptions the merge changes in the cost sheet of main.
+
+The dialog shows the merge preview of the server. It writes nothing.
+
+To see the changes on the canvas, select **Show on the canvas**. The canvas then marks each changed element. Select **Close the diff** in the bar at the bottom to leave this view.
+
+## Resolve the conflicts
+
+A conflict is a change that needs a decision. The part **Conflicts** lists each one with the reason and with the fields of the two sides.
+
+| Reason in the dialog | Conflict kind in the API |
+|---|---|
+| Main and the draft changed this in different ways. | `both_modified` |
+| One side deleted this and the other side changed it. | `delete_modify` |
+| One side deleted an element and the other side put a child in it. | `orphaned_child` |
+| One side deleted this and a contract of the other side names it. | `referenced_by_contract` |
+| The owner of this operation does not exist after the merge. | `dangling_operation` |
+| This subscription names something that does not exist after the merge. | `dangling_subscription` |
+| This binding names something that does not exist after the merge. | `dangling_binding` |
+
+For each conflict, select one choice.
+
+| Choice | Result |
+|---|---|
+| **Keep main** | Main keeps its value. |
+| **Take the draft** | Main gets the value of the draft. If the draft deleted the item, main deletes it. |
+
+A conflict between the two cost sheets has no choice. The dialog shows **The two cost sheets do not merge.** and the reasons. Open **Costs**. Change the sheet of the draft or of main until the two agree. Then open the diff again.
+
+## Merge
+
+1. Give each conflict a choice.
+2. Select **Merge into main**.
+
+The workbench then shows main, and a message says that the draft is merged.
+
+The merge writes the model and the cost sheet together. If Vellum refuses the merge, it writes nothing, and the dialog shows **Nothing was merged.** and the reason.
+
+| Reason | Fix |
+|---|---|
+| `Main has changed since preview. Please re-preview.` | Close the dialog. Open the diff again. |
+| `The cost sheet of the draft does not merge into the cost sheet of main` | Change one of the two cost sheets until the two agree. |
+| A sentence that names an item that points at nothing | The choices give a model that is not valid. Select other choices, or change the draft. |
+
+## Abandon a draft
+
+1. Show the draft.
+2. Select the model switcher.
+3. Select **Abandon this draft…**.
+4. Select **Abandon draft**.
+
+Vellum discards the changes of the draft and its cost sheet. Main does not change. An abandoned draft cannot be opened again.
+
+## Use the API
+
+The `curl` examples use the session cookie of a signed-in person in the file `vellum.cookies`. [Use the HTTP API](/how-to/use-the-http-api/) shows how to sign in. An agent token cannot make these calls: these endpoints are not open to agent tokens and answer `403`.
+
+### Create a draft
+
+Send the request. The `id` is a new UUID that you make.
+
+```sh
+curl -X POST "http://localhost:8080/api/projects/<project-id>/drafts" \
+  -b vellum.cookies \
+  -H "Content-Type: application/json" \
+  -d '{"id":"<new-uuid>","name":"add-outbox"}'
+```
+
+Keep `id` (the draft ID) and `streamId` (the branch ID) of the answer.
 
 ```json
 {
@@ -44,7 +148,7 @@ A draft is a copy of main at one version. Main can change while the draft is ope
 
 `GET /api/projects/{projectId}/drafts` lists the drafts. `GET /api/projects/{projectId}/drafts/{draftId}` gives one.
 
-## Change the draft
+### Change a draft
 
 Add `?branchId=<streamId>` to a model request. The request then reads or writes the draft and not main.
 
@@ -61,7 +165,7 @@ A write to a draft that is merged or abandoned gets `400` with the error type `i
 
 To give the draft the cost sheet of main, send `POST /api/projects/{projectId}/costs/copy` with `?branchId=<streamId>` and the body `{"from":"main"}`.
 
-## Add a comment
+### Add a comment
 
 ```sh
 curl -X POST "http://localhost:8080/api/projects/<project-id>/drafts/<draft-id>/comments" \
@@ -78,7 +182,9 @@ curl -X POST "http://localhost:8080/api/projects/<project-id>/drafts/<draft-id>/
 
 You change and delete only your own comments. For a comment of another person the answer is `403` with `You can only edit your own comments` or `You can only delete your own comments`.
 
-## Preview the merge
+In the app, the detail panel shows the comments of an element while the diff is shown on the canvas.
+
+### Preview the merge
 
 ```sh
 curl -X POST "http://localhost:8080/api/projects/<project-id>/drafts/<draft-id>/merge/preview" \
@@ -125,41 +231,20 @@ The preview writes nothing. A viewer can call it.
 
 The values in the example are short. A real value is the full element, relationship, message, operation, channel or subscription.
 
-## Read the conflicts
+### Merge
 
-| `conflictKind` | Meaning |
-|---|---|
-| `both_modified` | Main and the draft changed the same item in different ways. |
-| `delete_modify` | One side deleted the item and the other side changed it. |
-| `orphaned_child` | One side deleted an element and the other side put a child in it. |
-| `referenced_by_contract` | One side deleted an element or a channel that an operation, a subscription or a binding of the other side names. |
-| `dangling_operation` | The owner of an operation does not exist after the merge. |
-| `dangling_subscription` | A subscription names an item that does not exist after the merge. |
-| `dangling_binding` | A binding names an item that does not exist after the merge. |
+An error answer has the fields `type`, `title`, `detail` and `errors`.
 
-For each conflict, choose one resolution.
+Send the merge. Give one resolution for each conflict: `keep_ours` or `take_theirs`. Give the `mainVersion` of the preview as `expectedMainVersion`.
 
-| Resolution | Result |
-|---|---|
-| `keep_ours` | Main keeps its value. |
-| `take_theirs` | Main gets the value of the draft. If the draft deleted the item, main deletes it. |
+```sh
+curl -X POST "http://localhost:8080/api/projects/<project-id>/drafts/<draft-id>/merge/execute" \
+  -b vellum.cookies \
+  -H "Content-Type: application/json" \
+  -d '{"resolutions":[{"entityId":"<entity-id>","resolution":"take_theirs"}],"expectedMainVersion":45}'
+```
 
-## Merge
-
-An error answer has the fields `type`, `title`, `detail` and `errors`. The tables on this page give the `type` and the `title`.
-
-1. Send the merge. Give one resolution for each conflict. Give the `mainVersion` of the preview as `expectedMainVersion`.
-
-   ```sh
-   curl -X POST "http://localhost:8080/api/projects/<project-id>/drafts/<draft-id>/merge/execute" \
-     -b vellum.cookies \
-     -H "Content-Type: application/json" \
-     -d '{"resolutions":[{"entityId":"<entity-id>","resolution":"take_theirs"}],"expectedMainVersion":45}'
-   ```
-
-2. Read the answer. The `status` of the draft is `merged`.
-
-The merge writes the model and the cost sheet together. If Vellum refuses the merge, it writes nothing.
+The `status` of the draft in the answer is `merged`.
 
 | Status | Message | Fix |
 |---|---|---|
@@ -170,13 +255,11 @@ The merge writes the model and the cost sheet together. If Vellum refuses the me
 | `409` | `Draft is merged` or `Draft is abandoned` | The draft is closed. Create a new draft. |
 | `409` | A sentence that names an item that points at nothing | The resolutions give a model that is not valid. Choose other resolutions, or change the draft. |
 
-A cost sheet conflict has no resolution to choose. The two sheets must agree before the merge.
-
-## Abandon a draft
+### Abandon a draft
 
 ```sh
 curl -X POST "http://localhost:8080/api/projects/<project-id>/drafts/<draft-id>/abandon" \
   -b vellum.cookies
 ```
 
-The `status` becomes `abandoned`. Main does not change. An abandoned draft cannot be opened again.
+The `status` becomes `abandoned`.

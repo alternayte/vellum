@@ -247,6 +247,32 @@ public class IdentityEndpointTests
         using var scope = factory.Services.CreateScope();
         Assert.False(await scope.ServiceProvider.GetRequiredService<AppIdentityDbContext>().Users.AnyAsync());
     }
+
+    [Fact]
+    public async Task The_sign_in_methods_name_only_what_the_instance_offers()
+    {
+        using var factory = CreateFactory();
+        using var client = CreateClient(factory);
+
+        // No credential is needed. This instance has no external provider.
+        var plain = await client.GetFromJsonAsync<SignInMethodsResponse>("/api/auth/methods");
+        Assert.True(plain!.Password);
+        Assert.Empty(plain.Providers);
+
+        // The answer on registration is the answer that the registration itself gives.
+        var register = await client.PostAsJsonAsync("/api/auth/register",
+            new { email = $"test-{Guid.NewGuid():N}@vellum.local", password = "Test12345!", displayName = "Test" });
+        Assert.Equal(register.StatusCode != HttpStatusCode.Forbidden, plain.RegistrationOpen);
+
+        using var withGitHub = CreateFactory().WithWebHostBuilder(builder =>
+        {
+            builder.UseSetting("Authentication:GitHub:ClientId", "client-id");
+            builder.UseSetting("Authentication:GitHub:ClientSecret", "client-secret");
+        });
+        using var second = CreateClient(withGitHub);
+        var configured = await second.GetFromJsonAsync<SignInMethodsResponse>("/api/auth/methods");
+        Assert.Equal([IdentityModule.GitHubScheme], configured!.Providers);
+    }
 }
 
 // Helper to remove all registrations of a type

@@ -66,6 +66,8 @@ interface DetailPanelProps {
   onDeleteRelationship?: (id: string) => void
   /** Opens the Add Element dialog for a child of this kind inside the element. */
   onAddChild?: (parentId: string, kind: string) => void
+  /** The model cannot be changed: the fields show their values and take no input. */
+  readOnly?: boolean
 }
 
 export function DetailPanel({
@@ -79,6 +81,7 @@ export function DetailPanel({
   onDeleteElement,
   onDeleteRelationship,
   onAddChild,
+  readOnly = false,
 }: DetailPanelProps) {
   const { detailPanelOpen, selectedElementId, selectedRelationshipId, selectedMessageId, selectElement, selectRelationship, selectMessage } =
     useShellStore()
@@ -120,6 +123,8 @@ export function DetailPanel({
   return (
     <Sheet open={detailPanelOpen} modal={false} onOpenChange={(open) => !open && handleClose()}>
       <SheetContent side="right" overlay={false} className="w-80 overflow-y-auto border-l border-border bg-card">
+        {readOnly && <p role="note" className="mx-4 mt-10 rounded-md border border-dashed border-border px-2.5 py-1.5 text-[11px] text-muted-foreground">Read-only. The fields show the values and take no change.</p>}
+        <fieldset disabled={readOnly} className="m-0 min-w-0 border-0 p-0">
         {selectedMessage && (
           <div key={selectedMessage.id}>
             <SheetHeader>
@@ -479,6 +484,7 @@ export function DetailPanel({
             )}
           </>
         )}
+        </fieldset>
       </SheetContent>
     </Sheet>
   )
