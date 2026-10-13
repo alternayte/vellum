@@ -12,19 +12,21 @@ Each model branch of a project has one cost sheet: main, each draft and each var
 - A new variant starts with a copy of a cost sheet. Vellum makes the variant and the copy in one transaction. The default source is the branch that the model is forked from. `costSheetFrom` in the request names another branch.
 - A new draft has an empty sheet until you copy one into it.
 - A copy leaves out a resource whose element is not in the model of the new branch.
+- A copy keeps each assumption. When the subject of an assumption is not in the model of the new branch, the copy has no subject.
+- A branch whose source has no sheet starts with no sheet.
 
 ### Resource
 
 | Field | Content |
 |---|---|
 | `elementId` | The model element that the resource runs. The element must be in the model of the branch. |
-| `name` | Unique for the element. |
+| `name` | Unique for the element. One line of at most 200 characters. |
 | `category` | `compute`, `database`, `queue`, `storage`, `egress` or `other`. |
 | `provider` | `azure`, `aws`, `gcp` or `custom`. |
-| `region`, `sku` | Text. |
-| `quantity`, `unit` | The baseline for one month. Leave both out for a resource that has usage lines only. |
-| `priceRef` | The ID of a price entry of the workspace, or null. |
-| `usage` | Up to 20 usage lines. Each has a `name`, an `assumptionId` and a `priceRef`. |
+| `region`, `sku` | Text. The region has at most 100 characters. The SKU has at most 200 characters. |
+| `quantity`, `unit` | The baseline for one month. Leave both out for a resource that has usage lines only. The quantity is from 0 to 1,000,000,000,000 with at most 6 decimal places. |
+| `priceRef` | The ID of a price entry of the workspace, or null. A resource without a quantity takes no `priceRef`. |
+| `usage` | Up to 20 usage lines. Each has an `id`, a `name`, an `assumptionId` of the same sheet and a `priceRef` or null. |
 | `factStatus`, `provenance` | The truth label of the resource, as for other model facts. The default is `declared`. |
 
 ### Assumption
@@ -34,12 +36,14 @@ Each model branch of a project has one cost sheet: main, each draft and each var
 | `name` | Unique in the sheet. |
 | `kind` | `requests`, `storage`, `egress`, `messages` or `other`. |
 | `subjectId` | An element, an operation or a channel of the model, or null for the whole system. |
-| `value`, `unit` | The number and its unit. |
+| `value`, `unit` | The number and its unit. The value is from 0 to 1,000,000,000,000 with at most 6 decimal places. |
 | `label` | `declared`, `measured` or `inferred`. |
-| `source` | Where the number comes from. Necessary for `measured` and `inferred`. |
+| `source` | Where the number comes from. Necessary for `measured` and `inferred`. At most 2000 characters. |
 | `effectiveDate` | The first day on which the number applies. |
 
 A sheet holds at most 500 resources and 500 assumptions.
+
+A request can give the `id` of a new resource, a new usage line or a new assumption. Without it, Vellum makes one. Each write answers with the whole sheet: `branchId`, `version`, `resources` and `assumptions`. Each resource in the answer has `elementName`. It is null when the element is not in the model of the branch.
 
 ## Price entry
 
@@ -47,32 +51,48 @@ The price book belongs to the workspace. It holds at most 2000 entries. An entry
 
 | Field | Content |
 |---|---|
-| `provider`, `region`, `sku` | What the price is for. |
-| `unit`, `unitPrice`, `currency` | The price for one unit. The price has at most 10 decimal places. |
+| `provider`, `region`, `sku` | What the price is for. The provider is `azure`, `aws`, `gcp` or `custom`. A custom price needs a `sku`. The region can be empty. |
+| `description` | Text, or null. |
+| `unit`, `unitPrice`, `currency` | The price for one unit. The price is from 0 to 1,000,000 with at most 10 decimal places. The currency is a code of three upper-case letters, for example `USD`. |
 | `effectiveDate` | The first day on which the price applies. |
 | `source` | `custom` or `fetched`. |
 | `acceptedBy`, `acceptedAt` | The person who entered the price, or who picked the fetched row, and the time. |
-| `fetched` | For a fetched price: the address, the time of the request, the meter ID of the provider and the effective date of the provider. |
+| `fetched` | For a fetched price: `url`, `fetchedAt`, `meterId` and `providerEffectiveDate`. Null for a custom price. |
+| `unitReadable` | False when Vellum does not read the unit. A line with this price is then unknown. |
 
-A project can pin an entry. An owner cannot delete a pinned entry. When an entry is deleted, each line that names it becomes unknown.
+A project can pin an entry. A project pins at most 500 entries. An owner cannot delete a pinned entry: the delete answers `409`. When an entry is deleted, each line that names it becomes unknown with the reason `price-not-found`.
 
 ## Azure Retail Prices
 
 Vellum reads the Azure Retail Prices API as Microsoft documents it at <https://learn.microsoft.com/en-us/rest/api/cost-management/retail-prices/azure-retail-prices>. The page was read on 2026-10-13.
 
-- The request is `GET {base URL}/api/retail/prices` with `api-version=2023-01-01-preview`, `currencyCode='USD'` and `$filter`.
+- The request is `GET {base URL}/api/retail/prices` with `api-version=2023-01-01-preview`, `currencyCode` and `$filter`. The currency code is in single quotes, for example `currencyCode='USD'`. Without `currency` in the search, Vellum uses the currency of the workspace.
 - The filter uses `serviceName`, `armRegionName`, `skuName`, `meterId` and `skuId` with `eq`, `contains(meterName, '…')` and `priceType eq 'Consumption'`.
-- Vellum refuses a search value that holds a single quote.
-- The response holds `Items` and `NextPageLink`. Vellum reads at most 2 pages and shows at most 500 rows. It follows `NextPageLink` only to the server in the settings.
+- A search needs `serviceName`. The values are case sensitive.
+- Vellum refuses a search value that holds a single quote or a control character, that starts or ends with a space, or that has more than 100 characters.
+- The response holds `Items` and `NextPageLink`. Vellum reads at most 2 pages and shows at most 500 rows. It follows `NextPageLink` only to the server in the settings. `more` in the answer is true when the API has more rows than Vellum read.
+- Vellum does not show a row without a meter ID, a unit or a price, or a row in another currency than the search.
 - Vellum stores `retailPrice`, `unitOfMeasure`, `currencyCode`, `meterId`, `armRegionName`, `skuName`, `productName`, `meterName` and `effectiveStartDate`.
-- Vellum does not store a row whose `type` is not `Consumption` or a row with a `reservationTerm`.
+- Vellum does not store a row whose `type` is not `Consumption`, a row with a `reservationTerm` or a row whose price is outside the range of a unit price. Such a row has a sentence in `notImportable`.
+- The stored `sku` is the `skuName`, or the `meterName` when the row has no `skuName`. The stored effective date is `effectiveStartDate`, or the day of the request when the row has none.
 - The API returns one row for each price tier of a meter. The rows have the same meter, SKU and region and different `tierMinimumUnits`. When one row of such a group has `tierMinimumUnits` above 0, Vellum stores no row of the group. The row from 0 is the price of the first units only, and it is often 0. The import answers `409` with the type `price_tiered`. Enter the price that you pay as a custom price.
 
-The API is public. Vellum sends no credential and no workspace data to it, except the search values. The base URL is the setting `cost.azureRetailPricesBaseUrl`. The instance policy for outbound addresses applies to it.
+The API is public. Vellum sends no credential and no workspace data to it, except the search values. The base URL is the setting `cost.azureRetailPricesBaseUrl`. The instance policy for outbound addresses applies to it. An empty value turns the search off.
+
+The search and the import answer with these refusals:
+
+| Status | Type | Cause |
+|---|---|---|
+| `400` | `price_source_refused` | The API refused the filter. |
+| `409` | `price_source_not_configured` | The setting is empty, or the instance policy refuses the address. |
+| `409` | `price_tiered` | The import names a meter with price tiers. |
+| `409` | `conflict` | The import finds no row that Vellum can store, or more than one row. |
+| `502` | `price_source_unavailable` | The API gave no usable answer. |
+| `503` | `price_source_rate_limited` | The API limits the requests of the server. |
 
 ## Units
 
-A unit is `[number] name [/ period]`. The period is `hour`, `day` or `month`. Examples: `1 Hour`, `GB/month`, `1000000 requests`, `instances`. A space stands between the number and the name. Names are compared in lower case and in the singular.
+A unit is `[number] name [/ period]`. The period is `hour`, `day` or `month`. Examples: `1 Hour`, `GB/month`, `1000000 requests`, `instances`. A space stands between the number and the name. Names are compared in lower case and in the singular. A unit has at most 50 characters. The number is from 0.001 to 1,000,000,000. `h`, `hr` and `hrs` are hours, `d` is a day and `mo` is a month.
 
 Vellum converts a quantity to price units with these rules only:
 
@@ -117,6 +137,8 @@ The estimate is a function of the resources, the assumptions, the price entries,
 - A price is used only for a resource of the same provider. When the resource and the price each name a region, the regions must be the same. Vellum compares regions without regard to upper and lower case. A price with no region applies to each region of its provider.
 - A resource is priced only while its element is in the model of the branch.
 - The amount of one line is at most 1,000,000,000,000,000.
+- The default date is the current day in UTC.
+- The answer holds `branchId`, `modelVersion`, `sheetVersion`, `inputsFingerprint`, `hash` and `estimate`. `inputsFingerprint` is the hash of the inputs without the date.
 - Dates and numbers in the result have the same text on each server. The language settings of the server do not change the hash.
 - `hash` is the SHA-256 of the canonical JSON of the estimate.
 - `engine` is `cost-2`. Engine `cost-1` did not compare the provider and the region of a price and did not read the elements of the model.
@@ -127,7 +149,7 @@ A line with one of these reasons has no amount. It is in no subtotal and in no t
 
 | Reason | Meaning |
 |---|---|
-| `no-price` | The line names no price entry. |
+| `no-price` | The line names no price entry, or the resource has no quantity and no usage line. |
 | `price-not-found` | The price entry is not in the price book of the workspace. |
 | `price-not-effective` | The effective date of the price is after the date of the estimate. |
 | `unit-mismatch` | Vellum does not read a unit, or the two units do not convert. |
@@ -151,7 +173,7 @@ The age of a price counts from the day it was entered or fetched. It does not co
 
 ## Saved estimate
 
-A saved estimate holds the branch, the version of the model stream, the date, the fingerprint of the inputs, the hash and the result. It never changes. When the inputs of the branch change, the estimate is `outdated` and `changes` lists each resource, assumption, price or setting that was added, removed or changed. A branch holds at most 100 saved estimates.
+A saved estimate holds a name, the branch, the version of the model stream, the date, the fingerprint of the inputs, the hash, the user, the time and the result. The default name is `Estimate` and the date. A list of saved estimates leaves out the result. It never changes. When the inputs of the branch change, the estimate is `outdated` and `changes` lists each resource, assumption, price or setting that was added, removed or changed. A branch holds at most 100 saved estimates.
 
 - A resource counts as changed when its element leaves the model.
 - An estimate that an earlier engine saved is `outdated`. `changes` then has an entry of the kind `engine`. It lists the inputs that were added or removed. It cannot tell if an input that is on both sides changed.
@@ -180,6 +202,7 @@ The merge is a three-way merge by the ID of each resource and each assumption. T
 | Changed, added or removed | Not changed | The value of the draft. |
 | Changed | Changed to the same value | That value. |
 | Changed | Changed to a different value, or removed | Conflict. |
+| Added | Added with the same ID and a different value | Conflict. |
 | Removed | Changed | Conflict. |
 
 These cases are conflicts too:
@@ -188,7 +211,7 @@ These cases are conflicts too:
 - The merged sheet has two assumptions with the same name.
 - The merged sheet has more than 500 resources or 500 assumptions.
 
-Vellum refuses a merge with a conflict. The answer is `409` with the type `cost_sheet_conflict` and one sentence for each conflict. Nothing is stored. The merge of the model takes a resolution for each model conflict. A sheet conflict has no resolution: change the sheet of the draft or of main until the two agree, then merge again.
+Vellum refuses a merge with a conflict. The answer is `409` with the type `cost_sheet_conflict` and one text that names at most 10 conflicts and the number of the others. Nothing is stored. The merge of the model takes a resolution for each model conflict. A sheet conflict has no resolution: change the sheet of the draft or of main until the two agree, then merge again.
 
 `POST /api/projects/{projectId}/drafts/{draftId}/merge/preview` returns `costSheet` with the number of sheet `changes` and the list of `conflicts`.
 
@@ -210,7 +233,7 @@ The target of the entry holds the ID of the price entry, the provider, the SKU, 
 
 ## Endpoints
 
-A project endpoint takes `?branchId=` with the stream ID of a draft or a variant. Without it, the endpoint uses main. A viewer reads. An editor writes. Only an owner changes the price book or searches Azure.
+A project endpoint takes `?branchId=` with the stream ID of a draft or a variant. Without it, the endpoint uses main. A viewer reads. An editor writes and pins. Only an owner of the workspace changes the price book or searches Azure.
 
 | Method and path | Purpose |
 |---|---|
@@ -219,20 +242,20 @@ A project endpoint takes `?branchId=` with the stream ID of a draft or a variant
 | `PUT`, `DELETE /api/projects/{projectId}/costs/resources/{resourceId}` | Change or remove a resource. |
 | `POST /api/projects/{projectId}/costs/assumptions` | Add an assumption. |
 | `PUT`, `DELETE /api/projects/{projectId}/costs/assumptions/{assumptionId}` | Change or remove an assumption. |
-| `POST /api/projects/{projectId}/costs/copy` | Replace the sheet with a copy of the sheet of the branch in `from`. |
+| `POST /api/projects/{projectId}/costs/copy` | Replace the sheet with a copy of the sheet of the branch in `from`. `from` is `main` or a branch ID, and it is another branch than the target. |
 | `POST /api/projects/{projectId}/variants` | Create a variant. `costSheetFrom` is `main` or a branch ID. The variant starts with a copy of that cost sheet. |
 | `GET /api/projects/{projectId}/costs/estimate?asOf=` | The estimate as it is now. Nothing is stored. |
 | `GET`, `POST /api/projects/{projectId}/costs/estimates` | List the saved estimates, or save one. |
 | `GET`, `DELETE /api/projects/{projectId}/costs/estimates/{estimateId}` | Read or delete a saved estimate. |
 | `GET /api/projects/{projectId}/costs/compare?left=&right=&asOf=` | Compare two branches. A side is `main` or a branch ID. |
-| `GET /api/projects/{projectId}/costs/prices` | The price book of the workspace of the project, and the pinned entries. |
+| `GET /api/projects/{projectId}/costs/prices` | The price book of the workspace of the project, and the IDs of the pinned entries. |
 | `PUT`, `DELETE /api/projects/{projectId}/costs/pins/{priceId}` | Pin or unpin a price entry. |
-| `GET`, `POST /api/workspaces/{workspaceId}/prices` | List the price book, or add a custom price. |
+| `GET`, `POST /api/workspaces/{workspaceId}/prices` | List the price book, or add a custom price. The list is in pages: `limit` is from 1 to 200 with a default of 50, and `cursor` is the `cursor` of the page before. |
 | `DELETE /api/workspaces/{workspaceId}/prices/{priceId}` | Delete an entry that no project pins. |
 | `GET /api/workspaces/{workspaceId}/prices/azure/meters` | Search Azure meters. Parameters: `serviceName`, `region`, `skuName`, `meterName`, `currency`. |
 | `POST /api/workspaces/{workspaceId}/prices/azure` | Store the row with `meterId`, `skuId`, `armRegionName` and `currency`. Vellum reads the row again. |
 
-A workspace makes at most 30 Azure requests in one minute.
+A workspace makes at most 30 Azure requests in one minute. A request over the limit gets `429` with the type `rate_limited` and a `Retry-After` header.
 
 A request body without `value` for an assumption, or without `unitPrice` for a custom price, gets `400` with the name of the field. Vellum does not read a missing number as 0.
 

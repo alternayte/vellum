@@ -1,0 +1,67 @@
+---
+// Starlight's theme picker, with one change: a reader with no stored choice gets the dark
+// theme, and "Auto" is stored as a choice of its own. Keep this file in step with
+// @astrojs/starlight/components/ThemeSelect.astro and with ./ThemeProvider.astro.
+import Select from '@astrojs/starlight/components/Select.astro'
+---
+
+<starlight-theme-select>
+  <Select
+    icon="moon"
+    label={Astro.locals.t('themeSelect.accessibleLabel')}
+    options={[
+      { label: Astro.locals.t('themeSelect.dark'), selected: true, value: 'dark' },
+      { label: Astro.locals.t('themeSelect.light'), selected: false, value: 'light' },
+      { label: Astro.locals.t('themeSelect.auto'), selected: false, value: 'auto' },
+    ]}
+    width="6.25em"
+  />
+</starlight-theme-select>
+
+{/* Inlined so that the picker shows the right value on the first paint. Uses the global of ThemeProvider.astro. */}
+<script is:inline>
+  StarlightThemeProvider.updatePickers()
+</script>
+
+<script>
+  type Theme = 'auto' | 'dark' | 'light'
+
+  const storageKey = 'starlight-theme'
+
+  /** No stored choice, or a value that is not a theme, means dark. */
+  const parseTheme = (theme: unknown): Theme => (theme === 'auto' || theme === 'light' ? theme : 'dark')
+
+  const loadTheme = (): Theme => parseTheme(typeof localStorage !== 'undefined' && localStorage.getItem(storageKey))
+
+  function storeTheme(theme: Theme): void {
+    if (typeof localStorage !== 'undefined') localStorage.setItem(storageKey, theme)
+  }
+
+  const systemTheme = (): 'dark' | 'light' => (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark')
+
+  declare const StarlightThemeProvider: { updatePickers(theme?: string): void }
+
+  function apply(theme: Theme): void {
+    StarlightThemeProvider.updatePickers(theme)
+    document.documentElement.dataset.theme = theme === 'auto' ? systemTheme() : theme
+  }
+
+  matchMedia('(prefers-color-scheme: light)').addEventListener('change', () => {
+    if (loadTheme() === 'auto') apply('auto')
+  })
+
+  class StarlightThemeSelect extends HTMLElement {
+    constructor() {
+      super()
+      apply(loadTheme())
+      this.querySelector('select')?.addEventListener('change', (e) => {
+        if (e.currentTarget instanceof HTMLSelectElement) {
+          const theme = parseTheme(e.currentTarget.value)
+          apply(theme)
+          storeTheme(theme)
+        }
+      })
+    }
+  }
+  customElements.define('starlight-theme-select', StarlightThemeSelect)
+</script>

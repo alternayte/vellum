@@ -28,6 +28,28 @@ The engine walks the same scenario document as the trace engine. It moves jobs, 
 
 A scenario that the trace engine refuses is refused.
 
+## Profile document
+
+`POST /api/projects/{projectId}/stress/profiles` and `PUT /api/projects/{projectId}/stress/profiles/{profileId}` take this document as the body. The body has at most 256 KB. Each list is necessary. An empty list is valid.
+
+| Member | Content |
+|---|---|
+| `name` | One line of at most 200 characters. |
+| `scenarioId` | A saved scenario of the project. |
+| `seed` | An unsigned 64-bit integer as text in decimal digits, from `0` to `18446744073709551615`. |
+| `arrivals` | `kind`, `ratePerSecond`, `toRatePerSecond` for a ramp, `bursts` for a burst, `durationSeconds` and `warmUpSeconds`. |
+| `arrivals.bursts[]` | `fromSeconds`, `toSeconds` and `ratePerSecond`. The windows are in time order, do not overlap and are inside the duration. |
+| `resources[]` | `elementId`, `concurrency` and `queueCapacity`. One entry for each element. |
+| `serviceTimes[]` | `target` and `time`. The target is an operation, a subscription or a store element. `time` has `kind` and the members of its distribution: `ms`, `meanMs`, `medianMs` and `p95Ms`, or `minMs` and `maxMs`. |
+| `subscriptions[]` | `subscriptionId`, `consumers` and `queueCapacity`. |
+| `branches[]` | `stepId` and `probability`. |
+| `overrides[]` | `target` and at least one of `timeoutMs`, `maxAttempts` and `backoffMs`. The target is an operation or a subscription of the flow. A subscription takes no `timeoutMs`. |
+| `outages[]` | `target`, `fromSeconds` and `toSeconds`. The target is an element, an operation, a channel or a subscription of the model. |
+
+`arrivals` and each entry of `resources`, `serviceTimes`, `subscriptions`, `branches` and `overrides` has a `label` and a `measurementRef`. The label is `declared` or `measured`. The default is `declared`. A `declared` value has no `measurementRef`. A `measured` value needs a `measurementRef` that names an imported result. See [k6 result format and target rules](/reference/k6-results-and-targets/#measured-values-in-a-stress-profile).
+
+A save checks the ranges and the shape only. A profile that lacks an input of its scenario is saved, and the run names what is missing.
+
 ## Time and events
 
 - Time is virtual. It is a whole number of nanoseconds.
@@ -138,7 +160,7 @@ The consumers of a subscription and the workers of the same element are separate
 
 ## Overrides
 
-A profile can replace the timeout or the retry policy of an operation, and the retry policy of a subscription. The result lists each replaced value next to the value of the model.
+A profile can replace the timeout or the retry policy of an operation, and the retry policy of a subscription. The result lists each replaced value next to the value of the model. A value that is equal to the value of the model is not in that list.
 
 ## Statistics
 
@@ -154,6 +176,7 @@ The run has three parts: the warm-up, the measured window and the drain. The mea
 - **Flow latency** is from the start of a flow to the end of its last synchronous step.
 - **Call latency** is from the start of an attempt to its response, for attempts that succeeded.
 - **Subscription latency** is from the publish to the end of the handler, for deliveries that succeeded.
+- **Element latency** is from the arrival of a call or a write at the element to the release of the worker.
 - **Wait** is from the arrival at a resource to the start of service.
 
 ### Percentiles
@@ -200,7 +223,7 @@ The engine measures four values for each resource inside the measured window:
 
 A coefficient that has no value is 1. The variability is `v = (ca² + cs²) / 2`. It is 1 for Poisson arrivals and exponential service times, and 0 when nothing varies.
 
-The noise bound is the smaller of two depths. It is at least 2.
+The noise bound is the smaller of two depths. It is at least 2. It is at most the `queued` limit plus 1.
 
 **Depth of a steady queue.** The measured utilisation has a standard error of `u * sqrt(2 * v / n)`. The rule uses the upper 1 % point: `w = min(1, u * (1 + 2.326 * sqrt(2 * v / n)))`. With `s = exp(-(1 - w) / v)`, the depth is the smallest d of 2 or more with
 
@@ -270,15 +293,30 @@ Every result lists the effects that the engine leaves out:
 
 A result adds the faults and the assertions of the scenario when the scenario has them. The engine applies neither.
 
+A result also states the number of inputs of the profile that the flow does not use. Such an input has no effect and is not in the assumptions.
+
+## Confidence
+
+The result states a level and the rule that sets it.
+
+| Level | Rule |
+|---|---|
+| `low` | A service time on the path of the flow is declared without a measurement. |
+| `medium` | Each service time on the path of the flow is measured. |
+
+The engine never reports `high`. The level is not a probability.
+
 ## The hash
 
 The hash is SHA-256 over the result in canonical JSON, with the hash member empty. The result holds the engine version, the seed, every assumption and the limits of the run.
 
-Two runs have the same result only when their hashes are equal. The comparison of two runs states this from the hashes, not from the list of inputs.
+Two runs have the same result only when their hashes are equal. The comparison of two runs states this in `sameResult` from the hashes, not from the list of inputs.
 
 ## Comparison
 
-The comparison lists the inputs that differ. These keys name one input each:
+`GET /api/projects/{projectId}/stress/compare` takes `left` and `right`, the IDs of two stored runs of the project. Each row of `metrics` has the left value, the right value and `delta`. The delta is right minus left. It is null when one side has no value. The comparison gives no verdict.
+
+The comparison lists the inputs that differ. The first entries are what pins each run: `profile`, `model`, `scenario`, `seed` and `engineVersion`. These keys name one input each:
 
 | Input | Key |
 |---|---|
@@ -287,20 +325,20 @@ The comparison lists the inputs that differ. These keys name one input each:
 | Branch probability | The step ID. |
 | Override | The target and the field. |
 | Outage window | The target and the place of the window in time order among the windows of that target. |
-| Limit | The name of the limit. |
+| Limit | `limits.` and the name of the limit. A run of engine version 1 has `not recorded`. |
 
 ## Limits
 
-A run over a limit stops with `stress-too-large` and the name of the limit. It stores no result.
+A run over a limit stops with the issue `stress-too-large` and the name of the limit in `limit`. It stores no result.
 
 | Limit | Value | Name |
 |---|---|---|
 | Arrival window | 3 600 virtual seconds | `duration` |
-| Arrivals | 200 000 | `arrivals` |
+| Arrivals. The run is refused before it starts when the mean number of arrivals of the profile is above the limit. | 200 000 | `arrivals` |
 | Events | 5 000 000 | `events` |
 | Work that waits at one instant | 250 000 | `queued` |
 | Events that are scheduled at one instant | 250 000 | `pending` |
-| Resources, service times and subscriptions of one flow | 100 | `targets` |
+| Resources, service times and subscriptions of one flow. The count is the elements with workers, the operations, the stores and two times the subscriptions. | 100 | `targets` |
 | Bindings matched for one message | 200 | `routes` |
 | Real time | 20 seconds | `wall-clock` |
 
@@ -331,43 +369,67 @@ These bounds apply to stored data:
 | Profiles of one project | 50 |
 | Stored runs of one profile | 20 |
 
+A create of profile 51 gets status 409. A profile keeps its newest 20 runs. Vellum deletes an older run when it stores a new one.
+
 ## Profile ranges
 
 | Field | Range |
 |---|---|
 | Duration | At least 0.001 s, at most 86 400 s |
 | Measured window, from the end of the warm-up to the end of the duration | At least 0.001 s |
-| Rate | 0 to 100 000 per second |
+| Rate | 0 to 100 000 per second. The rate of `constant` and `poisson` is more than 0. A ramp from 0 to 0 is refused. |
 | Workers and consumers | 1 to 10 000 |
 | Queue capacity | 0 to 1 000 000, or empty |
-| Service time | 0 to 3 600 000 ms |
+| Service time | 0 to 3 600 000 ms. The mean of `exponential` and the median of `lognormal` are more than 0. `p95Ms` is at least `medianMs`. `maxMs` is at least `minMs`. |
+| Warm-up | 0 or more, and shorter than the duration |
+| Outage window | Starts at 0 s or later, ends after it starts and ends at 90 000 s or earlier |
 | Probability | 0 to 1 |
 | Timeout and backoff override | 0 to 3 600 000 ms |
 | Attempts override | 1 to 10 |
 | Entries of one list | 200 |
 | Outages | 50 |
-| Burst windows | 20 |
+| Burst windows | 1 to 20 for the pattern `burst` |
 
 ## HTTP
 
-All paths start with `/api/projects/{projectId}/stress`.
-
 | Method and path | Role | Result |
 |---|---|---|
-| `GET /requirements?scenarioId=` | Viewer | What a profile for the scenario must state |
-| `GET /profiles` | Viewer | The profiles of the project |
-| `POST /profiles` | Editor | A new profile |
-| `GET /profiles/{id}` | Viewer | One profile |
-| `PUT /profiles/{id}` | Editor | The profile at its next version |
-| `DELETE /profiles/{id}` | Editor | Deletes the profile and its runs |
-| `POST /profiles/{id}/runs` | Editor | Runs the profile and stores the run |
-| `GET /profiles/{id}/runs` | Viewer | The stored runs, newest first |
-| `GET /runs/{runId}` | Viewer | One run with its profile and result |
-| `DELETE /runs/{runId}` | Editor | Deletes one run |
-| `GET /compare?left=&right=` | Viewer | The differences of two runs |
+| `GET /api/projects/{projectId}/stress/requirements` | Viewer | What a profile for the scenario in `scenarioId` must state |
+| `GET /api/projects/{projectId}/stress/profiles` | Viewer | The profiles of the project |
+| `POST /api/projects/{projectId}/stress/profiles` | Editor | A new profile |
+| `GET /api/projects/{projectId}/stress/profiles/{profileId}` | Viewer | One profile |
+| `PUT /api/projects/{projectId}/stress/profiles/{profileId}` | Editor | The profile at its next version |
+| `DELETE /api/projects/{projectId}/stress/profiles/{profileId}` | Editor | Deletes the profile and its runs |
+| `POST /api/projects/{projectId}/stress/profiles/{profileId}/runs` | Editor | Runs the profile and stores the run |
+| `GET /api/projects/{projectId}/stress/profiles/{profileId}/runs` | Viewer | The stored runs, newest first |
+| `GET /api/projects/{projectId}/stress/runs/{runId}` | Viewer | One run with its profile and result |
+| `DELETE /api/projects/{projectId}/stress/runs/{runId}` | Editor | Deletes one run |
+| `GET /api/projects/{projectId}/stress/compare` | Viewer | The differences of the runs in `left` and `right` |
 
-`GET /requirements` and `POST /profiles/{id}/runs` accept `?branchId=` for a draft or a variant.
+`GET /api/projects/{projectId}/stress/requirements` and `POST /api/projects/{projectId}/stress/profiles/{profileId}/runs` accept `?branchId=` for a draft or a variant.
 
-A refused run gets status 422 with the issues. A run over a bound on runs gets status 429 with `Retry-After`. Its type is `busy` when the instance is full and `rate_limited` when the workspace is.
+A stored run states the versions that pin it: the profile, the model stream and the scenario. `outdated` is true when the model or the scenario changed after the run. `outdatedBecause` lists `model`, `scenario` or both.
 
-A save of a profile outside its ranges gets status 400 with the field. The engine counts whole nanoseconds, so the ranges of the duration and of the warm-up apply to the rounded values.
+### Refusals
+
+A refused run gets status 422 with `type`, `title` and `issues`. The type is `stress-too-large` when a limit stopped the run and `stress-refused` in the other cases. Each issue has a `code`, a `target` and a `message`.
+
+| Code | Cause |
+|---|---|
+| `invalid-profile` | A value of the profile is outside its range, or an override sets a timeout for a subscription. |
+| `invalid-scenario` | The trace engine refuses the scenario. |
+| `unknown-scenario` | The scenario of the profile does not exist. |
+| `missing-concurrency` | An element that does work in the flow has no workers. |
+| `missing-service-time` | An operation, a store or a handler of the flow has no service time. |
+| `missing-consumers` | A subscription that the flow reaches has no consumers. |
+| `missing-branch-probability` | A branch step has no probability. |
+| `unknown-target` | An override names no operation and no subscription of the flow, or an outage names nothing of the model. |
+| `stress-too-large` | The run is over a limit. |
+
+The engine supplies no default for a missing input.
+
+A run over a bound on runs gets status 429 with `Retry-After`. Its type is `busy` when the instance is full and `rate_limited` when the workspace is.
+
+A save of a profile outside its ranges gets status 400 with the type `validation_error` and the field. A save also gets status 400 when the scenario is not in the project, or when a `measurementRef` names no imported result. The engine counts whole nanoseconds, so the ranges of the duration and of the warm-up apply to the rounded values.
+
+See [Stress a flow](/how-to/stress-a-flow/) for the procedure and [An estimate is not a measurement](/concepts/estimates-are-not-measurements/) for what a result shows.

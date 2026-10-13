@@ -5,9 +5,33 @@ description: Every rule of the review, what it reads, each result it gives, its 
 
 This page lists the rules of the review. The rule set has the version `review-rules/2`. Every rule has an identifier and a version. The rules REL-003, CON-002, CON-004 and TRU-001 have version 1. Each other rule on this page has version 2.
 
-An answer that a person gave to a finding of a version 1 rule shows `needs re-review` when the rule has version 2 now. Read the finding again and settle it again.
+An answer that a person gave to a finding of a version 1 rule shows `needs re-review` when the rule has version 2 now. The API gives this as `needsReReview: true`. Read the finding again and settle it again.
 
 A rule is a function of one pinned state: the model, the scenarios, the schemas and the promises. It calls no AI and reads no clock. The same state gives the same findings and the same hash.
+
+A rule does not read the links between the model and an import. It reads the truth label and the stale mark that an import left on a fact.
+
+To learn what a finding establishes, see [Findings are not proof](/concepts/findings-are-not-proof/). To work with the findings, see [Review a design](/how-to/review-a-design/).
+
+## Endpoints
+
+| Endpoint | What it gives | Who |
+|---|---|---|
+| `GET /api/projects/{projectId}/review/rules` | Each rule: `id`, `version`, `category`, `title`, `reads`, `settle`. | A person, signed in. An agent token with the scope `read`. |
+| `GET /api/projects/{projectId}/review/findings` | The findings of one pinned state, with `ruleSetVersion`, `hash`, `inputsFingerprint` and `counts`. | A viewer. An agent token with the scope `read`. |
+| `PUT /api/projects/{projectId}/review/dispositions` | Sets the answer to one finding. See "Answers". | A person, signed in. |
+| `GET /api/projects/{projectId}/review/snapshots` | The saved snapshots of the findings. | A viewer, signed in. |
+| `POST /api/projects/{projectId}/review/snapshots` | Saves the findings of a pinned state with their answers. | An editor, signed in. |
+| `GET /api/projects/{projectId}/review/snapshots/{snapshotId}` | One saved snapshot. | A viewer, signed in. |
+| `DELETE /api/projects/{projectId}/review/snapshots/{snapshotId}` | Deletes one saved snapshot. | An editor, signed in. |
+
+The findings endpoint reads the main model. The query parameter `revisionId` names a revision of the model. The query parameter `branchId` names a draft or a variant. The scenarios, the schemas, the promises and the decisions are read as they are now.
+
+The `category` of a rule is `resilience`, `contracts`, `truth` or `overengineering`.
+
+The `counts` are `blocking`, `concerns`, `unknown`, `verified`, `notApplicable`, `settled` and `needsReReview`.
+
+The findings endpoint gives 413 `review_too_large` when the pinned state is larger than the limits of an export.
 
 ## Results
 
@@ -38,7 +62,7 @@ A rule cites every fact that its result rests on. Each cited fact passes this ch
 | `warning` | The finding asks for an answer. It blocks nothing. |
 | `note` | The finding gives numbers or a hint. It blocks nothing. |
 
-Only a finding with the severity `blocking` and the result `concern` blocks Build Ready. It adds the blocker `review-<rule ID>` to the Build manifest. An `unknown` never blocks. No finding prevents a save.
+Only a finding with the severity `blocking` and the result `concern` blocks Build Ready. It adds the blocker `review-<rule ID>` to the Build manifest. An `unknown` never blocks. No finding prevents a save. No finding prevents an export: the manifest of the bundle says `buildReady: false` and lists the blockers. See [Stale results and Build Ready](/troubleshooting/stale-results-and-build-ready/).
 
 A rule gives the severity `blocking` only on the path of an approved promise. The path of a promise holds:
 
