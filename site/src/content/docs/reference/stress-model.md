@@ -3,7 +3,17 @@ title: Stress model
 description: The exact rules of the stress engine: events, arrivals, distributions, statistics and limits.
 ---
 
-This page states what the stress engine does. The engine version is `1`. A change to any rule on this page is a new engine version.
+This page states what the stress engine does. The engine version is `2`. A change to any rule on this page is a new engine version.
+
+Version 2 differs from version 1 in five points:
+
+- The bottleneck rule is the saturation rule on this page.
+- The completed work and the throughput of an element count successful calls and writes only.
+- The end of the run is the last instant with open work.
+- The limits are in the result and in the hash.
+- Each outage window has a field of its own in the assumptions.
+
+A stored run of version 1 stays readable. It keeps its numbers and its rule, and the result view names its engine version.
 
 ## Inputs
 
@@ -79,6 +89,20 @@ When an attempt fails and the retry policy has attempts left, the next attempt s
 
 A timeout fails the attempt at the caller. It does not stop the element. The call stays in the queue or on its worker, and the element finishes it. The result counts this as wasted work, with the worker time that it took.
 
+The engine does not model cancellation. No deadline passes from a caller to the calls inside it.
+
+### Completed, wasted and failed calls
+
+A call that holds a worker ends in one of three ways. The result counts each way apart.
+
+| Count of the element | The call |
+|---|---|
+| Completed | Responds with success to a caller that still waits. |
+| Wasted | Ends after its caller gave up. |
+| Failed inside | Fails because a step inside it fails, while its caller still waits. |
+
+The throughput of an element counts completed work only. The utilisation counts the worker time of all three.
+
 ### Outages and waiting calls
 
 A call that waits when an outage starts fails when it reaches a worker. A call that a worker already holds goes on.
@@ -146,17 +170,124 @@ The engine samples at a fixed interval. The interval is the duration divided by 
 
 The time to drain is from the end of the arrivals to the instant no work is left. The run stops 3 600 virtual seconds after the arrivals stop. Work that is left then is reported as not drained.
 
-### Bottleneck
+### End of the run
 
-A queue grows when its mean depth rises from each quarter of the measured window to the next, and the last quarter is at least 1 above the first.
+The end of the run is the last instant at which a flow, a call, a write or a message is open. A timeout timer of a call that has ended is not open work. When work is left at the drain limit, the end of the run is the drain limit.
 
-The bottleneck is the resource with the highest utilisation among those whose queue grows. The lower ID wins a tie. When no queue grows, the result states **None found**.
+### Saturation and the bottleneck
 
-A full queue with a capacity does not grow. So a resource that rejects work is not named as the bottleneck. The rejected count shows it.
+A resource is an element with its workers, or a subscription with its consumers.
+
+A resource is **saturated** when one of these is true:
+
+1. It turns work away because its queue is full. This counts rejected calls, rejected writes and overflowed messages, from the end of the warm-up to the end of the run.
+2. Its queue reaches the **noise bound** inside the measured window.
+
+The **bottleneck** is the saturated resource with the highest utilisation. The lower ID wins a tie. The result lists every saturated resource.
+
+When no resource is saturated, the result states that the rule names no resource. It does not state that the flow has no bottleneck.
+
+#### The noise bound
+
+A queue with spare capacity also has a backlog at times. The noise bound is a depth that such a queue seldom reaches by chance.
+
+The engine measures four values for each resource inside the measured window:
+
+- n: the work that arrives at the resource.
+- u: the utilisation.
+- ca²: the squared coefficient of variation of the gaps between arrivals.
+- cs²: the squared coefficient of variation of the times that a worker holds work it serves. Work that an outage fails at the worker is not in it.
+
+A coefficient that has no value is 1. The variability is `v = (ca² + cs²) / 2`. It is 1 for Poisson arrivals and exponential service times, and 0 when nothing varies.
+
+The noise bound is the smaller of two depths. It is at least 2.
+
+**Depth of a steady queue.** The measured utilisation has a standard error of `u * sqrt(2 * v / n)`. The rule uses the upper 1 % point: `w = min(1, u * (1 + 2.326 * sqrt(2 * v / n)))`. With `s = exp(-(1 - w) / v)`, the depth is the smallest d of 2 or more with
+
+`(n * (1 - s) + 1 / (1 - s)) * (1 - s) * s^(d - 1) / (1 - s^d) <= 0.01`
+
+- The first factor bounds the number of times that work starts to wait. A steady queue gives `n * (1 - s)`. A queue that starts empty adds at most `1 / (1 - s)`.
+- The second factor is the chance that the queue then reaches depth d before it is empty.
+- For v = 1 this is a bound for an M/M/c queue of utilisation w. The exact ratio of that queue is w, and s is not below w.
+- For other values of v, s is the decay of the queue length in heavy traffic (Kingman).
+- When w is 1, this depth has no value. The other depth is the bound.
+
+**Depth at full load.** `2.576 * sqrt(2 * v * n)`, rounded up. A queue whose arrivals equal its capacity moves like a random walk with variance 2 v for each arrival. Its highest depth in n arrivals passes this value with a chance of 1 %. A queue with spare capacity is below a queue at full load.
+
+Each of the three parts has a chance of at most 1 %: the upper point of the utilisation and the two depths. So the rule names a resource with spare capacity with a chance of at most 3 %.
+
+The measured rate is lower. In 2 000 seeds each of a steady M/M/1 queue with a service time of 10 ms, the rule names the server this often:
+
+| Utilisation | Duration | Runs that name the server |
+|---|---|---|
+| 0.80 | 60 s | 1 of 2 000 |
+| 0.90 | 60 s | 1 of 2 000 |
+| 0.95 | 600 s | 1 of 2 000 |
+
+The bound has two limits:
+
+- It assumes service times without a long tail. A lognormal service time with a wide spread can pass the bound by chance more often.
+- An overload near full load needs enough arrivals. The rule finds it when the backlog passes the depth at full load, which grows with the square root of n.
+
+#### Backlog windows
+
+A backlog window is a time in which work waits at a resource without a break. It starts when the queue stops being empty. It ends when the queue is empty again. Both instants can be outside the measured window: the start in the warm-up, the end in the drain.
+
+The result lists a backlog window when its highest depth inside the measured window is at or above the noise bound. Each window has its start, its end, its highest depth and the instant of that depth. A window with no end states that work still waits at the end of the run.
+
+A resource lists at most 4 windows: the ones with the highest depth. The result states when the list is full.
+
+#### Queue growth
+
+The statement that a queue grows is separate from the saturation rule.
+
+The queue of a resource **grows** when its depth at the end of the arrivals is above its depth at the middle of the measured window by the noise bound or more. The rate is that difference divided by half of the measured window.
+
+A saturated resource can have a queue that does not grow:
+
+- A full queue with a capacity turns work away and stays at its capacity.
+- A backlog from a burst shrinks after the burst.
+
+### Not modelled
+
+Every result lists the effects that the engine leaves out:
+
+- Network latency, jitter and loss between elements.
+- Garbage collection pauses, cold starts and the warm-up of a runtime.
+- Autoscaling. The number of workers and consumers does not change during a run.
+- Database locks, contention and transaction conflicts.
+- Connection pools and thread pools other than the declared workers.
+- Caches. Every piece of work takes a time from its distribution.
+- Payload size.
+- Back-pressure from systems downstream of the flow, and load from other flows on the same elements.
+- Correlated failures. Only the declared outage windows fail work.
+- Clock effects: skew, timer resolution and time-of-day patterns.
+- Closed-loop clients. Arrivals do not slow down when the system is slow.
+- Capacity shared between the consumers of a subscription and the workers of the same element.
+- Retry jitter and growing backoff.
+- Consumers of a dead-letter channel.
+- Request cancellation and deadline propagation. A caller that gives up does not stop the call it made. The callee and every step behind it go on.
+
+A result adds the faults and the assertions of the scenario when the scenario has them. The engine applies neither.
 
 ## The hash
 
-The hash is SHA-256 over the result in canonical JSON, with the hash member empty. The result holds the engine version, the seed and every assumption.
+The hash is SHA-256 over the result in canonical JSON, with the hash member empty. The result holds the engine version, the seed, every assumption and the limits of the run.
+
+Two runs have the same result only when their hashes are equal. The comparison of two runs states this from the hashes, not from the list of inputs.
+
+## Comparison
+
+The comparison lists the inputs that differ. These keys name one input each:
+
+| Input | Key |
+|---|---|
+| Arrivals | The field. A burst window has its index. |
+| Workers, consumers, service time, model policy | The target and the field. |
+| Branch probability | The step ID. |
+| Override | The target and the field. |
+| Outage window | The target and the place of the window in time order among the windows of that target. |
+| Limit | The name of the limit. |
 
 ## Limits
 
@@ -167,26 +298,45 @@ A run over a limit stops with `stress-too-large` and the name of the limit. It s
 | Arrival window | 3 600 virtual seconds | `duration` |
 | Arrivals | 200 000 | `arrivals` |
 | Events | 5 000 000 | `events` |
-| Work that waits at one instant | 500 000 | `queued` |
+| Work that waits at one instant | 250 000 | `queued` |
+| Events that are scheduled at one instant | 250 000 | `pending` |
 | Resources, service times and subscriptions of one flow | 100 | `targets` |
 | Bindings matched for one message | 200 | `routes` |
 | Real time | 20 seconds | `wall-clock` |
 
-The real-time limit decides whether a run has a result. It never changes a result.
+The real-time limit decides whether a run has a result. It never changes a result. It is not in the result.
 
-These bounds apply to stored data and to requests:
+The result holds every other limit, with the drain limit, the kept samples and the series points. The limits are in the hash. An instance with other limits gives another hash.
+
+### Memory of one run
+
+The `queued` limit and the `pending` limit bound the memory of one run. A scheduled event is work in service, a backoff or a timeout that has not passed. A timeout of a call that has ended holds no memory of the call.
+
+In the measured worst profiles, one run at these limits holds about 150 MB of managed memory. Without the `pending` limit the same profiles hold more than 800 MB.
+
+### Runs at the same time
+
+| Bound | Value | Answer over the bound |
+|---|---|---|
+| Runs of the instance at the same time, over all workspaces | 4 | 429 `busy` |
+| Runs of one workspace at the same time | 2 | 429 `rate_limited` |
+| Runs of one workspace in one minute | 30 | 429 `rate_limited` |
+
+Each 429 answer has a `Retry-After` header. The instance bound of 4 is a default of the server. No setting changes it.
+
+These bounds apply to stored data:
 
 | Bound | Value |
 |---|---|
 | Profiles of one project | 50 |
 | Stored runs of one profile | 20 |
-| Runs of one workspace at the same time | 2 |
-| Runs of one workspace in one minute | 30 |
 
 ## Profile ranges
 
 | Field | Range |
 |---|---|
+| Duration | At least 0.001 s, at most 86 400 s |
+| Measured window, from the end of the warm-up to the end of the duration | At least 0.001 s |
 | Rate | 0 to 100 000 per second |
 | Workers and consumers | 1 to 10 000 |
 | Queue capacity | 0 to 1 000 000, or empty |
@@ -218,4 +368,6 @@ All paths start with `/api/projects/{projectId}/stress`.
 
 `GET /requirements` and `POST /profiles/{id}/runs` accept `?branchId=` for a draft or a variant.
 
-A refused run gets status 422 with the issues. A run over the rate gets status 429 with `Retry-After`.
+A refused run gets status 422 with the issues. A run over a bound on runs gets status 429 with `Retry-After`. Its type is `busy` when the instance is full and `rate_limited` when the workspace is.
+
+A save of a profile outside its ranges gets status 400 with the field. The engine counts whole nanoseconds, so the ranges of the duration and of the warm-up apply to the rounded values.

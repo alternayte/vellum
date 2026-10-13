@@ -105,6 +105,27 @@ public class StressEndpointTests(IntegrationFixture fixture)
             + $"billing.p95={Ms(Subscription(OrdersReference.BillingSub)["latency"]!["p95Ms"])} "
             + $"bottleneck={result["bottleneck"]!["name"]?.GetValue<string>() ?? "none"} confidence={result["confidence"]!["level"]}");
 
+        // The same case from the profile alone, with no number of the engine. Orders arrive at 40 per second
+        // and each one sends a message to Billing. Billing has one consumer that takes 30 ms: 33.33 per second.
+        // So Billing is saturated and its backlog grows by 40 - 33.33 = 6.67 per second.
+        var billing = Subscription(OrdersReference.BillingSub);
+        var saturation = billing["saturation"]!;
+        void Within(double expected, double tolerance, JsonNode? actual, string what) =>
+            Assert.True(Math.Abs(actual!.GetValue<double>() - expected) <= tolerance, $"{what}: expected {expected} ± {tolerance}, got {actual}");
+        // Flows after the warm-up: a Poisson count of mean 40 * 50 = 2 000, deviation 45. Three deviations.
+        Within(2000, 135, flow["arrivals"], "arrivals");
+        Assert.True(billing["utilisation"]!.GetValue<double>() >= 0.999, "The consumer is never idle in the measured window.");
+        Assert.True(saturation["saturated"]!.GetValue<bool>());
+        Assert.Equal(OrdersReference.BillingSub, result["bottleneck"]!["id"]!.GetValue<Guid>());
+        Assert.Equal(0, saturation["turnedAway"]!.GetValue<long>());
+        // At 60 s about 2 400 messages have arrived (deviation 49) and the consumer has ended 60 / 0.03 = 2 000: 400 wait.
+        Within(400, 150, billing["queue"]!["depthAtEndOfArrivals"], "backlog at the end of the arrivals");
+        // From 35 s to 60 s: 1 000 arrivals (deviation 32) against 833 ended. 167 more wait: 6.67 per second, deviation 1.3.
+        Assert.True(saturation["queueGrows"]!.GetValue<bool>());
+        Within(6.67, 3.8, saturation["growthPerSecond"], "growth of the backlog");
+        // The Orders API serves every order: its completed calls are the completed flows.
+        Assert.Equal(flow["counts"]!["completed"]!.GetValue<long>(), Element(OrdersReference.OrdersApi)["counts"]!["completed"]!.GetValue<long>());
+
         // What pins the run, and the labels a reader must see.
         Assert.Equal("estimated", result["label"]!.GetValue<string>());
         Assert.Equal("estimated", run["summary"]!["label"]!.GetValue<string>());
@@ -176,6 +197,43 @@ public class StressEndpointTests(IntegrationFixture fixture)
         // The run of version 1 says that the profile has moved on.
         var first = await Read(owner.GetAsync(Url(project, $"runs/{left}")));
         Assert.Equal((1, 2), (first["run"]!["profileVersion"]!.GetValue<int>(), first["run"]!["currentProfileVersion"]!.GetValue<int>()));
+    }
+
+    [Fact]
+    public async Task Two_outage_windows_on_one_target_are_two_inputs_and_only_equal_hashes_are_the_same_result()
+    {
+        var (factory, owner, _, orders) = await SeedAsync();
+        using var _f = factory;
+        var project = orders.ProjectId;
+
+        JsonObject With(double from, double to)
+        {
+            var profile = Profile(orders);
+            profile["outages"] = new JsonArray(
+                new JsonObject { ["target"] = OrdersReference.OrdersApi.ToString(), ["fromSeconds"] = 20, ["toSeconds"] = 21 },
+                new JsonObject { ["target"] = OrdersReference.OrdersApi.ToString(), ["fromSeconds"] = from, ["toSeconds"] = to });
+            return profile;
+        }
+
+        var profileId = await CreateAsync(owner, project, With(30, 31));
+        var left = (await RunAsync(owner, project, profileId))["run"]!;
+        await Read(owner.PutAsync(Url(project, $"profiles/{profileId}"), OrdersReference.Json(With(40, 45))));
+        var right = (await RunAsync(owner, project, profileId))["run"]!;
+        Assert.NotEqual(left["hash"]!.GetValue<string>(), right["hash"]!.GetValue<string>());
+
+        var comparison = await Read(owner.GetAsync(Url(project, $"compare?left={left["id"]}&right={right["id"]}")));
+        Assert.False(comparison["sameResult"]!.GetValue<bool>());
+        // The window that changed is listed; the window that both runs share is not.
+        var outages = comparison["inputs"]!.AsArray().Where(i => i!["input"]!.GetValue<string>().StartsWith("outage.")).ToList();
+        var changed = Assert.Single(outages)!;
+        Assert.Equal(
+            ("outage.window[1]", OrdersReference.OrdersApi, "from 30 s to 31 s (declared)", "from 40 s to 45 s (declared)"),
+            (changed["input"]!.GetValue<string>(), changed["target"]!.GetValue<Guid>(), changed["left"]!.GetValue<string>(), changed["right"]!.GetValue<string>()));
+
+        // A run against itself: no input differs, and the hashes say that the result is the same.
+        var same = await Read(owner.GetAsync(Url(project, $"compare?left={left["id"]}&right={left["id"]}")));
+        Assert.True(same["sameResult"]!.GetValue<bool>());
+        Assert.Empty(same["inputs"]!.AsArray());
     }
 
     [Fact]
@@ -255,6 +313,11 @@ public class StressEndpointTests(IntegrationFixture fixture)
         measured["serviceTimes"]![0]!["label"] = "measured";
         measured["serviceTimes"]![0]!["measurementRef"] = "k6:run-1";
         Assert.Equal("serviceTimes[0].measurementRef", await Field(measured));
+
+        // A measured window that rounds to no time gave a server error at the run. The save names the field.
+        var noWindow = Profile(orders);
+        noWindow["arrivals"]!["warmUpSeconds"] = 59.9999999999;
+        Assert.Equal("arrivals.warmUpSeconds", await Field(noWindow));
 
         var elsewhere = Profile(orders);
         elsewhere["scenarioId"] = Guid.NewGuid().ToString();
@@ -339,6 +402,71 @@ public class StressEndpointTests(IntegrationFixture fixture)
     }
 
     [Fact]
+    public async Task A_stored_run_of_engine_version_1_stays_readable_with_its_numbers_and_its_version()
+    {
+        var (factory, owner, _, orders) = await SeedAsync();
+        using var _f = factory;
+        var project = orders.ProjectId;
+        var profileId = await CreateAsync(owner, project, Profile(orders));
+        var current = (await RunAsync(owner, project, profileId))["run"]!["id"]!.GetValue<Guid>();
+
+        // The row that engine version 1 wrote: no limits, no saturation, no count of failed calls, and the
+        // bottleneck with the three numbers of its rule.
+        var old = Guid.NewGuid();
+        using (var scope = factory.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<StressDbContext>();
+            var row = await db.Runs.AsNoTracking().SingleAsync(r => r.Id == current);
+            var result = JsonNode.Parse(row.Result)!.AsObject();
+            result["engineVersion"] = "1";
+            result.Remove("limits");
+            foreach (var resource in result["elements"]!.AsArray().Concat(result["subscriptions"]!.AsArray()))
+            {
+                resource!.AsObject().Remove("failedInside");
+                resource.AsObject().Remove("saturation");
+            }
+            var bottleneck = result["bottleneck"]!.AsObject();
+            bottleneck.Remove("saturated");
+            bottleneck.Remove("growthRule");
+            bottleneck["rule"] = "The rule of version 1.";
+            bottleneck["meanDepthByQuarter"] = new JsonArray(95.5, 181.25, 263.5, 348.75);
+            bottleneck["depthAtEndOfArrivals"] = 398;
+            bottleneck["growthPerSecond"] = 6.75;
+
+            row.Id = old;
+            row.EngineVersion = "1";
+            row.Hash = new string('1', 64);
+            row.At = row.At.AddMinutes(-5);
+            row.Result = result.ToJsonString();
+            db.Runs.Add(row);
+            await db.SaveChangesAsync();
+        }
+
+        var read = await Read(owner.GetAsync(Url(project, $"runs/{old}")));
+        Assert.Equal("1", read["run"]!["engineVersion"]!.GetValue<string>());
+        var stored = read["result"]!;
+        Assert.Equal("1", stored["engineVersion"]!.GetValue<string>());
+        Assert.Equal(
+            ("The rule of version 1.", 398, 6.75, 4),
+            (stored["bottleneck"]!["rule"]!.GetValue<string>(), stored["bottleneck"]!["depthAtEndOfArrivals"]!.GetValue<int>(),
+             stored["bottleneck"]!["growthPerSecond"]!.GetValue<double>(), stored["bottleneck"]!["meanDepthByQuarter"]!.AsArray().Count));
+        // What version 1 did not write reads as no value, not as zero.
+        Assert.Null(stored["limits"]);
+        Assert.Null(stored["bottleneck"]!["saturated"]);
+        Assert.All(stored["elements"]!.AsArray(), e => Assert.True(e!["saturation"] is null && e["failedInside"] is null));
+
+        var runs = (await Read(owner.GetAsync(Url(project, $"profiles/{profileId}/runs")))).AsArray();
+        Assert.Equal([StressEngine.Version, "1"], runs.Select(r => r!["engineVersion"]!.GetValue<string>()));
+
+        // The two versions compare: the engine version and the limits are inputs that differ.
+        var comparison = await Read(owner.GetAsync(Url(project, $"compare?left={old}&right={current}")));
+        Assert.False(comparison["sameResult"]!.GetValue<bool>());
+        var inputs = comparison["inputs"]!.AsArray().ToDictionary(i => i!["input"]!.GetValue<string>(), i => i!);
+        Assert.Equal(("1", StressEngine.Version), (inputs["engineVersion"]["left"]!.GetValue<string>(), inputs["engineVersion"]["right"]!.GetValue<string>()));
+        Assert.Equal("not recorded", inputs["limits.maxDrainSeconds"]["left"]!.GetValue<string>());
+    }
+
+    [Fact]
     public async Task Deleting_a_project_removes_its_profiles_and_runs()
     {
         var (factory, owner, _, orders) = await SeedAsync();
@@ -407,5 +535,53 @@ public class StressEndpointTests(IntegrationFixture fixture)
         using var third = gate.TryEnter(workspace, out _);
         Assert.NotNull(third);
         second!.Dispose();
+    }
+
+    [Fact]
+    public void The_instance_runs_a_bounded_number_of_stress_runs_at_the_same_time_over_all_workspaces()
+    {
+        using var gate = new StressRunGate(new StressRunPolicy(MaxConcurrentPerWorkspace: 2, MaxConcurrentPerInstance: 3));
+
+        var places = new[] { Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid() }.Select(workspace => gate.TryEnter(workspace, out _)).ToList();
+        Assert.All(places, Assert.NotNull);
+
+        // A fourth workspace has run nothing, and the instance is full: the answer is 'busy', not the rate of the workspace.
+        var fourth = Guid.NewGuid();
+        Assert.Null(gate.TryEnter(fourth, out var refusal));
+        Assert.Equal("busy", refusal!.Code);
+        Assert.True(refusal.RetryAfter > TimeSpan.Zero);
+
+        // The refusal took no place of the workspace and no place of the instance.
+        places[0]!.Dispose();
+        using var afterwards = gate.TryEnter(fourth, out refusal);
+        Assert.NotNull(afterwards);
+        Assert.Null(refusal);
+        Assert.Null(gate.TryEnter(Guid.NewGuid(), out refusal));
+        Assert.Equal("busy", refusal!.Code);
+        places[1]!.Dispose();
+        places[2]!.Dispose();
+    }
+
+    [Fact]
+    public async Task A_run_on_a_full_instance_gets_429_busy_and_a_time_to_wait()
+    {
+        var (factory, owner, _, orders) = await SeedAsync(services =>
+            services.AddSingleton(new StressRunPolicy(MaxConcurrentPerInstance: 1)));
+        using var _f = factory;
+        var profileId = await CreateAsync(owner, orders.ProjectId, Profile(orders));
+
+        // Another workspace holds the one place of the instance.
+        using var held = factory.Services.GetRequiredService<StressRunGate>().TryEnter(Guid.NewGuid(), out _);
+        Assert.NotNull(held);
+
+        var busy = await owner.PostAsync(Url(orders.ProjectId, $"profiles/{profileId}/runs"), null);
+        Assert.Equal(HttpStatusCode.TooManyRequests, busy.StatusCode);
+        Assert.True(busy.Headers.RetryAfter is not null);
+        var body = (await busy.Content.ReadFromJsonAsync<JsonObject>())!;
+        Assert.Equal("busy", body["type"]!.GetValue<string>());
+        Assert.Empty((await Read(owner.GetAsync(Url(orders.ProjectId, $"profiles/{profileId}/runs")))).AsArray());
+
+        held!.Dispose();
+        await RunAsync(owner, orders.ProjectId, profileId);
     }
 }

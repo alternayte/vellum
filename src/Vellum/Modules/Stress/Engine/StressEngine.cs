@@ -1,3 +1,4 @@
+using System.Numerics;
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -41,7 +42,12 @@ public static class StressJson
 /// </summary>
 public static class StressEngine
 {
-    public const string Version = "1";
+    /// <summary>
+    /// Version 2 replaced the bottleneck rule of version 1, counts only successful service as
+    /// completed, reports the last instant with open work as the end, and puts the limits in
+    /// the result and in the hash. A stored result of version 1 keeps its numbers and its rule.
+    /// </summary>
+    public const string Version = "2";
 
     private const long NsPerMs = 1_000_000;
     private const double NsPerSecond = 1e9;
@@ -68,6 +74,7 @@ public static class StressEngine
         new("shared-capacity", "fixed", "Capacity shared between the consumers of a subscription and the workers of the same element. Each pool is separate."),
         new("retry-jitter", "fixed", "Retry jitter and growing backoff. A retry waits the fixed backoff of its policy."),
         new("dead-letter-consumers", "fixed", "Consumers of a dead-letter channel. A dead-lettered message is counted and then rests."),
+        new("cancellation", "fixed", "Request cancellation and deadline propagation. A caller that gives up does not stop the call it made: the callee and every step behind it go on, and no deadline passes from a caller to the calls inside it."),
     ];
 
     public const string ConfidenceRule =
@@ -75,10 +82,42 @@ public static class StressEngine
         + "It is 'medium' when every service time on the path is measured. This engine never reports 'high'. "
         + "The level is not a probability.";
 
+    /// <summary>The probability with which a resource that has spare capacity passes one part of the noise bound by chance.</summary>
+    public const double NoiseLevel = 0.01;
+
+    /// <summary>The two-sided 1 % point of the standard normal distribution: P(|Z| ≥ 2.5758) = 0.01.</summary>
+    private const double CriticalZ = 2.5758293035489004;
+
+    /// <summary>The one-sided 1 % point of the standard normal distribution: P(Z ≥ 2.3263) = 0.01.</summary>
+    private const double UpperZ = 2.3263478740408408;
+
+    /// <summary>The most backlog windows that one resource lists: the ones with the highest peak.</summary>
+    public const int MaxBacklogWindows = 4;
+
     public const string BottleneckRule =
-        "A queue grows when its time-weighted mean depth rises from each quarter of the measured window to the next "
-        + "and the last quarter is at least 1 above the first. The bottleneck is the resource with the highest "
-        + "utilisation among those whose queue grows; the lower ID wins a tie.";
+        "A resource is saturated when it turns work away because its queue is full, or when its queue reaches the noise bound "
+        + "inside the measured window. The noise bound is a queue depth that a resource with spare capacity seldom reaches by chance. "
+        + "It is the smaller of two depths, and it is at least 2. Both depths use n, the work "
+        + "that arrived in the measured window, and v = (ca² + cs²) / 2, where ca² and cs² are the squared coefficients of "
+        + "variation of the gaps between arrivals and of the service times. "
+        + "The first depth is for a steady queue at the measured utilisation u. The utilisation of a steady queue is measured with "
+        + "a standard error of u sqrt(2 v / n), so the rule uses its upper 1 % point: w = min(1, u (1 + 2.326 sqrt(2 v / n))). "
+        + "The depth is the smallest d with (n (1 - s) + 1 / (1 - s)) (1 - s) s^(d - 1) / (1 - s^d) ≤ 0.01, where s = exp(-(1 - w) / v). "
+        + "The first factor is the number of times that work starts to wait, for a queue that starts empty; the second is the chance "
+        + "that the queue then reaches depth d before it is empty. For Poisson arrivals and exponential service times, v is 1 and the "
+        + "left side is a bound on the chance that an M/M/c queue of utilisation w reaches depth d in the window; s is not below the "
+        + "exact ratio w. When w is 1, this depth has no value and the second depth is the bound. "
+        + "The second depth is for a queue at full load: 2.576 sqrt(2 v n), the 1 % point of the highest depth of a queue "
+        + "whose arrivals equal its capacity. "
+        + "Each of the three parts has a chance of at most 1 %, so a resource with spare capacity is named with a chance of at most 3 %. "
+        + "A backlog window is a time in which work waits without a break; it is listed when its peak is at or above the noise bound. "
+        + "The bottleneck is the saturated resource with the highest utilisation; the lower ID wins a tie. "
+        + "The bound assumes service times without a long tail: a lognormal service time with a wide spread can pass it by chance more often.";
+
+    public const string GrowthRule =
+        "The queue of a resource grows when its depth at the end of the arrivals is above its depth at the middle of the "
+        + "measured window by the noise bound of the resource or more. The rate is that difference divided by half of the measured window. "
+        + "The rule is apart from the saturation rule: a saturated resource with a full queue, or with a backlog that shrinks, has a queue that does not grow.";
 
     /// <summary>What a profile for <paramref name="scenario"/> must state. An invalid scenario has issues and no lists.</summary>
     public static StressRequirements Requirements(TraceModel model, Scenario scenario)
@@ -172,6 +211,7 @@ public static class StressEngine
         "arrivals" => $"The run has more than {limits.MaxArrivals} arrivals. Lower the rate or the duration.",
         "events" => $"The run needs more than {limits.MaxEvents} events. Lower the rate or the duration, or lower the retry attempts.",
         "queued" => $"More than {limits.MaxQueued} pieces of work wait at the same instant. Set a queue capacity, or lower the rate.",
+        "pending" => $"More than {limits.MaxPendingEvents} events are scheduled at the same instant: work in service, backoffs and timeouts that have not passed. Lower the rate, the timeouts or the retry attempts.",
         "targets" => $"The flow uses more than {limits.MaxTargets} resources, service times and subscriptions.",
         "routes" => $"A message is matched against more than {TraceLimits.MaxRoutes} bindings.",
         _ => $"The run did not end within {StressProfileRules.Number(limits.WallClock.TotalSeconds)} seconds of real time. Lower the rate or the duration.",
@@ -261,6 +301,9 @@ public static class StressEngine
         private (long At, long Sequence, Action Work)[] _items = new (long, long, Action)[1024];
         private int _count;
         private long _sequence;
+
+        /// <summary>Events that are scheduled and have not run.</summary>
+        public int Count => _count;
 
         public void Push(long at, Action work)
         {
@@ -454,6 +497,80 @@ public static class StressEngine
         }
     }
 
+    /// <summary>
+    /// Count, sum and sum of squares of whole nanoseconds, exact. The squared coefficient of
+    /// variation is computed from integers, so values that are all equal give exactly 0.
+    /// </summary>
+    private struct Moments
+    {
+        private long _count;
+        private Int128 _sum, _squares;
+
+        public void Add(long ns)
+        {
+            _count++;
+            _sum += ns;
+            _squares += (Int128)ns * ns;
+        }
+
+        /// <summary>Variance divided by the square of the mean. 1, the value of an exponential distribution, when there is no sample or the mean is 0.</summary>
+        public readonly double SquaredVariation()
+        {
+            if (_count == 0 || _sum == 0)
+                return 1;
+            BigInteger sum = _sum;
+            var square = sum * sum;
+            return (double)(_count * (BigInteger)_squares - square) / (double)square;
+        }
+    }
+
+    /// <summary>
+    /// The noise bound of the saturation rule (<see cref="BottleneckRule"/>): the smaller of the
+    /// depth for a steady queue at the measured utilisation and the depth for a queue at full
+    /// load, and at least 2. It is at most <paramref name="cap"/>, which no queue passes.
+    /// </summary>
+    internal static int NoiseBound(long arrivals, double utilisation, double variability, int cap)
+    {
+        // A queue at full load is a random walk with variance 2 v for each arrival. The highest
+        // point of a walk of n steps is above z sqrt(2 v n) with probability 2 (1 - Phi(z)).
+        var atFullLoad = Math.Ceiling(CriticalZ * Math.Sqrt(2 * variability * arrivals));
+        var limit = (int)Math.Min(cap, Math.Max(2, atFullLoad));
+
+        // A steady queue. Work waits in excursions that start at depth 1. An excursion reaches
+        // depth d before the queue is empty with probability (1 - s) s^(d - 1) / (1 - s^d): the
+        // ruin problem of a walk with ratio s. A queue in its steady state starts n (1 - s)
+        // excursions at most; one that starts empty adds 1 / (1 - s) at most before it is steady.
+        // At s = 1 the count has no bound, and the depth at full load is the answer.
+        // The utilisation is measured. The work that n arrivals bring has a variance of 2 v n
+        // squared mean service times, so the measured value has a standard error of u sqrt(2 v / n).
+        var upper = arrivals > 0 ? Math.Min(1, utilisation * (1 + UpperZ * Math.Sqrt(2 * variability / arrivals))) : 1;
+        var s = variability > 0 ? StressMath.Exp(-(1 - upper) / variability) : 0;
+        if (s >= 1)
+            return limit;
+        var allowed = NoiseLevel / (arrivals * (1 - s) + 1 / (1 - s));
+        var power = 1.0;
+        for (var depth = 1; depth < limit; depth++, power *= s)
+        {
+            if (depth >= 2 && (1 - s) * power / (1 - power * s) <= allowed)
+                return depth;
+        }
+        return limit;
+    }
+
+    /// <summary>
+    /// The timeout of one attempt. Its event stays in the heap until its instant, also after
+    /// the attempt has ended. An attempt that has ended drops the work, so the event keeps no
+    /// reference to the call and its flow: a long timeout does not hold the memory of ended calls.
+    /// </summary>
+    private sealed class Timer(Action work)
+    {
+        private Action? _work = work;
+
+        public void Fire() => _work?.Invoke();
+
+        public void Drop() => _work = null;
+    }
+
     private sealed class Flow(long at, bool counted)
     {
         public long At => at;
@@ -483,13 +600,85 @@ public static class StressEngine
 
         public int Busy;
         public readonly Queue<Job> Waiting = new();
-        public long Arrived, Waited, Completed, Failed, Rejected, Dropped, DeadLettered, Retries, Overflowed, WastedCount, WastedNs, CompletedInWindow;
+        public long Arrived, Waited, Completed, Failed, FailedInside, Rejected, Dropped, DeadLettered, Retries, Overflowed, WastedCount, WastedNs, CompletedInWindow;
         public int MaxDepth;
-        public int DepthAtEnd;
+        public int DepthAtMid, DepthAtEnd;
         public long BusyNs;
         public readonly long[] DepthNs = new long[4];
         public readonly List<int> DepthSeries = [];
         public readonly List<int> BusySeries = [];
+
+        // What the saturation rule reads. All of it is about the measured window.
+        public long WindowArrivals;
+        public Moments Gaps, Services;
+        public long TurnedAway, FirstTurnedAwayAt = -1, LastTurnedAwayAt;
+        /// <summary>The backlog windows with the highest peaks, in time order. <c>To</c> is -1 when work still waited at the end of the run.</summary>
+        public readonly List<(long From, long To, int Peak, long PeakAt)> Backlogs = [];
+        private long _lastArrivalAt = -1, _backlogFrom = -1, _backlogPeakAt;
+        private int _backlogPeak;
+
+        public void Arrive(long now, bool inWindow)
+        {
+            if (inWindow)
+            {
+                WindowArrivals++;
+                if (_lastArrivalAt >= 0)
+                    Gaps.Add(now - _lastArrivalAt);
+            }
+            _lastArrivalAt = now;
+        }
+
+        public void TurnAway(long now)
+        {
+            if (TurnedAway++ == 0)
+                FirstTurnedAwayAt = now;
+            LastTurnedAwayAt = now;
+        }
+
+        /// <summary>After a job joined the queue. A backlog window opens when the queue stops being empty.</summary>
+        public void Enqueued(long now, bool inWindow)
+        {
+            if (Waiting.Count == 1)
+                (_backlogFrom, _backlogPeak) = (now, 0);
+            if (!inWindow)
+                return;
+            if (Waiting.Count > MaxDepth)
+                MaxDepth = Waiting.Count;
+            if (Waiting.Count > _backlogPeak)
+                (_backlogPeak, _backlogPeakAt) = (Waiting.Count, now);
+        }
+
+        /// <summary>
+        /// Closes the open backlog window: at <paramref name="to"/> when the queue is empty again,
+        /// or with -1 at the end of the run. A window with no depth inside the measured window is
+        /// dropped. Of the others the ones with the highest peak stay; on equal peaks the earlier one.
+        /// </summary>
+        public void CloseBacklog(long to)
+        {
+            if (_backlogFrom < 0)
+                return;
+            (long From, long To, int Peak, long PeakAt) window = (_backlogFrom, to, _backlogPeak, _backlogPeakAt);
+            _backlogFrom = -1;
+            if (window.Peak == 0)
+                return;
+
+            if (Backlogs.Count < MaxBacklogWindows)
+            {
+                Backlogs.Add(window);
+                return;
+            }
+            var lowest = 0;
+            for (var i = 1; i < Backlogs.Count; i++)
+            {
+                if (Backlogs[i].Peak <= Backlogs[lowest].Peak)
+                    lowest = i;
+            }
+            if (window.Peak > Backlogs[lowest].Peak)
+            {
+                Backlogs.RemoveAt(lowest);
+                Backlogs.Add(window);
+            }
+        }
 
         /// <summary>Adds the time since the last change to the integrals of the measured window, by quarter.</summary>
         public void Advance(long now, long[] quarters)
@@ -575,8 +764,9 @@ public static class StressEngine
             var streams = new StressStreams(seed);
             Samples NewSamples(string purpose, Guid id) => new(limits.MaxSamples, streams.For(purpose, id));
 
-            _warmUp = (long)Math.Round(profile.Arrivals.WarmUpSeconds * NsPerSecond);
-            _duration = (long)Math.Round(profile.Arrivals.DurationSeconds * NsPerSecond);
+            // The rules of a profile check these rounded values: the measured window is at least a millisecond.
+            _warmUp = StressProfileRules.Nanoseconds(profile.Arrivals.WarmUpSeconds);
+            _duration = StressProfileRules.Nanoseconds(profile.Arrivals.DurationSeconds);
             _horizon = _duration + (long)Math.Round(limits.MaxDrainSeconds * NsPerSecond);
             var window = _duration - _warmUp;
             _quarters = [_warmUp, _warmUp + window / 4, _warmUp + window / 2, _warmUp + window * 3 / 4, _duration];
@@ -644,7 +834,12 @@ public static class StressEngine
 
         public void Run()
         {
-            // Scheduled first, so it runs before any other event of that instant.
+            // Scheduled first, so each runs before any other event of its instant.
+            _heap.Push(_quarters[2], () =>
+            {
+                foreach (var pool in _pools)
+                    pool.DepthAtMid = pool.Waiting.Count;
+            });
             _heap.Push(_duration, () =>
             {
                 foreach (var pool in _pools)
@@ -673,10 +868,19 @@ public static class StressEngine
                 work();
                 if (LimitHit is not null)
                     return;
+                // Each pending event holds the state of its work. The bound keeps the memory of a run finite.
+                if (_heap.Count > _limits.MaxPendingEvents)
+                {
+                    LimitHit = "pending";
+                    return;
+                }
             }
 
             foreach (var pool in _pools)
+            {
                 pool.Advance(Math.Max(_now, _duration), _quarters);
+                pool.CloseBacklog(-1);
+            }
         }
 
         private void After(long delay, Action work) => _heap.Push(_now + delay, work);
@@ -773,6 +977,7 @@ public static class StressEngine
         private bool Submit(Pool pool, Job job)
         {
             pool.Advance(_now, _quarters);
+            pool.Arrive(_now, InWindow);
             if (job.Counted) pool.Arrived++;
 
             if (pool.Busy < pool.Workers)
@@ -785,7 +990,11 @@ public static class StressEngine
             }
 
             if (pool.Capacity is { } capacity && pool.Waiting.Count >= capacity)
+            {
+                // From the warm-up to the end of the run: every rejection that a count of the result holds is in it.
+                if (_now >= _warmUp) pool.TurnAway(_now);
                 return false;
+            }
 
             if (++_queued > _limits.MaxQueued)
             {
@@ -795,8 +1004,7 @@ public static class StressEngine
             pool.Waiting.Enqueue(job);
             if (job.Counted) pool.Waited++;
             Open();
-            if (InWindow && pool.Waiting.Count > pool.MaxDepth)
-                pool.MaxDepth = pool.Waiting.Count;
+            pool.Enqueued(_now, InWindow);
             return true;
         }
 
@@ -816,7 +1024,15 @@ public static class StressEngine
                 pool.Busy++;
                 if (next.Counted) pool.Wait.Add(_now - next.At);
                 After(0, next.Begin);
+                if (pool.Waiting.Count == 0)
+                    pool.CloseBacklog(_now);
             }
+        }
+
+        /// <summary>The time a worker held work that it served, for the variation of the service times. Work that an outage failed at the worker is not service.</summary>
+        private void Served(Pool pool, long startedAt)
+        {
+            if (InWindow) pool.Services.Add(_now - startedAt);
         }
 
         /// <summary>Runs steps in order. A failure that nothing handles ends the sequence.</summary>
@@ -861,6 +1077,7 @@ public static class StressEngine
             var operation = _operations[step.Operation];
             var pool = operation.Pool;
             var settled = false;
+            Timer? timeout = null;
             var issuedAt = _now;
             if (flow.Counted) operation.Attempts++;
 
@@ -872,7 +1089,10 @@ public static class StressEngine
 
             // Queued before the callee's work, so a response at the deadline instant is late.
             if (operation.TimeoutMs > 0)
-                After(operation.TimeoutMs * NsPerMs, () => Fail(Failure.TimedOut));
+            {
+                timeout = new Timer(() => Fail(Failure.TimedOut));
+                After(operation.TimeoutMs * NsPerMs, timeout.Fire);
+            }
 
             var job = new Job(_now, flow.Counted, () =>
             {
@@ -888,9 +1108,9 @@ public static class StressEngine
                 After(operation.Time.Next(), () => Sequence(step.Then, 0, flow, ok =>
                 {
                     Leave();
-                    if (flow.Counted) pool.Completed++;
-                    if (InWindow) pool.CompletedInWindow++;
+                    Served(pool, startedAt);
 
+                    // The worker did the work in all three cases. Only the last one is completed work.
                     if (settled)
                     {
                         if (flow.Counted)
@@ -903,15 +1123,22 @@ public static class StressEngine
                     }
                     if (!ok)
                     {
+                        if (flow.Counted) pool.FailedInside++;
                         Fail(Failure.Inside);
                         return;
                     }
 
                     settled = true;
-                    if (InWindow) operation.CompletedInWindow++;
+                    timeout?.Drop();
+                    if (InWindow)
+                    {
+                        operation.CompletedInWindow++;
+                        pool.CompletedInWindow++;
+                    }
                     if (flow.Counted)
                     {
                         operation.Completed++;
+                        pool.Completed++;
                         operation.Latency.Add(_now - issuedAt);
                     }
                     done(true);
@@ -935,6 +1162,7 @@ public static class StressEngine
                 if (settled)
                     return;
                 settled = true;
+                timeout?.Drop();
 
                 if (flow.Counted)
                 {
@@ -1017,9 +1245,11 @@ public static class StressEngine
                     return;
                 }
 
+                var startedAt = _now;
                 After(subscription.Time.Next(), () => Sequence(handler, 0, flow, ok =>
                 {
                     Release(pool);
+                    Served(pool, startedAt);
                     if (!ok)
                     {
                         Failed();
@@ -1088,9 +1318,11 @@ public static class StressEngine
                     return;
                 }
 
+                var startedAt = _now;
                 After(_writeTimes[step.Store].Next(), () =>
                 {
                     Leave();
+                    Served(pool, startedAt);
                     if (InWindow) pool.CompletedInWindow++;
                     if (flow.Counted) pool.Completed++;
                     done(true);
@@ -1155,15 +1387,39 @@ public static class StressEngine
                     total += pool.DepthNs[q];
                 }
 
+                var utilisation = pool.BusyNs / ((double)pool.Workers * (_duration - _warmUp));
                 return new ResourceStats(
                     StressResult.Estimated, pool.Id, pool.Name, pool.Kind, pool.Workers, pool.Capacity,
                     pool.Arrived, pool.Waited,
                     new Counts(pool.Completed, pool.Failed, pool.Rejected, ownedTimeouts[pool.Id].Sum(), pool.Dropped, pool.DeadLettered),
                     pool.Retries, pool.Overflowed, pool.WastedCount, ToMs(pool.WastedNs),
-                    pool.BusyNs / ((double)pool.Workers * (_duration - _warmUp)),
+                    utilisation,
                     pool.CompletedInWindow / windowSeconds,
                     new QueueStats(total / (double)(_duration - _warmUp), quarters, pool.MaxDepth, pool.DepthAtEnd),
-                    pool.Wait.Summary(), pool.Latency.Summary());
+                    pool.Wait.Summary(), pool.Latency.Summary(),
+                    pool.FailedInside, SaturationOf(pool, utilisation));
+            }
+
+            Saturation SaturationOf(Pool pool, double utilisation)
+            {
+                var (arrivalVariation, serviceVariation) = (pool.Gaps.SquaredVariation(), pool.Services.SquaredVariation());
+                // No queue of this run is deeper than the limit on waiting work, so a bound above it cannot be met.
+                var bound = NoiseBound(pool.WindowArrivals, utilisation, (arrivalVariation + serviceVariation) / 2, _limits.MaxQueued + 1);
+                var windows = pool.Backlogs.Where(b => b.Peak >= bound)
+                    .Select(b => new BacklogWindow(ToMs(b.From), b.To < 0 ? null : ToMs(b.To), b.Peak, ToMs(b.PeakAt)))
+                    .ToList();
+
+                var growth = pool.DepthAtEnd - pool.DepthAtMid;
+                var grows = growth >= bound;
+                return new Saturation(
+                    pool.TurnedAway > 0 || windows.Count > 0,
+                    pool.TurnedAway,
+                    pool.TurnedAway > 0 ? ToMs(pool.FirstTurnedAwayAt) : null,
+                    pool.TurnedAway > 0 ? ToMs(pool.LastTurnedAwayAt) : null,
+                    pool.WindowArrivals, arrivalVariation, serviceVariation, bound,
+                    windows, windows.Count == MaxBacklogWindows,
+                    pool.DepthAtMid, grows,
+                    grows ? growth / ((_duration - _quarters[2]) / NsPerSecond) : null);
             }
 
             var elements = _elements.Values.Select(Stats).ToList();
@@ -1189,42 +1445,37 @@ public static class StressEngine
             var drained = _open == 0;
             return new StressResult(
                 Version, StressResult.Estimated, _profile.Seed,
-                new StressWindow(ToMs(_warmUp), ToMs(_duration), ToMs(_now)),
+                // The heap also holds timers of calls that have ended; their instants are no part of the run.
+                new StressWindow(ToMs(_warmUp), ToMs(_duration), ToMs(drained ? _lastIdleAt : _horizon)),
                 flow, elements, operations, subscriptions,
                 [.. _channels.Select(c => new ChannelStats(StressResult.Estimated, c.Key, _model.Channels[c.Key].Name, c.Value.Published, c.Value.PublishFailed))],
                 series,
                 new DrainStats(StressResult.Estimated, drained, drained ? ToMs(Math.Max(0, _lastIdleAt - _duration)) : null, _open),
-                FindBottleneck([.. elements, .. subscriptions], windowSeconds),
+                FindBottleneck([.. elements, .. subscriptions]),
                 Assumptions(), Overrides(), Unmodelled(), ConfidenceOf(),
                 new StressMethods(
                     "Sorted nearest rank: the value at rank ceil(p / 100 * n) of the n kept samples in ascending order.",
                     "Counts and latencies cover the flows that start at or after the warm-up and all the work they cause. "
-                    + "Throughput, utilisation and queue depth cover the time from the warm-up to the end of the arrivals.",
+                    + "Throughput, utilisation and queue depth cover the time from the warm-up to the end of the arrivals. "
+                    + "Completed work is work that ended with success; wasted and failed work has counts of its own.",
                     $"A summary keeps every sample up to {_limits.MaxSamples}. Above that it keeps a uniform reservoir of {_limits.MaxSamples}; "
                     + "count, minimum, mean and maximum stay exact.",
                     "Virtual time in whole nanoseconds. Events run in the order (time, sequence of scheduling)."),
+                new EffectiveLimits(
+                    _limits.MaxDurationSeconds, _limits.MaxDrainSeconds, _limits.MaxArrivals, _limits.MaxEvents,
+                    _limits.MaxQueued, _limits.MaxPendingEvents, _limits.MaxSamples, _limits.MaxSeriesPoints, _limits.MaxTargets),
                 "");
         }
 
-        private static Bottleneck FindBottleneck(IReadOnlyList<ResourceStats> resources, double windowSeconds)
+        /// <summary>The saturated resources in the order of the rule: the highest utilisation first, then the lower ID.</summary>
+        private static Bottleneck FindBottleneck(IReadOnlyList<ResourceStats> resources)
         {
-            ResourceStats? found = null;
-            foreach (var resource in resources)
-            {
-                var q = resource.Queue.MeanDepthByQuarter;
-                var grows = q[0] < q[1] && q[1] < q[2] && q[2] < q[3] && q[3] - q[0] >= 1;
-                if (grows && (found is null || resource.Utilisation > found.Utilisation
-                        || (resource.Utilisation == found.Utilisation && resource.Id.CompareTo(found.Id) < 0)))
-                    found = resource;
-            }
-
-            if (found is null)
-                return new(StressResult.Estimated, false, null, null, null, null, null, null, null, BottleneckRule);
-
-            var quarters = found.Queue.MeanDepthByQuarter;
-            // The centres of the first and the last quarter are three quarters of the window apart.
-            return new(StressResult.Estimated, true, found.Id, found.Name, found.Kind, found.Utilisation, quarters,
-                found.Queue.DepthAtEndOfArrivals, (quarters[3] - quarters[0]) / (0.75 * windowSeconds), BottleneckRule);
+            var saturated = resources.Where(r => r.Saturation!.Saturated)
+                .OrderByDescending(r => r.Utilisation).ThenBy(r => r.Id)
+                .ToList();
+            var found = saturated.FirstOrDefault();
+            return new(StressResult.Estimated, found is not null, found?.Id, found?.Name, found?.Kind, found?.Utilisation,
+                [.. saturated.Select(r => r.Id)], BottleneckRule, GrowthRule);
         }
 
         /// <summary>Every input the run used, in a fixed order. An input for something the flow does not use is not here.</summary>
@@ -1295,8 +1546,13 @@ public static class StressEngine
             foreach (var branch in _profile.Branches.Where(b => _branches.ContainsKey(b.StepId)).OrderBy(b => b.StepId, StringComparer.Ordinal))
                 rows.Add(new("branch", null, branch.StepId, "probability", N(branch.Probability), "of 1", branch.Label, branch.MeasurementRef));
 
-            foreach (var outage in _profile.Outages.OrderBy(o => o.Target).ThenBy(o => o.FromSeconds))
-                rows.Add(new("outage", outage.Target, NameOf(outage.Target), "window", $"from {N(outage.FromSeconds)} s to {N(outage.ToSeconds)} s", "", AssumptionLabel.Declared, null));
+            // A target can have many windows. The field numbers them in time order, so (group, target, field) names one row.
+            foreach (var windows in _profile.Outages.GroupBy(o => o.Target).OrderBy(g => g.Key))
+            {
+                var index = 0;
+                foreach (var outage in windows.OrderBy(o => o.FromSeconds).ThenBy(o => o.ToSeconds))
+                    rows.Add(new("outage", outage.Target, NameOf(outage.Target), $"window[{index++}]", $"from {N(outage.FromSeconds)} s to {N(outage.ToSeconds)} s", "", AssumptionLabel.Declared, null));
+            }
 
             // The model declares these. They are inputs of the run like the rest.
             foreach (var operation in _operations.Values)

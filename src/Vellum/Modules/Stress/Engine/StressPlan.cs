@@ -119,6 +119,11 @@ public static class StressProfileRules
     public const double MaxServiceMs = 3_600_000;
     /// <summary>The longest duration a profile may state. The engine runs less: see <see cref="StressLimits.MaxDurationSeconds"/>.</summary>
     public const double MaxDeclaredSeconds = 86_400;
+    /// <summary>The shortest measured window: one millisecond, in nanoseconds.</summary>
+    public const long MinWindowNs = 1_000_000;
+
+    /// <summary>Seconds as the whole nanoseconds that the engine counts.</summary>
+    internal static long Nanoseconds(double seconds) => (long)Math.Round(seconds * 1e9);
 
     public static bool TryParseSeed(string? seed, out ulong value) =>
         ulong.TryParse(seed, NumberStyles.None, CultureInfo.InvariantCulture, out value);
@@ -264,10 +269,20 @@ public static class StressProfileRules
             return;
         }
         // A duration above the limit of the engine is not a defect of the profile: the run reports it as stress-too-large.
-        if (!(arrivals.DurationSeconds > 0 && arrivals.DurationSeconds <= MaxDeclaredSeconds))
+        // The engine counts whole nanoseconds, so the rule is about the rounded values: a
+        // measured window of no length has no rate, no utilisation and no mean depth.
+        var durationInRange = arrivals.DurationSeconds > 0 && arrivals.DurationSeconds <= MaxDeclaredSeconds;
+        var warmUpInRange = arrivals.WarmUpSeconds >= 0 && arrivals.WarmUpSeconds < arrivals.DurationSeconds;
+        var minimum = Number(MinWindowNs / 1e9);
+        if (!durationInRange)
             invalid("arrivals.durationSeconds", $"The duration is more than 0 and at most {Number(MaxDeclaredSeconds)} s.");
-        if (!(arrivals.WarmUpSeconds >= 0 && arrivals.WarmUpSeconds < arrivals.DurationSeconds))
+        else if (Nanoseconds(arrivals.DurationSeconds) < MinWindowNs)
+            invalid("arrivals.durationSeconds", $"The duration is at least {minimum} s.");
+        if (!warmUpInRange)
             invalid("arrivals.warmUpSeconds", "The warm-up is 0 or more and shorter than the duration.");
+        else if (durationInRange && Nanoseconds(arrivals.DurationSeconds) >= MinWindowNs
+                 && Nanoseconds(arrivals.DurationSeconds) - Nanoseconds(arrivals.WarmUpSeconds) < MinWindowNs)
+            invalid("arrivals.warmUpSeconds", $"The warm-up ends at least {minimum} s before the duration ends. The time between them is the measured window.");
         if (!(arrivals.RatePerSecond >= 0 && arrivals.RatePerSecond <= MaxRatePerSecond))
             invalid("arrivals.ratePerSecond", $"A rate is 0 to {Number(MaxRatePerSecond)} per second.");
 

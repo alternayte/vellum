@@ -55,9 +55,10 @@ Timeouts and retries come from the model. To try another value, fill a field und
 The result shows these parts:
 
 - Headline numbers: throughput, latency percentiles, completed and failed flows, and the time to drain.
-- The bottleneck, with the numbers that name it, or **None found**.
+- The bottleneck: each saturated resource with the reason, the time window and the numbers. When the rule names no resource, the result says so and gives the deepest queue next to its noise bound.
+- Whether the queue of a saturated resource grows at the end of the arrivals. This is a separate statement.
 - A latency table for the flow, each operation and each subscription.
-- Utilisation and queue depth for each element and each subscription.
+- Utilisation, queue depth and counts for each element and each subscription. **Completed** is work that ended with success. **Wasted** and **Failed inside** are calls that held a worker and are not completed work.
 - Charts of arrivals, throughput, queue depth and flows in flight over virtual time.
 - **Not modelled**: the effects that the estimate leaves out.
 - **Confidence** and the rule that sets it.
@@ -74,17 +75,22 @@ Vellum stores the run. A profile keeps its 20 newest runs.
 
 The comparison lists the inputs that differ and the difference of each metric. It gives no verdict.
 
+The comparison states whether the two result hashes are equal. Only equal hashes mean the same result.
+
 Keep the seed when you compare. Runs with different seeds differ by chance too.
 
 ## When a run is outdated
 
 A stored run names the version of the model and of the scenario that it used. When either changes, the list marks the run **outdated**. Run the profile again to get a result for the current design.
 
+A stored run also names its engine version. A run of engine version 1 keeps the numbers and the bottleneck rule of that version, and the result says so. Run the profile again to apply the current rules.
+
 ## When a run is refused
 
 - **A value is missing.** Open the profile and fill the field that the message names.
 - **The scenario has issues.** Correct the scenario first.
 - **The run is over a limit.** Lower the rate or the duration. The [stress model](/reference/stress-model/) lists the limits.
-- **Too many stress runs.** Wait the stated number of seconds.
+- **Too many stress runs.** The workspace is at its limit. Wait the stated number of seconds.
+- **The instance is busy with other stress runs.** The instance is at its limit for all workspaces. Wait the stated number of seconds.
 
 A refused run stores nothing.

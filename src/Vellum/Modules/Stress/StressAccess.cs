@@ -16,27 +16,47 @@ using Vellum.Shared;
 
 namespace Vellum.Modules.Stress;
 
-/// <summary>How many profiles and runs a project keeps, and how often a workspace may run.</summary>
+/// <summary>How many profiles and runs a project keeps, how often a workspace may run, and how many runs the instance does at the same time.</summary>
 /// <param name="MaxRunsPerProfile">A profile keeps its newest runs. An older run is deleted when a new one is stored.</param>
+/// <param name="MaxConcurrentPerInstance">
+/// Runs of all workspaces together. One run holds a thread for up to <see cref="StressLimits.WallClock"/>
+/// and the memory that <see cref="StressLimits.MaxQueued"/> and <see cref="StressLimits.MaxPendingEvents"/>
+/// allow, so this number bounds what stress runs take from the instance.
+/// </param>
 public sealed record StressRunPolicy(
     int MaxConcurrentPerWorkspace = 2,
     int RunsPerMinutePerWorkspace = 30,
     int MaxRunsPerProfile = 20,
-    int MaxProfilesPerProject = 50);
+    int MaxProfilesPerProject = 50,
+    int MaxConcurrentPerInstance = 4);
+
+/// <summary>Why a run got no place. <paramref name="Code"/> is <c>busy</c> when the instance is full and <c>rate_limited</c> when the workspace is.</summary>
+public sealed record StressGateRefusal(string Code, TimeSpan RetryAfter);
 
 /// <summary>
-/// The stress runs that a workspace has in progress and has started in the last minute. A run
-/// holds a thread for up to <see cref="StressLimits.WallClock"/>, so one workspace cannot take
-/// all of them. A place is free again when the run ends, in any way.
+/// The stress runs in progress: of each workspace, with the runs it started in the last
+/// minute, and of the whole instance. A run holds a thread for up to
+/// <see cref="StressLimits.WallClock"/>, so one workspace cannot take all the places of the
+/// instance, and all workspaces together cannot take more than the instance allows. A place
+/// is free again when the run ends, in any way.
 /// </summary>
 public sealed class StressRunGate(StressRunPolicy policy) : IDisposable
 {
+    /// <summary>A run ends within the real-time limit. This is a short wait that a second try can meet.</summary>
+    private static readonly TimeSpan BusyRetry = TimeSpan.FromSeconds(5);
+
     private readonly PartitionedRateLimiter<Guid> _concurrent = PartitionedRateLimiter.Create<Guid, Guid>(
         workspaceId => RateLimitPartition.GetConcurrencyLimiter(workspaceId, _ => new ConcurrencyLimiterOptions
         {
             PermitLimit = policy.MaxConcurrentPerWorkspace,
             QueueLimit = 0,
         }));
+
+    private readonly ConcurrencyLimiter _instance = new(new ConcurrencyLimiterOptions
+    {
+        PermitLimit = policy.MaxConcurrentPerInstance,
+        QueueLimit = 0,
+    });
 
     private readonly PartitionedRateLimiter<Guid> _started = PartitionedRateLimiter.Create<Guid, Guid>(
         workspaceId => RateLimitPartition.GetFixedWindowLimiter(workspaceId, _ => new FixedWindowRateLimiterOptions
@@ -46,31 +66,52 @@ public sealed class StressRunGate(StressRunPolicy policy) : IDisposable
             QueueLimit = 0,
         }));
 
-    /// <summary>A place for one run, or null with the time to wait.</summary>
-    public IDisposable? TryEnter(Guid workspaceId, out TimeSpan retryAfter)
+    /// <summary>A place for one run, or null with the reason and the time to wait.</summary>
+    public IDisposable? TryEnter(Guid workspaceId, out StressGateRefusal? refusal)
     {
-        retryAfter = TimeSpan.FromSeconds(1);
-        var place = _concurrent.AttemptAcquire(workspaceId);
-        if (!place.IsAcquired)
+        refusal = null;
+        var workspace = _concurrent.AttemptAcquire(workspaceId);
+        if (!workspace.IsAcquired)
         {
-            place.Dispose();
+            workspace.Dispose();
+            refusal = new("rate_limited", TimeSpan.FromSeconds(1));
             return null;
         }
 
+        var instance = _instance.AttemptAcquire();
+        if (!instance.IsAcquired)
+        {
+            instance.Dispose();
+            workspace.Dispose();
+            refusal = new("busy", BusyRetry);
+            return null;
+        }
+
+        // Last, because a start that is counted cannot be given back.
         using var started = _started.AttemptAcquire(workspaceId);
         if (started.IsAcquired)
-            return place;
+            return new Place(workspace, instance);
 
-        if (started.TryGetMetadata(MetadataName.RetryAfter, out var wait))
-            retryAfter = wait;
-        place.Dispose();
+        refusal = new("rate_limited", started.TryGetMetadata(MetadataName.RetryAfter, out var wait) ? wait : TimeSpan.FromSeconds(1));
+        instance.Dispose();
+        workspace.Dispose();
         return null;
     }
 
     public void Dispose()
     {
         _concurrent.Dispose();
+        _instance.Dispose();
         _started.Dispose();
+    }
+
+    private sealed class Place(RateLimitLease workspace, RateLimitLease instance) : IDisposable
+    {
+        public void Dispose()
+        {
+            instance.Dispose();
+            workspace.Dispose();
+        }
     }
 }
 
