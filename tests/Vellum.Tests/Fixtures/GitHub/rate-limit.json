@@ -1,0 +1,22 @@
+{
+  "resources": {
+    "core": {
+      "limit": 60,
+      "remaining": 57,
+      "reset": 1767225600,
+      "used": 3
+    },
+    "search": {
+      "limit": 10,
+      "remaining": 10,
+      "reset": 1767225600,
+      "used": 0
+    }
+  },
+  "rate": {
+    "limit": 60,
+    "remaining": 57,
+    "reset": 1767225600,
+    "used": 3
+  }
+}

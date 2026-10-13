@@ -42,6 +42,9 @@ migrate-scenarios name:
 migrate-settings name:
     dotnet ef migrations add {{name}} --project src/Vellum --context SettingsDbContext --output-dir Modules/Settings/Migrations
 
+migrate-ai name:
+    dotnet ef migrations add {{name}} --project src/Vellum --context AiUsageDbContext --output-dir Modules/Ai/Usage/Migrations
+
 seed:
     dotnet run --project src/Vellum -- seed
 

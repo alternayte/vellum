@@ -1,0 +1,30 @@
+{
+  "sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "url": "https://api.github.com/repos/acme/orders/git/trees/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "tree": [
+    {
+      "path": "README.md",
+      "mode": "100644",
+      "type": "blob",
+      "size": 28,
+      "sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "url": "https://api.github.com/repos/acme/orders/git/blobs/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    },
+    {
+      "path": "src",
+      "mode": "040000",
+      "type": "tree",
+      "sha": "cccccccccccccccccccccccccccccccccccccccc",
+      "url": "https://api.github.com/repos/acme/orders/git/trees/cccccccccccccccccccccccccccccccccccccccc"
+    },
+    {
+      "path": "src/Program.cs",
+      "mode": "100644",
+      "type": "blob",
+      "size": 120,
+      "sha": "dddddddddddddddddddddddddddddddddddddddd",
+      "url": "https://api.github.com/repos/acme/orders/git/blobs/dddddddddddddddddddddddddddddddddddddddd"
+    }
+  ],
+  "truncated": false
+}

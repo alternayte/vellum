@@ -3171,6 +3171,36 @@
         }
       }
     },
+    "/api/workspaces/{workspaceId}/github/test": {
+      "post": {
+        "tags": [
+          "GitHub"
+        ],
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitHubTestResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/projects/{projectId}/docs/{docId}/scores": {
       "post": {
         "tags": [
@@ -3720,6 +3750,170 @@
           }
         }
       }
+    },
+    "/api/workspaces/{workspaceId}/ai/usage": {
+      "get": {
+        "tags": [
+          "AI"
+        ],
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiUsageResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workspaces/{workspaceId}/ai/providers/{providerId}/test": {
+      "post": {
+        "tags": [
+          "AI"
+        ],
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "providerId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiConnectionTest"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/instance/ai/prices": {
+      "get": {
+        "tags": [
+          "AI"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ModelPriceDto"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "AI"
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetModelPriceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ModelPriceDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -4010,6 +4204,55 @@
           }
         }
       },
+      "AiConnectionTest": {
+        "required": [
+          "ok",
+          "latencyMs",
+          "model",
+          "reportedModel",
+          "supportsStructuredOutput",
+          "error"
+        ],
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "latencyMs": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "model": {
+            "type": "string"
+          },
+          "reportedModel": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "supportsStructuredOutput": {
+            "type": [
+              "null",
+              "boolean"
+            ]
+          },
+          "error": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ConnectionTestError"
+              }
+            ]
+          }
+        }
+      },
       "AiProviderSettings": {
         "required": [
           "id",
@@ -4101,6 +4344,97 @@
           },
           "taskRouting": {
             "$ref": "#/components/schemas/TaskRouting"
+          }
+        }
+      },
+      "AiUsageResponse": {
+        "required": [
+          "from",
+          "to",
+          "totals"
+        ],
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "to": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "totals": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AiUsageTotal"
+            }
+          }
+        }
+      },
+      "AiUsageTotal": {
+        "required": [
+          "providerId",
+          "providerKind",
+          "model",
+          "task",
+          "calls",
+          "inputTokens",
+          "outputTokens",
+          "costUsd",
+          "costKnown"
+        ],
+        "type": "object",
+        "properties": {
+          "providerId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "providerKind": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "task": {
+            "type": "string"
+          },
+          "calls": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "inputTokens": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "outputTokens": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "costUsd": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "costKnown": {
+            "type": "boolean"
           }
         }
       },
@@ -4267,6 +4601,21 @@
       "ChannelId": {
         "type": "string",
         "format": "uuid"
+      },
+      "ConnectionTestError": {
+        "required": [
+          "code",
+          "message"
+        ],
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        }
       },
       "CostSettings": {
         "required": [
@@ -4753,6 +5102,45 @@
           }
         }
       },
+      "GitHubTestResponse": {
+        "required": [
+          "ok",
+          "authenticatedAs",
+          "rateLimitRemaining",
+          "error"
+        ],
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "authenticatedAs": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "rateLimitRemaining": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "error": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ConnectionTestError"
+              }
+            ]
+          }
+        }
+      },
       "ImportSettings": {
         "required": [
           "maxFiles",
@@ -4912,6 +5300,44 @@
       "MessageId": {
         "type": "string",
         "format": "uuid"
+      },
+      "ModelPriceDto": {
+        "required": [
+          "providerKind",
+          "model",
+          "inputUsdPerMillionTokens",
+          "outputUsdPerMillionTokens",
+          "effectiveFrom"
+        ],
+        "type": "object",
+        "properties": {
+          "providerKind": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "inputUsdPerMillionTokens": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "outputUsdPerMillionTokens": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "effectiveFrom": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
       },
       "ModuleMigrations": {
         "required": [
@@ -5524,6 +5950,55 @@
               "null",
               "string"
             ]
+          }
+        }
+      },
+      "SetModelPriceRequest": {
+        "required": [
+          "providerKind",
+          "model",
+          "inputUsdPerMillionTokens",
+          "outputUsdPerMillionTokens",
+          "effectiveFrom"
+        ],
+        "type": "object",
+        "properties": {
+          "providerKind": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "model": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "inputUsdPerMillionTokens": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "outputUsdPerMillionTokens": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "effectiveFrom": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
           }
         }
       },
@@ -6982,6 +7457,9 @@
       "name": "Scoring"
     },
     {
+      "name": "GitHub"
+    },
+    {
       "name": "Setup"
     },
     {
@@ -6989,6 +7467,9 @@
     },
     {
       "name": "Settings"
+    },
+    {
+      "name": "AI"
     }
   ]
 }

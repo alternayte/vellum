@@ -1,0 +1,6 @@
+data: {"candidates":[{"index":0,"content":{"role":"model","parts":[{"text":"Hello"}]}}],"modelVersion":"gemini-fixture-001","responseId":"fixture01","usageMetadata":{"promptTokenCount":21,"totalTokenCount":21}}
+
+: keep-alive
+
+data: {"candidates":[{"index":0,"content":{"role":"model","parts":[{"text":" world"}]},"finishReason":"STOP"}],"modelVersion":"gemini-fixture-001","responseId":"fixture01","usageMetadata":{"promptTokenCount":21,"candidatesTokenCount":7,"thoughtsTokenCount":2,"totalTokenCount":30}}
+

@@ -263,7 +263,7 @@ public class InstancePolicyTests : IAsyncLifetime
 
         var modules = diagnostics["migrations"]!.AsArray().ToDictionary(m => (string)m!["module"]!, m => m!);
         Assert.Equal(
-            ["docs", "drafts", "identity", "modelling", "scenarios", "schemas", "scoring", "settings", "views", "workspaces"],
+            ["ai", "docs", "drafts", "identity", "modelling", "scenarios", "schemas", "scoring", "settings", "views", "workspaces"],
             modules.Keys.Order());
         Assert.All(modules.Values, m =>
         {

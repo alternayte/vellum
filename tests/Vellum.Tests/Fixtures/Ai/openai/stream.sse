@@ -1,0 +1,17 @@
+event: response.created
+data: {"type":"response.created","sequence_number":0,"response":{"id":"resp_fixture01","object":"response","created_at":1741290958,"status":"in_progress","error":null,"incomplete_details":null,"model":"gpt-fixture-2026-01-01","output":[{"id":"msg_fixture01","type":"message","status":"in_progress","role":"assistant","content":[]}],"usage":null}}
+
+event: response.output_item.added
+data: {"type":"response.output_item.added","output_index":0,"sequence_number":1,"item":{"id":"msg_fixture01","type":"message","status":"in_progress","role":"assistant","content":[]}}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","item_id":"msg_fixture01","output_index":0,"content_index":0,"delta":"Hello","sequence_number":2,"logprobs":[]}
+
+: keep-alive
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","item_id":"msg_fixture01","output_index":0,"content_index":0,"delta":" world","sequence_number":3,"logprobs":[]}
+
+event: response.completed
+data: {"type":"response.completed","sequence_number":4,"response":{"id":"resp_fixture01","object":"response","created_at":1741290958,"status":"completed","error":null,"incomplete_details":null,"model":"gpt-fixture-2026-01-01","output":[{"id":"msg_fixture01","type":"message","status":"completed","role":"assistant","content":[{"type":"output_text","text":"Hello world","annotations":[],"logprobs":[]}]}],"usage":{"input_tokens":21,"input_tokens_details":{"cached_tokens":0},"output_tokens":9,"output_tokens_details":{"reasoning_tokens":0},"total_tokens":30}}}
+

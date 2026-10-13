@@ -1,0 +1,22 @@
+{
+  "number": 7,
+  "state": "open",
+  "title": "Remove the outbox",
+  "merged": false,
+  "draft": false,
+  "changed_files": 2,
+  "base": {
+    "ref": "main",
+    "sha": "1111111111111111111111111111111111111111",
+    "repo": {
+      "full_name": "acme/orders"
+    }
+  },
+  "head": {
+    "ref": "remove-outbox",
+    "sha": "2222222222222222222222222222222222222222",
+    "repo": {
+      "full_name": "contributor/orders"
+    }
+  }
+}
