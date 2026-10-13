@@ -1,6 +1,7 @@
 scenario.scenario_saved v1
 {
   "name": "Every type",
+  "origin": null,
   "document": {
     "id": "00000000-0000-0000-0000-000000000100",
     "name": "Every type",

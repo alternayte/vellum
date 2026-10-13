@@ -162,7 +162,7 @@ public class ArchitectureAndExplainTests(SharedOutboundHost shared) : IClassFixt
 
         var failure = Assert.Single(refused["failures"]!.AsArray())!;
         Assert.Equal(items["N1"], (Guid)failure["itemId"]!);
-        Assert.Contains("parentId", (string)failure["reason"]!);
+        Assert.Contains($"The parent of the item ({model.Shop}) is not in the model", (string)failure["reason"]!);
         // The channel of the same request was not written either.
         Assert.Equal(versionBefore, await ModelVersionAsync(_host, projectId));
         Assert.Empty((await GetAsync(ai.Owner, Url(projectId, "channels")))["items"]!.AsArray().Where(c => (string)c!["name"]! == "payment-events"));

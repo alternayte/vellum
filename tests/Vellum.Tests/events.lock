@@ -40,7 +40,7 @@ stream model (ModelState)
 
 stream scenario (ScenarioState)
   scenario.scenario_deleted v1 { scenarioId: custom(ScenarioId) }
-  scenario.scenario_saved v1 { document: { assertions: [{ id: string }], faults: [{ failFirst: int32?, kind: enum{Error=0, Timeout=1, Outage=2}, target: uuid }], id: custom(ScenarioId), name: string, steps: [{ id: string }] }, name: string, projectId: uuid }
+  scenario.scenario_saved v1 { document: { assertions: [{ id: string }], faults: [{ failFirst: int32?, kind: enum{Error=0, Timeout=1, Outage=2}, target: uuid }], id: custom(ScenarioId), name: string, steps: [{ id: string }] }, name: string, origin: { kind: string, model: string, proposalId: uuid, provider: string }?, projectId: uuid }
 
 stream schema (SchemaState)
   schema.schema_created v1 { content: string, description: string?, id: uuid, name: string, projectId: uuid, version: int32 }

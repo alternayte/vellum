@@ -118,10 +118,10 @@ internal static class DesignKit
         summary = "",
         steps = Enumerable.Range(0, count).Select(i => new
         {
-            id = $"s{i}", parentStepId = (string?)null, slot = "root", slotKey = (string?)null, order = i, type = "write",
-            from = (string?)null, operation = (string?)null, channel = (string?)null, message = (string?)null,
-            by = "E4", store = "E5", dataset = "d", whenStep = (string?)null, @is = (string?)null,
-            requestJson = (string?)null, responseJson = (string?)null, payloadJson = (string?)null, changeJson = (string?)null,
+            id = $"s{i}", parentStepId = "", slot = "root", slotKey = "", order = i, type = "write",
+            from = "", operation = "", channel = "", message = "",
+            by = "E4", store = "E5", dataset = "d", whenStep = "", @is = "",
+            requestJson = "", responseJson = "", payloadJson = "", changeJson = "",
         }),
         faults = Array.Empty<object>(),
         assertions = Array.Empty<object>(),

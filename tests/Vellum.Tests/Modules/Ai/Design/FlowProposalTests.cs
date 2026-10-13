@@ -282,7 +282,7 @@ public class FlowProposalTests(SharedOutboundHost shared) : IClassFixture<Shared
         // More steps than a scenario holds: read up to the limit, reported, not played and not acceptable.
         var many = await BodyAsync(await ProposeFlowAsync(ai.Owner, projectId, "Many"), HttpStatusCode.Created);
         Assert.Equal(500, many["scenario"]!["steps"]!.AsArray().Count);
-        Assert.Equal(["too-many-steps", "not-storable"], Codes(many));
+        Assert.Equal(["not-storable", "too-many-steps"], Codes(many));
         Assert.Null(many["preview"]);
         var unstorable = await ai.Owner.PostAsync(Url(projectId, $"ai/flow-proposals/{many["id"]}/accept"), null);
         Assert.Equal(HttpStatusCode.Conflict, unstorable.StatusCode);

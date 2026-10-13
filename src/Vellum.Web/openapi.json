@@ -3084,7 +3084,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Scenario"
+                  "$ref": "#/components/schemas/ScenarioDto"
                 }
               }
             }
@@ -4164,6 +4164,26 @@
                 }
               }
             }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       },
@@ -4262,6 +4282,56 @@
             }
           }
         }
+      },
+      "delete": {
+        "tags": [
+          "AI design"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "proposalId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/projects/{projectId}/ai/flow-proposals/{proposalId}/accept": {
@@ -4341,7 +4411,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
+                  "$ref": "#/components/schemas/ProposalStale"
                 }
               }
             }
@@ -4541,6 +4611,26 @@
                 }
               }
             }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       },
@@ -4630,6 +4720,56 @@
           },
           "404": {
             "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "AI design"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "proposalId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
             "content": {
               "application/json": {
                 "schema": {
@@ -4779,6 +4919,16 @@
           },
           "409": {
             "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
             "content": {
               "application/json": {
                 "schema": {
@@ -5347,6 +5497,10 @@
               "null",
               "string"
             ]
+          },
+          "acceptWithIssues": {
+            "type": "boolean",
+            "default": false
           }
         }
       },
@@ -5694,6 +5848,12 @@
                 "$ref": "#/components/schemas/ConnectionTestError"
               }
             ]
+          },
+          "structuredOutputNote": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -5933,6 +6093,67 @@
           }
         }
       },
+      "AliasOmitted": {
+        "required": [
+          "elements",
+          "operations",
+          "channels",
+          "subscriptions",
+          "messages",
+          "relationships"
+        ],
+        "type": "object",
+        "properties": {
+          "elements": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "operations": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "channels": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "subscriptions": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "messages": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "relationships": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          }
+        }
+      },
       "AliasTarget": {
         "required": [
           "alias",
@@ -6028,8 +6249,13 @@
           "reasoningSummary",
           "openQuestions",
           "items",
+          "resolvedToExisting",
           "rejectedReferences",
           "modelVersion",
+          "stale",
+          "itemIssues",
+          "omitted",
+          "omittedPrivate",
           "provider",
           "promptTemplateVersion",
           "usage",
@@ -6082,6 +6308,12 @@
               "$ref": "#/components/schemas/ArchitectureItemDto"
             }
           },
+          "resolvedToExisting": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResolvedToExisting"
+            }
+          },
           "rejectedReferences": {
             "type": "array",
             "items": {
@@ -6095,6 +6327,28 @@
               "string"
             ],
             "format": "int64"
+          },
+          "stale": {
+            "type": "boolean"
+          },
+          "itemIssues": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProposalItemFailure"
+            }
+          },
+          "omitted": {
+            "$ref": "#/components/schemas/AliasOmitted"
+          },
+          "omittedPrivate": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/OmittedPrivate"
+              }
+            ]
           },
           "provider": {
             "$ref": "#/components/schemas/ProposalProvider"
@@ -6372,6 +6626,16 @@
               "string"
             ],
             "format": "uuid"
+          },
+          "selection": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
           }
         }
       },
@@ -6490,6 +6754,16 @@
               "string"
             ],
             "format": "uuid"
+          },
+          "selection": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
           }
         }
       },
@@ -7334,6 +7608,7 @@
           "scenario",
           "blockedSteps",
           "missing",
+          "resolvedToExisting",
           "rejectedReferences",
           "issues",
           "preview",
@@ -7341,6 +7616,9 @@
           "evidence",
           "reviseScenarioId",
           "modelVersion",
+          "stale",
+          "omitted",
+          "omittedPrivate",
           "provider",
           "promptTemplateVersion",
           "usage",
@@ -7402,6 +7680,12 @@
               "$ref": "#/components/schemas/FlowMissingDto"
             }
           },
+          "resolvedToExisting": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ResolvedToExisting"
+            }
+          },
           "rejectedReferences": {
             "type": "array",
             "items": {
@@ -7454,6 +7738,22 @@
               "string"
             ],
             "format": "int64"
+          },
+          "stale": {
+            "type": "boolean"
+          },
+          "omitted": {
+            "$ref": "#/components/schemas/AliasOmitted"
+          },
+          "omittedPrivate": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/OmittedPrivate"
+              }
+            ]
           },
           "provider": {
             "$ref": "#/components/schemas/ProposalProvider"
@@ -7829,6 +8129,26 @@
               "null",
               "string"
             ]
+          }
+        }
+      },
+      "OmittedPrivate": {
+        "required": [
+          "count",
+          "reason"
+        ],
+        "type": "object",
+        "properties": {
+          "count": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "reason": {
+            "type": "string"
           }
         }
       },
@@ -8313,6 +8633,48 @@
           }
         }
       },
+      "ProposalStale": {
+        "required": [
+          "type",
+          "title",
+          "issues",
+          "preview",
+          "modelVersion"
+        ],
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "issues": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ScenarioIssue"
+            }
+          },
+          "preview": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/FlowPreview"
+              }
+            ]
+          },
+          "modelVersion": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          }
+        }
+      },
       "ProposalSummary": {
         "required": [
           "id",
@@ -8637,6 +8999,26 @@
             "type": "string"
           },
           "reason": {
+            "type": "string"
+          }
+        }
+      },
+      "ResolvedToExisting": {
+        "required": [
+          "alias",
+          "id",
+          "name"
+        ],
+        "type": "object",
+        "properties": {
+          "alias": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
             "type": "string"
           }
         }
@@ -9169,6 +9551,53 @@
           }
         }
       },
+      "ScenarioDto": {
+        "required": [
+          "id",
+          "name",
+          "steps",
+          "faults",
+          "assertions",
+          "origin"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "$ref": "#/components/schemas/ScenarioId"
+          },
+          "name": {
+            "type": "string"
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Step"
+            }
+          },
+          "faults": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Fault"
+            }
+          },
+          "assertions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Assertion"
+            }
+          },
+          "origin": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ScenarioOrigin"
+              }
+            ]
+          }
+        }
+      },
       "ScenarioId": {
         "type": "string",
         "format": "uuid"
@@ -9188,6 +9617,30 @@
             "type": "string"
           },
           "message": {
+            "type": "string"
+          }
+        }
+      },
+      "ScenarioOrigin": {
+        "required": [
+          "kind",
+          "proposalId",
+          "provider",
+          "model"
+        ],
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "proposalId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "model": {
             "type": "string"
           }
         }

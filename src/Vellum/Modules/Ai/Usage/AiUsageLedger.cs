@@ -20,7 +20,12 @@ public sealed record CallTicket(
 /// costs nothing. True when the provider answered with a success status or its stream
 /// started: it may bill output, whatever happened afterwards.
 /// </param>
-public sealed record CallEnd(string Outcome, string? ErrorCode, int? InputTokens, int? OutputTokens, string? ReportedModel, bool MayHaveGenerated);
+/// <param name="Note">
+/// A usage note that says how the call was made, such as <see cref="AiUsageLedger.NoteSchemaFallback"/>.
+/// A note about the counts or the cost of the call takes its place.
+/// </param>
+public sealed record CallEnd(
+    string Outcome, string? ErrorCode, int? InputTokens, int? OutputTokens, string? ReportedModel, bool MayHaveGenerated, string? Note = null);
 
 /// <param name="CostUsd">Null only when the model has no price.</param>
 /// <param name="InputTokens">The provider's count when it is within the sane range, else null.</param>
@@ -64,6 +69,8 @@ public sealed class AiUsageLedger(AiUsageDbContext db)
     public const string NoteEstimated = "cost_estimated";
     public const string NoteOutOfRange = "usage_out_of_range";
     public const string NoteReaped = "reaped";
+    /// <summary>The provider rejected the request in its structured-output mode, and this call sent the schema in the prompt.</summary>
+    public const string NoteSchemaFallback = "schema_rejected_fallback";
 
     /// <summary>The fewest UTF-8 bytes that the input estimate assumes for one token.</summary>
     public const int MinBytesPerToken = 2;
@@ -180,7 +187,7 @@ public sealed class AiUsageLedger(AiUsageDbContext db)
             cost = null;
         }
 
-        var note = outOfRange ? NoteOutOfRange : estimated ? NoteEstimated : null;
+        var note = outOfRange ? NoteOutOfRange : estimated ? NoteEstimated : end.Note;
         var duration = (int)Math.Min(int.MaxValue, Stopwatch.GetElapsedTime(ticket.StartedTimestamp).TotalMilliseconds);
         var reportedModel = end.ReportedModel is null ? null : OutboundText.Clean(end.ReportedModel, 200);
 

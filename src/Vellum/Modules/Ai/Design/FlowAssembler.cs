@@ -84,10 +84,11 @@ internal static partial class FlowAssembler
 
             string? Payload(string? text, string what)
             {
-                if (text is null)
+                // The empty string is the model's word for "no payload".
+                if (string.IsNullOrWhiteSpace(text))
                     return null;
                 if (Encoding.UTF8.GetByteCount(text) <= TraceLimits.MaxPayloadBytes)
-                    return text;
+                    return Canonical(text);
                 issues.Add(new(id, "payload-too-large",
                     $"The {what} is larger than {TraceLimits.MaxPayloadBytes / 1024} KB. It was left out; the step has no {what}."));
                 return null;
@@ -96,7 +97,7 @@ internal static partial class FlowAssembler
             steps.Add(new FlowStepOutput(
                 id, Token(step.ParentStepId), Token(step.Slot) ?? "", Token(step.SlotKey), step.Order, Token(step.Type) ?? "",
                 Token(step.From), Token(step.Operation), Token(step.Channel), Token(step.Message), Token(step.By), Token(step.Store),
-                step.Dataset is null ? null : DesignText.Line(step.Dataset),
+                string.IsNullOrEmpty(step.Dataset) ? null : DesignText.Line(step.Dataset),
                 Token(step.WhenStep), Token(step.Is),
                 Payload(step.RequestJson, "request"), Payload(step.ResponseJson, "response"),
                 Payload(step.PayloadJson, "payload"), Payload(step.ChangeJson, "change")));
@@ -108,19 +109,48 @@ internal static partial class FlowAssembler
             DesignText.Lines(raw.Summary),
             steps,
             [.. (raw.Faults ?? []).Where(f => f is not null).Take(MaxFaults)
-                .Select(f => new FlowFaultOutput(Token(f.Target) ?? "", Token(f.Kind) ?? "", f.FailFirst))],
+                .Select(f => new FlowFaultOutput(
+                    Token(f.Target) ?? "", Token(f.Kind) ?? "", f.FailFirst == DesignSchemas.NoFailFirst ? null : f.FailFirst))],
             [.. (raw.Assertions ?? []).Where(a => a is not null).Take(MaxAssertions)
                 .Select(a => new FlowAssertionOutput(
-                    Token(a.Id) ?? "", Token(a.Type) ?? "", Token(a.Step), Token(a.Expected), Token(a.EventKind), Token(a.Target), a.ExpectedCount))],
+                    Token(a.Id) ?? "", Token(a.Type) ?? "", Token(a.Step), Token(a.Expected), Token(a.EventKind), Token(a.Target),
+                    a.ExpectedCount == DesignSchemas.NoExpectedCount ? null : a.ExpectedCount))],
             [.. (raw.Missing ?? []).Where(m => m is not null).Take(MaxMissing)
                 .Select(m => new FlowMissingOutput(
-                    Token(m.Alias) ?? "", Token(m.Kind) ?? "", DesignText.Line(m.Name, TextRule.MaxName + 1),
+                    Token(m.Alias) ?? "", Token(m.Kind) ?? "", ProposedNames.Normalize(DesignText.Line(m.Name, TextRule.MaxName + 1)),
                     Token(m.ElementKind), Token(m.ParentAlias), Token(m.OwnerAlias), Token(m.Transport), Token(m.ChannelKind),
                     Token(m.ChannelAlias), Token(m.ConsumerAlias), DesignText.Lines(m.Reason), Confidence(m.Confidence)))],
             DesignText.List(raw.OpenQuestions, MaxQuestions),
             DesignText.Lines(raw.ReasoningSummary, TextRule.MaxDescription),
             [.. (raw.Evidence ?? []).Where(e => e is not null).Take(MaxEvidence)
                 .Select(e => new FlowEvidenceOutput(Token(e.Alias) ?? "", DesignText.Lines(e.Why)))]), issues);
+    }
+
+    /// <summary>
+    /// The payload text in its canonical form (<see cref="CanonicalJson"/>): sorted keys, the
+    /// last of two equal keys, one spelling per number. It is made once, when the answer is
+    /// read, so the previewed document, the stored proposal and the saved scenario hold the
+    /// same bytes. Text that is not a usable payload is returned as it is;
+    /// <see cref="Build"/> reports it and leaves it out.
+    /// </summary>
+    private static string Canonical(string text)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(text, new JsonDocumentOptions { MaxDepth = ScenarioShape.MaxPayloadDepth + 1 });
+            if (ScenarioShape.Payload(document.RootElement, "payload") is not null)
+                return text;
+
+            using var buffer = new MemoryStream();
+            using (var writer = new Utf8JsonWriter(buffer, new JsonWriterOptions { MaxDepth = ScenarioShape.MaxPayloadDepth + 2 }))
+                CanonicalJson.Write(writer, document.RootElement);
+            return Encoding.UTF8.GetString(buffer.ToArray());
+        }
+        // A string with half of a surrogate pair cannot be read as JSON text.
+        catch (Exception ex) when (ex is JsonException or ArgumentException)
+        {
+            return text;
+        }
     }
 
     /// <summary>A confidence is a number from 0 to 1. Anything else that a model writes is moved into that range.</summary>
@@ -367,7 +397,7 @@ internal static partial class FlowAssembler
 
                 return value;
             }
-            catch (JsonException)
+            catch (Exception ex) when (ex is JsonException or ArgumentException)
             {
                 issues.Add(new(node.Step.Id, "invalid-payload-json", $"The {what} is not JSON text. It was left out; the step has no {what}."));
                 return null;
@@ -457,10 +487,11 @@ internal static partial class FlowAssembler
         var scenario = new Scenario(scenarioId, output.Name, roots, faults, assertions);
 
         // The same limits a save applies. A document outside them cannot be accepted.
+        // The issue goes first: it decides whether the proposal can be accepted, so the bound on the list must not cut it.
         if (ScenarioShape.Check(scenario) is { } shape)
-            issues.Add(new("", "not-storable", $"{shape.Field}: {shape.Message}."));
+            issues.Insert(0, new("", "not-storable", $"{shape.Field}: {shape.Message}."));
         else if (JsonSerializer.SerializeToUtf8Bytes(scenario, DesignJson.Options).Length is var bytes and > ScenarioShape.MaxDocumentBytes)
-            issues.Add(new("", "not-storable", $"A scenario document holds at most {ScenarioShape.MaxDocumentBytes} bytes. This one has {bytes}."));
+            issues.Insert(0, new("", "not-storable", $"A scenario document holds at most {ScenarioShape.MaxDocumentBytes} bytes. This one has {bytes}."));
 
         var blocked = nodes.Where(n => !n.Dropped && n.Needs.Count > 0)
             .Select(n => new BlockedStep(n.Step.Id, [.. n.Needs])).ToList();

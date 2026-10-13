@@ -55,41 +55,54 @@ public static class SaveScenario
     /// </summary>
     internal static Task<CommandResult<Scenario>> CreateAsync(
         IServiceProvider requestServices, Guid projectId, Scenario document, CancellationToken ct) =>
-        // The count and the new row commit together, and creates of one project take turns on
-        // an advisory lock, so two of them cannot both take the last place. The lock is taken
-        // before the stream lock and nothing asks for it later, so it adds no wait cycle.
         SharedTransaction.RunAsync(requestServices, async services =>
         {
             var db = services.GetRequiredService<ScenariosDbContext>();
             await using var transaction = await db.Database.BeginTransactionAsync(ct);
-            await db.Database.ExecuteSqlAsync(
-                $"SELECT pg_advisory_xact_lock({ProjectLockSpace}, hashtext({projectId.ToString()}))", ct);
-
-            if (await db.Scenarios.CountAsync(s => s.ProjectId == projectId, ct) >= ScenarioDecider.MaxPerProject)
-            {
-                return new CommandResult<Scenario>.Conflict(
-                    $"A project holds at most {ScenarioDecider.MaxPerProject} scenarios. Delete one before you add another.");
-            }
-
-            CommandResult<Scenario> created;
-            try
-            {
-                created = await services.GetRequiredService<IEventStore>().UseDbContext(db)
-                    .DecideInTransaction<ScenarioState, Scenario>(
-                        document.Id,
-                        state => ScenarioDecider.Create(state, projectId, document),
-                        state => state.Document!,
-                        ct);
-            }
-            // The ID names a stream of another kind: a model branch or a schema.
-            catch (DeedboxException e) when (e.Code == DeedboxError.StreamTypeMismatch)
-            {
-                return new CommandResult<Scenario>.Conflict(ScenarioDecider.IdInUse);
-            }
-
-            await transaction.CommitAsync(ct);
+            var created = await CreateInTransactionAsync(
+                db, services.GetRequiredService<IEventStore>().UseDbContext(db), projectId, document, null, ct);
+            if (created is CommandResult<Scenario>.Success)
+                await transaction.CommitAsync(ct);
             return created;
         }, ct);
+
+    /// <summary>
+    /// The create inside a transaction that the caller opened on <paramref name="db"/> and
+    /// commits. <paramref name="pinned"/> is the event store bound to that context.
+    /// </summary>
+    /// <param name="origin">Set when the document is an accepted AI flow proposal.</param>
+    internal static async Task<CommandResult<Scenario>> CreateInTransactionAsync(
+        DbContext db, IEventStore pinned, Guid projectId, Scenario document, ScenarioOrigin? origin, CancellationToken ct)
+    {
+        // The count and the new row commit together, and creates of one project take turns on
+        // an advisory lock, so two of them cannot both take the last place. No unit asks for
+        // this lock while it holds the lock of a scenario stream, so it adds no wait cycle.
+        await db.Database.ExecuteSqlAsync(
+            $"SELECT pg_advisory_xact_lock({ProjectLockSpace}, hashtext({projectId.ToString()}))", ct);
+
+        var count = await db.Database
+            .SqlQuery<int>($"SELECT count(*)::int AS \"Value\" FROM trace.scenarios WHERE project_id = {projectId}")
+            .SingleAsync(ct);
+        if (count >= ScenarioDecider.MaxPerProject)
+        {
+            return new CommandResult<Scenario>.Conflict(
+                $"A project holds at most {ScenarioDecider.MaxPerProject} scenarios. Delete one before you add another.");
+        }
+
+        try
+        {
+            return await pinned.DecideInTransaction<ScenarioState, Scenario>(
+                document.Id,
+                state => ScenarioDecider.Create(state, projectId, document, origin),
+                state => state.Document!,
+                ct);
+        }
+        // The ID names a stream of another kind: a model branch or a schema.
+        catch (DeedboxException e) when (e.Code == DeedboxError.StreamTypeMismatch)
+        {
+            return new CommandResult<Scenario>.Conflict(ScenarioDecider.IdInUse);
+        }
+    }
 
     public static async Task<IResult> Update(
         Guid projectId, Guid scenarioId,

@@ -153,7 +153,9 @@ public static class ScenarioShape
 
     /// <summary>
     /// A payload is free JSON, so its strings may hold any text but two kinds that the event
-    /// store cannot keep: U+0000 and half of a surrogate pair.
+    /// store cannot keep: U+0000 and half of a surrogate pair. A number must have a finite
+    /// value and at most <see cref="CanonicalJson.MaxNumberChars"/> characters, so that it has
+    /// a canonical form (<see cref="CanonicalJson.Defect"/>).
     /// </summary>
     internal static ValidationError? Payload(JsonElement? payload, string path)
     {
@@ -197,6 +199,10 @@ public static class ScenarioShape
 
             case JsonValueKind.String:
                 return Text(value.GetString, path);
+
+            // A number that has no finite value, or that is too long, has no canonical form.
+            case JsonValueKind.Number:
+                return CanonicalJson.Defect(value) is { } defect ? new ValidationError(path, $"The payload {defect}") : null;
 
             default:
                 return null;

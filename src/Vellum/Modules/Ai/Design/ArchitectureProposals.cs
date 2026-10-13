@@ -12,7 +12,11 @@ namespace Vellum.Modules.Ai.Design;
 
 /// <param name="Request">What the system needs, in plain language. At most 4,000 characters.</param>
 /// <param name="BranchId">The draft or variant to design against. Null means the main model.</param>
-public sealed record CreateArchitectureProposalRequest(string? Request, Guid? BranchId);
+/// <param name="Selection">
+/// The IDs of the things selected on the canvas, at most 500. They are listed in the alias
+/// table before the rest of a large model. An ID that names nothing is ignored.
+/// </param>
+public sealed record CreateArchitectureProposalRequest(string? Request, Guid? BranchId, IReadOnlyList<Guid>? Selection = null);
 
 /// <summary>Item IDs. An ID is in one list at most.</summary>
 public sealed record DecideArchitectureProposalRequest(IReadOnlyList<Guid>? Accept, IReadOnlyList<Guid>? Reject);
@@ -44,12 +48,23 @@ public sealed record ArchitectureItemDto(
 
 /// <param name="Status"><c>draft</c> while an item is pending, then <c>decided</c>.</param>
 /// <param name="Scope">Always <c>additions</c>: this version proposes no change to and no removal of an existing fact.</param>
+/// <param name="ResolvedToExisting">Things the model proposed as new that the branch held already when the proposal was made. No item exists for them; the items that referenced them reference the existing thing.</param>
+/// <param name="ModelVersion">The version of the branch when the proposal was made.</param>
+/// <param name="Stale">True for a draft when the branch is at another version now.</param>
+/// <param name="ItemIssues">For a draft: the pending items that cannot be accepted against the model as it is now, with the reason. A decision that accepts one is refused.</param>
+/// <param name="Omitted">How many things the alias table of the request left out because the model is large.</param>
+/// <param name="OmittedPrivate">Set when private-sourced things were left out of the prompt because a setting forbids sending them.</param>
 public sealed record ArchitectureProposalDto(
     Guid Id, Guid ProjectId, Guid? BranchId, string Request, string Status, string Scope,
     string Summary, string ReasoningSummary, IReadOnlyList<string> OpenQuestions,
     IReadOnlyList<ArchitectureItemDto> Items,
+    IReadOnlyList<ResolvedToExisting> ResolvedToExisting,
     IReadOnlyList<RejectedReference> RejectedReferences,
     long ModelVersion,
+    bool Stale,
+    IReadOnlyList<ProposalItemFailure> ItemIssues,
+    AliasOmitted Omitted,
+    OmittedPrivate? OmittedPrivate,
     ProposalProvider Provider, string PromptTemplateVersion, ProposalUsage Usage,
     string CreatedBy, DateTimeOffset CreatedAt, string? DecidedBy, DateTimeOffset? DecidedAt);
 
@@ -61,7 +76,8 @@ public sealed record ProposalItemsRefused(string Type, string Title, IReadOnlyLi
 internal sealed record ArchitectureDocument(
     string Summary, string ReasoningSummary, IReadOnlyList<string> OpenQuestions,
     IReadOnlyList<ArchitectureItemDto> Items, IReadOnlyList<RejectedReference> RejectedReferences,
-    long ModelVersion, ProposalProvider Provider, string PromptTemplateVersion, ProposalUsage Usage);
+    long ModelVersion, ProposalProvider Provider, string PromptTemplateVersion, ProposalUsage Usage,
+    IReadOnlyList<ResolvedToExisting>? ResolvedToExisting = null, AliasOmitted? Omitted = null, OmittedPrivate? OmittedPrivate = null);
 
 /// <summary>
 /// Natural language to additions to the model, as a proposal. Each item is a suggestion with
@@ -81,36 +97,44 @@ public static partial class ArchitectureProposals
 
     public static async Task<IResult> Create(
         Guid projectId, CreateArchitectureProposalRequest body, HttpContext http,
-        AiClient ai, IEventStore store, SchemasDbContext schemasDb, AiDesignDbContext db, CancellationToken ct)
+        AiClient ai, IEventStore store, SchemasDbContext schemasDb, AiDesignDbContext db, PrivateSources privateSources,
+        CancellationToken ct)
     {
         var (caller, refusal) = await DesignAccess.ResolveAsync(http, projectId, body.BranchId, WorkspaceRole.Editor, forWrite: true, ct);
         if (caller is null)
             return refusal!;
         if (FlowProposals.RequestText(body.Request) is { } invalid)
             return invalid;
+        if (body.Selection is { Count: > FlowProposals.MaxSelection })
+            return DesignAccess.Invalid("selection", $"A selection holds at most {FlowProposals.MaxSelection} IDs");
+        // Asked before the provider is called, so a full project spends nothing.
+        if (await ProposalStore.DraftsFullAsync(db, projectId, ct))
+            return ProposalStore.TooManyDrafts();
 
         var snapshot = await BranchSnapshot.LoadAsync(store, schemasDb, projectId, caller.StreamId, ct);
-        var aliases = ModelAliases.Build(snapshot.Model, snapshot.Schemas);
+        var gate = await privateSources.LoadAsync(caller.WorkspaceId, projectId, snapshot.Model, ct);
+        var aliases = ModelAliases.Build(snapshot.Model, snapshot.Schemas, AliasNeeds.For(body.Request!, selected: body.Selection), gate);
         var prompt = DesignPrompts.InferArchitecture;
 
         var result = await ai.CompleteStructuredAsync<ArchitectureOutput>(new AiRequest(
             caller.WorkspaceId, AiTask.InferArchitecture, Purpose, DesignPrompts.InferArchitectureVersion, prompt["system"],
             [new AiMessage(AiRole.User,
             [
-                AiPart.Instruction(prompt["table"]), AiPart.Untrusted(aliases.Table, AiDataClass.Public),
+                AiPart.Instruction(prompt["table"]), AiPart.Untrusted(aliases.Table, aliases.DataClass),
                 AiPart.Instruction(prompt["request"]), AiPart.Untrusted(body.Request!, AiDataClass.Public),
             ])],
             DesignSchemas.Architecture, MaxOutputTokens, caller.UserId), ct);
         if (result is not AiResult<ArchitectureOutput>.Succeeded answer)
             return Results.Ok(AiUnavailable.From(((AiResult<ArchitectureOutput>.Failed)result).Failure));
 
-        var (items, rejected) = Build(answer.Value, aliases.ByAlias);
+        var (items, resolved, rejected) = Build(answer.Value, aliases.ByAlias, snapshot.Model);
         var document = new ArchitectureDocument(
             DesignText.Lines(answer.Value.Summary), DesignText.Lines(answer.Value.ReasoningSummary, TextRule.MaxDescription),
             DesignText.List(answer.Value.OpenQuestions, FlowAssembler.MaxQuestions),
             items, rejected, snapshot.Version,
             new ProposalProvider(answer.Usage.ProviderKind, answer.Usage.Model, answer.Usage.ReportedModel),
-            DesignPrompts.InferArchitectureVersion, ProposalUsage.From(answer.Usage));
+            DesignPrompts.InferArchitectureVersion, ProposalUsage.From(answer.Usage),
+            resolved, aliases.Omitted, OmittedPrivate.Of(aliases.OmittedPrivateCount));
 
         var name = DesignText.Line(answer.Value.Summary);
         var row = new ProposalEntity
@@ -128,10 +152,11 @@ public static partial class ArchitectureProposals
             CreatedBy = caller.UserId,
             CreatedAt = DateTimeOffset.UtcNow,
         };
-        db.Proposals.Add(row);
-        await db.SaveChangesAsync(ct);
+        if (!await ProposalStore.InsertDraftAsync(db, row, ct))
+            return ProposalStore.TooManyDrafts();
 
-        return Results.Created($"/api/projects/{projectId}/ai/architecture-proposals/{row.Id}", ToDto(row, document));
+        return Results.Created(
+            $"/api/projects/{projectId}/ai/architecture-proposals/{row.Id}", ToDto(row, document, snapshot));
     }
 
     public static async Task<IResult> List(
@@ -141,11 +166,42 @@ public static partial class ArchitectureProposals
         return Results.Ok(await ProposalStore.ListAsync(db, projectId, Kind, cursor, limit, ct));
     }
 
-    public static async Task<IResult> Get(Guid projectId, Guid proposalId, HttpContext http, AiDesignDbContext db, CancellationToken ct)
+    /// <summary>
+    /// A draft is read with the branch as it is now: <c>stale</c> says whether the branch
+    /// moved, and <c>itemIssues</c> names the pending items that can no longer be accepted.
+    /// </summary>
+    public static async Task<IResult> Get(
+        Guid projectId, Guid proposalId, HttpContext http,
+        IEventStore store, SchemasDbContext schemasDb, AiDesignDbContext db, CancellationToken ct)
     {
         await DesignAccess.RequireAsync(http, projectId, WorkspaceRole.Viewer, ct);
         var row = await db.Proposals.AsNoTracking().FirstOrDefaultAsync(p => p.Id == proposalId && p.ProjectId == projectId && p.Kind == Kind, ct);
-        return row is null ? DesignAccess.NotFound("Proposal") : Results.Ok(ToDto(row, Read(row)));
+        if (row is null)
+            return DesignAccess.NotFound("Proposal");
+        if (row.Status != "draft")
+            return Results.Ok(ToDto(row, Read(row), null));
+
+        var streamId = await DesignAccess.StreamOfAsync(http, projectId, row.BranchId, ct);
+        return Results.Ok(ToDto(row, Read(row), await BranchSnapshot.LoadAsync(store, schemasDb, projectId, streamId, ct)));
+    }
+
+    /// <summary>Removes a draft that has no decided item. A decided item is a record of a decision and stays.</summary>
+    public static async Task<IResult> Delete(Guid projectId, Guid proposalId, HttpContext http, AiDesignDbContext db, CancellationToken ct)
+    {
+        await DesignAccess.RequireAsync(http, projectId, WorkspaceRole.Editor, ct);
+
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        if (await ProposalStore.LockAsync(db, projectId, proposalId, Kind, ct) is not { } row)
+            return DesignAccess.NotFound("Proposal");
+        if (row.Status != "draft")
+            return DesignAccess.Conflict($"The proposal is {row.Status}. Only a draft can be deleted.");
+        if (Read(row).Items.Any(i => i.Status != "pending"))
+            return DesignAccess.Conflict("The proposal holds a decided item. Reject the pending items to close it; a decision is not deleted.");
+
+        db.Proposals.Remove(row);
+        await db.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
+        return Results.NoContent();
     }
 
     /// <summary>
@@ -153,10 +209,15 @@ public static partial class ArchitectureProposals
     /// model stream, in dependency order: all of them are written or none is. An item whose
     /// dependency is neither accepted already nor accepted in the same request is refused,
     /// and so is the whole request.
+    /// <para>
+    /// The decision is one transaction. It locks the branch stream and the proposal row, and
+    /// checks every accepted item against the locked model: an item that references a thing
+    /// that is gone, or that the model holds already, is refused by its ID. The append and the
+    /// new item statuses commit together or not at all.
+    /// </para>
     /// </summary>
     public static async Task<IResult> Decide(
-        Guid projectId, Guid proposalId, DecideArchitectureProposalRequest body, HttpContext http,
-        IEventStore store, AiDesignDbContext db, CancellationToken ct)
+        Guid projectId, Guid proposalId, DecideArchitectureProposalRequest body, HttpContext http, CancellationToken ct)
     {
         var (_, userId) = await DesignAccess.RequireAsync(http, projectId, WorkspaceRole.Editor, ct);
         var accept = (body.Accept ?? []).Distinct().ToList();
@@ -168,69 +229,142 @@ public static partial class ArchitectureProposals
         if (accept.Intersect(reject).Any())
             return DesignAccess.Invalid("reject", "An item cannot be accepted and rejected in one request");
 
-        await using var transaction = await db.Database.BeginTransactionAsync(ct);
-        if (await ProposalStore.LockAsync(db, projectId, proposalId, Kind, ct) is not { } row)
+        var branch = await ProposalStore.BranchOfAsync(http, projectId, proposalId, Kind, ct);
+        if (branch is null)
             return DesignAccess.NotFound("Proposal");
 
-        var document = Read(row);
-        var items = document.Items.ToDictionary(i => i.Id);
-        if (accept.Concat(reject).Where(id => !items.ContainsKey(id)).Take(1).ToList() is [var unknown])
-            return DesignAccess.Invalid(accept.Contains(unknown) ? "accept" : "reject", $"The proposal has no item {unknown}");
-
-        var failures = new List<ProposalItemFailure>();
-        foreach (var id in accept.Concat(reject))
-        {
-            if (items[id].Status != "pending")
-                failures.Add(new(id, $"The item is {items[id].Status} already. A decided item does not change."));
-        }
-        foreach (var id in accept.Where(id => items[id].Status == "pending"))
-        {
-            foreach (var dependency in items[id].DependsOn.Select(d => items[d]))
-            {
-                if (reject.Contains(dependency.Id) || dependency.Status == "rejected")
-                    failures.Add(new(id, $"The item needs '{dependency.Name}' ({dependency.Alias}), which is rejected."));
-                else if (dependency.Status != "accepted" && !accept.Contains(dependency.Id))
-                    failures.Add(new(id, $"The item needs '{dependency.Name}' ({dependency.Alias}), which is not accepted. Accept it first or in the same request."));
-            }
-        }
-        if (failures.Count > 0)
-            return Refused(failures);
-
+        // Only an accept writes to the branch, so only an accept needs a branch that is open.
+        Guid streamId;
         if (accept.Count > 0)
         {
-            var (caller, refusal) = await DesignAccess.ResolveAsync(http, projectId, row.BranchId, WorkspaceRole.Editor, forWrite: true, ct);
+            var (caller, refusal) = await DesignAccess.ResolveAsync(http, projectId, branch.Value.BranchId, WorkspaceRole.Editor, forWrite: true, ct);
             if (caller is null)
                 return refusal!;
+            streamId = caller.StreamId;
+        }
+        else
+        {
+            streamId = await DesignAccess.StreamOfAsync(http, projectId, branch.Value.BranchId, ct);
+        }
 
-            var additions = new List<(Addition Addition, double Confidence)>();
-            foreach (var item in InDependencyOrder(accept.Select(id => items[id]).ToList()))
+        return await SharedTransaction.RunAsync(http.RequestServices, async services =>
+        {
+            var db = services.GetRequiredService<AiDesignDbContext>();
+            await using var transaction = await db.Database.BeginTransactionAsync(ct);
+            var store = services.GetRequiredService<IEventStore>().ForProject(projectId).UseDbContext(db);
+
+            // The stream lock comes before the row lock in every write of this feature.
+            var snapshot = await BranchSnapshot.LockAsync(store, services.GetRequiredService<SchemasDbContext>(), projectId, streamId, ct);
+            if (await ProposalStore.LockAsync(db, projectId, proposalId, Kind, ct) is not { } row)
+                return DesignAccess.NotFound("Proposal");
+
+            var document = Read(row);
+            var items = document.Items.ToDictionary(i => i.Id);
+            if (accept.Concat(reject).Where(id => !items.ContainsKey(id)).Take(1).ToList() is [var unknown])
+                return DesignAccess.Invalid(accept.Contains(unknown) ? "accept" : "reject", $"The proposal has no item {unknown}");
+
+            var failures = new List<ProposalItemFailure>();
+            foreach (var id in accept.Concat(reject))
             {
-                if (ToAddition(item) is not { } addition)
-                    return Refused([new(item.Id, "The item does not describe an addition that can be written.")]);
-                additions.Add((addition, item.Confidence));
+                if (items[id].Status != "pending")
+                    failures.Add(new(id, $"The item is {items[id].Status} already. A decided item does not change."));
+            }
+            foreach (var id in accept.Where(id => items[id].Status == "pending"))
+            {
+                foreach (var dependency in items[id].DependsOn.Select(d => items[d]))
+                {
+                    if (reject.Contains(dependency.Id) || dependency.Status == "rejected")
+                        failures.Add(new(id, $"The item needs '{dependency.Name}' ({dependency.Alias}), which is rejected."));
+                    else if (dependency.Status != "accepted" && !accept.Contains(dependency.Id))
+                        failures.Add(new(id, $"The item needs '{dependency.Name}' ({dependency.Alias}), which is not accepted. Accept it first or in the same request."));
+                }
+
+                // The model can have changed since the proposal was made.
+                failures.AddRange(Vanished(items[id], items, snapshot.Model, accept));
+            }
+            if (failures.Count > 0)
+                return Refused(failures);
+
+            if (accept.Count > 0)
+            {
+                var additions = new List<(Addition Addition, double Confidence)>();
+                foreach (var item in InDependencyOrder(accept.Select(id => items[id]).ToList()))
+                {
+                    if (ToAddition(item) is not { } addition)
+                        return Refused([new(item.Id, "The item does not describe an addition that can be written.")]);
+                    additions.Add((addition, item.Confidence));
+                }
+
+                var refused = await InferredWrites.ApplyAsync(
+                    store, streamId, additions, InferredWrites.Source(document.Provider, Kind, row.Id), userId, ct);
+                if (refused is not null)
+                    return Refused([new(refused.Id, refused.Reason)]);
             }
 
-            var refused = await InferredWrites.ApplyAsync(
-                store, projectId, caller.StreamId, additions, InferredWrites.Source(document.Provider, Kind, row.Id), caller.UserId, ct);
-            if (refused is not null)
-                return Refused([new(refused.Id, refused.Reason)]);
+            document = document with
+            {
+                Items = [.. document.Items.Select(i =>
+                    accept.Contains(i.Id) ? i with { Status = "accepted" } : reject.Contains(i.Id) ? i with { Status = "rejected" } : i)],
+            };
+            row.Document = JsonSerializer.Serialize(document, DesignJson.Options);
+            if (document.Items.All(i => i.Status != "pending"))
+            {
+                row.Status = "decided";
+                row.DecidedBy = userId;
+                row.DecidedAt = DateTimeOffset.UtcNow;
+            }
+            await db.SaveChangesAsync(ct);
+            await transaction.CommitAsync(ct);
+            return Results.Ok(ToDto(row, document, null));
+        }, ct);
+    }
+
+    /// <summary>
+    /// The references of an item that name nothing in the model now: an existing thing that
+    /// was removed, or an item that was accepted before and was removed since.
+    /// </summary>
+    private static IEnumerable<ProposalItemFailure> Vanished(
+        ArchitectureItemDto item, Dictionary<Guid, ArchitectureItemDto> items, ModelState model, IReadOnlyCollection<Guid> accepting)
+    {
+        var proposed = item.Proposed;
+        IEnumerable<(string What, Guid? Id, bool Channel)> references =
+        [
+            ("parent", proposed.ParentId, false), ("source", proposed.FromId, false), ("target", proposed.ToId, false),
+            ("owner", proposed.OwnerId, false), ("channel", proposed.ChannelId, true), ("consumer", proposed.ConsumerId, false),
+            ("producer", proposed.ProducerId, false),
+            .. (proposed.ConsumerIds ?? []).Select(c => ("consumer", (Guid?)c, false)),
+        ];
+
+        foreach (var (what, reference, channel) in references)
+        {
+            // A reference to an item that is not accepted yet is the dependency rule's to judge.
+            if (reference is not { } id || (items.TryGetValue(id, out var other) && (other.Status != "accepted" || accepting.Contains(id))))
+                continue;
+            if (channel ? !model.Channels.ContainsKey(id) : !model.Elements.ContainsKey(id))
+                yield return new(item.Id, $"The {what} of the item ({id}) is not in the model.");
+        }
+    }
+
+    /// <summary>Why a pending item cannot be accepted against the model as it is now, for each such item.</summary>
+    private static List<ProposalItemFailure> ItemIssues(ArchitectureDocument document, ModelState model)
+    {
+        var items = document.Items.ToDictionary(i => i.Id);
+        var pending = document.Items.Where(i => i.Status == "pending").Select(i => i.Id).ToHashSet();
+        var issues = new List<ProposalItemFailure>();
+        foreach (var item in document.Items.Where(i => i.Status == "pending"))
+        {
+            issues.AddRange(Vanished(item, items, model, pending));
+            var proposed = item.Proposed;
+            var thing = new ProposedThing(
+                item.EntityKind, proposed.Name ?? "", proposed.Kind,
+                proposed.ParentId is { } parent && model.Elements.ContainsKey(parent) ? parent : null,
+                proposed.ParentId is { } other && !model.Elements.ContainsKey(other),
+                proposed.OwnerId, proposed.ChannelId, proposed.ConsumerId);
+            if (ExistingFacts.Find(model, thing, except: item.Id) is ExistingMatch.One one)
+                issues.Add(new(item.Id, $"The model holds this already: '{one.Name}' ({one.Id})."));
         }
 
-        document = document with
-        {
-            Items = [.. document.Items.Select(i =>
-                accept.Contains(i.Id) ? i with { Status = "accepted" } : reject.Contains(i.Id) ? i with { Status = "rejected" } : i)],
-        };
-        row.Document = JsonSerializer.Serialize(document, DesignJson.Options);
-        if (document.Items.All(i => i.Status != "pending"))
-        {
-            row.Status = "decided";
-            row.DecidedBy = userId;
-            row.DecidedAt = DateTimeOffset.UtcNow;
-        }
-        await db.SaveChangesAsync(ct);
-        await transaction.CommitAsync(ct);
-        return Results.Ok(ToDto(row, document));
+        return issues;
     }
 
     private static IResult Refused(IReadOnlyList<ProposalItemFailure> failures) => Results.Json(
@@ -299,9 +433,12 @@ public static partial class ArchitectureProposals
     /// or that references an alias that names nothing is dropped and listed; so is every item
     /// that depends on a dropped item, and every item that depends on itself.
     /// </summary>
-    internal static (List<ArchitectureItemDto> Items, List<RejectedReference> Rejected) Build(
-        ArchitectureOutput output, IReadOnlyDictionary<string, AliasRef> aliases)
+    internal static (List<ArchitectureItemDto> Items, List<ResolvedToExisting> Resolved, List<RejectedReference> Rejected) Build(
+        ArchitectureOutput output, IReadOnlyDictionary<string, AliasRef> table, ModelState model)
     {
+        // An item that turns out to exist is added to this copy of the table under its own alias.
+        var aliases = new Dictionary<string, AliasRef>(table, StringComparer.Ordinal);
+        var resolved = new List<ResolvedToExisting>();
         var rejected = new List<RejectedReference>();
         var given = (output.Items ?? []).Where(i => i is not null).ToList();
         if (given.Count > MaxItems)
@@ -317,10 +454,13 @@ public static partial class ArchitectureProposals
             {
                 Alias = alias,
                 EntityKind = Token(raw.EntityKind) ?? "",
-                Name = DesignText.Line(raw.Name, TextRule.MaxName + 1),
-                Description = raw.Description is null ? null : DesignText.Lines(raw.Description, TextRule.MaxDescription),
-                Technology = raw.Technology is null ? null : DesignText.Line(raw.Technology),
-                Label = raw.Label is null ? null : DesignText.Line(raw.Label),
+                Name = ProposedNames.Normalize(DesignText.Line(raw.Name, TextRule.MaxName + 1)),
+                // The empty string is the model's word for "not used".
+                Description = string.IsNullOrWhiteSpace(raw.Description) ? null : DesignText.Lines(raw.Description, TextRule.MaxDescription),
+                Technology = string.IsNullOrWhiteSpace(raw.Technology) ? null : DesignText.Line(raw.Technology),
+                Label = string.IsNullOrWhiteSpace(raw.Label) ? null : DesignText.Line(raw.Label),
+                ElementKind = Token(raw.ElementKind), RelationshipKind = Token(raw.RelationshipKind),
+                Transport = Token(raw.Transport), ChannelKind = Token(raw.ChannelKind),
                 Parent = Token(raw.Parent), From = Token(raw.From), To = Token(raw.To), Owner = Token(raw.Owner),
                 Channel = Token(raw.Channel), Consumer = Token(raw.Consumer), Producer = Token(raw.Producer),
                 Consumers = raw.Consumers?.Select(Token).Where(c => c is not null).Select(c => c!).Distinct(StringComparer.Ordinal).Take(50).ToList(),
@@ -394,49 +534,96 @@ public static partial class ArchitectureProposals
             _ => [],
         };
 
-        for (var changed = true; changed;)
+        void Prune()
         {
-            changed = false;
-            foreach (var (alias, candidate) in candidates.ToList())
+            for (var changed = true; changed;)
             {
-                foreach (var (field, reference, kind, required) in References(candidate.Output))
+                changed = false;
+                foreach (var (alias, candidate) in candidates.ToList())
                 {
-                    var fits = reference is null
-                        ? !required
-                        : aliases.TryGetValue(reference, out var existing) ? existing.Kind == kind
-                        : candidates.TryGetValue(reference, out var other) && other.Output.EntityKind == kind && reference != alias;
-                    if (fits)
-                        continue;
+                    foreach (var (field, reference, kind, required) in References(candidate.Output))
+                    {
+                        var fits = reference is null
+                            ? !required
+                            : aliases.TryGetValue(reference, out var existing) ? existing.Kind == kind
+                            : candidates.TryGetValue(reference, out var other) && other.Output.EntityKind == kind && reference != alias;
+                        if (fits)
+                            continue;
 
-                    rejected.Add(new($"item:{alias}.{field}", reference ?? "", reference is null
-                        ? $"{AliasKinds.WithArticle(candidate.Output.EntityKind)} needs '{field}'. The item was dropped."
-                        : Guid.TryParse(reference, out _)
-                            ? "A raw ID is not a reference. A thing is referenced by its alias from the table. The item was dropped."
-                            : $"The alias does not name {AliasKinds.WithArticle(kind)} of the table or of the proposal. The item was dropped."));
-                    candidates.Remove(alias);
-                    changed = true;
-                    break;
+                        rejected.Add(new($"item:{alias}.{field}", reference ?? "", reference is null
+                            ? $"{AliasKinds.WithArticle(candidate.Output.EntityKind)} needs '{field}'. The item was dropped."
+                            : Guid.TryParse(reference, out _)
+                                ? "A raw ID is not a reference. A thing is referenced by its alias from the table. The item was dropped."
+                                : $"The alias does not name {AliasKinds.WithArticle(kind)} of the table or of the proposal. The item was dropped."));
+                        candidates.Remove(alias);
+                        changed = true;
+                        break;
+                    }
                 }
             }
         }
 
+        Prune();
+
         // What is left after every item whose dependencies come first has been taken depends on itself.
-        var ordered = new HashSet<string>(StringComparer.Ordinal);
+        var ordered = new List<string>();
+        var placed = new HashSet<string>(StringComparer.Ordinal);
         for (var changed = true; changed;)
         {
             changed = false;
             foreach (var (alias, candidate) in candidates)
             {
-                if (!ordered.Contains(alias)
-                    && References(candidate.Output).All(r => r.Alias is null || aliases.ContainsKey(r.Alias) || ordered.Contains(r.Alias)))
-                    changed |= ordered.Add(alias);
+                if (!placed.Contains(alias)
+                    && References(candidate.Output).All(r => r.Alias is null || aliases.ContainsKey(r.Alias) || placed.Contains(r.Alias))
+                    && placed.Add(alias))
+                {
+                    ordered.Add(alias);
+                    changed = true;
+                }
             }
         }
-        foreach (var alias in candidates.Keys.Where(a => !ordered.Contains(a)).ToList())
+        foreach (var alias in candidates.Keys.Where(a => !placed.Contains(a)).ToList())
         {
             rejected.Add(new($"item:{alias}", alias, "The item depends on itself through other items. The item was dropped."));
             candidates.Remove(alias);
         }
+
+        // The server checks each item against the branch, in dependency order, so that an
+        // operation on an owner that turns out to exist is compared with that owner's operations.
+        foreach (var alias in ordered)
+        {
+            var item = candidates[alias].Output;
+            Guid? Existing(string? reference) => reference is not null && aliases.TryGetValue(reference, out var known) ? known.Id : null;
+            var thing = new ProposedThing(
+                item.EntityKind, item.Name, candidates[alias].Enum,
+                Existing(item.Parent), item.Parent is not null && Existing(item.Parent) is null,
+                Existing(item.Owner), Existing(item.Channel), Existing(item.Consumer));
+
+            var hasName = item.EntityKind is AliasKinds.Element or AliasKinds.Operation or AliasKinds.Channel or AliasKinds.Message;
+            if (hasName && ProposedNames.Problem(model, item.EntityKind, item.Name, thing.OwnerId) is { } problem)
+            {
+                rejected.Add(new($"item:{alias}.name", alias, $"{problem} The item was dropped."));
+                candidates.Remove(alias);
+                continue;
+            }
+
+            switch (ExistingFacts.Find(model, thing))
+            {
+                case ExistingMatch.One one:
+                    aliases[alias] = new AliasRef(item.EntityKind, one.Id, one.Name);
+                    resolved.Add(new ResolvedToExisting(alias, one.Id, one.Name));
+                    candidates.Remove(alias);
+                    break;
+                case ExistingMatch.Ambiguous several:
+                    rejected.Add(new($"item:{alias}", alias,
+                        $"More than one existing {item.EntityKind} fits ({string.Join(", ", several.Names.Select(n => $"'{n}'"))}). The server does not choose one. The item was dropped."));
+                    candidates.Remove(alias);
+                    break;
+            }
+        }
+
+        // An item that referenced a dropped item goes with it.
+        Prune();
 
         Guid? Id(string? alias) => alias is null ? null : aliases.TryGetValue(alias, out var existing) ? existing.Id : candidates[alias].Id;
         string Label(string? alias) => alias is null ? "" : aliases.TryGetValue(alias, out var existing) ? existing.Name : candidates[alias].Output.Name;
@@ -466,7 +653,7 @@ public static partial class ArchitectureProposals
                 item.Confidence, item.Rationale, "pending");
         }).ToList();
 
-        return (items, rejected.Count <= FlowAssembler.MaxFindings
+        return (items, resolved, rejected.Count <= FlowAssembler.MaxFindings
             ? rejected
             : [.. rejected.Take(FlowAssembler.MaxFindings - 1), new RejectedReference("", "", "More items were dropped; they are not listed.")]);
     }
@@ -484,9 +671,15 @@ public static partial class ArchitectureProposals
     private static ArchitectureDocument Read(ProposalEntity row) =>
         JsonSerializer.Deserialize<ArchitectureDocument>(row.Document, DesignJson.Options)!;
 
-    private static ArchitectureProposalDto ToDto(ProposalEntity row, ArchitectureDocument document) => new(
+    /// <param name="current">The branch as it is now, for a draft that is read. Null for an answer to a write and for a decided proposal.</param>
+    private static ArchitectureProposalDto ToDto(ProposalEntity row, ArchitectureDocument document, BranchSnapshot? current) => new(
         row.Id, row.ProjectId, row.BranchId, row.Request, row.Status, "additions",
-        document.Summary, document.ReasoningSummary, document.OpenQuestions, document.Items, document.RejectedReferences,
-        document.ModelVersion, document.Provider, document.PromptTemplateVersion, document.Usage,
+        document.Summary, document.ReasoningSummary, document.OpenQuestions, document.Items,
+        document.ResolvedToExisting ?? [], document.RejectedReferences,
+        document.ModelVersion,
+        current is not null && row.Status == "draft" && current.Version != document.ModelVersion,
+        current is not null && row.Status == "draft" ? ItemIssues(document, current.Model) : [],
+        document.Omitted ?? AliasOmitted.None, document.OmittedPrivate,
+        document.Provider, document.PromptTemplateVersion, document.Usage,
         row.CreatedBy, row.CreatedAt, row.DecidedBy, row.DecidedAt);
 }

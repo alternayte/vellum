@@ -22,7 +22,7 @@ public static class ScenarioEndpoints
             .Produces<Scenario>(StatusCodes.Status201Created);
 
         scenarios.MapGet("/{scenarioId}", ReadScenarios.Get)
-            .Produces<Scenario>();
+            .Produces<ScenarioDto>();
 
         scenarios.MapPut("/{scenarioId}", SaveScenario.Update)
             .Accepts<Scenario>("application/json")
