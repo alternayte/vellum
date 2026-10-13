@@ -17,6 +17,7 @@ using Vellum.Modules.Modelling.Contracts;
 using Vellum.Modules.Modelling.Model;
 using Vellum.Modules.Modelling.Revisions;
 using Vellum.Modules.Build;
+using Vellum.Modules.Costs;
 using Vellum.Modules.Modelling.Variants;
 using Vellum.Modules.Promises;
 using Vellum.Modules.Docs;
@@ -84,7 +85,8 @@ builder.Services.AddDeedbox(deedbox => deedbox
     .AddModelStreams()
     .AddSchemaStreams()
     .AddScenarioStreams()
-    .AddPromiseStreams());
+    .AddPromiseStreams()
+    .AddCostStreams());
 
 // Build-time OpenAPI generation starts the host with no database. Deedbox checks its
 // schema when the host starts, so its hosted services do not run in that process.
@@ -116,6 +118,7 @@ builder.Services.AddAiModule();
 builder.Services.AddImportModule(runWorker: !generatingOpenApi);
 builder.Services.AddPromisesModule();
 builder.Services.AddBuildModule();
+builder.Services.AddCostsModule();
 
 // Command handlers (Scrutor scan)
 builder.Services.Scan(s => s.FromAssemblyOf<Program>()
@@ -179,6 +182,7 @@ app.MapAiEndpoints();
 app.MapImportEndpoints();
 app.MapPromiseEndpoints();
 app.MapBuildEndpoints();
+app.MapCostEndpoints();
 
 if (!generatingOpenApi && app.Configuration.GetValue("Database:MigrateOnStartup", true))
 {

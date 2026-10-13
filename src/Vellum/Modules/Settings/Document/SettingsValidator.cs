@@ -37,6 +37,8 @@ public sealed class SettingsValidator(OutboundUrlPolicy urls, Bootstrap bootstra
         Text("cost.region", document.Cost.Region, 100, errors);
         if (document.Cost.Currency.Length != 3 || !document.Cost.Currency.All(c => c is >= 'A' and <= 'Z'))
             errors.Add(new("cost.currency", "Must be a three-letter currency code in upper case, for example USD."));
+        ValidatePriceApiUrl(document.Cost.AzureRetailPricesBaseUrl, policy, errors);
+        Range("cost.stalePriceAfterDays", document.Cost.StalePriceAfterDays, 1, 3650, errors);
 
         Range("simulation.seed", document.Simulation.Seed, 0, int.MaxValue, errors);
         Range("simulation.durationSeconds", document.Simulation.DurationSeconds, 1, 86_400, errors);
@@ -135,6 +137,27 @@ public sealed class SettingsValidator(OutboundUrlPolicy urls, Bootstrap bootstra
             url, policy.AllowPrivateNetworkUrls, requireHttps: bootstrap.Profile == OperatingProfile.Hosted, ct);
         if (!verdict.Allowed)
             errors.Add(new(field, verdict.Reason!));
+    }
+
+    /// <summary>
+    /// The price API takes no credential, and its default address is part of every settings
+    /// document. So a save does not resolve its host name: an instance with no network still
+    /// saves its settings. The request resolves the name and checks the addresses.
+    /// </summary>
+    private void ValidatePriceApiUrl(string url, InstancePolicy policy, List<FieldError> errors)
+    {
+        if (url.Length == 0)
+            return;
+        if (url.Length > 2000)
+        {
+            errors.Add(new(WorkspaceSettings.AzurePricesField, "Must be at most 2000 characters."));
+            return;
+        }
+
+        var verdict = OutboundUrlPolicy.CheckWithoutResolving(
+            url, policy.AllowPrivateNetworkUrls, requireHttps: bootstrap.Profile == OperatingProfile.Hosted);
+        if (!verdict.Allowed)
+            errors.Add(new(WorkspaceSettings.AzurePricesField, verdict.Reason!));
     }
 
     private static void Range(string field, long value, long min, long max, List<FieldError> errors)

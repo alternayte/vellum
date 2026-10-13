@@ -1,0 +1,53 @@
+{
+  "BillingCurrency": "USD",
+  "CustomerEntityId": "Default",
+  "CustomerEntityType": "Retail",
+  "Items": [
+    {
+      "currencyCode": "USD",
+      "tierMinimumUnits": 0.0,
+      "retailPrice": 0.019958,
+      "unitPrice": 0.019958,
+      "armRegionName": "indonesiacentral",
+      "location": "ID Central",
+      "effectiveStartDate": "2025-09-01T00:00:00Z",
+      "meterId": "00009753-d85a-5581-883d-a9b7620cf39b",
+      "meterName": "D2a v4/D2as v4 Spot",
+      "productId": "DZH318Z0CM2B",
+      "skuId": "DZH318Z0CM2B/0356",
+      "productName": "Virtual Machines Dav4 Series",
+      "skuName": "D2a v4 Spot",
+      "serviceName": "Virtual Machines",
+      "serviceId": "DZH313Z7MMC8",
+      "serviceFamily": "Compute",
+      "unitOfMeasure": "1 Hour",
+      "type": "Consumption",
+      "isPrimaryMeterRegion": true,
+      "armSkuName": "Standard_D2a_v4"
+    },
+    {
+      "currencyCode": "USD",
+      "tierMinimumUnits": 0.0,
+      "retailPrice": 0.478,
+      "unitPrice": 0.478,
+      "armRegionName": "uaenorth",
+      "location": "AE North",
+      "effectiveStartDate": "2025-06-01T00:00:00Z",
+      "meterId": "9e701f82-855d-529a-9a2f-f1eb873b9b88",
+      "meterName": "E4-2as v6",
+      "productId": "DZH318Z0F5F3",
+      "skuId": "DZH318Z0F5F3/045R",
+      "productName": "Virtual Machines Easv6 Series Windows",
+      "skuName": "E4-2as v6",
+      "serviceName": "Virtual Machines",
+      "serviceId": "DZH313Z7MMC8",
+      "serviceFamily": "Compute",
+      "unitOfMeasure": "1 Hour",
+      "type": "Consumption",
+      "isPrimaryMeterRegion": false,
+      "armSkuName": "Standard_E4-2as_v6"
+    }
+  ],
+  "NextPageLink": null,
+  "Count": 2
+}

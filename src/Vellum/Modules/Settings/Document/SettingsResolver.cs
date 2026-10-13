@@ -49,10 +49,13 @@ public sealed record WorkspaceSettings(
 {
     public const string GithubField = "github.apiBaseUrl";
     public const string WebhookField = "notifications.webhookUrl";
+    public const string AzurePricesField = "cost.azureRetailPricesBaseUrl";
 
     public SettingsUrl GithubApiBaseUrl => Resolve(GithubField, Effective.Github.ApiBaseUrl);
 
     public SettingsUrl WebhookUrl => Resolve(WebhookField, Effective.Notifications.WebhookUrl);
+
+    public SettingsUrl AzureRetailPricesBaseUrl => Resolve(AzurePricesField, Effective.Cost.AzureRetailPricesBaseUrl);
 
     /// <summary>The address of a provider: its base URL, or the address of its kind when the base URL is empty.</summary>
     public SettingsUrl ProviderBaseUrl(Guid providerId)
@@ -221,6 +224,10 @@ public sealed class SettingsResolver(SettingsDbContext db, Bootstrap bootstrap)
             ? new NotificationSettings(null)
             : document.Notifications;
 
+        var cost = UrlRefused(WorkspaceSettings.AzurePricesField, document.Cost.AzureRetailPricesBaseUrl)
+            ? document.Cost with { AzureRetailPricesBaseUrl = "" }
+            : document.Cost;
+
         var forwardsCode = document.Privacy.SendPrivateCodeToAi;
         if (forwardsCode && !policy.AllowSendingPrivateCodeToAi)
         {
@@ -234,6 +241,7 @@ public sealed class SettingsResolver(SettingsDbContext db, Bootstrap bootstrap)
             Ai = new AiSettings(providers,
                 new TaskRouting(Route(routing.InferArchitecture), Route(routing.ProposeFlow), Route(routing.Critique), Route(routing.Explain))),
             Github = github,
+            Cost = cost,
             Notifications = notifications,
             Privacy = new PrivacySettings(forwardsCode),
         };

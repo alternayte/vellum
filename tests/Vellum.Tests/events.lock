@@ -1,5 +1,15 @@
 # Deedbox event contracts. EventContracts.Verify writes this file; commit it.
 
+stream cost_sheet (CostSheetState)
+  cost_sheet.assumption_added v1 { assumption: { effectiveDate: date, id: uuid, kind: string, label: string, name: string, source: string?, subjectId: uuid?, unit: string, value: decimal }, at: date-time, by: string }
+  cost_sheet.assumption_changed v1 { assumption: { effectiveDate: date, id: uuid, kind: string, label: string, name: string, source: string?, subjectId: uuid?, unit: string, value: decimal }, at: date-time, by: string }
+  cost_sheet.assumption_removed v1 { assumptionId: uuid, at: date-time, by: string }
+  cost_sheet.resource_added v1 { at: date-time, by: string, resource: { category: string, elementId: uuid, factStatus: string, id: uuid, name: string, priceRef: uuid?, provenance: { acceptedAt: date-time?, acceptedBy: uuid?, confidence: float64?, revision: string?, source: string? }?, provider: string, quantity: decimal?, region: string, sku: string, unit: string?, usage: [{ assumptionId: uuid, id: uuid, name: string, priceRef: uuid? }] } }
+  cost_sheet.resource_changed v1 { at: date-time, by: string, resource: { category: string, elementId: uuid, factStatus: string, id: uuid, name: string, priceRef: uuid?, provenance: { acceptedAt: date-time?, acceptedBy: uuid?, confidence: float64?, revision: string?, source: string? }?, provider: string, quantity: decimal?, region: string, sku: string, unit: string?, usage: [{ assumptionId: uuid, id: uuid, name: string, priceRef: uuid? }] } }
+  cost_sheet.resource_removed v1 { at: date-time, by: string, resourceId: uuid }
+  cost_sheet.sheet_copied v1 { assumptions: [{ effectiveDate: date, id: uuid, kind: string, label: string, name: string, source: string?, subjectId: uuid?, unit: string, value: decimal }], at: date-time, by: string, fromBranchId: uuid, fromVersion: int64, resources: [{ category: string, elementId: uuid, factStatus: string, id: uuid, name: string, priceRef: uuid?, provenance: { acceptedAt: date-time?, acceptedBy: uuid?, confidence: float64?, revision: string?, source: string? }?, provider: string, quantity: decimal?, region: string, sku: string, unit: string?, usage: [{ assumptionId: uuid, id: uuid, name: string, priceRef: uuid? }] }] }
+  cost_sheet.sheet_opened v1 { at: date-time, branchId: uuid, by: string, projectId: uuid }
+
 stream model (ModelState)
   model.binding_added v1 { id: custom(BindingId), routingKey: string?, sourceChannelId: custom(ChannelId), targetChannelId: custom(ChannelId) }
   model.binding_changed v1 { bindingId: custom(BindingId), routingKey: string?, sourceChannelId: custom(ChannelId), targetChannelId: custom(ChannelId) }

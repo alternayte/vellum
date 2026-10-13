@@ -1,0 +1,234 @@
+using System.Collections.Immutable;
+using System.Security.Cryptography;
+using System.Text;
+using Deedbox;
+using Microsoft.EntityFrameworkCore;
+using Vellum.Modules.Modelling;
+using Vellum.Modules.Modelling.Model;
+using Vellum.Modules.Workspaces;
+using Vellum.Modules.Workspaces.Authorization;
+using Vellum.Shared;
+
+namespace Vellum.Modules.Costs;
+
+public sealed record UsageLineRequest(Guid? Id, string Name, Guid AssumptionId, Guid? PriceRef);
+
+/// <param name="Id">Optional on create: the server makes one when it is left out. Ignored on change.</param>
+/// <param name="Quantity">The monthly baseline, with <paramref name="Unit"/>. Leave both out for a resource with usage lines only.</param>
+/// <param name="FactStatus">Default <c>declared</c>.</param>
+public sealed record ResourceRequest(
+    Guid? Id, Guid ElementId, string Name, string Category, string Provider, string? Region, string? Sku,
+    decimal? Quantity, string? Unit, Guid? PriceRef, IReadOnlyList<UsageLineRequest>? Usage,
+    string? FactStatus, ProvenanceInput? Provenance);
+
+public sealed record AssumptionRequest(
+    Guid? Id, string Name, string Kind, Guid? SubjectId, decimal Value, string Unit,
+    string Label, string? Source, DateOnly EffectiveDate);
+
+/// <param name="From">The branch to copy from: <c>main</c>, or the stream ID of a draft or a variant.</param>
+public sealed record CopySheetRequest(string From);
+
+/// <param name="ElementName">Null when the element is no longer in the model of the branch.</param>
+public sealed record ResourceDto(
+    Guid Id, Guid ElementId, string? ElementName, string Name, string Category, string Provider, string Region, string Sku,
+    decimal? Quantity, string? Unit, Guid? PriceRef, IReadOnlyList<UsageLine> Usage,
+    string FactStatus, ProvenanceDto? Provenance);
+
+/// <param name="BranchId">The stream ID of the model branch the sheet belongs to.</param>
+/// <param name="Version">The version of the sheet stream. 0 for a branch with no sheet yet.</param>
+public sealed record CostSheetDto(
+    Guid BranchId, long Version, IReadOnlyList<ResourceDto> Resources, IReadOnlyList<CostAssumption> Assumptions);
+
+/// <summary>What the cost handlers share: where a sheet is stored and what it may point at.</summary>
+internal static class CostAccess
+{
+    /// <summary>
+    /// The stream of the sheet of a model branch. It is derived from the branch, so a branch
+    /// has one sheet and no lookup is needed to find it.
+    /// </summary>
+    public static Guid SheetStreamId(Guid branchId) =>
+        new(SHA256.HashData(Encoding.UTF8.GetBytes($"vellum.costs.sheet:{branchId:N}")).AsSpan(0, 16));
+
+    public static async Task<(CostSheetState State, long Version)> LoadSheetAsync(IEventStore store, Guid branchId, CancellationToken ct)
+    {
+        var (state, version) = await store.Load<CostSheetState>(StreamId.From(SheetStreamId(branchId)), ct);
+        return (state, version);
+    }
+
+    public static async Task<(ModelState Model, long Version)> LoadModelAsync(IEventStore store, Guid branchId, CancellationToken ct)
+    {
+        var (model, version) = await store.Load<ModelState>(StreamId.From(branchId), ct);
+        return (model, version);
+    }
+
+    /// <param name="priceRefs">The price entries the change names. Only these are looked up.</param>
+    public static async Task<CostWorld> WorldAsync(
+        IServiceProvider services, Guid projectId, ModelState model, IEnumerable<Guid> priceRefs, CancellationToken ct)
+    {
+        var elements = model.Elements.Keys.Select(id => id.Value).ToHashSet();
+        var subjects = elements
+            .Concat(model.Operations.Keys.Select(id => id.Value))
+            .Concat(model.Channels.Keys.Select(id => id.Value))
+            .ToHashSet();
+
+        var refs = priceRefs.Distinct().ToList();
+        var prices = new HashSet<Guid>();
+        if (refs.Count > 0)
+        {
+            // A price entry of another workspace does not exist for this project.
+            var workspaceId = await services.GetRequiredService<WorkspaceAuthorizationService>().GetProjectWorkspaceIdAsync(projectId, ct);
+            prices = (await services.GetRequiredService<CostsDbContext>().PriceEntries.AsNoTracking()
+                .Where(p => p.WorkspaceId == workspaceId && refs.Contains(p.Id))
+                .Select(p => p.Id)
+                .ToListAsync(ct)).ToHashSet();
+        }
+
+        return new CostWorld(elements, subjects, prices);
+    }
+
+    public static CostSheetDto ToDto(Guid branchId, CostSheetState state, long version, ModelState model) => new(
+        branchId, version,
+        state.Resources
+            .OrderBy(r => r.ElementId).ThenBy(r => r.Name, StringComparer.Ordinal).ThenBy(r => r.Id)
+            .Select(r => new ResourceDto(
+                r.Id, r.ElementId, model.Elements.TryGetValue(new ElementId(r.ElementId), out var element) ? element.Name : null,
+                r.Name, r.Category, r.Provider, r.Region, r.Sku, r.Quantity, r.Unit, r.PriceRef, r.Usage,
+                r.FactStatus, ProvenanceMapper.ToDto(r.Provenance)))
+            .ToList(),
+        state.Assumptions.OrderBy(a => a.Name, StringComparer.Ordinal).ThenBy(a => a.Id).ToList());
+
+    public static IResult NotFound(string what) => Results.NotFound(new ErrorResponse("not_found", $"{what} not found"));
+}
+
+public static class CostSheets
+{
+    public static Task<IResult> Get(Guid projectId, Guid? branchId, HttpContext http, IEventStore store, CancellationToken ct) =>
+        ModelBranches.RunAsync(http, projectId, branchId, WorkspaceRole.Viewer, async (branch, _) =>
+        {
+            var (state, version) = await CostAccess.LoadSheetAsync(store, branch, ct);
+            var (model, _) = await CostAccess.LoadModelAsync(store, branch, ct);
+            return Results.Ok(CostAccess.ToDto(branch, state, version, model));
+        }, ct);
+
+    public static Task<IResult> AddResource(
+        Guid projectId, Guid? branchId, ResourceRequest request, HttpContext http, IEventStore store, TimeProvider time, CancellationToken ct) =>
+        WriteAsync(http, store, projectId, branchId, PriceRefs(request), ct, (state, branch, world, userId) =>
+            CostDecider.AddResource(state, projectId, branch, ToResource(request, request.Id ?? Guid.NewGuid(), userId, time), world, userId, time.GetUtcNow()),
+            created: true);
+
+    public static Task<IResult> ChangeResource(
+        Guid projectId, Guid resourceId, Guid? branchId, ResourceRequest request, HttpContext http, IEventStore store, TimeProvider time, CancellationToken ct) =>
+        WriteAsync(http, store, projectId, branchId, PriceRefs(request), ct, (state, _, world, userId) =>
+            CostDecider.ChangeResource(state, ToResource(request, resourceId, userId, time), world, userId, time.GetUtcNow()));
+
+    public static Task<IResult> RemoveResource(
+        Guid projectId, Guid resourceId, Guid? branchId, HttpContext http, IEventStore store, TimeProvider time, CancellationToken ct) =>
+        WriteAsync(http, store, projectId, branchId, [], ct, (state, _, _, userId) =>
+            CostDecider.RemoveResource(state, resourceId, userId, time.GetUtcNow()));
+
+    public static Task<IResult> AddAssumption(
+        Guid projectId, Guid? branchId, AssumptionRequest request, HttpContext http, IEventStore store, TimeProvider time, CancellationToken ct) =>
+        WriteAsync(http, store, projectId, branchId, [], ct, (state, branch, world, userId) =>
+            CostDecider.AddAssumption(state, projectId, branch, ToAssumption(request, request.Id ?? Guid.NewGuid()), world, userId, time.GetUtcNow()),
+            created: true);
+
+    public static Task<IResult> ChangeAssumption(
+        Guid projectId, Guid assumptionId, Guid? branchId, AssumptionRequest request, HttpContext http, IEventStore store, TimeProvider time, CancellationToken ct) =>
+        WriteAsync(http, store, projectId, branchId, [], ct, (state, _, world, userId) =>
+            CostDecider.ChangeAssumption(state, ToAssumption(request, assumptionId), world, userId, time.GetUtcNow()));
+
+    public static Task<IResult> RemoveAssumption(
+        Guid projectId, Guid assumptionId, Guid? branchId, HttpContext http, IEventStore store, TimeProvider time, CancellationToken ct) =>
+        WriteAsync(http, store, projectId, branchId, [], ct, (state, _, _, userId) =>
+            CostDecider.RemoveAssumption(state, assumptionId, userId, time.GetUtcNow()));
+
+    /// <summary>
+    /// Replaces the sheet of the branch with a copy of the sheet of another branch of the
+    /// project. A new draft or variant starts with no sheet; this is how it gets one.
+    /// </summary>
+    public static Task<IResult> Copy(
+        Guid projectId, Guid? branchId, CopySheetRequest request, HttpContext http, IEventStore store, TimeProvider time, CancellationToken ct) =>
+        ModelBranches.RunAsync(http, projectId, branchId, WorkspaceRole.Editor, async (branch, userId) =>
+        {
+            var (from, refusal) = await ResolveSideAsync(http.RequestServices, projectId, request.From, "from", ct);
+            if (refusal is not null)
+                return refusal;
+            if (from == branch)
+                return Results.BadRequest(new ErrorResponse("validation_error", "Validation failed", Errors: [new FieldError("from", "Must be another branch")]));
+
+            var (source, sourceVersion) = await CostAccess.LoadSheetAsync(store, from, ct);
+            var (model, _) = await CostAccess.LoadModelAsync(store, branch, ct);
+            var world = await CostAccess.WorldAsync(http.RequestServices, projectId, model, [], ct);
+            var result = await store.Decide<CostSheetState, CostSheetState>(
+                CostAccess.SheetStreamId(branch),
+                state => CostDecider.Copy(state, projectId, branch, source, from, sourceVersion, world, userId, time.GetUtcNow()),
+                state => state, ct);
+            return await RespondAsync(result, store, branch, model, created: false, ct);
+        }, ct);
+
+    /// <summary>
+    /// <c>main</c> or the stream ID of an open draft or variant of the project, as the model
+    /// stream it names.
+    /// </summary>
+    internal static async Task<(Guid Branch, IResult? Refusal)> ResolveSideAsync(
+        IServiceProvider services, Guid projectId, string? side, string field, CancellationToken ct)
+    {
+        Guid? branchId = null;
+        if (!string.Equals(side, "main", StringComparison.Ordinal))
+        {
+            if (!Guid.TryParse(side, out var parsed))
+            {
+                return (default, Results.BadRequest(new ErrorResponse("validation_error", "Validation failed",
+                    Errors: [new FieldError(field, "Must be 'main' or the ID of a branch")])));
+            }
+            branchId = parsed;
+        }
+
+        var mainStreamId = await services.GetRequiredService<WorkspacesDbContext>().Projects.AsNoTracking()
+            .Where(p => p.Id == projectId).Select(p => p.StreamId).FirstAsync(ct);
+        return await ModelBranches.ResolveAsync(
+            branchId, projectId, mainStreamId,
+            services.GetRequiredService<Drafts.DraftsDbContext>(), services.GetRequiredService<ModellingDbContext>(),
+            forWrite: false, ct);
+    }
+
+    private static IEnumerable<Guid> PriceRefs(ResourceRequest request) =>
+        (request.Usage ?? []).Select(u => u.PriceRef).Append(request.PriceRef).OfType<Guid>();
+
+    private static CostResource ToResource(ResourceRequest request, Guid id, string userId, TimeProvider time) => new(
+        id, request.ElementId, request.Name?.Trim()!, request.Category, request.Provider, request.Region?.Trim() ?? "", request.Sku?.Trim() ?? "",
+        request.Quantity, request.Unit?.Trim(), request.PriceRef,
+        (request.Usage ?? []).Select(u => new UsageLine(u.Id ?? Guid.NewGuid(), u.Name?.Trim()!, u.AssumptionId, u.PriceRef)).ToImmutableList(),
+        request.FactStatus ?? FactStatus.Declared.ToApiString(),
+        // The acceptance stamp is taken once, so the decision stays a pure function of the state.
+        request.Provenance is { } provenance
+            ? new Provenance(provenance.Source, provenance.Revision, provenance.Confidence, Guid.Parse(userId), time.GetUtcNow())
+            : null);
+
+    private static CostAssumption ToAssumption(AssumptionRequest request, Guid id) => new(
+        id, request.Name?.Trim()!, request.Kind, request.SubjectId, request.Value, request.Unit?.Trim()!,
+        request.Label, string.IsNullOrWhiteSpace(request.Source) ? null : request.Source.Trim(), request.EffectiveDate);
+
+    private static Task<IResult> WriteAsync(
+        HttpContext http, IEventStore store, Guid projectId, Guid? branchId, IEnumerable<Guid> priceRefs, CancellationToken ct,
+        Func<CostSheetState, Guid, CostWorld, string, CommandResult<IReadOnlyList<object>>> decide, bool created = false) =>
+        ModelBranches.RunAsync(http, projectId, branchId, WorkspaceRole.Editor, async (branch, userId) =>
+        {
+            var (model, _) = await CostAccess.LoadModelAsync(store, branch, ct);
+            var world = await CostAccess.WorldAsync(http.RequestServices, projectId, model, priceRefs, ct);
+            var result = await store.Decide<CostSheetState, CostSheetState>(
+                CostAccess.SheetStreamId(branch), state => decide(state, branch, world, userId), state => state, ct);
+            return await RespondAsync(result, store, branch, model, created, ct);
+        }, ct);
+
+    /// <summary>Every write answers with the whole sheet, so a client shows what is stored.</summary>
+    private static async Task<IResult> RespondAsync(
+        CommandResult<CostSheetState> result, IEventStore store, Guid branch, ModelState model, bool created, CancellationToken ct)
+    {
+        if (result is not CommandResult<CostSheetState>.Success)
+            return result.ToHttpResult();
+        var (state, version) = await CostAccess.LoadSheetAsync(store, branch, ct);
+        var sheet = CostAccess.ToDto(branch, state, version, model);
+        return created ? Results.Json(sheet, statusCode: StatusCodes.Status201Created) : Results.Ok(sheet);
+    }
+}
