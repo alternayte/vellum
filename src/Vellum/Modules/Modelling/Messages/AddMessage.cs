@@ -31,5 +31,5 @@ public sealed class AddMessageHandler(IServiceProvider services)
     internal static MessageDto ToDto(MessageState message) => new(
         message.Id, message.Name, message.Description,
         message.ProducerId, message.ConsumerIds.ToGuids(), message.SchemaId, message.Tags,
-        message.FactStatus.ToApiString(), ProvenanceMapper.ToDto(message.Provenance));
+        message.FactStatus.ToApiString(), ProvenanceMapper.ToDto(message.Provenance), StaleDto.From(message.Stale));
 }

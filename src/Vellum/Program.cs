@@ -10,6 +10,7 @@ using Vellum.Shared.Outbound;
 using Vellum.Modules.Ai;
 using Vellum.Modules.GitHub;
 using Vellum.Modules.Identity;
+using Vellum.Modules.Import;
 using Vellum.Modules.Mcp;
 using Vellum.Modules.Modelling;
 using Vellum.Modules.Modelling.Contracts;
@@ -109,6 +110,7 @@ builder.Services.AddSettingsModule(generatingOpenApi);
 builder.Services.AddOutbound();
 builder.Services.AddGitHubModule();
 builder.Services.AddAiModule();
+builder.Services.AddImportModule(runWorker: !generatingOpenApi);
 
 // Command handlers (Scrutor scan)
 builder.Services.Scan(s => s.FromAssemblyOf<Program>()
@@ -169,6 +171,7 @@ app.MapMcpEndpoints();
 app.MapSettingsEndpoints();
 app.MapGitHubEndpoints();
 app.MapAiEndpoints();
+app.MapImportEndpoints();
 
 if (!generatingOpenApi && app.Configuration.GetValue("Database:MigrateOnStartup", true))
 {

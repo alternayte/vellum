@@ -100,7 +100,7 @@ public static class ContractDecider
             return new Decision.NotFound("Operation not found");
         if (FactRules.Validate(status, provenance) is { } error)
             return new Decision.Invalid([error]);
-        if (operation.FactStatus == status && SameClaim(operation.Provenance, provenance))
+        if (operation.FactStatus == status && SameClaim(operation.Provenance, provenance) && operation.Stale is null)
             return new Decision.Success([]);
 
         return new Decision.Success([new ModelEvent.OperationProvenanceRecorded(operationId, status, provenance)]);
@@ -161,7 +161,7 @@ public static class ContractDecider
             return new Decision.NotFound("Channel not found");
         if (FactRules.Validate(status, provenance) is { } error)
             return new Decision.Invalid([error]);
-        if (channel.FactStatus == status && SameClaim(channel.Provenance, provenance))
+        if (channel.FactStatus == status && SameClaim(channel.Provenance, provenance) && channel.Stale is null)
             return new Decision.Success([]);
 
         return new Decision.Success([new ModelEvent.ChannelProvenanceRecorded(channelId, status, provenance)]);
@@ -216,7 +216,7 @@ public static class ContractDecider
             return new Decision.NotFound("Subscription not found");
         if (FactRules.Validate(status, provenance) is { } error)
             return new Decision.Invalid([error]);
-        if (subscription.FactStatus == status && SameClaim(subscription.Provenance, provenance))
+        if (subscription.FactStatus == status && SameClaim(subscription.Provenance, provenance) && subscription.Stale is null)
             return new Decision.Success([]);
 
         return new Decision.Success([new ModelEvent.SubscriptionProvenanceRecorded(subscriptionId, status, provenance)]);

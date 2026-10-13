@@ -20,4 +20,7 @@ public class RelationshipEntity
     public double? ProvenanceConfidence { get; set; }
     public Guid? ProvenanceAcceptedBy { get; set; }
     public DateTimeOffset? ProvenanceAcceptedAt { get; set; }
+    /// <summary>Both stale columns are set, or both are null.</summary>
+    public string? StaleSinceRevision { get; set; }
+    public string? StaleReason { get; set; }
 }

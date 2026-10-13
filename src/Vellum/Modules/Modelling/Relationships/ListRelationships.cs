@@ -45,6 +45,8 @@ public static class ListRelationships
                 r.ProvenanceConfidence,
                 r.ProvenanceAcceptedBy,
                 r.ProvenanceAcceptedAt,
+                r.StaleSinceRevision,
+                r.StaleReason,
             })
             .ToListAsync(ct);
 
@@ -59,7 +61,8 @@ public static class ListRelationships
         var items = rows.Select(r => new RelationshipDto(
             r.Id, r.FromId, r.ToId, r.Label, r.Technology, r.MessageId, r.LineShape, r.Kind, r.FactStatus,
             Model.ProvenanceMapper.ToDto(r.ProvenanceSource, r.ProvenanceRevision, r.ProvenanceConfidence,
-                r.ProvenanceAcceptedBy, r.ProvenanceAcceptedAt))).ToList();
+                r.ProvenanceAcceptedBy, r.ProvenanceAcceptedAt),
+            Model.StaleDto.From(r.StaleSinceRevision, r.StaleReason))).ToList();
 
         return Results.Ok(new Page<RelationshipDto>(items, nextCursor));
     }

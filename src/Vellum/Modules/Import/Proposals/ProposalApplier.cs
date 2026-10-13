@@ -1,0 +1,308 @@
+using System.Text.Json.Nodes;
+using Vellum.Modules.Modelling.Model;
+using Vellum.Modules.Schemas;
+using Vellum.Modules.Trace.Engine;
+using Vellum.Shared;
+using Decision = Vellum.Shared.CommandResult<System.Collections.Generic.IReadOnlyList<object>>;
+
+namespace Vellum.Modules.Import.Proposals;
+
+/// <summary>
+/// Turns accepted proposals into model events, through the same deciders as every other
+/// write. It holds the model state of the locked stream and the states of the locked schema
+/// streams, and appends nothing itself: the caller appends when every proposal applied.
+/// <para>
+/// A proposal is a statement about the model as it was when the scan completed. When the
+/// entity changed since, the proposal is refused; a new scan compares against the new model.
+/// </para>
+/// </summary>
+internal sealed class ProposalApplier(
+    ModelState state, Dictionary<Guid, (SchemaState State, long Version)> schemas,
+    Guid projectId, string repository, string commitSha, Guid acceptedBy, DateTimeOffset acceptedAt)
+{
+    public const string ChangedSinceScan =
+        "The model changed after this scan completed, so the proposal no longer describes it. Scan the repository again.";
+
+    public ModelState State { get; private set; } = state;
+    public List<object> ModelEvents { get; } = [];
+    /// <summary>The events for each schema stream, with the version the stream was locked at.</summary>
+    public List<(Guid SchemaId, long Version, IReadOnlyList<object> Events)> SchemaAppends { get; } = [];
+    /// <summary>Schemas to delete. The delete has a guard of its own, which runs after the model append.</summary>
+    public List<(Guid SchemaId, Guid ProposalId)> SchemaDeletes { get; } = [];
+    /// <summary>Schemas that this decision creates. A message may name them before their rows exist.</summary>
+    public HashSet<Guid> CreatedSchemas { get; } = [];
+    /// <summary>Schemas that an added or changed message names, and the proposal that names each.</summary>
+    public List<(Guid SchemaId, Guid ProposalId)> NamedSchemas { get; } = [];
+    /// <summary>For each applied proposal, the entity's compared values after it: what the link remembers.</summary>
+    public Dictionary<Guid, SortedDictionary<string, string?>> AcceptedValues { get; } = [];
+
+    /// <summary>Why the proposal cannot be applied, or null when its events are added.</summary>
+    public string? Apply(ProposalEntity proposal)
+    {
+        var proposed = proposal.Proposed is null ? null : JsonNode.Parse(proposal.Proposed)!.AsObject();
+        var current = proposal.Current is null ? null : JsonNode.Parse(proposal.Current)!.AsObject();
+        var provenance = proposal.Action == ProposalAction.Remove ? null : Provenance(proposal);
+        if (proposal.Action != ProposalAction.Remove && provenance is null)
+            return "The proposal has no evidence, so the fact would have no source pointer.";
+
+        return proposal.EntityKind switch
+        {
+            EntityKinds.Element => Element(proposal, proposed, current, provenance),
+            EntityKinds.Operation => Operation(proposal, proposed, current, provenance),
+            EntityKinds.Channel => Channel(proposal, proposed, current, provenance),
+            EntityKinds.Subscription => Subscription(proposal, proposed, current, provenance),
+            EntityKinds.Message => Message(proposal, proposed, current, provenance),
+            EntityKinds.Schema => Schema(proposal, proposed, current),
+            _ => $"Entity kind '{proposal.EntityKind}' is not one the importer writes.",
+        };
+    }
+
+    private string? Element(ProposalEntity p, JsonObject? proposed, JsonObject? current, Provenance? provenance)
+    {
+        ElementId id = p.EntityId;
+        if (p.Action == ProposalAction.Add)
+        {
+            if (!ModelEnum.TryParseDefined(Text(proposed, Field.Kind), out ElementKind kind))
+                return $"'{Text(proposed, Field.Kind)}' is not an element kind.";
+            return Run(p, ModelDecider.AddElement(State, new AddElementCommand(
+                    id, kind, Text(proposed, Field.Name) ?? "", null, Text(proposed, Field.Technology), null,
+                    ElementStatus.Current, Id(proposed, Field.ParentId) is { } parent ? new ElementId(parent) : null, []))
+                .Then(State, after => ModelDecider.RecordElementProvenance(after, id, FactStatus.ObservedInSource, provenance)));
+        }
+
+        if (!State.Elements.TryGetValue(id, out var element) || Differs(ModelIndex.Of(element), current))
+            return ChangedSinceScan;
+
+        if (p.Action == ProposalAction.Remove)
+        {
+            // The element decider removes children, relationships and messages with the
+            // element. A person accepted the removal of one thing, so anything that would go
+            // with it stops the removal instead.
+            var dependents = new List<string>();
+            dependents.AddRange(State.Elements.Values.Where(e => e.ParentId == id).Select(e => $"element '{e.Name}'"));
+            dependents.AddRange(State.Relationships.Values.Where(r => r.FromId == id || r.ToId == id).Select(r => $"relationship {r.Id}"));
+            dependents.AddRange(State.Messages.Values.Where(m => m.ProducerId == id || m.ConsumerIds.Contains(id)).Select(m => $"message '{m.Name}'"));
+            if (dependents.Count > 0)
+            {
+                return $"Element '{element.Name}' is still used by {string.Join(", ", dependents.Order(StringComparer.Ordinal).Take(10))}. " +
+                    "Remove or reassign them first, or accept their removal in the same decision.";
+            }
+            return Run(p, ModelDecider.RemoveElement(State, id));
+        }
+
+        return Run(p, ModelDecider.UpdateElement(State, new UpdateElementCommand(
+                id, Name: Text(proposed, Field.Name), SetName: true,
+                Technology: Text(proposed, Field.Technology), SetTechnology: true))
+            .Then(State, after => ModelDecider.RecordElementProvenance(after, id, FactStatus.ObservedInSource, provenance)));
+    }
+
+    private string? Operation(ProposalEntity p, JsonObject? proposed, JsonObject? current, Provenance? provenance)
+    {
+        OperationId id = p.EntityId;
+        if (p.Action != ProposalAction.Add
+            && (!State.Operations.TryGetValue(id, out var operation) || Differs(ModelIndex.Of(operation), current)))
+            return ChangedSinceScan;
+        if (p.Action == ProposalAction.Remove)
+            return Run(p, ContractDecider.RemoveOperation(State, id));
+
+        if (!ModelEnum.TryParseDefined(Text(proposed, Field.Transport), out Transport transport))
+            return $"'{Text(proposed, Field.Transport)}' is not a transport.";
+        if (Id(proposed, Field.OwnerId) is not { } owner)
+            return "The proposal names no owner.";
+
+        var decision = p.Action == ProposalAction.Add
+            ? ContractDecider.AddOperation(State, new AddOperationCommand(
+                id, owner, Text(proposed, Field.Name) ?? "", transport, null, null, 0, RetryPolicy.None))
+            : ContractDecider.UpdateOperation(State, new UpdateOperationCommand(
+                id, Text(proposed, Field.Name), new ElementId(owner), transport));
+        return Run(p, decision.Then(State, after =>
+            ContractDecider.RecordOperationProvenance(after, id, FactStatus.ObservedInSource, provenance)));
+    }
+
+    private string? Channel(ProposalEntity p, JsonObject? proposed, JsonObject? current, Provenance? provenance)
+    {
+        ChannelId id = p.EntityId;
+        if (p.Action != ProposalAction.Add
+            && (!State.Channels.TryGetValue(id, out var channel) || Differs(ModelIndex.Of(channel), current)))
+            return ChangedSinceScan;
+        if (p.Action == ProposalAction.Remove)
+            return Run(p, ContractDecider.RemoveChannel(State, id));
+
+        if (!ModelEnum.TryParseDefined(Text(proposed, Field.Kind), out ChannelKind kind))
+            return $"'{Text(proposed, Field.Kind)}' is not a channel kind.";
+
+        var decision = p.Action == ProposalAction.Add
+            ? ContractDecider.AddChannel(State, new AddChannelCommand(id, Text(proposed, Field.Name) ?? "", kind))
+            : ContractDecider.UpdateChannel(State, new UpdateChannelCommand(id, Text(proposed, Field.Name), kind));
+        return Run(p, decision.Then(State, after =>
+            ContractDecider.RecordChannelProvenance(after, id, FactStatus.ObservedInSource, provenance)));
+    }
+
+    private string? Subscription(ProposalEntity p, JsonObject? proposed, JsonObject? current, Provenance? provenance)
+    {
+        SubscriptionId id = p.EntityId;
+        if (p.Action != ProposalAction.Add
+            && (!State.Subscriptions.TryGetValue(id, out var subscription) || Differs(ModelIndex.Of(State, subscription), current)))
+            return ChangedSinceScan;
+        if (p.Action == ProposalAction.Remove)
+            return Run(p, ContractDecider.RemoveSubscription(State, id));
+
+        if (Id(proposed, Field.ChannelId) is not { } channel || Id(proposed, Field.ConsumerId) is not { } consumer)
+            return "The proposal names no channel or no consumer.";
+        ChannelId? deadLetter = Id(proposed, Field.DeadLetterChannelId) is { } d ? new ChannelId(d) : null;
+
+        var decision = p.Action == ProposalAction.Add
+            ? ContractDecider.AddSubscription(State, new AddSubscriptionCommand(id, channel, consumer, RetryPolicy.None, deadLetter))
+            : ContractDecider.UpdateSubscription(State, new UpdateSubscriptionCommand(
+                id, new ChannelId(channel), new ElementId(consumer), null, deadLetter, SetDeadLetterChannelId: true));
+        return Run(p, decision.Then(State, after =>
+            ContractDecider.RecordSubscriptionProvenance(after, id, FactStatus.ObservedInSource, provenance)));
+    }
+
+    private string? Message(ProposalEntity p, JsonObject? proposed, JsonObject? current, Provenance? provenance)
+    {
+        MessageId id = p.EntityId;
+        if (p.Action != ProposalAction.Add
+            && (!State.Messages.TryGetValue(id, out var message) || Differs(ModelIndex.Of(message), current)))
+            return ChangedSinceScan;
+        if (p.Action == ProposalAction.Remove)
+            return Run(p, ModelDecider.RemoveMessage(State, id));
+
+        if (Id(proposed, Field.ProducerId) is not { } producer)
+            return "The proposal names no producer.";
+        var consumers = (proposed?[Field.ConsumerIds] as JsonArray ?? [])
+            .Select(node => new ElementId(Guid.Parse(node!.GetValue<string>()))).ToArray();
+        SchemaId? schema = Id(proposed, Field.SchemaId) is { } s ? new SchemaId(s) : null;
+        if (schema is { } named)
+            NamedSchemas.Add((named, p.Id));
+
+        var decision = p.Action == ProposalAction.Add
+            ? ModelDecider.AddMessage(State, new AddMessageCommand(id, Text(proposed, Field.Name) ?? "", null, producer, consumers, schema, []))
+            : ModelDecider.UpdateMessage(State, new UpdateMessageCommand(
+                id, Name: Text(proposed, Field.Name), SetName: true,
+                ProducerId: new ElementId(producer), SetProducerId: true,
+                ConsumerIds: consumers, SetConsumerIds: true,
+                SchemaId: schema, SetSchemaId: true));
+        return Run(p, decision.Then(State, after =>
+            ModelDecider.RecordMessageProvenance(after, id, FactStatus.ObservedInSource, provenance)));
+    }
+
+    /// <summary>
+    /// A schema is its own stream and has no truth label, so accepting writes its name and
+    /// content only. Its provenance is the link row.
+    /// </summary>
+    private string? Schema(ProposalEntity p, JsonObject? proposed, JsonObject? current)
+    {
+        if (!schemas.TryGetValue(p.EntityId, out var locked))
+            return "The schema's stream was not locked for this decision.";
+        var entry = locked.State.Schema;
+
+        Decision decision;
+        if (p.Action == ProposalAction.Add)
+        {
+            decision = SchemaDecider.Create(locked.State, new CreateSchemaCommand(
+                p.EntityId, Text(proposed, Field.Name) ?? "", null, Text(proposed, Field.Content) ?? "", projectId));
+            if (decision is Decision.Success)
+                CreatedSchemas.Add(p.EntityId);
+        }
+        else
+        {
+            if (entry is null || entry.ProjectId != projectId
+                || Differs(ModelIndex.Of(new SchemaRow(entry.Id, entry.Name, entry.Content)), current))
+                return ChangedSinceScan;
+
+            if (p.Action == ProposalAction.Remove)
+            {
+                SchemaDeletes.Add((p.EntityId, p.Id));
+                return null;
+            }
+
+            decision = SchemaDecider.Update(locked.State, new UpdateSchemaCommand(
+                p.EntityId, Name: Text(proposed, Field.Name), SetName: true,
+                Content: Text(proposed, Field.Content), SetContent: true));
+        }
+
+        if (decision is not Decision.Success success)
+            return Describe(decision);
+
+        if (success.Value.Count > 0)
+            SchemaAppends.Add((p.EntityId, locked.Version, success.Value));
+        AcceptedValues[p.Id] = Values((Field.Name, Text(proposed, Field.Name)), (Field.Content, Text(proposed, Field.Content)));
+        return null;
+    }
+
+    private string? Run(ProposalEntity proposal, Decision decision)
+    {
+        if (decision is not Decision.Success success)
+            return Describe(decision);
+
+        ModelEvents.AddRange(success.Value);
+        State = success.Value.Aggregate(State, ModelState.Evolve);
+
+        if (proposal.Action != ProposalAction.Remove)
+        {
+            var entity = ModelIndex.Read(State, proposal.EntityKind, proposal.EntityId);
+            var accepted = new SortedDictionary<string, string?>(StringComparer.Ordinal);
+            foreach (var field in ModelIndex.ComparedFields(proposal.EntityKind))
+                accepted[field] = entity?.Values.GetValueOrDefault(field);
+            AcceptedValues[proposal.Id] = accepted;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// True when the entity no longer has the values the proposal was computed against. The
+    /// compared fields and the truth label are checked; an edit of a description or a tag is
+    /// not a change of what the proposal is about.
+    /// </summary>
+    private static bool Differs(ModelEntity live, JsonObject? current)
+    {
+        if (current is null)
+            return true;
+        foreach (var field in ModelIndex.ComparedFields(live.EntityKind))
+        {
+            var then = field == Field.ConsumerIds
+                ? ModelIndex.JoinIds((current[field] as JsonArray ?? []).Select(node => Guid.Parse(node!.GetValue<string>())))
+                : Text(current, field);
+            var now = live.Values.GetValueOrDefault(field);
+            if (field == Field.ConsumerIds)
+                now = ModelIndex.JoinIds(ModelIndex.SplitIds(now));
+            if (!string.Equals(then, now, StringComparison.Ordinal))
+                return true;
+        }
+        return live.FactStatus is not null && Text(current, "factStatus") != live.FactStatus;
+    }
+
+    /// <summary>The first evidence is the pointer on the fact. All of it stays on the link row.</summary>
+    private Provenance? Provenance(ProposalEntity proposal)
+    {
+        var first = ProposalJson.ReadEvidence(proposal.Evidence).FirstOrDefault();
+        return first is null
+            ? null
+            : new Provenance(EvidenceLinks.Pointer(repository, commitSha, first), commitSha, null, acceptedBy, acceptedAt);
+    }
+
+    public static string Describe(Decision decision) => decision switch
+    {
+        Decision.Invalid invalid => string.Join("; ", invalid.Errors.Select(e => $"{e.Field}: {e.Message}")),
+        Decision.Conflict conflict => conflict.Message,
+        Decision.NotFound notFound => notFound.Message,
+        _ => "The model refused the change.",
+    };
+
+    private static string? Text(JsonObject? json, string field) =>
+        json is not null && json.TryGetPropertyValue(field, out var node) && node is JsonValue value && value.TryGetValue<string>(out var text)
+            ? text
+            : null;
+
+    private static Guid? Id(JsonObject? json, string field) =>
+        Guid.TryParse(Text(json, field), out var id) ? id : null;
+
+    private static SortedDictionary<string, string?> Values(params (string Name, string? Value)[] values)
+    {
+        var result = new SortedDictionary<string, string?>(StringComparer.Ordinal);
+        foreach (var (name, value) in values)
+            result[name] = value;
+        return result;
+    }
+}

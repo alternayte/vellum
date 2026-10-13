@@ -25,6 +25,7 @@ public static class ModellingModule
         .Stream<ModelState>("model", stream => stream
             .EventsNestedIn(typeof(ModelEvent))
             // Version 2 of the state added operations, channels and subscriptions.
-            .StateVersion(2))
+            // Version 3 added the stale mark of a fact.
+            .StateVersion(3))
         .Projection<ModelProjection>("model_read_model", Run.Inline);
 }

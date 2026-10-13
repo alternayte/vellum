@@ -19,6 +19,7 @@ public static class GetMessage
             entity.ProducerId, entity.ConsumerIds, entity.SchemaId, entity.Tags,
             entity.FactStatus,
             Model.ProvenanceMapper.ToDto(entity.ProvenanceSource, entity.ProvenanceRevision,
-                entity.ProvenanceConfidence, entity.ProvenanceAcceptedBy, entity.ProvenanceAcceptedAt)));
+                entity.ProvenanceConfidence, entity.ProvenanceAcceptedBy, entity.ProvenanceAcceptedAt),
+            Model.StaleDto.From(entity.StaleSinceRevision, entity.StaleReason)));
     }
 }

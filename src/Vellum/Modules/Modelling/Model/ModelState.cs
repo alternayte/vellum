@@ -10,10 +10,13 @@ public sealed record ElementState(
     string? Technology, Guid? OwnerId, ElementStatus Status,
     ElementId? ParentId, string[] Tags, string? Icon,
     FactStatus FactStatus = FactStatus.Declared,
-    Provenance? Provenance = null)
+    Provenance? Provenance = null,
+    StaleMark? Stale = null)
 {
     // The generated equality compares an array by reference. Two copies of one element that
     // were each read from stored JSON would then differ, and a merge would call that a change.
+    // The stale mark is left out on purpose, here and on the other five states: it is a note
+    // a scan leaves on a branch, not part of the fact, so a merge never sees it as an edit.
     public bool Equals(ElementState? other) =>
         other is not null
         && Id == other.Id && Kind == other.Kind && Name == other.Name && Description == other.Description
@@ -29,14 +32,26 @@ public sealed record RelationshipState(
     string? Technology, MessageId? MessageId, string? LineShape,
     RelationshipKind Kind = RelationshipKind.Structural,
     FactStatus FactStatus = FactStatus.Declared,
-    Provenance? Provenance = null);
+    Provenance? Provenance = null,
+    StaleMark? Stale = null)
+{
+    // Without the stale mark, for the reason given on ElementState.
+    public bool Equals(RelationshipState? other) =>
+        other is not null
+        && Id == other.Id && FromId == other.FromId && ToId == other.ToId && Label == other.Label
+        && Technology == other.Technology && MessageId == other.MessageId && LineShape == other.LineShape
+        && Kind == other.Kind && FactStatus == other.FactStatus && Provenance == other.Provenance;
+
+    public override int GetHashCode() => HashCode.Combine(Id, FromId, ToId, Kind);
+}
 
 public sealed record MessageState(
     MessageId Id, string Name, string? Description,
     ElementId ProducerId, ElementId[] ConsumerIds,
     SchemaId? SchemaId, string[] Tags,
     FactStatus FactStatus = FactStatus.Declared,
-    Provenance? Provenance = null)
+    Provenance? Provenance = null,
+    StaleMark? Stale = null)
 {
     // By value for the two arrays, for the reason given on ElementState.
     public bool Equals(MessageState? other) =>
@@ -55,18 +70,51 @@ public sealed record OperationState(
     SchemaId? RequestSchemaId, SchemaId? ResponseSchemaId,
     int TimeoutMs, RetryPolicy Retry,
     FactStatus FactStatus = FactStatus.Declared,
-    Provenance? Provenance = null);
+    Provenance? Provenance = null,
+    StaleMark? Stale = null)
+{
+    // Without the stale mark, for the reason given on ElementState.
+    public bool Equals(OperationState? other) =>
+        other is not null
+        && Id == other.Id && OwnerId == other.OwnerId && Name == other.Name && Transport == other.Transport
+        && RequestSchemaId == other.RequestSchemaId && ResponseSchemaId == other.ResponseSchemaId
+        && TimeoutMs == other.TimeoutMs && Retry == other.Retry
+        && FactStatus == other.FactStatus && Provenance == other.Provenance;
+
+    public override int GetHashCode() => HashCode.Combine(Id, OwnerId, Name, Transport);
+}
 
 public sealed record ChannelState(
     ChannelId Id, string Name, ChannelKind Kind,
     FactStatus FactStatus = FactStatus.Declared,
-    Provenance? Provenance = null);
+    Provenance? Provenance = null,
+    StaleMark? Stale = null)
+{
+    // Without the stale mark, for the reason given on ElementState.
+    public bool Equals(ChannelState? other) =>
+        other is not null
+        && Id == other.Id && Name == other.Name && Kind == other.Kind
+        && FactStatus == other.FactStatus && Provenance == other.Provenance;
+
+    public override int GetHashCode() => HashCode.Combine(Id, Name, Kind);
+}
 
 public sealed record SubscriptionState(
     SubscriptionId Id, ChannelId ChannelId, ElementId ConsumerId,
     RetryPolicy Retry, ChannelId? DeadLetterChannelId,
     FactStatus FactStatus = FactStatus.Declared,
-    Provenance? Provenance = null);
+    Provenance? Provenance = null,
+    StaleMark? Stale = null)
+{
+    // Without the stale mark, for the reason given on ElementState.
+    public bool Equals(SubscriptionState? other) =>
+        other is not null
+        && Id == other.Id && ChannelId == other.ChannelId && ConsumerId == other.ConsumerId
+        && Retry == other.Retry && DeadLetterChannelId == other.DeadLetterChannelId
+        && FactStatus == other.FactStatus && Provenance == other.Provenance;
+
+    public override int GetHashCode() => HashCode.Combine(Id, ChannelId, ConsumerId);
+}
 
 public sealed record ModelState(
     ImmutableDictionary<ElementId, ElementState> Elements,
@@ -109,30 +157,30 @@ public sealed record ModelState(
                 e.Id, e.Kind, e.Name, e.Description, e.Technology,
                 e.OwnerId, e.Status, e.ParentId, e.Tags, Icon: null))
         },
-        ModelEvent.ElementRenamed e => state.WithElement(e.ElementId, el => el with { Name = e.Name }),
+        ModelEvent.ElementRenamed e => state.WithElement(e.ElementId, el => el with { Name = e.Name, Stale = null }),
         ModelEvent.ElementDescriptionChanged e => state.WithElement(e.ElementId, el => el with { Description = e.Description }),
-        ModelEvent.ElementTechnologyChanged e => state.WithElement(e.ElementId, el => el with { Technology = e.Technology }),
+        ModelEvent.ElementTechnologyChanged e => state.WithElement(e.ElementId, el => el with { Technology = e.Technology, Stale = null }),
         ModelEvent.ElementOwnerChanged e => state.WithElement(e.ElementId, el => el with { OwnerId = e.OwnerId }),
-        ModelEvent.ElementReparented e => state.WithElement(e.ElementId, el => el with { ParentId = e.ParentId }),
+        ModelEvent.ElementReparented e => state.WithElement(e.ElementId, el => el with { ParentId = e.ParentId, Stale = null }),
         ModelEvent.ElementStatusChanged e => state.WithElement(e.ElementId, el => el with { Status = e.Status }),
         ModelEvent.ElementRetagged e => state.WithElement(e.ElementId, el => el with { Tags = e.Tags }),
         ModelEvent.ElementIconChanged e => state.WithElement(e.ElementId, el => el with { Icon = e.Icon }),
         ModelEvent.ElementRemoved e => state with { Elements = state.Elements.Remove(e.ElementId) },
         ModelEvent.ElementProvenanceRecorded e => state.WithElement(e.ElementId,
-            el => el with { FactStatus = e.Status, Provenance = e.Provenance }),
+            el => el with { FactStatus = e.Status, Provenance = e.Provenance, Stale = e.Stale }),
 
         ModelEvent.RelationshipAdded e => state with
         {
             Relationships = state.Relationships.SetItem(e.Id, new RelationshipState(
                 e.Id, e.FromId, e.ToId, e.Label, e.Technology, e.MessageId, null, e.Kind))
         },
-        ModelEvent.RelationshipLabelChanged e => state.WithRelationship(e.RelationshipId, r => r with { Label = e.Label }),
-        ModelEvent.RelationshipTechnologyChanged e => state.WithRelationship(e.RelationshipId, r => r with { Technology = e.Technology }),
+        ModelEvent.RelationshipLabelChanged e => state.WithRelationship(e.RelationshipId, r => r with { Label = e.Label, Stale = null }),
+        ModelEvent.RelationshipTechnologyChanged e => state.WithRelationship(e.RelationshipId, r => r with { Technology = e.Technology, Stale = null }),
         ModelEvent.RelationshipLineShapeChanged e => state.WithRelationship(e.RelationshipId, r => r with { LineShape = e.LineShape }),
-        ModelEvent.RelationshipKindChanged e => state.WithRelationship(e.RelationshipId, r => r with { Kind = e.Kind }),
+        ModelEvent.RelationshipKindChanged e => state.WithRelationship(e.RelationshipId, r => r with { Kind = e.Kind, Stale = null }),
         ModelEvent.RelationshipRemoved e => state with { Relationships = state.Relationships.Remove(e.RelationshipId) },
         ModelEvent.RelationshipProvenanceRecorded e => state.WithRelationship(e.RelationshipId,
-            r => r with { FactStatus = e.Status, Provenance = e.Provenance }),
+            r => r with { FactStatus = e.Status, Provenance = e.Provenance, Stale = e.Stale }),
 
         ModelEvent.MessageAdded m => state with
         {
@@ -141,7 +189,7 @@ public sealed record ModelState(
         },
         ModelEvent.MessageUpdated m => state.WithMessage(m.MessageId, msg =>
         {
-            var updated = msg;
+            var updated = msg with { Stale = null };
             if (m.Name is not null) updated = updated with { Name = m.Name };
             if (m.Description is not null) updated = updated with { Description = m.Description };
             if (m.ProducerId is not null) updated = updated with { ProducerId = m.ProducerId.Value };
@@ -152,7 +200,7 @@ public sealed record ModelState(
         }),
         ModelEvent.MessageRemoved m => state with { Messages = state.Messages.Remove(m.MessageId) },
         ModelEvent.MessageProvenanceRecorded m => state.WithMessage(m.MessageId,
-            msg => msg with { FactStatus = m.Status, Provenance = m.Provenance }),
+            msg => msg with { FactStatus = m.Status, Provenance = m.Provenance, Stale = m.Stale }),
 
         ModelEvent.OperationAdded e => state with
         {
@@ -163,20 +211,20 @@ public sealed record ModelState(
         {
             OwnerId = e.OwnerId, Name = e.Name, Transport = e.Transport,
             RequestSchemaId = e.RequestSchemaId, ResponseSchemaId = e.ResponseSchemaId,
-            TimeoutMs = e.TimeoutMs, Retry = e.Retry,
+            TimeoutMs = e.TimeoutMs, Retry = e.Retry, Stale = null,
         }),
         ModelEvent.OperationRemoved e => state with { Operations = state.Operations.Remove(e.OperationId) },
         ModelEvent.OperationProvenanceRecorded e => state.WithOperation(e.OperationId,
-            o => o with { FactStatus = e.Status, Provenance = e.Provenance }),
+            o => o with { FactStatus = e.Status, Provenance = e.Provenance, Stale = e.Stale }),
 
         ModelEvent.ChannelAdded e => state with
         {
             Channels = state.Channels.SetItem(e.Id, new ChannelState(e.Id, e.Name, e.Kind))
         },
-        ModelEvent.ChannelChanged e => state.WithChannel(e.ChannelId, c => c with { Name = e.Name, Kind = e.Kind }),
+        ModelEvent.ChannelChanged e => state.WithChannel(e.ChannelId, c => c with { Name = e.Name, Kind = e.Kind, Stale = null }),
         ModelEvent.ChannelRemoved e => state with { Channels = state.Channels.Remove(e.ChannelId) },
         ModelEvent.ChannelProvenanceRecorded e => state.WithChannel(e.ChannelId,
-            c => c with { FactStatus = e.Status, Provenance = e.Provenance }),
+            c => c with { FactStatus = e.Status, Provenance = e.Provenance, Stale = e.Stale }),
 
         ModelEvent.SubscriptionAdded e => state with
         {
@@ -186,11 +234,11 @@ public sealed record ModelState(
         ModelEvent.SubscriptionChanged e => state.WithSubscription(e.SubscriptionId, s => s with
         {
             ChannelId = e.ChannelId, ConsumerId = e.ConsumerId,
-            Retry = e.Retry, DeadLetterChannelId = e.DeadLetterChannelId,
+            Retry = e.Retry, DeadLetterChannelId = e.DeadLetterChannelId, Stale = null,
         }),
         ModelEvent.SubscriptionRemoved e => state with { Subscriptions = state.Subscriptions.Remove(e.SubscriptionId) },
         ModelEvent.SubscriptionProvenanceRecorded e => state.WithSubscription(e.SubscriptionId,
-            s => s with { FactStatus = e.Status, Provenance = e.Provenance }),
+            s => s with { FactStatus = e.Status, Provenance = e.Provenance, Stale = e.Stale }),
 
         _ => state
     };
@@ -225,33 +273,36 @@ public sealed record ModelState(
             : null;
     }
 
+    // The helpers below replace a value with Remove and Add. SetItem keeps the stored value
+    // when the new one is equal to it, and equality leaves the stale mark out, so SetItem
+    // would drop a change of the mark alone.
     private ModelState WithOperation(OperationId id, Func<OperationState, OperationState> update) =>
         Operations.TryGetValue(id, out var operation)
-            ? this with { Operations = Operations.SetItem(id, update(operation)) }
+            ? this with { Operations = Operations.Remove(id).Add(id, update(operation)) }
             : this;
 
     private ModelState WithChannel(ChannelId id, Func<ChannelState, ChannelState> update) =>
         Channels.TryGetValue(id, out var channel)
-            ? this with { Channels = Channels.SetItem(id, update(channel)) }
+            ? this with { Channels = Channels.Remove(id).Add(id, update(channel)) }
             : this;
 
     private ModelState WithSubscription(SubscriptionId id, Func<SubscriptionState, SubscriptionState> update) =>
         Subscriptions.TryGetValue(id, out var subscription)
-            ? this with { Subscriptions = Subscriptions.SetItem(id, update(subscription)) }
+            ? this with { Subscriptions = Subscriptions.Remove(id).Add(id, update(subscription)) }
             : this;
 
     private ModelState WithElement(ElementId id, Func<ElementState, ElementState> update) =>
         Elements.TryGetValue(id, out var element)
-            ? this with { Elements = Elements.SetItem(id, update(element)) }
+            ? this with { Elements = Elements.Remove(id).Add(id, update(element)) }
             : this;
 
     private ModelState WithRelationship(RelationshipId id, Func<RelationshipState, RelationshipState> update) =>
         Relationships.TryGetValue(id, out var relationship)
-            ? this with { Relationships = Relationships.SetItem(id, update(relationship)) }
+            ? this with { Relationships = Relationships.Remove(id).Add(id, update(relationship)) }
             : this;
 
     private ModelState WithMessage(MessageId id, Func<MessageState, MessageState> update) =>
         Messages.TryGetValue(id, out var message)
-            ? this with { Messages = Messages.SetItem(id, update(message)) }
+            ? this with { Messages = Messages.Remove(id).Add(id, update(message)) }
             : this;
 }

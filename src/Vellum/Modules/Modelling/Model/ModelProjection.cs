@@ -66,11 +66,11 @@ public sealed class ModelProjection : Projection<ModellingDbContext>
             return Task.CompletedTask;
         });
 
-        OnElement<ModelEvent.ElementRenamed>(e => e.ElementId, (e, row) => row.Name = e.Name);
+        OnElement<ModelEvent.ElementRenamed>(e => e.ElementId, (e, row) => { row.Name = e.Name; ClearStale(row); });
         OnElement<ModelEvent.ElementDescriptionChanged>(e => e.ElementId, (e, row) => row.Description = e.Description);
-        OnElement<ModelEvent.ElementTechnologyChanged>(e => e.ElementId, (e, row) => row.Technology = e.Technology);
+        OnElement<ModelEvent.ElementTechnologyChanged>(e => e.ElementId, (e, row) => { row.Technology = e.Technology; ClearStale(row); });
         OnElement<ModelEvent.ElementOwnerChanged>(e => e.ElementId, (e, row) => row.OwnerId = e.OwnerId);
-        OnElement<ModelEvent.ElementReparented>(e => e.ElementId, (e, row) => row.ParentId = e.ParentId);
+        OnElement<ModelEvent.ElementReparented>(e => e.ElementId, (e, row) => { row.ParentId = e.ParentId; ClearStale(row); });
         OnElement<ModelEvent.ElementStatusChanged>(e => e.ElementId, (e, row) => row.Status = e.Status.ToString().ToLowerInvariant());
         OnElement<ModelEvent.ElementRetagged>(e => e.ElementId, (e, row) => row.Tags = e.Tags);
         OnElement<ModelEvent.ElementIconChanged>(e => e.ElementId, (e, row) => row.Icon = e.Icon);
@@ -82,6 +82,8 @@ public sealed class ModelProjection : Projection<ModellingDbContext>
             row.ProvenanceConfidence = e.Provenance?.Confidence;
             row.ProvenanceAcceptedBy = e.Provenance?.AcceptedBy;
             row.ProvenanceAcceptedAt = e.Provenance?.AcceptedAt;
+            row.StaleSinceRevision = e.Stale?.SinceRevision;
+            row.StaleReason = e.Stale?.Reason;
         });
         On<ModelEvent.ElementRemoved>(async (removed, ctx) =>
         {
@@ -107,10 +109,10 @@ public sealed class ModelProjection : Projection<ModellingDbContext>
             return Task.CompletedTask;
         });
 
-        OnRelationship<ModelEvent.RelationshipLabelChanged>(e => e.RelationshipId, (e, row) => row.Label = e.Label);
-        OnRelationship<ModelEvent.RelationshipTechnologyChanged>(e => e.RelationshipId, (e, row) => row.Technology = e.Technology);
+        OnRelationship<ModelEvent.RelationshipLabelChanged>(e => e.RelationshipId, (e, row) => { row.Label = e.Label; ClearStale(row); });
+        OnRelationship<ModelEvent.RelationshipTechnologyChanged>(e => e.RelationshipId, (e, row) => { row.Technology = e.Technology; ClearStale(row); });
         OnRelationship<ModelEvent.RelationshipLineShapeChanged>(e => e.RelationshipId, (e, row) => row.LineShape = e.LineShape);
-        OnRelationship<ModelEvent.RelationshipKindChanged>(e => e.RelationshipId, (e, row) => row.Kind = e.Kind.ToString().ToLowerInvariant());
+        OnRelationship<ModelEvent.RelationshipKindChanged>(e => e.RelationshipId, (e, row) => { row.Kind = e.Kind.ToString().ToLowerInvariant(); ClearStale(row); });
         OnRelationship<ModelEvent.RelationshipProvenanceRecorded>(e => e.RelationshipId, (e, row) =>
         {
             row.FactStatus = e.Status.ToApiString();
@@ -119,6 +121,8 @@ public sealed class ModelProjection : Projection<ModellingDbContext>
             row.ProvenanceConfidence = e.Provenance?.Confidence;
             row.ProvenanceAcceptedBy = e.Provenance?.AcceptedBy;
             row.ProvenanceAcceptedAt = e.Provenance?.AcceptedAt;
+            row.StaleSinceRevision = e.Stale?.SinceRevision;
+            row.StaleReason = e.Stale?.Reason;
         });
         On<ModelEvent.RelationshipRemoved>(async (removed, ctx) =>
         {
@@ -151,6 +155,8 @@ public sealed class ModelProjection : Projection<ModellingDbContext>
             if (e.ConsumerIds is not null) row.ConsumerIds = e.ConsumerIds.ToGuids();
             if (e.SetSchemaId) row.SchemaId = e.SchemaId;
             if (e.Tags is not null) row.Tags = e.Tags;
+            row.StaleSinceRevision = null;
+            row.StaleReason = null;
         });
         OnMessage<ModelEvent.MessageProvenanceRecorded>(e => e.MessageId, (e, row) =>
         {
@@ -160,6 +166,8 @@ public sealed class ModelProjection : Projection<ModellingDbContext>
             row.ProvenanceConfidence = e.Provenance?.Confidence;
             row.ProvenanceAcceptedBy = e.Provenance?.AcceptedBy;
             row.ProvenanceAcceptedAt = e.Provenance?.AcceptedAt;
+            row.StaleSinceRevision = e.Stale?.SinceRevision;
+            row.StaleReason = e.Stale?.Reason;
         });
         On<ModelEvent.MessageRemoved>(async (removed, ctx) =>
         {
@@ -196,6 +204,12 @@ public sealed class ModelProjection : Projection<ModellingDbContext>
             var row = await FindMessageAsync(ctx, id(e));
             if (row is not null) apply(e, row);
         });
+
+    // The same events clear the mark in ModelState.Evolve: an edit of a value that a scan
+    // observes is a person's statement about the fact.
+    private static void ClearStale(ElementEntity row) => (row.StaleSinceRevision, row.StaleReason) = (null, null);
+
+    private static void ClearStale(RelationshipEntity row) => (row.StaleSinceRevision, row.StaleReason) = (null, null);
 
     private static Guid BranchOf(ProjectionContext ctx) => Guid.Parse(ctx.StreamId);
 
@@ -261,6 +275,8 @@ public sealed class ModelProjection : Projection<ModellingDbContext>
                 ProvenanceConfidence = element.Provenance?.Confidence,
                 ProvenanceAcceptedBy = element.Provenance?.AcceptedBy,
                 ProvenanceAcceptedAt = element.Provenance?.AcceptedAt,
+                StaleSinceRevision = element.Stale?.SinceRevision,
+                StaleReason = element.Stale?.Reason,
             });
         }
 
@@ -284,6 +300,8 @@ public sealed class ModelProjection : Projection<ModellingDbContext>
                 ProvenanceConfidence = relationship.Provenance?.Confidence,
                 ProvenanceAcceptedBy = relationship.Provenance?.AcceptedBy,
                 ProvenanceAcceptedAt = relationship.Provenance?.AcceptedAt,
+                StaleSinceRevision = relationship.Stale?.SinceRevision,
+                StaleReason = relationship.Stale?.Reason,
             });
         }
 
@@ -306,6 +324,8 @@ public sealed class ModelProjection : Projection<ModellingDbContext>
                 ProvenanceConfidence = message.Provenance?.Confidence,
                 ProvenanceAcceptedBy = message.Provenance?.AcceptedBy,
                 ProvenanceAcceptedAt = message.Provenance?.AcceptedAt,
+                StaleSinceRevision = message.Stale?.SinceRevision,
+                StaleReason = message.Stale?.Reason,
             });
         }
     }

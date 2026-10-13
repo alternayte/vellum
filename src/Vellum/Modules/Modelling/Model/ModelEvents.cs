@@ -34,6 +34,11 @@ public static class ModelEvent
     /// </summary>
     public sealed record BranchClosed(Guid BranchId);
 
+    // The Stale member of the six provenance events was added later as a nullable member,
+    // which keeps them at shape version 1: an event stored without it reads as null and means
+    // "not stale". A provenance event therefore always states the whole truth label of a
+    // fact: status, provenance and stale mark. Recording provenance without a mark clears it.
+
     // Element events
     public sealed record ElementAdded(
         ElementId Id, ElementKind Kind, string Name, string? Description,
@@ -49,7 +54,7 @@ public static class ModelEvent
     public sealed record ElementRetagged(ElementId ElementId, string[] Tags);
     public sealed record ElementIconChanged(ElementId ElementId, string? Icon);
     public sealed record ElementRemoved(ElementId ElementId);
-    public sealed record ElementProvenanceRecorded(ElementId ElementId, FactStatus Status, Provenance? Provenance);
+    public sealed record ElementProvenanceRecorded(ElementId ElementId, FactStatus Status, Provenance? Provenance, StaleMark? Stale = null);
 
     // Relationship events
     public sealed record RelationshipAdded(
@@ -62,7 +67,7 @@ public static class ModelEvent
     public sealed record RelationshipLineShapeChanged(RelationshipId RelationshipId, string? LineShape);
     public sealed record RelationshipKindChanged(RelationshipId RelationshipId, RelationshipKind Kind);
     public sealed record RelationshipRemoved(RelationshipId RelationshipId);
-    public sealed record RelationshipProvenanceRecorded(RelationshipId RelationshipId, FactStatus Status, Provenance? Provenance);
+    public sealed record RelationshipProvenanceRecorded(RelationshipId RelationshipId, FactStatus Status, Provenance? Provenance, StaleMark? Stale = null);
 
     // Message events
     public sealed record MessageAdded(
@@ -78,7 +83,7 @@ public static class ModelEvent
         string[]? Tags);
 
     public sealed record MessageRemoved(MessageId MessageId);
-    public sealed record MessageProvenanceRecorded(MessageId MessageId, FactStatus Status, Provenance? Provenance);
+    public sealed record MessageProvenanceRecorded(MessageId MessageId, FactStatus Status, Provenance? Provenance, StaleMark? Stale = null);
 
     // Operation events. A change carries the whole contract, so a nullable schema ID is unambiguous.
     public sealed record OperationAdded(
@@ -92,13 +97,13 @@ public static class ModelEvent
         int TimeoutMs, RetryPolicy Retry);
 
     public sealed record OperationRemoved(OperationId OperationId);
-    public sealed record OperationProvenanceRecorded(OperationId OperationId, FactStatus Status, Provenance? Provenance);
+    public sealed record OperationProvenanceRecorded(OperationId OperationId, FactStatus Status, Provenance? Provenance, StaleMark? Stale = null);
 
     // Channel events
     public sealed record ChannelAdded(ChannelId Id, string Name, ChannelKind Kind);
     public sealed record ChannelChanged(ChannelId ChannelId, string Name, ChannelKind Kind);
     public sealed record ChannelRemoved(ChannelId ChannelId);
-    public sealed record ChannelProvenanceRecorded(ChannelId ChannelId, FactStatus Status, Provenance? Provenance);
+    public sealed record ChannelProvenanceRecorded(ChannelId ChannelId, FactStatus Status, Provenance? Provenance, StaleMark? Stale = null);
 
     // Subscription events
     public sealed record SubscriptionAdded(
@@ -110,5 +115,5 @@ public static class ModelEvent
         RetryPolicy Retry, ChannelId? DeadLetterChannelId);
 
     public sealed record SubscriptionRemoved(SubscriptionId SubscriptionId);
-    public sealed record SubscriptionProvenanceRecorded(SubscriptionId SubscriptionId, FactStatus Status, Provenance? Provenance);
+    public sealed record SubscriptionProvenanceRecorded(SubscriptionId SubscriptionId, FactStatus Status, Provenance? Provenance, StaleMark? Stale = null);
 }

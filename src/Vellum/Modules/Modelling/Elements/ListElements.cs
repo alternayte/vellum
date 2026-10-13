@@ -49,6 +49,8 @@ public static class ListElements
                 e.ProvenanceConfidence,
                 e.ProvenanceAcceptedBy,
                 e.ProvenanceAcceptedAt,
+                e.StaleSinceRevision,
+                e.StaleReason,
             })
             .ToListAsync(ct);
 
@@ -64,7 +66,8 @@ public static class ListElements
             e.Id, e.Kind, e.Name, e.Description, e.Technology, e.OwnerId, e.Status,
             e.ParentId, e.Tags, e.Icon, e.FactStatus,
             Model.ProvenanceMapper.ToDto(e.ProvenanceSource, e.ProvenanceRevision, e.ProvenanceConfidence,
-                e.ProvenanceAcceptedBy, e.ProvenanceAcceptedAt))).ToList();
+                e.ProvenanceAcceptedBy, e.ProvenanceAcceptedAt),
+            Model.StaleDto.From(e.StaleSinceRevision, e.StaleReason))).ToList();
 
         return Results.Ok(new Page<ElementDto>(items, nextCursor));
     }
