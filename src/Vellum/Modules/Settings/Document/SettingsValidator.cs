@@ -3,7 +3,7 @@ using Vellum.Shared;
 namespace Vellum.Modules.Settings.Document;
 
 /// <summary>Every rule for a complete settings document, checked against the instance policy.</summary>
-public sealed class SettingsValidator(OutboundUrlPolicy urls)
+public sealed class SettingsValidator(OutboundUrlPolicy urls, Bootstrap bootstrap)
 {
     public const int MaxProviders = 20;
     public const int MaxExcludeGlobs = 100;
@@ -129,7 +129,10 @@ public sealed class SettingsValidator(OutboundUrlPolicy urls)
             return;
         }
 
-        var verdict = await urls.CheckAsync(url, policy.AllowPrivateNetworkUrls, ct);
+        // Every URL in the settings can receive a credential: the GitHub token, a provider key
+        // or a request that the webhook secret signs.
+        var verdict = await urls.CheckAsync(
+            url, policy.AllowPrivateNetworkUrls, requireHttps: bootstrap.Profile == OperatingProfile.Hosted, ct);
         if (!verdict.Allowed)
             errors.Add(new(field, verdict.Reason!));
     }

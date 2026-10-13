@@ -53,7 +53,7 @@ public class IntegrationFixture : IAsyncLifetime
         AdminEmail = email;
         var settings = (await admin.GetFromJsonAsync<JsonObject>("/api/instance/settings"))!;
         settings["policy"]!["allowSelfRegistration"] = true;
-        var opened = await admin.PutAsJsonAsync("/api/instance/settings", settings);
+        var opened = await admin.PutInstanceSettingsAsync(settings);
         Assert.True(opened.IsSuccessStatusCode, await opened.Content.ReadAsStringAsync());
     }
 

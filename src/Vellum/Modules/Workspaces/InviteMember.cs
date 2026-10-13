@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using Microsoft.EntityFrameworkCore;
+using Vellum.Modules.Identity;
 using Vellum.Modules.Settings.Audit;
 using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Modules.Workspaces.Entities;
@@ -12,12 +13,15 @@ public sealed record MembershipDto(Guid Id, Guid WorkspaceId, string UserId, str
 
 public static class InviteMember
 {
+    public const int MaxUserIdLength = 64;
+
     public static async Task<IResult> Handle(
         Guid workspaceId,
         InviteMemberRequest request,
         ClaimsPrincipal user,
         WorkspacesDbContext db,
         WorkspaceAuthorizationService auth,
+        AppIdentityDbContext identity,
         CancellationToken ct)
     {
         var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
@@ -26,6 +30,13 @@ public static class InviteMember
         if (!Enum.TryParse<WorkspaceRole>(request.Role, ignoreCase: true, out _))
             return Results.BadRequest(new ErrorResponse("validation_error", "Invalid role",
                 Errors: [new FieldError("role", "Must be Owner, Editor, or Viewer")]));
+
+        // The user ID goes into the membership and into the audit log, so it must be the ID
+        // of an account and not text that the caller chose.
+        if (request.UserId is not { Length: >= 1 and <= MaxUserIdLength } invitedId
+            || !await identity.Users.AnyAsync(u => u.Id == invitedId, ct))
+            return Results.BadRequest(new ErrorResponse("validation_error", "Invalid user",
+                Errors: [new FieldError("userId", "Must be the ID of an existing user.")]));
 
         var existing = await db.Memberships
             .FirstOrDefaultAsync(m => m.WorkspaceId == workspaceId && m.UserId == request.UserId, ct);

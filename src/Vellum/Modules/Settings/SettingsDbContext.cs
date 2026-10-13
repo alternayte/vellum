@@ -26,6 +26,7 @@ public class SettingsDbContext : DbContext
             b.Property(s => s.Id).ValueGeneratedNever();
             b.Property(s => s.Policy).HasColumnType("jsonb");
             b.Property(s => s.Defaults).HasColumnType("jsonb");
+            b.Property(s => s.Version).HasDefaultValue(1L);
             b.Property(s => s.UpdatedAt).HasDefaultValueSql("now()");
         });
 
@@ -35,6 +36,7 @@ public class SettingsDbContext : DbContext
             b.HasKey(s => s.WorkspaceId);
             b.Property(s => s.WorkspaceId).ValueGeneratedNever();
             b.Property(s => s.Overrides).HasColumnType("jsonb");
+            b.Property(s => s.Version).HasDefaultValue(1L);
             b.Property(s => s.UpdatedAt).HasDefaultValueSql("now()");
         });
 
@@ -43,6 +45,7 @@ public class SettingsDbContext : DbContext
             b.ToTable("secrets");
             b.HasKey(s => new { s.WorkspaceId, s.Name });
             b.Property(s => s.Name).HasMaxLength(200);
+            b.Property(s => s.BoundOrigin).HasMaxLength(300);
             b.Property(s => s.UpdatedAt).HasDefaultValueSql("now()");
         });
 

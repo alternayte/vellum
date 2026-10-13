@@ -1,11 +1,17 @@
 # `docker compose up` gives the whole app at http://localhost:8080 in the local profile.
 # No other configuration is needed: the app creates its schema and its master key.
+# The first start writes a one-time setup code to the log: `docker compose logs vellum`.
+#
+# Both ports are published on this machine only (127.0.0.1). To reach the app from other
+# machines, set VELLUM_BIND=0.0.0.0 and put the app behind HTTPS first. VELLUM_BIND does not
+# move the database port: the database has a well-known password, so VELLUM_POSTGRES_BIND
+# is a separate value that you change only on a network you trust.
 # For host-run development start only the database: `docker compose up -d postgres`.
 services:
   postgres:
     image: postgres:17
     ports:
-      - "${VELLUM_POSTGRES_PORT:-5432}:5432"
+      - "${VELLUM_POSTGRES_BIND:-127.0.0.1}:${VELLUM_POSTGRES_PORT:-5432}:5432"
     environment:
       POSTGRES_USER: vellum
       POSTGRES_PASSWORD: vellum
@@ -24,14 +30,26 @@ services:
       postgres:
         condition: service_healthy
     ports:
-      - "${VELLUM_PORT:-8080}:8080"
+      - "${VELLUM_BIND:-127.0.0.1}:${VELLUM_PORT:-8080}:8080"
     environment:
       Vellum__Profile: local
-      # The generated master key lives here, on a volume, so it survives a restart.
+      # The generated master key and the setup code live here, on a volume, so they survive a restart.
       Vellum__DataDirectory: /data
       ConnectionStrings__DefaultConnection: Host=postgres;Database=vellum;Username=vellum;Password=vellum
+      # Optional. Empty means "not set": Vellum then uses the key file on the volume and a
+      # generated setup code. Set the two keys to rotate the master key.
+      Vellum__MasterKey: ${VELLUM_MASTER_KEY:-}
+      Vellum__PreviousMasterKey: ${VELLUM_PREVIOUS_MASTER_KEY:-}
+      Vellum__SetupToken: ${VELLUM_SETUP_TOKEN:-}
     volumes:
       - vellum-data:/data
+    # The app answers /health when it reaches its database.
+    healthcheck:
+      test: ["CMD", "dotnet", "Vellum.dll", "health"]
+      interval: 15s
+      timeout: 6s
+      start_period: 40s
+      retries: 5
 
 volumes:
   pgdata:

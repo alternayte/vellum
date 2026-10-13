@@ -8,6 +8,8 @@ public class InstanceSettingsEntity
     public int Id { get; set; }
     public string? Policy { get; set; }
     public string? Defaults { get; set; }
+    /// <summary>Goes up by one on every save. A writer states the version it read.</summary>
+    public long Version { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
     public string UpdatedBy { get; set; } = null!;
 }
@@ -16,6 +18,8 @@ public class WorkspaceSettingsEntity
 {
     public Guid WorkspaceId { get; set; }
     public string Overrides { get; set; } = null!;
+    /// <summary>Goes up by one on every save. A writer states the version it read.</summary>
+    public long Version { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
     public string UpdatedBy { get; set; } = null!;
 }
@@ -31,6 +35,12 @@ public class SecretEntity
     public byte[] Nonce { get; set; } = null!;
     public byte[] Ciphertext { get; set; } = null!;
     public string Fingerprint { get; set; } = null!;
+    /// <summary>
+    /// The origin (scheme, host, port) that the credential was saved for. It is part of the
+    /// encrypted row's associated data. Null on a row from before origins were recorded;
+    /// such a row is never sent anywhere.
+    /// </summary>
+    public string? BoundOrigin { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
     public string UpdatedBy { get; set; } = null!;
 }

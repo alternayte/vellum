@@ -133,6 +133,12 @@ namespace Vellum.Modules.Settings.Migrations
                         .HasColumnType("text")
                         .HasColumnName("updated_by");
 
+                    b.Property<long>("Version")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasDefaultValue(1L)
+                        .HasColumnName("version");
+
                     b.HasKey("Id")
                         .HasName("pk_instance_settings");
 
@@ -152,6 +158,11 @@ namespace Vellum.Modules.Settings.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)")
                         .HasColumnName("name");
+
+                    b.Property<string>("BoundOrigin")
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)")
+                        .HasColumnName("bound_origin");
 
                     b.Property<byte[]>("Ciphertext")
                         .IsRequired()
@@ -221,6 +232,12 @@ namespace Vellum.Modules.Settings.Migrations
                         .IsRequired()
                         .HasColumnType("text")
                         .HasColumnName("updated_by");
+
+                    b.Property<long>("Version")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bigint")
+                        .HasDefaultValue(1L)
+                        .HasColumnName("version");
 
                     b.HasKey("WorkspaceId")
                         .HasName("pk_workspace_settings");

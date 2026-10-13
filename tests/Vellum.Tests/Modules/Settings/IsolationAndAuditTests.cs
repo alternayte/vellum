@@ -25,7 +25,7 @@ public class IsolationAndAuditTests
         return new()
         {
             ["GET settings"] = c => c.GetAsync($"{root}/settings"),
-            ["PUT settings"] = c => c.PutAsync($"{root}/settings", Json("""{ "import": { "maxFiles": 3 } }""")),
+            ["PUT settings"] = c => c.PutSettingsAsync($"{root}/settings", Json("""{ "import": { "maxFiles": 3 } }""")),
             ["GET secrets"] = c => c.GetAsync($"{root}/secrets"),
             ["PUT secret"] = c => c.PutAsJsonAsync($"{root}/secrets/github:token", new { value = "intruder-value" }),
             ["DELETE secret"] = c => c.DeleteAsync($"{root}/secrets/github:token"),
@@ -61,7 +61,8 @@ public class IsolationAndAuditTests
         await TestHost.CreateProjectAsync(ownerB);
         using var anonymous = TestHost.Client(factory);
 
-        await ownerA.PutAsJsonAsync($"/api/workspaces/{workspaceA}/secrets/github:token", new { value = "owner-a-token-value" });
+        var saved = await ownerA.PutAsJsonAsync($"/api/workspaces/{workspaceA}/secrets/github:token", new { value = "owner-a-token-value" });
+        Assert.Equal(HttpStatusCode.NoContent, saved.StatusCode);
         var before = await ownerA.GetStringAsync($"/api/workspaces/{workspaceA}/secrets");
 
         await AssertAllAsync(ownerB, workspaceA, HttpStatusCode.Forbidden);
@@ -120,15 +121,15 @@ public class IsolationAndAuditTests
         const string secret = "audit-secret-value-9f8e7d6c5b4a";
         const string webhook = "https://hooks.example.com/audited-path-31337";
 
-        await owner.PutAsync($"/api/workspaces/{workspaceId}/settings", Json($$"""{ "notifications": { "webhookUrl": "{{webhook}}" } }"""));
-        await owner.PutAsJsonAsync($"/api/workspaces/{workspaceId}/secrets/github:token", new { value = secret });
-        await owner.DeleteAsync($"/api/workspaces/{workspaceId}/secrets/github:token");
+        Assert.Equal(HttpStatusCode.OK, (await owner.PutSettingsAsync($"/api/workspaces/{workspaceId}/settings", Json($$"""{ "notifications": { "webhookUrl": "{{webhook}}" } }"""))).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await owner.PutAsJsonAsync($"/api/workspaces/{workspaceId}/secrets/github:token", new { value = secret })).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await owner.DeleteAsync($"/api/workspaces/{workspaceId}/secrets/github:token")).StatusCode);
         using var member = await TestHost.SignInMemberAsync(factory, owner, workspaceId, "Editor");
         var memberId = (await member.GetFromJsonAsync<UserInfoResponse>("/api/auth/me"))!.Id;
-        await owner.DeleteAsync($"/api/workspaces/{workspaceId}/members/{memberId}");
+        Assert.True((await owner.DeleteAsync($"/api/workspaces/{workspaceId}/members/{memberId}")).IsSuccessStatusCode);
         // Refused calls record nothing.
-        await member.PutAsJsonAsync($"/api/workspaces/{workspaceId}/secrets/github:token", new { value = secret });
-        await owner.PutAsync($"/api/workspaces/{workspaceId}/settings", Json("""{ "import": { "maxFiles": 0 } }"""));
+        Assert.Equal(HttpStatusCode.Forbidden, (await member.PutAsJsonAsync($"/api/workspaces/{workspaceId}/secrets/github:token", new { value = secret })).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await owner.PutSettingsAsync($"/api/workspaces/{workspaceId}/settings", Json("""{ "import": { "maxFiles": 0 } }"""))).StatusCode);
 
         var body = await owner.GetStringAsync($"/api/workspaces/{workspaceId}/audit");
         var entries = JsonNode.Parse(body)!.AsArray();
@@ -138,7 +139,7 @@ public class IsolationAndAuditTests
             entries.Select(e => (string)e!["action"]!).Where(a => a != "keys.rotated"));
         var workspaceEntries = entries.Where(e => (string)e!["action"]! != "keys.rotated").ToList();
         Assert.Equal(
-            [$"user:{memberId} role:editor", $"user:{memberId} role:editor", "github:token", "github:token", "workspace-settings", $"user:{ownerId} role:owner"],
+            [$"user:{memberId} role:editor", $"user:{memberId} role:editor", "github:token", "github:token", "workspace-settings fields:notifications.webhookUrl=https://hooks.example.com", $"user:{ownerId} role:owner"],
             workspaceEntries.Select(e => (string)e!["target"]!));
         Assert.All(workspaceEntries, e =>
         {
@@ -161,10 +162,13 @@ public class IsolationAndAuditTests
                  {
                      "UPDATE settings.audit_entries SET action = 'x' WHERE workspace_id = @w",
                      "DELETE FROM settings.audit_entries WHERE workspace_id = @w",
+                     "TRUNCATE settings.audit_entries",
+                     "TRUNCATE settings.audit_entries RESTART IDENTITY CASCADE",
                  })
         {
             await using var command = new NpgsqlCommand(sql, connection);
-            command.Parameters.AddWithValue("w", workspaceId);
+            if (sql.Contains("@w"))
+                command.Parameters.AddWithValue("w", workspaceId);
             var refused = await Assert.ThrowsAsync<PostgresException>(() => command.ExecuteNonQueryAsync());
             Assert.Contains("append-only", refused.MessageText);
         }

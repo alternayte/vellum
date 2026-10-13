@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 using Vellum.Modules.Settings;
 using Vellum.Modules.Settings.Instance;
@@ -44,26 +45,45 @@ public class SetupAndBootstrapHostTests
         using var client = TestHost.Client(factory);
 
         var before = await client.GetFromJsonAsync<SetupStatusResponse>("/api/setup/status");
-        Assert.Equal(new SetupStatusResponse(NeedsSetup: true, Profile: "local", RequiresSetupToken: false), before);
+        Assert.Equal(new SetupStatusResponse(NeedsSetup: true, Profile: "local", RequiresSetupToken: true, SetupTokenHint: "log"), before);
+        var code = TestHost.SetupCode(factory);
+
+        // Reaching the port is not enough: setup needs the code from the log or the code file.
+        foreach (var wrong in new[] { null, "", "AAAAA-BBBBB-CCCCC-DDDDD", code + "X" })
+        {
+            var refused = await client.PostAsJsonAsync("/api/setup", Account(wrong));
+            Assert.Equal(HttpStatusCode.Forbidden, refused.StatusCode);
+            var refusal = await refused.Content.ReadAsStringAsync();
+            Assert.Contains("invalid_setup_token", refusal);
+            Assert.DoesNotContain(code, refusal);
+        }
+
+        Assert.Equal(0, await CountAsync(database, "identity.\"AspNetUsers\""));
 
         // No account exists before setup, and registration cannot create the first one.
         var early = await client.PostAsJsonAsync("/api/auth/register",
-            new { email = "early@vellum.local", password = "Test123!", displayName = "Early" });
+            new { email = "early@vellum.local", password = "Test12345!", displayName = "Early" });
         Assert.Equal(HttpStatusCode.Forbidden, early.StatusCode);
         Assert.Equal("setup_required", (await early.Content.ReadFromJsonAsync<ErrorResponse>())!.Type);
 
         // A refused setup leaves nothing behind.
-        var weak = await client.PostAsJsonAsync("/api/setup", Account(password: "weak"));
+        var weak = await client.PostAsJsonAsync("/api/setup", Account(code, password: "weak"));
         Assert.Equal(HttpStatusCode.BadRequest, weak.StatusCode);
         Assert.NotEmpty((await weak.Content.ReadFromJsonAsync<ErrorResponse>())!.Errors!);
-        var blank = await client.PostAsJsonAsync("/api/setup", new { email = "", password = "", displayName = "", workspaceName = "" });
+        var blank = await client.PostAsJsonAsync("/api/setup", new { email = "", password = "", displayName = "", workspaceName = "", setupToken = code });
         Assert.Equal(HttpStatusCode.BadRequest, blank.StatusCode);
         Assert.Equal(4, (await blank.Content.ReadFromJsonAsync<ErrorResponse>())!.Errors!.Count);
         Assert.True((await client.GetFromJsonAsync<SetupStatusResponse>("/api/setup/status"))!.NeedsSetup);
         Assert.Equal(0, await CountAsync(database, "workspaces.workspaces"));
 
-        var response = await client.PostAsJsonAsync("/api/setup", Account());
+        // Ten characters is the shortest new password.
+        var shortPassword = await client.PostAsJsonAsync("/api/setup", Account(code, password: "Short123!"));
+        Assert.Equal(HttpStatusCode.BadRequest, shortPassword.StatusCode);
+
+        var response = await client.PostAsJsonAsync("/api/setup", Account(code));
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        // The code worked one time: its file is gone.
+        Assert.False(File.Exists(factory.Services.GetRequiredService<SetupAccess>().CodeFilePath));
         var created = (await response.Content.ReadFromJsonAsync<SetupResponse>())!;
 
         // The same client is signed in, is the instance admin and owns the new workspace.
@@ -80,14 +100,15 @@ public class SetupAndBootstrapHostTests
 
         var after = await client.GetFromJsonAsync<SetupStatusResponse>("/api/setup/status");
         Assert.False(after!.NeedsSetup);
+        Assert.Null(after.SetupTokenHint);
 
         using var stranger = TestHost.Client(factory);
-        var second = await stranger.PostAsJsonAsync("/api/setup", Account());
+        var second = await stranger.PostAsJsonAsync("/api/setup", Account(code));
         Assert.Equal(HttpStatusCode.Conflict, second.StatusCode);
         Assert.Equal("already_set_up", (await second.Content.ReadFromJsonAsync<ErrorResponse>())!.Type);
 
         var register = await stranger.PostAsJsonAsync("/api/auth/register",
-            new { email = "late@vellum.local", password = "Test123!", displayName = "Late" });
+            new { email = "late@vellum.local", password = "Test12345!", displayName = "Late" });
         Assert.Equal(HttpStatusCode.Forbidden, register.StatusCode);
         Assert.Equal("registration_closed", (await register.Content.ReadFromJsonAsync<ErrorResponse>())!.Type);
         Assert.Equal(1, await CountAsync(database, "identity.\"AspNetUsers\""));
@@ -101,7 +122,7 @@ public class SetupAndBootstrapHostTests
         using var client = TestHost.Client(factory, https: true);
 
         var status = await client.GetFromJsonAsync<SetupStatusResponse>("/api/setup/status");
-        Assert.Equal(new SetupStatusResponse(NeedsSetup: true, Profile: "hosted", RequiresSetupToken: true), status);
+        Assert.Equal(new SetupStatusResponse(NeedsSetup: true, Profile: "hosted", RequiresSetupToken: true, SetupTokenHint: "operator"), status);
 
         foreach (var token in new[] { null, "", "wrong-token-0123456789abcdef", TestHost.SetupToken + "x", TestHost.SetupToken[..^1] })
         {
@@ -132,7 +153,7 @@ public class SetupAndBootstrapHostTests
         // Hosted opens registration by default. A registered user is not an instance admin.
         using var user = TestHost.Client(factory, https: true);
         await TestHost.Created(user.PostAsJsonAsync("/api/auth/register",
-            new { email = $"user-{Guid.NewGuid():N}@vellum.local", password = "Test123!", displayName = "User" }));
+            new { email = $"user-{Guid.NewGuid():N}@vellum.local", password = "Test12345!", displayName = "User" }));
         Assert.False((await user.GetFromJsonAsync<InstanceInfoResponse>("/api/instance"))!.IsInstanceAdmin);
         Assert.Equal(HttpStatusCode.Forbidden, (await user.GetAsync("/api/instance/settings")).StatusCode);
     }
@@ -146,8 +167,9 @@ public class SetupAndBootstrapHostTests
         using (var warm = TestHost.Client(factory))
             await warm.GetAsync("/api/setup/status");
 
+        var code = TestHost.SetupCode(factory);
         var clients = Enumerable.Range(0, 8).Select(_ => TestHost.Client(factory)).ToList();
-        var responses = await Task.WhenAll(clients.Select(c => c.PostAsJsonAsync("/api/setup", Account())));
+        var responses = await Task.WhenAll(clients.Select(c => c.PostAsJsonAsync("/api/setup", Account(code))));
 
         Assert.Single(responses, r => r.StatusCode == HttpStatusCode.Created);
         Assert.Equal(7, responses.Count(r => r.StatusCode == HttpStatusCode.Conflict));
@@ -226,7 +248,7 @@ public class SetupAndBootstrapHostTests
     // ---- Data Protection keys: in Postgres, sealed with the master key --------------
 
     [Fact]
-    public async Task A_session_cookie_is_accepted_by_another_instance_with_the_same_master_key_and_refused_with_a_different_one()
+    public async Task A_session_cookie_is_accepted_by_another_instance_with_the_same_master_key_and_an_instance_with_a_different_one_does_not_start()
     {
         var database = await TestHost.CreateDatabaseAsync(_fixture);
         var key = TestHost.NewMasterKey();
@@ -235,7 +257,7 @@ public class SetupAndBootstrapHostTests
         using (var first = TestHost.Create(database, new Dictionary<string, string?> { ["Vellum:MasterKey"] = key }))
         {
             using var client = first.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = false });
-            var response = await client.PostAsJsonAsync("/api/setup", Account());
+            var response = await client.PostAsJsonAsync("/api/setup", Account(TestHost.SetupCode(first)));
             Assert.Equal(HttpStatusCode.Created, response.StatusCode);
             cookie = string.Join("; ", response.Headers.GetValues("Set-Cookie").Select(c => c.Split(';')[0]));
         }
@@ -269,8 +291,11 @@ public class SetupAndBootstrapHostTests
         }
 
         Assert.Equal(HttpStatusCode.OK, await MeAsync(key));
-        Assert.Equal(HttpStatusCode.Unauthorized, await MeAsync(TestHost.NewMasterKey()));
-        // The instance with the other key did not damage the keys of the first.
+        // An instance with another key does not start: it could read no stored key, and it
+        // would sign sessions with keys that the first instance cannot read.
+        using (var other = TestHost.Create(database, new Dictionary<string, string?> { ["Vellum:MasterKey"] = TestHost.NewMasterKey() }))
+            Assert.Contains("keys forget", StartFails(other).Message);
+        // The refused start changed nothing.
         Assert.Equal(HttpStatusCode.OK, await MeAsync(key));
     }
 

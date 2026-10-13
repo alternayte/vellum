@@ -56,6 +56,18 @@ public sealed record InstancePolicy(
 public static class AiProviderKinds
 {
     public static readonly IReadOnlyList<string> All = ["openai", "anthropic", "gemini", "openai-compatible"];
+
+    /// <summary>
+    /// The address of a provider that has an empty base URL, or null for a kind that has no
+    /// address of its own. A stored API key is bound to the origin of this address.
+    /// </summary>
+    public static string? DefaultBaseUrl(string kind) => kind switch
+    {
+        "openai" => "https://api.openai.com/v1",
+        "anthropic" => "https://api.anthropic.com",
+        "gemini" => "https://generativelanguage.googleapis.com",
+        _ => null,
+    };
 }
 
 public static class SettingsDefaults
@@ -97,16 +109,19 @@ public static class SettingsJson
         RespectRequiredConstructorParameters = true,
     };
 
-    public const int MaxDocumentLength = 64 * 1024;
-    public const string NotADocument = "Must be a settings document of at most 64 KB in which no field repeats.";
+    /// <summary>The largest request body of a settings endpoint, in bytes.</summary>
+    public const int MaxBodyBytes = 64 * 1024;
+    public const string NotADocument = "Must be a settings document in which no field repeats.";
+    public const string HasControlCharacter = "Must not contain control characters.";
 
     /// <summary>
-    /// The request body as a document, or null when it is not a JSON object, is too large or
-    /// repeats a field. A repeated field has no single meaning, so it is refused.
+    /// The request body as a document, or null when it is not a JSON object or repeats a
+    /// field. A repeated field has no single meaning, so it is refused. The size of the body
+    /// is limited before it is parsed.
     /// </summary>
     public static JsonObject? ToDocument(JsonElement body)
     {
-        if (body.ValueKind != JsonValueKind.Object || body.GetRawText().Length > MaxDocumentLength)
+        if (body.ValueKind != JsonValueKind.Object)
             return null;
 
         try
@@ -132,6 +147,80 @@ public static class SettingsJson
             {
                 foreach (var item in array)
                     Visit(item);
+            }
+        }
+    }
+
+    /// <summary>
+    /// The path of the first field name or text value that holds a control character, or
+    /// null. No setting needs one, and the database cannot store U+0000 in a document.
+    /// </summary>
+    public static string? FindControlCharacter(JsonNode? node, string path = "")
+    {
+        switch (node)
+        {
+            case JsonObject obj:
+                foreach (var (name, value) in obj)
+                {
+                    if (name.Any(char.IsControl))
+                        return path;
+                    if (FindControlCharacter(value, path.Length == 0 ? name : $"{path}.{name}") is { } found)
+                        return found;
+                }
+
+                return null;
+            case JsonArray array:
+                for (var i = 0; i < array.Count; i++)
+                {
+                    if (FindControlCharacter(array[i], $"{path}[{i}]") is { } found)
+                        return found;
+                }
+
+                return null;
+            case JsonValue value when value.GetValueKind() == JsonValueKind.String:
+                return value.GetValue<string>().Any(char.IsControl) ? path : null;
+            default:
+                return null;
+        }
+    }
+
+    private static bool IsUrlField(string path) =>
+        path.EndsWith("apiBaseUrl", StringComparison.Ordinal) || path.EndsWith("baseUrl", StringComparison.Ordinal)
+        || path.EndsWith("webhookUrl", StringComparison.Ordinal);
+
+    /// <summary>
+    /// The paths of the values that differ between two documents, for the audit log. A path
+    /// carries no value, with one exception: a changed URL field carries its new origin
+    /// (scheme, host and port), which shows an auditor where a credential can now go.
+    /// </summary>
+    public static IReadOnlyList<string> ChangedPaths(JsonNode? before, JsonNode? after, string path = "")
+    {
+        var changed = new List<string>();
+        Compare(before, after, path);
+        return changed;
+
+        void Compare(JsonNode? a, JsonNode? b, string at)
+        {
+            if (a is JsonObject || b is JsonObject)
+            {
+                var left = a as JsonObject;
+                var right = b as JsonObject;
+                foreach (var name in (left?.Select(p => p.Key) ?? []).Union(right?.Select(p => p.Key) ?? []).Order(StringComparer.Ordinal))
+                    Compare(left?[name], right?[name], at.Length == 0 ? name : $"{at}.{name}");
+            }
+            else if (a is JsonArray || b is JsonArray)
+            {
+                var left = a as JsonArray;
+                var right = b as JsonArray;
+                for (var i = 0; i < Math.Max(left?.Count ?? 0, right?.Count ?? 0); i++)
+                    Compare(i < (left?.Count ?? 0) ? left![i] : null, i < (right?.Count ?? 0) ? right![i] : null, $"{at}[{i}]");
+            }
+            else if (!JsonNode.DeepEquals(a, b))
+            {
+                var origin = IsUrlField(at) && b is JsonValue value && value.GetValueKind() == JsonValueKind.String
+                    ? OutboundUrlPolicy.OriginOf(value.GetValue<string>())
+                    : null;
+                changed.Add(origin is null ? at : $"{at}={origin}");
             }
         }
     }

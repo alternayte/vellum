@@ -13,12 +13,34 @@ public sealed class MasterKey
     {
         if (key.Length != Size)
             throw new ArgumentException($"A master key is {Size} bytes.", nameof(key));
-        _key = key.ToArray();
+        // The one copy of the key that the process keeps. It is pinned, so the collector
+        // never moves it and leaves no stale copy behind.
+        _key = GC.AllocateUninitializedArray<byte>(Size, pinned: true);
+        key.CopyTo(_key);
         // A keyed digest: the ID names the key in rows and diagnostics and says nothing about it.
         Id = Convert.ToHexStringLower(HMACSHA256.HashData(_key, "vellum.master-key-id"u8)[..8]);
     }
 
     public string Id { get; }
+
+    /// <summary>
+    /// A keyed digest of <paramref name="value"/> under a key that is derived from this key
+    /// for <paramref name="context"/>. Equal values in two contexts give different digests,
+    /// and a reader of the digest cannot test a guess without this key.
+    /// </summary>
+    internal byte[] Digest(ReadOnlySpan<byte> context, ReadOnlySpan<byte> value)
+    {
+        Span<byte> derived = stackalloc byte[Size];
+        try
+        {
+            HKDF.DeriveKey(HashAlgorithmName.SHA256, _key, derived, salt: [], info: context);
+            return HMACSHA256.HashData(derived, value);
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(derived);
+        }
+    }
 
     internal byte[] Encrypt(ReadOnlySpan<byte> nonce, ReadOnlySpan<byte> plaintext, ReadOnlySpan<byte> associatedData) =>
         Envelope.Encrypt(_key, nonce, plaintext, associatedData);
@@ -56,6 +78,11 @@ public sealed class MasterKeyRing
 
     public MasterKey Current { get; }
     public bool HasPrevious => _previous is not null;
+
+    /// <summary>The IDs of the keys that can unwrap: the current key and the previous key.</summary>
+    public IReadOnlyList<string> LoadedIds => _previous is null ? [Current.Id] : [Current.Id, _previous.Id];
+
+    public bool IsLoaded(string masterKeyId) => masterKeyId == Current.Id || masterKeyId == _previous?.Id;
 
     /// <summary>
     /// Encrypts <paramref name="plaintext"/> with a new random data key. The associated data
@@ -111,6 +138,15 @@ public sealed class MasterKeyRing
     }
 
     public bool IsCurrent(string masterKeyId) => masterKeyId == Current.Id;
+
+    /// <summary>
+    /// Proves that the wrapped key and the associated data are the ones that were sealed,
+    /// without decrypting the value.
+    /// </summary>
+    /// <exception cref="MasterKeyUnavailableException">The wrapping master key is not loaded.</exception>
+    /// <exception cref="CryptographicException">The wrapped key or its associated data was changed.</exception>
+    public void Verify(SealedValue value, ReadOnlySpan<byte> associatedData) =>
+        CryptographicOperations.ZeroMemory(Unwrap(value, associatedData));
 
     private byte[] Unwrap(SealedValue value, ReadOnlySpan<byte> associatedData)
     {

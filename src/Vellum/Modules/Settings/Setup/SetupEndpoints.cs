@@ -14,7 +14,13 @@ using Vellum.Shared;
 
 namespace Vellum.Modules.Settings.Setup;
 
-public sealed record SetupStatusResponse(bool NeedsSetup, string Profile, bool RequiresSetupToken);
+/// <summary>
+/// <paramref name="RequiresSetupToken"/> is true in both profiles. <paramref name="SetupTokenHint"/> says
+/// where the person who runs setup finds the value: <c>log</c> (a generated setup code, in the
+/// log of the app and in the file <c>setup-code</c> in its data directory) or <c>operator</c> (the
+/// setup token that the operator set). It is null when the instance needs no setup.
+/// </summary>
+public sealed record SetupStatusResponse(bool NeedsSetup, string Profile, bool RequiresSetupToken, string? SetupTokenHint);
 public sealed record SetupRequest(string? Email, string? Password, string? DisplayName, string? WorkspaceName, string? SetupToken);
 public sealed record SetupResponse(string UserId, Guid WorkspaceId);
 
@@ -25,28 +31,24 @@ public static class SetupState
         !await identity.Users.AnyAsync(ct);
 
     /// <summary>
-    /// A hosted instance with no user and no setup token would give the admin account to the
-    /// first caller, so it does not start.
+    /// Runs before the host accepts requests: refuses a hosted instance that has no user and
+    /// no setup token, and gives a local instance that has no user its setup code.
     /// </summary>
-    public static async Task RefuseOpenHostedSetupAsync(IServiceProvider services, CancellationToken ct = default)
+    public static async Task PrepareAsync(IServiceProvider services, CancellationToken ct = default)
     {
         using var scope = services.CreateScope();
-        var bootstrap = scope.ServiceProvider.GetRequiredService<Bootstrap>();
-        if (bootstrap.Profile != OperatingProfile.Hosted || bootstrap.SetupToken is not null)
-            return;
-
-        if (await NeedsSetupAsync(scope.ServiceProvider.GetRequiredService<AppIdentityDbContext>(), ct))
-            throw new BootstrapException(
-                "The hosted profile has no user yet and no setup token. Set Vellum__SetupToken to at least " +
-                $"{Bootstrap.MinimumSetupTokenLength} random characters and give it to the person who runs first-time setup.");
+        var needsSetup = await NeedsSetupAsync(scope.ServiceProvider.GetRequiredService<AppIdentityDbContext>(), ct);
+        scope.ServiceProvider.GetRequiredService<SetupAccess>().Prepare(needsSetup);
     }
 }
 
 public static class GetSetupStatus
 {
-    public static async Task<IResult> Handle(Bootstrap bootstrap, AppIdentityDbContext identity, CancellationToken ct) =>
-        Results.Ok(new SetupStatusResponse(
-            await SetupState.NeedsSetupAsync(identity, ct), bootstrap.ProfileName, bootstrap.RequiresSetupToken));
+    public static async Task<IResult> Handle(Bootstrap bootstrap, SetupAccess access, AppIdentityDbContext identity, CancellationToken ct)
+    {
+        var needsSetup = await SetupState.NeedsSetupAsync(identity, ct);
+        return Results.Ok(new SetupStatusResponse(needsSetup, bootstrap.ProfileName, true, needsSetup ? access.Hint : null));
+    }
 }
 
 public static class RunSetup
@@ -54,9 +56,12 @@ public static class RunSetup
     // Any constant works; every Vellum instance must use the same one.
     private const long LockKey = 0x56454C5345545550;
 
+    /// <summary>Five short text fields.</summary>
+    public const int MaxBodyBytes = 4 * 1024;
+
     public static async Task<IResult> Handle(
         SetupRequest request,
-        Bootstrap bootstrap,
+        SetupAccess access,
         IConfiguration configuration,
         AppIdentityDbContext identity,
         WorkspacesDbContext workspaces,
@@ -68,10 +73,12 @@ public static class RunSetup
         if (!await SetupState.NeedsSetupAsync(identity, ct))
             return AlreadySetUp();
 
-        if (bootstrap.RequiresSetupToken && !TokenMatches(bootstrap.SetupToken, request.SetupToken))
+        if (!access.Matches(request.SetupToken))
             return Results.Json(
                 new ErrorResponse("invalid_setup_token", "The setup token is missing or wrong",
-                    "Use the value of Vellum__SetupToken from the environment of this instance."),
+                    access.Hint == "operator"
+                        ? "Use the value of Vellum__SetupToken from the environment of this instance."
+                        : $"Use the setup code from the log of this instance (the line that contains '{SetupAccess.LogMarker}') or from the file '{SetupAccess.CodeFileName}' in its data directory."),
                 statusCode: StatusCodes.Status403Forbidden);
 
         var errors = new List<FieldError>();
@@ -138,6 +145,7 @@ public static class RunSetup
         foreach (var context in contexts)
             await context.Database.UseTransactionAsync(null, ct);
 
+        access.Complete();
         await signIn.SignInAsync(user, isPersistent: true);
         return Results.Created("/api/auth/me", new SetupResponse(user.Id, workspaceId));
     }
@@ -145,15 +153,6 @@ public static class RunSetup
     private static IResult AlreadySetUp() =>
         Results.Conflict(new ErrorResponse("already_set_up", "This instance is already set up", "Sign in with an existing account."));
 
-    // Both sides are hashed first, so the comparison takes the same time for any input length.
-    private static bool TokenMatches(string? expected, string? supplied)
-    {
-        if (expected is null || string.IsNullOrEmpty(supplied))
-            return false;
-        return CryptographicOperations.FixedTimeEquals(
-            SHA256.HashData(Encoding.UTF8.GetBytes(expected)),
-            SHA256.HashData(Encoding.UTF8.GetBytes(supplied)));
-    }
 }
 
 /// <summary>Decides whether a new account may be created outside first-run setup.</summary>

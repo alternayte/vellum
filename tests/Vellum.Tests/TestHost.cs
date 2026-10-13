@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
+using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
@@ -76,7 +77,7 @@ internal static class TestHost
     };
 
     public const string SetupToken = "setup-token-for-tests-0123456789";
-    public const string AdminPassword = "Admin123!";
+    public const string AdminPassword = "Admin12345!";
 
     /// <summary>A cookie-keeping client. A hosted instance marks its cookie Secure, so its client uses https.</summary>
     public static HttpClient Client(WebApplicationFactory<Program> factory, bool https = false) =>
@@ -93,10 +94,38 @@ internal static class TestHost
     {
         var client = Client(factory, https);
         var email = $"admin-{Guid.NewGuid():N}@vellum.local";
+        setupToken ??= SetupCode(factory);
         var response = await Created(client.PostAsJsonAsync("/api/setup",
             new { email, password = AdminPassword, displayName = "Admin", workspaceName = "Home", setupToken }));
         return (client, (await response.Content.ReadFromJsonAsync<SetupResponse>())!, email);
     }
+
+    /// <summary>
+    /// The setup code that a local instance with no user generated when it started, read
+    /// from the file where an operator finds it.
+    /// </summary>
+    public static string SetupCode(WebApplicationFactory<Program> factory) =>
+        File.ReadAllText(factory.Services.GetRequiredService<SetupAccess>().CodeFilePath).Trim();
+
+    /// <summary>
+    /// Saves settings as a client does: reads the current version, then sends it in
+    /// <c>If-Match</c>. A caller that cannot read the settings sends version 0.
+    /// </summary>
+    public static async Task<HttpResponseMessage> PutSettingsAsync(this HttpClient client, string url, HttpContent content)
+    {
+        using var current = await client.GetAsync(url);
+        using var request = new HttpRequestMessage(HttpMethod.Put, url) { Content = content };
+        request.Headers.TryAddWithoutValidation("If-Match", current.Headers.ETag?.Tag ?? "\"0\"");
+        return await client.SendAsync(request);
+    }
+
+    /// <summary>Saves the policy and the defaults of <paramref name="settings"/>; its other fields are response fields.</summary>
+    public static Task<HttpResponseMessage> PutInstanceSettingsAsync(this HttpClient client, JsonObject settings) =>
+        client.PutSettingsAsync("/api/instance/settings", JsonContent.Create(new JsonObject
+        {
+            ["policy"] = settings["policy"]?.DeepClone(),
+            ["defaults"] = settings["defaults"]?.DeepClone(),
+        }));
 
     /// <summary>A resolver for tests: named hosts map to fixed addresses and no test reaches DNS.</summary>
     public static void UseResolver(IServiceCollection services, IReadOnlyDictionary<string, string> hosts) =>
@@ -115,7 +144,7 @@ internal static class TestHost
     {
         var client = factory.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = true, AllowAutoRedirect = false });
         var response = await client.PostAsJsonAsync("/api/auth/register",
-            new { email = $"test-{Guid.NewGuid():N}@vellum.local", password = "Test123!", displayName = "Test User" });
+            new { email = $"test-{Guid.NewGuid():N}@vellum.local", password = "Test12345!", displayName = "Test User" });
         Assert.True(response.IsSuccessStatusCode, await response.Content.ReadAsStringAsync());
         return client;
     }

@@ -5,6 +5,8 @@ namespace Vellum.Modules.Identity;
 
 public static class IdentityModule
 {
+    public const int MinimumPasswordLength = 10;
+
     public static IServiceCollection AddIdentityModule(this IServiceCollection services, IConfiguration config)
     {
         var connectionString = config.GetConnectionString("DefaultConnection")!;
@@ -16,10 +18,16 @@ public static class IdentityModule
         services.AddIdentity<ApplicationUser, IdentityRole>(options =>
             {
                 options.Password.RequireDigit = true;
-                options.Password.RequiredLength = 6;
+                // For new passwords. An account from before this rule signs in as before.
+                options.Password.RequiredLength = MinimumPasswordLength;
                 options.Password.RequireNonAlphanumeric = false;
                 options.Password.RequireUppercase = true;
                 options.User.RequireUniqueEmail = true;
+                // Five wrong passwords lock the account for a short time. The sign-in endpoint
+                // answers a locked account like a wrong password.
+                options.Lockout.AllowedForNewUsers = true;
+                options.Lockout.MaxFailedAccessAttempts = 5;
+                options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(5);
             })
             .AddEntityFrameworkStores<AppIdentityDbContext>()
             .AddDefaultTokenProviders();

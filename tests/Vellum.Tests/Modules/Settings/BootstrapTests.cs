@@ -21,11 +21,14 @@ public class BootstrapTests : IDisposable
 
     private static string NewKey() => TestHost.NewMasterKey();
 
+    // As on an empty database: no row is under any key.
+    private static Bootstrap Load(IConfiguration configuration) => Bootstrap.Load(configuration, () => []);
+
     [Fact]
     public void Hosted_without_a_master_key_refuses_and_states_the_fix()
     {
         var ex = Assert.Throws<BootstrapException>(() =>
-            Bootstrap.Load(Config(("Vellum:Profile", "hosted"), ("AllowedHosts", "vellum.example.com"), ("Vellum:DataDirectory", _directory))));
+            Load(Config(("Vellum:Profile", "hosted"), ("AllowedHosts", "vellum.example.com"), ("Vellum:DataDirectory", _directory))));
 
         Assert.Contains("Vellum__MasterKey", ex.Message);
         Assert.Contains("openssl rand -base64 32", ex.Message);
@@ -38,17 +41,26 @@ public class BootstrapTests : IDisposable
     [InlineData("")]
     [InlineData(null)]
     [InlineData("vellum.example.com;*")]
+    [InlineData("*;vellum.example.com")]
+    [InlineData("vellum.example.com;0.0.0.0")]
+    [InlineData("0.0.0.0")]
+    [InlineData("[::];vellum.example.com")]
+    [InlineData("vellum.example.com;::")]
+    [InlineData("*.example.com")]
+    [InlineData("vellum.example.com;;other.example.com")]
+    [InlineData("vellum.example.com;")]
+    [InlineData(" ; ")]
     public void Hosted_with_any_host_allowed_refuses(string? allowedHosts)
     {
         var ex = Assert.Throws<BootstrapException>(() =>
-            Bootstrap.Load(Config(("Vellum:Profile", "hosted"), ("Vellum:MasterKey", NewKey()), ("AllowedHosts", allowedHosts))));
+            Load(Config(("Vellum:Profile", "hosted"), ("Vellum:MasterKey", NewKey()), ("AllowedHosts", allowedHosts))));
         Assert.Contains("AllowedHosts", ex.Message);
     }
 
     [Fact]
     public void Hosted_with_cookies_not_marked_secure_refuses()
     {
-        var ex = Assert.Throws<BootstrapException>(() => Bootstrap.Load(Config(
+        var ex = Assert.Throws<BootstrapException>(() => Load(Config(
             ("Vellum:Profile", "hosted"), ("Vellum:MasterKey", NewKey()), ("AllowedHosts", "vellum.example.com"), ("Vellum:SecureCookies", "false"))));
         Assert.Contains("Vellum__SecureCookies", ex.Message);
     }
@@ -56,7 +68,7 @@ public class BootstrapTests : IDisposable
     [Fact]
     public void Hosted_with_a_short_setup_token_refuses()
     {
-        var ex = Assert.Throws<BootstrapException>(() => Bootstrap.Load(Config(
+        var ex = Assert.Throws<BootstrapException>(() => Load(Config(
             ("Vellum:Profile", "hosted"), ("Vellum:MasterKey", NewKey()), ("AllowedHosts", "vellum.example.com"), ("Vellum:SetupToken", "short"))));
         Assert.Contains("Vellum__SetupToken", ex.Message);
     }
@@ -64,13 +76,12 @@ public class BootstrapTests : IDisposable
     [Fact]
     public void A_safe_hosted_bootstrap_loads_with_secure_cookies()
     {
-        var bootstrap = Bootstrap.Load(Config(
+        var bootstrap = Load(Config(
             ("Vellum:Profile", "Hosted"), ("Vellum:MasterKey", NewKey()), ("AllowedHosts", "vellum.example.com"), ("Vellum:SetupToken", TestHost.SetupToken)));
 
         Assert.Equal(OperatingProfile.Hosted, bootstrap.Profile);
         Assert.Equal("hosted", bootstrap.ProfileName);
         Assert.True(bootstrap.SecureCookies);
-        Assert.True(bootstrap.RequiresSetupToken);
         Assert.False(bootstrap.Keys.HasPrevious);
     }
 
@@ -79,19 +90,18 @@ public class BootstrapTests : IDisposable
     {
         var config = Config(("Vellum:DataDirectory", _directory), ("AllowedHosts", "*"), ("Vellum:SecureCookies", "false"));
 
-        var first = Bootstrap.Load(config);
+        var first = Load(config);
         var path = Path.Combine(_directory, Bootstrap.MasterKeyFileName);
 
         Assert.Equal(OperatingProfile.Local, first.Profile);
         Assert.False(first.SecureCookies);
-        Assert.False(first.RequiresSetupToken);
         Assert.True(File.Exists(path));
         Assert.Equal(32, Convert.FromBase64String(File.ReadAllText(path)).Length);
         if (!OperatingSystem.IsWindows())
             Assert.Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite, File.GetUnixFileMode(path));
 
         var written = File.ReadAllText(path);
-        var second = Bootstrap.Load(config);
+        var second = Load(config);
 
         Assert.Equal(first.Keys.Current.Id, second.Keys.Current.Id);
         Assert.Equal(written, File.ReadAllText(path));
@@ -104,7 +114,7 @@ public class BootstrapTests : IDisposable
         var config = Config(("Vellum:DataDirectory", _directory));
 
         var ids = Enumerable.Range(0, 16).AsParallel().WithDegreeOfParallelism(16)
-            .Select(_ => Bootstrap.Load(config).Keys.Current.Id).Distinct().ToList();
+            .Select(_ => Load(config).Keys.Current.Id).Distinct().ToList();
 
         Assert.Single(ids);
         Assert.Single(Directory.GetFiles(_directory));
@@ -121,8 +131,8 @@ public class BootstrapTests : IDisposable
         File.WriteAllText(keyFile, key + "\n");
         File.WriteAllText(previousFile, previous);
 
-        var fromFiles = Bootstrap.Load(Config(("Vellum:MasterKeyFile", keyFile), ("Vellum:PreviousMasterKeyFile", previousFile)));
-        var inline = Bootstrap.Load(Config(("Vellum:MasterKey", key), ("Vellum:PreviousMasterKey", previous)));
+        var fromFiles = Load(Config(("Vellum:MasterKeyFile", keyFile), ("Vellum:PreviousMasterKeyFile", previousFile)));
+        var inline = Load(Config(("Vellum:MasterKey", key), ("Vellum:PreviousMasterKey", previous)));
 
         Assert.Equal(inline.Keys.Current.Id, fromFiles.Keys.Current.Id);
         Assert.True(fromFiles.Keys.HasPrevious);
@@ -135,18 +145,120 @@ public class BootstrapTests : IDisposable
     [InlineData("c2hvcnQ=")]
     public void A_malformed_master_key_refuses_without_repeating_it(string value)
     {
-        var ex = Assert.Throws<BootstrapException>(() => Bootstrap.Load(Config(("Vellum:MasterKey", value))));
+        var ex = Assert.Throws<BootstrapException>(() => Load(Config(("Vellum:MasterKey", value))));
         Assert.DoesNotContain(value, ex.Message);
     }
 
     [Fact]
     public void A_master_key_given_twice_or_as_a_missing_file_refuses()
     {
-        Assert.Throws<BootstrapException>(() => Bootstrap.Load(Config(
+        Assert.Throws<BootstrapException>(() => Load(Config(
             ("Vellum:MasterKey", NewKey()), ("Vellum:MasterKeyFile", Path.Combine(_directory, "k")))));
-        Assert.Throws<BootstrapException>(() => Bootstrap.Load(Config(
+        Assert.Throws<BootstrapException>(() => Load(Config(
             ("Vellum:MasterKeyFile", Path.Combine(_directory, "missing")))));
-        Assert.Throws<BootstrapException>(() => Bootstrap.Load(Config(("Vellum:Profile", "production"))));
+        Assert.Throws<BootstrapException>(() => Load(Config(("Vellum:Profile", "production"))));
+    }
+
+    [Fact]
+    public async Task A_refused_start_ends_the_process_with_the_reason_and_exit_code_1()
+    {
+        // The real program, as a container runs it. A process that only threw would end by an
+        // abort signal, which the kernel ignores for the first process of a container.
+        var start = new System.Diagnostics.ProcessStartInfo("dotnet")
+        {
+            WorkingDirectory = AppContext.BaseDirectory,
+            RedirectStandardError = true,
+            RedirectStandardOutput = true,
+        };
+        start.ArgumentList.Add(typeof(Program).Assembly.Location);
+        start.Environment["ASPNETCORE_ENVIRONMENT"] = "Production";
+        start.Environment["Vellum__Profile"] = "hosted";
+        start.Environment["Vellum__MasterKey"] = "";
+        start.Environment["Vellum__MasterKeyFile"] = "";
+        start.Environment["AllowedHosts"] = "vellum.example.com";
+
+        using var process = System.Diagnostics.Process.Start(start)!;
+        var error = process.StandardError.ReadToEndAsync();
+        var output = process.StandardOutput.ReadToEndAsync();
+        using var limit = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        try
+        {
+            await process.WaitForExitAsync(limit.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            process.Kill(entireProcessTree: true);
+            Assert.Fail("The refused process did not end.");
+        }
+
+        Assert.Equal(1, process.ExitCode);
+        var message = await error;
+        await output;
+        Assert.StartsWith("Vellum did not start. The hosted profile needs a master key.", message);
+        Assert.DoesNotContain("   at ", message);
+    }
+
+    [Fact]
+    public void A_key_file_that_other_users_can_read_refuses_and_states_the_fix()
+    {
+        if (OperatingSystem.IsWindows())
+            return;
+        var config = Config(("Vellum:DataDirectory", _directory));
+        Load(config);
+        var path = Path.Combine(_directory, Bootstrap.MasterKeyFileName);
+
+        foreach (var mode in new[] { UnixFileMode.GroupRead, UnixFileMode.OtherRead, UnixFileMode.OtherWrite })
+        {
+            File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite | mode);
+            var ex = Assert.Throws<BootstrapException>(() => Load(config));
+            Assert.Contains($"chmod 600 {path}", ex.Message);
+        }
+
+        File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        Load(config);
+    }
+
+    [Fact]
+    public void No_key_file_is_created_while_the_database_holds_rows_under_another_key()
+    {
+        var config = Config(("Vellum:DataDirectory", _directory));
+        IReadOnlyList<MasterKeyUsage> inUse = [new("0123456789abcdef", Secrets: 2, DataProtectionKeys: 1)];
+
+        var ex = Assert.Throws<BootstrapException>(() => Bootstrap.Load(config, () => inUse));
+
+        Assert.Contains("key 0123456789abcdef (2 stored credentials, 1 session key)", ex.Message);
+        Assert.Contains("keys forget --yes", ex.Message);
+        Assert.False(File.Exists(Path.Combine(_directory, Bootstrap.MasterKeyFileName)));
+
+        // With a key from the environment the question is not asked here: the start-up check compares the keys.
+        var asked = false;
+        Bootstrap.Load(Config(("Vellum:DataDirectory", _directory), ("Vellum:MasterKey", NewKey())), () => { asked = true; return inUse; });
+        Assert.False(asked);
+        // An existing key file is read and the question is not asked either.
+        Load(config);
+        Bootstrap.Load(config, () => { asked = true; return inUse; });
+        Assert.False(asked);
+    }
+
+    [Fact]
+    public void The_start_up_check_names_each_key_that_is_not_loaded()
+    {
+        var current = RandomNumberGenerator.GetBytes(32);
+        var previous = RandomNumberGenerator.GetBytes(32);
+        var ring = Ring(current, previous);
+        var currentId = ring.Current.Id;
+        var previousId = new MasterKey(previous).Id;
+
+        MasterKeyGuard.EnsureLoaded(ring, []);
+        MasterKeyGuard.EnsureLoaded(ring, [new(currentId, 3, 1), new(previousId, 1, 0)]);
+
+        var ex = Assert.Throws<BootstrapException>(() => MasterKeyGuard.EnsureLoaded(ring,
+            [new(currentId, 3, 1), new("aaaaaaaaaaaaaaaa", 1, 0), new("bbbbbbbbbbbbbbbb", 0, 2)]));
+        Assert.Contains("key aaaaaaaaaaaaaaaa (1 stored credential, 0 session keys)", ex.Message);
+        Assert.Contains("key bbbbbbbbbbbbbbbb (0 stored credentials, 2 session keys)", ex.Message);
+        Assert.Contains($"The loaded keys are: {currentId}, {previousId}", ex.Message);
+        Assert.Contains("Vellum__PreviousMasterKey", ex.Message);
+        Assert.Contains("keys forget --yes", ex.Message);
     }
 
     // ---- Envelope ------------------------------------------------------------

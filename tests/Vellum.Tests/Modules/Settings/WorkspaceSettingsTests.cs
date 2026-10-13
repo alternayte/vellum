@@ -78,7 +78,7 @@ public class WorkspaceSettingsTests
               "notifications": { "webhookUrl": "https://hooks.example.com/vellum" }
             }
             """;
-        var saved = await ReadAsync(await owner.PutAsync(url, Json(overrides)));
+        var saved = await ReadAsync(await owner.PutSettingsAsync(url, Json(overrides)));
 
         var read = await ReadAsync(await owner.GetAsync(url));
         Assert.True(JsonNode.DeepEquals(saved, read));
@@ -105,14 +105,14 @@ public class WorkspaceSettingsTests
         Assert.Equal(2000, (int)read["defaults"]!["import"]!["maxFiles"]!);
 
         // The body replaces the overrides: what it leaves out is no longer overridden.
-        var cleared = await ReadAsync(await owner.PutAsync(url, Json("""{ "cost": { "region": "eu-west-1" } }""")));
+        var cleared = await ReadAsync(await owner.PutSettingsAsync(url, Json("""{ "cost": { "region": "eu-west-1" } }""")));
         Assert.Equal(2000, (int)cleared["effective"]!["import"]!["maxFiles"]!);
         Assert.Empty(cleared["effective"]!["ai"]!["providers"]!.AsArray());
         Assert.Null(cleared["effective"]!["usage"]!["monthlyAiBudgetUsd"]);
         Assert.Equal("eu-west-1", (string)cleared["effective"]!["cost"]!["region"]!);
         Assert.Equal("USD", (string)cleared["effective"]!["cost"]!["currency"]!);
 
-        var empty = await ReadAsync(await owner.PutAsync(url, Json("{}")));
+        var empty = await ReadAsync(await owner.PutSettingsAsync(url, Json("{}")));
         Assert.True(JsonNode.DeepEquals(empty["effective"], empty["defaults"]));
     }
 
@@ -200,7 +200,7 @@ public class WorkspaceSettingsTests
         var (workspaceId, _) = await TestHost.CreateProjectAsync(owner);
         var url = $"/api/workspaces/{workspaceId}/settings";
 
-        var response = await owner.PutAsync(url, Json(overrides));
+        var response = await owner.PutSettingsAsync(url, Json(overrides));
 
         var body = await response.Content.ReadAsStringAsync();
         Assert.True(response.StatusCode == HttpStatusCode.BadRequest, body);
@@ -222,7 +222,7 @@ public class WorkspaceSettingsTests
         using var owner = await TestHost.SignInAsync(factory);
         var (workspaceId, _) = await TestHost.CreateProjectAsync(owner);
 
-        var response = await owner.PutAsync($"/api/workspaces/{workspaceId}/settings", Json(body));
+        var response = await owner.PutSettingsAsync($"/api/workspaces/{workspaceId}/settings", Json(body));
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
@@ -235,7 +235,7 @@ public class WorkspaceSettingsTests
         var (workspaceId, _) = await TestHost.CreateProjectAsync(owner);
         var url = $"/api/workspaces/{workspaceId}/settings";
 
-        var routed = await ReadAsync(await owner.PutAsync(url, Json($$"""
+        var routed = await ReadAsync(await owner.PutSettingsAsync(url, Json($$"""
             { "ai": { "providers": [ {{ProviderJson()}} ],
                       "taskRouting": { "inferArchitecture": "{{ProviderA}}", "proposeFlow": null, "critique": "{{ProviderA}}", "explain": null } },
               "notifications": { "webhookUrl": null }, "usage": { "monthlyAiBudgetUsd": null } }
@@ -255,7 +255,7 @@ public class WorkspaceSettingsTests
         using var owner = await TestHost.SignInAsync(factory);
         var (workspaceId, _) = await TestHost.CreateProjectAsync(owner);
 
-        var saved = await ReadAsync(await owner.PutAsync($"/api/workspaces/{workspaceId}/settings", Json("""
+        var saved = await ReadAsync(await owner.PutSettingsAsync($"/api/workspaces/{workspaceId}/settings", Json("""
             { "github": { "apiBaseUrl": "http://192.168.1.50:3000/api/v3" },
               "notifications": { "webhookUrl": "http://localhost:9000/hook" },
               "privacy": { "sendPrivateCodeToAi": true } }
