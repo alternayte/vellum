@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RestoreSources>https://deploy:hunter2-planted@nuget.acme.example/v3/index.json</RestoreSources>
+    <NuGetToken>ghp_PLANTEDplanted0123456789</NuGetToken>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MassTransit.RabbitMQ" Version="8.3.4" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.2" />
+    <ProjectReference Include="..\ghp_PLANTEDplanted0123456789\Shared.csproj" />
+  </ItemGroup>
+
+</Project>
