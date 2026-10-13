@@ -16,7 +16,9 @@ using Vellum.Modules.Modelling;
 using Vellum.Modules.Modelling.Contracts;
 using Vellum.Modules.Modelling.Model;
 using Vellum.Modules.Modelling.Revisions;
+using Vellum.Modules.Build;
 using Vellum.Modules.Modelling.Variants;
+using Vellum.Modules.Promises;
 using Vellum.Modules.Docs;
 using Vellum.Modules.Drafts;
 using Vellum.Modules.Schemas;
@@ -81,7 +83,8 @@ builder.Services.AddDeedbox(deedbox => deedbox
     .UsePostgres(services => services.GetRequiredService<IConfiguration>().GetConnectionString("DefaultConnection")!)
     .AddModelStreams()
     .AddSchemaStreams()
-    .AddScenarioStreams());
+    .AddScenarioStreams()
+    .AddPromiseStreams());
 
 // Build-time OpenAPI generation starts the host with no database. Deedbox checks its
 // schema when the host starts, so its hosted services do not run in that process.
@@ -111,6 +114,8 @@ builder.Services.AddOutbound();
 builder.Services.AddGitHubModule();
 builder.Services.AddAiModule();
 builder.Services.AddImportModule(runWorker: !generatingOpenApi);
+builder.Services.AddPromisesModule();
+builder.Services.AddBuildModule();
 
 // Command handlers (Scrutor scan)
 builder.Services.Scan(s => s.FromAssemblyOf<Program>()
@@ -172,6 +177,8 @@ app.MapSettingsEndpoints();
 app.MapGitHubEndpoints();
 app.MapAiEndpoints();
 app.MapImportEndpoints();
+app.MapPromiseEndpoints();
+app.MapBuildEndpoints();
 
 if (!generatingOpenApi && app.Configuration.GetValue("Database:MigrateOnStartup", true))
 {

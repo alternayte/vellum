@@ -1,0 +1,288 @@
+using System.Text.Json;
+using System.Text.RegularExpressions;
+using Vellum.Modules.Modelling.Export;
+using Vellum.Modules.Modelling.Model;
+using Vellum.Modules.Promises;
+using Vellum.Modules.Trace.Engine;
+
+namespace Vellum.Modules.Build;
+
+/// <summary>An HTTP operation whose name is a method and a path, such as <c>POST /orders</c>.</summary>
+internal sealed record Route(OperationState Operation, string Method, string Path);
+
+/// <summary>
+/// The machine-readable contract files of a bundle: <c>architecture.json</c>, one OpenAPI
+/// document per service that owns a routed HTTP operation, and one AsyncAPI document for the
+/// project's channels. They are generated from the pinned model and hold nothing else.
+/// </summary>
+internal static partial class ContractDocuments
+{
+    private static readonly string[] Methods = ["GET", "PUT", "POST", "DELETE", "OPTIONS", "HEAD", "PATCH", "TRACE"];
+
+    [GeneratedRegex(@"\A(GET|PUT|POST|DELETE|OPTIONS|HEAD|PATCH|TRACE)[ \t]+(/[^\s]*)\z", RegexOptions.IgnoreCase)]
+    private static partial Regex RouteName();
+
+    /// <summary>
+    /// The routed HTTP operations of each owner. A routed operation is an <c>http</c>
+    /// operation named as a method and a path. When two operations of one owner have the same
+    /// method and path, the one with the lower ID is routed and the other is not.
+    /// </summary>
+    public static IReadOnlyDictionary<Guid, IReadOnlyList<Route>> Routes(BuildView view) =>
+        view.Operations
+            .Where(o => o.Transport == Transport.Http)
+            .Select(o => (Operation: o, Match: RouteName().Match(o.Name)))
+            .Where(x => x.Match.Success)
+            .Select(x => new Route(x.Operation, x.Match.Groups[1].Value.ToUpperInvariant(), x.Match.Groups[2].Value))
+            .GroupBy(r => r.Operation.OwnerId.Value)
+            .ToDictionary(
+                g => g.Key,
+                g => (IReadOnlyList<Route>)[.. g.GroupBy(r => (r.Method, r.Path))
+                    .Select(same => same.OrderBy(r => r.Operation.Id.Value).First())
+                    .OrderBy(r => r.Path, StringComparer.Ordinal).ThenBy(r => Array.IndexOf(Methods, r.Method))]);
+
+    public static string OpenApiPath(Guid ownerId) => $"openapi/{ownerId}.yaml";
+
+    public const string AsyncApiPath = "asyncapi.yaml";
+
+    // The keys of the AsyncAPI operations hold IDs with their dashes. A long run of letters and
+    // digits reads as a credential to the import extractor, which then leaves the operation out.
+    public static string ReceiveKey(Guid subscriptionId) => $"receive.{subscriptionId}";
+
+    public static string SendKey(Guid publisherId, Guid channelId) => $"send.{publisherId}.{channelId}";
+
+    /// <summary>The existing model export document, plus the promises.</summary>
+    public static byte[] Architecture(BuildView view)
+    {
+        var model = view.Model;
+        var document = new
+        {
+            version = "1.0",
+            project = new ProjectInfo(view.Input.ProjectName),
+            elements = model.Elements.Values.OrderBy(e => e.Id.Value).Select(e => new ElementExport(
+                e.Id, e.Kind.ToString().ToLowerInvariant(), e.Name, e.Description, e.Technology,
+                e.Status.ToString().ToLowerInvariant(), e.ParentId, e.Tags, e.Icon,
+                e.FactStatus.ToApiString(), ProvenanceExport.From(e.Provenance))),
+            relationships = model.Relationships.Values.OrderBy(r => r.Id.Value).Select(r => new RelationshipExport(
+                r.Id, r.FromId, r.ToId, r.Label, r.Technology, r.Kind.ToString().ToLowerInvariant(), r.LineShape,
+                r.FactStatus.ToApiString(), ProvenanceExport.From(r.Provenance))),
+            messages = model.Messages.Values.OrderBy(m => m.Id.Value).Select(m => new MessageExport(
+                m.Id, m.Name, m.Description, m.ProducerId, [.. m.ConsumerIds.Select(c => c.Value)], m.SchemaId, m.Tags,
+                m.FactStatus.ToApiString(), ProvenanceExport.From(m.Provenance))),
+            schemas = view.Input.Schemas.OrderBy(s => s.Id).Select(s => new SchemaExport(s.Id, s.Name, s.Description, s.Content, s.Version)),
+            operations = model.Operations.Values.OrderBy(o => o.Id.Value).Select(o => new OperationExport(
+                o.Id, o.OwnerId, o.Name, o.Transport.ToString().ToLowerInvariant(), o.RequestSchemaId, o.ResponseSchemaId,
+                o.TimeoutMs, new RetryExport(o.Retry.MaxAttempts, o.Retry.BackoffMs),
+                o.FactStatus.ToApiString(), ProvenanceExport.From(o.Provenance))),
+            channels = model.Channels.Values.OrderBy(c => c.Id.Value).Select(c => new ChannelExport(
+                c.Id, c.Name, c.Kind.ToString().ToLowerInvariant(), c.FactStatus.ToApiString(), ProvenanceExport.From(c.Provenance))),
+            subscriptions = model.Subscriptions.Values.OrderBy(s => s.Id.Value).Select(s => new SubscriptionExport(
+                s.Id, s.ChannelId, s.ConsumerId, new RetryExport(s.Retry.MaxAttempts, s.Retry.BackoffMs), s.DeadLetterChannelId,
+                s.FactStatus.ToApiString(), ProvenanceExport.From(s.Provenance))),
+            staleFacts = StaleFacts(model),
+            promises = view.Promises.Select(PromiseDocuments.Export),
+        };
+        return BuildText.CanonicalJson(document);
+    }
+
+    /// <summary>Every fact a scan marked stale, by ID. The export format of the model has no place for the mark.</summary>
+    private static IEnumerable<object> StaleFacts(ModelState model) =>
+        model.Elements.Values.Where(e => e.Stale is not null).Select(e => (Id: e.Id.Value, Kind: "element", e.Stale))
+            .Concat(model.Relationships.Values.Where(r => r.Stale is not null).Select(r => (Id: r.Id.Value, Kind: "relationship", r.Stale)))
+            .Concat(model.Messages.Values.Where(m => m.Stale is not null).Select(m => (Id: m.Id.Value, Kind: "message", m.Stale)))
+            .Concat(model.Operations.Values.Where(o => o.Stale is not null).Select(o => (Id: o.Id.Value, Kind: "operation", o.Stale)))
+            .Concat(model.Channels.Values.Where(c => c.Stale is not null).Select(c => (Id: c.Id.Value, Kind: "channel", c.Stale)))
+            .Concat(model.Subscriptions.Values.Where(s => s.Stale is not null).Select(s => (Id: s.Id.Value, Kind: "subscription", s.Stale)))
+            .OrderBy(f => f.Id)
+            .Select(f => (object)new { id = f.Id, kind = f.Kind, sinceRevision = f.Stale!.SinceRevision, reason = f.Stale.Reason });
+
+    /// <summary>OpenAPI 3.1 for the routed HTTP operations of one service.</summary>
+    public static byte[] OpenApi(BuildView view, Guid ownerId, IReadOnlyList<Route> routes)
+    {
+        var used = routes.SelectMany(r => new[] { r.Operation.RequestSchemaId, r.Operation.ResponseSchemaId })
+            .OfType<SchemaId>().Select(id => id.Value).Where(view.SchemasById.ContainsKey).Distinct().ToList();
+        var schemaKeys = BuildText.Keys(used.Select(id => (id, view.SchemasById[id].Name)));
+
+        var paths = new OrderedDictionary<string, object?>();
+        foreach (var byPath in routes.GroupBy(r => r.Path))
+        {
+            var item = new OrderedDictionary<string, object?>();
+            foreach (var route in byPath)
+            {
+                var operation = route.Operation;
+                var entry = BuildText.Map(
+                    ("operationId", operation.Id.Value.ToString()),
+                    ("summary", operation.Name),
+                    ("x-vellum-truth", operation.FactStatus.ToApiString()),
+                    ("x-vellum-timeout-ms", operation.TimeoutMs),
+                    ("x-vellum-retry", BuildText.Map(("maxAttempts", operation.Retry.MaxAttempts), ("backoffMs", operation.Retry.BackoffMs))));
+                if (Reference(operation.RequestSchemaId) is { } request)
+                    entry["requestBody"] = BuildText.Map(("required", true), ("content", Content(request)));
+                var response = BuildText.Map(("description", "The declared response."));
+                if (Reference(operation.ResponseSchemaId) is { } responseSchema)
+                    response["content"] = Content(responseSchema);
+                // The model declares one response contract and no status codes.
+                entry["responses"] = BuildText.Map(("default", response));
+                item[route.Method.ToLowerInvariant()] = entry;
+            }
+            paths[byPath.Key] = item;
+        }
+
+        var document = BuildText.Map(
+            ("openapi", "3.1.0"),
+            ("info", BuildText.Map(
+                ("title", view.Name(ownerId)),
+                ("version", "declared"),
+                ("x-vellum-element-id", ownerId.ToString()))),
+            ("paths", paths));
+        if (schemaKeys.Count > 0)
+            document["components"] = BuildText.Map(("schemas", Schemas(view, schemaKeys)));
+        return BuildText.Yaml(document);
+
+        string? Reference(SchemaId? id) =>
+            id is { } schemaId && schemaKeys.TryGetValue(schemaId.Value, out var key) ? $"#/components/schemas/{key}" : null;
+    }
+
+    private static OrderedDictionary<string, object?> Content(string reference) =>
+        BuildText.Map(("application/json", BuildText.Map(("schema", BuildText.Map(("$ref", reference))))));
+
+    private static OrderedDictionary<string, object?> Schemas(BuildView view, Dictionary<Guid, string> keys)
+    {
+        var schemas = new OrderedDictionary<string, object?>();
+        foreach (var (id, key) in keys.OrderBy(k => k.Value, StringComparer.Ordinal))
+            schemas[key] = SchemaBody(view.SchemasById[id]);
+        return schemas;
+    }
+
+    /// <summary>The schema as stored, or an empty schema that names the stored text when it is not a JSON object.</summary>
+    private static object? SchemaBody(BuildSchema schema)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(schema.Content);
+            if (document.RootElement.ValueKind is JsonValueKind.Object or JsonValueKind.True or JsonValueKind.False)
+                return BuildText.Plain(document.RootElement);
+        }
+        catch (JsonException)
+        {
+        }
+        return BuildText.Map(("description", $"Schema {schema.Id} is not a JSON Schema object. See architecture.json for its stored text."));
+    }
+
+    /// <summary>
+    /// AsyncAPI 3.0 for every channel, message and subscription of the model. The messages of
+    /// a channel and the <c>send</c> operations come from the publish steps of the scenarios,
+    /// because the model has no publication of its own.
+    /// </summary>
+    public static byte[] AsyncApi(BuildView view)
+    {
+        var channelKeys = BuildText.Keys(view.Channels.Select(c => (c.Id.Value, c.Name)));
+        var messageKeys = BuildText.Keys(view.Messages.Select(m => (m.Id.Value, m.Name)));
+        var schemaIds = view.Messages.Select(m => m.SchemaId).OfType<SchemaId>().Select(id => id.Value)
+            .Where(view.SchemasById.ContainsKey).Distinct().ToList();
+        var schemaKeys = BuildText.Keys(schemaIds.Select(id => (id, view.SchemasById[id].Name)));
+        var publications = view.Publications()
+            .Where(p => channelKeys.ContainsKey(p.Channel) && messageKeys.ContainsKey(p.Message)).ToList();
+
+        var channels = new OrderedDictionary<string, object?>();
+        foreach (var channel in view.Channels.OrderBy(c => channelKeys[c.Id.Value], StringComparer.Ordinal))
+        {
+            var entry = BuildText.Map(("address", channel.Name));
+            var messages = new OrderedDictionary<string, object?>();
+            foreach (var message in publications.Where(p => p.Channel == channel.Id.Value).Select(p => p.Message).Distinct()
+                         .OrderBy(id => messageKeys[id], StringComparer.Ordinal))
+                messages[messageKeys[message]] = BuildText.Map(("$ref", $"#/components/messages/{messageKeys[message]}"));
+            if (messages.Count > 0)
+                entry["messages"] = messages;
+            entry["x-vellum-channel-id"] = channel.Id.Value.ToString();
+            entry["x-vellum-kind"] = channel.Kind.ToString().ToLowerInvariant();
+            entry["x-vellum-truth"] = channel.FactStatus.ToApiString();
+            channels[channelKeys[channel.Id.Value]] = entry;
+        }
+
+        var operations = new OrderedDictionary<string, object?>();
+        foreach (var subscription in view.Model.Subscriptions.Values.Where(s => channelKeys.ContainsKey(s.ChannelId.Value)).OrderBy(s => s.Id.Value))
+        {
+            var entry = BuildText.Map(
+                ("action", "receive"),
+                ("channel", BuildText.Map(("$ref", $"#/channels/{channelKeys[subscription.ChannelId.Value]}"))),
+                ("summary", ContractDecider.SubscriptionLabel(view.Model, subscription)),
+                ("x-vellum-subscription-id", subscription.Id.Value.ToString()),
+                ("x-vellum-consumer-id", subscription.ConsumerId.Value.ToString()),
+                ("x-vellum-retry", BuildText.Map(("maxAttempts", subscription.Retry.MaxAttempts), ("backoffMs", subscription.Retry.BackoffMs))),
+                ("x-vellum-truth", subscription.FactStatus.ToApiString()));
+            if (subscription.DeadLetterChannelId is { } deadLetter)
+                entry["x-vellum-dead-letter-channel-id"] = deadLetter.Value.ToString();
+            operations[ReceiveKey(subscription.Id.Value)] = entry;
+        }
+        foreach (var send in publications.GroupBy(p => (p.Publisher, p.Channel)).OrderBy(g => g.Key.Publisher).ThenBy(g => g.Key.Channel))
+        {
+            var channelKey = channelKeys[send.Key.Channel];
+            operations[SendKey(send.Key.Publisher, send.Key.Channel)] = BuildText.Map(
+                ("action", "send"),
+                ("channel", BuildText.Map(("$ref", $"#/channels/{channelKey}"))),
+                ("messages", send.Select(p => messageKeys[p.Message]).Distinct().Order(StringComparer.Ordinal)
+                    .Select(key => (object?)BuildText.Map(("$ref", $"#/channels/{channelKey}/messages/{key}"))).ToList()),
+                ("summary", $"{view.Name(send.Key.Publisher)} publishes to {view.Name(send.Key.Channel)}"),
+                ("x-vellum-publisher-id", send.Key.Publisher.ToString()),
+                ("x-vellum-derived-from", "scenario publish steps"));
+        }
+
+        var messageMap = new OrderedDictionary<string, object?>();
+        foreach (var message in view.Messages.OrderBy(m => messageKeys[m.Id.Value], StringComparer.Ordinal))
+        {
+            var entry = BuildText.Map(("name", message.Name), ("contentType", "application/json"));
+            if (message.SchemaId is { } schemaId && schemaKeys.TryGetValue(schemaId.Value, out var schemaKey))
+                entry["payload"] = BuildText.Map(("$ref", $"#/components/schemas/{schemaKey}"));
+            entry["x-vellum-message-id"] = message.Id.Value.ToString();
+            entry["x-vellum-producer-id"] = message.ProducerId.Value.ToString();
+            entry["x-vellum-truth"] = message.FactStatus.ToApiString();
+            messageMap[messageKeys[message.Id.Value]] = entry;
+        }
+
+        var components = new OrderedDictionary<string, object?>();
+        if (messageMap.Count > 0) components["messages"] = messageMap;
+        if (schemaKeys.Count > 0) components["schemas"] = Schemas(view, schemaKeys);
+
+        var document = BuildText.Map(
+            ("asyncapi", "3.0.0"),
+            ("info", BuildText.Map(("title", view.Input.ProjectName), ("version", "declared"))),
+            ("channels", channels),
+            ("operations", operations));
+        if (components.Count > 0)
+            document["components"] = components;
+        return BuildText.Yaml(document);
+    }
+}
+
+/// <summary>The promise and scenario files of a bundle.</summary>
+internal static class PromiseDocuments
+{
+    public static string Path(PromiseDto promise) => $"promises/{promise.RequirementId}.json";
+
+    public static string ScenarioPath(Scenario scenario) => $"scenarios/{scenario.Id.Value}.json";
+
+    /// <summary>A promise as an implementer needs it: every revision, with the evidence status of each.</summary>
+    public static object Export(PromiseDto promise) => new
+    {
+        promise.Id, promise.RequirementId, promise.Origin, promise.State,
+        promise.InForceRevision, promise.LatestRevision, promise.NeedsReview, promise.MissingLinks,
+        promise.Revisions,
+    };
+
+    public static byte[] Promise(PromiseDto promise) => BuildText.CanonicalJson(Export(promise));
+
+    /// <summary>The scenario document and what its playback on the pinned model gives.</summary>
+    public static byte[] Scenario(Scenario scenario, TraceResult playback) => BuildText.CanonicalJson(new
+    {
+        scenario,
+        declaredPlayback = new
+        {
+            engineVersion = playback.EngineVersion,
+            hash = playback.Hash,
+            issues = playback.Issues,
+            outcomes = playback.Outcomes.OrderBy(o => o.Key, StringComparer.Ordinal).ToDictionary(o => o.Key, o => o.Value),
+            assertions = playback.Assertions,
+            eventCount = playback.Events.Count,
+        },
+    });
+}

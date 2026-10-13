@@ -5479,6 +5479,938 @@
           }
         }
       }
+    },
+    "/api/projects/{projectId}/promises": {
+      "get": {
+        "tags": [
+          "Promises"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": [
+                "integer",
+                "string"
+              ],
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PageOfPromiseSummaryDto"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Promises"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PromiseRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromiseDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/promises/prefix": {
+      "get": {
+        "tags": [
+          "Promises"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrefixDto"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Promises"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetPrefixRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrefixDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/promises/{promiseId}": {
+      "get": {
+        "tags": [
+          "Promises"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "promiseId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromiseDto"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Promises"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "promiseId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PromiseRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromiseDto"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Promises"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "promiseId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/promises/{promiseId}/revise": {
+      "post": {
+        "tags": [
+          "Promises"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "promiseId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ReviseRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromiseDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/promises/{promiseId}/approve": {
+      "post": {
+        "tags": [
+          "Promises"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "promiseId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ApproveRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromiseDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/promises/{promiseId}/runs": {
+      "get": {
+        "tags": [
+          "Promises"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "promiseId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": [
+                "integer",
+                "string"
+              ],
+              "format": "int32"
+            }
+          },
+          {
+            "name": "obligation",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PageOfVerificationRun"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/promises/{promiseId}/obligations": {
+      "post": {
+        "tags": [
+          "Promises"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "promiseId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ObligationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromiseDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/promises/{promiseId}/obligations/generate": {
+      "post": {
+        "tags": [
+          "Promises"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "promiseId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GenerateObligationsResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/promises/{promiseId}/obligations/{obligationKey}": {
+      "put": {
+        "tags": [
+          "Promises"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "promiseId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "obligationKey",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ObligationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromiseDto"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Promises"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "promiseId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "obligationKey",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromiseDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/promises/{promiseId}/obligations/{obligationKey}/run": {
+      "post": {
+        "tags": [
+          "Promises"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "promiseId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "obligationKey",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RunObligationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerificationRun"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/promises/{promiseId}/obligations/{obligationKey}/evidence": {
+      "post": {
+        "tags": [
+          "Promises"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "promiseId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "obligationKey",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecordEvidenceRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerificationRun"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/build/export": {
+      "post": {
+        "tags": [
+          "Build"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ExportRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          },
+          "413": {
+            "description": "Payload Too Large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/build/manifest": {
+      "get": {
+        "tags": [
+          "Build"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "revisionId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "branchId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BuildManifest"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/build/brief": {
+      "post": {
+        "tags": [
+          "Build"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BriefRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BriefResult"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/build/verify": {
+      "post": {
+        "tags": [
+          "Build"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VerifyRequest"
+              }
+            },
+            "application/zip": {
+              "schema": {
+                "$ref": "#/components/schemas/VerifyRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerifyResponse"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -6106,6 +7038,22 @@
           }
         }
       },
+      "ApproveRequest": {
+        "required": [
+          "revision"
+        ],
+        "type": "object",
+        "properties": {
+          "revision": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          }
+        }
+      },
       "ArchitectureItemDto": {
         "required": [
           "id",
@@ -6414,6 +7362,325 @@
             "items": {
               "type": "string"
             }
+          }
+        }
+      },
+      "Blocker": {
+        "required": [
+          "code",
+          "subject",
+          "message"
+        ],
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      },
+      "BriefIncluded": {
+        "required": [
+          "elementIds",
+          "operationIds",
+          "channelIds",
+          "subscriptionIds",
+          "messageIds",
+          "schemaIds",
+          "scenarioIds",
+          "requirementIds"
+        ],
+        "type": "object",
+        "properties": {
+          "elementIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "operationIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "channelIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "subscriptionIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "messageIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "schemaIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "scenarioIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "requirementIds": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "BriefManifest": {
+        "required": [
+          "format",
+          "generator",
+          "pinned",
+          "selection",
+          "included",
+          "notApproved",
+          "unconfirmedFacts",
+          "sha256",
+          "bytes",
+          "buildReady",
+          "blockers"
+        ],
+        "type": "object",
+        "properties": {
+          "format": {
+            "type": "string"
+          },
+          "generator": {
+            "$ref": "#/components/schemas/GeneratorInfo"
+          },
+          "pinned": {
+            "$ref": "#/components/schemas/PinnedState"
+          },
+          "selection": {
+            "$ref": "#/components/schemas/BriefSelection"
+          },
+          "included": {
+            "$ref": "#/components/schemas/BriefIncluded"
+          },
+          "notApproved": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "unconfirmedFacts": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "bytes": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "buildReady": {
+            "type": "boolean"
+          },
+          "blockers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Blocker"
+            }
+          }
+        }
+      },
+      "BriefRequest": {
+        "type": "object",
+        "properties": {
+          "promiseIds": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "scenarioIds": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "elementIds": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "revisionId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "branchId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          }
+        }
+      },
+      "BriefResult": {
+        "required": [
+          "brief",
+          "manifest"
+        ],
+        "type": "object",
+        "properties": {
+          "brief": {
+            "type": "string"
+          },
+          "manifest": {
+            "$ref": "#/components/schemas/BriefManifest"
+          }
+        }
+      },
+      "BriefSelection": {
+        "required": [
+          "promiseIds",
+          "scenarioIds",
+          "elementIds"
+        ],
+        "type": "object",
+        "properties": {
+          "promiseIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "scenarioIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "elementIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        }
+      },
+      "BuildManifest": {
+        "required": [
+          "format",
+          "generator",
+          "pinned",
+          "files",
+          "bundleHash",
+          "buildReady",
+          "blockers",
+          "selfCheck"
+        ],
+        "type": "object",
+        "properties": {
+          "format": {
+            "type": "string"
+          },
+          "generator": {
+            "$ref": "#/components/schemas/GeneratorInfo"
+          },
+          "pinned": {
+            "$ref": "#/components/schemas/PinnedState"
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/BundleFile"
+            }
+          },
+          "bundleHash": {
+            "type": "string"
+          },
+          "buildReady": {
+            "type": "boolean"
+          },
+          "blockers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Blocker"
+            }
+          },
+          "selfCheck": {
+            "$ref": "#/components/schemas/SelfCheck"
+          }
+        }
+      },
+      "BundleFile": {
+        "required": [
+          "path",
+          "sha256",
+          "bytes"
+        ],
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "bytes": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
           }
         }
       },
@@ -7064,6 +8331,49 @@
           }
         }
       },
+      "EvidenceCountsDto": {
+        "required": [
+          "passed",
+          "failed",
+          "notRun",
+          "unsupported"
+        ],
+        "type": "object",
+        "properties": {
+          "passed": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "failed": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "notRun": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "unsupported": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          }
+        }
+      },
       "EvidenceDto": {
         "required": [
           "path",
@@ -7105,6 +8415,76 @@
           }
         }
       },
+      "EvidenceItem": {
+        "required": [
+          "kind"
+        ],
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "hash": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "scenarioId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "pointer": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "url": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "source": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ExternalSource"
+              }
+            ]
+          },
+          "artifactDigest": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "identity": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "identityReason": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "claimedResult": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
       "EvidenceItemDto": {
         "required": [
           "factKey",
@@ -7139,6 +8519,52 @@
           },
           "reason": {
             "type": "string"
+          }
+        }
+      },
+      "EvidenceStatusDto": {
+        "required": [
+          "counts",
+          "obligations",
+          "modelRevisions",
+          "commits",
+          "environments",
+          "gaps"
+        ],
+        "type": "object",
+        "properties": {
+          "counts": {
+            "$ref": "#/components/schemas/EvidenceCountsDto"
+          },
+          "obligations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ObligationStatusDto"
+            }
+          },
+          "modelRevisions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "commits": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "environments": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "gaps": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       },
@@ -7246,6 +8672,89 @@
               "string"
             ],
             "format": "int32"
+          }
+        }
+      },
+      "ExportRequest": {
+        "type": "object",
+        "properties": {
+          "revisionId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "branchId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "format": {
+            "type": "string",
+            "default": "bundle"
+          }
+        }
+      },
+      "ExternalSource": {
+        "required": [
+          "system",
+          "runUrl",
+          "commitSha",
+          "jobName",
+          "conclusion"
+        ],
+        "type": "object",
+        "properties": {
+          "system": {
+            "type": "string"
+          },
+          "runUrl": {
+            "type": "string"
+          },
+          "commitSha": {
+            "type": "string"
+          },
+          "jobName": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "conclusion": {
+            "type": "string"
+          }
+        }
+      },
+      "ExternalSourceRequest": {
+        "required": [
+          "system",
+          "runUrl",
+          "commitSha",
+          "jobName",
+          "conclusion"
+        ],
+        "type": "object",
+        "properties": {
+          "system": {
+            "type": "string"
+          },
+          "runUrl": {
+            "type": "string"
+          },
+          "commitSha": {
+            "type": "string"
+          },
+          "jobName": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "conclusion": {
+            "type": "string"
           }
         }
       },
@@ -7654,6 +9163,65 @@
           }
         }
       },
+      "ForbiddenEvent": {
+        "required": [
+          "kind",
+          "target"
+        ],
+        "type": "object",
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/TraceEventKind"
+          },
+          "target": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          }
+        }
+      },
+      "GenerateObligationsResponse": {
+        "required": [
+          "promise",
+          "added",
+          "skipped"
+        ],
+        "type": "object",
+        "properties": {
+          "promise": {
+            "$ref": "#/components/schemas/PromiseDto"
+          },
+          "added": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "skipped": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Skipped"
+            }
+          }
+        }
+      },
+      "GeneratorInfo": {
+        "required": [
+          "name",
+          "version"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        }
+      },
       "GithubSettings": {
         "required": [
           "apiBaseUrl",
@@ -8027,6 +9595,58 @@
         "type": "string",
         "format": "uuid"
       },
+      "MissingLinkDto": {
+        "required": [
+          "kind",
+          "id"
+        ],
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "ModelPin": {
+        "required": [
+          "streamId",
+          "version",
+          "revisionId",
+          "revisionName"
+        ],
+        "type": "object",
+        "properties": {
+          "streamId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "version": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "revisionId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "revisionName": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
       "ModelPriceDto": {
         "required": [
           "providerKind",
@@ -8097,6 +9717,206 @@
         "type": "object",
         "properties": {
           "webhookUrl": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "ObligationDto": {
+        "required": [
+          "id",
+          "key",
+          "number",
+          "kind",
+          "supported",
+          "execution",
+          "title",
+          "recipe",
+          "source"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "number": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "supported": {
+            "type": "boolean"
+          },
+          "execution": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "recipe": {
+            "$ref": "#/components/schemas/ObligationRecipe"
+          },
+          "source": {
+            "type": "string"
+          }
+        }
+      },
+      "ObligationRecipe": {
+        "required": [
+          "text"
+        ],
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string"
+          },
+          "scenarioCheck": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ScenarioCheckRecipe"
+              }
+            ]
+          },
+          "sourcePattern": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SourcePatternRecipe"
+              }
+            ]
+          },
+          "plan": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/TestPlanRecipe"
+              }
+            ]
+          }
+        }
+      },
+      "ObligationRequest": {
+        "required": [
+          "kind",
+          "title",
+          "recipe"
+        ],
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "recipe": {
+            "$ref": "#/components/schemas/ObligationRecipe"
+          }
+        }
+      },
+      "ObligationStatusDto": {
+        "required": [
+          "obligationId",
+          "result",
+          "runId",
+          "at",
+          "environment",
+          "modelRevision",
+          "commitSha",
+          "scanId",
+          "scope",
+          "evidence",
+          "limitations",
+          "detail"
+        ],
+        "type": "object",
+        "properties": {
+          "obligationId": {
+            "type": "string"
+          },
+          "result": {
+            "type": "string"
+          },
+          "runId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "at": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "environment": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "modelRevision": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ModelPin"
+              }
+            ]
+          },
+          "commitSha": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "scanId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "scope": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EvidenceItem"
+            }
+          },
+          "limitations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "detail": {
             "type": [
               "null",
               "string"
@@ -8250,6 +10070,27 @@
           }
         }
       },
+      "PageOfPromiseSummaryDto": {
+        "required": [
+          "items",
+          "cursor"
+        ],
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PromiseSummaryDto"
+            }
+          },
+          "cursor": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
       "PageOfProposalSummary": {
         "required": [
           "items",
@@ -8334,6 +10175,61 @@
           }
         }
       },
+      "PageOfVerificationRun": {
+        "required": [
+          "items",
+          "cursor"
+        ],
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/VerificationRun"
+            }
+          },
+          "cursor": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "PinnedState": {
+        "required": [
+          "projectId",
+          "branch",
+          "streamVersion",
+          "revisionId"
+        ],
+        "type": "object",
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "branch": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "streamVersion": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "revisionId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          }
+        }
+      },
       "PolicyViolation": {
         "required": [
           "field",
@@ -8349,6 +10245,30 @@
           }
         }
       },
+      "PrefixDto": {
+        "required": [
+          "prefix",
+          "nextNumber"
+        ],
+        "type": "object",
+        "properties": {
+          "prefix": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "nextNumber": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          }
+        }
+      },
       "PrivacySettings": {
         "required": [
           "sendPrivateCodeToAi"
@@ -8357,6 +10277,446 @@
         "properties": {
           "sendPrivateCodeToAi": {
             "type": "boolean"
+          }
+        }
+      },
+      "PromiseDto": {
+        "required": [
+          "id",
+          "projectId",
+          "requirementId",
+          "origin",
+          "state",
+          "latestRevision",
+          "inForceRevision",
+          "needsReview",
+          "missingLinks",
+          "current",
+          "draft",
+          "revisions",
+          "createdBy",
+          "createdAt",
+          "updatedAt"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "projectId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "requirementId": {
+            "type": "string"
+          },
+          "origin": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "latestRevision": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "inForceRevision": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "needsReview": {
+            "type": "boolean"
+          },
+          "missingLinks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MissingLinkDto"
+            }
+          },
+          "current": {
+            "$ref": "#/components/schemas/PromiseRevisionDto"
+          },
+          "draft": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PromiseRevisionDto"
+              }
+            ]
+          },
+          "revisions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PromiseRevisionDto"
+            }
+          },
+          "createdBy": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "PromiseLinks": {
+        "required": [
+          "scenarioIds",
+          "operationIds",
+          "channelIds",
+          "subscriptionIds",
+          "messageIds",
+          "elementIds"
+        ],
+        "type": "object",
+        "properties": {
+          "scenarioIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "operationIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "channelIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "subscriptionIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "messageIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "elementIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        }
+      },
+      "PromiseRequest": {
+        "required": [
+          "title",
+          "claim",
+          "scope",
+          "preconditions",
+          "expectedOutcome",
+          "forbiddenOutcome",
+          "evidenceCriteria",
+          "forbiddenEvents",
+          "requiresPattern",
+          "links"
+        ],
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "claim": {
+            "type": "string"
+          },
+          "scope": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "preconditions": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "expectedOutcome": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "forbiddenOutcome": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "evidenceCriteria": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "forbiddenEvents": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/ForbiddenEvent"
+            }
+          },
+          "requiresPattern": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/RequiredPattern"
+              }
+            ]
+          },
+          "links": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/PromiseLinks"
+              }
+            ]
+          },
+          "origin": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "PromiseRevisionDto": {
+        "required": [
+          "revision",
+          "status",
+          "retires",
+          "inForce",
+          "title",
+          "claim",
+          "scope",
+          "preconditions",
+          "expectedOutcome",
+          "forbiddenOutcome",
+          "evidenceCriteria",
+          "forbiddenEvents",
+          "requiresPattern",
+          "links",
+          "obligations",
+          "createdBy",
+          "createdAt",
+          "approvedBy",
+          "approvedAt",
+          "approvedModelVersion",
+          "evidenceStatus"
+        ],
+        "type": "object",
+        "properties": {
+          "revision": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "status": {
+            "type": "string"
+          },
+          "retires": {
+            "type": "boolean"
+          },
+          "inForce": {
+            "type": "boolean"
+          },
+          "title": {
+            "type": "string"
+          },
+          "claim": {
+            "type": "string"
+          },
+          "scope": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "preconditions": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "expectedOutcome": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "forbiddenOutcome": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "evidenceCriteria": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "forbiddenEvents": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ForbiddenEvent"
+            }
+          },
+          "requiresPattern": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/RequiredPattern"
+              }
+            ]
+          },
+          "links": {
+            "$ref": "#/components/schemas/PromiseLinks"
+          },
+          "obligations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ObligationDto"
+            }
+          },
+          "createdBy": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "approvedBy": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "approvedAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "approvedModelVersion": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "evidenceStatus": {
+            "$ref": "#/components/schemas/EvidenceStatusDto"
+          }
+        }
+      },
+      "PromiseSummaryDto": {
+        "required": [
+          "id",
+          "requirementId",
+          "title",
+          "state",
+          "origin",
+          "latestRevision",
+          "inForceRevision",
+          "hasDraft",
+          "needsReview",
+          "counts",
+          "updatedAt"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "requirementId": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "origin": {
+            "type": "string"
+          },
+          "latestRevision": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "inForceRevision": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "hasDraft": {
+            "type": "boolean"
+          },
+          "needsReview": {
+            "type": "boolean"
+          },
+          "counts": {
+            "$ref": "#/components/schemas/EvidenceCountsDto"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
           }
         }
       },
@@ -8937,6 +11297,37 @@
           }
         }
       },
+      "RecordEvidenceRequest": {
+        "required": [
+          "result",
+          "source",
+          "artifactDigest"
+        ],
+        "type": "object",
+        "properties": {
+          "result": {
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/components/schemas/ExternalSourceRequest"
+          },
+          "artifactDigest": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "revision": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          }
+        }
+      },
       "RegisterRequest": {
         "required": [
           "email",
@@ -8997,6 +11388,29 @@
           }
         }
       },
+      "RequiredPattern": {
+        "required": [
+          "repository",
+          "pattern",
+          "service"
+        ],
+        "type": "object",
+        "properties": {
+          "repository": {
+            "type": "string"
+          },
+          "pattern": {
+            "type": "string"
+          },
+          "service": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          }
+        }
+      },
       "RetryDto": {
         "required": [
           "maxAttempts",
@@ -9019,6 +11433,15 @@
               "string"
             ],
             "format": "int32"
+          }
+        }
+      },
+      "ReviseRequest": {
+        "type": "object",
+        "properties": {
+          "retire": {
+            "type": "boolean",
+            "default": false
           }
         }
       },
@@ -9064,6 +11487,41 @@
           "version": {
             "pattern": "^-?(?:0|[1-9]\\d*)$",
             "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          }
+        }
+      },
+      "RunObligationRequest": {
+        "type": "object",
+        "properties": {
+          "modelRevisionId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "branchId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "scanId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "revision": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
               "integer",
               "string"
             ],
@@ -9692,6 +12150,32 @@
           }
         }
       },
+      "ScenarioCheckRecipe": {
+        "required": [
+          "scenarioId",
+          "faults",
+          "expect"
+        ],
+        "type": "object",
+        "properties": {
+          "scenarioId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "faults": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Fault"
+            }
+          },
+          "expect": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Assertion"
+            }
+          }
+        }
+      },
       "ScenarioId": {
         "type": "string",
         "format": "uuid"
@@ -9779,6 +12263,83 @@
           }
         }
       },
+      "SelfCheck": {
+        "required": [
+          "passed",
+          "openApiOperations",
+          "asyncApiChannels",
+          "asyncApiMessages",
+          "asyncApiSubscriptions",
+          "asyncApiPublications",
+          "notes"
+        ],
+        "type": "object",
+        "properties": {
+          "passed": {
+            "type": "boolean"
+          },
+          "openApiOperations": {
+            "$ref": "#/components/schemas/SelfCheckCount"
+          },
+          "asyncApiChannels": {
+            "$ref": "#/components/schemas/SelfCheckCount"
+          },
+          "asyncApiMessages": {
+            "$ref": "#/components/schemas/SelfCheckCount"
+          },
+          "asyncApiSubscriptions": {
+            "$ref": "#/components/schemas/SelfCheckCount"
+          },
+          "asyncApiPublications": {
+            "$ref": "#/components/schemas/SelfCheckCount"
+          },
+          "notes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "SelfCheckCount": {
+        "required": [
+          "expected",
+          "parsed",
+          "missing",
+          "unexpected"
+        ],
+        "type": "object",
+        "properties": {
+          "expected": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "parsed": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "missing": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "unexpected": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
       "SetModelPriceRequest": {
         "required": [
           "providerKind",
@@ -9825,6 +12386,26 @@
               "string"
             ],
             "format": "date-time"
+          }
+        }
+      },
+      "SetPrefixRequest": {
+        "required": [
+          "prefix"
+        ],
+        "type": "object",
+        "properties": {
+          "prefix": {
+            "type": "string"
+          },
+          "startAt": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
           }
         }
       },
@@ -9996,6 +12577,44 @@
               "string"
             ],
             "format": "double"
+          }
+        }
+      },
+      "Skipped": {
+        "required": [
+          "key",
+          "reason"
+        ],
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      },
+      "SourcePatternRecipe": {
+        "required": [
+          "repository",
+          "pattern",
+          "service"
+        ],
+        "type": "object",
+        "properties": {
+          "repository": {
+            "type": "string"
+          },
+          "pattern": {
+            "type": "string"
+          },
+          "service": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
           }
         }
       },
@@ -10456,6 +13075,49 @@
               "string"
             ],
             "format": "uuid"
+          }
+        }
+      },
+      "TestPlanRecipe": {
+        "required": [
+          "steps",
+          "inputs",
+          "expectedObservations",
+          "forbiddenObservations",
+          "contractIds"
+        ],
+        "type": "object",
+        "properties": {
+          "steps": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "inputs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "expectedObservations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "forbiddenObservations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "contractIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
           }
         }
       },
@@ -11294,6 +13956,174 @@
           }
         }
       },
+      "VerificationRun": {
+        "required": [
+          "id",
+          "obligationId",
+          "promiseRevision",
+          "obligationHash",
+          "startedBy",
+          "at",
+          "modelRevision",
+          "commitSha",
+          "scanId",
+          "environment",
+          "result",
+          "scope",
+          "evidence",
+          "limitations",
+          "detail"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "obligationId": {
+            "type": "string"
+          },
+          "promiseRevision": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "obligationHash": {
+            "type": "string"
+          },
+          "startedBy": {
+            "type": "string"
+          },
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "modelRevision": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ModelPin"
+              }
+            ]
+          },
+          "commitSha": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "scanId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "environment": {
+            "type": "string"
+          },
+          "result": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string"
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/EvidenceItem"
+            }
+          },
+          "limitations": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "detail": {
+            "type": "string"
+          }
+        }
+      },
+      "VerifiedFile": {
+        "required": [
+          "path",
+          "status",
+          "expectedSha256",
+          "actualSha256"
+        ],
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "expectedSha256": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "actualSha256": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "VerifyRequest": {
+        "required": [
+          "manifest"
+        ],
+        "type": "object",
+        "properties": {
+          "manifest": {
+            "$ref": "#/components/schemas/BuildManifest"
+          }
+        }
+      },
+      "VerifyResponse": {
+        "required": [
+          "pinned",
+          "identical",
+          "expectedBundleHash",
+          "actualBundleHash",
+          "files",
+          "selfCheck"
+        ],
+        "type": "object",
+        "properties": {
+          "pinned": {
+            "$ref": "#/components/schemas/PinnedState"
+          },
+          "identical": {
+            "type": "boolean"
+          },
+          "expectedBundleHash": {
+            "type": "string"
+          },
+          "actualBundleHash": {
+            "type": "string"
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/VerifiedFile"
+            }
+          },
+          "selfCheck": {
+            "$ref": "#/components/schemas/SelfCheck"
+          }
+        }
+      },
       "WorkspaceSettingsResponse": {
         "required": [
           "effective",
@@ -11421,6 +14251,12 @@
     },
     {
       "name": "Imports"
+    },
+    {
+      "name": "Promises"
+    },
+    {
+      "name": "Build"
     }
   ]
 }

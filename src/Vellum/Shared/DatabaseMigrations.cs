@@ -7,6 +7,7 @@ using Vellum.Modules.Drafts;
 using Vellum.Modules.Identity;
 using Vellum.Modules.Import;
 using Vellum.Modules.Modelling;
+using Vellum.Modules.Promises;
 using Vellum.Modules.Schemas;
 using Vellum.Modules.Scoring;
 using Vellum.Modules.Settings;
@@ -44,6 +45,7 @@ public static class DatabaseMigrations
         ("ai", typeof(AiUsageDbContext)),
         ("import", typeof(ImportDbContext)),
         ("ai-design", typeof(AiDesignDbContext)),
+        ("promises", typeof(PromisesDbContext)),
     ];
 
     public static async Task ApplyAsync(IServiceProvider services, string connectionString, CancellationToken ct = default)

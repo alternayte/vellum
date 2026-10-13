@@ -44,6 +44,11 @@ internal interface IGitHubApi
     Task<HttpResponseMessage> GetPullRequest(string owner, string repo, int number,
         [Property(OutboundCall.PropertyName)] OutboundCall call, CancellationToken ct);
 
+    /// <summary>One run of a GitHub Actions workflow. A token needs the <c>actions: read</c> permission for a private repository.</summary>
+    [Get("/repos/{owner}/{repo}/actions/runs/{runId}")]
+    Task<HttpResponseMessage> GetWorkflowRun(string owner, string repo, long runId,
+        [Property(OutboundCall.PropertyName)] OutboundCall call, CancellationToken ct);
+
     [Get("/rate_limit")]
     Task<HttpResponseMessage> GetRateLimit([Property(OutboundCall.PropertyName)] OutboundCall call, CancellationToken ct);
 
@@ -113,6 +118,13 @@ internal sealed record PullSideDto(
     [property: JsonPropertyName("repo")] PullRepoDto? Repo);
 
 internal sealed record PullRepoDto([property: JsonPropertyName("full_name")] string? FullName);
+
+internal sealed record WorkflowRunDto(
+    [property: JsonPropertyName("id")] long Id,
+    [property: JsonPropertyName("head_sha")] string? HeadSha,
+    [property: JsonPropertyName("status")] string? Status,
+    [property: JsonPropertyName("conclusion")] string? Conclusion,
+    [property: JsonPropertyName("name")] string? Name);
 
 internal sealed record RateLimitDto([property: JsonPropertyName("resources")] RateResourcesDto? Resources);
 
