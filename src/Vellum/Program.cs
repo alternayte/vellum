@@ -6,6 +6,9 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi;
 using Scalar.AspNetCore;
 using Vellum.Shared;
+using Vellum.Shared.Outbound;
+using Vellum.Modules.Ai;
+using Vellum.Modules.GitHub;
 using Vellum.Modules.Identity;
 using Vellum.Modules.Mcp;
 using Vellum.Modules.Modelling;
@@ -79,6 +82,9 @@ builder.Services.AddScoringModule(builder.Configuration);
 builder.Services.AddScenariosModule();
 builder.Services.AddMcpModule();
 builder.Services.AddSettingsModule(generatingOpenApi);
+builder.Services.AddOutbound();
+builder.Services.AddGitHubModule();
+builder.Services.AddAiModule();
 
 // Command handlers (Scrutor scan)
 builder.Services.Scan(s => s.FromAssemblyOf<Program>()
@@ -135,6 +141,8 @@ app.MapScenarioEndpoints();
 app.MapScoreEndpoints();
 app.MapMcpEndpoints();
 app.MapSettingsEndpoints();
+app.MapGitHubEndpoints();
+app.MapAiEndpoints();
 
 if (!generatingOpenApi && app.Configuration.GetValue("Database:MigrateOnStartup", true))
 {

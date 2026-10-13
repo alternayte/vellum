@@ -1,0 +1,8 @@
+{
+  "sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "node_id": "B_fixture",
+  "size": 28,
+  "url": "https://api.github.com/repos/acme/orders/git/blobs/bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "content": "IyBPcmRlcnMKSGVsbG8g\nZnJvbSBmaXh0dXJlCg==\n",
+  "encoding": "base64"
+}

@@ -1,0 +1,23 @@
+{
+  "id": "chatcmpl-fixture01",
+  "object": "chat.completion",
+  "created": 1741569952,
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "__TEXT__",
+        "refusal": null
+      },
+      "logprobs": null,
+      "finish_reason": "stop"
+    }
+  ],
+  "model": "llama-fixture:latest",
+  "usage": {
+    "prompt_tokens": 21,
+    "completion_tokens": 9,
+    "total_tokens": 30
+  }
+}

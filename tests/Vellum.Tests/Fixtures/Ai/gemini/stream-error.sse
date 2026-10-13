@@ -1,0 +1,4 @@
+data: {"candidates":[{"index":0,"content":{"role":"model","parts":[{"text":"Hel"}]}}],"modelVersion":"gemini-fixture-001","responseId":"fixture01","usageMetadata":{"promptTokenCount":21,"totalTokenCount":21}}
+
+data: {"error":{"code":503,"message":"The model is overloaded. Please try again later.","status":"UNAVAILABLE"}}
+
