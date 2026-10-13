@@ -1,0 +1,49 @@
+{
+  "scriptHash": "df2a6095749d7d483b695fd6228df7f37afa687305ab502aaebb34a289866fc6",
+  "format": "vellum-k6-result/1",
+  "generator": "vellum-k6/1",
+  "scenarioId": "e4491c93-5f17-4dbf-aeb2-10cd8953763f",
+  "scenarioVersion": 1,
+  "modelStreamId": "3006ffb6-6d0e-486f-a4d8-d17d64b4765e",
+  "modelVersion": 12,
+  "targetId": "a6ce0305-b02c-468e-9a59-4031eab2a3be",
+  "environment": "test",
+  "baseUrlHash": "14a1dad2562afbc1b52f6e8e7814e830fe250c04d29e2958c57e6dc5e5785c39",
+  "startedAt": "2026-10-13T16:23:07.072Z",
+  "window": {
+    "warmUpMs": 10000,
+    "elapsedMs": 60013
+  },
+  "flow": {
+    "iterations": 2000,
+    "failed": 41,
+    "droppedIterations": 0,
+    "latencyMs": {
+      "count": 1959,
+      "min": 26.358,
+      "mean": 31.526928534966874,
+      "p50": 31.369,
+      "p90": 34.916399999999996,
+      "p95": 35.430099999999996,
+      "p99": 40.139540000000004,
+      "max": 54.887
+    }
+  },
+  "operations": [
+    {
+      "operationId": "00000000-0000-0000-0000-000000000010",
+      "requests": 2000,
+      "failed": 41,
+      "latencyMs": {
+        "count": 1959,
+        "min": 26.358,
+        "mean": 31.526928534966874,
+        "p50": 31.369,
+        "p90": 34.916399999999996,
+        "p95": 35.430099999999996,
+        "p99": 40.139540000000004,
+        "max": 54.887
+      }
+    }
+  ]
+}

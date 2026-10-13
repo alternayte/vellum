@@ -33,7 +33,9 @@ Every input is an assumption. The result lists each one with a label.
 - `declared`: a person entered the value.
 - `measured`: the value names a measurement that Vellum imported.
 
-This version of Vellum imports no measurements. So every value is `declared`, and a save with the label `measured` is refused. A person cannot turn a typed number into a measured one.
+A value is `measured` only when it names an imported k6 result of the same project, as `k6:<result ID>`. A save with the label `measured` and no such name is refused. A person cannot turn a typed number into a measured one.
+
+A measured input does not make the output measured. The simulator computes every number of a stress result, so every number of a stress result stays `estimated`.
 
 ## Confidence is a rule, not a probability
 
@@ -74,3 +76,26 @@ A hash that repeats shows that the calculation repeats. It does not show that th
 ## How to use an estimate
 
 Use an estimate to compare designs and to find the first limit of a design. Then measure the real system. Keep the measurement apart from the estimate.
+
+## What a measurement is
+
+A measurement is a number that k6 recorded on a deployed system. Vellum does not produce it. Vellum generates the k6 script, you run it, and Vellum imports the result file. See [Load test with k6](/how-to/load-test-with-k6/).
+
+A measured result has the label `measured`. Its provenance names the import: the script, the target, the user and the time.
+
+Vellum accepts a result only when it names a script that Vellum generated for the project. The script binds the numbers to one scenario version, one model version and one authorised target. A file that names no such script is refused. It is not stored with a weaker label.
+
+A measurement has limits too:
+
+- It holds for one run, one load and one target.
+- It covers only the steps that the script drove. The result lists the steps that it does not cover.
+- It is a statement of the person or the agent who imported the file. Vellum does not run k6 and cannot check that k6 produced the numbers.
+- It goes `stale` when the scenario or the model changes.
+
+## Estimates beside measurements
+
+The comparison puts a simulation run beside a measured result. Each side keeps its own label, its own column and its own look. An estimate is amber with the mark "~". A measurement is teal and bold.
+
+A step that the script did not drive has no measured value. The comparison shows `unknown` for it. `unknown` is not zero and it is not a match.
+
+The comparison states differences. It gives no verdict. An estimate that is near one measurement is not confirmed for any other load.

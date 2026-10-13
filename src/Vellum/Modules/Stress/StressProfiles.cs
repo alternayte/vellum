@@ -2,6 +2,7 @@ using System.Security.Claims;
 using System.Text.Json;
 using Deedbox;
 using Microsoft.EntityFrameworkCore;
+using Vellum.Modules.LoadTests;
 using Vellum.Modules.Modelling;
 using Vellum.Modules.Schemas;
 using Vellum.Modules.Stress.Engine;
@@ -61,7 +62,7 @@ public static class StressProfiles
 
     public static async Task<IResult> Create(
         Guid projectId, HttpContext http, ClaimsPrincipal user, WorkspaceAuthorizationService auth,
-        StressDbContext db, IEventStore store, StressLimits limits, StressRunPolicy policy, TimeProvider time, CancellationToken ct)
+        StressDbContext db, LoadTestsDbContext loadTestsDb, IEventStore store, StressLimits limits, StressRunPolicy policy, TimeProvider time, CancellationToken ct)
     {
         var userId = StressAccess.UserId(user);
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
@@ -69,7 +70,7 @@ public static class StressProfiles
         var (profile, error) = await StressAccess.ReadAsync<StressProfile>(http);
         if (profile is null)
             return error!;
-        if (await RefusalAsync(profile, projectId, store, limits, ct) is { } refusal)
+        if (await RefusalAsync(profile, projectId, store, loadTestsDb, limits, ct) is { } refusal)
             return refusal;
 
         // The count and the new row commit together, and creates of one project take turns
@@ -96,7 +97,7 @@ public static class StressProfiles
 
     public static async Task<IResult> Update(
         Guid projectId, Guid profileId, HttpContext http, ClaimsPrincipal user, WorkspaceAuthorizationService auth,
-        StressDbContext db, IEventStore store, StressLimits limits, TimeProvider time, CancellationToken ct)
+        StressDbContext db, LoadTestsDbContext loadTestsDb, IEventStore store, StressLimits limits, TimeProvider time, CancellationToken ct)
     {
         var userId = StressAccess.UserId(user);
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
@@ -108,7 +109,7 @@ public static class StressProfiles
         var row = await db.Profiles.FirstOrDefaultAsync(p => p.Id == profileId && p.ProjectId == projectId, ct);
         if (row is null)
             return StressAccess.NotFound("Stress profile");
-        if (await RefusalAsync(profile, projectId, store, limits, ct) is { } refusal)
+        if (await RefusalAsync(profile, projectId, store, loadTestsDb, limits, ct) is { } refusal)
             return refusal;
 
         row.Name = profile.Name;
@@ -144,17 +145,20 @@ public static class StressProfiles
     private static StressProfileDto Dto(StressProfileEntity row) => new(row.Id, row.Version, row.UpdatedAt, Read(row.Document));
 
     private static async Task<IResult?> RefusalAsync(
-        StressProfile profile, Guid projectId, IEventStore store, StressLimits limits, CancellationToken ct)
+        StressProfile profile, Guid projectId, IEventStore store, LoadTestsDbContext loadTestsDb, StressLimits limits, CancellationToken ct)
     {
         var errors = StressProfileRules.Check(profile, limits).Select(i => new FieldError(i.Target, i.Message)).ToList();
 
         // A value is measured only when it names a measurement that Vellum imported (SDD
-        // guarantee 2). Nothing imports a measurement yet, so no name can be checked and a
-        // person cannot promote a typed number to a measured one.
-        if (errors.Count == 0 && Labels(profile).Any(label => label == AssumptionLabel.Measured))
+        // guarantee 2): a k6 result of this project. A name that resolves to no such result
+        // is refused, so a person cannot promote a typed number to a measured one.
+        if (errors.Count == 0)
         {
-            errors.Add(new FieldError("label",
-                "A value is 'measured' only when it names a measurement that Vellum imported. This project has no imported measurement. Use 'declared'."));
+            var measured = Labelled(profile).Where(l => l.Label == AssumptionLabel.Measured).ToList();
+            var unresolved = await MeasurementRefs.UnresolvedAsync(loadTestsDb, projectId, [.. measured.Select(l => l.MeasurementRef!)], ct);
+            errors.AddRange(measured.Where(l => unresolved.Contains(l.MeasurementRef!)).Select(l => new FieldError($"{l.Field}.measurementRef",
+                $"A value is 'measured' only when it names a measured result that Vellum imported for this project, as '{MeasurementRefs.Prefix}<result ID>'. "
+                + $"'{l.MeasurementRef}' names none. Import the k6 result first, or use 'declared'.")));
         }
 
         if (errors.Count == 0 && (await StressAccess.ScenarioAsync(store, projectId, profile.ScenarioId, ct)).Document is null)
@@ -165,11 +169,12 @@ public static class StressProfiles
             : Results.BadRequest(new ErrorResponse("validation_error", "Validation failed", Errors: errors));
     }
 
-    private static IEnumerable<AssumptionLabel> Labels(StressProfile profile) =>
-        profile.Resources.Select(r => r.Label)
-            .Concat(profile.ServiceTimes.Select(t => t.Label))
-            .Concat(profile.Subscriptions.Select(s => s.Label))
-            .Concat(profile.Branches.Select(b => b.Label))
-            .Concat(profile.Overrides.Select(o => o.Label))
-            .Append(profile.Arrivals.Label);
+    /// <summary>Every labelled value of the profile, with the field path that a validation error names.</summary>
+    private static IEnumerable<(string Field, AssumptionLabel Label, string? MeasurementRef)> Labelled(StressProfile profile) =>
+        profile.Resources.Select((r, i) => ($"resources[{i}]", r.Label, r.MeasurementRef))
+            .Concat(profile.ServiceTimes.Select((t, i) => ($"serviceTimes[{i}]", t.Label, t.MeasurementRef)))
+            .Concat(profile.Subscriptions.Select((s, i) => ($"subscriptions[{i}]", s.Label, s.MeasurementRef)))
+            .Concat(profile.Branches.Select((b, i) => ($"branches[{i}]", b.Label, b.MeasurementRef)))
+            .Concat(profile.Overrides.Select((o, i) => ($"overrides[{i}]", o.Label, o.MeasurementRef)))
+            .Append(("arrivals", profile.Arrivals.Label, profile.Arrivals.MeasurementRef));
 }

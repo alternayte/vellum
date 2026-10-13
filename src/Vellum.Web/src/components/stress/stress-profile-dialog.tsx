@@ -6,6 +6,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from '@/components/ui/input'
 import { shownInline } from '@/lib/mutation-errors'
 import { ApiError } from '@/lib/settings-api'
+import { loadTestsApi, measurementRef } from '@/lib/load-tests-api'
 import {
   emptyProfile, stressApi,
   type ArrivalKind, type Distribution, type DistributionKind, type StressProfile, type StressProfileDetail, type StressRequirements,
@@ -76,6 +77,8 @@ type Draft = Omit<StressProfile, 'resources' | 'subscriptions' | 'branches'> & {
   subscriptions: Record<string, { consumers: number | null; queueCapacity: number | null }>
   branches: Record<string, number | null>
   policies: Record<string, { timeoutMs: number | null; maxAttempts: number | null; backoffMs: number | null }>
+  /** The measured result that a service time names as its source. No entry: the value is declared. */
+  sources: Record<string, string>
 }
 
 function toDraft(profile: StressProfile): Draft {
@@ -86,6 +89,7 @@ function toDraft(profile: StressProfile): Draft {
     subscriptions: Object.fromEntries(profile.subscriptions.map((s) => [s.subscriptionId, { consumers: s.consumers, queueCapacity: s.queueCapacity }])),
     branches: Object.fromEntries(profile.branches.map((b) => [b.stepId, b.probability])),
     policies: Object.fromEntries(profile.overrides.map((o) => [o.target, { timeoutMs: o.timeoutMs, maxAttempts: o.maxAttempts, backoffMs: o.backoffMs }])),
+    sources: Object.fromEntries(profile.serviceTimes.filter((t) => t.label === 'measured' && t.measurementRef).map((t) => [t.target, t.measurementRef!])),
   }
 }
 
@@ -112,7 +116,11 @@ function toProfile(draft: Draft, needs: StressRequirements | undefined): StressP
       .map((id) => {
         const time = draft.times[id]
         const fields = DISTRIBUTIONS.find((d) => d.kind === time.kind)!.fields
-        return { target: id, time: { kind: time.kind, ...Object.fromEntries(fields.map((f) => [f.key, time[f.key]])) } }
+        const source = draft.sources[id]
+        return {
+          target: id, time: { kind: time.kind, ...Object.fromEntries(fields.map((f) => [f.key, time[f.key]])) },
+          ...(source ? { label: 'measured' as const, measurementRef: source } : {}),
+        }
       }),
     subscriptions: used(needs?.subscriptions.map((s) => s.subscriptionId), draft.subscriptions)
       .filter((id) => draft.subscriptions[id].consumers !== null)
@@ -145,6 +153,8 @@ export function StressProfileDialog({ projectId, branchId, scenarios, existing, 
     staleTime: 0,
   })
   const requirements = needs.data
+  // The imported k6 results of the project: the only sources a measured value can name.
+  const measured = useQuery({ queryKey: ['projects', projectId, 'load-tests', 'results'], queryFn: () => loadTestsApi.results(projectId) })
 
   const save = useMutation({
     mutationFn: async (run: boolean) => {
@@ -278,6 +288,29 @@ export function StressProfileDialog({ projectId, branchId, scenarios, existing, 
                           <NumberField key={field.key} label={field.label} value={current[field.key] as number | null | undefined} onChange={(v) => setTime(need.target, { [field.key]: v })} />
                         ))}
                       </div>
+                      {((measured.data?.length ?? 0) > 0 || draft.sources[need.target]) && (
+                        <label className="block text-[11px] font-medium text-muted-foreground">
+                          Source of this value
+                          <select
+                            className={`${selectClass} mt-1`} value={draft.sources[need.target] ?? ''}
+                            onChange={(e) => {
+                              const rest = { ...draft.sources }
+                              delete rest[need.target]
+                              set('sources', e.target.value ? { ...rest, [need.target]: e.target.value } : rest)
+                            }}
+                          >
+                            <option value="">Declared: a person states it</option>
+                            {draft.sources[need.target] && !measured.data?.some((r) => measurementRef(r.id) === draft.sources[need.target]) && (
+                              <option value={draft.sources[need.target]}>Measured: {draft.sources[need.target]}</option>
+                            )}
+                            {measured.data?.map((r) => (
+                              <option key={r.id} value={measurementRef(r.id)}>
+                                Measured: k6 run of {new Date(r.startedAt).toLocaleString()} against {r.provenance.targetName}{r.stale ? ' (stale)' : ''}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      )}
                       {need.kind !== 'store' && (() => {
                         const declared = need.kind === 'operation'
                           ? need
@@ -375,7 +408,7 @@ export function StressProfileDialog({ projectId, branchId, scenarios, existing, 
         )}
 
         <div className="flex flex-wrap items-center gap-2">
-          <p className="min-w-0 flex-1 text-[11px] text-muted-foreground">Every value is saved as <span className="font-mono">declared</span>. A value becomes <span className="font-mono">measured</span> only from an imported measurement.</p>
+          <p className="min-w-0 flex-1 text-[11px] text-muted-foreground">A value is saved as <span className="font-mono">declared</span>. A service time is <span className="font-mono">measured</span> only when you name an imported k6 result as its source.</p>
           <Button variant="ghost" size="sm" onClick={onClose}>Close</Button>
           <Button variant="secondary" size="sm" disabled={!canSave} onClick={() => save.mutate(false)}>Save</Button>
           <Button size="sm" disabled={!canSave} onClick={() => save.mutate(true)}>Save and run</Button>

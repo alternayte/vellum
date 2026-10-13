@@ -3,6 +3,7 @@ using Deedbox;
 using Vellum.Modules.Costs;
 using Vellum.Modules.Import;
 using Vellum.Modules.Import.Scans;
+using Vellum.Modules.LoadTests;
 using Vellum.Modules.Promises;
 using Vellum.Modules.Stress;
 using Vellum.Modules.Review;
@@ -22,7 +23,7 @@ public static class DeleteProject
     /// rows, their runs and the requirement numbering. A delete that was cut short before
     /// that step is finished by the next delete of any project. The project's cost sheets, pins and saved estimates go as well. The review data goes last, in
     /// the same way: the decisions with their streams, the dispositions, the snapshots, the
-    /// open questions and the critiques.
+    /// open questions and the critiques. The load-test targets, scripts and measured results go too.
     /// </summary>
     public static async Task<IResult> Handle(
         Guid projectId,
@@ -32,6 +33,7 @@ public static class DeleteProject
         PromisesDbContext promisesDb,
         CostsDbContext costsDb,
         ReviewDbContext reviewDb,
+        LoadTestsDbContext loadTestsDb,
         IEventStore store,
         TimeProvider time,
         WorkspaceAuthorizationService auth,
@@ -61,6 +63,7 @@ public static class DeleteProject
         await CostRetention.DeleteProjectAsync(costsDb, store, projectId, CancellationToken.None);
         await ReviewRetention.DeleteProjectAsync(reviewDb, store, projectId, CancellationToken.None);
         await ReviewRetention.DeleteOrphansAsync(reviewDb, store, CancellationToken.None);
+        await LoadTestRetention.DeleteProjectAsync(loadTestsDb, store, projectId, CancellationToken.None);
         return Results.NoContent();
     }
 }

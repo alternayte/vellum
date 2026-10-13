@@ -250,11 +250,11 @@ public class StressEndpointTests(IntegrationFixture fixture)
         negative["resources"]![0]!["concurrency"] = 0;
         Assert.Equal("resources[0].concurrency", await Field(negative));
 
-        // A person cannot promote a typed number to a measured one: nothing imports a measurement yet.
+        // A person cannot promote a typed number to a measured one: the name must resolve to an imported k6 result of the project.
         var measured = Profile(orders);
         measured["serviceTimes"]![0]!["label"] = "measured";
         measured["serviceTimes"]![0]!["measurementRef"] = "k6:run-1";
-        Assert.Equal("label", await Field(measured));
+        Assert.Equal("serviceTimes[0].measurementRef", await Field(measured));
 
         var elsewhere = Profile(orders);
         elsewhere["scenarioId"] = Guid.NewGuid().ToString();

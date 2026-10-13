@@ -19,6 +19,15 @@ stream decision (DecisionState)
   decision.settlement_recorded v1 { at: date-time, by: string, stamp: { fingerprint: string?, ruleId: string, ruleVersion: int32, subjectId: uuid } }
   decision.settlement_removed v1 { at: date-time, by: string, ruleId: string, subjectId: uuid }
 
+stream load_test_target (TargetState)
+  load_test_target.authorisation_voided v1 { at: date-time, by: string, cause: string }
+  load_test_target.override_cleared v1 { at: date-time, by: string, cause: string }
+  load_test_target.override_set v1 { allowFailureInjection: bool, allowNonIdempotent: bool, at: date-time, by: string, reason: string }
+  load_test_target.target_added v1 { at: date-time, baseUrl: string, by: string, environment: string, name: string, projectId: uuid }
+  load_test_target.target_authorised v1 { at: date-time, baseUrl: string, by: string, environment: string }
+  load_test_target.target_changed v1 { at: date-time, baseUrl: string, by: string, environment: string, name: string }
+  load_test_target.target_removed v1 { at: date-time, by: string }
+
 stream model (ModelState)
   model.binding_added v1 { id: custom(BindingId), routingKey: string?, sourceChannelId: custom(ChannelId), targetChannelId: custom(ChannelId) }
   model.binding_changed v1 { bindingId: custom(BindingId), routingKey: string?, sourceChannelId: custom(ChannelId), targetChannelId: custom(ChannelId) }

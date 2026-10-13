@@ -504,6 +504,9 @@ public class AgentTokenTests(IntegrationFixture fixture)
         "POST /api/projects/{projectId}/questions/{questionId:guid}/answer",
         "POST /api/projects/{projectId}/questions/{questionId:guid}/drop",
         "DELETE /api/projects/{projectId}/questions/{questionId:guid}",
+        "POST /api/projects/{projectId}/load-tests/targets/{targetId:guid}/authorise",
+        "DELETE /api/projects/{projectId}/load-tests/targets/{targetId:guid}/authorisation",
+        "PUT /api/projects/{projectId}/load-tests/targets/{targetId:guid}/override",
     ];
 
     /// <summary>
@@ -558,6 +561,15 @@ public class AgentTokenTests(IntegrationFixture fixture)
         ["POST /api/projects/{projectId}/build/export"] = "export",
         ["POST /api/projects/{projectId}/build/brief"] = "export",
         ["POST /api/projects/{projectId}/build/verify"] = "export",
+        ["GET /api/projects/{projectId}/load-tests/targets"] = "read or export",
+        ["POST /api/projects/{projectId}/load-tests/scripts"] = "export",
+        ["GET /api/projects/{projectId}/load-tests/scripts"] = "read or export",
+        ["GET /api/projects/{projectId}/load-tests/scripts/{scriptId:guid}"] = "read or export",
+        ["POST /api/projects/{projectId}/load-tests/results"] = "propose",
+        ["GET /api/projects/{projectId}/load-tests/results"] = "read",
+        ["GET /api/projects/{projectId}/load-tests/results/{resultId:guid}"] = "read",
+        ["GET /api/projects/{projectId}/load-tests/compare/estimate"] = "read",
+        ["GET /api/projects/{projectId}/load-tests/compare/results"] = "read",
         ["GET /api/agent/capabilities"] = "",
         ["POST /mcp/"] = "",
         ["GET /llms.txt"] = "",

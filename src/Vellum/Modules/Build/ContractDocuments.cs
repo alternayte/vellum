@@ -24,6 +24,16 @@ internal static partial class ContractDocuments
     private static partial Regex RouteName();
 
     /// <summary>
+    /// The method in upper case and the path of an operation name such as <c>POST /orders</c>,
+    /// or null when the name is not a method and a path. The OpenAPI documents and the k6
+    /// scripts read a route in this one way.
+    /// </summary>
+    public static (string Method, string Path)? RouteOf(string name) =>
+        RouteName().Match(name) is { Success: true } match
+            ? (match.Groups[1].Value.ToUpperInvariant(), match.Groups[2].Value)
+            : null;
+
+    /// <summary>
     /// The routed HTTP operations of each owner. A routed operation is an <c>http</c>
     /// operation named as a method and a path. When two operations of one owner have the same
     /// method and path, the one with the lower ID is routed and the other is not.
@@ -31,9 +41,9 @@ internal static partial class ContractDocuments
     public static IReadOnlyDictionary<Guid, IReadOnlyList<Route>> Routes(BuildView view) =>
         view.Operations
             .Where(o => o.Transport == Transport.Http)
-            .Select(o => (Operation: o, Match: RouteName().Match(o.Name)))
-            .Where(x => x.Match.Success)
-            .Select(x => new Route(x.Operation, x.Match.Groups[1].Value.ToUpperInvariant(), x.Match.Groups[2].Value))
+            .Select(o => (Operation: o, Route: RouteOf(o.Name)))
+            .Where(x => x.Route is not null)
+            .Select(x => new Route(x.Operation, x.Route!.Value.Method, x.Route.Value.Path))
             .GroupBy(r => r.Operation.OwnerId.Value)
             .ToDictionary(
                 g => g.Key,

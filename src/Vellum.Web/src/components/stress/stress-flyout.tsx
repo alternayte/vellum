@@ -6,6 +6,7 @@ import { shownInline } from '@/lib/mutation-errors'
 import { formatMs, formatNumber, stressApi, StressRefused, type StressIssue, type StressProfileDetail, type StressRun } from '@/lib/stress-api'
 import { StressProfileDialog } from './stress-profile-dialog'
 import { StressResultDialog } from './stress-result-dialog'
+import { LoadTestsPanel } from './load-tests-panel'
 
 interface StressFlyoutProps {
   projectId: string
@@ -33,6 +34,7 @@ export function StressFlyout({ projectId, branchId, scenarios }: StressFlyoutPro
   const [shown, setShown] = useState<StressRun | null>(null)
   const [refusal, setRefusal] = useState<{ profileId: string; title: string; issues: StressIssue[] } | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [tab, setTab] = useState<'simulate' | 'measure'>('simulate')
 
   const refresh = () => {
     queryClient.invalidateQueries({ queryKey: profilesKey })
@@ -74,18 +76,43 @@ export function StressFlyout({ projectId, branchId, scenarios }: StressFlyoutPro
     <div className="flex h-full flex-col">
       <div className="flex items-center justify-between border-b border-border px-3 py-2">
         <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Stress</span>
-        <Button
-          variant="ghost" size="sm" className="h-6 gap-1 px-1.5 text-xs" disabled={scenarios.length === 0}
-          title={scenarios.length === 0 ? 'Create a scenario first' : undefined}
-          onClick={() => setEditing({ existing: null })}
-        >
-          <Plus className="h-3 w-3" />
-          New
-        </Button>
+        {tab === 'simulate' && (
+          <Button
+            variant="ghost" size="sm" className="h-6 gap-1 px-1.5 text-xs" disabled={scenarios.length === 0}
+            title={scenarios.length === 0 ? 'Create a scenario first' : undefined}
+            onClick={() => setEditing({ existing: null })}
+          >
+            <Plus className="h-3 w-3" />
+            New
+          </Button>
+        )}
+      </div>
+      <div role="tablist" aria-label="Stress" className="flex border-b border-border px-2">
+        {([['simulate', 'Simulate'], ['measure', 'Measure']] as const).map(([id, label]) => (
+          <button
+            key={id} type="button" role="tab" id={`stress-tab-${id}`} aria-selected={tab === id} aria-controls={`stress-panel-${id}`}
+            tabIndex={tab === id ? 0 : -1}
+            className={`-mb-px border-b-2 px-2.5 py-1.5 text-xs focus-visible:outline-2 focus-visible:outline-primary ${tab === id ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
+            onClick={() => setTab(id)}
+            onKeyDown={(e) => {
+              if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return
+              const next = id === 'simulate' ? 'measure' : 'simulate'
+              setTab(next)
+              document.getElementById(`stress-tab-${next}`)?.focus()
+            }}
+          >
+            {label}
+          </button>
+        ))}
       </div>
       {error && <p role="alert" className="border-b border-border px-3 py-2 text-xs text-[var(--trace-failure)]">{error}</p>}
 
-      <div className="flex-1 overflow-y-auto p-2">
+      {tab === 'measure' && (
+        <div role="tabpanel" id="stress-panel-measure" aria-labelledby="stress-tab-measure" className="min-h-0 flex-1 overflow-y-auto">
+          <LoadTestsPanel projectId={projectId} branchId={branchId} profiles={profiles.data ?? []} scenarios={scenarios} />
+        </div>
+      )}
+      <div role="tabpanel" id="stress-panel-simulate" aria-labelledby="stress-tab-simulate" hidden={tab !== 'simulate'} className="flex-1 overflow-y-auto p-2">
         {profiles.isError && <p role="alert" className="px-1.5 py-1 text-xs text-destructive">{profiles.error.message}</p>}
         {profiles.data?.length === 0 && (
           <p className="px-1.5 py-1 text-xs leading-relaxed text-muted-foreground">

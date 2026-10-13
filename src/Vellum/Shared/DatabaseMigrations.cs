@@ -7,6 +7,7 @@ using Vellum.Modules.Docs;
 using Vellum.Modules.Drafts;
 using Vellum.Modules.Identity;
 using Vellum.Modules.Import;
+using Vellum.Modules.LoadTests;
 using Vellum.Modules.Modelling;
 using Vellum.Modules.Promises;
 using Vellum.Modules.Schemas;
@@ -59,6 +60,7 @@ public static class DatabaseMigrations
         ("stress", typeof(StressDbContext)),
         ("costs", typeof(CostsDbContext)),
         ("review", typeof(ReviewDbContext)),
+        ("load-tests", typeof(LoadTestsDbContext)),
     ];
 
     public static async Task ApplyAsync(IServiceProvider services, string connectionString, CancellationToken ct = default)
