@@ -81,6 +81,7 @@ export function ScenariosFlyout({ projectId, branchId, references }: ScenariosFl
         <ScenarioEditor
           key={editing.scenario.id}
           projectId={projectId}
+          branchId={branchId}
           scenario={editing.scenario}
           isNew={editing.isNew}
           references={references}

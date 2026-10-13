@@ -238,6 +238,17 @@ public static class ExecuteMerge
             };
         }
 
+        if (entityType == "binding")
+        {
+            return changeKind switch
+            {
+                "added" or "modified" when value is BindingState binding =>
+                    BuildBindingEvents(binding, currentMain),
+                "removed" => [new ModelEvent.BindingRemoved(entityId)],
+                _ => []
+            };
+        }
+
         return [];
     }
 
@@ -275,6 +286,26 @@ public static class ExecuteMerge
 
         if (FactChanged(current?.FactStatus, current?.Provenance, target.FactStatus, target.Provenance))
             events.Add(new ModelEvent.ChannelProvenanceRecorded(target.Id, target.FactStatus, target.Provenance, target.Stale));
+        return events;
+    }
+
+    private static List<object> BuildBindingEvents(BindingState target, ModelState currentMain)
+    {
+        var events = new List<object>();
+        var current = currentMain.Bindings.GetValueOrDefault(target.Id);
+        if (current is null)
+        {
+            events.Add(new ModelEvent.BindingAdded(
+                target.Id, target.SourceChannelId, target.TargetChannelId, target.RoutingKey));
+        }
+        else if (current with { FactStatus = target.FactStatus, Provenance = target.Provenance } != target)
+        {
+            events.Add(new ModelEvent.BindingChanged(
+                target.Id, target.SourceChannelId, target.TargetChannelId, target.RoutingKey));
+        }
+
+        if (FactChanged(current?.FactStatus, current?.Provenance, target.FactStatus, target.Provenance))
+            events.Add(new ModelEvent.BindingProvenanceRecorded(target.Id, target.FactStatus, target.Provenance, target.Stale));
         return events;
     }
 

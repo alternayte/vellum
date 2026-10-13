@@ -8,7 +8,8 @@ namespace Vellum.Modules.Ai.Design;
 /// <summary>A thing that a model proposed, with every reference as the ID of a thing that exists. A null ID is a reference to a thing that does not exist yet.</summary>
 internal sealed record ProposedThing(
     string Kind, string Name, string? ElementKind = null, Guid? ParentId = null, bool ParentIsNew = false,
-    Guid? OwnerId = null, Guid? ChannelId = null, Guid? ConsumerId = null);
+    Guid? OwnerId = null, Guid? ChannelId = null, Guid? ConsumerId = null,
+    Guid? SourceChannelId = null, Guid? TargetChannelId = null, string? RoutingKey = null);
 
 /// <summary>What a proposed thing is in the model already.</summary>
 internal abstract record ExistingMatch
@@ -34,8 +35,9 @@ internal abstract record ExistingMatch
 /// names and constraints ignored (<c>POST /orders/{id}</c> is <c>post /orders/{orderId:guid}/</c>).</item>
 /// <item>channel, message: the same normalised name.</item>
 /// <item>subscription: the same channel and consumer.</item>
+/// <item>binding: the same source, target and routing key.</item>
 /// </list>
-/// A thing whose owner, channel or consumer is itself new cannot exist already.
+/// A thing whose owner, channel, consumer, source or target is itself new cannot exist already.
 /// </summary>
 internal static class ExistingFacts
 {
@@ -85,6 +87,14 @@ internal static class ExistingFacts
                 candidates = model.Subscriptions.Values
                     .Where(s => s.ChannelId.Value == channel && s.ConsumerId.Value == consumer)
                     .Select(s => (s.Id.Value, ContractDecider.SubscriptionLabel(model, s)));
+                break;
+
+            case AliasKinds.Binding:
+                if (thing is not { SourceChannelId: { } source, TargetChannelId: { } target })
+                    return new ExistingMatch.None();
+                candidates = model.Bindings.Values
+                    .Where(b => b.SourceChannelId.Value == source && b.TargetChannelId.Value == target && b.RoutingKey == thing.RoutingKey)
+                    .Select(b => (b.Id.Value, ContractDecider.BindingLabel(model, b)));
                 break;
 
             default:

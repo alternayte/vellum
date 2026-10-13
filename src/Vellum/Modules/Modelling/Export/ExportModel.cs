@@ -93,9 +93,16 @@ public static class ExportModel
                 s.FactStatus.ToApiString(), ProvenanceExport.From(s.Provenance), StaleExport.From(s.Stale)))
             .ToList();
 
+        var bindings = state.Bindings.Values
+            .OrderBy(b => b.Id.Value)
+            .Select(b => new BindingExport(
+                b.Id, b.SourceChannelId, b.TargetChannelId, b.RoutingKey,
+                b.FactStatus.ToApiString(), ProvenanceExport.From(b.Provenance), StaleExport.From(b.Stale)))
+            .ToList();
+
         var doc = new ModelExportDocument("1.0",
             new ProjectInfo(project.Name), elements, relationships, messages, schemas,
-            operations, channels, subscriptions);
+            operations, channels, subscriptions, bindings);
 
         if (format.Equals("yaml", StringComparison.OrdinalIgnoreCase))
         {

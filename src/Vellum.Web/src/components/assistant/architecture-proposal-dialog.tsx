@@ -65,6 +65,7 @@ export function ArchitectureProposalDialog({ projectId, proposal: initial, label
       case 'operation': return `${String(p.transport)} · offered by ${name(p.ownerId)}`
       case 'channel': return String(p.kind)
       case 'subscription': return `${name(p.consumerId)} on ${name(p.channelId)}`
+      case 'binding': return `${name(p.fromId)} routes to ${name(p.toId)} · ${p.label ? `routing key ${String(p.label)}` : 'every message'}`
       case 'message': return `produced by ${name(p.producerId)}`
     }
   }

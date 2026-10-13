@@ -1,11 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
+  deleteApiProjectsByProjectIdBindingsByBindingId,
   deleteApiProjectsByProjectIdChannelsByChannelId,
   deleteApiProjectsByProjectIdOperationsByOperationId,
   deleteApiProjectsByProjectIdSubscriptionsBySubscriptionId,
+  getApiProjectsByProjectIdBindings,
   getApiProjectsByProjectIdChannels,
   getApiProjectsByProjectIdOperations,
   getApiProjectsByProjectIdSubscriptions,
+  postApiProjectsByProjectIdBindings,
   postApiProjectsByProjectIdChannels,
   postApiProjectsByProjectIdOperations,
   postApiProjectsByProjectIdSubscriptions,
@@ -45,6 +48,19 @@ export interface Subscription {
   deadLetterChannelId: string | null
   factStatus: string
 }
+
+/** A route from an exchange or a topic to a queue or an exchange. A null key passes every message. */
+export interface Binding {
+  id: string
+  sourceChannelId: string
+  targetChannelId: string
+  routingKey: string | null
+  factStatus: string
+}
+
+/** The channel kinds a binding may start at and end at. The server holds the same rule. */
+export const canRouteFrom = (kind: string) => kind === 'exchange' || kind === 'topic'
+export const canRouteTo = (kind: string) => kind === 'queue' || kind === 'exchange'
 
 interface Page<T> {
   items: T[]
@@ -111,12 +127,21 @@ export function useSubscriptions(projectId: string, branchId?: string | null) {
   })
 }
 
+export function useBindings(projectId: string, branchId?: string | null) {
+  return useQuery({
+    queryKey: key(projectId, 'bindings', branchId),
+    queryFn: () => allPages<Binding>((query) => getApiProjectsByProjectIdBindings({ path: { projectId }, query }), branchId, 'Bindings did not load.'),
+    staleTime: 30_000,
+  })
+}
+
 export type NewOperation = Pick<Operation, 'ownerId' | 'name' | 'transport' | 'timeoutMs' | 'retry'> & {
   requestSchemaId?: string | null
   responseSchemaId?: string | null
 }
 export type NewChannel = Pick<Channel, 'name' | 'kind'>
 export type NewSubscription = Pick<Subscription, 'channelId' | 'consumerId' | 'retry' | 'deadLetterChannelId'>
+export type NewBinding = Pick<Binding, 'sourceChannelId' | 'targetChannelId' | 'routingKey'>
 
 export function useContractMutations(projectId: string, branchId?: string | null) {
   const queryClient = useQueryClient()
@@ -189,6 +214,24 @@ export function useContractMutations(projectId: string, branchId?: string | null
           'The subscription was not removed.',
         ),
       onSuccess: refresh('subscriptions'),
+      onError: shownInline,
+    }),
+    addBinding: useMutation({
+      mutationFn: async (binding: NewBinding) =>
+        unwrap<Binding>(
+          await postApiProjectsByProjectIdBindings({ path: { projectId }, query, body: { id: crypto.randomUUID(), ...binding } }),
+          'The binding was not saved.',
+        ),
+      onSuccess: refresh('bindings'),
+      onError: shownInline,
+    }),
+    removeBinding: useMutation({
+      mutationFn: async (bindingId: string) =>
+        unwrap<void>(
+          await deleteApiProjectsByProjectIdBindingsByBindingId({ path: { projectId, bindingId }, query }),
+          'The binding was not removed.',
+        ),
+      onSuccess: refresh('bindings'),
       onError: shownInline,
     }),
   }

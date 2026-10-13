@@ -23,6 +23,10 @@ public sealed record SubscriptionContract(
     SubscriptionId Id, ChannelId ChannelId, ElementId ConsumerId,
     RetryPolicy Retry, ChannelId? DeadLetterChannelId);
 
+/// <summary>A route from an exchange or a topic to a queue or an exchange. A null key passes every message.</summary>
+public sealed record BindingContract(
+    BindingId Id, ChannelId SourceChannelId, ChannelId TargetChannelId, string? RoutingKey);
+
 public sealed record MessageContract(MessageId Id, string Name, SchemaId? SchemaId);
 
 /// <summary>
@@ -35,4 +39,9 @@ public sealed record TraceModel(
     IReadOnlyDictionary<ChannelId, ChannelContract> Channels,
     IReadOnlyDictionary<SubscriptionId, SubscriptionContract> Subscriptions,
     IReadOnlyDictionary<MessageId, MessageContract> Messages,
-    IReadOnlyDictionary<SchemaId, string> Schemas);
+    IReadOnlyDictionary<SchemaId, string> Schemas)
+{
+    /// <summary>Empty unless set: a model without bindings plays as it did before they existed.</summary>
+    public IReadOnlyDictionary<BindingId, BindingContract> Bindings { get; init; } =
+        new Dictionary<BindingId, BindingContract>();
+}

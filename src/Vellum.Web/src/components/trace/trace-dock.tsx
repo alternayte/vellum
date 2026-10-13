@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import { ChevronLeft, ChevronRight, CircleCheck, CircleX, Pause, Play, RotateCcw, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import { describeEvent, formatVirtualTime, traceColor, traceFamily } from '@/lib/trace'
+import { describeEvent, formatVirtualTime, notRoutedReason, traceColor, traceFamily } from '@/lib/trace'
 import { TRACE_SPEEDS, currentTraceEvent, useTraceStore } from '@/stores/trace-store'
 
 const STEP_INTERVAL_MS = 900
@@ -180,7 +180,9 @@ export function TraceDock() {
               </p>
               <p className="mt-1 truncate pl-4 font-mono text-[11px] text-muted-foreground">
                 step {event.stepId}
-                {event.detail && event.kind !== 'DataWritten' && event.kind !== 'BranchTaken' ? ` · ${event.detail}` : ''}
+                {event.kind === 'NotRouted'
+                  ? ` · ${notRoutedReason(event.detail)}`
+                  : event.detail && event.kind !== 'DataWritten' && event.kind !== 'BranchTaken' ? ` · ${event.detail}` : ''}
               </p>
               {event.headers && (
                 <dl className="mt-1.5 flex flex-wrap gap-1.5 pl-4" aria-label="Headers">

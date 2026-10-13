@@ -11,7 +11,9 @@ public sealed record ModelExportDocument(
     IReadOnlyList<SchemaExport> Schemas,
     IReadOnlyList<OperationExport> Operations,
     IReadOnlyList<ChannelExport> Channels,
-    IReadOnlyList<SubscriptionExport> Subscriptions);
+    IReadOnlyList<SubscriptionExport> Subscriptions,
+    // Added after the first documents were written: a document without the member has no bindings.
+    IReadOnlyList<BindingExport>? Bindings = null);
 
 public sealed record ProjectInfo(string Name);
 
@@ -87,5 +89,10 @@ public sealed record ChannelExport(
 public sealed record SubscriptionExport(
     Guid Id, Guid ChannelId, Guid ConsumerId,
     RetryExport? Retry, Guid? DeadLetterChannelId,
+    string FactStatus = "declared", ProvenanceExport? Provenance = null,
+    StaleExport? Stale = null);
+
+public sealed record BindingExport(
+    Guid Id, Guid SourceChannelId, Guid TargetChannelId, string? RoutingKey = null,
     string FactStatus = "declared", ProvenanceExport? Provenance = null,
     StaleExport? Stale = null);

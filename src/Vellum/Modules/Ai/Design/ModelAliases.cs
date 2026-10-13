@@ -15,6 +15,8 @@ internal static class AliasKinds
     public const string Subscription = "subscription";
     public const string Message = "message";
     public const string Relationship = "relationship";
+    /// <summary>A binding has no alias: nothing references one. An architecture proposal can add one.</summary>
+    public const string Binding = "binding";
 
     public static readonly string[] Contracts = [Element, Operation, Channel, Subscription, Message];
 
@@ -22,11 +24,13 @@ internal static class AliasKinds
 }
 
 /// <summary>How many things of each kind the alias table of a request left out to stay inside its size.</summary>
-public sealed record AliasOmitted(int Elements, int Operations, int Channels, int Subscriptions, int Messages, int Relationships)
+/// <param name="Bindings">Added after the first proposals were stored: a stored count without it reads as 0.</param>
+public sealed record AliasOmitted(
+    int Elements, int Operations, int Channels, int Subscriptions, int Messages, int Relationships, int Bindings = 0)
 {
     public static readonly AliasOmitted None = new(0, 0, 0, 0, 0, 0);
 
-    internal int Total => Elements + Operations + Channels + Subscriptions + Messages + Relationships;
+    internal int Total => Elements + Operations + Channels + Subscriptions + Messages + Relationships + Bindings;
 }
 
 /// <summary>What a request needs from the alias table, in the order in which the table is filled.</summary>
@@ -53,6 +57,11 @@ internal sealed record AliasNeeds(IReadOnlySet<Guid> Required, IReadOnlySet<Guid
 /// words first), then the rest by name. The owner, channel, consumer, producer or parent of a
 /// listed thing of the first three groups is listed with it. What does not fit is counted in
 /// <see cref="Omitted"/>, and the table says so in <c>omitted</c>.
+/// </para>
+/// <para>
+/// <b>Bindings and relationships</b> have no alias. A binding is listed as <c>source</c>,
+/// <c>target</c> and <c>routingKey</c> when both of its channels are listed, so a flow can
+/// publish to an exchange and name the subscriptions on the queues behind it.
 /// </para>
 /// <para>
 /// <b>Private sources.</b> A thing that <see cref="PrivateGate.Hides"/> is not listed, whatever
@@ -235,6 +244,36 @@ internal sealed class ModelAliases
         foreach (var (name, kind, _) in Sections)
             table[name] = new JsonArray([.. bySection[kind].Select(e => (JsonNode?)e.Write(Ref, ids[e.Id]))]);
 
+        var bindings = new JsonArray();
+        var bindingsLeftOut = 0;
+        var hiddenBindings = 0;
+        var listedBindings = new List<Guid>();
+        foreach (var b in model.Bindings.Values.OrderBy(b => b.Id.Value))
+        {
+            if (gate.Hides(b.Id))
+            {
+                hiddenBindings++;
+                continue;
+            }
+            // A binding to a channel that is hidden or left out would name nothing.
+            if (hidden.Contains(b.SourceChannelId) || hidden.Contains(b.TargetChannelId))
+                continue;
+            var node = ids.ContainsKey(b.SourceChannelId) && ids.ContainsKey(b.TargetChannelId)
+                ? new JsonObject { ["source"] = ids[b.SourceChannelId], ["target"] = ids[b.TargetChannelId], ["routingKey"] = b.RoutingKey }
+                : null;
+            var size = node?.ToJsonString().Length + 1 ?? 0;
+            if (node is null || bytes + size > MaxTableBytes)
+            {
+                bindingsLeftOut++;
+                continue;
+            }
+
+            bytes += size;
+            bindings.Add(node);
+            listedBindings.Add(b.Id);
+        }
+        table["bindings"] = bindings;
+
         var relationships = new JsonArray();
         var relationshipsLeftOut = 0;
         foreach (var r in model.Relationships.Values
@@ -263,17 +302,18 @@ internal sealed class ModelAliases
         int LeftOut(string kind) => open.Values.Count(e => e.Kind == kind && !listed.Contains(e.Id));
         var omitted = new AliasOmitted(
             LeftOut(AliasKinds.Element), LeftOut(AliasKinds.Operation), LeftOut(AliasKinds.Channel),
-            LeftOut(AliasKinds.Subscription), LeftOut(AliasKinds.Message), relationshipsLeftOut);
+            LeftOut(AliasKinds.Subscription), LeftOut(AliasKinds.Message), relationshipsLeftOut, bindingsLeftOut);
         if (omitted.Total > 0)
         {
             table["omitted"] = new JsonObject
             {
                 ["elements"] = omitted.Elements, ["operations"] = omitted.Operations, ["channels"] = omitted.Channels,
                 ["subscriptions"] = omitted.Subscriptions, ["messages"] = omitted.Messages, ["relationships"] = omitted.Relationships,
+                ["bindings"] = omitted.Bindings,
             };
         }
 
-        var omittedPrivate = hidden.Count + hiddenSchemas.Count;
+        var omittedPrivate = hidden.Count + hiddenSchemas.Count + hiddenBindings;
         if (omittedPrivate > 0)
             table["withheld"] = omittedPrivate;
 
@@ -281,7 +321,7 @@ internal sealed class ModelAliases
         {
             Omitted = omitted,
             OmittedPrivateCount = omittedPrivate,
-            DataClass = gate.ClassOf(listed.Concat(shownSchemas)),
+            DataClass = gate.ClassOf(listed.Concat(shownSchemas).Concat(listedBindings)),
         };
         foreach (var (alias, named) in aliases) result._byAlias[alias] = named;
         foreach (var (id, alias) in ids) result._byId[id] = alias;

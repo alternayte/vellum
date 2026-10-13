@@ -28,6 +28,7 @@ public sealed record DecideArchitectureProposalRequest(IReadOnlyList<Guid>? Acce
 /// operation: <c>ownerId</c>, <c>name</c>, <c>transport</c> (http, grpc, command).
 /// channel: <c>name</c>, <c>kind</c> (topic, queue, exchange).
 /// subscription: <c>channelId</c>, <c>consumerId</c>.
+/// binding: <c>fromId</c> (the source channel), <c>toId</c> (the target channel), <c>label</c> (the routing key, null for none).
 /// message: <c>name</c>, <c>description</c>, <c>producerId</c>, <c>consumerIds</c>.
 /// An ID is the real ID of an existing thing, or the ID of another item of the proposal.
 /// </summary>
@@ -327,9 +328,11 @@ public static partial class ArchitectureProposals
         ArchitectureItemDto item, Dictionary<Guid, ArchitectureItemDto> items, ModelState model, IReadOnlyCollection<Guid> accepting)
     {
         var proposed = item.Proposed;
+        // The source and the target of a binding are channels; those of a relationship are elements.
+        var binding = item.EntityKind == AliasKinds.Binding;
         IEnumerable<(string What, Guid? Id, bool Channel)> references =
         [
-            ("parent", proposed.ParentId, false), ("source", proposed.FromId, false), ("target", proposed.ToId, false),
+            ("parent", proposed.ParentId, false), ("source", proposed.FromId, binding), ("target", proposed.ToId, binding),
             ("owner", proposed.OwnerId, false), ("channel", proposed.ChannelId, true), ("consumer", proposed.ConsumerId, false),
             ("producer", proposed.ProducerId, false),
             .. (proposed.ConsumerIds ?? []).Select(c => ("consumer", (Guid?)c, false)),
@@ -359,7 +362,10 @@ public static partial class ArchitectureProposals
                 item.EntityKind, proposed.Name ?? "", proposed.Kind,
                 proposed.ParentId is { } parent && model.Elements.ContainsKey(parent) ? parent : null,
                 proposed.ParentId is { } other && !model.Elements.ContainsKey(other),
-                proposed.OwnerId, proposed.ChannelId, proposed.ConsumerId);
+                proposed.OwnerId, proposed.ChannelId, proposed.ConsumerId,
+                item.EntityKind == AliasKinds.Binding ? proposed.FromId : null,
+                item.EntityKind == AliasKinds.Binding ? proposed.ToId : null,
+                item.EntityKind == AliasKinds.Binding ? proposed.Label : null);
             if (ExistingFacts.Find(model, thing, except: item.Id) is ExistingMatch.One one)
                 issues.Add(new(item.Id, $"The model holds this already: '{one.Name}' ({one.Id})."));
         }
@@ -416,6 +422,8 @@ public static partial class ArchitectureProposals
                     : null;
             case AliasKinds.Subscription:
                 return proposed is { ChannelId: { } channel, ConsumerId: { } consumer } ? new Addition.Subscription(item.Id, channel, consumer) : null;
+            case AliasKinds.Binding:
+                return proposed is { FromId: { } source, ToId: { } target } ? new Addition.Binding(item.Id, source, target, proposed.Label) : null;
             case AliasKinds.Message:
                 return proposed is { ProducerId: { } producer, Name: { } messageName }
                     ? new Addition.Message(item.Id, messageName, proposed.Description, producer, [.. proposed.ConsumerIds ?? []])
@@ -508,7 +516,7 @@ public static partial class ArchitectureProposals
                 AliasKinds.Relationship => Parse<RelationshipKind>(item.RelationshipKind, "structural", out kindValue),
                 AliasKinds.Operation => Parse<Transport>(item.Transport, "http", out kindValue),
                 AliasKinds.Channel => Parse<ChannelKind>(item.ChannelKind, "topic", out kindValue),
-                AliasKinds.Subscription or AliasKinds.Message => true,
+                AliasKinds.Subscription or AliasKinds.Binding or AliasKinds.Message => true,
                 _ => false,
             };
             if (!kindOk)
@@ -526,6 +534,7 @@ public static partial class ArchitectureProposals
             AliasKinds.Relationship => [("from", item.From, AliasKinds.Element, true), ("to", item.To, AliasKinds.Element, true)],
             AliasKinds.Operation => [("owner", item.Owner, AliasKinds.Element, true)],
             AliasKinds.Subscription => [("channel", item.Channel, AliasKinds.Channel, true), ("consumer", item.Consumer, AliasKinds.Element, true)],
+            AliasKinds.Binding => [("from", item.From, AliasKinds.Channel, true), ("to", item.To, AliasKinds.Channel, true)],
             AliasKinds.Message =>
             [
                 ("producer", item.Producer, AliasKinds.Element, true),
@@ -565,6 +574,25 @@ public static partial class ArchitectureProposals
 
         Prune();
 
+        // A binding joins an exchange or a topic to a queue or an exchange. The kind of each end
+        // is known here: an existing channel has one, and a new channel states one.
+        ChannelKind? KindOfChannel(string? alias) =>
+            alias is null ? null
+            : aliases.TryGetValue(alias, out var existing) ? model.Channels.TryGetValue(existing.Id, out var channel) ? channel.Kind : null
+            : candidates.TryGetValue(alias, out var other) && ModelEnum.TryParseDefined(other.Enum, out ChannelKind proposedKind) ? proposedKind : null;
+        foreach (var (alias, candidate) in candidates.Where(c => c.Value.Output.EntityKind == AliasKinds.Binding).ToList())
+        {
+            var item = candidate.Output;
+            var problem = item.From == item.To ? "The source and the target of a binding are two channels."
+                : KindOfChannel(item.From) is { } from && !ContractDecider.CanRouteFrom(from) ? "The source of a binding is an exchange or a topic."
+                : KindOfChannel(item.To) is { } to && !ContractDecider.CanRouteTo(to) ? "The target of a binding is a queue or an exchange."
+                : null;
+            if (problem is null)
+                continue;
+            rejected.Add(new($"item:{alias}", alias, $"{problem} The item was dropped."));
+            candidates.Remove(alias);
+        }
+
         // What is left after every item whose dependencies come first has been taken depends on itself.
         var ordered = new List<string>();
         var placed = new HashSet<string>(StringComparer.Ordinal);
@@ -597,7 +625,10 @@ public static partial class ArchitectureProposals
             var thing = new ProposedThing(
                 item.EntityKind, item.Name, candidates[alias].Enum,
                 Existing(item.Parent), item.Parent is not null && Existing(item.Parent) is null,
-                Existing(item.Owner), Existing(item.Channel), Existing(item.Consumer));
+                Existing(item.Owner), Existing(item.Channel), Existing(item.Consumer),
+                item.EntityKind == AliasKinds.Binding ? Existing(item.From) : null,
+                item.EntityKind == AliasKinds.Binding ? Existing(item.To) : null,
+                item.EntityKind == AliasKinds.Binding ? item.Label : null);
 
             var hasName = item.EntityKind is AliasKinds.Element or AliasKinds.Operation or AliasKinds.Channel or AliasKinds.Message;
             if (hasName && ProposedNames.Problem(model, item.EntityKind, item.Name, thing.OwnerId) is { } problem)
@@ -638,6 +669,7 @@ public static partial class ArchitectureProposals
                 AliasKinds.Operation => new ProposedEntity(null, item.Name, null, null, null, null, null, null, Id(item.Owner), candidate.Enum, null, null, null, null),
                 AliasKinds.Channel => new ProposedEntity(candidate.Enum, item.Name, null, null, null, null, null, null, null, null, null, null, null, null),
                 AliasKinds.Subscription => new ProposedEntity(null, null, null, null, null, null, null, null, null, null, Id(item.Channel), Id(item.Consumer), null, null),
+                AliasKinds.Binding => new ProposedEntity(null, null, null, null, null, Id(item.From), Id(item.To), item.Label, null, null, null, null, null, null),
                 _ => new ProposedEntity(null, item.Name, item.Description, null, null, null, null, null, null, null, null, null, Id(item.Producer),
                     [.. (item.Consumers ?? []).Select(c => Id(c)!.Value)]),
             };
@@ -645,6 +677,7 @@ public static partial class ArchitectureProposals
             {
                 AliasKinds.Relationship => string.IsNullOrWhiteSpace(item.Label) ? $"{Label(item.From)} → {Label(item.To)}" : $"{Label(item.From)} → {Label(item.To)}: {item.Label}",
                 AliasKinds.Subscription => $"{Label(item.Consumer)} on {Label(item.Channel)}",
+                AliasKinds.Binding => item.Label is null ? $"{Label(item.From)} to {Label(item.To)}" : $"{Label(item.From)} to {Label(item.To)} on {item.Label}",
                 _ => item.Name,
             };
             return new ArchitectureItemDto(

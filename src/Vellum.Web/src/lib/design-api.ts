@@ -69,7 +69,7 @@ export interface ArchitectureItem {
   id: string
   alias: string
   action: 'add'
-  entityKind: 'element' | 'relationship' | 'operation' | 'channel' | 'subscription' | 'message'
+  entityKind: 'element' | 'relationship' | 'operation' | 'channel' | 'subscription' | 'binding' | 'message'
   name: string
   proposed: Record<string, unknown>
   dependsOn: string[]
@@ -185,7 +185,7 @@ export function describeStep(step: FlowStep, labels: Record<string, string>): st
     case 'call':
       return `${name(step.from)} calls ${name(step.operation)}`
     case 'publish':
-      return `${name(step.from)} publishes ${name(step.message)} to ${name(step.channel)}`
+      return `${name(step.from)} publishes ${name(step.message)} to ${name(step.channel)}${typeof step.routingKey === 'string' && step.routingKey ? ` with routing key ${step.routingKey}` : ''}`
     case 'write':
       return `${name(step.by)} writes ${typeof step.dataset === 'string' ? step.dataset : 'data'} in ${name(step.store)}`
     case 'parallel':

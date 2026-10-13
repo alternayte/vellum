@@ -25,7 +25,7 @@ public static class TraceEngine
         if (playback.Overflowed)
         {
             return Rejected([new ScenarioIssue("", "trace-too-large",
-                "The scenario is too large to play. Nested retries multiply; lower the attempts or flatten the steps.")]);
+                "The scenario is too large to play. Nested retries multiply, and each binding of a channel adds a route; lower the attempts, flatten the steps or publish to a channel with fewer bindings.")]);
         }
 
         var assertions = scenario.Assertions.Select(a => Evaluate(a, playback.Events, playback.Outcomes)).ToList();
@@ -158,6 +158,12 @@ public static class TraceEngine
         private readonly PriorityQueue<Action, (long At, long Order)> _queue = new();
         private readonly Dictionary<Guid, Fault> _faults = scenario.Faults.ToDictionary(f => f.Target);
         private readonly Dictionary<Guid, int> _attemptsSeen = [];
+        // Both are sorted by ID before they are grouped, so fan-out and routing order do not
+        // depend on dictionary order.
+        private readonly ILookup<ChannelId, SubscriptionContract> _subscriptionsOn =
+            model.Subscriptions.Values.OrderBy(s => s.Id.Value).ToLookup(s => s.ChannelId);
+        private readonly ILookup<ChannelId, BindingContract> _bindingsFrom =
+            model.Bindings.Values.OrderBy(b => b.Id.Value).ToLookup(b => b.SourceChannelId);
         private readonly Scope _root = new(null);
         private long _order;
         private long _now;
@@ -315,17 +321,86 @@ public static class TraceEngine
                 message: step.Message, headers: step.Headers);
             scope.Record(step.Id, StepOutcome.Succeeded);
 
-            // Fan-out order is by subscription ID so it does not depend on dictionary order.
-            foreach (var subscription in model.Subscriptions.Values
-                         .Where(s => s.ChannelId == step.Channel)
-                         .OrderBy(s => s.Id.Value))
-            {
-                var handler = step.Handlers.GetValueOrDefault(subscription.Id) ?? [];
-                After(0, () => Deliver(step, subscription, handler, 1, scope));
-            }
+            Route(step, step.Channel, 1, from, scope, new Routing(step.Channel));
 
             // The publisher does not wait for its consumers.
             done(true);
+        }
+
+        /// <summary>The channels one message has been routed to, and the bindings it was matched against.</summary>
+        private sealed class Routing(ChannelId start)
+        {
+            public HashSet<ChannelId> Reached { get; } = [start];
+            public int Considered { get; set; }
+        }
+
+        /// <summary>
+        /// Hands the message to the subscriptions on <paramref name="channel"/>, by ID, then
+        /// follows the bindings of the channel, by ID, and does the same on each target. A
+        /// channel takes the message once, so a cycle of bindings ends. A dead-lettered
+        /// message has no <paramref name="publisher"/> scope: it is routed and then rests,
+        /// because a scenario declares no steps for the consumers of a dead-letter channel.
+        /// </summary>
+        private void Route(PublishStep step, ChannelId channel, int attempt, Guid from, Scope? publisher, Routing routing)
+        {
+            if (publisher is not null)
+            {
+                foreach (var subscription in _subscriptionsOn[channel])
+                {
+                    var handler = step.Handlers.GetValueOrDefault(subscription.Id) ?? [];
+                    After(0, () => Deliver(step, subscription, handler, 1, publisher));
+                }
+            }
+
+            foreach (var binding in _bindingsFrom[channel])
+            {
+                // A binding that is only matched emits one event and costs one unit of work.
+                if (Overflowed || ++routing.Considered > TraceLimits.MaxRoutes || ++_worked > TraceLimits.MaxWork)
+                {
+                    Overflowed = true;
+                    return;
+                }
+
+                Guid source = channel, target = binding.TargetChannelId, id = binding.Id;
+                if (!ChannelRouting.Matches(binding.RoutingKey, step.RoutingKey))
+                {
+                    Emit(TraceEventKind.NotRouted, step.Id, attempt, source, target, id, message: step.Message,
+                        detail: step.RoutingKey is null
+                            ? $"Binding {id} needs routing key '{binding.RoutingKey}'; the step states none."
+                            : $"Binding {id}: routing key '{step.RoutingKey}' does not match '{binding.RoutingKey}'.");
+                    continue;
+                }
+                if (!routing.Reached.Add(binding.TargetChannelId))
+                {
+                    Emit(TraceEventKind.NotRouted, step.Id, attempt, source, target, id, message: step.Message,
+                        detail: $"Binding {id}: the message was already routed to this channel.");
+                    continue;
+                }
+
+                // A fault on a bound channel closes this route only.
+                if (NextFault(target) is { } fault)
+                {
+                    var reason = fault is FaultKind.Outage ? "is unavailable" : "rejected the message";
+                    if (publisher is not null)
+                    {
+                        Emit(TraceEventKind.PublishFailed, step.Id, attempt, from, target: target, payload: step.Payload,
+                            detail: $"The bound channel {reason}; binding {id} is not followed.",
+                            message: step.Message, headers: step.Headers);
+                    }
+                    else
+                    {
+                        Emit(TraceEventKind.Dropped, step.Id, attempt, from, target: target, payload: step.Payload,
+                            detail: $"The bound channel {reason}; the dead-lettered message does not reach it.", message: step.Message);
+                    }
+                    continue;
+                }
+
+                Emit(TraceEventKind.Routed, step.Id, attempt, source, target, id, message: step.Message,
+                    detail: binding.RoutingKey is null
+                        ? $"Binding {id} has no routing key."
+                        : $"Binding {id}: routing key '{step.RoutingKey}' matches '{binding.RoutingKey}'.");
+                Route(step, binding.TargetChannelId, attempt, from, publisher, routing);
+            }
         }
 
         private void Deliver(PublishStep step, SubscriptionContract subscription, IReadOnlyList<Step> handler, int attempt, Scope publisher)
@@ -384,6 +459,7 @@ public static class TraceEngine
                 {
                     Emit(TraceEventKind.DeadLettered, step.Id, attempt, consumer, target: deadLetter.Value, payload: step.Payload,
                         message: step.Message, headers: step.Headers);
+                    Route(step, deadLetter, attempt, consumer, null, new Routing(deadLetter));
                 }
             }
         }

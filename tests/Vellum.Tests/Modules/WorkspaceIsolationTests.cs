@@ -34,16 +34,19 @@ public class WorkspaceIsolationTests(IntegrationFixture fixture)
         using var owner = await TestHost.SignInAsync(factory);
         var (_, theirs) = await TestHost.CreateProjectAsync(owner);
         Guid element = Guid.NewGuid(), operation = Guid.NewGuid(), channel = Guid.NewGuid(), subscription = Guid.NewGuid(), scenario = Guid.NewGuid();
+        Guid queue = Guid.NewGuid(), binding = Guid.NewGuid();
         await TestHost.Created(owner.PostAsJsonAsync(Url(theirs, "elements"), new { id = element, kind = "system", name = "Secret system" }));
         await TestHost.Created(owner.PostAsJsonAsync(Url(theirs, "operations"), new { id = operation, ownerId = element, name = "Secret operation", transport = "http" }));
         await TestHost.Created(owner.PostAsJsonAsync(Url(theirs, "channels"), new { id = channel, name = "secret-channel", kind = "topic" }));
         await TestHost.Created(owner.PostAsJsonAsync(Url(theirs, "subscriptions"), new { id = subscription, channelId = channel, consumerId = element }));
+        await TestHost.Created(owner.PostAsJsonAsync(Url(theirs, "channels"), new { id = queue, name = "secret-queue", kind = "queue" }));
+        await TestHost.Created(owner.PostAsJsonAsync(Url(theirs, "bindings"), new { id = binding, sourceChannelId = channel, targetChannelId = queue, routingKey = "secret.key" }));
         await TestHost.Created(owner.PostAsync(Url(theirs, "scenarios"), Scenario(scenario)));
         var draft = (await (await TestHost.Created(owner.PostAsJsonAsync(Url(theirs, "drafts"), new { id = Guid.NewGuid(), name = "Secret draft" })))
             .Content.ReadFromJsonAsync<DraftDto>())!;
         await TestHost.Created(owner.PostAsJsonAsync(Url(theirs, "channels", draft.StreamId), new { id = Guid.NewGuid(), name = "secret-draft-channel", kind = "queue" }));
 
-        string[] reads = ["operations", "channels", "subscriptions", "scenarios", $"scenarios/{scenario}"];
+        string[] reads = ["operations", "channels", "subscriptions", "bindings", "scenarios", $"scenarios/{scenario}"];
         var before = new List<string>();
         foreach (var path in reads)
             before.Add(await owner.GetStringAsync(Url(theirs, path)));
@@ -58,8 +61,11 @@ public class WorkspaceIsolationTests(IntegrationFixture fixture)
         // 1. The owner's project: every read and every write is forbidden, with or without the branch.
         foreach (var branch in new Guid?[] { null, draft.StreamId })
         {
-            foreach (var path in new[] { "operations", "channels", "subscriptions" })
+            foreach (var path in new[] { "operations", "channels", "subscriptions", "bindings" })
                 await AssertStatus(HttpStatusCode.Forbidden, stranger.GetAsync(Url(theirs, path, branch)), $"GET {path}");
+            await AssertStatus(HttpStatusCode.Forbidden, stranger.PostAsJsonAsync(Url(theirs, "bindings", branch), new { id = Guid.NewGuid(), sourceChannelId = channel, targetChannelId = queue, routingKey = "planted" }), "POST bindings");
+            await AssertStatus(HttpStatusCode.Forbidden, stranger.PatchAsJsonAsync(Url(theirs, $"bindings/{binding}", branch), new { routingKey = "renamed" }), "PATCH binding");
+            await AssertStatus(HttpStatusCode.Forbidden, stranger.DeleteAsync(Url(theirs, $"bindings/{binding}", branch)), "DELETE binding");
 
             await AssertStatus(HttpStatusCode.Forbidden, stranger.PostAsJsonAsync(Url(theirs, "channels", branch), new { id = Guid.NewGuid(), name = "planted", kind = "topic" }), "POST channels");
             await AssertStatus(HttpStatusCode.Forbidden, stranger.PostAsJsonAsync(Url(theirs, "operations", branch), new { id = Guid.NewGuid(), ownerId = element, name = "planted", transport = "http" }), "POST operations");
@@ -80,7 +86,7 @@ public class WorkspaceIsolationTests(IntegrationFixture fixture)
         await AssertStatus(HttpStatusCode.Forbidden, stranger.DeleteAsync(Url(theirs, $"scenarios/{scenario}")), "DELETE scenario");
 
         // 2. The stranger's own project with the owner's branch: the branch is not one of this project.
-        foreach (var path in new[] { "operations", "channels", "subscriptions" })
+        foreach (var path in new[] { "operations", "channels", "subscriptions", "bindings" })
             await AssertStatus(HttpStatusCode.BadRequest, stranger.GetAsync(Url(mine, path, draft.StreamId)), $"GET {path} on a foreign branch");
         await AssertStatus(HttpStatusCode.BadRequest, stranger.PostAsJsonAsync(Url(mine, "channels", draft.StreamId), new { id = Guid.NewGuid(), name = "planted", kind = "topic" }), "POST channel on a foreign branch");
         await AssertStatus(HttpStatusCode.BadRequest, stranger.PatchAsJsonAsync(Url(mine, $"channels/{channel}", draft.StreamId), new { name = "renamed" }), "PATCH channel on a foreign branch");
@@ -91,6 +97,9 @@ public class WorkspaceIsolationTests(IntegrationFixture fixture)
         await AssertStatus(HttpStatusCode.NotFound, stranger.PatchAsJsonAsync(Url(mine, $"operations/{operation}"), new { name = "renamed" }), "PATCH foreign operation");
         await AssertStatus(HttpStatusCode.NotFound, stranger.PatchAsJsonAsync(Url(mine, $"channels/{channel}"), new { name = "renamed" }), "PATCH foreign channel");
         await AssertStatus(HttpStatusCode.NotFound, stranger.DeleteAsync(Url(mine, $"subscriptions/{subscription}")), "DELETE foreign subscription");
+        await AssertStatus(HttpStatusCode.NotFound, stranger.DeleteAsync(Url(mine, $"bindings/{binding}")), "DELETE foreign binding");
+        await AssertStatus(HttpStatusCode.NotFound, stranger.PatchAsJsonAsync(Url(mine, $"bindings/{binding}"), new { routingKey = "renamed" }), "PATCH foreign binding");
+        await AssertStatus(HttpStatusCode.BadRequest, stranger.PostAsJsonAsync(Url(mine, "bindings"), new { id = Guid.NewGuid(), sourceChannelId = channel, targetChannelId = queue }), "binding between foreign channels");
         await AssertStatus(HttpStatusCode.NotFound, stranger.GetAsync(Url(mine, $"scenarios/{scenario}")), "GET foreign scenario");
         await AssertStatus(HttpStatusCode.NotFound, stranger.PutAsync(Url(mine, $"scenarios/{scenario}"), Scenario(scenario, "Taken over")), "PUT foreign scenario");
         await AssertStatus(HttpStatusCode.NotFound, stranger.DeleteAsync(Url(mine, $"scenarios/{scenario}")), "DELETE foreign scenario");
@@ -101,7 +110,7 @@ public class WorkspaceIsolationTests(IntegrationFixture fixture)
         var run = await stranger.PostAsync(Url(mine, $"scenarios/{ownScenario}/run"), null);
         Assert.Equal(HttpStatusCode.OK, run.StatusCode);
         Assert.DoesNotContain("Secret", await run.Content.ReadAsStringAsync());
-        foreach (var path in new[] { "operations", "channels", "subscriptions", "scenarios" })
+        foreach (var path in new[] { "operations", "channels", "subscriptions", "bindings", "scenarios" })
             Assert.DoesNotContain("ecret", await stranger.GetStringAsync(Url(mine, path)));
 
         // Nothing of the owner's changed.

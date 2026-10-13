@@ -40,6 +40,8 @@ internal sealed class ModelIndex
             index.Add(Of(c));
         foreach (var s in model.Subscriptions.Values)
             index.Add(Of(model, s));
+        foreach (var b in model.Bindings.Values)
+            index.Add(Of(model, b));
         foreach (var m in model.Messages.Values)
             index.Add(Of(m));
         foreach (var schema in schemas)
@@ -62,6 +64,11 @@ internal sealed class ModelIndex
         s.Id, EntityKinds.Subscription, ContractDecider.SubscriptionLabel(model, s), Values(
             (Field.ChannelId, s.ChannelId.ToString()), (Field.ConsumerId, s.ConsumerId.ToString()),
             (Field.DeadLetterChannelId, s.DeadLetterChannelId?.ToString())), s.FactStatus.ToApiString(), s.Stale);
+
+    public static ModelEntity Of(ModelState model, BindingState b) => new(
+        b.Id, EntityKinds.Binding, ContractDecider.BindingLabel(model, b), Values(
+            (Field.SourceChannelId, b.SourceChannelId.ToString()), (Field.TargetChannelId, b.TargetChannelId.ToString()),
+            (Field.RoutingKey, b.RoutingKey)), b.FactStatus.ToApiString(), b.Stale);
 
     public static ModelEntity Of(MessageState m) => new(m.Id, EntityKinds.Message, m.Name, Values(
         (Field.Name, m.Name), (Field.ProducerId, m.ProducerId.ToString()),
@@ -89,6 +96,7 @@ internal sealed class ModelIndex
         EntityKinds.Operation => OperationFields,
         EntityKinds.Channel => ChannelFields,
         EntityKinds.Subscription => SubscriptionFields,
+        EntityKinds.Binding => BindingFields,
         EntityKinds.Message => MessageFields,
         EntityKinds.Schema => SchemaFields,
         _ => [],
@@ -98,6 +106,7 @@ internal sealed class ModelIndex
     private static readonly string[] OperationFields = [Field.Name, Field.Transport, Field.OwnerId];
     private static readonly string[] ChannelFields = [Field.Name, Field.Kind];
     private static readonly string[] SubscriptionFields = [Field.ChannelId, Field.ConsumerId, Field.DeadLetterChannelId];
+    private static readonly string[] BindingFields = [Field.SourceChannelId, Field.TargetChannelId, Field.RoutingKey];
     private static readonly string[] MessageFields = [Field.Name, Field.ProducerId, Field.ConsumerIds, Field.SchemaId];
     private static readonly string[] SchemaFields = [Field.Name, Field.Content];
 
@@ -105,6 +114,7 @@ internal sealed class ModelIndex
     /// The exact rule that says a fact and an entity are the same thing: the same kind and
     /// the same normalised name or route. For an operation the owner must be the same
     /// element too; a subscription has no name and matches on its channel and consumer; a
+    /// binding has none either and matches on its source, its target and its routing key; a
     /// message, a channel and a schema match on the name alone.
     /// It is used for two things: to join a fact to a hand-made entity, and to move an
     /// accepted link to the fact that replaced its key after the extraction rules changed.
@@ -114,6 +124,7 @@ internal sealed class ModelIndex
         EntityKinds.Element => $"{values.GetValueOrDefault(Field.Kind)}|{NormalName(values.GetValueOrDefault(Field.Name))}",
         EntityKinds.Operation => $"{values.GetValueOrDefault(Field.OwnerId)}|{NormalRoute(values.GetValueOrDefault(Field.Name))}",
         EntityKinds.Subscription => $"{values.GetValueOrDefault(Field.ChannelId)}|{values.GetValueOrDefault(Field.ConsumerId)}",
+        EntityKinds.Binding => $"{values.GetValueOrDefault(Field.SourceChannelId)}|{values.GetValueOrDefault(Field.TargetChannelId)}|{values.GetValueOrDefault(Field.RoutingKey)}",
         _ => NormalName(values.GetValueOrDefault(Field.Name)),
     };
 
@@ -158,6 +169,7 @@ internal sealed class ModelIndex
         EntityKinds.Operation => model.Operations.TryGetValue(id, out var operation) ? Of(operation) : null,
         EntityKinds.Channel => model.Channels.TryGetValue(id, out var channel) ? Of(channel) : null,
         EntityKinds.Subscription => model.Subscriptions.TryGetValue(id, out var subscription) ? Of(model, subscription) : null,
+        EntityKinds.Binding => model.Bindings.TryGetValue(id, out var binding) ? Of(model, binding) : null,
         EntityKinds.Message => model.Messages.TryGetValue(id, out var message) ? Of(message) : null,
         _ => null,
     };

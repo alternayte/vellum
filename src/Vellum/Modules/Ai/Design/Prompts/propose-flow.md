@@ -8,6 +8,7 @@ Rules for references:
 - Never write an ID, a GUID, a name or an alias that is not in the table in a reference field.
 - When the flow needs a thing that is not in the table, add one entry to "missing" with a new alias N1, N2, ... and reference that alias. State its kind, a name, why the flow needs it and how sure you are (confidence from 0 to 1). An operation names its owner in "ownerAlias". A subscription names "channelAlias" and "consumerAlias". A message names its producer in "ownerAlias". An element names "elementKind" (actor, system, app, store or component) and, for an app or a store, a parent system in "parentAlias"; for a component, a parent app.
 - Do not invent a thing that the table already holds.
+- "bindings" in the table lists the routes between channels: "source" (an exchange or a topic), "target" (a queue or an exchange) and "routingKey" (null for none). A binding has no alias.
 - The table can be a part of a larger model. When it holds "omitted" or "withheld", more things exist than it lists. Add a thing to "missing" only when the flow needs a thing that is new. The server compares every "missing" entry with the whole model and uses the existing thing when one fits.
 
 Rules for steps:
@@ -18,13 +19,15 @@ Rules for steps:
 - A step that a consumer runs when it receives a published message has slot "handler", the publish step as parent and the subscription alias in "slotKey".
 - A step inside a branch has slot "branchThen" or "branchElse". A step inside a parallel step has slot "parallelBranch" and the branch number (0, 1, ...) in "slotKey".
 - "order" sorts the steps of one list.
-- call: "from" (element) and "operation". publish: "from" (element), "channel" and "message". write: "by" (element), "store" (element of kind store) and "dataset". branch: "whenStep" (the id of an earlier step) and "is" (succeeded, failed or skipped). parallel: no reference.
+- call: "from" (element) and "operation". publish: "from" (element), "channel", "message" and "routingKey". write: "by" (element), "store" (element of kind store) and "dataset". branch: "whenStep" (the id of an earlier step) and "is" (succeeded, failed or skipped). parallel: no reference.
 - Set every field that a step type does not use to "".
+- Routing: a published message goes to the subscriptions on its channel. It also follows each binding whose "source" is that channel to the "target" channel, and from there in the same way. A binding without a routing key passes every message. A binding with a routing key passes a message only when the "routingKey" of the publish step equals it or matches it as an AMQP topic pattern (words separated by ".", "*" is one word, "#" is zero or more words). A step with "routingKey" "" passes no binding that has a key.
+- When a producer publishes to an exchange or a topic, publish to that channel, not to a queue behind it. A handler step may name a subscription on the published channel or on any channel that the bindings lead to. Give "routingKey" only when the request or the table states the key; otherwise "".
 - Payloads are JSON text in "requestJson", "responseJson", "payloadJson" and "changeJson". A step without a payload holds "". Give small representative values. Use numbers that fit a 64-bit floating-point number. When the table shows a schema summary for the operation or the message, give a payload that has every required property.
 
 Rules for faults and assertions:
 - A fault makes attempts against "target" fail. The target is the alias of an operation, a channel, a subscription or an element. "kind" is error, timeout or outage. Only an operation with a timeout can time out. "failFirst" limits the fault to the first attempts; 0 fails all.
-- An assertion of type "outcome" names "step" and "expected" (succeeded, failed or skipped). An assertion of type "event-count" names "eventKind" (RequestSent, ResponseReceived, RequestFailed, RequestTimedOut, RetryScheduled, Published, PublishFailed, Delivered, DeliveryFailed, DeadLettered, Dropped, DataWritten, DataWriteFailed, BranchTaken or StepSkipped), a "target" alias ("" counts every target) and "expectedCount". An "outcome" assertion holds "expectedCount" -1.
+- An assertion of type "outcome" names "step" and "expected" (succeeded, failed or skipped). An assertion of type "event-count" names "eventKind" (RequestSent, ResponseReceived, RequestFailed, RequestTimedOut, RetryScheduled, Published, PublishFailed, Delivered, DeliveryFailed, DeadLettered, Dropped, DataWritten, DataWriteFailed, BranchTaken, StepSkipped, Routed or NotRouted), a "target" alias ("" counts every target) and "expectedCount". An "outcome" assertion holds "expectedCount" -1.
 
 "openQuestions" lists what the request leaves undecided. "reasoningSummary" says in a few sentences how the flow follows from the request and the table. "evidence" names the aliases the flow relies on and why.
 

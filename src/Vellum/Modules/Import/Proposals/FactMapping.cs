@@ -10,10 +10,11 @@ public static class EntityKinds
     public const string Operation = "operation";
     public const string Channel = "channel";
     public const string Subscription = "subscription";
+    public const string Binding = "binding";
     public const string Message = "message";
     public const string Schema = "schema";
 
-    public static readonly string[] All = [Element, Operation, Channel, Subscription, Message, Schema];
+    public static readonly string[] All = [Element, Operation, Channel, Subscription, Binding, Message, Schema];
 }
 
 /// <summary>The names of the values a proposal can hold. They are the names of the model's own fields.</summary>
@@ -29,13 +30,16 @@ internal static class Field
     public const string ChannelId = "channelId";
     public const string ConsumerId = "consumerId";
     public const string DeadLetterChannelId = "deadLetterChannelId";
+    public const string SourceChannelId = "sourceChannelId";
+    public const string TargetChannelId = "targetChannelId";
+    public const string RoutingKey = "routingKey";
     public const string ProducerId = "producerId";
     public const string ConsumerIds = "consumerIds";
     public const string SchemaId = "schemaId";
 
     /// <summary>The fields that hold the ID of another entity.</summary>
     public static readonly string[] References =
-        [ParentId, OwnerId, ChannelId, ConsumerId, DeadLetterChannelId, ProducerId, SchemaId];
+        [ParentId, OwnerId, ChannelId, ConsumerId, DeadLetterChannelId, SourceChannelId, TargetChannelId, ProducerId, SchemaId];
 }
 
 /// <summary>A value of a candidate that is another fact. <paramref name="FactKey"/> is null when the source names none.</summary>
@@ -79,7 +83,8 @@ internal sealed record MappingResult(
 /// <item><term>(the repository)</term><description>An element of kind <c>system</c>. The model puts an app or a store inside a system, and the repository is the one grouping the source establishes.</description></item>
 /// <item><term>Operation</term><description>An operation of its service. An operation that only a contract file declares has no owner and stays evidence.</description></item>
 /// <item><term>Channel</term><description>A channel of kind topic, queue or exchange.</description></item>
-/// <item><term>Subscription</term><description>A subscription of its service to its queue, with the queue's dead-letter exchange. A queue-to-exchange binding stays evidence.</description></item>
+/// <item><term>Subscription</term><description>A subscription of its service to its queue, with the queue's dead-letter exchange.</description></item>
+/// <item><term>Subscription with an <c>exchange</c> attribute</term><description>A binding from that exchange to the queue the fact names, with the routing key when the source gives one that is not empty. Both channels must be channel facts of this scan; a binding that names a channel the scan did not resolve stays evidence. Only a statement of the source is a binding: a queue that a framework binds by convention has no binding fact.</description></item>
 /// <item><term>Message</term><description>A message. Its producer is the one service that a Publication fact names; its consumers are the services whose subscriptions name the message; its schema is its payload schema. A consumer that only a queue binding connects to the message is not added: that is a chain of two facts, not a statement of the source.</description></item>
 /// <item><term>Publication</term><description>Not an entity: it gives a message its producer. The model's relationships join two elements and a channel is not an element, so there is no producer-to-channel edge to write. A pattern fact and a contract-only publication stay evidence.</description></item>
 /// <item><term>Schema</term><description>A schema, when the fact holds a JSON Schema body. A contract document as a whole stays evidence.</description></item>
@@ -259,8 +264,19 @@ internal static class FactMapping
                     break;
 
                 case FactKind.Subscription:
-                    if (fact.Attributes.ContainsKey("exchange"))
-                        Evidence(fact, "binding-has-no-model-home");
+                    if (fact.Attributes.TryGetValue("exchange", out var exchange))
+                    {
+                        if (!fact.Attributes.TryGetValue("queue", out var bound) || !IsChannel(exchange) || !IsChannel(bound))
+                            Evidence(fact, "binding-channel-not-resolved");
+                        else
+                            Add(fact, EntityKinds.Binding, fact.Name, 5,
+                                // An empty key is what a fanout binding passes; it states no key.
+                                Fields((Field.RoutingKey, fact.Attributes.GetValueOrDefault("routingKey") is { Length: > 0 } key ? key : null)),
+                            [
+                                new Reference(Field.SourceChannelId, exchange, RequiredToAdd: true),
+                                new Reference(Field.TargetChannelId, bound, RequiredToAdd: true),
+                            ], consumed: ["exchange", "queue", "routingKey"]);
+                    }
                     else if (!IsConsumerSubscription(fact))
                         Evidence(fact, "no-channel-or-consumer");
                     else
@@ -380,6 +396,11 @@ internal static class FactMapping
 
         void Evidence(ExtractedFact fact, string reason) =>
             mapped.Add(new MappedFact(fact, FactDisposition.EvidenceOnly, reason));
+
+        // A channel fact of this scan that maps to a channel of the model.
+        bool IsChannel(string key) =>
+            byKey.TryGetValue(key, out var channel) && channel.Kind == FactKind.Channel
+            && ChannelKind(channel.Attributes.GetValueOrDefault("kind")) is not null;
     }
 
     /// <summary>True for a message or a channel that a contract file declares (AsyncAPI), as opposed to one the code declares.</summary>

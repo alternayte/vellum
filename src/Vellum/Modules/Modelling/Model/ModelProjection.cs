@@ -339,5 +339,6 @@ public static class ModelStore
     public static ModelEvent.BranchForked Fork(ModelState source, Guid sourceStreamId, long sourceVersion) => new(
         sourceStreamId, sourceVersion,
         [.. source.Elements.Values], [.. source.Relationships.Values], [.. source.Messages.Values],
-        [.. source.Operations.Values], [.. source.Channels.Values], [.. source.Subscriptions.Values]);
+        [.. source.Operations.Values], [.. source.Channels.Values], [.. source.Subscriptions.Values],
+        [.. source.Bindings.Values]);
 }
