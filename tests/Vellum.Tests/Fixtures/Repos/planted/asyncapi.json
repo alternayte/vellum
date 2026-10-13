@@ -1,0 +1,28 @@
+{
+  "asyncapi": "2.6.0",
+  "info": { "title": "Planted events", "version": "0.1.0", "x-start": "worker --password pl4nt-flag-asyncapi -p pl4nt-flag-asyncapi2" },
+  "servers": {
+    "production": { "url": "//events:pl4nt-url-asyncapi@broker.acme.example:5672", "protocol": "amqp" },
+    "mirror": { "url": "events:pl4nt-url-asyncapi2@mirror.acme.example", "protocol": "amqp" }
+  },
+  "channels": {
+    "planted.stock": {
+      "subscribe": {
+        "operationId": "onStockReserved",
+        "bindings": { "kafka": { "groupId": { "type": "string", "enum": ["pl4nt schema asyncapi"], "default": "pl4nt-schema-asyncapi2" } } },
+        "message": {
+          "name": "StockReserved",
+          "x-shibboleth": "pl4nt-short-asyncapi",
+          "payload": {
+            "type": "object",
+            "properties": {
+              "sku": { "type": "string", "example": "pl4nt-schema-asyncapi3", "const": "pl4nt-schema-asyncapi4" },
+              "pin": { "type": "string", "default": "4821-pl4nt-short" },
+              "lines": { "type": "array", "items": { "oneOf": [ { "type": "string", "default": "pl4nt-schema-asyncapi5", "enum": ["pl4nt schema asyncapi6"] } ] } }
+            }
+          }
+        }
+      }
+    }
+  }
+}

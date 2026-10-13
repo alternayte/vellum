@@ -5,26 +5,26 @@
   "facts": [
     {
       "kind": "Channel",
-      "key": "channel:billing.order-created",
+      "key": "channel:amqp:billing.order-created",
       "name": "billing.order-created",
       "attributes": {
         "kind": "queue",
-        "transport": "masstransit"
+        "transport": "amqp"
       },
       "evidence": [
         {
           "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:billing/Program.cs:16-20",
           "rule": "dotnet.masstransit-receive-endpoint",
-          "ruleVersion": 1
+          "ruleVersion": 2
         }
       ]
     },
     {
       "kind": "Channel",
-      "key": "channel:inventory.order-created",
+      "key": "channel:amqp:inventory.order-created",
       "name": "inventory.order-created",
       "attributes": {
-        "deadLetterExchange": "channel:order-events.dlx",
+        "deadLetterExchange": "channel:amqp:order-events.dlx",
         "durable": "true",
         "kind": "queue",
         "transport": "amqp"
@@ -33,48 +33,38 @@
         {
           "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:inventory-worker/consumer.go:40-42",
           "rule": "go.amqp-queue-declare",
-          "ruleVersion": 1
+          "ruleVersion": 2
         }
       ]
     },
     {
       "kind": "Channel",
-      "key": "channel:order-events",
-      "name": "orderEvents",
+      "key": "channel:amqp:order-events",
+      "name": "order-events",
       "attributes": {
-        "address": "order-events",
-        "amqp.exchange": "order-events",
         "amqp.exchange.type": "fanout",
-        "amqp.is": "routingKey",
-        "channelId": "orderEvents",
-        "contract": "contract:asyncapi.yaml",
         "durable": "true",
-        "entityOf": "message:OrderCreated",
+        "entityOf": "message:Orders.Contracts.OrderCreated",
         "kind": "exchange",
-        "messages": "message:OrderCreated",
+        "messageType": "OrderCreated",
         "transport": "amqp"
       },
       "evidence": [
         {
-          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:asyncapi.yaml:10-21",
-          "rule": "asyncapi.channel",
-          "ruleVersion": 1
-        },
-        {
           "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:inventory-worker/consumer.go:33-33",
           "rule": "go.amqp-exchange-declare",
-          "ruleVersion": 1
+          "ruleVersion": 2
         },
         {
           "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:orders-api/Program.cs:16-16",
           "rule": "dotnet.masstransit-entity-name",
-          "ruleVersion": 1
+          "ruleVersion": 2
         }
       ]
     },
     {
       "kind": "Channel",
-      "key": "channel:order-events.dlx",
+      "key": "channel:amqp:order-events.dlx",
       "name": "order-events.dlx",
       "attributes": {
         "amqp.exchange.type": "fanout",
@@ -86,7 +76,30 @@
         {
           "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:inventory-worker/consumer.go:36-36",
           "rule": "go.amqp-exchange-declare",
-          "ruleVersion": 1
+          "ruleVersion": 2
+        }
+      ]
+    },
+    {
+      "kind": "Channel",
+      "key": "channel:asyncapi.yaml#orderEvents",
+      "name": "orderEvents",
+      "attributes": {
+        "address": "order-events",
+        "amqp.exchange": "order-events",
+        "amqp.exchange.type": "fanout",
+        "amqp.is": "routingKey",
+        "channelId": "orderEvents",
+        "contract": "contract:asyncapi.yaml",
+        "kind": "exchange",
+        "messages": "message:asyncapi.yaml#OrderCreated",
+        "transport": "amqp"
+      },
+      "evidence": [
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:asyncapi.yaml:10-21",
+          "rule": "asyncapi.channel",
+          "ruleVersion": 2
         }
       ]
     },
@@ -105,13 +118,13 @@
         {
           "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:inventory-worker/main.go:20-20",
           "rule": "go.sql-open",
-          "ruleVersion": 1
+          "ruleVersion": 2
         }
       ]
     },
     {
       "kind": "DataAccess",
-      "key": "dataaccess:orders-api:OrdersDbContext",
+      "key": "dataaccess:orders-api:Orders.Api.OrdersDbContext",
       "name": "OrdersDbContext",
       "attributes": {
         "dbContext": "OrdersDbContext",
@@ -125,18 +138,18 @@
         {
           "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:orders-api/OrdersDbContext.cs:5-6",
           "rule": "dotnet.efcore-dbcontext",
-          "ruleVersion": 1
+          "ruleVersion": 2
         },
         {
           "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:orders-api/OrdersDbContext.cs:7-7",
           "rule": "dotnet.efcore-dbcontext",
-          "ruleVersion": 1
+          "ruleVersion": 2
         }
       ]
     },
     {
       "kind": "DataStore",
-      "key": "datastore:postgres",
+      "key": "datastore:.:postgres",
       "name": "postgres",
       "attributes": {
         "environment": "POSTGRES_DB,POSTGRES_PASSWORD,POSTGRES_USER",
@@ -149,7 +162,7 @@
         {
           "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:docker-compose.yml:2-11",
           "rule": "compose.service",
-          "ruleVersion": 1
+          "ruleVersion": 2
         }
       ]
     },
@@ -171,7 +184,7 @@
         {
           "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:billing/Billing.csproj:10-10",
           "rule": "dotnet.package-reference",
-          "ruleVersion": 1
+          "ruleVersion": 2
         }
       ]
     },
@@ -190,7 +203,7 @@
         {
           "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:billing/Billing.csproj:11-11",
           "rule": "dotnet.package-reference",
-          "ruleVersion": 1
+          "ruleVersion": 2
         }
       ]
     },
@@ -208,7 +221,7 @@
         {
           "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:billing/Billing.csproj:15-15",
           "rule": "dotnet.package-reference",
-          "ruleVersion": 1
+          "ruleVersion": 2
         }
       ]
     },
@@ -228,7 +241,7 @@
         {
           "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:inventory-worker/go.mod:11-11",
           "rule": "go.require",
-          "ruleVersion": 1
+          "ruleVersion": 2
         }
       ]
     },
@@ -249,7 +262,7 @@
         {
           "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:inventory-worker/go.mod:6-6",
           "rule": "go.require",
-          "ruleVersion": 1
+          "ruleVersion": 2
         }
       ]
     },
@@ -270,7 +283,7 @@
         {
           "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:inventory-worker/go.mod:7-7",
           "rule": "go.require",
-          "ruleVersion": 1
+          "ruleVersion": 2
         }
       ]
     },
@@ -290,7 +303,7 @@
         {
           "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:inventory-worker/go.mod:12-12",
           "rule": "go.require",
-          "ruleVersion": 1
+          "ruleVersion": 2
         }
       ]
     },
@@ -311,7 +324,7 @@
         {
           "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:orders-api/Orders.Api.csproj:10-10",
           "rule": "dotnet.package-reference",
-          "ruleVersion": 1
+          "ruleVersion": 2
         }
       ]
     },
@@ -333,7 +346,7 @@
         {
           "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:orders-api/Orders.Api.csproj:11-11",
           "rule": "dotnet.package-reference",
-          "ruleVersion": 1
+          "ruleVersion": 2
         }
       ]
     },
@@ -355,7 +368,7 @@
         {
           "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:orders-api/Orders.Api.csproj:12-12",
           "rule": "dotnet.package-reference",
-          "ruleVersion": 1
+          "ruleVersion": 2
         }
       ]
     },
@@ -373,13 +386,13 @@
         {
           "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:orders-api/Orders.Api.csproj:16-16",
           "rule": "dotnet.package-reference",
-          "ruleVersion": 1
+          "ruleVersion": 2
         }
       ]
     },
     {
       "kind": "Deployment",
-      "key": "deployment:compose:billing",
+      "key": "deployment:compose:.:billing",
       "name": "billing",
       "attributes": {
         "build": ".",
@@ -394,13 +407,13 @@
         {
           "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:docker-compose.yml:32-39",
           "rule": "compose.service",
-          "ruleVersion": 1
+          "ruleVersion": 2
         }
       ]
     },
     {
       "kind": "Deployment",
-      "key": "deployment:compose:inventory-worker",
+      "key": "deployment:compose:.:inventory-worker",
       "name": "inventory-worker",
       "attributes": {
         "build": "./inventory-worker",
@@ -415,13 +428,13 @@
         {
           "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:docker-compose.yml:41-50",
           "rule": "compose.service",
-          "ruleVersion": 1
+          "ruleVersion": 2
         }
       ]
     },
     {
       "kind": "Deployment",
-      "key": "deployment:compose:orders-api",
+      "key": "deployment:compose:.:orders-api",
       "name": "orders-api",
       "attributes": {
         "build": ".",
@@ -437,13 +450,13 @@
         {
           "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:docker-compose.yml:19-30",
           "rule": "compose.service",
-          "ruleVersion": 1
+          "ruleVersion": 2
         }
       ]
     },
     {
       "kind": "Deployment",
-      "key": "deployment:compose:rabbitmq",
+      "key": "deployment:compose:.:rabbitmq",
       "name": "rabbitmq",
       "attributes": {
         "image": "rabbitmq:3.13-management",
@@ -456,7 +469,7 @@
         {
           "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:docker-compose.yml:13-17",
           "rule": "compose.service",
-          "ruleVersion": 1
+          "ruleVersion": 2
         }
       ]
     },
@@ -466,7 +479,7 @@
       "name": "billing/Dockerfile",
       "attributes": {
         "baseImage": "mcr.microsoft.com/dotnet/runtime:10.0",
-        "entrypoint": "[\"dotnet\", \"Billing.dll\"]",
+        "entrypoint": "dotnet",
         "source": "dockerfile",
         "stageImages": "mcr.microsoft.com/dotnet/runtime:10.0,mcr.microsoft.com/dotnet/sdk:10.0"
       },
@@ -474,17 +487,17 @@
         {
           "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:billing/Dockerfile:1-1",
           "rule": "docker.dockerfile",
-          "ruleVersion": 1
+          "ruleVersion": 2
         },
         {
           "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:billing/Dockerfile:7-7",
           "rule": "docker.dockerfile",
-          "ruleVersion": 1
+          "ruleVersion": 2
         },
         {
           "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:billing/Dockerfile:10-10",
           "rule": "docker.dockerfile",
-          "ruleVersion": 1
+          "ruleVersion": 2
         }
       ]
     },
@@ -494,7 +507,7 @@
       "name": "inventory-worker/Dockerfile",
       "attributes": {
         "baseImage": "gcr.io/distroless/static-debian12",
-        "entrypoint": "[\"/inventory-worker\"]",
+        "entrypoint": "/inventory-worker",
         "ports": "8081",
         "source": "dockerfile",
         "stageImages": "gcr.io/distroless/static-debian12,golang:1.23-alpine"
@@ -503,22 +516,22 @@
         {
           "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:inventory-worker/Dockerfile:1-1",
           "rule": "docker.dockerfile",
-          "ruleVersion": 1
+          "ruleVersion": 2
         },
         {
           "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:inventory-worker/Dockerfile:8-8",
           "rule": "docker.dockerfile",
-          "ruleVersion": 1
+          "ruleVersion": 2
         },
         {
           "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:inventory-worker/Dockerfile:10-10",
           "rule": "docker.dockerfile",
-          "ruleVersion": 1
+          "ruleVersion": 2
         },
         {
           "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:inventory-worker/Dockerfile:11-11",
           "rule": "docker.dockerfile",
-          "ruleVersion": 1
+          "ruleVersion": 2
         }
       ]
     },
@@ -528,7 +541,7 @@
       "name": "orders-api/Dockerfile",
       "attributes": {
         "baseImage": "mcr.microsoft.com/dotnet/aspnet:10.0",
-        "entrypoint": "[\"dotnet\", \"Orders.Api.dll\"]",
+        "entrypoint": "dotnet",
         "ports": "8080",
         "source": "dockerfile",
         "stageImages": "mcr.microsoft.com/dotnet/aspnet:10.0,mcr.microsoft.com/dotnet/sdk:10.0"
@@ -537,28 +550,28 @@
         {
           "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:orders-api/Dockerfile:2-2",
           "rule": "docker.dockerfile",
-          "ruleVersion": 1
+          "ruleVersion": 2
         },
         {
           "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:orders-api/Dockerfile:8-8",
           "rule": "docker.dockerfile",
-          "ruleVersion": 1
+          "ruleVersion": 2
         },
         {
           "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:orders-api/Dockerfile:12-12",
           "rule": "docker.dockerfile",
-          "ruleVersion": 1
+          "ruleVersion": 2
         },
         {
           "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:orders-api/Dockerfile:13-13",
           "rule": "docker.dockerfile",
-          "ruleVersion": 1
+          "ruleVersion": 2
         }
       ]
     },
     {
       "kind": "Deployment",
-      "key": "deployment:k8s:deployment/orders/orders-api",
+      "key": "deployment:k8s:deploy/k8s/orders-api.yaml#deployment/orders/orders-api",
       "name": "orders-api",
       "attributes": {
         "containers": "orders-api",
@@ -574,13 +587,13 @@
         {
           "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:deploy/k8s/orders-api.yaml:1-26",
           "rule": "k8s.workload",
-          "ruleVersion": 1
+          "ruleVersion": 2
         }
       ]
     },
     {
       "kind": "Deployment",
-      "key": "deployment:k8s:ingress/orders/orders-api",
+      "key": "deployment:k8s:deploy/k8s/orders-api.yaml#ingress/orders/orders-api",
       "name": "orders-api",
       "attributes": {
         "kind": "Ingress",
@@ -593,13 +606,13 @@
         {
           "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:deploy/k8s/orders-api.yaml:41-57",
           "rule": "k8s.ingress",
-          "ruleVersion": 1
+          "ruleVersion": 2
         }
       ]
     },
     {
       "kind": "Deployment",
-      "key": "deployment:k8s:service/orders/orders-api",
+      "key": "deployment:k8s:deploy/k8s/orders-api.yaml#service/orders/orders-api",
       "name": "orders-api",
       "attributes": {
         "kind": "Service",
@@ -614,7 +627,7 @@
         {
           "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:deploy/k8s/orders-api.yaml:28-39",
           "rule": "k8s.service",
-          "ruleVersion": 1
+          "ruleVersion": 2
         }
       ]
     },
@@ -627,6 +640,7 @@
         "deployJobs": "deploy",
         "jobs": "test,images,deploy",
         "name": "CI",
+        "otherJobs": "test",
         "source": "github-actions",
         "triggers": "pull_request,push"
       },
@@ -634,30 +648,45 @@
         {
           "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:.github/workflows/ci.yml:1-1",
           "rule": "github.workflow",
-          "ruleVersion": 1
+          "ruleVersion": 2
         },
         {
           "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:.github/workflows/ci.yml:23-41",
           "rule": "github.workflow",
-          "ruleVersion": 1
+          "ruleVersion": 2
         },
         {
           "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:.github/workflows/ci.yml:43-49",
           "rule": "github.workflow",
-          "ruleVersion": 1
+          "ruleVersion": 2
         }
       ]
     },
     {
       "kind": "Message",
-      "key": "message:OrderCreated",
+      "key": "message:Orders.Contracts.OrderCreated",
       "name": "OrderCreated",
       "attributes": {
         "clrType": "Orders.Contracts.OrderCreated",
+        "declaredIn": "contracts/Orders.Contracts.csproj",
+        "fields": "CreatedAt:DateTimeOffset;CustomerId:Guid;OrderId:Guid;TotalAmount:decimal"
+      },
+      "evidence": [
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:contracts/OrderCreated.cs:4-8",
+          "rule": "dotnet.message-contract",
+          "ruleVersion": 2
+        }
+      ]
+    },
+    {
+      "kind": "Message",
+      "key": "message:asyncapi.yaml#OrderCreated",
+      "name": "OrderCreated",
+      "attributes": {
         "contentType": "application/vnd.masstransit+json",
         "contract": "contract:asyncapi.yaml",
-        "declaredIn": "contracts/Orders.Contracts.csproj",
-        "fields": "CreatedAt:DateTimeOffset;CustomerId:Guid;OrderId:Guid;TotalAmount:decimal",
+        "name": "OrderCreated",
         "payloadSchema": "schema:asyncapi.yaml#/components/schemas/OrderCreated",
         "title": "An order was accepted"
       },
@@ -665,11 +694,47 @@
         {
           "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:asyncapi.yaml:32-37",
           "rule": "asyncapi.message",
+          "ruleVersion": 2
+        }
+      ]
+    },
+    {
+      "kind": "Message",
+      "key": "message:github.com/acme/orders/inventory-worker.envelope",
+      "name": "envelope",
+      "attributes": {
+        "declaredIn": "inventory-worker/go.mod",
+        "fields": "message:orderCreated;messageId:string",
+        "goType": "github.com/acme/orders/inventory-worker.envelope",
+        "language": "go"
+      },
+      "evidence": [
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:inventory-worker/consumer.go:26-29",
+          "rule": "go.struct-message",
           "ruleVersion": 1
         },
         {
-          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:contracts/OrderCreated.cs:4-8",
-          "rule": "dotnet.message-contract",
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:inventory-worker/consumer.go:63-63",
+          "rule": "go.struct-message",
+          "ruleVersion": 1
+        }
+      ]
+    },
+    {
+      "kind": "Message",
+      "key": "message:github.com/acme/orders/inventory-worker.orderCreated",
+      "name": "orderCreated",
+      "attributes": {
+        "declaredIn": "inventory-worker/go.mod",
+        "fields": "customerId:string;orderId:string;totalAmount:float64",
+        "goType": "github.com/acme/orders/inventory-worker.orderCreated",
+        "language": "go"
+      },
+      "evidence": [
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:inventory-worker/consumer.go:19-23",
+          "rule": "go.struct-message",
           "ruleVersion": 1
         }
       ]
@@ -679,11 +744,12 @@
       "key": "operation:inventory-worker:GET /healthz",
       "name": "GET /healthz",
       "attributes": {
+        "declaredRoute": "GET /healthz",
         "framework": "net/http",
         "method": "GET",
         "path": "/healthz",
         "project": "inventory-worker/go.mod",
-        "routeTemplate": "GET /healthz",
+        "routeTemplate": "/healthz",
         "service": "service:inventory-worker",
         "transport": "http"
       },
@@ -691,7 +757,7 @@
         {
           "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:inventory-worker/main.go:41-47",
           "rule": "go.net-http-route",
-          "ruleVersion": 1
+          "ruleVersion": 2
         }
       ]
     },
@@ -701,18 +767,20 @@
       "name": "GET /healthz",
       "attributes": {
         "contract": "contract:openapi.yaml",
+        "declaredRoute": "/healthz",
         "method": "GET",
         "operationId": "health",
         "path": "/healthz",
         "responses": "200",
-        "security": "false",
+        "routeTemplate": "/healthz",
+        "security": "none",
         "transport": "http"
       },
       "evidence": [
         {
           "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:openapi.yaml:50-55",
           "rule": "openapi.operation",
-          "ruleVersion": 1
+          "ruleVersion": 2
         }
       ]
     },
@@ -722,12 +790,14 @@
       "name": "GET /orders/{id}",
       "attributes": {
         "contract": "contract:openapi.yaml",
+        "declaredRoute": "/orders/{id}",
         "method": "GET",
         "operationId": "getOrder",
         "path": "/orders/{id}",
         "response.200.schema": "schema:openapi.yaml#/components/schemas/Order",
         "responses": "200,404",
-        "security": "true",
+        "routeTemplate": "/orders/{}",
+        "security": "required",
         "summary": "Read one order",
         "transport": "http"
       },
@@ -735,7 +805,7 @@
         {
           "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:openapi.yaml:30-48",
           "rule": "openapi.operation",
-          "ruleVersion": 1
+          "ruleVersion": 2
         }
       ]
     },
@@ -745,6 +815,7 @@
       "name": "POST /orders",
       "attributes": {
         "contract": "contract:openapi.yaml",
+        "declaredRoute": "/orders",
         "method": "POST",
         "operationId": "createOrder",
         "path": "/orders",
@@ -752,7 +823,8 @@
         "requestSchema": "schema:openapi.yaml#/components/schemas/CreateOrder",
         "response.201.schema": "schema:openapi.yaml#/components/schemas/Order",
         "responses": "201,400",
-        "security": "true",
+        "routeTemplate": "/orders",
+        "security": "required",
         "summary": "Accept an order",
         "transport": "http"
       },
@@ -760,7 +832,7 @@
         {
           "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:openapi.yaml:11-28",
           "rule": "openapi.operation",
-          "ruleVersion": 1
+          "ruleVersion": 2
         }
       ]
     },
@@ -769,6 +841,7 @@
       "key": "operation:orders-api:GET /healthz",
       "name": "GET /healthz",
       "attributes": {
+        "declaredRoute": "/healthz",
         "framework": "aspnetcore-minimal-api",
         "method": "GET",
         "path": "/healthz",
@@ -781,7 +854,7 @@
         {
           "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:orders-api/Program.cs:27-27",
           "rule": "dotnet.minimal-api-route",
-          "ruleVersion": 1
+          "ruleVersion": 2
         }
       ]
     },
@@ -790,11 +863,12 @@
       "key": "operation:orders-api:GET /orders/{id}",
       "name": "GET /orders/{id}",
       "attributes": {
+        "declaredRoute": "/orders/{id:guid}",
         "framework": "aspnetcore-minimal-api",
         "method": "GET",
         "path": "/orders/{id}",
         "project": "orders-api/Orders.Api.csproj",
-        "routeTemplate": "/orders/{id:guid}",
+        "routeTemplate": "/orders/{}",
         "service": "service:orders-api",
         "transport": "http"
       },
@@ -802,7 +876,7 @@
         {
           "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:orders-api/Program.cs:43-44",
           "rule": "dotnet.minimal-api-route",
-          "ruleVersion": 1
+          "ruleVersion": 2
         }
       ]
     },
@@ -811,11 +885,12 @@
       "key": "operation:orders-api:POST /orders",
       "name": "POST /orders",
       "attributes": {
+        "declaredRoute": "/orders/",
         "framework": "aspnetcore-minimal-api",
         "method": "POST",
         "path": "/orders",
         "project": "orders-api/Orders.Api.csproj",
-        "routeTemplate": "/orders/",
+        "routeTemplate": "/orders",
         "service": "service:orders-api",
         "transport": "http"
       },
@@ -823,7 +898,7 @@
         {
           "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:orders-api/Program.cs:31-41",
           "rule": "dotnet.minimal-api-route",
-          "ruleVersion": 1
+          "ruleVersion": 2
         }
       ]
     },
@@ -833,26 +908,27 @@
       "name": "publishOrderCreated",
       "attributes": {
         "action": "send",
-        "channel": "channel:order-events",
+        "channel": "channel:asyncapi.yaml#orderEvents",
         "contract": "contract:asyncapi.yaml",
-        "messages": "message:OrderCreated",
+        "messages": "message:asyncapi.yaml#OrderCreated",
         "summary": "orders-api publishes this once for each accepted order."
       },
       "evidence": [
         {
           "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:asyncapi.yaml:23-29",
           "rule": "asyncapi.operation",
-          "ruleVersion": 1
+          "ruleVersion": 2
         }
       ]
     },
     {
       "kind": "Publication",
-      "key": "publication:orders-api:OrderCreated",
+      "key": "publication:orders-api:Orders.Contracts.OrderCreated",
       "name": "OrderCreated",
       "attributes": {
-        "channel": "channel:order-events",
-        "message": "message:OrderCreated",
+        "channel": "channel:amqp:order-events",
+        "message": "message:Orders.Contracts.OrderCreated",
+        "messageType": "OrderCreated",
         "mode": "publish",
         "project": "orders-api/Orders.Api.csproj",
         "service": "service:orders-api",
@@ -862,7 +938,7 @@
         {
           "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:orders-api/Program.cs:38-38",
           "rule": "dotnet.masstransit-publish",
-          "ruleVersion": 1
+          "ruleVersion": 2
         }
       ]
     },
@@ -874,6 +950,7 @@
         "apiVersion": "1.2.0",
         "format": "asyncapi",
         "protocols": "amqp",
+        "serverUrls": "rabbitmq:5672",
         "servers": "rabbitmq",
         "specVersion": "3.0.0",
         "title": "Orders events"
@@ -882,7 +959,7 @@
         {
           "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:asyncapi.yaml:1-1",
           "rule": "asyncapi.document",
-          "ruleVersion": 1
+          "ruleVersion": 2
         }
       ]
     },
@@ -901,12 +978,12 @@
         {
           "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:openapi.yaml:1-1",
           "rule": "openapi.document",
-          "ruleVersion": 1
+          "ruleVersion": 2
         },
         {
           "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:openapi.yaml:5-6",
           "rule": "openapi.document",
-          "ruleVersion": 1
+          "ruleVersion": 2
         }
       ]
     },
@@ -924,7 +1001,7 @@
         {
           "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:asyncapi.yaml:39-53",
           "rule": "asyncapi.schema",
-          "ruleVersion": 1
+          "ruleVersion": 2
         }
       ]
     },
@@ -942,7 +1019,7 @@
         {
           "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:openapi.yaml:73-84",
           "rule": "openapi.schema",
-          "ruleVersion": 1
+          "ruleVersion": 2
         }
       ]
     },
@@ -960,7 +1037,7 @@
         {
           "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:openapi.yaml:85-103",
           "rule": "openapi.schema",
-          "ruleVersion": 1
+          "ruleVersion": 2
         }
       ]
     },
@@ -978,7 +1055,7 @@
         {
           "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:openapi.yaml:62-72",
           "rule": "openapi.schema",
-          "ruleVersion": 1
+          "ruleVersion": 2
         }
       ]
     },
@@ -997,7 +1074,7 @@
         {
           "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:billing/Billing.csproj:1-1",
           "rule": "dotnet.project",
-          "ruleVersion": 1
+          "ruleVersion": 2
         }
       ]
     },
@@ -1016,7 +1093,7 @@
         {
           "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:inventory-worker/go.mod:1-1",
           "rule": "go.module",
-          "ruleVersion": 1
+          "ruleVersion": 2
         }
       ]
     },
@@ -1035,18 +1112,18 @@
         {
           "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:orders-api/Orders.Api.csproj:1-1",
           "rule": "dotnet.project",
-          "ruleVersion": 1
+          "ruleVersion": 2
         }
       ]
     },
     {
       "kind": "Subscription",
-      "key": "binding:inventory.order-created:order-events",
+      "key": "binding:inventory-worker:amqp:inventory.order-created:order-events",
       "name": "inventory.order-created bound to order-events",
       "attributes": {
-        "exchange": "channel:order-events",
+        "exchange": "channel:amqp:order-events",
         "project": "inventory-worker/go.mod",
-        "queue": "channel:inventory.order-created",
+        "queue": "channel:amqp:inventory.order-created",
         "service": "service:inventory-worker",
         "transport": "amqp"
       },
@@ -1054,19 +1131,21 @@
         {
           "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:inventory-worker/consumer.go:46-46",
           "rule": "go.amqp-queue-bind",
-          "ruleVersion": 1
+          "ruleVersion": 2
         }
       ]
     },
     {
       "kind": "Subscription",
-      "key": "subscription:billing:OrderCreatedConsumer:OrderCreated",
+      "key": "subscription:billing:Billing.OrderCreatedConsumer:Orders.Contracts.OrderCreated",
       "name": "OrderCreatedConsumer consumes OrderCreated",
       "attributes": {
+        "clrType": "Billing.OrderCreatedConsumer",
         "consumer": "OrderCreatedConsumer",
-        "message": "message:OrderCreated",
+        "message": "message:Orders.Contracts.OrderCreated",
+        "messageType": "OrderCreated",
         "project": "billing/Billing.csproj",
-        "queue": "channel:billing.order-created",
+        "queue": "channel:amqp:billing.order-created",
         "service": "service:billing",
         "transport": "masstransit"
       },
@@ -1074,12 +1153,12 @@
         {
           "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:billing/OrderCreatedConsumer.cs:7-9",
           "rule": "dotnet.masstransit-consumer",
-          "ruleVersion": 1
+          "ruleVersion": 2
         },
         {
           "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:billing/Program.cs:16-20",
           "rule": "dotnet.masstransit-receive-endpoint",
-          "ruleVersion": 1
+          "ruleVersion": 2
         }
       ]
     },
@@ -1088,8 +1167,9 @@
       "key": "subscription:inventory-worker:amqp:inventory.order-created",
       "name": "consume inventory.order-created",
       "attributes": {
+        "message": "message:github.com/acme/orders/inventory-worker.envelope",
         "project": "inventory-worker/go.mod",
-        "queue": "channel:inventory.order-created",
+        "queue": "channel:amqp:inventory.order-created",
         "service": "service:inventory-worker",
         "transport": "amqp"
       },
@@ -1097,6 +1177,11 @@
         {
           "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:inventory-worker/consumer.go:50-50",
           "rule": "go.amqp-consume",
+          "ruleVersion": 2
+        },
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:inventory-worker/consumer.go:63-63",
+          "rule": "go.struct-message",
           "ruleVersion": 1
         }
       ]

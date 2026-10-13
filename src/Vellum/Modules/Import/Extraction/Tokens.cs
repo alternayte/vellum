@@ -21,6 +21,7 @@ internal sealed class TokenList
         _tokens = tokens;
         Match = new int[tokens.Count];
         Parent = new int[tokens.Count];
+        Depth = new int[tokens.Count];
         var open = new Stack<int>();
         // Open brackets of each kind, so that a stray closer costs nothing.
         int round = 0, square = 0, curly = 0;
@@ -28,6 +29,7 @@ internal sealed class TokenList
         {
             Match[i] = -1;
             Parent[i] = open.Count > 0 ? open.Peek() : -1;
+            Depth[i] = open.Count;
             if (tokens[i].Kind != TokKind.Punct)
                 continue;
             var c = tokens[i].Text[0];
@@ -49,6 +51,7 @@ internal sealed class TokenList
                 Match[opener] = i;
                 Match[i] = opener;
                 Parent[i] = open.Count > 0 ? open.Peek() : -1;
+                Depth[i] = open.Count;
             }
         }
 
@@ -64,6 +67,8 @@ internal sealed class TokenList
     public int[] Match { get; }
     /// <summary>The index of the innermost open bracket around a token, or -1.</summary>
     public int[] Parent { get; }
+    /// <summary>The number of open brackets around a token. A rule uses it to refuse a construct that nests deeper than its documented maximum.</summary>
+    public int[] Depth { get; }
     public int Count => _tokens.Count;
     public Tok this[int index] => _tokens[index];
 

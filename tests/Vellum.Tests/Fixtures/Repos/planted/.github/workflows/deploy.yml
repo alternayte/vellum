@@ -1,0 +1,31 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      pin:
+        default: 4821-pl4nt-short
+        type: choice
+        options: [pl4nt-schema-workflow]
+
+env:
+  SHIBBOLETH: pl4nt-short-workflow
+  MIRROR: //mirror:pl4nt-url-workflow@cache.acme.example
+
+jobs:
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: docker/build-push-action@v6
+        with:
+          registry: deploy:pl4nt-url-workflow2@registry.acme.example
+          example: pl4nt-schema-workflow2
+          const: pl4nt-schema-workflow3
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - run: kubectl apply -f k8s/ --token pl4nt-flag-workflow -p pl4nt-flag-workflow2
+      - run: |
+          helm upgrade api ./chart --set password=pl4nt-flag-workflow3 --password pl4nt-flag-workflow4
