@@ -16,8 +16,9 @@ export default defineConfig({
     tailwindcss(),
   ],
   server: {
+    // VELLUM_API moves the proxy to an API on another port.
     proxy: {
-      '/api': 'http://localhost:5195',
+      '/api': process.env.VELLUM_API ?? 'http://localhost:5195',
     },
   },
   resolve: {
