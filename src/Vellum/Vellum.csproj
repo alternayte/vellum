@@ -43,6 +43,7 @@
 
   <ItemGroup>
     <EmbeddedResource Include="../Vellum.Web/src/rubrics/*.md" LinkBase="Rubrics" />
+    <EmbeddedResource Include="Modules/Ai/Design/Prompts/*.md" />
   </ItemGroup>
 
 </Project>

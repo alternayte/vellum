@@ -1,0 +1,153 @@
+{
+  "name": "Place an order",
+  "summary": "The customer places an order. Orders saves it and publishes OrderCreated. Inventory and Billing consume it. Billing fails.",
+  "steps": [
+    {
+      "id": "place",
+      "parentStepId": null,
+      "slot": "root",
+      "slotKey": null,
+      "order": 1,
+      "type": "call",
+      "from": "E2",
+      "operation": "O1",
+      "channel": null,
+      "message": null,
+      "by": null,
+      "store": null,
+      "dataset": null,
+      "whenStep": null,
+      "is": null,
+      "requestJson": "{\"sku\":\"apple\",\"qty\":2}",
+      "responseJson": "{\"orderId\":\"o-1\"}",
+      "payloadJson": null,
+      "changeJson": null
+    },
+    {
+      "id": "save",
+      "parentStepId": "place",
+      "slot": "then",
+      "slotKey": null,
+      "order": 1,
+      "type": "write",
+      "from": null,
+      "operation": null,
+      "channel": null,
+      "message": null,
+      "by": "E4",
+      "store": "E5",
+      "dataset": "orders",
+      "whenStep": null,
+      "is": null,
+      "requestJson": null,
+      "responseJson": null,
+      "payloadJson": null,
+      "changeJson": "{\"orderId\":\"o-1\",\"status\":\"accepted\"}"
+    },
+    {
+      "id": "publish",
+      "parentStepId": "place",
+      "slot": "then",
+      "slotKey": null,
+      "order": 2,
+      "type": "publish",
+      "from": "E4",
+      "operation": null,
+      "channel": "C1",
+      "message": "M1",
+      "by": null,
+      "store": null,
+      "dataset": null,
+      "whenStep": null,
+      "is": null,
+      "requestJson": null,
+      "responseJson": null,
+      "payloadJson": "{\"orderId\":\"o-1\"}",
+      "changeJson": null
+    },
+    {
+      "id": "reserve",
+      "parentStepId": "publish",
+      "slot": "handler",
+      "slotKey": "S2",
+      "order": 1,
+      "type": "write",
+      "from": null,
+      "operation": null,
+      "channel": null,
+      "message": null,
+      "by": "E3",
+      "store": "E5",
+      "dataset": "stock",
+      "whenStep": null,
+      "is": null,
+      "requestJson": null,
+      "responseJson": null,
+      "payloadJson": null,
+      "changeJson": "{\"sku\":\"apple\",\"reserved\":2}"
+    },
+    {
+      "id": "invoice",
+      "parentStepId": "publish",
+      "slot": "handler",
+      "slotKey": "S1",
+      "order": 1,
+      "type": "write",
+      "from": null,
+      "operation": null,
+      "channel": null,
+      "message": null,
+      "by": "E1",
+      "store": "E5",
+      "dataset": "invoices",
+      "whenStep": null,
+      "is": null,
+      "requestJson": null,
+      "responseJson": null,
+      "payloadJson": null,
+      "changeJson": "{\"orderId\":\"o-1\"}"
+    }
+  ],
+  "faults": [
+    {
+      "target": "E1",
+      "kind": "error",
+      "failFirst": null
+    }
+  ],
+  "assertions": [
+    {
+      "id": "order-accepted",
+      "type": "outcome",
+      "step": "place",
+      "expected": "succeeded",
+      "eventKind": null,
+      "target": null,
+      "expectedCount": null
+    },
+    {
+      "id": "billing-drops",
+      "type": "event-count",
+      "step": null,
+      "expected": null,
+      "eventKind": "Dropped",
+      "target": "S1",
+      "expectedCount": 1
+    }
+  ],
+  "missing": [],
+  "openQuestions": [
+    "Must Billing get a dead-letter channel?"
+  ],
+  "reasoningSummary": "The request names the order call, the save and the event. The table holds one operation, one topic and two subscriptions for them.",
+  "evidence": [
+    {
+      "alias": "O1",
+      "why": "The customer places the order through this operation."
+    },
+    {
+      "alias": "S1",
+      "why": "Billing consumes OrderCreated through this subscription. It has no dead-letter channel."
+    }
+  ]
+}

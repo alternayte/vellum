@@ -139,7 +139,9 @@ public sealed class AiClient(
     /// <see cref="AiStreamFailedException"/>; a cancelled token ends it with
     /// <see cref="OperationCanceledException"/> and aborts the HTTP request.
     /// </summary>
-    public async IAsyncEnumerable<string> StreamTextAsync(AiRequest request, [EnumeratorCancellation] CancellationToken ct = default)
+    /// <param name="completed">Receives what the call used, once, after a complete answer and before the stream ends.</param>
+    public async IAsyncEnumerable<string> StreamTextAsync(
+        AiRequest request, [EnumeratorCancellation] CancellationToken ct = default, Action<AiUsage>? completed = null)
     {
         var (route, unroutable) = await RouteAsync(request, ct);
         if (route is null)
@@ -157,6 +159,7 @@ public sealed class AiClient(
                 throw new AiStreamFailedException(stopped);
 
             yield return whole.Text;
+            completed?.Invoke(totals.ToUsage());
             yield break;
         }
 
@@ -195,6 +198,7 @@ public sealed class AiClient(
             throw new AiStreamFailedException(new AiFailure.ProviderError("stream_interrupted", ProviderErrors.Sentence("stream_interrupted")));
         if (Failure(end, request.MaxOutputTokens) is { } failure)
             throw new AiStreamFailedException(failure);
+        completed?.Invoke(totals.ToUsage());
     }
 
     /// <summary>
