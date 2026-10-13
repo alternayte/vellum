@@ -1,8 +1,9 @@
+import { useRef } from 'react'
 import { useQuery, useMutation } from '@tanstack/react-query'
 import { CircleCheck, CircleX, Download } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { shownInline } from '@/lib/mutation-errors'
-import { downloadBuild, promisesApi } from '@/lib/promises-api'
+import { downloadBuild, promisesApi, verifyBundle } from '@/lib/promises-api'
 
 /**
  * The handoff to an implementation agent: a standalone SDD and a bundle of contracts,
@@ -12,6 +13,8 @@ import { downloadBuild, promisesApi } from '@/lib/promises-api'
 export function BuildFlyout({ projectId }: { projectId: string }) {
   const manifest = useQuery({ queryKey: ['projects', projectId, 'build', 'manifest'], queryFn: () => promisesApi.manifest(projectId), staleTime: 0 })
   const download = useMutation({ mutationFn: (format: 'sdd' | 'bundle') => downloadBuild(projectId, format), onError: shownInline })
+  const verify = useMutation({ mutationFn: (file: File) => verifyBundle(projectId, file), onError: shownInline })
+  const picker = useRef<HTMLInputElement>(null)
   const data = manifest.data
 
   return (
@@ -71,6 +74,47 @@ export function BuildFlyout({ projectId }: { projectId: string }) {
                 <p role="status" className="mt-2 text-xs text-[var(--trace-failure)]">
                   The generated contracts do not read back as the model. {data.selfCheck.notes[0]}
                 </p>
+              )}
+            </section>
+
+            <section aria-labelledby="build-verify">
+              <h3 id="build-verify" className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Check a bundle</h3>
+              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                Vellum generates the bundle again from the versions that the file names, and compares every file.
+              </p>
+              <input
+                ref={picker} type="file" accept=".zip,application/zip" className="sr-only" aria-label="Bundle file"
+                onChange={(e) => { const file = e.target.files?.[0]; if (file) verify.mutate(file); e.target.value = '' }}
+              />
+              <Button size="sm" variant="secondary" className="mt-2 w-full" disabled={verify.isPending} onClick={() => picker.current?.click()}>
+                {verify.isPending ? 'Checking…' : 'Select a bundle file'}
+              </Button>
+              {verify.isError && <p role="alert" className="mt-2 text-xs text-destructive">{verify.error.message}</p>}
+              {verify.data && (
+                <div role="status" className="mt-2 space-y-1 rounded-md border border-border p-2.5 text-xs">
+                  <p className="font-medium" style={{ color: verify.data.matchesPinned ? 'var(--trace-request)' : 'var(--trace-failure)' }}>
+                    {verify.data.matchesPinned
+                      ? 'The files are what Vellum generates for the versions that the bundle names.'
+                      : 'The bundle differs from what Vellum generates for the versions that it names.'}
+                  </p>
+                  {verify.data.matchesPinned && !verify.data.identical && (
+                    <p className="text-muted-foreground">The archive was written again by another tool. The files in it are unchanged.</p>
+                  )}
+                  {verify.data.manifestDifferences.length > 0 && (
+                    <p className="text-muted-foreground">Changed in the manifest: <span className="font-mono text-foreground">{verify.data.manifestDifferences.join(', ')}</span></p>
+                  )}
+                  {verify.data.files.filter((f) => f.status !== 'match').map((f) => (
+                    <p key={f.path} className="font-mono text-[11px] text-[var(--trace-failure)]">{f.path} · {f.status}</p>
+                  ))}
+                  <p className="text-muted-foreground">
+                    {verify.data.current
+                      ? 'The model has not changed since this bundle was made.'
+                      : `The model has changed since this bundle was made: ${verify.data.moved.length} ${verify.data.moved.length === 1 ? 'input' : 'inputs'} moved.`}
+                  </p>
+                  {verify.data.moved.slice(0, 8).map((m) => (
+                    <p key={m.kind + m.id} className="font-mono text-[11px] text-muted-foreground">{m.kind} {m.id.slice(0, 8)} · {m.pinned ?? 'none'} → {m.current ?? 'none'}</p>
+                  ))}
+                </div>
               )}
             </section>
           </>

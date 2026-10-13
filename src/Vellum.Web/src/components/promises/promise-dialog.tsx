@@ -5,9 +5,10 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import { shownInline } from '@/lib/mutation-errors'
+import { ApiError } from '@/lib/settings-api'
 import {
   RESULT_COLOR, RESULT_LABEL, emptyPromise, promisesApi,
-  type ObligationStatus, type PromiseDetail, type PromiseInput, type PromiseLinks, type PromiseRevision,
+  type EvidenceSource, type Obligation, type ObligationStatus, type PromiseDetail, type PromiseInput, type PromiseLinks, type PromiseRevision,
 } from '@/lib/promises-api'
 import type { ScenarioReference } from '@/components/trace/scenario-editor'
 
@@ -30,6 +31,25 @@ const LINK_GROUPS: { field: keyof PromiseLinks; label: string; group: ScenarioRe
   { field: 'messageIds', label: 'Messages', group: 'Messages' },
   { field: 'elementIds', label: 'Elements', group: 'Elements' },
 ]
+
+const FIELD_LABEL: Record<string, string> = {
+  title: 'Title', claim: 'Claim', scope: 'Scope', preconditions: 'Preconditions', expectedOutcome: 'Expected outcome',
+  forbiddenOutcome: 'Forbidden outcome', evidenceCriteria: 'What counts as evidence',
+}
+
+/** The error of a request, with each refused field named. */
+function Failure({ error }: { error: Error }) {
+  return (
+    <div role="alert" className="text-xs text-destructive">
+      <p>{error.message}</p>
+      {error instanceof ApiError && error.fields.length > 0 && (
+        <ul className="mt-0.5 list-disc pl-4">
+          {error.fields.map((e, i) => <li key={i}>{FIELD_LABEL[e.field] ?? e.field}: {e.message}</li>)}
+        </ul>
+      )}
+    </div>
+  )
+}
 
 function toInput(revision: PromiseRevision): PromiseInput {
   const { title, claim, scope, preconditions, expectedOutcome, forbiddenOutcome, evidenceCriteria, forbiddenEvents, requiresPattern, links } = revision
@@ -73,11 +93,18 @@ export function PromiseDialog({ projectId, promiseId, references, scenarios, onC
     onSuccess: store, onError: shownInline,
   })
   const generate = useMutation({ mutationFn: () => promisesApi.generate(projectId, id!), onSuccess: (r) => store(r.promise), onError: shownInline })
-  const approve = useMutation({ mutationFn: () => promisesApi.approve(projectId, id!, revision!.revision), onSuccess: store, onError: shownInline })
+  const reload = () => queryClient.invalidateQueries({ queryKey: ['projects', projectId, 'promises', id] })
+  const approve = useMutation({
+    mutationFn: () => promisesApi.approve(projectId, id!, revision!.revision, revision!.contentHash),
+    onSuccess: store,
+    // The content changed after it was loaded: show what is stored now, so the approver reads it first.
+    onError: (error) => { shownInline(); if (/changed/i.test(error.message)) void reload() },
+  })
   const revise = useMutation({ mutationFn: () => promisesApi.revise(projectId, id!), onSuccess: store, onError: shownInline })
   const run = useMutation({
-    mutationFn: (key: string) => promisesApi.run(projectId, id!, key, null),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['projects', projectId, 'promises', id] }),
+    // A draft is run by its number. That run is labelled as a draft run and does not count after approval.
+    mutationFn: (key: string) => promisesApi.run(projectId, id!, key, null, revision!.status === 'draft' ? revision!.revision : null),
+    onSuccess: reload,
     onError: shownInline,
   })
   const failure = save.error ?? generate.error ?? approve.error ?? revise.error ?? run.error
@@ -170,12 +197,14 @@ export function PromiseDialog({ projectId, promiseId, references, scenarios, onC
                 {revision.obligations.map((obligation) => {
                   const status = statusOf(obligation.id)
                   const result = status?.result ?? (obligation.supported ? 'not-run' : 'unsupported')
+                  const stale = status?.current === false
+                  const color = stale ? 'var(--trace-retry)' : RESULT_COLOR[result]
                   return (
                     <li key={obligation.id} className="rounded-md border border-border px-3 py-2">
                       <div className="flex flex-wrap items-baseline gap-x-2">
                         <span className="font-mono text-[11px] text-muted-foreground">{obligation.id}</span>
                         <span className="min-w-0 flex-1 text-sm text-foreground">{obligation.title}</span>
-                        <span className="rounded-full border px-1.5 text-[11px]" style={{ borderColor: RESULT_COLOR[result], color: RESULT_COLOR[result] }}>{RESULT_LABEL[result]}</span>
+                        <span className="rounded-full border px-1.5 text-[11px]" style={{ borderColor: color, color }}>{RESULT_LABEL[result]}{stale ? ' (stale)' : ''}</span>
                         {obligation.execution === 'deterministic' && (
                           <Button variant="secondary" size="sm" className="h-6 text-xs" disabled={run.isPending} onClick={() => run.mutate(obligation.key)}>Run</Button>
                         )}
@@ -183,8 +212,21 @@ export function PromiseDialog({ projectId, promiseId, references, scenarios, onC
                       <p className="mt-0.5 font-mono text-[10px] text-muted-foreground">
                         {obligation.kind}{obligation.execution === 'external-evidence' ? ' · a test plan: Vellum cannot run it; it needs a result from your CI' : obligation.execution === 'none' ? ' · Vellum cannot check this kind' : ''}
                       </p>
+                      {obligation.recipe.plan && (
+                        <PlanEvidence
+                          key={obligation.id + (obligation.recipe.plan.evidenceSource ? JSON.stringify(obligation.recipe.plan.evidenceSource) : '')}
+                          projectId={projectId} promiseId={promise.id} obligation={obligation} editable={editable && edited === null}
+                          revision={revision.status === 'draft' ? revision.revision : null} onStored={store} onRecorded={reload}
+                        />
+                      )}
                       {status && status.result !== 'not-run' && (
                         <div className="mt-1.5 space-y-0.5 text-xs text-muted-foreground">
+                          {stale && status.changed.length > 0 && (
+                            <div className="text-[var(--trace-retry)]">
+                              <p>This result is stale. It was made before these changes:</p>
+                              <ul className="list-disc pl-4">{status.changed.map((change, i) => <li key={i}>{change}</li>)}</ul>
+                            </div>
+                          )}
                           {status.scope && <p><span className="text-foreground">Checked:</span> {status.scope}</p>}
                           {status.environment && <p><span className="text-foreground">Against:</span> <span className="font-mono">{status.environment}</span>{status.at ? ` on ${new Date(status.at).toLocaleString()}` : ''}</p>}
                           {status.detail && <p>{status.detail}</p>}
@@ -193,6 +235,9 @@ export function PromiseDialog({ projectId, promiseId, references, scenarios, onC
                               {e.kind === 'trace' ? `trace ${e.hash?.slice(0, 12)}` : e.kind === 'source' ? e.pointer : `external · ${e.identity}`}
                               {e.url && <> · <a className="underline-offset-2 hover:underline" href={e.url} target="_blank" rel="noreferrer noopener">open</a></>}
                             </p>
+                          ))}
+                          {status.assertions?.filter((a) => a.vacuous).map((a) => (
+                            <p key={a.id}><span className="text-foreground">Checks nothing:</span> <span className="font-mono">{a.id}</span> · {a.vacuousReason}</p>
                           ))}
                           {status.limitations.map((limitation, i) => <p key={i}><span className="text-foreground">Limit:</span> {limitation}</p>)}
                         </div>
@@ -212,7 +257,7 @@ export function PromiseDialog({ projectId, promiseId, references, scenarios, onC
           )}
         </div>
 
-        {failure && <p role="alert" className="text-xs text-destructive">{failure.message}</p>}
+        {failure && <Failure error={failure} />}
 
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex-1" />
@@ -233,5 +278,69 @@ export function PromiseDialog({ projectId, promiseId, references, scenarios, onC
         </div>
       </DialogContent>
     </Dialog>
+  )
+}
+
+/**
+ * A test plan is run outside Vellum. Its result counts only when it comes from the workflow
+ * that the obligation names: Vellum reads the run from GitHub and compares the repository,
+ * the workflow, the job and the commit.
+ */
+function PlanEvidence({ projectId, promiseId, obligation, editable, revision, onStored, onRecorded }: {
+  projectId: string
+  promiseId: string
+  obligation: Obligation
+  editable: boolean
+  revision: number | null
+  onStored: (promise: PromiseDetail) => void
+  onRecorded: () => void
+}) {
+  const plan = obligation.recipe.plan!
+  const [source, setSource] = useState<EvidenceSource>(plan.evidenceSource ?? { system: 'github-actions', repository: '', workflow: '', job: null })
+  const [runUrl, setRunUrl] = useState('')
+  const [commitSha, setCommitSha] = useState('')
+  const saveSource = useMutation({
+    mutationFn: () => promisesApi.updateObligation(projectId, promiseId, obligation, { ...obligation.recipe, plan: { ...plan, evidenceSource: { ...source, job: source.job?.trim() || null } } }),
+    onSuccess: onStored, onError: shownInline,
+  })
+  const record = useMutation({
+    mutationFn: () => promisesApi.recordEvidence(projectId, promiseId, obligation.key, runUrl.trim(), commitSha.trim() || null, revision),
+    onSuccess: () => { setRunUrl(''); setCommitSha(''); onRecorded() }, onError: shownInline,
+  })
+  const failure = saveSource.error ?? record.error
+  const field = 'h-7 text-xs'
+
+  return (
+    <div className="mt-1.5 space-y-1.5 rounded-md bg-muted/40 p-2 text-xs">
+      {plan.evidenceSource === null && !editable && (
+        <p className="text-[var(--trace-retry)]">This plan names no evidence source. It cannot pass. Start a new revision to name the workflow that runs it.</p>
+      )}
+      {editable ? (
+        <div className="grid gap-1.5 sm:grid-cols-[1fr_1fr_1fr_auto]">
+          <Input className={field} aria-label="Repository" placeholder="owner/name" value={source.repository} onChange={(e) => setSource({ ...source, repository: e.target.value })} spellCheck={false} />
+          <Input className={field} aria-label="Workflow" placeholder="Workflow file or name" value={source.workflow} onChange={(e) => setSource({ ...source, workflow: e.target.value })} spellCheck={false} />
+          <Input className={field} aria-label="Job (optional)" placeholder="Job (optional)" value={source.job ?? ''} onChange={(e) => setSource({ ...source, job: e.target.value })} spellCheck={false} />
+          <Button variant="secondary" size="sm" className="h-7 text-xs" disabled={saveSource.isPending || !source.repository.trim() || !source.workflow.trim()} onClick={() => saveSource.mutate()}>
+            Set source
+          </Button>
+          <p className="text-[11px] text-muted-foreground sm:col-span-4">The result of this plan counts only when it comes from this GitHub Actions workflow, in a repository that this project imports.</p>
+        </div>
+      ) : plan.evidenceSource && (
+        <>
+          <p className="text-muted-foreground">
+            Evidence source: <span className="font-mono text-foreground">{plan.evidenceSource.repository}</span> · workflow <span className="font-mono text-foreground">{plan.evidenceSource.workflow}</span>
+            {plan.evidenceSource.job && <> · job <span className="font-mono text-foreground">{plan.evidenceSource.job}</span></>}
+          </p>
+          <div className="grid gap-1.5 sm:grid-cols-[2fr_1fr_auto]">
+            <Input className={field} aria-label="Workflow run URL" placeholder="URL of the workflow run" value={runUrl} onChange={(e) => setRunUrl(e.target.value)} spellCheck={false} />
+            <Input className={field} aria-label="Commit (optional)" placeholder="Commit (optional)" value={commitSha} onChange={(e) => setCommitSha(e.target.value)} spellCheck={false} />
+            <Button variant="secondary" size="sm" className="h-7 text-xs" disabled={record.isPending || !runUrl.trim()} onClick={() => record.mutate()}>
+              {record.isPending ? 'Reading the run…' : 'Record run'}
+            </Button>
+          </div>
+        </>
+      )}
+      {failure && <Failure error={failure} />}
+    </div>
   )
 }

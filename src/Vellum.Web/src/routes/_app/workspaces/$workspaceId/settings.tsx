@@ -19,7 +19,7 @@ export const Route = createFileRoute('/_app/workspaces/$workspaceId/settings')({
   component: SettingsPage,
 })
 
-type SectionId = SettingsSection | 'audit' | 'instance'
+type SectionId = SettingsSection | 'agents' | 'audit' | 'instance'
 
 const SECTIONS: { id: SectionId; label: string; adminOnly?: boolean }[] = [
   { id: 'ai', label: 'AI providers' },
@@ -30,6 +30,7 @@ const SECTIONS: { id: SectionId; label: string; adminOnly?: boolean }[] = [
   { id: 'privacy', label: 'Privacy' },
   { id: 'usage', label: 'Usage limits' },
   { id: 'notifications', label: 'Notifications' },
+  { id: 'agents', label: 'Agent tokens' },
   { id: 'audit', label: 'Audit log' },
   { id: 'instance', label: 'Instance', adminOnly: true },
 ]
@@ -277,13 +278,14 @@ function SettingsPage() {
               </>
             )}
 
+            {section === 'agents' && <AgentTokens workspaceId={workspaceId} />}
             {section === 'audit' && <AuditLog workspaceId={workspaceId} />}
             {section === 'instance' && instance.data && <InstancePanel info={instance.data} />}
           </div>
         </main>
       </div>
 
-      {(dirty || save.isError) && section !== 'audit' && section !== 'instance' && (
+      {(dirty || save.isError) && section !== 'agents' && section !== 'audit' && section !== 'instance' && (
         <div role="region" aria-label="Unsaved changes" className="fixed inset-x-0 bottom-0 z-20 border-t border-border bg-card/95 px-4 py-3 backdrop-blur">
           <div className="mx-auto flex max-w-3xl flex-wrap items-center gap-3">
             <p className={cn('min-w-0 flex-1 text-sm', save.isError ? 'text-destructive' : 'text-foreground')} role={save.isError ? 'alert' : undefined}>
@@ -412,6 +414,110 @@ function LabelledInput({ label, value, onChange, error, ...input }: { label: str
       <Input className="mt-1" value={value} aria-invalid={error ? true : undefined} onChange={(e) => onChange(e.target.value)} {...input} />
       {error && <span role="alert" className="mt-1 block font-normal text-destructive">{error}</span>}
     </label>
+  )
+}
+
+interface AgentToken {
+  id: string
+  name: string
+  scopes: string[]
+  projectId: string | null
+  createdAt: string
+  expiresAt: string
+  lastUsedAt: string | null
+  revokedAt: string | null
+}
+
+const AGENT_SCOPES: { id: string; label: string; hint: string }[] = [
+  { id: 'read', label: 'Read', hint: 'Read the model and the promises.' },
+  { id: 'propose', label: 'Propose', hint: 'Write promise drafts and record check results. A person approves.' },
+  { id: 'export', label: 'Export', hint: 'Generate the SDD and the bundle.' },
+]
+
+/**
+ * A coding agent signs in with a token of its own, never with a person's session. A token
+ * cannot approve a promise, accept a proposal or change settings.
+ */
+function AgentTokens({ workspaceId }: { workspaceId: string }) {
+  const queryClient = useQueryClient()
+  const url = `/api/workspaces/${workspaceId}/agent-tokens`
+  const tokens = useQuery({ queryKey: ['workspaces', workspaceId, 'agent-tokens'], queryFn: () => api<AgentToken[]>('GET', url), retry: false })
+  const [name, setName] = useState('')
+  const [scopes, setScopes] = useState<string[]>(['read'])
+  const refresh = () => queryClient.invalidateQueries({ queryKey: ['workspaces', workspaceId, 'agent-tokens'] })
+  const create = useMutation({
+    mutationFn: () => api<{ token: string; name: string; expiresAt: string }>('POST', url, { name: name.trim(), scopes, projectId: null, expiresAt: null }),
+    onSuccess: () => { setName(''); return refresh() },
+    onError: shownInline,
+  })
+  const revoke = useMutation({ mutationFn: (id: string) => api<void>('DELETE', `${url}/${id}`), onSuccess: refresh, onError: shownInline })
+  const live = tokens.data?.filter((t) => !t.revokedAt) ?? []
+
+  return (
+    <>
+      <SectionHeading title="Agent tokens" description="A token lets a coding agent use the MCP endpoint and the API of this workspace. A token cannot approve a promise, accept a proposal or change settings. Only a person can do these." />
+      {tokens.isError && <p className="mt-4 text-sm text-muted-foreground">Only a workspace owner can manage agent tokens.</p>}
+      {tokens.data && (
+        <>
+          <form className="mt-4 space-y-3 rounded-lg border border-border p-4" onSubmit={(e) => { e.preventDefault(); create.mutate() }}>
+            <LabelledInput label="Name" value={name} onChange={setName} placeholder="Claude Code on my laptop" />
+            <fieldset>
+              <legend className="text-xs font-medium text-muted-foreground">The token can</legend>
+              <div className="mt-1.5 space-y-1.5">
+                {AGENT_SCOPES.map((scope) => (
+                  <label key={scope.id} className="flex items-start gap-2 text-sm text-foreground">
+                    <input
+                      type="checkbox" className="mt-1 h-3.5 w-3.5 accent-[var(--primary)]" checked={scopes.includes(scope.id)}
+                      onChange={() => setScopes(scopes.includes(scope.id) ? scopes.filter((s) => s !== scope.id) : [...scopes, scope.id])}
+                    />
+                    <span>{scope.label}<span className="block text-xs text-muted-foreground">{scope.hint}</span></span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+            <Button type="submit" size="sm" disabled={create.isPending || !name.trim() || scopes.length === 0}>Create token</Button>
+            {create.isError && <p role="alert" className="text-sm text-destructive">{create.error.message}</p>}
+          </form>
+
+          {create.data && (
+            <div role="status" className="mt-4 rounded-lg border border-[var(--trace-retry)]/60 p-4">
+              <p className="text-sm font-medium text-foreground">Copy the token for {create.data.name} now. Vellum does not show it again.</p>
+              <div className="mt-2 flex items-center gap-2">
+                <code className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap rounded-md bg-muted px-2 py-1.5 font-mono text-xs text-foreground">{create.data.token}</code>
+                <Button variant="secondary" size="sm" onClick={() => navigator.clipboard.writeText(create.data.token)}>Copy</Button>
+                <Button variant="ghost" size="sm" onClick={() => create.reset()}>Done</Button>
+              </div>
+              <p className="mt-2 text-xs text-muted-foreground">The agent sends it as <span className="font-mono">Authorization: Bearer …</span> on each request. It expires on {new Date(create.data.expiresAt).toLocaleDateString()}.</p>
+            </div>
+          )}
+
+          {live.length === 0 && <p className="mt-4 text-sm text-muted-foreground">No token yet.</p>}
+          {live.length > 0 && (
+            <div className="mt-4 overflow-x-auto rounded-lg border border-border">
+              <table className="w-full text-left text-sm">
+                <thead className="border-b border-border text-xs text-muted-foreground">
+                  <tr><th className="px-3 py-2 font-medium">Name</th><th className="px-3 py-2 font-medium">Can</th><th className="px-3 py-2 font-medium">Last used</th><th className="px-3 py-2 font-medium">Expires</th><th className="px-3 py-2" /></tr>
+                </thead>
+                <tbody>
+                  {live.map((token) => (
+                    <tr key={token.id} className="border-b border-border last:border-b-0">
+                      <td className="px-3 py-2">{token.name}</td>
+                      <td className="px-3 py-2 font-mono text-xs">{token.scopes.join(', ')}</td>
+                      <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">{token.lastUsedAt ? new Date(token.lastUsedAt).toLocaleString() : 'Never'}</td>
+                      <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">{new Date(token.expiresAt).toLocaleDateString()}</td>
+                      <td className="px-3 py-2 text-right">
+                        <Button variant="ghost" size="sm" className="h-7 text-xs" disabled={revoke.isPending} onClick={() => revoke.mutate(token.id)}>Revoke</Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {revoke.isError && <p role="alert" className="mt-2 text-sm text-destructive">{revoke.error.message}</p>}
+        </>
+      )}
+    </>
   )
 }
 
