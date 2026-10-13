@@ -5,6 +5,8 @@ using System.Text.RegularExpressions;
 using Vellum.Modules.Build;
 using Vellum.Modules.Modelling.Model;
 using Vellum.Modules.Promises;
+using Vellum.Modules.Review.Decisions;
+using Vellum.Modules.Review.Rules;
 using Vellum.Modules.Trace.Engine;
 
 namespace Vellum.Tests.Modules.Build;
@@ -84,6 +86,31 @@ public class DataSafeMarkdownTests
 
     [Theory]
     [MemberData(nameof(Corpus))]
+    public void The_structure_of_a_decision_document_is_what_the_decision_defines(string name, string hostile)
+    {
+        static List<string> Documents(BuildInput input)
+        {
+            var bundle = Bundle.Build(input, BuildLimits.Default);
+            // The accepted decision and the one it supersedes are in the bundle. The proposal is not.
+            Assert.Equal(["decisions/ADR-0001.md", "decisions/ADR-0002.md"], bundle.Files.Keys.Where(path => path.StartsWith("decisions/", StringComparison.Ordinal)));
+            var view = new BuildView(input);
+            return [.. bundle.Files.Where(f => f.Key.StartsWith("decisions/", StringComparison.Ordinal)).Select(f => Encoding.UTF8.GetString(f.Value)),
+                DecisionDocuments.MarkdownAll(view.Decisions, input.ProjectName, view.Name)];
+        }
+
+        var benign = Documents(Input(Benign));
+        foreach (var (document, twin) in Documents(Input(hostile)).Zip(benign))
+        {
+            var (scanned, expected) = (MarkdownScanner.Scan(document), MarkdownScanner.Scan(twin));
+            Assert.True(expected.Lines.Select(l => l.Kind).SequenceEqual(scanned.Lines.Select(l => l.Kind)), $"[{name}] the structure differs from the harmless twin:\n{document}");
+            Assert.Equal(expected.Tables, scanned.Tables);
+            Assert.Empty(scanned.Hazards);
+            Assert.DoesNotContain(scanned.Source, c => MarkdownScanner.IsInvisible(c));
+        }
+    }
+
+    [Theory]
+    [MemberData(nameof(Corpus))]
     public void The_structure_of_the_brief_is_what_the_model_defines(string name, string hostile)
     {
         BriefResult Make(string text)
@@ -125,12 +152,20 @@ public class DataSafeMarkdownTests
         }
 
         // The blocker section: one sentence, then one table with a row for each blocker of the manifest.
-        var section = actual.Lines.Skip(end + 1).Select(l => l.Kind).Where(kind => kind != "blank").ToList();
+        // What comes after that table (the decisions of an SDD) has the structure of the harmless twin.
+        static List<string> Kinds(MarkdownScanner.Document document, int from) =>
+            [.. document.Lines.Skip(from + 1).Select(l => l.Kind).Where(kind => kind != "blank")];
+        var section = Kinds(actual, end);
         Assert.True(blockers > 0);
-        Assert.Equal(["paragraph", .. Enumerable.Repeat("table-row:3", blockers + 2)], section);
+        Assert.Equal(["paragraph", .. Enumerable.Repeat("table-row:3", blockers + 2)], section.Take(blockers + 3));
+        var twin = Kinds(expected, end);
+        Assert.Equal(twin.Skip(twin.IndexOf("h3") is >= 0 and var at ? at : twin.Count), section.Skip(blockers + 3));
 
         Assert.Equal(expected.Headings.Select(h => h.Level), actual.Headings.Select(h => h.Level));
-        Assert.Equal(expected.Tables.SkipLast(1), actual.Tables.SkipLast(1));
+        // The blocker table is the one table whose length follows the text: every other table has the rows of the twin.
+        static bool IsBlockerTable(string table) => table.Split(',').All(columns => columns == "3");
+        Assert.Equal(expected.Tables.Count, actual.Tables.Count);
+        Assert.All(expected.Tables.Zip(actual.Tables), pair => Assert.True(pair.First == pair.Second || (IsBlockerTable(pair.First) && IsBlockerTable(pair.Second)), pair.Second));
         Assert.Equal(expected.Fences, actual.Fences);
         Assert.Equal(expected.TaskItems, actual.TaskItems);
         Assert.Empty(actual.Hazards);
@@ -245,9 +280,29 @@ public class DataSafeMarkdownTests
                 h, DateTimeOffset.UnixEpoch, DateTimeOffset.UnixEpoch);
         }
 
-        return new BuildInput(
+        var input = new BuildInput(
             G(99), h, new ModelPin(G(98), 15, G(97), h), model, schemas, [ScenarioOf(G(60)), ScenarioOf(G(61))],
             [Promise(80, "ORD-014", PromiseLifecycle.Approved), Promise(81, "ORD-015", PromiseLifecycle.Draft), Promise(82, "ORD-016", PromiseLifecycle.Retired)]);
+
+        // Decisions hold text of a person, an agent or a model. One is accepted and settles a
+        // finding as it is, one is superseded by it, one is a proposal that no export shows.
+        var settled = RuleSet.Run(input).Findings.First(f => f.RuleId == "OVR-004" && f.Fired);
+        var content = new DecisionContent(h, h, h, [new Alternative(h, h), new Alternative(h, null)], h, [G(3), G(8)], [new Settles(settled.RuleId, settled.Subject.Id)], null);
+        DecisionState Decision(int number, DecisionContent text, bool accepted) => new object[]
+        {
+            new DecisionEvent.DecisionProposed(G(99), number, DecisionOrigin.AiSuggested, text, h, DateTimeOffset.UnixEpoch),
+            new DecisionEvent.DecisionRejected(h, DateTimeOffset.UnixEpoch, h),
+            new DecisionEvent.DecisionAccepted(h, DateTimeOffset.UnixEpoch, [new SettlementStamp(settled.RuleId, settled.Subject.Id, settled.RuleVersion, settled.Fingerprint)]),
+        }.Where((_, i) => i == 0 || (accepted ? i == 2 : i == 1)).Aggregate(DecisionState.Initial, DecisionState.Evolve);
+        return input with
+        {
+            Decisions =
+            [
+                new PinnedDecision(G(110), Decision(1, content with { Settles = [] }, accepted: true), 2),
+                new PinnedDecision(G(111), Decision(2, content with { Supersedes = G(110) }, accepted: true), 2),
+                new PinnedDecision(G(112), Decision(3, content, accepted: false), 2),
+            ],
+        };
     }
 }
 

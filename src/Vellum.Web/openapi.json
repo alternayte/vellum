@@ -3577,18 +3577,6 @@
         }
       }
     },
-    "/api/scoring/status": {
-      "get": {
-        "tags": [
-          "Scoring"
-        ],
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      }
-    },
     "/api/agent/capabilities": {
       "get": {
         "tags": [
@@ -3634,109 +3622,6 @@
                 }
               }
             }
-          }
-        }
-      }
-    },
-    "/api/projects/{projectId}/docs/{docId}/scores": {
-      "post": {
-        "tags": [
-          "Scoring"
-        ],
-        "parameters": [
-          {
-            "name": "projectId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "name": "docId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      },
-      "get": {
-        "tags": [
-          "Scoring"
-        ],
-        "parameters": [
-          {
-            "name": "projectId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "name": "docId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK"
-          }
-        }
-      }
-    },
-    "/api/projects/{projectId}/docs/{docId}/scores/{scoreId}": {
-      "get": {
-        "tags": [
-          "Scoring"
-        ],
-        "parameters": [
-          {
-            "name": "projectId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "name": "docId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "name": "scoreId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK"
           }
         }
       }
@@ -8481,6 +8366,1405 @@
           }
         }
       }
+    },
+    "/api/projects/{projectId}/review/rules": {
+      "get": {
+        "tags": [
+          "Review"
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RuleDto"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/review/findings": {
+      "get": {
+        "tags": [
+          "Review"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "revisionId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "branchId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FindingsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Payload Too Large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/review/snapshots": {
+      "get": {
+        "tags": [
+          "Review"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PageOfSnapshotSummary"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Review"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveSnapshotRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SnapshotDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/review/snapshots/{snapshotId}": {
+      "get": {
+        "tags": [
+          "Review"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "snapshotId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SnapshotDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Review"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "snapshotId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/review/dispositions": {
+      "put": {
+        "tags": [
+          "Review"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetDispositionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FindingView"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/review/critiques": {
+      "post": {
+        "tags": [
+          "Review"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CritiqueRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CritiqueDto"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiUnavailable"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "tags": [
+          "Review"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PageOfCritiqueSummary"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/review/critiques/{critiqueId}": {
+      "get": {
+        "tags": [
+          "Review"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "critiqueId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CritiqueDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Review"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "critiqueId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/review/critiques/{critiqueId}/proposed-decisions/{index}/keep": {
+      "post": {
+        "tags": [
+          "Review"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "critiqueId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "index",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DecisionDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/review/critiques/{critiqueId}/questions/{index}/keep": {
+      "post": {
+        "tags": [
+          "Review"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "critiqueId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "index",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": "integer",
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuestionDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/decisions": {
+      "get": {
+        "tags": [
+          "Decisions"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PageOfDecisionDto"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Decisions"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DecisionDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/decisions/export": {
+      "get": {
+        "tags": [
+          "Decisions"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/markdown": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/decisions/{decisionId}": {
+      "get": {
+        "tags": [
+          "Decisions"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "decisionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DecisionDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Decisions"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "decisionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DecisionDto"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Decisions"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "decisionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/decisions/{decisionId}/export": {
+      "get": {
+        "tags": [
+          "Decisions"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "decisionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "text/markdown": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/decisions/{decisionId}/accept": {
+      "post": {
+        "tags": [
+          "Decisions"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "decisionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DecisionDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/decisions/{decisionId}/reject": {
+      "post": {
+        "tags": [
+          "Decisions"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "decisionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RejectDecisionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DecisionDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/questions": {
+      "get": {
+        "tags": [
+          "Questions"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PageOfQuestionDto"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Questions"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/QuestionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuestionDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/questions/keep": {
+      "post": {
+        "tags": [
+          "Questions"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KeepQuestionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuestionDto"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuestionDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/questions/{questionId}/answer": {
+      "post": {
+        "tags": [
+          "Questions"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "questionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AnswerQuestionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuestionDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/questions/{questionId}/drop": {
+      "post": {
+        "tags": [
+          "Questions"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "questionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/QuestionDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/questions/{questionId}": {
+      "delete": {
+        "tags": [
+          "Questions"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "questionId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -9394,6 +10678,24 @@
           }
         }
       },
+      "Alternative": {
+        "required": [
+          "title",
+          "whyNot"
+        ],
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "whyNot": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
       "AmountDelta": {
         "required": [
           "currency",
@@ -9432,6 +10734,17 @@
               "string"
             ],
             "format": "double"
+          }
+        }
+      },
+      "AnswerQuestionRequest": {
+        "required": [
+          "answer"
+        ],
+        "type": "object",
+        "properties": {
+          "answer": {
+            "type": "string"
           }
         }
       },
@@ -10907,6 +12220,26 @@
           }
         }
       },
+      "Cited": {
+        "required": [
+          "kind",
+          "id",
+          "name"
+        ],
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
+      },
       "Comparison": {
         "required": [
           "comparable",
@@ -11583,6 +12916,339 @@
           }
         }
       },
+      "CritiqueDto": {
+        "required": [
+          "id",
+          "projectId",
+          "branchId",
+          "question",
+          "focus",
+          "questions",
+          "risks",
+          "proposedDecisions",
+          "leftOut",
+          "modelVersion",
+          "findingsHash",
+          "stale",
+          "findingsSent",
+          "findingsLeftOut",
+          "omitted",
+          "omittedPrivate",
+          "provider",
+          "promptTemplateVersion",
+          "usage",
+          "disclaimer",
+          "createdBy",
+          "createdAt"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "projectId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "branchId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "question": {
+            "type": "string"
+          },
+          "focus": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "questions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CritiqueQuestion"
+            }
+          },
+          "risks": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CritiqueRisk"
+            }
+          },
+          "proposedDecisions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CritiqueProposedDecision"
+            }
+          },
+          "leftOut": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CritiqueLeftOut"
+            }
+          },
+          "modelVersion": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "findingsHash": {
+            "type": "string"
+          },
+          "stale": {
+            "type": "boolean"
+          },
+          "findingsSent": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "findingsLeftOut": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "omitted": {
+            "$ref": "#/components/schemas/AliasOmitted"
+          },
+          "omittedPrivate": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/OmittedPrivate"
+              }
+            ]
+          },
+          "provider": {
+            "$ref": "#/components/schemas/ProposalProvider"
+          },
+          "promptTemplateVersion": {
+            "type": "string"
+          },
+          "usage": {
+            "$ref": "#/components/schemas/ProposalUsage"
+          },
+          "disclaimer": {
+            "type": "string"
+          },
+          "createdBy": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "CritiqueLeftOut": {
+        "required": [
+          "where",
+          "reason"
+        ],
+        "type": "object",
+        "properties": {
+          "where": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      },
+      "CritiqueProposedDecision": {
+        "required": [
+          "title",
+          "context",
+          "decision",
+          "alternatives",
+          "settles",
+          "about"
+        ],
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "context": {
+            "type": "string"
+          },
+          "decision": {
+            "type": "string"
+          },
+          "alternatives": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Alternative"
+            }
+          },
+          "settles": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Settles"
+            }
+          },
+          "about": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Cited"
+            }
+          },
+          "keptAs": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          }
+        }
+      },
+      "CritiqueQuestion": {
+        "required": [
+          "about",
+          "text",
+          "why",
+          "source",
+          "note"
+        ],
+        "type": "object",
+        "properties": {
+          "about": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Cited"
+            }
+          },
+          "text": {
+            "type": "string"
+          },
+          "why": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "source": {
+            "type": "string"
+          },
+          "note": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "keptAs": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          }
+        }
+      },
+      "CritiqueRequest": {
+        "type": "object",
+        "properties": {
+          "question": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "focus": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "branchId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          }
+        }
+      },
+      "CritiqueRisk": {
+        "required": [
+          "about",
+          "claim",
+          "ruleId",
+          "subjectId"
+        ],
+        "type": "object",
+        "properties": {
+          "about": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Cited"
+            }
+          },
+          "claim": {
+            "type": "string"
+          },
+          "ruleId": {
+            "type": "string"
+          },
+          "subjectId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
+      "CritiqueSummary": {
+        "required": [
+          "id",
+          "branchId",
+          "question",
+          "createdBy",
+          "createdAt"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "branchId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "question": {
+            "type": "string"
+          },
+          "createdBy": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
       "CustomPriceRequest": {
         "required": [
           "provider",
@@ -11754,6 +13420,135 @@
           }
         }
       },
+      "DecisionDto": {
+        "required": [
+          "id",
+          "projectId",
+          "number",
+          "title",
+          "status",
+          "origin",
+          "context",
+          "decision",
+          "alternatives",
+          "consequences",
+          "affectedIds",
+          "settles",
+          "stamps",
+          "supersedes",
+          "supersededBy",
+          "createdBy",
+          "createdAt",
+          "updatedAt",
+          "acceptedBy",
+          "acceptedAt",
+          "history"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "projectId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "number": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "origin": {
+            "type": "string"
+          },
+          "context": {
+            "type": "string"
+          },
+          "decision": {
+            "type": "string"
+          },
+          "alternatives": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Alternative"
+            }
+          },
+          "consequences": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "affectedIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "settles": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Settles"
+            }
+          },
+          "stamps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SettlementStamp"
+            }
+          },
+          "supersedes": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "supersededBy": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "createdBy": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "acceptedBy": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "acceptedAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "history": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DecisionHistoryEntry"
+            }
+          }
+        }
+      },
       "DecisionFailure": {
         "required": [
           "id",
@@ -11767,6 +13562,107 @@
           },
           "reason": {
             "type": "string"
+          }
+        }
+      },
+      "DecisionHistoryEntry": {
+        "required": [
+          "at",
+          "by",
+          "action",
+          "note"
+        ],
+        "type": "object",
+        "properties": {
+          "at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "by": {
+            "type": "string"
+          },
+          "action": {
+            "type": "string"
+          },
+          "note": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "DecisionRequest": {
+        "required": [
+          "title",
+          "context",
+          "decision",
+          "alternatives",
+          "consequences",
+          "affectedIds",
+          "settles",
+          "supersedes"
+        ],
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "context": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "decision": {
+            "type": "string"
+          },
+          "alternatives": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/Alternative"
+            }
+          },
+          "consequences": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "affectedIds": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "settles": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/Settles"
+            }
+          },
+          "supersedes": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "origin": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -12811,6 +14707,175 @@
           }
         }
       },
+      "Finding": {
+        "required": [
+          "ruleId",
+          "ruleVersion",
+          "category",
+          "severity",
+          "result",
+          "subject",
+          "cites",
+          "reason",
+          "wouldChange",
+          "question",
+          "fingerprint"
+        ],
+        "type": "object",
+        "properties": {
+          "ruleId": {
+            "type": "string"
+          },
+          "ruleVersion": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "category": {
+            "type": "string"
+          },
+          "severity": {
+            "type": "string"
+          },
+          "result": {
+            "type": "string"
+          },
+          "subject": {
+            "$ref": "#/components/schemas/Cited"
+          },
+          "cites": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Cited"
+            }
+          },
+          "reason": {
+            "type": "string"
+          },
+          "wouldChange": {
+            "type": "string"
+          },
+          "question": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "fingerprint": {
+            "type": "string"
+          },
+          "fired": {
+            "type": "boolean"
+          }
+        }
+      },
+      "FindingsResponse": {
+        "required": [
+          "projectId",
+          "branch",
+          "modelVersion",
+          "revisionId",
+          "inputsFingerprint",
+          "ruleSetVersion",
+          "hash",
+          "counts",
+          "findings"
+        ],
+        "type": "object",
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "branch": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "modelVersion": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "revisionId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "inputsFingerprint": {
+            "type": "string"
+          },
+          "ruleSetVersion": {
+            "type": "string"
+          },
+          "hash": {
+            "type": "string"
+          },
+          "counts": {
+            "$ref": "#/components/schemas/ReviewCounts"
+          },
+          "findings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FindingView"
+            }
+          }
+        }
+      },
+      "FindingView": {
+        "required": [
+          "finding",
+          "status",
+          "decisionId",
+          "decision",
+          "reason",
+          "needsReReview"
+        ],
+        "type": "object",
+        "properties": {
+          "finding": {
+            "$ref": "#/components/schemas/Finding"
+          },
+          "status": {
+            "type": "string"
+          },
+          "decisionId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "decision": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "reason": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "needsReReview": {
+            "type": "boolean"
+          },
+          "settled": {
+            "type": "boolean"
+          },
+          "blocks": {
+            "type": "boolean"
+          }
+        }
+      },
       "FlowDiff": {
         "required": [
           "addedSteps",
@@ -13593,6 +15658,27 @@
       "JsonElement": { },
       "JsonObject": {
         "type": "object"
+      },
+      "KeepQuestionRequest": {
+        "required": [
+          "proposalId",
+          "index"
+        ],
+        "type": "object",
+        "properties": {
+          "proposalId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "index": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          }
+        }
       },
       "LatencySummary": {
         "required": [
@@ -14663,6 +16749,48 @@
           }
         }
       },
+      "PageOfCritiqueSummary": {
+        "required": [
+          "items",
+          "cursor"
+        ],
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CritiqueSummary"
+            }
+          },
+          "cursor": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "PageOfDecisionDto": {
+        "required": [
+          "items",
+          "cursor"
+        ],
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DecisionDto"
+            }
+          },
+          "cursor": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
       "PageOfEvidenceItemDto": {
         "required": [
           "items",
@@ -14768,6 +16896,27 @@
           }
         }
       },
+      "PageOfQuestionDto": {
+        "required": [
+          "items",
+          "cursor"
+        ],
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/QuestionDto"
+            }
+          },
+          "cursor": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
       "PageOfScanDto": {
         "required": [
           "items",
@@ -14800,6 +16949,27 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/ScenarioSummaryDto"
+            }
+          },
+          "cursor": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "PageOfSnapshotSummary": {
+        "required": [
+          "items",
+          "cursor"
+        ],
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SnapshotSummary"
             }
           },
           "cursor": {
@@ -14999,6 +17169,15 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/PinnedSource"
+            }
+          },
+          "decisions": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/PinnedStream"
             }
           }
         }
@@ -16392,6 +18571,101 @@
           }
         }
       },
+      "QuestionDto": {
+        "required": [
+          "id",
+          "projectId",
+          "text",
+          "about",
+          "origin",
+          "status",
+          "answer",
+          "answeredBy",
+          "answeredAt",
+          "createdBy",
+          "createdAt"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "projectId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "text": {
+            "type": "string"
+          },
+          "about": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "origin": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "answer": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "answeredBy": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "answeredAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "createdBy": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "QuestionRequest": {
+        "required": [
+          "text"
+        ],
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string"
+          },
+          "about": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "origin": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
       "QueueStats": {
         "required": [
           "meanDepth",
@@ -16484,6 +18758,20 @@
             "type": "string"
           },
           "displayName": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "RejectDecisionRequest": {
+        "required": [
+          "reason"
+        ],
+        "type": "object",
+        "properties": {
+          "reason": {
             "type": [
               "null",
               "string"
@@ -17167,6 +19455,76 @@
           }
         }
       },
+      "ReviewCounts": {
+        "required": [
+          "blocking",
+          "concerns",
+          "unknown",
+          "verified",
+          "notApplicable",
+          "settled",
+          "needsReReview"
+        ],
+        "type": "object",
+        "properties": {
+          "blocking": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "concerns": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "unknown": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "verified": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "notApplicable": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "settled": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "needsReReview": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          }
+        }
+      },
       "ReviseRequest": {
         "type": "object",
         "properties": {
@@ -17233,6 +19591,42 @@
             "format": "int32"
           },
           "message": {
+            "type": "string"
+          }
+        }
+      },
+      "RuleDto": {
+        "required": [
+          "id",
+          "version",
+          "category",
+          "title",
+          "reads",
+          "settle"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "version": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "category": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "reads": {
+            "type": "string"
+          },
+          "settle": {
             "type": "string"
           }
         }
@@ -17634,6 +20028,31 @@
             "items": {
               "$ref": "#/components/schemas/SaveLayoutEdge"
             }
+          }
+        }
+      },
+      "SaveSnapshotRequest": {
+        "type": "object",
+        "properties": {
+          "revisionId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "branchId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "note": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -18411,6 +20830,53 @@
           }
         }
       },
+      "SetDispositionRequest": {
+        "required": [
+          "ruleId",
+          "subjectId",
+          "status"
+        ],
+        "type": "object",
+        "properties": {
+          "ruleId": {
+            "type": "string"
+          },
+          "subjectId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string"
+          },
+          "decisionId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "reason": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "revisionId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "branchId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          }
+        }
+      },
       "SetModelPriceRequest": {
         "required": [
           "providerKind",
@@ -18530,6 +20996,54 @@
           },
           "notifications": {
             "$ref": "#/components/schemas/NotificationSettings"
+          }
+        }
+      },
+      "SettlementStamp": {
+        "required": [
+          "ruleId",
+          "subjectId",
+          "ruleVersion",
+          "fingerprint"
+        ],
+        "type": "object",
+        "properties": {
+          "ruleId": {
+            "type": "string"
+          },
+          "subjectId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "ruleVersion": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "fingerprint": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "Settles": {
+        "required": [
+          "ruleId",
+          "subjectId"
+        ],
+        "type": "object",
+        "properties": {
+          "ruleId": {
+            "type": "string"
+          },
+          "subjectId": {
+            "type": "string",
+            "format": "uuid"
           }
         }
       },
@@ -18663,6 +21177,142 @@
           },
           "reason": {
             "type": "string"
+          }
+        }
+      },
+      "SnapshotDto": {
+        "required": [
+          "id",
+          "projectId",
+          "branch",
+          "modelVersion",
+          "revisionId",
+          "inputsFingerprint",
+          "ruleSetVersion",
+          "hash",
+          "note",
+          "findings",
+          "createdBy",
+          "createdAt"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "projectId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "branch": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "modelVersion": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "revisionId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "inputsFingerprint": {
+            "type": "string"
+          },
+          "ruleSetVersion": {
+            "type": "string"
+          },
+          "hash": {
+            "type": "string"
+          },
+          "note": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "findings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FindingView"
+            }
+          },
+          "createdBy": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "SnapshotSummary": {
+        "required": [
+          "id",
+          "branch",
+          "modelVersion",
+          "revisionId",
+          "inputsFingerprint",
+          "ruleSetVersion",
+          "hash",
+          "note",
+          "createdBy",
+          "createdAt"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "branch": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "modelVersion": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "revisionId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "inputsFingerprint": {
+            "type": "string"
+          },
+          "ruleSetVersion": {
+            "type": "string"
+          },
+          "hash": {
+            "type": "string"
+          },
+          "note": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "createdBy": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
           }
         }
       },
@@ -21345,9 +23995,6 @@
       "name": "Scenarios"
     },
     {
-      "name": "Scoring"
-    },
-    {
       "name": "Agent"
     },
     {
@@ -21385,6 +24032,15 @@
     },
     {
       "name": "Prices"
+    },
+    {
+      "name": "Review"
+    },
+    {
+      "name": "Decisions"
+    },
+    {
+      "name": "Questions"
     }
   ]
 }

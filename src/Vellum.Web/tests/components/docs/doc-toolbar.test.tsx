@@ -4,7 +4,7 @@ import { DocToolbar } from '../../../src/components/docs/doc-toolbar'
 
 describe('DocToolbar', () => {
   it('renders formatting buttons when in edit mode', () => {
-    render(<DocToolbar editorView={null} mode="edit" onToggleMode={vi.fn()} />)
+    render(<DocToolbar getEditorView={() => null} mode="edit" onToggleMode={vi.fn()} />)
     expect(screen.getByLabelText('Bold')).toBeTruthy()
     expect(screen.getByLabelText('Italic')).toBeTruthy()
     expect(screen.getByLabelText('Heading 1')).toBeTruthy()
@@ -15,17 +15,17 @@ describe('DocToolbar', () => {
   })
 
   it('hides formatting buttons in read mode', () => {
-    render(<DocToolbar editorView={null} mode="read" onToggleMode={vi.fn()} />)
+    render(<DocToolbar getEditorView={() => null} mode="read" onToggleMode={vi.fn()} />)
     expect(screen.queryByLabelText('Bold')).toBeNull()
   })
 
   it('renders mode toggle button', () => {
-    render(<DocToolbar editorView={null} mode="edit" onToggleMode={vi.fn()} />)
+    render(<DocToolbar getEditorView={() => null} mode="edit" onToggleMode={vi.fn()} />)
     expect(screen.getByText('Read')).toBeTruthy()
   })
 
   it('shows Edit label when in read mode', () => {
-    render(<DocToolbar editorView={null} mode="read" onToggleMode={vi.fn()} />)
+    render(<DocToolbar getEditorView={() => null} mode="read" onToggleMode={vi.fn()} />)
     expect(screen.getByText('Edit')).toBeTruthy()
   })
 })

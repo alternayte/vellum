@@ -5,6 +5,7 @@ using Vellum.Modules.Import;
 using Vellum.Modules.Import.Scans;
 using Vellum.Modules.Promises;
 using Vellum.Modules.Stress;
+using Vellum.Modules.Review;
 using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Shared;
 
@@ -19,7 +20,9 @@ public static class DeleteProject
     /// the scan worker repeats it on its timer for a project whose delete was cut short
     /// between the two. The promises of the project go the same way: their streams, their
     /// rows, their runs and the requirement numbering. A delete that was cut short before
-    /// that step is finished by the next delete of any project. The project's cost sheets, pins and saved estimates go as well.
+    /// that step is finished by the next delete of any project. The project's cost sheets, pins and saved estimates go as well. The review data goes last, in
+    /// the same way: the decisions with their streams, the dispositions, the snapshots, the
+    /// open questions and the critiques.
     /// </summary>
     public static async Task<IResult> Handle(
         Guid projectId,
@@ -28,6 +31,7 @@ public static class DeleteProject
         ImportDbContext importDb,
         PromisesDbContext promisesDb,
         CostsDbContext costsDb,
+        ReviewDbContext reviewDb,
         IEventStore store,
         TimeProvider time,
         WorkspaceAuthorizationService auth,
@@ -55,6 +59,8 @@ public static class DeleteProject
         await PromiseRetention.DeleteProjectAsync(promisesDb, store, projectId, CancellationToken.None);
         await PromiseRetention.DeleteOrphansAsync(promisesDb, store, CancellationToken.None);
         await CostRetention.DeleteProjectAsync(costsDb, store, projectId, CancellationToken.None);
+        await ReviewRetention.DeleteProjectAsync(reviewDb, store, projectId, CancellationToken.None);
+        await ReviewRetention.DeleteOrphansAsync(reviewDb, store, CancellationToken.None);
         return Results.NoContent();
     }
 }

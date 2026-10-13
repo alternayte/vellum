@@ -1,6 +1,7 @@
 using System.Text;
 using Vellum.Modules.Import.Extraction;
 using Vellum.Modules.Promises;
+using Vellum.Modules.Review.Decisions;
 
 namespace Vellum.Modules.Build;
 
@@ -65,9 +66,20 @@ public sealed record BuildManifest(
 /// </summary>
 public sealed class Bundle
 {
-    /// <summary>Format 2 pins the version of every input, so a bundle of it can be generated again. A manifest of format 1 cannot.</summary>
-    public const string Format = "vellum-bundle/2";
-    public const string GeneratorVersion = "2";
+    /// <summary>
+    /// Format 3 adds the review: the decision streams are pinned, <c>decisions/</c> holds the
+    /// accepted decisions, and a blocking finding that no decision settles is a blocker.
+    /// </summary>
+    public const string Format = "vellum-bundle/3";
+    public const string GeneratorVersion = "3";
+
+    /// <summary>
+    /// Format 2 pins the version of every input but names no decision stream. A pinned state
+    /// of it is still generated, byte for byte as it was exported: with this format, this
+    /// generator version and no review. A manifest of format 1 cannot be generated again.
+    /// </summary>
+    public const string FormatWithoutReview = "vellum-bundle/2";
+    public const string GeneratorVersionWithoutReview = "2";
     public const string ManifestPath = "manifest.json";
 
     /// <summary>The code of the blocker for a contract file that holds a number YAML cannot hold exactly.</summary>
@@ -86,6 +98,9 @@ public sealed class Bundle
     public byte[] ManifestBytes { get; }
 
     public static GeneratorInfo Generator { get; } = new("vellum-build", GeneratorVersion);
+
+    /// <summary>The generator version that a pinned state is generated with: that of its format.</summary>
+    internal static string GeneratorVersionOf(BuildView view) => view.Reviewed ? GeneratorVersion : GeneratorVersionWithoutReview;
 
     public static Bundle Build(BuildInput input, BuildLimits limits)
     {
@@ -125,6 +140,7 @@ public sealed class Bundle
 
         var selfCheck = Check(view, routes, files);
         var blockers = Blockers.Of(view, routes).ToList();
+        blockers.AddRange(Blockers.FromReview(view.Review));
         foreach (var (path, unrepresentable) in notWritten)
         {
             blockers.Add(new Blocker(YamlNumberBlocker, path,
@@ -141,11 +157,13 @@ public sealed class Bundle
             Add(PromiseDocuments.ScenarioPath(scenario), PromiseDocuments.Scenario(scenario, view.Playbacks[scenario.Id.Value]));
         foreach (var promise in view.Promises)
             Add(PromiseDocuments.Path(promise), PromiseDocuments.Promise(promise));
+        foreach (var decision in DecisionDocuments.InBundle(view))
+            Add(DecisionDocuments.Path(decision), System.Text.Encoding.UTF8.GetBytes(DecisionDocuments.Markdown(view.Decisions, decision, view.Name)));
         Add(SddDocument.Path, SddDocument.Write(view, routes, Slices.Of(view), blockers, notWritten.Keys.ToHashSet(StringComparer.Ordinal)));
 
         var listed = files.Select(f => new BundleFile(f.Key, BuildText.Sha256(f.Value), f.Value.Length)).ToList();
         var manifest = new BuildManifest(
-            Format, Generator,
+            view.Reviewed ? Format : FormatWithoutReview, Generator with { Version = GeneratorVersionOf(view) },
             input.Pinned,
             listed, BundleHash(listed.Select(f => (f.Path, f.Sha256))), blockers.Count == 0, blockers, selfCheck);
         var bundle = new Bundle(files, manifest);

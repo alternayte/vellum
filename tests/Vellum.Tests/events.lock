@@ -10,6 +10,15 @@ stream cost_sheet (CostSheetState)
   cost_sheet.sheet_copied v1 { assumptions: [{ effectiveDate: date, id: uuid, kind: string, label: string, name: string, source: string?, subjectId: uuid?, unit: string, value: decimal }], at: date-time, by: string, fromBranchId: uuid, fromVersion: int64, resources: [{ category: string, elementId: uuid, factStatus: string, id: uuid, name: string, priceRef: uuid?, provenance: { acceptedAt: date-time?, acceptedBy: uuid?, confidence: float64?, revision: string?, source: string? }?, provider: string, quantity: decimal?, region: string, sku: string, unit: string?, usage: [{ assumptionId: uuid, id: uuid, name: string, priceRef: uuid? }] }] }
   cost_sheet.sheet_opened v1 { at: date-time, branchId: uuid, by: string, projectId: uuid }
 
+stream decision (DecisionState)
+  decision.decision_accepted v1 { at: date-time, by: string, stamps: [{ fingerprint: string?, ruleId: string, ruleVersion: int32, subjectId: uuid }] }
+  decision.decision_changed v1 { at: date-time, by: string, content: { affectedIds: [uuid], alternatives: [{ title: string, whyNot: string? }], consequences: string?, context: string, decision: string, settles: [{ ruleId: string, subjectId: uuid }], supersedes: uuid?, title: string } }
+  decision.decision_deleted v1 { at: date-time, by: string }
+  decision.decision_proposed v1 { at: date-time, by: string, content: { affectedIds: [uuid], alternatives: [{ title: string, whyNot: string? }], consequences: string?, context: string, decision: string, settles: [{ ruleId: string, subjectId: uuid }], supersedes: uuid?, title: string }, number: int32, origin: string, projectId: uuid }
+  decision.decision_rejected v1 { at: date-time, by: string, reason: string? }
+  decision.settlement_recorded v1 { at: date-time, by: string, stamp: { fingerprint: string?, ruleId: string, ruleVersion: int32, subjectId: uuid } }
+  decision.settlement_removed v1 { at: date-time, by: string, ruleId: string, subjectId: uuid }
+
 stream model (ModelState)
   model.binding_added v1 { id: custom(BindingId), routingKey: string?, sourceChannelId: custom(ChannelId), targetChannelId: custom(ChannelId) }
   model.binding_changed v1 { bindingId: custom(BindingId), routingKey: string?, sourceChannelId: custom(ChannelId), targetChannelId: custom(ChannelId) }

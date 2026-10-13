@@ -462,8 +462,6 @@ public class AgentTokenTests(IntegrationFixture fixture)
         "POST /api/auth/login",
         "GET /api/auth/external/{provider}",
         "GET /api/auth/external/callback",
-        // One bit of the instance: whether document scoring has an AI client.
-        "GET /api/scoring/status",
         "GET /llms.txt",
         "GET /llms-full.txt",
         "GET /skills/vellum/SKILL.md",
@@ -493,6 +491,19 @@ public class AgentTokenTests(IntegrationFixture fixture)
         "POST /api/projects/{projectId}/ai/flow-proposals/{proposalId}/missing/{alias}/create",
         "POST /api/projects/{projectId}/ai/architecture-proposals/",
         "POST /api/projects/{projectId}/ai/architecture-proposals/{proposalId}/decide",
+        "PUT /api/projects/{projectId}/review/dispositions",
+        "POST /api/projects/{projectId}/review/snapshots",
+        "DELETE /api/projects/{projectId}/review/snapshots/{snapshotId:guid}",
+        "POST /api/projects/{projectId}/review/critiques/",
+        "DELETE /api/projects/{projectId}/review/critiques/{critiqueId:guid}",
+        "POST /api/projects/{projectId}/review/critiques/{critiqueId:guid}/proposed-decisions/{index:int}/keep",
+        "POST /api/projects/{projectId}/review/critiques/{critiqueId:guid}/questions/{index:int}/keep",
+        "POST /api/projects/{projectId}/decisions/{decisionId:guid}/accept",
+        "POST /api/projects/{projectId}/decisions/{decisionId:guid}/reject",
+        "POST /api/projects/{projectId}/questions/keep",
+        "POST /api/projects/{projectId}/questions/{questionId:guid}/answer",
+        "POST /api/projects/{projectId}/questions/{questionId:guid}/drop",
+        "DELETE /api/projects/{projectId}/questions/{questionId:guid}",
     ];
 
     /// <summary>
@@ -535,6 +546,15 @@ public class AgentTokenTests(IntegrationFixture fixture)
         ["POST /api/projects/{projectId}/promises/{promiseId:guid}/obligations/{obligationKey}/run"] = "propose",
         ["POST /api/projects/{projectId}/promises/{promiseId:guid}/obligations/{obligationKey}/evidence"] = "propose",
         ["GET /api/projects/{projectId}/build/manifest"] = "read or export",
+        ["GET /api/projects/{projectId}/review/rules"] = "read",
+        ["GET /api/projects/{projectId}/review/findings"] = "read",
+        ["GET /api/projects/{projectId}/decisions/"] = "read",
+        ["GET /api/projects/{projectId}/decisions/export"] = "read",
+        ["GET /api/projects/{projectId}/decisions/{decisionId:guid}"] = "read",
+        ["GET /api/projects/{projectId}/decisions/{decisionId:guid}/export"] = "read",
+        ["POST /api/projects/{projectId}/decisions/"] = "propose",
+        ["GET /api/projects/{projectId}/questions/"] = "read",
+        ["POST /api/projects/{projectId}/questions/"] = "propose",
         ["POST /api/projects/{projectId}/build/export"] = "export",
         ["POST /api/projects/{projectId}/build/brief"] = "export",
         ["POST /api/projects/{projectId}/build/verify"] = "export",
@@ -618,6 +638,7 @@ public class AgentTokenTests(IntegrationFixture fixture)
                 "workspaceId" => workspaceId.ToString(),
                 "projectId" => projectId.ToString(),
                 "provider" or "name" or "alias" or "obligationKey" => "x",
+                "index" => "0",
                 _ => Guid.NewGuid().ToString(),
             }));
         async Task<HttpResponseMessage> SendAsync(HttpClient client, string method, RouteEndpoint endpoint)

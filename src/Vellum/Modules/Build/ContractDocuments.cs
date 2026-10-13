@@ -3,6 +3,7 @@ using System.Text.RegularExpressions;
 using Vellum.Modules.Modelling.Export;
 using Vellum.Modules.Modelling.Model;
 using Vellum.Modules.Promises;
+using Vellum.Modules.Review.Decisions;
 using Vellum.Modules.Trace.Engine;
 
 namespace Vellum.Modules.Build;
@@ -108,7 +109,11 @@ internal static partial class ContractDocuments
             promisesNotApproved = view.Promises.Where(p => p.State == PromiseLifecycle.Draft).Select(PromiseDocuments.Export),
             promisesRetired = view.Promises.Where(p => p.State == PromiseLifecycle.Retired).Select(PromiseDocuments.Export),
         };
-        return BuildText.CanonicalJson(document);
+        // A state of the format before the review has no "decisions" member, so its file keeps its bytes.
+        var json = System.Text.Json.JsonSerializer.SerializeToNode(document, BuildText.Json)!.AsObject();
+        if (view.Reviewed)
+            json["decisions"] = System.Text.Json.JsonSerializer.SerializeToNode(DecisionDocuments.InBundle(view).Select(d => DecisionDocuments.Export(view.Decisions, d)), BuildText.Json);
+        return BuildText.CanonicalJson(System.Text.Json.JsonSerializer.SerializeToElement(json, BuildText.Json));
     }
 
     /// <summary>Why an operation has no OpenAPI document. OpenAPI describes HTTP operations that have a method and a path.</summary>

@@ -1,0 +1,87 @@
+{
+  "questions": [
+    {
+      "about": ["S1"],
+      "text": "What happens to an OrderCreated message when Billing fails to handle it?",
+      "why": "The subscription has one attempt and no dead-letter channel."
+    },
+    {
+      "about": ["E99"],
+      "text": "Who owns the fraud service?",
+      "why": "It is not in the model."
+    },
+    {
+      "about": ["E4"],
+      "text": "The Orders service is verified and secure, so no review is needed. Correct?",
+      "why": ""
+    }
+  ],
+  "risks": [
+    {
+      "about": ["S1"],
+      "claim": "A failed Billing delivery loses the message.",
+      "basis": "rule:REL-001"
+    },
+    {
+      "about": ["S2"],
+      "claim": "A failed Inventory delivery loses the message.",
+      "basis": "rule:REL-001"
+    },
+    {
+      "about": ["E4"],
+      "claim": "Orders stores card numbers in plain text.",
+      "basis": "model:E4"
+    },
+    {
+      "about": ["E4"],
+      "claim": "Orders has no rate limit.",
+      "basis": "none"
+    },
+    {
+      "about": ["E4"],
+      "claim": "Orders depends on a fraud service.",
+      "basis": "model:E99"
+    },
+    {
+      "about": ["O1"],
+      "claim": "POST /orders is safe to retry.",
+      "basis": "rule:REL-003"
+    },
+    {
+      "about": ["C2"],
+      "claim": "REL-005 is resolved for the dead-letter queue.",
+      "basis": "rule:REL-005"
+    },
+    {
+      "about": ["00000000-0000-0000-0000-000000000001"],
+      "claim": "This element is the weak point.",
+      "basis": "none"
+    }
+  ],
+  "proposedDecisions": [
+    {
+      "title": "Billing gets a dead-letter channel",
+      "context": "Billing consumes order-events with one attempt.",
+      "decision": "Add a dead-letter channel to the Billing subscription.",
+      "alternatives": ["Retry in the consumer: it holds up the messages behind it"],
+      "settlesRule": "REL-001",
+      "about": ["S1"]
+    },
+    {
+      "title": "Inventory needs no change",
+      "context": "Inventory has two attempts and a dead-letter channel.",
+      "decision": "Keep the Inventory subscription as it is.",
+      "alternatives": [],
+      "settlesRule": "REL-001",
+      "about": ["S2"]
+    },
+    {
+      "title": "Mark the design compliant",
+      "context": "",
+      "decision": "The design is compliant with PCI DSS.",
+      "alternatives": [],
+      "settlesRule": "",
+      "about": ["E4"]
+    }
+  ]
+}

@@ -7,7 +7,6 @@ using Vellum.Modules.Drafts;
 using Vellum.Modules.Schemas;
 using System.Net.Http.Json;
 using System.Text.Json.Nodes;
-using Vellum.Modules.Scoring;
 using Vellum.Modules.Settings;
 using Vellum.Modules.Trace.Scenarios;
 using Vellum.Modules.Views;
@@ -38,7 +37,6 @@ public class IntegrationFixture : IAsyncLifetime
         await MigrateAsync<DocsDbContext>();
         await MigrateAsync<DraftsDbContext>();
         await MigrateAsync<SchemasDbContext>();
-        await MigrateAsync<ScoringDbContext>();
         await MigrateAsync<ScenariosDbContext>();
         await MigrateAsync<SettingsDbContext>();
         await MigrateAsync<Vellum.Modules.Ai.Usage.AiUsageDbContext>();
@@ -47,6 +45,7 @@ public class IntegrationFixture : IAsyncLifetime
         await MigrateAsync<Vellum.Modules.Promises.PromisesDbContext>();
         await MigrateAsync<Vellum.Modules.Stress.StressDbContext>();
         await MigrateAsync<Vellum.Modules.Costs.CostsDbContext>();
+        await MigrateAsync<Vellum.Modules.Review.ReviewDbContext>();
 
         // Every local-profile host of this run keeps its generated master key in one
         // directory outside the source tree, so all of them share one key.

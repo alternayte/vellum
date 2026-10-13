@@ -205,10 +205,11 @@ internal static class DesignPrompts
     public static readonly IReadOnlyDictionary<string, string> InferArchitecture = Load("infer-architecture.md");
     public static readonly IReadOnlyDictionary<string, string> Explain = Load("explain.md");
 
-    private static Dictionary<string, string> Load(string file)
+    /// <param name="folder">The end of the resource name before the file name. Another feature gives its own prompt folder.</param>
+    internal static Dictionary<string, string> Load(string file, string folder = ".Design.Prompts.")
     {
         var assembly = typeof(DesignPrompts).Assembly;
-        var name = assembly.GetManifestResourceNames().Single(n => n.EndsWith($".Design.Prompts.{file}", StringComparison.Ordinal));
+        var name = assembly.GetManifestResourceNames().Single(n => n.EndsWith(folder + file, StringComparison.Ordinal));
         using var reader = new StreamReader(assembly.GetManifestResourceStream(name)!, Encoding.UTF8);
 
         var sections = new Dictionary<string, string>(StringComparer.Ordinal);

@@ -41,7 +41,7 @@ public sealed record VerifyRequest(BuildManifest Manifest);
 public sealed record VerifiedFile(string Path, string Status, string? ExpectedSha256, string? ActualSha256);
 
 /// <summary>An input that is not at its pinned version any more.</summary>
-/// <param name="Kind"><c>model</c>, <c>project-name</c>, <c>scenario</c>, <c>schema</c>, <c>promise</c>, <c>run</c> or <c>source</c>.</param>
+/// <param name="Kind"><c>model</c>, <c>project-name</c>, <c>scenario</c>, <c>schema</c>, <c>promise</c>, <c>decision</c>, <c>run</c> or <c>source</c>.</param>
 /// <param name="Pinned">What the manifest pins, or null for an input that did not exist then.</param>
 /// <param name="Current">What it is now, or null for an input that no longer exists.</param>
 public sealed record MovedInput(string Kind, string Id, string? Pinned, string? Current);
@@ -431,15 +431,17 @@ public static partial class BuildModule
         if (pin.ProjectName is null || pin.Scenarios is null || pin.Schemas is null || pin.Promises is null || pin.Runs is null || pin.Sources is null)
         {
             return Results.BadRequest(new ErrorResponse("invalid_bundle",
-                $"The pinned state does not name the version of every input. Only a manifest of the format {Bundle.Format} can be generated again."));
+                $"The pinned state does not name the version of every input. Only a manifest of the format {Bundle.FormatWithoutReview} or {Bundle.Format} can be generated again."));
         }
-        if (pin.Scenarios.Count + pin.Schemas.Count + pin.Promises.Count > limits.MaxFiles
+        // A state of the format before the review names no decision stream. That is not an error.
+        var decisions = pin.Decisions ?? [];
+        if (pin.Scenarios.Count + pin.Schemas.Count + pin.Promises.Count + decisions.Count > limits.MaxFiles
             || pin.Runs.Count > limits.MaxPinnedRuns || pin.Sources.Count > limits.MaxFiles)
             return Invalid(field, "The pinned state names more inputs than a bundle holds");
-        if (pin.Scenarios.Concat(pin.Schemas).Concat(pin.Promises).Any(p => p is null || p.Version < 1)
+        if (pin.Scenarios.Concat(pin.Schemas).Concat(pin.Promises).Concat(decisions).Any(p => p is null || p.Version < 1)
             || pin.Runs.Any(r => r is null) || pin.Sources.Any(s => s?.Repository is null))
             return Invalid(field, "Every pinned input has an ID and a version of at least 1");
-        foreach (var (name, pins) in new[] { ("scenarios", pin.Scenarios), ("schemas", pin.Schemas), ("promises", pin.Promises) })
+        foreach (var (name, pins) in new[] { ("scenarios", pin.Scenarios), ("schemas", pin.Schemas), ("promises", pin.Promises), ("decisions", decisions) })
         {
             if (pins.GroupBy(p => p.Id).Any(g => g.Count() > 1))
                 return Invalid($"{field}.{name}", "An input is pinned once");
@@ -530,6 +532,9 @@ public static partial class BuildModule
         Streams("scenario", pin.Scenarios, now.Scenarios);
         Streams("schema", pin.Schemas, now.Schemas);
         Streams("promise", pin.Promises, now.Promises);
+        // A state of the format before the review pins no decision, so a decision cannot have moved for it.
+        if (pin.Decisions is not null)
+            Streams("decision", pin.Decisions, now.Decisions ?? []);
 
         static string RunKey(PinnedRun run) => string.Create(CultureInfo.InvariantCulture, $"{run.PromiseId}:{run.PromiseRevision}:{run.ObligationId}");
         var runsThen = pin.Runs.GroupBy(RunKey, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.Last().RunId, StringComparer.Ordinal);

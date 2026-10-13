@@ -203,7 +203,11 @@ public static class Brief
         var unconfirmed = Blockers.Facts(view).Where(f => !Confirmed(f.Status, f.Stale)).OrderBy(f => f.Kind, StringComparer.Ordinal).ThenBy(f => f.Id).ToList();
 
         var routes = ContractDocuments.Routes(view);
-        var blockers = Blockers.Of(view, routes);
+        // The review reads the whole pinned state: a rule needs the scenarios and the promises
+        // that the scope leaves out. Its blockers are those about a thing in scope.
+        var inScope = gathered.Concat(elements).Concat(requirements).ToHashSet();
+        IReadOnlyList<Blocker> blockers =
+            [.. Blockers.Of(view, routes), .. Blockers.FromReview(new BuildView(input).Review.Where(f => inScope.Contains(f.Finding.Subject.Id)))];
         var approved = view.Promises.Where(p => requirements.Contains(p.Id)).ToList();
         var drafts = view.Promises.Where(p => notApproved.Contains(p.Id)).ToList();
 

@@ -160,7 +160,8 @@ export interface VerifyResult {
 }
 
 export interface BuildManifest {
-  pinned: { projectId: string; projectName: string; branch: string; streamVersion: number; revisionId: string | null }
+  /** `decisions` names the pinned decision streams. A manifest of the format before the review has none. */
+  pinned: { projectId: string; projectName: string; branch: string; streamVersion: number; revisionId: string | null; decisions?: { id: string; version: number }[] | null }
   files: { path: string; sha256: string; bytes: number }[]
   bundleHash: string
   buildReady: boolean
