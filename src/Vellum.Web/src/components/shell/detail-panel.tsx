@@ -137,7 +137,7 @@ export function DetailPanel({
               </Badge>
             </SheetHeader>
 
-            <div className="mt-4 space-y-4">
+            <div className="mt-4 space-y-4 px-4 pb-4">
               {selectedMessage.description && (
                 <div>
                   <label className="mb-1 block text-xs text-muted-foreground">Description</label>
@@ -260,7 +260,7 @@ export function DetailPanel({
                 )}
               </>
             ) : (
-              <div className="mt-4 space-y-4">
+              <div className="mt-4 space-y-4 px-4 pb-4">
                 <div>
                   <label className="mb-1 block text-xs text-muted-foreground">Name</label>
                   <Input
@@ -426,7 +426,7 @@ export function DetailPanel({
                 )}
               </>
             ) : (
-              <div className="mt-4 space-y-4">
+              <div className="mt-4 space-y-4 px-4 pb-4">
                 <div>
                   <label className="mb-1 block text-xs text-muted-foreground">From</label>
                   <p className="text-sm">{elements.find((e) => e.id === selectedRel.fromId)?.name ?? 'Unknown'}</p>
