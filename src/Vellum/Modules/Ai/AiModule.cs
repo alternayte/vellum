@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using Microsoft.EntityFrameworkCore;
+using Vellum.Modules.Ai.Design;
 using Vellum.Modules.Ai.Providers;
 using Vellum.Modules.Ai.Providers.Anthropic;
 using Vellum.Modules.Ai.Providers.Gemini;
@@ -33,6 +34,7 @@ public static class AiModule
 
         services.AddScoped<AiUsageLedger>();
         services.AddScoped<AiClient>();
+        services.AddAiDesign();
         return services;
     }
 
@@ -52,6 +54,7 @@ public static class AiModule
             .Produces<ModelPriceDto>()
             .Produces<ErrorResponse>(StatusCodes.Status400BadRequest);
 
+        app.MapAiDesignEndpoints();
         return app;
     }
 }

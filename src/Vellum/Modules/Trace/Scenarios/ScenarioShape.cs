@@ -155,7 +155,7 @@ public static class ScenarioShape
     /// A payload is free JSON, so its strings may hold any text but two kinds that the event
     /// store cannot keep: U+0000 and half of a surrogate pair.
     /// </summary>
-    private static ValidationError? Payload(JsonElement? payload, string path)
+    internal static ValidationError? Payload(JsonElement? payload, string path)
     {
         if (payload is not { } value)
             return null;

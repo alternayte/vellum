@@ -42,6 +42,7 @@ public class IntegrationFixture : IAsyncLifetime
         await MigrateAsync<ScenariosDbContext>();
         await MigrateAsync<SettingsDbContext>();
         await MigrateAsync<Vellum.Modules.Ai.Usage.AiUsageDbContext>();
+        await MigrateAsync<Vellum.Modules.Ai.Design.AiDesignDbContext>();
 
         // Every local-profile host of this run keeps its generated master key in one
         // directory outside the source tree, so all of them share one key.
