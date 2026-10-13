@@ -51,7 +51,7 @@ public class GitHubReaderTests(SharedOutboundHost shared) : IClassFixture<Shared
         using var github = await CreateAsync(path: "/api/v3");
         github.Stub
             .Json(Fixture("repository.json"))
-            .Then(() => new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(CommitSha + "\n") })
+            .Json("""[{"sha":"SHA","commit":{"message":"Add outbox"}}]""".Replace("SHA", CommitSha))
             .Json(Fixture("tree.json"))
             .Json(Fixture("blob.json"))
             .Json(Fixture("compare.json"))
@@ -83,7 +83,7 @@ public class GitHubReaderTests(SharedOutboundHost shared) : IClassFixture<Shared
         Assert.Equal(
         [
             "/api/v3/repos/acme/orders",
-            "/api/v3/repos/acme/orders/commits/heads/feature/outbox",
+            "/api/v3/repos/acme/orders/commits?sha=heads%2Ffeature%2Foutbox&per_page=1",
             $"/api/v3/repos/acme/orders/git/trees/{CommitSha}?recursive=1",
             $"/api/v3/repos/acme/orders/git/blobs/{BlobSha}",
             $"/api/v3/repos/acme/orders/compare/{new string('1', 40)}...{new string('2', 40)}?per_page=1&page=1",
@@ -97,8 +97,7 @@ public class GitHubReaderTests(SharedOutboundHost shared) : IClassFixture<Shared
             Assert.Equal("2022-11-28", s.Header("X-GitHub-Api-Version"));
             Assert.Equal("Vellum", s.Header("User-Agent"));
         });
-        Assert.Equal("application/vnd.github.sha", sent[1].Header("Accept"));
-        Assert.All(sent.Where((_, i) => i != 1), s => Assert.Equal("application/vnd.github+json", s.Header("Accept")));
+        Assert.All(sent, s => Assert.Equal("application/vnd.github+json", s.Header("Accept")));
     }
 
     [Fact]

@@ -93,6 +93,9 @@ public static class SetSecret
         if (request.Value is not { Length: >= 1 and <= SecretEnvelope.MaxValueLength } value)
             return Results.BadRequest(new ErrorResponse("validation_error", "Validation failed",
                 Errors: [new FieldError("value", $"Must be 1 to {SecretEnvelope.MaxValueLength} characters.")]));
+        // The message is a fixed sentence. It never repeats the value.
+        if (SecretNames.ValueRuleBrokenBy(secretName, value) is { } rule)
+            return Results.BadRequest(new ErrorResponse("validation_error", "Validation failed", Errors: [new FieldError("value", rule)]));
 
         // The settings cannot change between the read below and the write: a settings save
         // takes the same lock. The credential is bound to the origin that the settings name now.

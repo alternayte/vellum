@@ -4564,7 +4564,8 @@
           "inputTokens",
           "outputTokens",
           "costUsd",
-          "costKnown"
+          "costKnown",
+          "costEstimated"
         ],
         "type": "object",
         "properties": {
@@ -4617,6 +4618,9 @@
             "format": "double"
           },
           "costKnown": {
+            "type": "boolean"
+          },
+          "costEstimated": {
             "type": "boolean"
           }
         }

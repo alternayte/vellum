@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Vellum.Modules.Settings.Crypto;
 using Vellum.Modules.Settings.Entities;
 using Vellum.Shared;
+using Vellum.Shared.Outbound;
 
 namespace Vellum.Modules.Settings.Secrets;
 
@@ -24,6 +25,23 @@ public static class SecretNames
         && providerId != Guid.Empty
             ? providerId
             : null;
+
+    /// <summary>
+    /// The rule that <paramref name="value"/> breaks for the secret <paramref name="name"/>,
+    /// or null when the value can be stored. A GitHub token and an AI API key travel in an
+    /// HTTP header, so each must be one header value: printable ASCII and nothing else. A line
+    /// break in such a value would add a header to the request. A webhook signing secret is
+    /// the key of a signature and never a header value; it can be any printable text, and a
+    /// control character in it is refused because no real secret holds one.
+    /// </summary>
+    public static string? ValueRuleBrokenBy(string name, string value) =>
+        name == WebhookSecret
+            ? OutboundText.HasControlCharacter(value)
+                ? "Must not contain a line break, a tab or another control character."
+                : null
+            : OutboundText.IsHeaderValue(value)
+                ? null
+                : "Must contain printable ASCII characters only: letters, digits, punctuation and spaces. This credential is sent in an HTTP header, which cannot hold a line break, another control character or a character outside ASCII.";
 
     /// <summary>Returns the stored form of an allowed name, or null for any other name.</summary>
     public static string? Normalize(string? name) =>

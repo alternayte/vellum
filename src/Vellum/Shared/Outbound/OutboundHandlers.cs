@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Diagnostics.Metrics;
 using System.Net;
+using System.Net.Sockets;
 
 namespace Vellum.Shared.Outbound;
 
@@ -62,8 +63,9 @@ public sealed class OutboundTelemetryHandler(ILogger<OutboundTelemetryHandler> l
 /// Bounded retry. A request is sent again only when the provider did not process it:
 /// 429, 503 and 529 say so for any method, and a failed connection sent nothing. 502 and 504
 /// leave that open, so only a read (GET or HEAD) is sent again after them. The wait is the
-/// provider's <c>Retry-After</c> when it gives one. The attempts and the total wait are capped;
-/// past either cap the last response goes back to the caller.
+/// provider's <c>Retry-After</c> when it gives one, and else a doubling backoff with jitter.
+/// The attempts and the total wait are capped; past either cap the last response goes back
+/// to the caller.
 /// </summary>
 public sealed class OutboundRetryHandler(OutboundLimits limits) : DelegatingHandler
 {
@@ -87,9 +89,14 @@ public sealed class OutboundRetryHandler(OutboundLimits limits) : DelegatingHand
 
             var again = response is null || (int)response.StatusCode is 429 or 503 or 529
                 || (read && response.StatusCode is HttpStatusCode.BadGateway or HttpStatusCode.GatewayTimeout);
-            var wait = (response is null ? null : RetryAfter(response)) ?? limits.BaseBackoff * (1 << (attempt - 1));
+            if (!again || attempt >= limits.MaxAttempts)
+                return response ?? throw failure!;
 
-            if (!again || attempt >= limits.MaxAttempts || waited + wait > limits.MaxTotalWait)
+            // The server's own wait is kept as it is. The pipeline's backoff is shortened by
+            // up to half, at random, so clients that failed together do not return together.
+            var wait = (response is null ? null : RetryAfter(response))
+                       ?? limits.BaseBackoff * (1 << (attempt - 1)) * (1 - Math.Clamp(limits.Jitter(), 0, 1) / 2);
+            if (waited + wait > limits.MaxTotalWait)
                 return response ?? throw failure!;
 
             response?.Dispose();
@@ -107,12 +114,14 @@ public sealed class OutboundRetryHandler(OutboundLimits limits) : DelegatingHand
 }
 
 /// <summary>
-/// Innermost handler; it runs for every attempt. It builds the address from the base URL in
-/// settings, checks it with <see cref="OutboundUrlPolicy"/> and passes the checked addresses
-/// to the connection, adds the credential for the send only, applies the timeout and caps the
-/// response size.
+/// Innermost handler; it runs for every attempt, so a retry and a followed redirect pass the
+/// same checks. It builds the address from the base URL in settings, refuses an address or a
+/// header that holds a control character, checks the address with
+/// <see cref="OutboundUrlPolicy"/> (private networks and https as the call demands), fixes
+/// the addresses the connection may use, adds the credential for the send only, applies the
+/// timeouts and caps the response size.
 /// </summary>
-public sealed class OutboundAttemptHandler(OutboundUrlPolicy policy) : DelegatingHandler
+public sealed class OutboundAttemptHandler(OutboundUrlPolicy policy, HostResolver resolve, TimeProvider time) : DelegatingHandler
 {
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
     {
@@ -127,24 +136,36 @@ public sealed class OutboundAttemptHandler(OutboundUrlPolicy policy) : Delegatin
         }
 
         var target = call.AbsoluteUri ?? new Uri(call.BaseUrl.GetLeftPart(UriPartial.Path).TrimEnd('/') + path);
-        var verdict = await policy.CheckAsync(target.AbsoluteUri, call.AllowPrivateNetwork, ct);
+        RefuseUnsafeText(request, target, call);
+
+        var verdict = await policy.CheckAsync(target.AbsoluteUri, call.AllowPrivateNetwork, call.RequireHttps, ct);
         if (!verdict.Allowed)
             throw new OutboundException(OutboundFailure.UrlRefused, call, verdict.Reason);
 
-        request.RequestUri = target;
-        request.Options.Set(OutboundCall.PinnedAddressesKey, verdict.Addresses);
+        // The policy does not resolve a name that it allows anyway. The name is resolved here
+        // once, so the connection goes to these addresses and a later answer of the name
+        // cannot move it.
+        var addresses = verdict.Addresses.Count > 0 ? verdict.Addresses : await ResolveAsync(target, call, ct);
+        var attempt = request.Options.TryGetValue(OutboundCall.AttemptsKey, out var count) ? count : 1;
 
-        var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        deadline.CancelAfter(call.Timeout);
+        request.RequestUri = target;
+        request.Options.Set(OutboundCall.PinnedAddressesKey, addresses);
+        // One address per attempt. A retry after a failed connection takes the next one.
+        request.Options.Set(OutboundCall.ChosenAddressKey, addresses[(attempt - 1) % addresses.Count]);
+
+        // Until the headers arrive the limit is the timeout. After them, a streamed response
+        // gets its total limit and a whole response keeps the time that is left.
+        var limit = new CancellationTokenSource(call.Timeout, time);
         HttpResponseMessage response;
         try
         {
-            call.Credential?.Apply(request);
-            response = await base.SendAsync(request, deadline.Token);
+            using var sending = CancellationTokenSource.CreateLinkedTokenSource(ct, limit.Token);
+            call.Credential?.Apply(request, call);
+            response = await base.SendAsync(request, sending.Token);
         }
         catch (Exception ex)
         {
-            deadline.Dispose();
+            limit.Dispose();
             if (ex is OutboundException || (ex is OperationCanceledException && ct.IsCancellationRequested))
                 throw;
 
@@ -170,23 +191,77 @@ public sealed class OutboundAttemptHandler(OutboundUrlPolicy policy) : Delegatin
         if (response.Content.Headers.ContentLength > call.MaxResponseBytes)
         {
             response.Dispose();
-            deadline.Dispose();
+            limit.Dispose();
             throw new OutboundException(OutboundFailure.ResponseTooLarge, call);
         }
 
-        var guarded = new GuardedContent(response.Content, call, deadline, ct);
+        if (call.Streaming)
+        {
+            limit.Dispose();
+            limit = new CancellationTokenSource(call.MaxStreamDuration, time);
+        }
+
+        var guarded = new GuardedContent(response.Content, call, time, limit, ct);
         foreach (var header in response.Content.Headers)
             guarded.Headers.TryAddWithoutValidation(header.Key, header.Value);
         response.Content = guarded;
         return response;
     }
 
-    /// <summary>The response body behind the size cap and the timeout.</summary>
-    private sealed class GuardedContent(HttpContent inner, OutboundCall call, CancellationTokenSource deadline, CancellationToken caller)
+    /// <summary>
+    /// A header value or an address with a control character is never sent. The address is
+    /// checked in its decoded form, so an encoded line break in a path part is found too.
+    /// </summary>
+    private static void RefuseUnsafeText(HttpRequestMessage request, Uri target, OutboundCall call)
+    {
+        string decoded;
+        try
+        {
+            decoded = Uri.UnescapeDataString(target.GetComponents(UriComponents.PathAndQuery, UriFormat.UriEscaped));
+        }
+        catch (UriFormatException)
+        {
+            throw new OutboundException(OutboundFailure.InvalidRequest, call, OutboundException.BadAddress);
+        }
+
+        if (OutboundText.HasControlCharacter(target.OriginalString) || OutboundText.HasControlCharacter(decoded))
+            throw new OutboundException(OutboundFailure.InvalidRequest, call, OutboundException.BadAddress);
+
+        var headers = request.Content is null
+            ? request.Headers.NonValidated.AsEnumerable()
+            : request.Headers.NonValidated.Concat(request.Content.Headers.NonValidated);
+        foreach (var header in headers)
+        {
+            foreach (var value in header.Value)
+            {
+                if (OutboundText.HasControlCharacter(value))
+                    throw new OutboundException(OutboundFailure.InvalidRequest, call, OutboundException.BadHeader);
+            }
+        }
+    }
+
+    private async Task<IReadOnlyList<IPAddress>> ResolveAsync(Uri target, OutboundCall call, CancellationToken ct)
+    {
+        try
+        {
+            var addresses = await resolve(target.IdnHost.TrimEnd('.'), ct);
+            if (addresses.Length > 0)
+                return addresses;
+        }
+        catch (Exception ex) when (ex is SocketException or ArgumentException)
+        {
+            // The name does not resolve: no connection can be made. The failure below says so.
+        }
+
+        throw new OutboundException(OutboundFailure.ConnectionFailed, call);
+    }
+
+    /// <summary>The response body behind the size cap and the time limits.</summary>
+    private sealed class GuardedContent(HttpContent inner, OutboundCall call, TimeProvider time, CancellationTokenSource limit, CancellationToken caller)
         : HttpContent
     {
         protected override async Task<Stream> CreateContentReadStreamAsync() =>
-            new GuardedStream(await inner.ReadAsStreamAsync(caller), call, deadline, caller);
+            new GuardedStream(await inner.ReadAsStreamAsync(caller), call, time, limit, caller);
 
         protected override async Task SerializeToStreamAsync(Stream stream, TransportContext? context)
         {
@@ -205,14 +280,20 @@ public sealed class OutboundAttemptHandler(OutboundUrlPolicy policy) : Delegatin
             if (disposing)
             {
                 inner.Dispose();
-                deadline.Dispose();
+                limit.Dispose();
             }
 
             base.Dispose(disposing);
         }
     }
 
-    private sealed class GuardedStream(Stream inner, OutboundCall call, CancellationTokenSource deadline, CancellationToken caller) : Stream
+    /// <summary>
+    /// <paramref name="limit"/> ends the whole body: the time left of the timeout for a whole
+    /// response, the total duration for a stream. A stream has a second limit for each read:
+    /// the timeout, counted only while the read waits for the server. Bytes that already
+    /// arrived are returned at once, so a slow reader never causes a timeout.
+    /// </summary>
+    private sealed class GuardedStream(Stream inner, OutboundCall call, TimeProvider time, CancellationTokenSource limit, CancellationToken caller) : Stream
     {
         private long _read;
 
@@ -224,15 +305,13 @@ public sealed class OutboundAttemptHandler(OutboundUrlPolicy policy) : Delegatin
 
         public override async ValueTask<int> ReadAsync(Memory<byte> buffer, CancellationToken ct = default)
         {
-            using var linked = ct.CanBeCanceled && ct != caller
-                ? CancellationTokenSource.CreateLinkedTokenSource(ct, deadline.Token)
-                : null;
+            using var idle = call.Streaming ? new CancellationTokenSource(call.Timeout, time) : null;
             try
             {
-                if (call.Streaming)
-                    deadline.CancelAfter(call.Timeout);
-
-                var count = await inner.ReadAsync(buffer, linked?.Token ?? deadline.Token);
+                using var waiting = CancellationTokenSource.CreateLinkedTokenSource(ct, caller, limit.Token, idle?.Token ?? CancellationToken.None);
+                // A limit that already passed ends the body even when bytes are buffered.
+                waiting.Token.ThrowIfCancellationRequested();
+                var count = await inner.ReadAsync(buffer, waiting.Token);
                 _read += count;
                 return _read > call.MaxResponseBytes
                     ? throw new OutboundException(OutboundFailure.ResponseTooLarge, call)

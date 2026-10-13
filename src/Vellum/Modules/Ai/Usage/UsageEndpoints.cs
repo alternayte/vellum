@@ -10,15 +10,22 @@ namespace Vellum.Modules.Ai.Usage;
 
 /// <param name="InputTokens">The sum of the counts that providers reported. Null when no call reported one.</param>
 /// <param name="CostUsd">The sum of the known costs. Null when no call has a known cost.</param>
-/// <param name="CostKnown">True when every call of the row has a known cost. False means the real cost is higher or unknown.</param>
+/// <param name="CostKnown">True when every call of the row has a cost. False means the real cost is higher or unknown.</param>
+/// <param name="CostEstimated">
+/// True when the cost of at least one call is an estimate: the provider may have generated
+/// output and did not report a sane token count, so the call is charged its highest possible cost.
+/// </param>
 public sealed record AiUsageTotal(
     Guid ProviderId, string ProviderKind, string Model, string Task,
-    int Calls, long? InputTokens, long? OutputTokens, decimal? CostUsd, bool CostKnown);
+    int Calls, long? InputTokens, long? OutputTokens, decimal? CostUsd, bool CostKnown, bool CostEstimated);
 
 public sealed record AiUsageResponse(DateTimeOffset From, DateTimeOffset To, IReadOnlyList<AiUsageTotal> Totals);
 
 public static class GetAiUsage
 {
+    /// <summary>One year, with room for a leap year.</summary>
+    public static readonly TimeSpan MaxRange = TimeSpan.FromDays(366);
+
     public static async Task<IResult> Handle(
         Guid workspaceId,
         DateTimeOffset? from,
@@ -38,6 +45,9 @@ public static class GetAiUsage
         if (start >= end)
             return Results.BadRequest(new ErrorResponse("validation_error", "Validation failed",
                 Errors: [new FieldError("from", "Must be earlier than 'to'.")]));
+        if (end - start > MaxRange)
+            return Results.BadRequest(new ErrorResponse("validation_error", "Validation failed",
+                Errors: [new FieldError("to", $"The range from 'from' to 'to' must be at most {MaxRange.Days} days.")]));
 
         var groups = await db.UsageRecords.AsNoTracking()
             .Where(r => r.WorkspaceId == workspaceId && r.StartedAt >= start && r.StartedAt < end)
@@ -51,6 +61,8 @@ public static class GetAiUsage
                 OutputReported = g.Count(r => r.OutputTokens != null),
                 Output = g.Sum(r => (long)(r.OutputTokens ?? 0)),
                 CostKnownCalls = g.Count(r => r.CostUsd != null),
+                CostEstimatedCalls = g.Count(r => r.CostUsd != null
+                    && (r.UsageNote == AiUsageLedger.NoteEstimated || r.UsageNote == AiUsageLedger.NoteOutOfRange)),
                 Cost = g.Sum(r => r.CostUsd ?? 0m),
             })
             .ToListAsync(ct);
@@ -63,7 +75,8 @@ public static class GetAiUsage
                 g.InputReported > 0 ? g.Input : null,
                 g.OutputReported > 0 ? g.Output : null,
                 g.CostKnownCalls > 0 ? g.Cost : null,
-                g.CostKnownCalls == g.Calls))
+                g.CostKnownCalls == g.Calls,
+                g.CostEstimatedCalls > 0))
             .ToList();
 
         return Results.Ok(new AiUsageResponse(start, end, totals));
@@ -85,6 +98,20 @@ public sealed record SetModelPriceRequest(
 public static class ModelPrices
 {
     private const decimal MaxPrice = 100_000m;
+    private const int StoredDecimals = 8;
+    private const decimal MinPrice = 0.00000001m;
+    private const string PriceRule =
+        "Must be from 0.00000001 to 100000. A price is stored with 8 decimals, and a price that is stored as 0 makes every call free for the budget.";
+
+    /// <summary>
+    /// The price as the column holds it, or null when it is missing, negative, above the
+    /// maximum, or so small that it is stored as 0. The JSON reader already refuses text that
+    /// is not a number in the range of <see cref="decimal"/> (NaN, Infinity, 1e400).
+    /// </summary>
+    private static decimal? Stored(decimal? price) =>
+        price is >= 0 and <= MaxPrice && Math.Round(price.Value, StoredDecimals, MidpointRounding.AwayFromZero) is >= MinPrice and var stored
+            ? stored
+            : null;
 
     public static async Task<IResult> List(ClaimsPrincipal user, InstanceAuthorization admins, AiUsageDbContext db, CancellationToken ct)
     {
@@ -106,15 +133,16 @@ public static class ModelPrices
             errors.Add(new("providerKind", $"Must be one of: {string.Join(", ", AiProviderKinds.All)}."));
         if (request.Model is not { Length: >= 1 and <= 200 } || request.Model.Any(char.IsControl))
             errors.Add(new("model", "Must be 1 to 200 characters."));
-        if (request.InputUsdPerMillionTokens is not (>= 0 and <= MaxPrice))
-            errors.Add(new("inputUsdPerMillionTokens", $"Must be from 0 to {MaxPrice:0}."));
-        if (request.OutputUsdPerMillionTokens is not (>= 0 and <= MaxPrice))
-            errors.Add(new("outputUsdPerMillionTokens", $"Must be from 0 to {MaxPrice:0}."));
+        if (Stored(request.InputUsdPerMillionTokens) is null)
+            errors.Add(new("inputUsdPerMillionTokens", PriceRule));
+        if (Stored(request.OutputUsdPerMillionTokens) is null)
+            errors.Add(new("outputUsdPerMillionTokens", PriceRule));
         if (errors.Count > 0)
             return Results.BadRequest(new ErrorResponse("validation_error", "Validation failed", Errors: errors));
 
+        // The answer holds the prices as they are stored.
         var price = new ModelPriceDto(
-            request.ProviderKind!, request.Model!, request.InputUsdPerMillionTokens!.Value, request.OutputUsdPerMillionTokens!.Value,
+            request.ProviderKind!, request.Model!, Stored(request.InputUsdPerMillionTokens)!.Value, Stored(request.OutputUsdPerMillionTokens)!.Value,
             (request.EffectiveFrom ?? DateTimeOffset.UtcNow).ToUniversalTime());
         var id = Guid.NewGuid();
 
