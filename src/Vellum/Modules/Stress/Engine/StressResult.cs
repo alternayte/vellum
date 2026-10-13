@@ -201,7 +201,23 @@ public sealed record Bottleneck(
 /// <summary>One input of the run with its label. Together the rows are every number the result depends on.</summary>
 public sealed record AssumptionRow(
     string Group, Guid? Target, string Name, string Field, string Value, string Unit,
-    AssumptionLabel Label, string? MeasurementRef);
+    AssumptionLabel Label, string? MeasurementRef)
+{
+    /// <summary>
+    /// For a measured value: true when the measured result was bound to another model version
+    /// or scenario version than the run used, or was not in the project. Null for a declared
+    /// value and in a result of engine version 1 or 2.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public bool? MeasurementStale { get; init; }
+}
+
+/// <summary>
+/// Why the measurement behind a measured service time does not count for the confidence level.
+/// </summary>
+/// <param name="Stale">True when the measured result is of another model version or scenario version than the run, or is gone.</param>
+/// <param name="Reason">One sentence for the confidence reasons.</param>
+public sealed record MeasurementDoubt(bool Stale, string Reason);
 
 /// <summary>A timeout or retry value that the profile sets against the model.</summary>
 public sealed record OverrideRow(

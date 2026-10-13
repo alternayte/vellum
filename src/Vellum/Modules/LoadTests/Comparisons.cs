@@ -11,15 +11,23 @@ namespace Vellum.Modules.LoadTests;
 /// One number from the simulator beside the number that k6 measured for the same thing.
 /// </summary>
 /// <param name="Scope"><c>flow</c> or <c>operation</c>.</param>
-/// <param name="Metric"><c>latencyP50</c>, <c>latencyP90</c>, <c>latencyP95</c>, <c>latencyP99</c>, <c>throughput</c> or <c>errorRate</c>.</param>
+/// <param name="Metric">
+/// <c>latencyP50</c>, <c>latencyP90</c>, <c>latencyP95</c>, <c>latencyP99</c>, <c>throughput</c> or <c>unexpectedStatusRate</c>.
+/// For the last one the estimate is the share of work that failed in the model, and the measurement is the share of
+/// requests whose status was not the expected one.
+/// </param>
 /// <param name="Estimated">Null when the simulation has no value for it.</param>
 /// <param name="EstimatedLabel"><c>estimated</c>, or <c>unknown</c> when there is no value.</param>
-/// <param name="Measured">Null when the script did not measure it. Null is not zero and is not a match.</param>
+/// <param name="Measured">
+/// Null when the script did not measure it, and when the run measured another thing than the simulation
+/// estimates (see <paramref name="Reason"/>). Null is not zero and is not a match.
+/// </param>
 /// <param name="MeasuredLabel"><c>measured</c>, or <c>unknown</c> when there is no value.</param>
 /// <param name="Difference">Measured minus estimated. Null when one side has no value.</param>
+/// <param name="Reason">Why the measured side is unknown although the run has a number, or null.</param>
 public sealed record EstimateRow(
     string Scope, Guid? Target, string Name, string Metric, string Unit,
-    double? Estimated, string EstimatedLabel, double? Measured, string MeasuredLabel, double? Difference);
+    double? Estimated, string EstimatedLabel, double? Measured, string MeasuredLabel, double? Difference, string? Reason);
 
 /// <summary>
 /// A stored simulation run beside an imported k6 result of the same scenario. It states
@@ -52,20 +60,27 @@ public static class Comparisons
     public const string Unknown = "unknown";
 
     public const string EstimateNote =
-        "Estimated latency is the time of a successful attempt in the model. Measured latency is the duration of a request that got the expected status, "
+        "Estimated latency is the time of a successful attempt in the model. Measured latency is the duration of a request that expected a 2xx status and got one, "
         + "as k6 saw it, with the network. The comparison states differences and gives no verdict.";
+
+    public const string FaultsReason =
+        "The scenario declares faults. The simulation does not apply them, and the k6 run had them in the target. The two sides are of different flows, so the measured side is unknown here.";
+
+    public const string ExpectedFailureReason =
+        "A step of the script expects a failure. For that step a status is 'unexpected' when the request succeeds, so the count is not an error count, "
+        + "and a flow that fails as expected counts as met. The simulation has no such expectation, so the measured side is unknown here.";
 
     /// <summary>A latency is worse when it grows by more than this share and by more than <see cref="LatencyFloorMs"/>.</summary>
     public const double LatencyTolerance = 0.10;
     public const double LatencyFloorMs = 1;
-    /// <summary>An error rate is worse when it grows by more than this, as a share of the requests.</summary>
-    public const double ErrorRateTolerance = 0.001;
+    /// <summary>A rate of unexpected statuses is worse when it grows by more than this, as a share of the requests.</summary>
+    public const double UnexpectedStatusTolerance = 0.001;
     /// <summary>A throughput is worse when it falls by more than this share.</summary>
     public const double ThroughputTolerance = 0.10;
 
     public const string RegressionRule =
         "A latency row is regressed when the candidate is more than 10 % and more than 1 ms above the baseline, and improved when it is that much below. "
-        + "An error rate row is regressed when the candidate is more than 0.1 percentage points above the baseline, and improved when it is that much below. "
+        + "An unexpected status rate row is regressed when the candidate is more than 0.1 percentage points above the baseline, and improved when it is that much below. "
         + "A throughput row is regressed when the candidate is more than 10 % below the baseline, and improved when it is that much above. "
         + "A row with no value on one side is unknown. A flow or an operation is regressed when one of its rows is.";
 
@@ -76,38 +91,51 @@ public static class Comparisons
     {
         await auth.RequireProjectRoleAsync(projectId, Targets.UserId(user), WorkspaceRole.Viewer, ct);
 
-        if (await MeasuredResults.ReadAsync(db, store, projectId, resultId, ct) is not { } measured)
+        if (await MeasuredResults.ReadWithPlanAsync(db, store, projectId, resultId, ct) is not var (measured, plan))
             return Targets.NotFound("Measured result");
         if (await StressRuns.ReadAsync(stressDb, store, projectId, runId, ct) is not { } run)
             return Targets.NotFound("Stress run");
         if (run.Run.ScenarioId != measured.Result.ScenarioId)
             return Invalid("runId", "The stress run and the measured result are of different scenarios.");
 
-        return Results.Ok(new EstimateComparisonDto(run.Run, measured.Result, EstimateRows(run.Result, measured), EstimateDifferences(run, measured), EstimateNote));
+        return Results.Ok(new EstimateComparisonDto(run.Run, measured.Result, EstimateRows(run.Result, measured, plan), EstimateDifferences(run, measured, plan), EstimateNote));
     }
 
-    private static List<EstimateRow> EstimateRows(StressResult estimate, MeasuredResultDto measured)
+    /// <summary>
+    /// Like is compared with like only. With faults in the scenario, the run measured a flow
+    /// that the simulation did not estimate: every row is unknown. Without faults, an operation
+    /// with a step that expects a failure, and the flow of such a script, are unknown.
+    /// </summary>
+    internal static List<EstimateRow> EstimateRows(StressResult estimate, MeasuredResultDto measured, K6Plan plan)
     {
         var rows = new List<EstimateRow>();
-        void Add(string scope, Guid? target, string name, string metric, string unit, double? estimated, double? value) =>
+        void Add(string? unlike, string scope, Guid? target, string name, string metric, string unit, double? estimated, double? value)
+        {
+            if (unlike is not null)
+                value = null;
             rows.Add(new(scope, target, name, metric, unit,
                 estimated, estimated is null ? Unknown : StressResult.Estimated,
                 value, value is null ? Unknown : MeasuredResults.Measured,
-                estimated is { } e && value is { } m ? m - e : null));
-
-        void Latency(string scope, Guid? target, string name, LatencySummary? estimated, MeasuredLatencyDto? value)
-        {
-            Add(scope, target, name, "latencyP50", "ms", estimated?.P50Ms, value?.P50Ms);
-            Add(scope, target, name, "latencyP90", "ms", estimated?.P90Ms, value?.P90Ms);
-            Add(scope, target, name, "latencyP95", "ms", estimated?.P95Ms, value?.P95Ms);
-            Add(scope, target, name, "latencyP99", "ms", estimated?.P99Ms, value?.P99Ms);
+                estimated is { } e && value is { } m ? m - e : null, unlike));
         }
 
+        void Latency(string? unlike, string scope, Guid? target, string name, LatencySummary? estimated, MeasuredLatencyDto? value)
+        {
+            Add(unlike, scope, target, name, "latencyP50", "ms", estimated?.P50Ms, value?.P50Ms);
+            Add(unlike, scope, target, name, "latencyP90", "ms", estimated?.P90Ms, value?.P90Ms);
+            Add(unlike, scope, target, name, "latencyP95", "ms", estimated?.P95Ms, value?.P95Ms);
+            Add(unlike, scope, target, name, "latencyP99", "ms", estimated?.P99Ms, value?.P99Ms);
+        }
+
+        var expectFailure = plan.ExpectFailure();
+        var faults = plan.Faults > 0 ? FaultsReason : null;
+        var flowUnlike = faults ?? (expectFailure.Count > 0 ? ExpectedFailureReason : null);
+
         var flow = measured.Result.Flow;
-        Latency("flow", null, "Flow", estimate.Flow.Latency, flow.Latency);
-        Add("flow", null, "Flow", "throughput", "per second", estimate.Flow.ThroughputPerSecond, flow.ThroughputPerSecond);
-        Add("flow", null, "Flow", "errorRate", "of 1",
-            estimate.Flow.Arrivals > 0 ? (double)estimate.Flow.Counts.Failed / estimate.Flow.Arrivals : null, flow.ErrorRate);
+        Latency(flowUnlike, "flow", null, "Flow", estimate.Flow.Latency, flow.Latency);
+        Add(flowUnlike, "flow", null, "Flow", "throughput", "per second", estimate.Flow.ThroughputPerSecond, flow.ThroughputPerSecond);
+        Add(flowUnlike, "flow", null, "Flow", "unexpectedStatusRate", "of 1",
+            estimate.Flow.Arrivals > 0 ? (double)estimate.Flow.Counts.Failed / estimate.Flow.Arrivals : null, flow.UnexpectedStatusRate);
 
         // Every operation of either side gets its rows. An operation that the script did not
         // drive has an estimate and no measurement: its measured side is unknown.
@@ -119,18 +147,26 @@ public static class Comparisons
             var name = e?.Name ?? m!.Name;
             // An operation with no counted request has no measured throughput: nothing was sent to it.
             var counted = m is { Requests: > 0 };
-            Latency("operation", id, name, e?.Latency, m?.Latency);
-            Add("operation", id, name, "throughput", "per second", e?.ThroughputPerSecond, counted ? m!.ThroughputPerSecond : null);
-            Add("operation", id, name, "errorRate", "of 1",
-                e is { Attempts: > 0 } ? 1 - (double)e.Counts.Completed / e.Attempts : null, m?.ErrorRate);
+            var unlike = m is null ? null : faults ?? (expectFailure.Contains(id) ? ExpectedFailureReason : null);
+            Latency(unlike, "operation", id, name, e?.Latency, m?.Latency);
+            Add(unlike, "operation", id, name, "throughput", "per second", e?.ThroughputPerSecond, counted ? m!.ThroughputPerSecond : null);
+            Add(unlike, "operation", id, name, "unexpectedStatusRate", "of 1",
+                e is { Attempts: > 0 } ? 1 - (double)e.Counts.Completed / e.Attempts : null, m?.UnexpectedStatusRate);
         }
         return rows;
     }
 
-    private static List<string> EstimateDifferences(StressRunDto run, MeasuredResultDto measured)
+    /// <summary>Every known difference between the two sides. A reader of the table must not have to find one alone.</summary>
+    internal static List<string> EstimateDifferences(StressRunDto run, MeasuredResultDto measured, K6Plan plan)
     {
         var notes = new List<string>();
         var (estimate, result) = (run.Run, measured.Result);
+        static string N(double value) => value.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture);
+
+        if (plan.Faults > 0)
+            notes.Add(FaultsReason);
+        else if (plan.ExpectFailure().Count > 0)
+            notes.Add(ExpectedFailureReason);
         if (estimate.ModelStreamId != result.ModelStreamId)
             notes.Add("The simulation and the measurement are of different branches of the model.");
         else if (estimate.ModelVersion != result.ModelVersion)
@@ -149,6 +185,17 @@ public static class Comparisons
             notes.Add($"The script does not perform {measured.NotCovered.Count} step(s) of the scenario. The measured flow is the driven requests only, and a step that is not driven has no measured value.");
         if (result.Flow.DroppedIterations > 0)
             notes.Add($"k6 dropped {result.Flow.DroppedIterations} iteration(s): the load of the run was below the rate of the profile.");
+
+        // Where the load of the script is not the arrivals of its profile: the shape of the arrivals and rounded rates.
+        notes.AddRange((plan.LoadNotes ?? plan.Notes).Select(note => $"Load of the k6 run: {note}"));
+
+        var (outages, overrides) = (run.Profile.Outages.Count, run.Profile.Overrides.Count);
+        if (outages > 0 || overrides > 0)
+            notes.Add($"The simulation applies {outages} outage window(s) and {overrides} policy override(s) of its profile. The k6 run applied none of them: the script does not inject outages and does not change a timeout or a retry policy of the target.");
+
+        var window = run.Result.Window;
+        notes.Add($"The k6 run measured {N(result.MeasuredSeconds)} s after its warm-up. The simulation measured {N((window.DurationMs - window.WarmUpMs) / 1000)} s: "
+            + $"its profile has a duration of {N(window.DurationMs / 1000)} s and a warm-up of {N(window.WarmUpMs / 1000)} s.");
         return notes;
     }
 
@@ -186,11 +233,11 @@ public static class Comparisons
             Add(scope, target, name, "latencyP95", "ms", a?.P95Ms, b?.P95Ms);
             Add(scope, target, name, "latencyP99", "ms", a?.P99Ms, b?.P99Ms);
             Add(scope, target, name, "throughput", "per second", aThroughput, bThroughput);
-            Add(scope, target, name, "errorRate", "of 1", aErrors, bErrors);
+            Add(scope, target, name, "unexpectedStatusRate", "of 1", aErrors, bErrors);
         }
 
         var (x, y) = (before.Result.Flow, after.Result.Flow);
-        Subject("flow", null, "Flow", x.Latency, y.Latency, x.ThroughputPerSecond, y.ThroughputPerSecond, x.ErrorRate, y.ErrorRate);
+        Subject("flow", null, "Flow", x.Latency, y.Latency, x.ThroughputPerSecond, y.ThroughputPerSecond, x.UnexpectedStatusRate, y.UnexpectedStatusRate);
 
         var left = before.Operations.ToDictionary(o => o.OperationId);
         var right = after.Operations.ToDictionary(o => o.OperationId);
@@ -199,7 +246,7 @@ public static class Comparisons
             var (a, b) = (left.GetValueOrDefault(id), right.GetValueOrDefault(id));
             Subject("operation", id, (b ?? a)!.Name, a?.Latency, b?.Latency,
                 a is { Requests: > 0 } ? a.ThroughputPerSecond : null, b is { Requests: > 0 } ? b.ThroughputPerSecond : null,
-                a?.ErrorRate, b?.ErrorRate);
+                a?.UnexpectedStatusRate, b?.UnexpectedStatusRate);
         }
 
         var subjects = rows.GroupBy(r => (r.Scope, r.Target, r.Name))
@@ -228,8 +275,8 @@ public static class Comparisons
     {
         if (change is not { } c)
             return Unknown;
-        if (metric == "errorRate")
-            return c > ErrorRateTolerance ? "regressed" : c < -ErrorRateTolerance ? "improved" : "unchanged";
+        if (metric == "unexpectedStatusRate")
+            return c > UnexpectedStatusTolerance ? "regressed" : c < -UnexpectedStatusTolerance ? "improved" : "unchanged";
         if (metric == "throughput")
             return relative is not { } share ? (baseline == 0 && c > 0 ? "improved" : "unchanged")
                 : share < -ThroughputTolerance ? "regressed" : share > ThroughputTolerance ? "improved" : "unchanged";

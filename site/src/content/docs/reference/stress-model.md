@@ -3,7 +3,14 @@ title: Stress model
 description: The exact rules of the stress engine: events, arrivals, distributions, statistics and limits.
 ---
 
-This page states what the stress engine does. The engine version is `2`. A change to any rule on this page is a new engine version.
+This page states what the stress engine does. The engine version is `3`. A change to any rule on this page is a new engine version.
+
+Version 3 differs from version 2 in two points:
+
+- The confidence rule counts a measured service time only when its measurement is not in doubt. See [Confidence](#confidence).
+- Each assumption with the label `measured` states `measurementStale`.
+
+A stored run of version 2 stays readable. It keeps its confidence level and the rule of that version.
 
 Version 2 differs from version 1 in five points:
 
@@ -271,6 +278,31 @@ Every result lists the effects that the engine leaves out:
 A result adds the faults and the assertions of the scenario when the scenario has them. The engine applies neither.
 
 ## The hash
+
+## Confidence
+
+The result states a level and the rule in words. The level is not a probability.
+
+| Level | When |
+|---|---|
+| `low` | A service time on the path of the flow is `declared`. |
+| `low` | A service time on the path is `measured` and its measurement is in doubt. |
+| `medium` | Each service time on the path is `measured` and no measurement is in doubt. |
+
+The engine never reports `high`.
+
+A measurement is in doubt in these cases:
+
+- The measured result is not in the project.
+- The measured result is of another branch of the model than the run.
+- The measured result is bound to another model version or scenario version than the run uses. The assumption then has `measurementStale: true`.
+- The stored numbers are not the numbers of the result that the service time names.
+
+The engine reads no store. The server finds the doubts and gives them to the engine as an input. The same profile version, model version and scenario version give the same doubts.
+
+A measured service time is the request latency that k6 recorded. It holds the network, the wait at the target and the steps inside the call. It is not a pure service time.
+
+## Hash
 
 The hash is SHA-256 over the result in canonical JSON, with the hash member empty. The result holds the engine version, the seed, every assumption and the limits of the run.
 

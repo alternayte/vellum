@@ -1,27 +1,45 @@
 using System.Globalization;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using Vellum.Shared;
 
 namespace Vellum.Modules.LoadTests;
 
-/// <summary>Request durations of the requests that met the expected status, in milliseconds, as k6 computed them.</summary>
+/// <summary>Request durations in milliseconds, as k6 computed them.</summary>
 public sealed record MeasuredLatency(
     long Count, double MinMs, double MeanMs, double P50Ms, double P90Ms, double P95Ms, double P99Ms, double MaxMs);
 
 /// <param name="Requests">Requests of iterations that started after the warm-up.</param>
-/// <param name="Failed">Requests whose status was not the expected one.</param>
-public sealed record MeasuredOperation(Guid OperationId, string Name, long Requests, long Failed, MeasuredLatency? Latency);
+/// <param name="UnexpectedStatus">
+/// Requests whose status was not the expected one. A 3xx status is never the expected one.
+/// The stored member keeps the name <c>failed</c> of the first format.
+/// </param>
+/// <param name="Latency">The durations of the requests that expected a 2xx status and got one.</param>
+/// <param name="ExpectedFailures">Requests that expected a failure and got one. They are in no success latency.</param>
+/// <param name="ExpectedFailureLatency">The durations of those requests. Null when there is none.</param>
+public sealed record MeasuredOperation(
+    Guid OperationId, string Name, long Requests,
+    [property: JsonPropertyName("failed")] long UnexpectedStatus, MeasuredLatency? Latency,
+    long ExpectedFailures = 0, MeasuredLatency? ExpectedFailureLatency = null);
 
 /// <param name="Iterations">Flows that started after the warm-up.</param>
-/// <param name="Failed">Flows in which a request did not get the expected status.</param>
+/// <param name="UnexpectedStatus">Flows in which a request did not get the expected status. The stored member keeps the name <c>failed</c>.</param>
 /// <param name="DroppedIterations">Iterations that k6 did not start because no virtual user was free, over the whole run.</param>
-/// <param name="Latency">The sum of the request durations of a flow, for flows in which every request got the expected status.</param>
-public sealed record MeasuredFlow(long Iterations, long Failed, long DroppedIterations, MeasuredLatency? Latency);
+/// <param name="Latency">
+/// The sum of the request durations of a flow, for flows in which every request got a 2xx
+/// status. Null when a step of the flow expects a failure: such a flow has no success latency.
+/// </param>
+public sealed record MeasuredFlow(
+    long Iterations, [property: JsonPropertyName("failed")] long UnexpectedStatus, long DroppedIterations, MeasuredLatency? Latency);
 
 /// <summary>What one k6 run measured. Every number is read from the imported file.</summary>
-/// <param name="ElapsedMs">From the start of the run to the end of its last iteration.</param>
-public sealed record MeasuredRun(double WarmUpMs, double ElapsedMs, MeasuredFlow Flow, IReadOnlyList<MeasuredOperation> Operations)
+/// <param name="ElapsedMs">From the end of <c>setup()</c> to the start of <c>teardown()</c>: the time the executor ran.</param>
+/// <param name="Iterations">Iterations that k6 completed over the whole run, warm-up included. Null in a result of the first format.</param>
+/// <param name="Load">The executor options that k6 ran, as the script stated them. Null in a result of the first format.</param>
+public sealed record MeasuredRun(
+    double WarmUpMs, double ElapsedMs, MeasuredFlow Flow, IReadOnlyList<MeasuredOperation> Operations,
+    long? Iterations = null, string? Load = null)
 {
     /// <summary>The seconds in which the counted iterations ran.</summary>
     public double MeasuredSeconds => (ElapsedMs - WarmUpMs) / 1000;
@@ -32,7 +50,11 @@ public sealed record ClaimedIdentity(
     string? Generator, Guid? ScenarioId, long? ScenarioVersion, Guid? ModelStreamId, long? ModelVersion,
     Guid? TargetId, string? Environment, string? BaseUrlHash);
 
-public sealed record ParsedResult(string Format, string ScriptHash, ClaimedIdentity? Claimed, DateTimeOffset? StartedAt, MeasuredRun Run);
+/// <param name="StatedDurationMs">The planned duration that a Vellum result file states. Null for a summary export.</param>
+/// <param name="StatedIterations">The planned iterations that a Vellum result file states. Null for a summary export.</param>
+public sealed record ParsedResult(
+    string Format, string ScriptHash, ClaimedIdentity? Claimed, DateTimeOffset? StartedAt, MeasuredRun Run,
+    double? StatedDurationMs = null, double? StatedIterations = null);
 
 /// <summary>
 /// Reads the two files a k6 run of a Vellum script leaves: the Vellum result that
@@ -45,6 +67,7 @@ public static partial class ResultFile
     public const string SummaryExportFormat = "k6-summary-export";
     public const long MaxBytes = 256 * 1024;
     private const int MaxDepth = 12;
+    private const int MaxLoadChars = 8_000;
     private const long MaxCount = 1_000_000_000_000;
     private const double MaxLatencyMs = 86_400_000;
     private const double MaxElapsedMs = 7 * 86_400_000d;
@@ -142,12 +165,25 @@ public static partial class ResultFile
         var warmUp = window is { } w ? read.Number(w, "warmUpMs", "window.warmUpMs") : null;
         var elapsed = window is { } w2 ? read.Number(w2, "elapsedMs", "window.elapsedMs") : null;
 
-        var flow = new MeasuredFlow(0, 0, 0, null);
+        string? effective = null;
+        long? iterations = null;
+        long dropped = 0;
+        double? statedDuration = null, statedIterations = null;
+        if (read.Object(root, "load", "load") is { } l)
+        {
+            effective = read.Text(l, "effective", "load.effective", MaxLoadChars);
+            statedDuration = read.Number(l, "plannedDurationMs", "load.plannedDurationMs");
+            statedIterations = read.Number(l, "plannedIterations", "load.plannedIterations");
+            iterations = read.Whole(l, "iterations", "load.iterations");
+            dropped = read.Whole(l, "droppedIterations", "load.droppedIterations") ?? 0;
+        }
+
+        var flow = new MeasuredFlow(0, 0, dropped, null);
         if (read.Object(root, "flow", "flow") is { } f)
         {
             flow = new MeasuredFlow(
-                read.Whole(f, "iterations", "flow.iterations") ?? 0, read.Whole(f, "failed", "flow.failed") ?? 0,
-                read.Whole(f, "droppedIterations", "flow.droppedIterations") ?? 0, Latency(f, "flow.latencyMs", read));
+                read.Whole(f, "iterations", "flow.iterations") ?? 0, read.Whole(f, "unexpectedStatus", "flow.unexpectedStatus") ?? 0,
+                dropped, Latency(f, "latencyMs", "flow.latencyMs", read));
         }
 
         var operations = new List<MeasuredOperation>();
@@ -178,16 +214,20 @@ public static partial class ResultFile
                     read.Error($"{at}.operationId", "The operation is in the file more than once.");
                 operations.Add(new(
                     id ?? Guid.Empty, id is { } named ? names.GetValueOrDefault(named, "") : "",
-                    read.Whole(item, "requests", $"{at}.requests") ?? 0, read.Whole(item, "failed", $"{at}.failed") ?? 0,
-                    Latency(item, $"{at}.latencyMs", read)));
+                    read.Whole(item, "requests", $"{at}.requests") ?? 0, read.Whole(item, "unexpectedStatus", $"{at}.unexpectedStatus") ?? 0,
+                    Latency(item, "latencyMs", $"{at}.latencyMs", read),
+                    read.Whole(item, "expectedFailures", $"{at}.expectedFailures") ?? 0,
+                    Latency(item, "expectedFailureLatencyMs", $"{at}.expectedFailureLatencyMs", read)));
             }
         }
 
-        return new ParsedResult(K6ScriptGenerator.ResultFormat, scriptHash, claimed, startedAt, new MeasuredRun(warmUp ?? 0, elapsed ?? 0, flow, operations));
+        return new ParsedResult(
+            K6ScriptGenerator.ResultFormat, scriptHash, claimed, startedAt,
+            new MeasuredRun(warmUp ?? 0, elapsed ?? 0, flow, operations, iterations, effective), statedDuration, statedIterations);
 
-        static MeasuredLatency? Latency(JsonElement parent, string at, Reader read)
+        static MeasuredLatency? Latency(JsonElement parent, string name, string at, Reader read)
         {
-            if (!parent.TryGetProperty("latencyMs", out var value) || value.ValueKind == JsonValueKind.Null)
+            if (!parent.TryGetProperty(name, out var value) || value.ValueKind == JsonValueKind.Null)
                 return null;
             if (value.ValueKind != JsonValueKind.Object)
             {
@@ -212,6 +252,7 @@ public static partial class ResultFile
         var metrics = root.GetProperty("metrics");
 
         DateTimeOffset? startedAt = null;
+        string? effective = null;
         if (root.TryGetProperty("setup_data", out var setup) && setup.ValueKind == JsonValueKind.Object
             && read.Number(setup, "startedAtMs", "setup_data.startedAtMs") is { } startedAtMs)
         {
@@ -219,6 +260,7 @@ public static partial class ResultFile
                 startedAt = DateTimeOffset.FromUnixTimeMilliseconds((long)startedAtMs);
             else
                 read.Error("setup_data.startedAtMs", "The start of the run is not a time.");
+            effective = read.Text(setup, "load", "setup_data.load", MaxLoadChars);
         }
         else
         {
@@ -229,29 +271,34 @@ public static partial class ResultFile
         if (read.Object(metrics, "vellum_run_elapsed_ms", "metrics.vellum_run_elapsed_ms") is { } gauge)
             elapsed = read.Number(gauge, "max", "metrics.vellum_run_elapsed_ms.max");
 
-        var (flowTotal, flowFailed) = Failures("vellum_flow_failed");
-        long dropped = 0;
-        if (metrics.TryGetProperty("dropped_iterations", out var droppedMetric) && droppedMetric.ValueKind == JsonValueKind.Object)
-            dropped = read.Whole(droppedMetric, "count", "metrics.dropped_iterations.count") ?? 0;
-        var flow = new MeasuredFlow(flowTotal, flowFailed, dropped, Latency("vellum_flow_duration"));
+        var (flowTotal, flowUnexpected) = Unexpected("vellum_flow_unexpected");
+        var flow = new MeasuredFlow(flowTotal, flowUnexpected, Count("dropped_iterations"), Latency("vellum_flow_duration"));
 
         var operations = plan.Operations.Select(o =>
         {
-            var (total, failed) = Failures($"vellum_op{o.Index}_failed");
-            return new MeasuredOperation(o.OperationId, o.Name, total, failed, Latency($"vellum_op{o.Index}_duration"));
+            var (total, unexpected) = Unexpected($"vellum_op{o.Index}_unexpected");
+            var failures = Latency($"vellum_op{o.Index}_expected_failure_duration");
+            return new MeasuredOperation(o.OperationId, o.Name, total, unexpected, Latency($"vellum_op{o.Index}_duration"), failures?.Count ?? 0, failures);
         }).ToList();
 
-        return new ParsedResult(SummaryExportFormat, scriptHash, null, startedAt, new MeasuredRun(plan.WarmUpMs, elapsed ?? 0, flow, operations));
+        return new ParsedResult(
+            SummaryExportFormat, scriptHash, null, startedAt,
+            new MeasuredRun(plan.WarmUpMs, elapsed ?? 0, flow, operations, Count("iterations"), effective));
 
         // k6 leaves a metric out when it got no sample: no request counted.
-        (long Total, long Failed) Failures(string name)
+        (long Total, long Unexpected) Unexpected(string name)
         {
             if (!metrics.TryGetProperty(name, out var metric) || metric.ValueKind != JsonValueKind.Object)
                 return (0, 0);
-            var failed = read.Whole(metric, "passes", $"metrics.{name}.passes") ?? 0;
+            var unexpected = read.Whole(metric, "passes", $"metrics.{name}.passes") ?? 0;
             var met = read.Whole(metric, "fails", $"metrics.{name}.fails") ?? 0;
-            return (failed + met, failed);
+            return (unexpected + met, unexpected);
         }
+
+        long Count(string name) =>
+            metrics.TryGetProperty(name, out var metric) && metric.ValueKind == JsonValueKind.Object
+                ? read.Whole(metric, "count", $"metrics.{name}.count") ?? 0
+                : 0;
 
         MeasuredLatency? Latency(string name)
         {
@@ -273,22 +320,59 @@ public static partial class ResultFile
     /// <summary>
     /// What must hold between the numbers when the script wrote them. A file that breaks one
     /// of these did not come from a run of the script as Vellum generated it.
+    /// <para>
+    /// The load of the run is one of them. The script stops in <c>setup()</c> when k6 runs
+    /// other executor options than the generated ones, and it states the options that k6 ran.
+    /// So a file is refused when those options are not the ones of the plan, when the run is
+    /// shorter than the plan needs to start its iterations, and when the iterations that k6
+    /// completed and dropped are not the planned arrivals. The tolerance is
+    /// <see cref="K6Load.Tolerance"/>: 5 % of the planned iterations, and at least 2.
+    /// </para>
     /// </summary>
     private static void Check(ParsedResult result, K6Plan plan, bool export, List<FieldError> errors)
     {
         var run = result.Run;
+        static string N(double value) => value.ToString("0.###", CultureInfo.InvariantCulture);
         var elapsedAt = export ? "metrics.vellum_run_elapsed_ms.max" : "window.elapsedMs";
         if (run.WarmUpMs != plan.WarmUpMs)
-            errors.Add(new("window.warmUpMs", $"The script has a warm-up of {plan.WarmUpMs} ms; the file states {run.WarmUpMs.ToString(CultureInfo.InvariantCulture)} ms."));
+            errors.Add(new("window.warmUpMs", $"The script has a warm-up of {plan.WarmUpMs} ms; the file states {N(run.WarmUpMs)} ms."));
         if (run.ElapsedMs > MaxElapsedMs)
             errors.Add(new(elapsedAt, "A run is at most 7 days long."));
         else if (run.ElapsedMs <= run.WarmUpMs)
             errors.Add(new(elapsedAt, $"The run ended inside the warm-up of {plan.WarmUpMs} ms. It has no measured window."));
+        else if (run.ElapsedMs < plan.MinElapsedMs)
+            errors.Add(new(elapsedAt, $"The run lasted {N(run.ElapsedMs)} ms. The plan of the script has a duration of {plan.DurationMs} ms and needs {plan.MinElapsedMs} ms to start its iterations. A shorter run did not apply the load of the profile."));
         if (result.StartedAt is null && !export)
             errors.Add(new("startedAt", "The file does not state when the run started."));
 
-        var flowAt = export ? "metrics.vellum_flow_failed" : "flow";
-        Counts(flowAt, export ? "metrics.vellum_flow_duration" : "flow.latencyMs", run.Flow.Iterations, run.Flow.Failed, run.Flow.Latency, "flow");
+        var loadAt = export ? "setup_data.load" : "load.effective";
+        if (run.Load != plan.Load)
+            errors.Add(new(loadAt, $"The run used the executor options '{run.Load}'. The script was generated with '{plan.Load}'. A run with other options did not apply the load of the profile."));
+        if (result.StatedDurationMs is { } statedDuration && statedDuration != plan.DurationMs)
+            errors.Add(new("load.plannedDurationMs", $"The script plans {plan.DurationMs} ms; the file states {N(statedDuration)} ms."));
+        var planned = plan.PlannedIterations!.Value;
+        if (result.StatedIterations is { } statedIterations && Math.Abs(statedIterations - planned) > 1e-6)
+            errors.Add(new("load.plannedIterations", $"The script plans {N(planned)} iteration(s); the file states {N(statedIterations)}."));
+
+        var iterationsAt = export ? "metrics.iterations.count" : "load.iterations";
+        var started = (run.Iterations ?? 0) + run.Flow.DroppedIterations;
+        var tolerance = K6Load.Tolerance(planned);
+        if (Math.Abs(started - planned) > tolerance)
+            errors.Add(new(iterationsAt, $"k6 completed {run.Iterations ?? 0} iteration(s) and dropped {run.Flow.DroppedIterations}. The plan of the script starts {N(planned)}, and the two may differ by {N(tolerance)}. The run did not apply the load of the profile, or k6 stopped iterations before they ended."));
+        else if (run.Flow.Iterations > (run.Iterations ?? 0))
+            errors.Add(new(iterationsAt, $"The file counts {run.Flow.Iterations} flow(s) after the warm-up and {run.Iterations ?? 0} iteration(s) in the whole run."));
+
+        var expectFailure = plan.ExpectFailure();
+        var flowAt = export ? "metrics.vellum_flow_unexpected" : "flow";
+        var flowLatencyAt = export ? "metrics.vellum_flow_duration" : "flow.latencyMs";
+        if (run.Flow.UnexpectedStatus > run.Flow.Iterations)
+            errors.Add(new(flowAt, "More flows with an unexpected status than flows."));
+        // The script records the duration of a flow only when no step of the flow expects a failure.
+        else if (expectFailure.Count > 0 && run.Flow.Latency is not null)
+            errors.Add(new(flowLatencyAt, "A step of the scenario expects a failure, so the script records no flow latency. The file has one."));
+        else if (expectFailure.Count == 0 && (run.Flow.Latency?.Count ?? 0) != run.Flow.Iterations - run.Flow.UnexpectedStatus)
+            errors.Add(new(flowLatencyAt, $"The latency summary counts {run.Flow.Latency?.Count ?? 0} flow(s); {run.Flow.Iterations - run.Flow.UnexpectedStatus} got the expected status. The script records one duration for each of those."));
+        Order(flowLatencyAt, run.Flow.Latency);
         if (run.Flow.Iterations == 0 && errors.Count == 0)
             errors.Add(new(flowAt, "No flow started after the warm-up. The file holds no measurement."));
 
@@ -297,19 +381,26 @@ public static partial class ResultFile
             var operation = run.Operations[i];
             // In an export the metrics are found by the index of the operation in the script.
             var index = export ? plan.Operations.First(o => o.OperationId == operation.OperationId).Index : i;
-            Counts(
-                export ? $"metrics.vellum_op{index}_failed" : $"operations[{i}]",
-                export ? $"metrics.vellum_op{index}_duration" : $"operations[{i}].latencyMs",
-                operation.Requests, operation.Failed, operation.Latency, "request");
+            var at = export ? $"metrics.vellum_op{index}_unexpected" : $"operations[{i}]";
+            var latencyAt = export ? $"metrics.vellum_op{index}_duration" : $"operations[{i}].latencyMs";
+            var failureAt = export ? $"metrics.vellum_op{index}_expected_failure_duration" : $"operations[{i}].expectedFailureLatencyMs";
+
+            var successes = operation.Requests - operation.UnexpectedStatus - operation.ExpectedFailures;
+            if (successes < 0)
+                errors.Add(new(at, "More requests with an unexpected status and expected failures than requests."));
+            else if (operation.ExpectedFailures > 0 && !expectFailure.Contains(operation.OperationId))
+                errors.Add(new(failureAt, "No step of this operation expects a failure. The file counts expected failures for it."));
+            // The script records a duration for each request that got the expected status: a success in one summary, an expected failure in the other.
+            else if ((operation.Latency?.Count ?? 0) != successes)
+                errors.Add(new(latencyAt, $"The latency summary counts {operation.Latency?.Count ?? 0} request(s); {successes} got the 2xx status they expected. The script records one duration for each of those."));
+            else if ((operation.ExpectedFailureLatency?.Count ?? 0) != operation.ExpectedFailures)
+                errors.Add(new(failureAt, $"The summary of expected failures counts {operation.ExpectedFailureLatency?.Count ?? 0} request(s); the file states {operation.ExpectedFailures} expected failure(s)."));
+            Order(latencyAt, operation.Latency);
+            Order(failureAt, operation.ExpectedFailureLatency);
         }
 
-        void Counts(string at, string latencyAt, long total, long failed, MeasuredLatency? latency, string what)
+        void Order(string latencyAt, MeasuredLatency? latency)
         {
-            if (failed > total)
-                errors.Add(new(at, $"More failed {what}s than {what}s."));
-            // The script records a duration for each request that got the expected status, and for no other.
-            else if ((latency?.Count ?? 0) != total - failed)
-                errors.Add(new(latencyAt, $"The latency summary counts {latency?.Count ?? 0} {what}(s); {total - failed} got the expected status. The script records one duration for each of those."));
             if (latency is null)
                 return;
             double[] ascending = [latency.MinMs, latency.P50Ms, latency.P90Ms, latency.P95Ms, latency.P99Ms, latency.MaxMs];
@@ -333,10 +424,10 @@ public static partial class ResultFile
             return null;
         }
 
-        public string? Text(JsonElement parent, string name, string at)
+        public string? Text(JsonElement parent, string name, string at, int max = 200)
         {
             if (parent.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String
-                && value.GetString() is { Length: <= 200 } text && !text.Any(char.IsControl))
+                && value.GetString() is { } text && text.Length <= max && !text.Any(char.IsControl))
                 return text;
             Error(at, "The member is missing or is not a line of text.");
             return null;

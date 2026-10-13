@@ -37,6 +37,11 @@ export interface K6Plan {
   warmUpMs: number
   durationMs: number
   faults: number
+  /** The executor options in one line. The script stops when k6 runs other options. Null in a plan of generator 1. */
+  load: string | null
+  plannedIterations: number | null
+  minElapsedMs: number | null
+  loadNotes: string[] | null
 }
 
 export interface K6Script {
@@ -71,10 +76,15 @@ export interface MeasuredOperation {
   operationId: string
   name: string
   requests: number
-  failed: number
-  errorRate: number | null
+  /** Requests whose status was not the one the script expected. For a step that expects a failure, a 2xx status is unexpected. A 3xx status is always unexpected. */
+  unexpectedStatus: number
+  unexpectedStatusRate: number | null
   throughputPerSecond: number
+  /** Requests that expected a 2xx status and got one. */
   latency: MeasuredLatency | null
+  /** Requests that expected a failure and got one. They are in no success latency. */
+  expectedFailures: number
+  expectedFailureLatency: MeasuredLatency | null
 }
 
 export interface MeasuredResultSummary {
@@ -103,12 +113,20 @@ export interface MeasuredResultSummary {
     importedVia: string | null
     importedAt: string
   }
-  flow: { label: 'measured'; iterations: number; failed: number; droppedIterations: number; errorRate: number | null; throughputPerSecond: number; latency: MeasuredLatency | null }
+  flow: { label: 'measured'; iterations: number; unexpectedStatus: number; droppedIterations: number; unexpectedStatusRate: number | null; throughputPerSecond: number; latency: MeasuredLatency | null }
   stale: boolean
   staleBecause: ('model' | 'scenario')[]
 }
 
-export interface MeasuredResult { result: MeasuredResultSummary; operations: MeasuredOperation[]; notCovered: K6NotCovered[] }
+export interface MeasuredResult {
+  result: MeasuredResultSummary
+  operations: MeasuredOperation[]
+  notCovered: K6NotCovered[]
+  /** The faults that the scenario declares. The script injects none. */
+  faults: number
+  /** True when a step of the script expects a failure. The flow then has no success latency. */
+  expectsFailure: boolean
+}
 
 export type EvidenceLabel = 'estimated' | 'measured' | 'unknown'
 
@@ -124,6 +142,8 @@ export interface EstimateRow {
   measured: number | null
   measuredLabel: EvidenceLabel
   difference: number | null
+  /** Why the measured side is unknown although the run has a number: the run measured another thing than the simulation estimates. */
+  reason: string | null
 }
 
 export interface EstimateComparison { estimate: StressRunSummary; measured: MeasuredResultSummary; rows: EstimateRow[]; differences: string[]; note: string }
@@ -216,7 +236,9 @@ export const loadTestsApi = {
   changeTarget: (projectId: string, id: string, target: { name: string; baseUrl: string; environment: string }) =>
     call<LoadTestTarget>('PUT', `${base(projectId)}/targets/${id}`, target),
   removeTarget: (projectId: string, id: string) => call<void>('DELETE', `${base(projectId)}/targets/${id}`),
-  authorise: (projectId: string, id: string, baseUrl: string) => call<LoadTestTarget>('POST', `${base(projectId)}/targets/${id}/authorise`, { baseUrl }),
+  /** The caller names what it read: the base URL, the class and the version. A target that differs in one of them is not authorised (409). */
+  authorise: (projectId: string, target: Pick<LoadTestTarget, 'id' | 'baseUrl' | 'environment' | 'version'>) =>
+    call<LoadTestTarget>('POST', `${base(projectId)}/targets/${target.id}/authorise`, { baseUrl: target.baseUrl, environment: target.environment, version: target.version }),
   revoke: (projectId: string, id: string) => call<LoadTestTarget>('DELETE', `${base(projectId)}/targets/${id}/authorisation`),
   setOverride: (projectId: string, id: string, body: { allowNonIdempotent: boolean; allowFailureInjection: boolean; reason: string; confirmName: string }) =>
     call<LoadTestTarget>('PUT', `${base(projectId)}/targets/${id}/override`, body),
@@ -301,5 +323,5 @@ export const measurementRef = (resultId: string) => `k6:${resultId}`
 
 export const METRIC_NAMES: Record<string, string> = {
   latencyP50: 'Latency, p50', latencyP90: 'Latency, p90', latencyP95: 'Latency, p95', latencyP99: 'Latency, p99',
-  throughput: 'Throughput, per second', errorRate: 'Error rate',
+  throughput: 'Throughput, per second', unexpectedStatusRate: 'Unexpected status',
 }

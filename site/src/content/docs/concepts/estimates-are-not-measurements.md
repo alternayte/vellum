@@ -35,7 +35,19 @@ Every input is an assumption. The result lists each one with a label.
 - `declared`: a person entered the value.
 - `measured`: the value names a measurement that Vellum imported.
 
-A value is `measured` only when it names an imported k6 result of the same project, as `k6:<result ID>`. A save with the label `measured` and no such name is refused. A person cannot turn a typed number into a measured one.
+Only the service time of an operation can be `measured`. All of these must be true:
+
+- The service time names an imported k6 result of the same project, as `k6:<result ID>`.
+- The result is of the scenario of the profile.
+- The script of that result drove the operation, and the result has a latency for it.
+
+You select the result and the distribution. Vellum writes the numbers of the result into the profile. Vellum does not read a number that you type for a measured service time. A person cannot turn a typed number into a measured one.
+
+Vellum refuses the label `measured` on workers, consumers, branch probabilities, overrides and arrivals. A k6 result measures none of them.
+
+A measured service time has a limit. k6 measures the time from the request to the response. That time holds the network, the wait for a worker at the target and the steps inside the call. So the measured value is not a pure service time. It holds for the load of that run only.
+
+A measurement goes `stale` when the scenario or the model changes. The profile and each run show `stale measurement` beside the label.
 
 A measured input does not make the output measured. The simulator computes every number of a stress result, so every number of a stress result stays `estimated`.
 
@@ -44,7 +56,8 @@ A measured input does not make the output measured. The simulator computes every
 The result states a confidence level and the rule that sets it.
 
 - `low`: a service time on the path of the flow is declared without a measurement.
-- `medium`: every service time on the path of the flow is measured.
+- `low`: a measured service time on the path has a stale measurement.
+- `medium`: every service time on the path of the flow is measured, and no measurement is stale.
 
 The stress engine never reports `high`. A model that leaves out the effects below does not earn it.
 
@@ -144,7 +157,9 @@ A measurement is a number that k6 recorded on a deployed system. Vellum does not
 
 A measured result has the label `measured`. Its provenance names the import: the script, the target, the user and the time.
 
-Vellum accepts a result only when it names a script that Vellum generated for the project. The script binds the numbers to one scenario version, one model version and one authorised target. A file that names no such script is refused. It is not stored with a weaker label.
+Vellum accepts a result only when it names a script that Vellum generated for the project. The script binds the numbers to one scenario version, one model version, one authorised target and one load. A file that names no such script is refused. It is not stored with a weaker label.
+
+The script stops when k6 runs another load than the load of the profile. Vellum refuses a file from a run that was shorter than the plan, or that started another number of iterations.
 
 A measurement has limits too:
 
@@ -158,5 +173,9 @@ A measurement has limits too:
 The comparison puts a simulation run beside a measured result. Each side keeps its own label, its own column and its own look. An estimate is amber with the mark "~". A measurement is teal and bold.
 
 A step that the script did not drive has no measured value. The comparison shows `unknown` for it. `unknown` is not zero and it is not a match.
+
+A scenario with faults is another case of `unknown`. The simulation does not apply the faults of a scenario. The k6 run had them in the target. The two sides are of different flows, so the comparison shows `unknown` on the measured side, with the reason.
+
+The comparison lists each known difference of the two sides. Read that list before you read the table.
 
 The comparison states differences. It gives no verdict. An estimate that is near one measurement is not confirmed for any other load.

@@ -83,6 +83,11 @@ public static class Scripts
                 CreatedBy = userId, CreatedAt = time.GetUtcNow(),
             };
 
+            // The count, the removal and the insert are one unit, and the writes of one project take turns: two
+            // requests cannot both take the last place, and no result is imported for the script that makes room.
+            await using var transaction = await db.Database.BeginTransactionAsync(ct);
+            await Targets.LockProjectAsync(db.Database, projectId, ct);
+
             // A project keeps a bounded number of scripts. The oldest one that no result names makes room.
             if (await db.Scripts.CountAsync(s => s.ProjectId == projectId, ct) >= MaxScriptsPerProject)
             {
@@ -93,17 +98,28 @@ public static class Scripts
                     return Results.Conflict(new ErrorResponse("conflict",
                         $"A project holds at most {MaxScriptsPerProject} scripts, and each one has a result. Delete a result before you generate another script."));
                 }
-                await db.Scripts.Where(s => s.Id == oldest).ExecuteDeleteAsync(ct);
+                try
+                {
+                    await db.Scripts.Where(s => s.Id == oldest).ExecuteDeleteAsync(ct);
+                }
+                // A writer that does not take the lock gave that script a result. Nothing is removed and nothing is stored.
+                catch (PostgresException e) when (e.SqlState == PostgresErrorCodes.ForeignKeyViolation)
+                {
+                    return Results.Conflict(new ErrorResponse("conflict",
+                        "A result was imported for the script that would make room. Generate the script again."));
+                }
             }
 
             db.Scripts.Add(row);
             try
             {
                 await db.SaveChangesAsync(ct);
+                await transaction.CommitAsync(ct);
             }
-            // Two requests for the same script at once: the other one stored it.
+            // Two requests for the same script at once: the other one stored it. The failed statement ended this transaction.
             catch (DbUpdateException e) when (e.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation })
             {
+                await transaction.RollbackAsync(ct);
                 var stored = await db.Scripts.AsNoTracking().FirstAsync(s => s.ProjectId == projectId && s.Hash == script.Hash, ct);
                 return Results.Ok(Dto(stored, withContent: true));
             }

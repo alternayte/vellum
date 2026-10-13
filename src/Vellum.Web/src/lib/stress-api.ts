@@ -54,7 +54,9 @@ export interface StressProfile {
 }
 
 export interface StressProfileSummary { id: string; name: string; scenarioId: string; version: number; updatedAt: string; runs: number }
-export interface StressProfileDetail { id: string; version: number; updatedAt: string; profile: StressProfile }
+/** A measured service time and whether the k6 result that it names is stale now. */
+export interface ProfileMeasurement { target: string; measurementRef: string; measurementStale: boolean; staleBecause: ('model' | 'scenario' | 'missing')[] }
+export interface StressProfileDetail { id: string; version: number; updatedAt: string; profile: StressProfile; measurements: ProfileMeasurement[] }
 
 export interface StressRequirements {
   scenarioIssues: { stepId: string; code: string; message: string }[]
@@ -184,7 +186,8 @@ export interface StressResult {
     depthAtEndOfArrivals?: number | null
     growthPerSecond?: number | null
   }
-  assumptions: { group: string; target: string | null; name: string; field: string; value: string; unit: string; label: AssumptionLabel; measurementRef: string | null }[]
+  /** `measurementStale`: for a measured value, whether its k6 result was stale for this run. Absent for a declared value and in a result of engine version 1 or 2. */
+  assumptions: { group: string; target: string | null; name: string; field: string; value: string; unit: string; label: AssumptionLabel; measurementRef: string | null; measurementStale?: boolean | null }[]
   overrides: { target: string; name: string; field: string; modelValue: number; profileValue: number; label: AssumptionLabel; measurementRef: string | null }[]
   unmodelled: { code: string; kind: 'fixed' | 'run'; text: string }[]
   confidence: { level: 'low' | 'medium'; rule: string; reasons: string[] }

@@ -1,49 +1,57 @@
 {
-  "scriptHash": "df2a6095749d7d483b695fd6228df7f37afa687305ab502aaebb34a289866fc6",
-  "format": "vellum-k6-result/1",
-  "generator": "vellum-k6/1",
-  "scenarioId": "e4491c93-5f17-4dbf-aeb2-10cd8953763f",
+  "scriptHash": "ef6f2900a8c9d4f7fb6ae0d830a1dc81c5b03cacfbe609b83afc598457778fa7",
+  "format": "vellum-k6-result/2",
+  "generator": "vellum-k6/2",
+  "scenarioId": "1183670c-b0c3-4cf4-99cc-7c4c844f5c1d",
   "scenarioVersion": 1,
-  "modelStreamId": "3006ffb6-6d0e-486f-a4d8-d17d64b4765e",
-  "modelVersion": 12,
-  "targetId": "a6ce0305-b02c-468e-9a59-4031eab2a3be",
+  "modelStreamId": "6e4c8d61-a51d-4686-9378-1526f9a618ee",
+  "modelVersion": 15,
+  "targetId": "4bb42d09-46f1-4d13-8107-b2e01808e8a8",
   "environment": "test",
-  "baseUrlHash": "14a1dad2562afbc1b52f6e8e7814e830fe250c04d29e2958c57e6dc5e5785c39",
-  "startedAt": "2026-10-13T16:21:54.624Z",
+  "baseUrlHash": "056cececee254dbaf7e1b7609d16900e4406c85499d48f39dbe7f68fa5d3a3c9",
+  "startedAt": "2026-10-13T17:48:32.526Z",
   "window": {
     "warmUpMs": 10000,
-    "elapsedMs": 59988
+    "elapsedMs": 60003
+  },
+  "load": {
+    "effective": "constant-arrival-rate rate=40 unit=1000 duration=60000 pre=40 max=400",
+    "plannedDurationMs": 60000,
+    "plannedIterations": 2400,
+    "iterations": 2400,
+    "droppedIterations": 0
   },
   "flow": {
     "iterations": 2000,
-    "failed": 0,
-    "droppedIterations": 0,
+    "unexpectedStatus": 0,
     "latencyMs": {
       "count": 2000,
-      "min": 1.574,
-      "mean": 6.717881000000006,
-      "p50": 6.72,
-      "p90": 10.076400000000001,
-      "p95": 10.51905,
-      "p99": 13.988969999999997,
-      "max": 36.692
+      "min": 1.416,
+      "mean": 8.406916500000005,
+      "p50": 8.041,
+      "p90": 12.4602,
+      "p95": 14.42865,
+      "p99": 25.7391,
+      "max": 40.29
     }
   },
   "operations": [
     {
       "operationId": "00000000-0000-0000-0000-000000000010",
       "requests": 2000,
-      "failed": 0,
+      "unexpectedStatus": 0,
+      "expectedFailures": 0,
       "latencyMs": {
         "count": 2000,
-        "min": 1.574,
-        "mean": 6.717881000000006,
-        "p50": 6.72,
-        "p90": 10.076400000000001,
-        "p95": 10.51905,
-        "p99": 13.988969999999997,
-        "max": 36.692
-      }
+        "min": 1.416,
+        "mean": 8.406916500000005,
+        "p50": 8.041,
+        "p90": 12.4602,
+        "p95": 14.42865,
+        "p99": 25.7391,
+        "max": 40.29
+      },
+      "expectedFailureLatencyMs": null
     }
   ]
 }

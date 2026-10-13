@@ -40,16 +40,24 @@ const DISTRIBUTIONS: { kind: DistributionKind; label: string; fields: { key: key
   { kind: 'uniform', label: 'Uniform', fields: [{ key: 'minMs', label: 'Minimum, ms' }, { key: 'maxMs', label: 'Maximum, ms' }] },
 ]
 
+/** What a measured service time takes from the request latency of its k6 result, for each distribution. The server writes the numbers. */
+const MEASURED_FROM: Record<DistributionKind, string> = {
+  fixed: 'the mean',
+  exponential: 'the mean',
+  lognormal: 'the median (p50) and the 95th percentile',
+  uniform: 'the minimum and the maximum',
+}
+
 /** A number input that gives null when it is empty. */
-function NumberField({ label, value, onChange, min = 0, step = 'any', placeholder, className }: {
+function NumberField({ label, value, onChange, min = 0, step = 'any', placeholder, className, disabled }: {
   label: string; value: number | null | undefined; onChange: (value: number | null) => void
-  min?: number; step?: number | 'any'; placeholder?: string; className?: string
+  min?: number; step?: number | 'any'; placeholder?: string; className?: string; disabled?: boolean
 }) {
   return (
     <label className={`block text-[11px] font-medium text-muted-foreground ${className ?? ''}`}>
       {label}
       <Input
-        type="number" inputMode="decimal" min={min} step={step} placeholder={placeholder}
+        type="number" inputMode="decimal" min={min} step={step} placeholder={placeholder} disabled={disabled}
         className="mt-1 font-mono"
         value={value ?? ''}
         onChange={(e) => onChange(e.target.value === '' || Number.isNaN(e.target.valueAsNumber) ? null : e.target.valueAsNumber)}
@@ -112,15 +120,14 @@ function toProfile(draft: Draft, needs: StressRequirements | undefined): StressP
       .filter((id) => draft.resources[id].concurrency !== null)
       .map((id) => ({ elementId: id, concurrency: draft.resources[id].concurrency!, queueCapacity: draft.resources[id].queueCapacity })),
     serviceTimes: used(needs?.serviceTimes.map((t) => t.target), draft.times)
-      .filter((id) => complete(draft.times[id]))
+      .filter((id) => draft.sources[id] !== undefined || complete(draft.times[id]))
       .map((id) => {
         const time = draft.times[id]
-        const fields = DISTRIBUTIONS.find((d) => d.kind === time.kind)!.fields
         const source = draft.sources[id]
-        return {
-          target: id, time: { kind: time.kind, ...Object.fromEntries(fields.map((f) => [f.key, time[f.key]])) },
-          ...(source ? { label: 'measured' as const, measurementRef: source } : {}),
-        }
+        // A measured service time sends its distribution and the name of the result. The server takes the numbers from the result.
+        if (source) return { target: id, time: { kind: time.kind }, label: 'measured' as const, measurementRef: source }
+        const fields = DISTRIBUTIONS.find((d) => d.kind === time.kind)!.fields
+        return { target: id, time: { kind: time.kind, ...Object.fromEntries(fields.map((f) => [f.key, time[f.key]])) } }
       }),
     subscriptions: used(needs?.subscriptions.map((s) => s.subscriptionId), draft.subscriptions)
       .filter((id) => draft.subscriptions[id].consumers !== null)
@@ -181,6 +188,7 @@ export function StressProfileDialog({ projectId, branchId, scenarios, existing, 
           <DialogTitle>{existing ? `Stress profile · version ${existing.version}` : 'New stress profile'}</DialogTitle>
           <DialogDescription>
             A profile states the load and the capacity that one scenario is simulated under. Every number you enter is an assumption, and the result lists it as declared.
+            A number that you type is never measured.
           </DialogDescription>
         </DialogHeader>
 
@@ -274,6 +282,12 @@ export function StressProfileDialog({ projectId, branchId, scenarios, existing, 
                   const current = time(need.target)
                   const shape = DISTRIBUTIONS.find((d) => d.kind === current.kind)!
                   const overrides = policy(need.target)
+                  const source = draft.sources[need.target]
+                  // A k6 result measures an operation that its script drove, for the scenario of this profile. The server checks both.
+                  const candidates = (measured.data ?? []).filter((r) => r.scenarioId === draft.scenarioId)
+                  const chosen = (measured.data ?? []).find((r) => measurementRef(r.id) === source)
+                  const stored = existing?.measurements.find((m) => m.target === need.target && m.measurementRef === source)
+                  const staleBecause = source === undefined ? [] : chosen ? chosen.staleBecause : measured.data ? ['missing' as const] : (stored?.staleBecause ?? [])
                   return (
                     <li key={need.target} className="space-y-2 rounded-md border border-border p-2.5">
                       <div className="grid items-end gap-2 sm:grid-cols-[1fr_9rem_9rem_9rem]">
@@ -285,31 +299,53 @@ export function StressProfileDialog({ projectId, branchId, scenarios, existing, 
                           </select>
                         </label>
                         {shape.fields.map((field) => (
-                          <NumberField key={field.key} label={field.label} value={current[field.key] as number | null | undefined} onChange={(v) => setTime(need.target, { [field.key]: v })} />
+                          <NumberField
+                            key={field.key} label={field.label} disabled={source !== undefined} placeholder={source !== undefined ? 'from the result' : undefined}
+                            value={current[field.key] as number | null | undefined} onChange={(v) => setTime(need.target, { [field.key]: v })}
+                          />
                         ))}
                       </div>
-                      {((measured.data?.length ?? 0) > 0 || draft.sources[need.target]) && (
+                      {need.kind === 'operation' && (candidates.length > 0 || source !== undefined) && (
                         <label className="block text-[11px] font-medium text-muted-foreground">
                           Source of this value
                           <select
-                            className={`${selectClass} mt-1`} value={draft.sources[need.target] ?? ''}
+                            className={`${selectClass} mt-1`} value={source ?? ''}
                             onChange={(e) => {
-                              const rest = { ...draft.sources }
-                              delete rest[need.target]
-                              set('sources', e.target.value ? { ...rest, [need.target]: e.target.value } : rest)
+                              const picked = e.target.value
+                              setDraft((d) => {
+                                const sources = { ...d.sources }
+                                delete sources[need.target]
+                                if (!picked) return { ...d, sources }
+                                // The numbers of a measured service time are not typed: they are the numbers of the result.
+                                return { ...d, sources: { ...sources, [need.target]: picked }, times: { ...d.times, [need.target]: { kind: (d.times[need.target] ?? { kind: 'fixed' }).kind } } }
+                              })
                             }}
                           >
                             <option value="">Declared: a person states it</option>
-                            {draft.sources[need.target] && !measured.data?.some((r) => measurementRef(r.id) === draft.sources[need.target]) && (
-                              <option value={draft.sources[need.target]}>Measured: {draft.sources[need.target]}</option>
+                            {source !== undefined && !candidates.some((r) => measurementRef(r.id) === source) && (
+                              <option value={source}>Measured: {source}</option>
                             )}
-                            {measured.data?.map((r) => (
+                            {candidates.map((r) => (
                               <option key={r.id} value={measurementRef(r.id)}>
                                 Measured: k6 run of {new Date(r.startedAt).toLocaleString()} against {r.provenance.targetName}{r.stale ? ' (stale)' : ''}
                               </option>
                             ))}
                           </select>
                         </label>
+                      )}
+                      {source !== undefined && (
+                        <p className="text-[11px] leading-relaxed text-muted-foreground">
+                          <span className="font-mono text-foreground">measured</span> · Vellum takes {MEASURED_FROM[current.kind]} of the request latency of this operation from the result when you save.
+                          You cannot type these numbers. k6 measures the time from the request to the response, with the network and the wait at the target, so this is not a pure service time.
+                        </p>
+                      )}
+                      {staleBecause.length > 0 && (
+                        <p role="status" className="rounded-md border border-[var(--trace-retry)]/60 px-2.5 py-1.5 text-[11px] leading-relaxed text-foreground">
+                          {staleBecause.includes('missing')
+                            ? 'Stale measurement: the measured result is not in the project.'
+                            : `Stale measurement: the ${staleBecause.join(' and the ')} changed after the script of that run was generated.`}
+                          {' '}A stale measurement does not raise the confidence of a run. Run a new script and choose its result, or choose “Declared”.
+                        </p>
                       )}
                       {need.kind !== 'store' && (() => {
                         const declared = need.kind === 'operation'
@@ -408,7 +444,7 @@ export function StressProfileDialog({ projectId, branchId, scenarios, existing, 
         )}
 
         <div className="flex flex-wrap items-center gap-2">
-          <p className="min-w-0 flex-1 text-[11px] text-muted-foreground">A value is saved as <span className="font-mono">declared</span>. A service time is <span className="font-mono">measured</span> only when you name an imported k6 result as its source.</p>
+          <p className="min-w-0 flex-1 text-[11px] text-muted-foreground">A value that you type is saved as <span className="font-mono">declared</span>. The service time of an operation is <span className="font-mono">measured</span> only when you choose an imported k6 result of this scenario as its source. Vellum then writes the numbers of that result.</p>
           <Button variant="ghost" size="sm" onClick={onClose}>Close</Button>
           <Button variant="secondary" size="sm" disabled={!canSave} onClick={() => save.mutate(false)}>Save</Button>
           <Button size="sm" disabled={!canSave} onClick={() => save.mutate(true)}>Save and run</Button>

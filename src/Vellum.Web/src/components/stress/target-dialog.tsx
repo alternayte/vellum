@@ -69,9 +69,26 @@ export function TargetDialog({ projectId, existing, onClose, onChanged }: Props)
     },
     onMutate: start, onSuccess: stored, onError: failed,
   })
+  // The request names what this dialog shows: the base URL, the class and the version. When the target changed
+  // since, the server authorises nothing (409). The dialog then reads the target again, so the person sees what it holds now.
   const authorise = useMutation({
-    mutationFn: () => loadTestsApi.authorise(projectId, target!.id, target!.baseUrl),
-    onMutate: start, onSuccess: stored, onError: failed,
+    mutationFn: () => loadTestsApi.authorise(projectId, target!),
+    onMutate: start, onSuccess: stored,
+    onError: async (e: Error) => {
+      failed(e)
+      if (!(e instanceof ApiError) || e.status !== 409) return
+      try {
+        const current = (await loadTestsApi.targets(projectId)).find((t) => t.id === target!.id)
+        if (current) {
+          stored(current)
+          setFailure('The target changed after this dialog read it. Nothing was authorised. Read the base URL and the class below, then authorise again.')
+        } else {
+          setFailure('The target was removed. Nothing was authorised.')
+        }
+      } catch {
+        // The first message stays: the target could not be read again.
+      }
+    },
   })
   const revoke = useMutation({
     mutationFn: () => loadTestsApi.revoke(projectId, target!.id),
@@ -178,12 +195,20 @@ export function TargetDialog({ projectId, existing, onClose, onChanged }: Props)
                 </div>
               )}
               <p className="text-[11px] leading-relaxed text-muted-foreground">
-                An owner of the workspace authorises a target. With it you state that k6 load may go to <span className="font-mono">{target.baseUrl}</span>. An agent token cannot do this.
+                An owner of the workspace authorises a target. An agent token cannot do this.
               </p>
+              {!target.authorisation && (
+                <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 rounded-md border border-border px-3 py-2 text-xs text-foreground">
+                  <dt className="col-span-2 mb-0.5 text-[11px] font-medium text-muted-foreground">You authorise k6 load against:</dt>
+                  <dt className="text-muted-foreground">Base URL</dt><dd className="break-all font-mono">{target.baseUrl}</dd>
+                  <dt className="text-muted-foreground">Class</dt><dd className={target.environment === 'production' ? 'font-semibold text-[var(--trace-failure)]' : ''}>{target.environment}</dd>
+                  <dt className="text-muted-foreground">Version</dt><dd className="font-mono">{target.version}</dd>
+                </dl>
+              )}
               <div className="flex gap-2">
                 {!target.authorisation && (
                   <Button type="button" size="sm" disabled={busy || dirty} title={dirty ? 'Save the changes first' : undefined} onClick={() => authorise.mutate()}>
-                    {authorise.isPending ? 'Authorising…' : 'Authorise this base URL'}
+                    {authorise.isPending ? 'Authorising…' : `Authorise as ${target.environment}`}
                   </Button>
                 )}
                 {target.authorisation && (

@@ -53,7 +53,7 @@ function Tile({ label, value: text, detail }: { label: string; value: string; de
 }
 
 function LatencyCells({ latency }: { latency: MeasuredLatency | null }) {
-  if (!latency) return <td className={td} colSpan={5}><UnknownLabel /> <span className="font-sans text-[11px] text-muted-foreground">no request got the expected status</span></td>
+  if (!latency) return <td className={td} colSpan={5}><UnknownLabel /> <span className="font-sans text-[11px] text-muted-foreground">no request expected a 2xx status and got one</span></td>
   return <>{[latency.p50Ms, latency.p90Ms, latency.p95Ms, latency.p99Ms, latency.maxMs].map((ms, i) => <td key={i} className={`${td} text-foreground`}>{formatMs(ms)}</td>)}</>
 }
 
@@ -84,7 +84,9 @@ function EstimateTable({ comparison }: { comparison: EstimateComparison }) {
                   {row.estimated === null ? <EvidenceTag label="unknown" /> : <span title="Estimated">~ {value(row.estimated, row.unit)}</span>}
                 </td>
                 <td className={`${td} ${row.measured === null ? '' : measuredCell}`}>
-                  {row.measured === null ? <EvidenceTag label="unknown" /> : <span title="Measured">{value(row.measured, row.unit)}</span>}
+                  {row.measured === null
+                    ? <span title={row.reason ?? undefined}><EvidenceTag label="unknown" />{row.reason && <span className="ml-1 font-sans text-[11px] text-muted-foreground">not like for like</span>}</span>
+                    : <span title="Measured">{value(row.measured, row.unit)}</span>}
                 </td>
                 <td className={`${td} text-foreground`}>{signed(row.difference, row.unit) ?? <span className="font-sans text-[11px] text-muted-foreground">no difference to state</span>}</td>
               </tr>
@@ -92,7 +94,10 @@ function EstimateTable({ comparison }: { comparison: EstimateComparison }) {
           </tbody>
         </table>
       </div>
-      <p className="text-[11px] leading-relaxed text-muted-foreground">{comparison.note} An estimate is written with “~”. “Unknown” is a missing value: it is not zero and it is not a match.</p>
+      <p className="text-[11px] leading-relaxed text-muted-foreground">
+        {comparison.note} An estimate is written with “~”. “Unknown” is a missing value: it is not zero and it is not a match.
+        “Unexpected status” is the share of requests whose status was not the one the script expected. For the simulation it is the share of work that failed.
+      </p>
     </div>
   )
 }
@@ -181,7 +186,8 @@ export function MeasuredResultDialog({ projectId, result, results, profileName, 
         <DialogHeader>
           <DialogTitle className="flex flex-wrap items-center gap-2">k6 run against {provenance.targetName} <MeasuredLabel /></DialogTitle>
           <DialogDescription>
-            Numbers that k6 measured on a deployed system, read from the file that was imported. They hold for this run, this load and this target.
+            Numbers read from the file that was imported. The file names a script that Vellum generated for this project.
+            Vellum did not run k6 and cannot check that k6 produced the numbers. They are stated for this run, this load and this target.
             <span className="mt-1 block font-mono text-[11px]">
               {new Date(pin.startedAt).toLocaleString()} · {formatNumber(pin.measuredSeconds, 1)} s measured · {provenance.baseUrl} ({provenance.environment}) · script {provenance.scriptHash.slice(0, 12)}
               {' '}· scenario version {pin.scenarioVersion} · model version {pin.modelVersion}{profileName ? ` · ${profileName} v${pin.profileVersion}` : ''}
@@ -204,24 +210,36 @@ export function MeasuredResultDialog({ projectId, result, results, profileName, 
             <Tile label="Throughput" value={`${formatNumber(pin.flow.throughputPerSecond, 2)} /s`} detail={`${formatNumber(pin.flow.iterations)} flows after the warm-up`} />
             <Tile label="Latency, p50" value={formatMs(pin.flow.latency?.p50Ms)} detail={`mean ${formatMs(pin.flow.latency?.meanMs)}`} />
             <Tile label="Latency, p95" value={formatMs(pin.flow.latency?.p95Ms)} detail={`p99 ${formatMs(pin.flow.latency?.p99Ms)}`} />
-            <Tile label="Failed flows" value={formatPercent(pin.flow.errorRate)} detail={`${formatNumber(pin.flow.failed)} failed · ${formatNumber(pin.flow.droppedIterations)} iterations dropped by k6`} />
+            <Tile label="Flows with an unexpected status" value={formatPercent(pin.flow.unexpectedStatusRate)} detail={`${formatNumber(pin.flow.unexpectedStatus)} flows · ${formatNumber(pin.flow.droppedIterations)} iterations dropped by k6`} />
           </div>
 
-          <Section id="measured-operations" title="Operations" tags={<MeasuredLabel />} note="Latency is the duration of the requests that got the expected status, as k6 saw it. The percentiles are the ones k6 computed.">
+          {(result.faults > 0 || result.expectsFailure) && (
+            <p role="status" className="rounded-md border border-[var(--trace-retry)]/60 px-3 py-2 text-xs leading-relaxed text-foreground">
+              {result.faults > 0 && <>The scenario declares {result.faults} {result.faults === 1 ? 'fault' : 'faults'}. The script injects none: this run measured the target with the faults that a person injected in it. </>}
+              {result.expectsFailure && <>A step of the script expects a failure. For that step an unexpected status is a request that succeeded, so “unexpected status” is not an error count. The flow has no success latency, and the durations of expected failures are in a column of their own. </>}
+              The comparison with a simulation shows “unknown” for these rows.
+            </p>
+          )}
+
+          <Section id="measured-operations" title="Operations" tags={<MeasuredLabel />} note="Latency is the duration of the requests that expected a 2xx status and got one, as k6 saw it, with the network. The percentiles are the ones k6 computed. A status is unexpected when it is not the one the script expected; a 3xx status is always unexpected, because the script follows no redirect.">
             <div className="overflow-x-auto rounded-md border border-border">
               <table className="w-full border-collapse text-xs text-muted-foreground">
                 <thead>
-                  <tr>{['Operation', 'Requests', 'Failed', 'Error rate', 'Per second', 'p50', 'p90', 'p95', 'p99', 'Max'].map((h, i) => <th key={i} scope="col" className={th}>{h}</th>)}</tr>
+                  <tr>{['Operation', 'Requests', 'Unexpected status', 'Unexpected status, share', 'Per second', 'p50', 'p90', 'p95', 'p99', 'Max', ...(result.expectsFailure ? ['Expected failures', 'Their p95'] : [])].map((h, i) => <th key={i} scope="col" className={th}>{h}</th>)}</tr>
                 </thead>
                 <tbody>
                   {operations.map((o) => (
                     <tr key={o.operationId} className="border-t border-border">
                       <th scope="row" className={`${td} font-normal text-foreground`}>{o.name}</th>
                       <td className={td}>{formatNumber(o.requests)}</td>
-                      <td className={td}>{formatNumber(o.failed)}</td>
-                      <td className={td}>{o.errorRate === null ? <UnknownLabel /> : formatPercent(o.errorRate)}</td>
+                      <td className={td}>{formatNumber(o.unexpectedStatus)}</td>
+                      <td className={td}>{o.unexpectedStatusRate === null ? <UnknownLabel /> : formatPercent(o.unexpectedStatusRate)}</td>
                       <td className={td}>{o.requests === 0 ? <UnknownLabel /> : formatNumber(o.throughputPerSecond, 2)}</td>
                       <LatencyCells latency={o.latency} />
+                      {result.expectsFailure && <>
+                        <td className={td}>{formatNumber(o.expectedFailures)}</td>
+                        <td className={td}>{o.expectedFailureLatency ? formatMs(o.expectedFailureLatency.p95Ms) : <UnknownLabel />}</td>
+                      </>}
                     </tr>
                   ))}
                 </tbody>
@@ -282,7 +300,7 @@ export function MeasuredResultDialog({ projectId, result, results, profileName, 
             {regression.data && baselineId !== '' && <RegressionTable regression={regression.data} />}
           </Section>
 
-          <Section id="measured-use" title="Use in a stress profile" note="A value of a stress profile takes the label “measured” only when it names an imported result. This is the name of this result:">
+          <Section id="measured-use" title="Use in a stress profile" note="The service time of an operation that this run drove can take its numbers from this result. Vellum writes the numbers; a typed number stays “declared”. The measured latency holds the network and the wait at the target, so it is not a pure service time. This is the name of this result:">
             <p className="font-mono text-xs text-foreground">{measurementRef(pin.id)}</p>
           </Section>
         </div>
