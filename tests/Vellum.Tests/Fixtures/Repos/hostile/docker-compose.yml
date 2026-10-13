@@ -1,0 +1,14 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_PASSWORD: hunter2-planted
+  api:
+    image: registry.acme.example/api:PlantedOpaque0123456789abcdefABCDEF4567
+    environment:
+      - ConnectionStrings__App=Host=db;Password=hunter2-planted
+      - GITHUB_TOKEN=ghp_PLANTEDplanted0123456789
+    ports:
+      - "8080:8080"
+  mirror:
+    image: https://deploy:hunter2-planted@registry.acme.example/mirror:1

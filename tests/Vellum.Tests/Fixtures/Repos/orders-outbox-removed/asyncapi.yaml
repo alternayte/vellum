@@ -1,0 +1,53 @@
+asyncapi: 3.0.0
+info:
+  title: Orders events
+  version: 1.2.0
+servers:
+  rabbitmq:
+    host: rabbitmq:5672
+    protocol: amqp
+channels:
+  orderEvents:
+    address: order-events
+    messages:
+      OrderCreated:
+        $ref: '#/components/messages/OrderCreated'
+    bindings:
+      amqp:
+        is: routingKey
+        exchange:
+          name: order-events
+          type: fanout
+          durable: true
+operations:
+  publishOrderCreated:
+    action: send
+    summary: orders-api publishes this once for each accepted order.
+    channel:
+      $ref: '#/channels/orderEvents'
+    messages:
+      - $ref: '#/channels/orderEvents/messages/OrderCreated'
+components:
+  messages:
+    OrderCreated:
+      name: OrderCreated
+      title: An order was accepted
+      contentType: application/vnd.masstransit+json
+      payload:
+        $ref: '#/components/schemas/OrderCreated'
+  schemas:
+    OrderCreated:
+      type: object
+      required: [orderId, customerId, totalAmount, createdAt]
+      properties:
+        orderId:
+          type: string
+          format: uuid
+        customerId:
+          type: string
+          format: uuid
+        totalAmount:
+          type: number
+        createdAt:
+          type: string
+          format: date-time

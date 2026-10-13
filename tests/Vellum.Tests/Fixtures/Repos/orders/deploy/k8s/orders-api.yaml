@@ -1,0 +1,57 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: orders-api
+  namespace: orders
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: orders-api
+  template:
+    metadata:
+      labels:
+        app: orders-api
+    spec:
+      containers:
+        - name: orders-api
+          image: ghcr.io/acme/orders-api:1.4.0
+          ports:
+            - containerPort: 8080
+          env:
+            - name: ConnectionStrings__Orders
+              valueFrom:
+                secretKeyRef:
+                  name: orders-db
+                  key: connection-string
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: orders-api
+  namespace: orders
+spec:
+  type: ClusterIP
+  selector:
+    app: orders-api
+  ports:
+    - port: 80
+      targetPort: 8080
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: orders-api
+  namespace: orders
+spec:
+  rules:
+    - host: orders.acme.example
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: orders-api
+                port:
+                  number: 80

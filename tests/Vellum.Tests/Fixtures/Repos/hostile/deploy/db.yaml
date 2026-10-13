@@ -1,0 +1,19 @@
+# The file name says nothing. The second document is a Secret, so the whole file is refused.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: must-not-appear
+spec:
+  replicas: 1
+  template:
+    spec:
+      containers:
+        - name: db
+          image: postgres:16
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: db
+data:
+  password: aHVudGVyMi1wbGFudGVk

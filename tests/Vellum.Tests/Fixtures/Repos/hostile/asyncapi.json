@@ -1,0 +1,18 @@
+{
+  "asyncapi": "2.6.0",
+  "info": { "title": "Hostile events", "version": "0.1.0" },
+  "servers": {
+    "production": { "url": "amqp://events:s3cr3t-planted@broker.acme.example:5672", "protocol": "amqp" }
+  },
+  "channels": {
+    "stock.reserved": {
+      "subscribe": {
+        "operationId": "onStockReserved",
+        "message": { "name": "StockReserved", "payload": { "type": "object", "properties": { "sku": { "type": "string", "example": "hunter2-planted" } } } }
+      }
+    },
+    "AKIAIOSFODNN7EXAMPLE": {
+      "publish": { "message": { "name": "Leak", "payload": { "type": "object" } } }
+    }
+  }
+}

@@ -1,0 +1,53 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: orders
+      POSTGRES_PASSWORD: orders-dev-pw
+      POSTGRES_DB: orders
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+
+  orders-api:
+    build:
+      context: .
+      dockerfile: orders-api/Dockerfile
+    environment:
+      - ConnectionStrings__Orders=Host=postgres;Database=orders;Username=orders;Password=orders-dev-pw
+      - RabbitMq__Host=amqp://guest:guest@rabbitmq:5672
+    ports:
+      - "8080:8080"
+    depends_on:
+      - postgres
+      - rabbitmq
+
+  billing:
+    build:
+      context: .
+      dockerfile: billing/Dockerfile
+    environment:
+      - RabbitMq__Host=amqp://guest:guest@rabbitmq:5672
+    depends_on:
+      - rabbitmq
+
+  inventory-worker:
+    build: ./inventory-worker
+    environment:
+      INVENTORY_DATABASE_URL: postgres://orders:orders-dev-pw@postgres:5432/orders
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672
+    ports:
+      - "8081:8081"
+    depends_on:
+      - postgres
+      - rabbitmq
+
+volumes:
+  pgdata:

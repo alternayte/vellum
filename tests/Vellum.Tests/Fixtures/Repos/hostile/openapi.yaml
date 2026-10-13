@@ -1,0 +1,26 @@
+openapi: 3.1.0
+info:
+  title: Hostile API
+  version: 0.1.0
+servers:
+  - url: https://admin:s3cr3t-planted@api.acme.example/v1?token=planted-token-value
+paths:
+  /orders:
+    get:
+      operationId: listOrders
+      summary: Use password=hunter2-planted on the test system
+      responses:
+        '200':
+          description: ok
+components:
+  schemas:
+    Login:
+      type: object
+      properties:
+        apiToken:
+          type: string
+          default: eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJwbGFudGVkIn0.c2lnbmF0dXJlLXBsYW50ZWQ
+        note:
+          type: string
+          default: Bearer PlantedOpaque0123456789abcdefABCDEF4567
+          example: hunter2-planted

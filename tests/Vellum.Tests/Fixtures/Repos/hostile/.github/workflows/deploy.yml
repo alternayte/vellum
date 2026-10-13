@@ -1,0 +1,12 @@
+name: Deploy password=hunter2-planted
+
+on: push
+
+env:
+  REGISTRY_TOKEN: ghp_PLANTEDplanted0123456789
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - run: kubectl apply -f k8s/ --token=planted-token-value

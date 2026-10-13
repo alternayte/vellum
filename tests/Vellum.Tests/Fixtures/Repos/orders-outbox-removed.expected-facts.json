@@ -1,0 +1,1106 @@
+{
+  "repository": "github.com/acme/orders-outbox-removed",
+  "commitSha": "4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081",
+  "isComplete": true,
+  "facts": [
+    {
+      "kind": "Channel",
+      "key": "channel:billing.order-created",
+      "name": "billing.order-created",
+      "attributes": {
+        "kind": "queue",
+        "transport": "masstransit"
+      },
+      "evidence": [
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:billing/Program.cs:16-20",
+          "rule": "dotnet.masstransit-receive-endpoint",
+          "ruleVersion": 1
+        }
+      ]
+    },
+    {
+      "kind": "Channel",
+      "key": "channel:inventory.order-created",
+      "name": "inventory.order-created",
+      "attributes": {
+        "deadLetterExchange": "channel:order-events.dlx",
+        "durable": "true",
+        "kind": "queue",
+        "transport": "amqp"
+      },
+      "evidence": [
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:inventory-worker/consumer.go:40-42",
+          "rule": "go.amqp-queue-declare",
+          "ruleVersion": 1
+        }
+      ]
+    },
+    {
+      "kind": "Channel",
+      "key": "channel:order-events",
+      "name": "orderEvents",
+      "attributes": {
+        "address": "order-events",
+        "amqp.exchange": "order-events",
+        "amqp.exchange.type": "fanout",
+        "amqp.is": "routingKey",
+        "channelId": "orderEvents",
+        "contract": "contract:asyncapi.yaml",
+        "durable": "true",
+        "entityOf": "message:OrderCreated",
+        "kind": "exchange",
+        "messages": "message:OrderCreated",
+        "transport": "amqp"
+      },
+      "evidence": [
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:asyncapi.yaml:10-21",
+          "rule": "asyncapi.channel",
+          "ruleVersion": 1
+        },
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:inventory-worker/consumer.go:33-33",
+          "rule": "go.amqp-exchange-declare",
+          "ruleVersion": 1
+        },
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:orders-api/Program.cs:16-16",
+          "rule": "dotnet.masstransit-entity-name",
+          "ruleVersion": 1
+        }
+      ]
+    },
+    {
+      "kind": "Channel",
+      "key": "channel:order-events.dlx",
+      "name": "order-events.dlx",
+      "attributes": {
+        "amqp.exchange.type": "fanout",
+        "durable": "true",
+        "kind": "exchange",
+        "transport": "amqp"
+      },
+      "evidence": [
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:inventory-worker/consumer.go:36-36",
+          "rule": "go.amqp-exchange-declare",
+          "ruleVersion": 1
+        }
+      ]
+    },
+    {
+      "kind": "DataAccess",
+      "key": "dataaccess:inventory-worker:sql:pgx",
+      "name": "database/sql (pgx)",
+      "attributes": {
+        "driver": "pgx",
+        "project": "inventory-worker/go.mod",
+        "service": "service:inventory-worker",
+        "storeKind": "postgres",
+        "technology": "database/sql"
+      },
+      "evidence": [
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:inventory-worker/main.go:20-20",
+          "rule": "go.sql-open",
+          "ruleVersion": 1
+        }
+      ]
+    },
+    {
+      "kind": "DataAccess",
+      "key": "dataaccess:orders-api:OrdersDbContext",
+      "name": "OrdersDbContext",
+      "attributes": {
+        "dbContext": "OrdersDbContext",
+        "entities": "Order",
+        "project": "orders-api/Orders.Api.csproj",
+        "service": "service:orders-api",
+        "storeKind": "postgres",
+        "technology": "efcore"
+      },
+      "evidence": [
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:orders-api/OrdersDbContext.cs:5-6",
+          "rule": "dotnet.efcore-dbcontext",
+          "ruleVersion": 1
+        },
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:orders-api/OrdersDbContext.cs:7-7",
+          "rule": "dotnet.efcore-dbcontext",
+          "ruleVersion": 1
+        }
+      ]
+    },
+    {
+      "kind": "DataStore",
+      "key": "datastore:postgres",
+      "name": "postgres",
+      "attributes": {
+        "environment": "POSTGRES_DB,POSTGRES_PASSWORD,POSTGRES_USER",
+        "image": "postgres:16-alpine",
+        "kind": "postgres",
+        "ports": "5432:5432",
+        "source": "compose"
+      },
+      "evidence": [
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:docker-compose.yml:2-11",
+          "rule": "compose.service",
+          "ruleVersion": 1
+        }
+      ]
+    },
+    {
+      "kind": "Dependency",
+      "key": "dependency:billing:nuget:MassTransit.RabbitMQ",
+      "name": "MassTransit.RabbitMQ",
+      "attributes": {
+        "broker": "rabbitmq",
+        "ecosystem": "nuget",
+        "package": "MassTransit.RabbitMQ",
+        "project": "billing/Billing.csproj",
+        "role": "messaging",
+        "service": "service:billing",
+        "technology": "masstransit",
+        "version": "8.3.4"
+      },
+      "evidence": [
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:billing/Billing.csproj:10-10",
+          "rule": "dotnet.package-reference",
+          "ruleVersion": 1
+        }
+      ]
+    },
+    {
+      "kind": "Dependency",
+      "key": "dependency:billing:nuget:Microsoft.Extensions.Hosting",
+      "name": "Microsoft.Extensions.Hosting",
+      "attributes": {
+        "ecosystem": "nuget",
+        "package": "Microsoft.Extensions.Hosting",
+        "project": "billing/Billing.csproj",
+        "service": "service:billing",
+        "version": "10.0.0"
+      },
+      "evidence": [
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:billing/Billing.csproj:11-11",
+          "rule": "dotnet.package-reference",
+          "ruleVersion": 1
+        }
+      ]
+    },
+    {
+      "kind": "Dependency",
+      "key": "dependency:billing:project:Orders.Contracts",
+      "name": "Orders.Contracts",
+      "attributes": {
+        "ecosystem": "project",
+        "project": "billing/Billing.csproj",
+        "reference": "../contracts/Orders.Contracts.csproj",
+        "service": "service:billing"
+      },
+      "evidence": [
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:billing/Billing.csproj:15-15",
+          "rule": "dotnet.package-reference",
+          "ruleVersion": 1
+        }
+      ]
+    },
+    {
+      "kind": "Dependency",
+      "key": "dependency:inventory-worker:go:github.com/jackc/pgpassfile",
+      "name": "github.com/jackc/pgpassfile",
+      "attributes": {
+        "ecosystem": "go",
+        "indirect": "true",
+        "package": "github.com/jackc/pgpassfile",
+        "project": "inventory-worker/go.mod",
+        "service": "service:inventory-worker",
+        "version": "v1.0.0"
+      },
+      "evidence": [
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:inventory-worker/go.mod:11-11",
+          "rule": "go.require",
+          "ruleVersion": 1
+        }
+      ]
+    },
+    {
+      "kind": "Dependency",
+      "key": "dependency:inventory-worker:go:github.com/jackc/pgx/v5",
+      "name": "github.com/jackc/pgx/v5",
+      "attributes": {
+        "ecosystem": "go",
+        "package": "github.com/jackc/pgx/v5",
+        "project": "inventory-worker/go.mod",
+        "role": "data",
+        "service": "service:inventory-worker",
+        "technology": "postgres",
+        "version": "v5.7.1"
+      },
+      "evidence": [
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:inventory-worker/go.mod:6-6",
+          "rule": "go.require",
+          "ruleVersion": 1
+        }
+      ]
+    },
+    {
+      "kind": "Dependency",
+      "key": "dependency:inventory-worker:go:github.com/rabbitmq/amqp091-go",
+      "name": "github.com/rabbitmq/amqp091-go",
+      "attributes": {
+        "ecosystem": "go",
+        "package": "github.com/rabbitmq/amqp091-go",
+        "project": "inventory-worker/go.mod",
+        "role": "messaging",
+        "service": "service:inventory-worker",
+        "technology": "rabbitmq",
+        "version": "v1.10.0"
+      },
+      "evidence": [
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:inventory-worker/go.mod:7-7",
+          "rule": "go.require",
+          "ruleVersion": 1
+        }
+      ]
+    },
+    {
+      "kind": "Dependency",
+      "key": "dependency:inventory-worker:go:golang.org/x/text",
+      "name": "golang.org/x/text",
+      "attributes": {
+        "ecosystem": "go",
+        "indirect": "true",
+        "package": "golang.org/x/text",
+        "project": "inventory-worker/go.mod",
+        "service": "service:inventory-worker",
+        "version": "v0.18.0"
+      },
+      "evidence": [
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:inventory-worker/go.mod:12-12",
+          "rule": "go.require",
+          "ruleVersion": 1
+        }
+      ]
+    },
+    {
+      "kind": "Dependency",
+      "key": "dependency:orders-api:nuget:MassTransit.EntityFrameworkCore",
+      "name": "MassTransit.EntityFrameworkCore",
+      "attributes": {
+        "ecosystem": "nuget",
+        "package": "MassTransit.EntityFrameworkCore",
+        "project": "orders-api/Orders.Api.csproj",
+        "role": "messaging-persistence",
+        "service": "service:orders-api",
+        "technology": "masstransit",
+        "version": "8.3.4"
+      },
+      "evidence": [
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:orders-api/Orders.Api.csproj:10-10",
+          "rule": "dotnet.package-reference",
+          "ruleVersion": 1
+        }
+      ]
+    },
+    {
+      "kind": "Dependency",
+      "key": "dependency:orders-api:nuget:MassTransit.RabbitMQ",
+      "name": "MassTransit.RabbitMQ",
+      "attributes": {
+        "broker": "rabbitmq",
+        "ecosystem": "nuget",
+        "package": "MassTransit.RabbitMQ",
+        "project": "orders-api/Orders.Api.csproj",
+        "role": "messaging",
+        "service": "service:orders-api",
+        "technology": "masstransit",
+        "version": "8.3.4"
+      },
+      "evidence": [
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:orders-api/Orders.Api.csproj:11-11",
+          "rule": "dotnet.package-reference",
+          "ruleVersion": 1
+        }
+      ]
+    },
+    {
+      "kind": "Dependency",
+      "key": "dependency:orders-api:nuget:Npgsql.EntityFrameworkCore.PostgreSQL",
+      "name": "Npgsql.EntityFrameworkCore.PostgreSQL",
+      "attributes": {
+        "ecosystem": "nuget",
+        "package": "Npgsql.EntityFrameworkCore.PostgreSQL",
+        "project": "orders-api/Orders.Api.csproj",
+        "role": "data",
+        "service": "service:orders-api",
+        "store": "postgres",
+        "technology": "efcore",
+        "version": "10.0.2"
+      },
+      "evidence": [
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:orders-api/Orders.Api.csproj:12-12",
+          "rule": "dotnet.package-reference",
+          "ruleVersion": 1
+        }
+      ]
+    },
+    {
+      "kind": "Dependency",
+      "key": "dependency:orders-api:project:Orders.Contracts",
+      "name": "Orders.Contracts",
+      "attributes": {
+        "ecosystem": "project",
+        "project": "orders-api/Orders.Api.csproj",
+        "reference": "../contracts/Orders.Contracts.csproj",
+        "service": "service:orders-api"
+      },
+      "evidence": [
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:orders-api/Orders.Api.csproj:16-16",
+          "rule": "dotnet.package-reference",
+          "ruleVersion": 1
+        }
+      ]
+    },
+    {
+      "kind": "Deployment",
+      "key": "deployment:compose:billing",
+      "name": "billing",
+      "attributes": {
+        "build": ".",
+        "dependsOn": "rabbitmq",
+        "dockerfile": "billing/Dockerfile",
+        "environment": "RabbitMq__Host",
+        "kind": "unknown",
+        "role": "service",
+        "source": "compose"
+      },
+      "evidence": [
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:docker-compose.yml:32-39",
+          "rule": "compose.service",
+          "ruleVersion": 1
+        }
+      ]
+    },
+    {
+      "kind": "Deployment",
+      "key": "deployment:compose:inventory-worker",
+      "name": "inventory-worker",
+      "attributes": {
+        "build": "./inventory-worker",
+        "dependsOn": "postgres,rabbitmq",
+        "environment": "INVENTORY_DATABASE_URL,RABBITMQ_URL",
+        "kind": "unknown",
+        "ports": "8081:8081",
+        "role": "service",
+        "source": "compose"
+      },
+      "evidence": [
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:docker-compose.yml:41-50",
+          "rule": "compose.service",
+          "ruleVersion": 1
+        }
+      ]
+    },
+    {
+      "kind": "Deployment",
+      "key": "deployment:compose:orders-api",
+      "name": "orders-api",
+      "attributes": {
+        "build": ".",
+        "dependsOn": "postgres,rabbitmq",
+        "dockerfile": "orders-api/Dockerfile",
+        "environment": "ConnectionStrings__Orders,RabbitMq__Host",
+        "kind": "unknown",
+        "ports": "8080:8080",
+        "role": "service",
+        "source": "compose"
+      },
+      "evidence": [
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:docker-compose.yml:19-30",
+          "rule": "compose.service",
+          "ruleVersion": 1
+        }
+      ]
+    },
+    {
+      "kind": "Deployment",
+      "key": "deployment:compose:rabbitmq",
+      "name": "rabbitmq",
+      "attributes": {
+        "image": "rabbitmq:3.13-management",
+        "kind": "rabbitmq",
+        "ports": "5672:5672,15672:15672",
+        "role": "broker",
+        "source": "compose"
+      },
+      "evidence": [
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:docker-compose.yml:13-17",
+          "rule": "compose.service",
+          "ruleVersion": 1
+        }
+      ]
+    },
+    {
+      "kind": "Deployment",
+      "key": "deployment:dockerfile:billing/Dockerfile",
+      "name": "billing/Dockerfile",
+      "attributes": {
+        "baseImage": "mcr.microsoft.com/dotnet/runtime:10.0",
+        "entrypoint": "[\"dotnet\", \"Billing.dll\"]",
+        "source": "dockerfile",
+        "stageImages": "mcr.microsoft.com/dotnet/runtime:10.0,mcr.microsoft.com/dotnet/sdk:10.0"
+      },
+      "evidence": [
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:billing/Dockerfile:1-1",
+          "rule": "docker.dockerfile",
+          "ruleVersion": 1
+        },
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:billing/Dockerfile:7-7",
+          "rule": "docker.dockerfile",
+          "ruleVersion": 1
+        },
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:billing/Dockerfile:10-10",
+          "rule": "docker.dockerfile",
+          "ruleVersion": 1
+        }
+      ]
+    },
+    {
+      "kind": "Deployment",
+      "key": "deployment:dockerfile:inventory-worker/Dockerfile",
+      "name": "inventory-worker/Dockerfile",
+      "attributes": {
+        "baseImage": "gcr.io/distroless/static-debian12",
+        "entrypoint": "[\"/inventory-worker\"]",
+        "ports": "8081",
+        "source": "dockerfile",
+        "stageImages": "gcr.io/distroless/static-debian12,golang:1.23-alpine"
+      },
+      "evidence": [
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:inventory-worker/Dockerfile:1-1",
+          "rule": "docker.dockerfile",
+          "ruleVersion": 1
+        },
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:inventory-worker/Dockerfile:8-8",
+          "rule": "docker.dockerfile",
+          "ruleVersion": 1
+        },
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:inventory-worker/Dockerfile:10-10",
+          "rule": "docker.dockerfile",
+          "ruleVersion": 1
+        },
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:inventory-worker/Dockerfile:11-11",
+          "rule": "docker.dockerfile",
+          "ruleVersion": 1
+        }
+      ]
+    },
+    {
+      "kind": "Deployment",
+      "key": "deployment:dockerfile:orders-api/Dockerfile",
+      "name": "orders-api/Dockerfile",
+      "attributes": {
+        "baseImage": "mcr.microsoft.com/dotnet/aspnet:10.0",
+        "entrypoint": "[\"dotnet\", \"Orders.Api.dll\"]",
+        "ports": "8080",
+        "source": "dockerfile",
+        "stageImages": "mcr.microsoft.com/dotnet/aspnet:10.0,mcr.microsoft.com/dotnet/sdk:10.0"
+      },
+      "evidence": [
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:orders-api/Dockerfile:2-2",
+          "rule": "docker.dockerfile",
+          "ruleVersion": 1
+        },
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:orders-api/Dockerfile:8-8",
+          "rule": "docker.dockerfile",
+          "ruleVersion": 1
+        },
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:orders-api/Dockerfile:12-12",
+          "rule": "docker.dockerfile",
+          "ruleVersion": 1
+        },
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:orders-api/Dockerfile:13-13",
+          "rule": "docker.dockerfile",
+          "ruleVersion": 1
+        }
+      ]
+    },
+    {
+      "kind": "Deployment",
+      "key": "deployment:k8s:deployment/orders/orders-api",
+      "name": "orders-api",
+      "attributes": {
+        "containers": "orders-api",
+        "images": "ghcr.io/acme/orders-api:1.4.0",
+        "kind": "Deployment",
+        "name": "orders-api",
+        "namespace": "orders",
+        "ports": "8080",
+        "replicas": "2",
+        "source": "kubernetes"
+      },
+      "evidence": [
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:deploy/k8s/orders-api.yaml:1-26",
+          "rule": "k8s.workload",
+          "ruleVersion": 1
+        }
+      ]
+    },
+    {
+      "kind": "Deployment",
+      "key": "deployment:k8s:ingress/orders/orders-api",
+      "name": "orders-api",
+      "attributes": {
+        "kind": "Ingress",
+        "name": "orders-api",
+        "namespace": "orders",
+        "rules": "orders.acme.example/->orders-api:80",
+        "source": "kubernetes"
+      },
+      "evidence": [
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:deploy/k8s/orders-api.yaml:41-57",
+          "rule": "k8s.ingress",
+          "ruleVersion": 1
+        }
+      ]
+    },
+    {
+      "kind": "Deployment",
+      "key": "deployment:k8s:service/orders/orders-api",
+      "name": "orders-api",
+      "attributes": {
+        "kind": "Service",
+        "name": "orders-api",
+        "namespace": "orders",
+        "ports": "80->8080",
+        "selector": "app=orders-api",
+        "source": "kubernetes",
+        "type": "ClusterIP"
+      },
+      "evidence": [
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:deploy/k8s/orders-api.yaml:28-39",
+          "rule": "k8s.service",
+          "ruleVersion": 1
+        }
+      ]
+    },
+    {
+      "kind": "Deployment",
+      "key": "deployment:workflow:.github/workflows/ci.yml",
+      "name": "CI",
+      "attributes": {
+        "buildJobs": "images",
+        "deployJobs": "deploy",
+        "jobs": "test,images,deploy",
+        "name": "CI",
+        "source": "github-actions",
+        "triggers": "pull_request,push"
+      },
+      "evidence": [
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:.github/workflows/ci.yml:1-1",
+          "rule": "github.workflow",
+          "ruleVersion": 1
+        },
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:.github/workflows/ci.yml:23-41",
+          "rule": "github.workflow",
+          "ruleVersion": 1
+        },
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:.github/workflows/ci.yml:43-49",
+          "rule": "github.workflow",
+          "ruleVersion": 1
+        }
+      ]
+    },
+    {
+      "kind": "Message",
+      "key": "message:OrderCreated",
+      "name": "OrderCreated",
+      "attributes": {
+        "clrType": "Orders.Contracts.OrderCreated",
+        "contentType": "application/vnd.masstransit+json",
+        "contract": "contract:asyncapi.yaml",
+        "declaredIn": "contracts/Orders.Contracts.csproj",
+        "fields": "CreatedAt:DateTimeOffset;CustomerId:Guid;OrderId:Guid;TotalAmount:decimal",
+        "payloadSchema": "schema:asyncapi.yaml#/components/schemas/OrderCreated",
+        "title": "An order was accepted"
+      },
+      "evidence": [
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:asyncapi.yaml:32-37",
+          "rule": "asyncapi.message",
+          "ruleVersion": 1
+        },
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:contracts/OrderCreated.cs:4-8",
+          "rule": "dotnet.message-contract",
+          "ruleVersion": 1
+        }
+      ]
+    },
+    {
+      "kind": "Operation",
+      "key": "operation:inventory-worker:GET /healthz",
+      "name": "GET /healthz",
+      "attributes": {
+        "framework": "net/http",
+        "method": "GET",
+        "path": "/healthz",
+        "project": "inventory-worker/go.mod",
+        "routeTemplate": "GET /healthz",
+        "service": "service:inventory-worker",
+        "transport": "http"
+      },
+      "evidence": [
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:inventory-worker/main.go:41-47",
+          "rule": "go.net-http-route",
+          "ruleVersion": 1
+        }
+      ]
+    },
+    {
+      "kind": "Operation",
+      "key": "operation:openapi.yaml:GET /healthz",
+      "name": "GET /healthz",
+      "attributes": {
+        "contract": "contract:openapi.yaml",
+        "method": "GET",
+        "operationId": "health",
+        "path": "/healthz",
+        "responses": "200",
+        "security": "false",
+        "transport": "http"
+      },
+      "evidence": [
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:openapi.yaml:50-55",
+          "rule": "openapi.operation",
+          "ruleVersion": 1
+        }
+      ]
+    },
+    {
+      "kind": "Operation",
+      "key": "operation:openapi.yaml:GET /orders/{id}",
+      "name": "GET /orders/{id}",
+      "attributes": {
+        "contract": "contract:openapi.yaml",
+        "method": "GET",
+        "operationId": "getOrder",
+        "path": "/orders/{id}",
+        "response.200.schema": "schema:openapi.yaml#/components/schemas/Order",
+        "responses": "200,404",
+        "security": "true",
+        "summary": "Read one order",
+        "transport": "http"
+      },
+      "evidence": [
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:openapi.yaml:30-48",
+          "rule": "openapi.operation",
+          "ruleVersion": 1
+        }
+      ]
+    },
+    {
+      "kind": "Operation",
+      "key": "operation:openapi.yaml:POST /orders",
+      "name": "POST /orders",
+      "attributes": {
+        "contract": "contract:openapi.yaml",
+        "method": "POST",
+        "operationId": "createOrder",
+        "path": "/orders",
+        "requestContentType": "application/json",
+        "requestSchema": "schema:openapi.yaml#/components/schemas/CreateOrder",
+        "response.201.schema": "schema:openapi.yaml#/components/schemas/Order",
+        "responses": "201,400",
+        "security": "true",
+        "summary": "Accept an order",
+        "transport": "http"
+      },
+      "evidence": [
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:openapi.yaml:11-28",
+          "rule": "openapi.operation",
+          "ruleVersion": 1
+        }
+      ]
+    },
+    {
+      "kind": "Operation",
+      "key": "operation:orders-api:GET /healthz",
+      "name": "GET /healthz",
+      "attributes": {
+        "framework": "aspnetcore-minimal-api",
+        "method": "GET",
+        "path": "/healthz",
+        "project": "orders-api/Orders.Api.csproj",
+        "routeTemplate": "/healthz",
+        "service": "service:orders-api",
+        "transport": "http"
+      },
+      "evidence": [
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:orders-api/Program.cs:27-27",
+          "rule": "dotnet.minimal-api-route",
+          "ruleVersion": 1
+        }
+      ]
+    },
+    {
+      "kind": "Operation",
+      "key": "operation:orders-api:GET /orders/{id}",
+      "name": "GET /orders/{id}",
+      "attributes": {
+        "framework": "aspnetcore-minimal-api",
+        "method": "GET",
+        "path": "/orders/{id}",
+        "project": "orders-api/Orders.Api.csproj",
+        "routeTemplate": "/orders/{id:guid}",
+        "service": "service:orders-api",
+        "transport": "http"
+      },
+      "evidence": [
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:orders-api/Program.cs:43-44",
+          "rule": "dotnet.minimal-api-route",
+          "ruleVersion": 1
+        }
+      ]
+    },
+    {
+      "kind": "Operation",
+      "key": "operation:orders-api:POST /orders",
+      "name": "POST /orders",
+      "attributes": {
+        "framework": "aspnetcore-minimal-api",
+        "method": "POST",
+        "path": "/orders",
+        "project": "orders-api/Orders.Api.csproj",
+        "routeTemplate": "/orders/",
+        "service": "service:orders-api",
+        "transport": "http"
+      },
+      "evidence": [
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:orders-api/Program.cs:31-41",
+          "rule": "dotnet.minimal-api-route",
+          "ruleVersion": 1
+        }
+      ]
+    },
+    {
+      "kind": "Publication",
+      "key": "publication:asyncapi.yaml:publishOrderCreated",
+      "name": "publishOrderCreated",
+      "attributes": {
+        "action": "send",
+        "channel": "channel:order-events",
+        "contract": "contract:asyncapi.yaml",
+        "messages": "message:OrderCreated",
+        "summary": "orders-api publishes this once for each accepted order."
+      },
+      "evidence": [
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:asyncapi.yaml:23-29",
+          "rule": "asyncapi.operation",
+          "ruleVersion": 1
+        }
+      ]
+    },
+    {
+      "kind": "Publication",
+      "key": "publication:orders-api:OrderCreated",
+      "name": "OrderCreated",
+      "attributes": {
+        "channel": "channel:order-events",
+        "message": "message:OrderCreated",
+        "mode": "publish",
+        "project": "orders-api/Orders.Api.csproj",
+        "service": "service:orders-api",
+        "transport": "masstransit"
+      },
+      "evidence": [
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:orders-api/Program.cs:38-38",
+          "rule": "dotnet.masstransit-publish",
+          "ruleVersion": 1
+        }
+      ]
+    },
+    {
+      "kind": "Schema",
+      "key": "contract:asyncapi.yaml",
+      "name": "Orders events",
+      "attributes": {
+        "apiVersion": "1.2.0",
+        "format": "asyncapi",
+        "protocols": "amqp",
+        "servers": "rabbitmq",
+        "specVersion": "3.0.0",
+        "title": "Orders events"
+      },
+      "evidence": [
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:asyncapi.yaml:1-1",
+          "rule": "asyncapi.document",
+          "ruleVersion": 1
+        }
+      ]
+    },
+    {
+      "kind": "Schema",
+      "key": "contract:openapi.yaml",
+      "name": "Orders API",
+      "attributes": {
+        "apiVersion": "1.4.0",
+        "format": "openapi",
+        "servers": "https://orders.acme.example",
+        "specVersion": "3.0.3",
+        "title": "Orders API"
+      },
+      "evidence": [
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:openapi.yaml:1-1",
+          "rule": "openapi.document",
+          "ruleVersion": 1
+        },
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:openapi.yaml:5-6",
+          "rule": "openapi.document",
+          "ruleVersion": 1
+        }
+      ]
+    },
+    {
+      "kind": "Schema",
+      "key": "schema:asyncapi.yaml#/components/schemas/OrderCreated",
+      "name": "OrderCreated",
+      "attributes": {
+        "contract": "contract:asyncapi.yaml",
+        "format": "json-schema",
+        "pointer": "#/components/schemas/OrderCreated",
+        "schema": "{\"properties\":{\"createdAt\":{\"format\":\"date-time\",\"type\":\"string\"},\"customerId\":{\"format\":\"uuid\",\"type\":\"string\"},\"orderId\":{\"format\":\"uuid\",\"type\":\"string\"},\"totalAmount\":{\"type\":\"number\"}},\"required\":[\"orderId\",\"customerId\",\"totalAmount\",\"createdAt\"],\"type\":\"object\"}"
+      },
+      "evidence": [
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:asyncapi.yaml:39-53",
+          "rule": "asyncapi.schema",
+          "ruleVersion": 1
+        }
+      ]
+    },
+    {
+      "kind": "Schema",
+      "key": "schema:openapi.yaml#/components/schemas/CreateOrder",
+      "name": "CreateOrder",
+      "attributes": {
+        "contract": "contract:openapi.yaml",
+        "format": "json-schema",
+        "pointer": "#/components/schemas/CreateOrder",
+        "schema": "{\"properties\":{\"customerId\":{\"format\":\"uuid\",\"type\":\"string\"},\"lines\":{\"items\":{\"$ref\":\"#/components/schemas/OrderLine\"},\"minItems\":1,\"type\":\"array\"}},\"required\":[\"customerId\",\"lines\"],\"type\":\"object\"}"
+      },
+      "evidence": [
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:openapi.yaml:73-84",
+          "rule": "openapi.schema",
+          "ruleVersion": 1
+        }
+      ]
+    },
+    {
+      "kind": "Schema",
+      "key": "schema:openapi.yaml#/components/schemas/Order",
+      "name": "Order",
+      "attributes": {
+        "contract": "contract:openapi.yaml",
+        "format": "json-schema",
+        "pointer": "#/components/schemas/Order",
+        "schema": "{\"properties\":{\"createdAt\":{\"format\":\"date-time\",\"type\":\"string\"},\"customerId\":{\"format\":\"uuid\",\"type\":\"string\"},\"id\":{\"format\":\"uuid\",\"type\":\"string\"},\"lines\":{\"items\":{\"$ref\":\"#/components/schemas/OrderLine\"},\"type\":\"array\"},\"total\":{\"type\":\"number\"}},\"required\":[\"id\",\"customerId\",\"lines\",\"total\",\"createdAt\"],\"type\":\"object\"}"
+      },
+      "evidence": [
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:openapi.yaml:85-103",
+          "rule": "openapi.schema",
+          "ruleVersion": 1
+        }
+      ]
+    },
+    {
+      "kind": "Schema",
+      "key": "schema:openapi.yaml#/components/schemas/OrderLine",
+      "name": "OrderLine",
+      "attributes": {
+        "contract": "contract:openapi.yaml",
+        "format": "json-schema",
+        "pointer": "#/components/schemas/OrderLine",
+        "schema": "{\"properties\":{\"quantity\":{\"minimum\":1,\"type\":\"integer\"},\"sku\":{\"type\":\"string\"},\"unitPrice\":{\"type\":\"number\"}},\"required\":[\"sku\",\"quantity\",\"unitPrice\"],\"type\":\"object\"}"
+      },
+      "evidence": [
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:openapi.yaml:62-72",
+          "rule": "openapi.schema",
+          "ruleVersion": 1
+        }
+      ]
+    },
+    {
+      "kind": "Service",
+      "key": "service:billing",
+      "name": "Billing",
+      "attributes": {
+        "kind": "worker",
+        "language": "dotnet",
+        "project": "billing/Billing.csproj",
+        "sdk": "Microsoft.NET.Sdk.Worker",
+        "targetFramework": "net10.0"
+      },
+      "evidence": [
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:billing/Billing.csproj:1-1",
+          "rule": "dotnet.project",
+          "ruleVersion": 1
+        }
+      ]
+    },
+    {
+      "kind": "Service",
+      "key": "service:inventory-worker",
+      "name": "inventory-worker",
+      "attributes": {
+        "goVersion": "1.23",
+        "hasMain": "true",
+        "language": "go",
+        "module": "github.com/acme/orders/inventory-worker",
+        "project": "inventory-worker/go.mod"
+      },
+      "evidence": [
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:inventory-worker/go.mod:1-1",
+          "rule": "go.module",
+          "ruleVersion": 1
+        }
+      ]
+    },
+    {
+      "kind": "Service",
+      "key": "service:orders-api",
+      "name": "Orders.Api",
+      "attributes": {
+        "kind": "web",
+        "language": "dotnet",
+        "project": "orders-api/Orders.Api.csproj",
+        "sdk": "Microsoft.NET.Sdk.Web",
+        "targetFramework": "net10.0"
+      },
+      "evidence": [
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:orders-api/Orders.Api.csproj:1-1",
+          "rule": "dotnet.project",
+          "ruleVersion": 1
+        }
+      ]
+    },
+    {
+      "kind": "Subscription",
+      "key": "binding:inventory.order-created:order-events",
+      "name": "inventory.order-created bound to order-events",
+      "attributes": {
+        "exchange": "channel:order-events",
+        "project": "inventory-worker/go.mod",
+        "queue": "channel:inventory.order-created",
+        "service": "service:inventory-worker",
+        "transport": "amqp"
+      },
+      "evidence": [
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:inventory-worker/consumer.go:46-46",
+          "rule": "go.amqp-queue-bind",
+          "ruleVersion": 1
+        }
+      ]
+    },
+    {
+      "kind": "Subscription",
+      "key": "subscription:billing:OrderCreatedConsumer:OrderCreated",
+      "name": "OrderCreatedConsumer consumes OrderCreated",
+      "attributes": {
+        "consumer": "OrderCreatedConsumer",
+        "message": "message:OrderCreated",
+        "project": "billing/Billing.csproj",
+        "queue": "channel:billing.order-created",
+        "service": "service:billing",
+        "transport": "masstransit"
+      },
+      "evidence": [
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:billing/OrderCreatedConsumer.cs:7-9",
+          "rule": "dotnet.masstransit-consumer",
+          "ruleVersion": 1
+        },
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:billing/Program.cs:16-20",
+          "rule": "dotnet.masstransit-receive-endpoint",
+          "ruleVersion": 1
+        }
+      ]
+    },
+    {
+      "kind": "Subscription",
+      "key": "subscription:inventory-worker:amqp:inventory.order-created",
+      "name": "consume inventory.order-created",
+      "attributes": {
+        "project": "inventory-worker/go.mod",
+        "queue": "channel:inventory.order-created",
+        "service": "service:inventory-worker",
+        "transport": "amqp"
+      },
+      "evidence": [
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:inventory-worker/consumer.go:50-50",
+          "rule": "go.amqp-consume",
+          "ruleVersion": 1
+        }
+      ]
+    }
+  ],
+  "notes": []
+}
