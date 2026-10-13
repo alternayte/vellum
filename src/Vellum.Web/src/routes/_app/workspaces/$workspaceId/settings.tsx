@@ -14,18 +14,20 @@ import {
 } from '@/lib/settings-api'
 import { NumberField, SectionHeading, SelectField, TextField, Toggle, ToggleField, selectClass } from '@/components/settings/fields'
 import { SecretControl } from '@/components/settings/secret-control'
+import { PriceBook } from '@/components/settings/price-book'
 
 export const Route = createFileRoute('/_app/workspaces/$workspaceId/settings')({
   component: SettingsPage,
 })
 
-type SectionId = SettingsSection | 'agents' | 'audit' | 'instance'
+type SectionId = SettingsSection | 'prices' | 'agents' | 'audit' | 'instance'
 
 const SECTIONS: { id: SectionId; label: string; adminOnly?: boolean }[] = [
   { id: 'ai', label: 'AI providers' },
   { id: 'github', label: 'GitHub' },
   { id: 'import', label: 'Import limits' },
   { id: 'cost', label: 'Cost' },
+  { id: 'prices', label: 'Prices' },
   { id: 'simulation', label: 'Simulation' },
   { id: 'privacy', label: 'Privacy' },
   { id: 'usage', label: 'Usage limits' },
@@ -227,7 +229,19 @@ function SettingsPage() {
                 <SectionHeading title="Cost" description="The defaults for a new cost estimate. A resource with no supported price shows as unknown, never as zero." />
                 <TextField label="Cloud provider" placeholder="aws, azure, gcp or custom" {...bind('cost', 'provider')} />
                 <TextField label="Region" placeholder="eu-west-1" {...bind('cost', 'region')} />
-                <TextField label="Currency" hint="A three-letter code, such as USD or GBP." {...bind('cost', 'currency')} />
+                <TextField label="Currency" hint="A three-letter code, such as USD or GBP. An estimate flags a line that is priced in another currency. Vellum converts no currency." {...bind('cost', 'currency')} />
+                <NumberField
+                  label="A price is stale after"
+                  hint="An estimate flags a price that was entered or fetched longer ago than this."
+                  min={1} max={3650} suffix="days"
+                  {...bind('cost', 'stalePriceAfterDays')}
+                />
+                <TextField
+                  label="Azure price API"
+                  hint="The address of the Azure Retail Prices API, or of a mirror. Vellum sends no credential to it. Empty turns the price search off."
+                  placeholder="https://prices.azure.com"
+                  {...bind('cost', 'azureRetailPricesBaseUrl')}
+                />
               </>
             )}
 
@@ -279,13 +293,14 @@ function SettingsPage() {
             )}
 
             {section === 'agents' && <AgentTokens workspaceId={workspaceId} />}
+            {section === 'prices' && <PriceBook workspaceId={workspaceId} currency={data.effective.cost.currency} />}
             {section === 'audit' && <AuditLog workspaceId={workspaceId} />}
             {section === 'instance' && instance.data && <InstancePanel info={instance.data} />}
           </div>
         </main>
       </div>
 
-      {(dirty || save.isError) && section !== 'agents' && section !== 'audit' && section !== 'instance' && (
+      {(dirty || save.isError) && section !== 'prices' && section !== 'agents' && section !== 'audit' && section !== 'instance' && (
         <div role="region" aria-label="Unsaved changes" className="fixed inset-x-0 bottom-0 z-20 border-t border-border bg-card/95 px-4 py-3 backdrop-blur">
           <div className="mx-auto flex max-w-3xl flex-wrap items-center gap-3">
             <p className={cn('min-w-0 flex-1 text-sm', save.isError ? 'text-destructive' : 'text-foreground')} role={save.isError ? 'alert' : undefined}>

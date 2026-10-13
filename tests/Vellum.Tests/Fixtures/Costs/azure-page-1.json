@@ -1,0 +1,88 @@
+{
+  "BillingCurrency": "USD",
+  "CustomerEntityId": "Default",
+  "CustomerEntityType": "Retail",
+  "Items": [
+    {
+      "currencyCode": "USD",
+      "tierMinimumUnits": 0.0,
+      "retailPrice": 0.60386,
+      "unitPrice": 0.60386,
+      "armRegionName": "southindia",
+      "location": "IN South",
+      "effectiveStartDate": "2026-10-01T00:00:00Z",
+      "meterId": "000009d0-057f-5f2b-b7e9-9e26add324a8",
+      "meterName": "D14/DS14 Spot",
+      "productId": "DZH318Z0BPVW",
+      "skuId": "DZH318Z0BPVW/00QZ",
+      "productName": "Virtual Machines D Series Windows",
+      "skuName": "D14 Spot",
+      "serviceName": "Virtual Machines",
+      "serviceId": "DZH313Z7MMC8",
+      "serviceFamily": "Compute",
+      "unitOfMeasure": "1 Hour",
+      "type": "Consumption",
+      "isPrimaryMeterRegion": true,
+      "armSkuName": "Standard_D14"
+    },
+    {
+      "currencyCode": "USD",
+      "tierMinimumUnits": 0.0,
+      "retailPrice": 0.291,
+      "unitPrice": 0.291,
+      "armRegionName": "brazilsouth",
+      "location": "BR South",
+      "effectiveStartDate": "2025-11-01T00:00:00Z",
+      "meterId": "00003b45-e996-5b04-b673-a2db710f9237",
+      "meterName": "D4as v7",
+      "productId": "DZH318Z0TBJJ",
+      "skuId": "DZH318Z0TBJJ/00NL",
+      "productName": "Virtual Machines Dasv7 Series",
+      "skuName": "D4as v7",
+      "serviceName": "Virtual Machines",
+      "serviceId": "DZH313Z7MMC8",
+      "serviceFamily": "Compute",
+      "unitOfMeasure": "1 Hour",
+      "type": "Consumption",
+      "isPrimaryMeterRegion": true,
+      "armSkuName": "Standard_D4as_v7",
+      "savingsPlan": [
+        {
+          "unitPrice": 0.13677,
+          "retailPrice": 0.13677,
+          "term": "3 Years"
+        },
+        {
+          "unitPrice": 0.18333,
+          "retailPrice": 0.18333,
+          "term": "1 Year"
+        }
+      ]
+    },
+    {
+      "currencyCode": "USD",
+      "tierMinimumUnits": 0.0,
+      "reservationTerm": "1 Year",
+      "retailPrice": 622.0,
+      "unitPrice": 622.0,
+      "armRegionName": "westeurope",
+      "location": "EU West",
+      "effectiveStartDate": "2026-06-01T00:00:00Z",
+      "meterId": "0561adcb-1c48-542e-9e0c-10dea22fc392",
+      "meterName": "D2s v5",
+      "productId": "DZH318Z08M9W",
+      "skuId": "DZH318Z08M9W/02JT",
+      "productName": "Virtual Machines Dsv5 Series",
+      "skuName": "Standard_D2s_v5",
+      "serviceName": "Virtual Machines",
+      "serviceId": "DZH313Z7MMC8",
+      "serviceFamily": "Compute",
+      "unitOfMeasure": "1 Hour",
+      "type": "Reservation",
+      "isPrimaryMeterRegion": true,
+      "armSkuName": "Standard_D2s_v5"
+    }
+  ],
+  "NextPageLink": "__NEXT__",
+  "Count": 3
+}

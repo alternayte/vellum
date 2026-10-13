@@ -39,7 +39,7 @@ export interface SettingsDocument {
   }
   github: { apiBaseUrl: string; defaultRef: string }
   import: { maxFiles: number; maxFileBytes: number; maxTotalBytes: number; excludeGlobs: string[] }
-  cost: { provider: string; region: string; currency: string }
+  cost: { provider: string; region: string; currency: string; azureRetailPricesBaseUrl: string; stalePriceAfterDays: number }
   simulation: { seed: number; durationSeconds: number; arrivalRatePerSecond: number }
   privacy: { sendPrivateCodeToAi: boolean }
   usage: { monthlyAiBudgetUsd: number | null; maxScansPerDay: number }

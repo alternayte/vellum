@@ -1,6 +1,6 @@
 import { type ReactNode, useEffect } from 'react'
 import { useShellStore, type Flyout } from '@/stores/shell-store'
-import { FileText, Plus, LayoutGrid, Search, Cable, Route, GitPullRequestArrow, Sparkles, ShieldCheck, PackageOpen, Gauge } from 'lucide-react'
+import { FileText, Plus, LayoutGrid, Search, Cable, Route, GitPullRequestArrow, Sparkles, ShieldCheck, PackageOpen, Gauge, Coins } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface LeftToolbarProps {
@@ -18,6 +18,7 @@ const toolbarItems: { flyout: Flyout; label: string; icon: typeof FileText }[] =
   { flyout: 'promises', label: 'Promises', icon: ShieldCheck },
   { flyout: 'build', label: 'Build', icon: PackageOpen },
   { flyout: 'stress', label: 'Stress', icon: Gauge },
+  { flyout: 'costs', label: 'Costs', icon: Coins },
   { flyout: 'search', label: 'Search', icon: Search },
 ]
 

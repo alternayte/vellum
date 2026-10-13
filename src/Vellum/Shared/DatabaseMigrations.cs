@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using Vellum.Modules.Ai.Design;
 using Vellum.Modules.Ai.Usage;
+using Vellum.Modules.Costs;
 using Vellum.Modules.Docs;
 using Vellum.Modules.Drafts;
 using Vellum.Modules.Identity;
@@ -48,6 +49,7 @@ public static class DatabaseMigrations
         ("ai-design", typeof(AiDesignDbContext)),
         ("promises", typeof(PromisesDbContext)),
         ("stress", typeof(StressDbContext)),
+        ("costs", typeof(CostsDbContext)),
     ];
 
     public static async Task ApplyAsync(IServiceProvider services, string connectionString, CancellationToken ct = default)

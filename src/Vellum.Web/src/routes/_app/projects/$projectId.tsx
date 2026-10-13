@@ -19,6 +19,7 @@ import { AssistantFlyout } from '@/components/assistant/assistant-flyout'
 import { PromisesFlyout } from '@/components/promises/promises-flyout'
 import { BuildFlyout } from '@/components/build/build-flyout'
 import { StressFlyout } from '@/components/stress/stress-flyout'
+import { CostsFlyout } from '@/components/costs/costs-flyout'
 import { useRunScenario, useScenarios } from '@/hooks/use-scenarios'
 import { useTraceStore } from '@/stores/trace-store'
 import type { ScenarioReference } from '@/components/trace/scenario-editor'
@@ -639,6 +640,7 @@ function ProjectWorkspace() {
           {activeFlyout === 'promises' && <PromisesFlyout projectId={projectId} references={scenarioReferences} scenarios={scenarioList ?? []} />}
           {activeFlyout === 'build' && <BuildFlyout projectId={projectId} />}
           {activeFlyout === 'stress' && <StressFlyout projectId={projectId} branchId={contractBranchId} scenarios={scenarioList ?? []} />}
+          {activeFlyout === 'costs' && <CostsFlyout projectId={projectId} branchId={contractBranchId} references={scenarioReferences} />}
           {activeFlyout === 'assistant' && (
             <AssistantFlyout
               projectId={projectId}

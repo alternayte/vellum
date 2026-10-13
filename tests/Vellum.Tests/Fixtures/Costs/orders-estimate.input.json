@@ -1,0 +1,322 @@
+{
+  "resources": [
+    {
+      "id": "a0000000-0000-0000-0000-000000000001",
+      "elementId": "e1000000-0000-0000-0000-000000000001",
+      "name": "API instances",
+      "category": "compute",
+      "provider": "azure",
+      "region": "westeurope",
+      "sku": "",
+      "quantity": 2,
+      "unit": "instances",
+      "priceRef": "d0000000-0000-0000-0000-000000000001",
+      "usage": [
+        {
+          "id": "b0000000-0000-0000-0000-000000000001",
+          "name": "Egress",
+          "assumptionId": "c0000000-0000-0000-0000-000000000001",
+          "priceRef": "d0000000-0000-0000-0000-000000000004"
+        }
+      ],
+      "factStatus": "declared",
+      "provenance": null
+    },
+    {
+      "id": "a0000000-0000-0000-0000-000000000002",
+      "elementId": "e1000000-0000-0000-0000-000000000002",
+      "name": "Orders DB storage",
+      "category": "database",
+      "provider": "azure",
+      "region": "westeurope",
+      "sku": "",
+      "quantity": 50,
+      "unit": "GB",
+      "priceRef": "d0000000-0000-0000-0000-000000000002",
+      "usage": [],
+      "factStatus": "declared",
+      "provenance": null
+    },
+    {
+      "id": "a0000000-0000-0000-0000-000000000003",
+      "elementId": "e1000000-0000-0000-0000-000000000002",
+      "name": "Orders DB server",
+      "category": "database",
+      "provider": "custom",
+      "region": "westeurope",
+      "sku": "",
+      "quantity": 730,
+      "unit": "hours",
+      "priceRef": "d0000000-0000-0000-0000-000000000003",
+      "usage": [],
+      "factStatus": "declared",
+      "provenance": null
+    },
+    {
+      "id": "a0000000-0000-0000-0000-000000000004",
+      "elementId": "e1000000-0000-0000-0000-000000000003",
+      "name": "Broker",
+      "category": "queue",
+      "provider": "aws",
+      "region": "westeurope",
+      "sku": "",
+      "quantity": null,
+      "unit": null,
+      "priceRef": null,
+      "usage": [
+        {
+          "id": "b0000000-0000-0000-0000-000000000002",
+          "name": "Messages",
+          "assumptionId": "c0000000-0000-0000-0000-000000000002",
+          "priceRef": "d0000000-0000-0000-0000-000000000005"
+        },
+        {
+          "id": "b0000000-0000-0000-0000-000000000003",
+          "name": "Requests",
+          "assumptionId": "c0000000-0000-0000-0000-000000000009",
+          "priceRef": "d0000000-0000-0000-0000-000000000005"
+        },
+        {
+          "id": "b0000000-0000-0000-0000-000000000004",
+          "name": "Planned traffic",
+          "assumptionId": "c0000000-0000-0000-0000-000000000003",
+          "priceRef": "d0000000-0000-0000-0000-000000000005"
+        }
+      ],
+      "factStatus": "declared",
+      "provenance": null
+    },
+    {
+      "id": "a0000000-0000-0000-0000-000000000005",
+      "elementId": "e1000000-0000-0000-0000-000000000002",
+      "name": "Backups",
+      "category": "storage",
+      "provider": "gcp",
+      "region": "westeurope",
+      "sku": "",
+      "quantity": 200,
+      "unit": "GB",
+      "priceRef": null,
+      "usage": [],
+      "factStatus": "declared",
+      "provenance": null
+    },
+    {
+      "id": "a0000000-0000-0000-0000-000000000006",
+      "elementId": "e1000000-0000-0000-0000-000000000001",
+      "name": "Cache",
+      "category": "compute",
+      "provider": "azure",
+      "region": "westeurope",
+      "sku": "",
+      "quantity": 1,
+      "unit": "instances",
+      "priceRef": "d0000000-0000-0000-0000-000000000006",
+      "usage": [],
+      "factStatus": "declared",
+      "provenance": null
+    },
+    {
+      "id": "a0000000-0000-0000-0000-000000000007",
+      "elementId": "e1000000-0000-0000-0000-000000000001",
+      "name": "Log volume",
+      "category": "storage",
+      "provider": "azure",
+      "region": "westeurope",
+      "sku": "",
+      "quantity": 30,
+      "unit": "GB",
+      "priceRef": "d0000000-0000-0000-0000-000000000001",
+      "usage": [],
+      "factStatus": "declared",
+      "provenance": null
+    },
+    {
+      "id": "a0000000-0000-0000-0000-000000000008",
+      "elementId": "e1000000-0000-0000-0000-000000000001",
+      "name": "CDN",
+      "category": "egress",
+      "provider": "aws",
+      "region": "westeurope",
+      "sku": "",
+      "quantity": 10,
+      "unit": "GB",
+      "priceRef": "d0000000-0000-0000-0000-000000000099",
+      "usage": [],
+      "factStatus": "declared",
+      "provenance": null
+    },
+    {
+      "id": "a0000000-0000-0000-0000-000000000009",
+      "elementId": "e1000000-0000-0000-0000-000000000001",
+      "name": "Next year",
+      "category": "compute",
+      "provider": "azure",
+      "region": "westeurope",
+      "sku": "",
+      "quantity": 1,
+      "unit": "instance",
+      "priceRef": "d0000000-0000-0000-0000-000000000007",
+      "usage": [],
+      "factStatus": "declared",
+      "provenance": null
+    },
+    {
+      "id": "a0000000-0000-0000-0000-000000000010",
+      "elementId": "e1000000-0000-0000-0000-000000000002",
+      "name": "Disks",
+      "category": "storage",
+      "provider": "custom",
+      "region": "westeurope",
+      "sku": "",
+      "quantity": 3,
+      "unit": "disks",
+      "priceRef": "d0000000-0000-0000-0000-000000000008",
+      "usage": [],
+      "factStatus": "declared",
+      "provenance": null
+    },
+    {
+      "id": "a0000000-0000-0000-0000-000000000011",
+      "elementId": "e1000000-0000-0000-0000-000000000001",
+      "name": "Nightly job",
+      "category": "compute",
+      "provider": "azure",
+      "region": "westeurope",
+      "sku": "",
+      "quantity": 2,
+      "unit": "hours/day",
+      "priceRef": "d0000000-0000-0000-0000-000000000001",
+      "usage": [],
+      "factStatus": "inferred",
+      "provenance": null
+    },
+    {
+      "id": "a0000000-0000-0000-0000-000000000012",
+      "elementId": "e1000000-0000-0000-0000-000000000003",
+      "name": "Placeholder",
+      "category": "other",
+      "provider": "custom",
+      "region": "westeurope",
+      "sku": "",
+      "quantity": null,
+      "unit": null,
+      "priceRef": null,
+      "usage": [],
+      "factStatus": "declared",
+      "provenance": null
+    }
+  ],
+  "assumptions": [
+    {
+      "id": "c0000000-0000-0000-0000-000000000001",
+      "name": "Egress to clients",
+      "kind": "egress",
+      "subjectId": "e1000000-0000-0000-0000-000000000001",
+      "value": 500,
+      "unit": "GB/month",
+      "label": "declared",
+      "source": null,
+      "effectiveDate": "2026-01-01"
+    },
+    {
+      "id": "c0000000-0000-0000-0000-000000000002",
+      "name": "Order events",
+      "kind": "messages",
+      "subjectId": null,
+      "value": 12000000,
+      "unit": "messages/month",
+      "label": "measured",
+      "source": "grafana: orders-events, September 2026",
+      "effectiveDate": "2026-10-01"
+    },
+    {
+      "id": "c0000000-0000-0000-0000-000000000003",
+      "name": "Traffic after launch",
+      "kind": "messages",
+      "subjectId": null,
+      "value": 90000000,
+      "unit": "messages/month",
+      "label": "inferred",
+      "source": "launch plan",
+      "effectiveDate": "2027-01-01"
+    }
+  ],
+  "prices": {
+    "d0000000-0000-0000-0000-000000000001": {
+      "id": "d0000000-0000-0000-0000-000000000001",
+      "unit": "1 Hour",
+      "unitPrice": 0.115,
+      "currency": "USD",
+      "effectiveDate": "2021-11-01",
+      "source": "fetched",
+      "observedOn": "2026-10-01"
+    },
+    "d0000000-0000-0000-0000-000000000002": {
+      "id": "d0000000-0000-0000-0000-000000000002",
+      "unit": "1 GB/Month",
+      "unitPrice": 0.017247,
+      "currency": "EUR",
+      "effectiveDate": "2017-02-03",
+      "source": "fetched",
+      "observedOn": "2026-10-01"
+    },
+    "d0000000-0000-0000-0000-000000000003": {
+      "id": "d0000000-0000-0000-0000-000000000003",
+      "unit": "hour",
+      "unitPrice": 0.25,
+      "currency": "USD",
+      "effectiveDate": "2026-01-01",
+      "source": "custom",
+      "observedOn": "2026-01-05"
+    },
+    "d0000000-0000-0000-0000-000000000004": {
+      "id": "d0000000-0000-0000-0000-000000000004",
+      "unit": "1 GB",
+      "unitPrice": 0.08,
+      "currency": "USD",
+      "effectiveDate": "2026-09-01",
+      "source": "custom",
+      "observedOn": "2026-09-01"
+    },
+    "d0000000-0000-0000-0000-000000000005": {
+      "id": "d0000000-0000-0000-0000-000000000005",
+      "unit": "1000000 messages",
+      "unitPrice": 0.4,
+      "currency": "USD",
+      "effectiveDate": "2026-09-01",
+      "source": "custom",
+      "observedOn": "2026-09-01"
+    },
+    "d0000000-0000-0000-0000-000000000006": {
+      "id": "d0000000-0000-0000-0000-000000000006",
+      "unit": "10K",
+      "unitPrice": 0.02,
+      "currency": "USD",
+      "effectiveDate": "2026-09-01",
+      "source": "fetched",
+      "observedOn": "2026-10-01"
+    },
+    "d0000000-0000-0000-0000-000000000007": {
+      "id": "d0000000-0000-0000-0000-000000000007",
+      "unit": "1 Hour",
+      "unitPrice": 0.2,
+      "currency": "USD",
+      "effectiveDate": "2027-01-01",
+      "source": "custom",
+      "observedOn": "2026-10-01"
+    },
+    "d0000000-0000-0000-0000-000000000008": {
+      "id": "d0000000-0000-0000-0000-000000000008",
+      "unit": "disk/hour",
+      "unitPrice": 0.01,
+      "currency": "USD",
+      "effectiveDate": "2026-09-01",
+      "source": "custom",
+      "observedOn": "2026-09-01"
+    }
+  },
+  "asOf": "2026-10-13",
+  "currency": "USD",
+  "staleAfterDays": 90
+}

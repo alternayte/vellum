@@ -40,7 +40,17 @@ public sealed record TaskRouting(Guid? InferArchitecture, Guid? ProposeFlow, Gui
 
 public sealed record GithubSettings(string ApiBaseUrl, string DefaultRef);
 public sealed record ImportSettings(int MaxFiles, long MaxFileBytes, long MaxTotalBytes, IReadOnlyList<string> ExcludeGlobs);
-public sealed record CostSettings(string Provider, string Region, string Currency);
+/// <param name="AzureRetailPricesBaseUrl">
+/// The address of the Azure Retail Prices API, or of a mirror of it. Empty turns the price
+/// search off. No credential is sent to it.
+/// </param>
+/// <param name="StalePriceAfterDays">An estimate flags a price that was entered or fetched more than this many days before its date.</param>
+public sealed record CostSettings(
+    string Provider, string Region, string Currency,
+    string AzureRetailPricesBaseUrl = CostSettings.AzureRetailPrices, int StalePriceAfterDays = 90)
+{
+    public const string AzureRetailPrices = "https://prices.azure.com";
+}
 public sealed record SimulationSettings(int Seed, int DurationSeconds, double ArrivalRatePerSecond);
 public sealed record PrivacySettings(bool SendPrivateCodeToAi);
 public sealed record UsageSettings(decimal? MonthlyAiBudgetUsd, int MaxScansPerDay);
@@ -186,7 +196,7 @@ public static class SettingsJson
 
     private static bool IsUrlField(string path) =>
         path.EndsWith("apiBaseUrl", StringComparison.Ordinal) || path.EndsWith("baseUrl", StringComparison.Ordinal)
-        || path.EndsWith("webhookUrl", StringComparison.Ordinal);
+        || path.EndsWith("webhookUrl", StringComparison.Ordinal) || path.EndsWith("azureRetailPricesBaseUrl", StringComparison.Ordinal);
 
     /// <summary>
     /// The paths of the values that differ between two documents, for the audit log. A path
