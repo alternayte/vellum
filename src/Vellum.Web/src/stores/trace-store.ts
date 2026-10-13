@@ -5,12 +5,14 @@ export const TRACE_SPEEDS = [0.5, 1, 2, 4] as const
 
 interface TraceState {
   run: TraceRun | null
+  /** The stored scenario this run came from, when it came from one. */
+  scenarioId: string | null
   /** Index of the current event; -1 is the moment before the first one. */
   cursor: number
   playing: boolean
   speed: number
 
-  load: (run: TraceRun) => void
+  load: (run: TraceRun, scenarioId?: string) => void
   close: () => void
   play: () => void
   pause: () => void
@@ -21,12 +23,13 @@ interface TraceState {
 
 export const useTraceStore = create<TraceState>((set, get) => ({
   run: null,
+  scenarioId: null,
   cursor: -1,
   playing: false,
   speed: 1,
 
-  load: (run) => set({ run, cursor: -1, playing: false }),
-  close: () => set({ run: null, cursor: -1, playing: false }),
+  load: (run, scenarioId) => set({ run, scenarioId: scenarioId ?? null, cursor: -1, playing: false }),
+  close: () => set({ run: null, scenarioId: null, cursor: -1, playing: false }),
 
   play: () => {
     const { run, cursor } = get()
