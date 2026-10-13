@@ -7,10 +7,10 @@ This guide shows you how to start Vellum with the hosted profile. The hosted pro
 
 ## Know the status first
 
-The hosted profile exists in the code. It is not ready for use.
+The hosted profile has limited evidence. Read these limits before you use it.
 
-- The automated tests exercise the hosted profile. Nobody has run the hosted profile in a container.
-- The isolation between the workspaces of different tenants has no test.
+- The automated tests exercise the hosted profile. One manual run used `docker-compose.hosted.example.yml` on one machine, with the `X-Forwarded-Proto` header set by hand in place of a reverse proxy that ends TLS. No run used a real reverse proxy or a real certificate.
+- In that run, a user of one workspace sent 18 requests for the projects, settings, secrets, agent tokens, exports and MCP tools of another workspace. Each request got `403` or "Project not found". The automated tests cover isolation for each module; no test covers every endpoint.
 - The automated tests run the sign-in with GitHub against a stand-in for GitHub, not against GitHub itself. Sign-in with Google has no test.
 
 Use the local profile for real work. [Local and hosted profiles](/concepts/local-and-hosted-profiles/) explains the difference.
