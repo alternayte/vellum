@@ -57,7 +57,7 @@ public class ProjectionRebuildTests
         using var factory = CreateFactory();
         using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = true, AllowAutoRedirect = false });
         await client.PostAsJsonAsync("/api/auth/register",
-            new { email = $"test-{Guid.NewGuid():N}@vellum.local", password = "Test123!", displayName = "Test User" });
+            new { email = $"test-{Guid.NewGuid():N}@vellum.local", password = "Test12345!", displayName = "Test User" });
 
         var workspaceId = Guid.NewGuid();
         await client.PostAsJsonAsync("/api/workspaces", new { id = workspaceId, name = "Test WS" });
@@ -122,7 +122,7 @@ public class ProjectionRebuildTests
         using var factory = CreateFactory();
         using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = true, AllowAutoRedirect = false });
         await client.PostAsJsonAsync("/api/auth/register",
-            new { email = $"test-{Guid.NewGuid():N}@vellum.local", password = "Test123!", displayName = "Test User" });
+            new { email = $"test-{Guid.NewGuid():N}@vellum.local", password = "Test12345!", displayName = "Test User" });
 
         var workspaceId = Guid.NewGuid();
         await client.PostAsJsonAsync("/api/workspaces", new { id = workspaceId, name = "Test WS" });

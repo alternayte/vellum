@@ -23,7 +23,7 @@ RUN dotnet publish src/Vellum/Vellum.csproj -c Release -o /app --no-restore
 FROM mcr.microsoft.com/dotnet/aspnet:10.0
 WORKDIR /app
 COPY --from=api /app ./
-# The local profile writes its generated master key here. The non-root app user owns the
+# The local profile writes its generated master key and its setup code here. The non-root app user owns the
 # directory, and a volume mounted on it starts with the same owner.
 RUN mkdir -p /data && chown $APP_UID /data && chmod 700 /data
 ENV ASPNETCORE_HTTP_PORTS=8080 \
@@ -31,4 +31,7 @@ ENV ASPNETCORE_HTTP_PORTS=8080 \
 VOLUME /data
 EXPOSE 8080
 USER $APP_UID
+# The image has no HTTP client program, so the app asks itself: `Vellum.dll health` calls
+# /health on this machine and exits 0 when the app reaches its database.
+HEALTHCHECK --interval=15s --timeout=6s --start-period=40s --retries=5 CMD ["dotnet", "Vellum.dll", "health"]
 ENTRYPOINT ["dotnet", "Vellum.dll"]

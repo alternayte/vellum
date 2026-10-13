@@ -190,7 +190,7 @@ public sealed class OutboundHost : IDisposable
 
     internal static async Task PutSettingsAsync(HttpClient owner, Guid workspaceId, JsonObject overrides)
     {
-        var response = await owner.PutAsync($"/api/workspaces/{workspaceId}/settings",
+        var response = await owner.PutSettingsAsync($"/api/workspaces/{workspaceId}/settings",
             new StringContent(overrides.ToJsonString(), Encoding.UTF8, "application/json"));
         Assert.True(response.IsSuccessStatusCode, await response.Content.ReadAsStringAsync());
     }

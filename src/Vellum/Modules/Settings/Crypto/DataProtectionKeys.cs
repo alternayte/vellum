@@ -41,6 +41,14 @@ internal static class DataProtectionEnvelope
         return changed ? document.ToString(SaveOptions.DisableFormatting) : null;
     }
 
+    /// <summary>The master keys that the envelopes in a stored key document are wrapped with.</summary>
+    public static IReadOnlyList<string> MasterKeyIds(string storedXml) =>
+        XElement.Parse(storedXml).DescendantsAndSelf(Element)
+            .Select(e => (string?)e.Attribute("masterKeyId"))
+            .OfType<string>()
+            .Distinct()
+            .ToList();
+
     private static XElement ToXml(SealedValue value) => new(Element,
         new XAttribute("masterKeyId", value.MasterKeyId),
         new XElement("wrapNonce", Convert.ToBase64String(value.WrapNonce)),

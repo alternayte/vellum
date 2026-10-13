@@ -3396,6 +3396,26 @@
           "required": true
         },
         "responses": {
+          "413": {
+            "description": "Payload Too Large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "201": {
             "description": "Created",
             "content": {
@@ -3484,7 +3504,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/UpdateInstanceSettingsRequest"
+                "$ref": "#/components/schemas/JsonElement"
               }
             }
           },
@@ -3507,6 +3527,72 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Payload Too Large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "Precondition Required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/instance/audit": {
+      "get": {
+        "tags": [
+          "Instance"
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "pattern": "^-?(?:0|[1-9]\\d*)$",
+              "type": [
+                "integer",
+                "string"
+              ],
+              "format": "int32"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AuditEntryDto"
+                  }
                 }
               }
             }
@@ -3636,6 +3722,36 @@
                 }
               }
             }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Payload Too Large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "428": {
+            "description": "Precondition Required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -3708,6 +3824,16 @@
           "required": true
         },
         "responses": {
+          "413": {
+            "description": "Payload Too Large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
           "204": {
             "description": "No Content"
           },
@@ -4953,7 +5079,8 @@
           "migrations",
           "eventStore",
           "masterKeyId",
-          "previousMasterKeyLoaded"
+          "previousMasterKeyLoaded",
+          "masterKeysInUse"
         ],
         "type": "object",
         "properties": {
@@ -4980,6 +5107,12 @@
           },
           "previousMasterKeyLoaded": {
             "type": "boolean"
+          },
+          "masterKeysInUse": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/MasterKeyInUse"
+            }
           }
         }
       },
@@ -5291,7 +5424,9 @@
       "InstanceSettingsResponse": {
         "required": [
           "policy",
-          "defaults"
+          "defaults",
+          "version",
+          "workspacesWithPolicyViolations"
         ],
         "type": "object",
         "properties": {
@@ -5300,6 +5435,22 @@
           },
           "defaults": {
             "$ref": "#/components/schemas/SettingsDocument"
+          },
+          "version": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "workspacesWithPolicyViolations": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
           }
         }
       },
@@ -5335,6 +5486,43 @@
           },
           "password": {
             "type": "string"
+          }
+        }
+      },
+      "MasterKeyInUse": {
+        "required": [
+          "masterKeyId",
+          "secrets",
+          "dataProtectionKeys",
+          "isCurrent",
+          "isLoaded"
+        ],
+        "type": "object",
+        "properties": {
+          "masterKeyId": {
+            "type": "string"
+          },
+          "secrets": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "dataProtectionKeys": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "isCurrent": {
+            "type": "boolean"
+          },
+          "isLoaded": {
+            "type": "boolean"
           }
         }
       },
@@ -5592,6 +5780,21 @@
           }
         }
       },
+      "PolicyViolation": {
+        "required": [
+          "field",
+          "message"
+        ],
+        "type": "object",
+        "properties": {
+          "field": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        }
+      },
       "PrivacySettings": {
         "required": [
           "sendPrivateCodeToAi"
@@ -5730,7 +5933,9 @@
       },
       "RotateKeysResponse": {
         "required": [
-          "rewrapped"
+          "rewrapped",
+          "remaining",
+          "message"
         ],
         "type": "object",
         "properties": {
@@ -5741,6 +5946,17 @@
               "string"
             ],
             "format": "int32"
+          },
+          "remaining": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "message": {
+            "type": "string"
           }
         }
       },
@@ -5979,7 +6195,9 @@
           "isSet",
           "updatedAt",
           "updatedBy",
-          "fingerprint"
+          "fingerprint",
+          "boundOrigin",
+          "matchesCurrentUrl"
         ],
         "type": "object",
         "properties": {
@@ -6007,6 +6225,15 @@
               "null",
               "string"
             ]
+          },
+          "boundOrigin": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "matchesCurrentUrl": {
+            "type": "boolean"
           }
         }
       },
@@ -6174,7 +6401,8 @@
         "required": [
           "needsSetup",
           "profile",
-          "requiresSetupToken"
+          "requiresSetupToken",
+          "setupTokenHint"
         ],
         "type": "object",
         "properties": {
@@ -6186,6 +6414,12 @@
           },
           "requiresSetupToken": {
             "type": "boolean"
+          },
+          "setupTokenHint": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -6910,28 +7144,6 @@
           }
         }
       },
-      "UpdateInstanceSettingsRequest": {
-        "required": [
-          "policy",
-          "defaults"
-        ],
-        "type": "object",
-        "properties": {
-          "policy": {
-            "oneOf": [
-              {
-                "type": "null"
-              },
-              {
-                "$ref": "#/components/schemas/InstancePolicy"
-              }
-            ]
-          },
-          "defaults": {
-            "$ref": "#/components/schemas/JsonElement"
-          }
-        }
-      },
       "UpdateMessageRequest": {
         "required": [
           "name",
@@ -7426,7 +7638,9 @@
         "required": [
           "effective",
           "overrides",
-          "defaults"
+          "defaults",
+          "policyViolations",
+          "version"
         ],
         "type": "object",
         "properties": {
@@ -7438,6 +7652,20 @@
           },
           "defaults": {
             "$ref": "#/components/schemas/SettingsDocument"
+          },
+          "policyViolations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PolicyViolation"
+            }
+          },
+          "version": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
           }
         }
       }

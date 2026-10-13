@@ -181,7 +181,7 @@ public sealed class AiClient(
         if (!instance.Policy.AllowedAiProviderKinds.Contains(provider.Kind))
             return Fail("disabled_by_policy", $"The instance policy does not allow the provider kind '{provider.Kind}'.");
 
-        var (route, unroutable) = await TargetAsync(workspaceId, provider, instance.Policy, workspace.Effective.Usage.MonthlyAiBudgetUsd, ct);
+        var (route, unroutable) = await TargetAsync(workspaceId, provider, instance.Policy, workspace, ct);
         if (route is null)
         {
             return unroutable is AiFailure.ProviderError error
@@ -271,7 +271,7 @@ public sealed class AiClient(
         if (!provider.Enabled)
             return (null, new AiFailure.Disabled());
 
-        return await TargetAsync(workspaceId, provider, instance.Policy, workspace.Effective.Usage.MonthlyAiBudgetUsd, ct);
+        return await TargetAsync(workspaceId, provider, instance.Policy, workspace, ct);
     }
 
     private static Guid? StoredRoute(WorkspaceSettings workspace, AiTask task)
@@ -291,22 +291,42 @@ public sealed class AiClient(
     }
 
     private async Task<(Route? Route, AiFailure? Failure)> TargetAsync(
-        Guid workspaceId, AiProviderSettings provider, InstancePolicy policy, decimal? workspaceBudget, CancellationToken ct)
+        Guid workspaceId, AiProviderSettings provider, InstancePolicy policy, WorkspaceSettings workspace, CancellationToken ct)
     {
         var adapter = services.GetServices<IAiProviderAdapter>().FirstOrDefault(a => a.Kind == provider.Kind);
         if (adapter is null || string.IsNullOrWhiteSpace(provider.Model))
             return (null, new AiFailure.NotConfigured());
 
-        var baseUrl = provider.BaseUrl.Length == 0
-            ? adapter.DefaultBaseUrl
-            : Uri.TryCreate(provider.BaseUrl, UriKind.Absolute, out var parsed) ? parsed : null;
-        if (baseUrl is null)
-            return (null, new AiFailure.NotConfigured());
+        // The settings module decides the destination: it applies the instance policy and
+        // gives the origin the stored key is bound to. The call goes to that URL and no other.
+        Uri baseUrl;
+        switch (workspace.ProviderBaseUrl(provider.Id))
+        {
+            case SettingsUrl.Usable usable:
+                baseUrl = usable.Url;
+                break;
+            case SettingsUrl.BlockedByPolicy blocked:
+                return (null, new AiFailure.ProviderError("url_refused", blocked.Message));
+            default:
+                return (null, new AiFailure.NotConfigured());
+        }
 
         string? apiKey;
         try
         {
-            apiKey = await secrets.GetAsync(workspaceId, SecretNames.AiApiKey(provider.Id), ct);
+            switch (await secrets.ReadAsync(workspaceId, SecretNames.AiApiKey(provider.Id), baseUrl, ct))
+            {
+                case SecretRead.Found found:
+                    apiKey = found.Value;
+                    break;
+                case SecretRead.SavedForAnotherHost other:
+                    // A key never follows a changed base URL to a new host.
+                    return (null, new AiFailure.ProviderError("key_saved_for_another_host",
+                        $"The API key was saved for {other.BoundOrigin ?? "another host"}. Enter it again to use it with {other.RequestedOrigin}."));
+                default:
+                    apiKey = null;
+                    break;
+            }
         }
         catch (SecretUnavailableException)
         {
@@ -320,7 +340,7 @@ public sealed class AiClient(
         var target = new ProviderTarget(
             provider.Id, provider.Kind, provider.Model, baseUrl, apiKey is null ? null : adapter.Credential(apiKey),
             policy.AllowPrivateNetworkUrls, TimeSpan.FromSeconds(provider.TimeoutSeconds), provider.Temperature);
-        return (new Route(provider, adapter, target, workspaceBudget), null);
+        return (new Route(provider, adapter, target, workspace.Effective.Usage.MonthlyAiBudgetUsd), null);
     }
 
     private static CallStart Start(

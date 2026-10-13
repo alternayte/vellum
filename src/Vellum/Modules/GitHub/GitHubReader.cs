@@ -71,18 +71,31 @@ public sealed class GitHubReader(IServiceProvider services, SettingsResolver set
         var workspace = await settings.GetWorkspaceAsync(workspaceId, ct);
         var instance = await settings.GetInstanceAsync(ct);
 
+        // The settings module applies the instance policy and names the origin the token
+        // is bound to. A token saved for another host is never sent.
+        if (workspace.GithubApiBaseUrl is not SettingsUrl.Usable destination)
+            return new GitHubFailure.Unavailable("url_refused");
+        var baseUrl = destination.Url;
+
         string? token;
         try
         {
-            token = await secrets.GetAsync(workspaceId, SecretNames.GithubToken, ct);
+            switch (await secrets.ReadAsync(workspaceId, SecretNames.GithubToken, baseUrl, ct))
+            {
+                case SecretRead.Found found:
+                    token = found.Value;
+                    break;
+                case SecretRead.SavedForAnotherHost:
+                    return new GitHubFailure.Unavailable("token_saved_for_another_host");
+                default:
+                    token = null;
+                    break;
+            }
         }
         catch (SecretUnavailableException)
         {
             return new GitHubFailure.Unavailable("secret_unavailable");
         }
-
-        if (!Uri.TryCreate(workspace.Effective.Github.ApiBaseUrl, UriKind.Absolute, out var baseUrl))
-            return new GitHubFailure.Unavailable("url_refused");
 
         return new GitHubConnection(
             services.GetRequiredService<IGitHubApi>(), baseUrl, instance.Policy.AllowPrivateNetworkUrls,

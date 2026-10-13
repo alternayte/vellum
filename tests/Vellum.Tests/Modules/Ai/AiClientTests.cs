@@ -59,7 +59,7 @@ public class AiClientTests(SharedOutboundHost shared) : IClassFixture<SharedOutb
         stricter["policy"]!["allowedAiProviderKinds"] = new JsonArray("openai", "anthropic", "openai-compatible");
         try
         {
-            Assert.True((await admin.PutAsJsonAsync("/api/instance/settings", stricter)).IsSuccessStatusCode);
+            Assert.True((await admin.PutInstanceSettingsAsync(stricter)).IsSuccessStatusCode);
 
             Assert.IsType<AiFailure.Disabled>(FailureOf(await ai.StructuredAsync()));
             Assert.Empty(ai.Stub.Requests);
@@ -72,7 +72,7 @@ public class AiClientTests(SharedOutboundHost shared) : IClassFixture<SharedOutb
         }
         finally
         {
-            Assert.True((await admin.PutAsJsonAsync("/api/instance/settings", before)).IsSuccessStatusCode);
+            Assert.True((await admin.PutInstanceSettingsAsync(before)).IsSuccessStatusCode);
         }
     }
 

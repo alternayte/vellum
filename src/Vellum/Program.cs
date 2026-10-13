@@ -21,6 +21,8 @@ using Vellum.Modules.Drafts;
 using Vellum.Modules.Schemas;
 using Vellum.Modules.Scoring;
 using Vellum.Modules.Settings;
+using Vellum.Modules.Settings.Crypto;
+using Vellum.Modules.Settings.Instance;
 using Vellum.Modules.Settings.Entities;
 using Vellum.Modules.Settings.Setup;
 using Vellum.Modules.Trace.Scenarios;
@@ -28,7 +30,28 @@ using Vellum.Modules.Views;
 using Vellum.Modules.Workspaces;
 using Vellum.Modules.Workspaces.Entities;
 
+// A start that is refused must end the process. As process 1 of a container, a process that
+// dies of an unhandled exception does not end: the runtime aborts, and the kernel ignores
+// that signal for process 1. So the process writes the reason and exits by itself. A test
+// host runs this file inside the test process, which keeps its own handling.
+if (Assembly.GetEntryAssembly() == typeof(Program).Assembly)
+{
+    AppDomain.CurrentDomain.UnhandledException += (_, unhandled) =>
+    {
+        Console.Error.WriteLine(unhandled.ExceptionObject is BootstrapException refusal
+            ? $"Vellum did not start. {refusal.Message}"
+            : $"Vellum stopped on an error. {unhandled.ExceptionObject}");
+        Environment.Exit(1);
+    };
+}
+
 var builder = WebApplication.CreateBuilder(args);
+
+// Maintenance commands. They read the configuration, do one thing and end; no host starts.
+if (KeysCommand.Matches(args))
+    return await KeysCommand.RunAsync(args, builder.Configuration, Console.Out);
+if (args is ["health"])
+    return await HealthCommand.RunAsync(builder.Configuration, Console.Error);
 
 // OpenAPI
 builder.Services.AddOpenApi(options => options.AddSchemaTransformer((schema, context, _) =>
@@ -48,6 +71,7 @@ builder.Services.AddOpenApi(options => options.AddSchemaTransformer((schema, con
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<UnauthorizedExceptionHandler>();
 builder.Services.AddExceptionHandler<ConcurrencyExceptionHandler>();
+builder.Services.AddRequestLimits();
 
 // Event store. Each module registers its own streams and projections. The connection
 // string is read when the host starts, so configuration that a test host overrides applies.
@@ -108,6 +132,8 @@ if (app.Environment.IsDevelopment())
 app.UseExceptionHandler();
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseRateLimiter();
+app.UseBodyLimits();
 app.UseRequestBodyLimits();
 
 // Every event a request appends records who caused it and which request it belongs to.
@@ -151,7 +177,19 @@ if (!generatingOpenApi && app.Configuration.GetValue("Database:MigrateOnStartup"
 }
 
 if (!generatingOpenApi)
-    await SetupState.RefuseOpenHostedSetupAsync(app.Services);
+{
+    // Fail closed on a wrong master key, in both profiles, before anything is read, signed
+    // or written with it.
+    var bootstrap = app.Services.GetRequiredService<Bootstrap>();
+    MasterKeyGuard.EnsureLoaded(bootstrap.Keys,
+        await KeyInventory.ReadAsync(app.Configuration.GetConnectionString("DefaultConnection")!));
+    if (bootstrap.UnusedKeyFile is { } unusedKeyFile)
+        app.Logger.LogWarning(
+            "The key file {Path} is not used, because the environment gives the master key. Keep it only as a backup of an old key.",
+            unusedKeyFile);
+
+    await SetupState.PrepareAsync(app.Services);
+}
 
 if (app.Environment.IsDevelopment())
 {
@@ -176,7 +214,7 @@ if (app.Environment.IsDevelopment())
                 Email = "dev@vellum.local",
                 DisplayName = "Dev User"
             };
-            var seedResult = await userManager.CreateAsync(devUser, "Dev123!");
+            var seedResult = await userManager.CreateAsync(devUser, "DevPassword123!");
             if (!seedResult.Succeeded)
                 throw new InvalidOperationException(
                     $"Failed to create dev user: {string.Join(", ", seedResult.Errors.Select(e => e.Description))}");
@@ -236,13 +274,14 @@ if (app.Environment.IsDevelopment())
         }
 
         Console.WriteLine("Dev seed complete.");
-        return;
+        return 0;
     }
 }
 
 app.UseStaticFiles();
 app.MapFallbackToFile("index.html");
 
-app.Run();
+await app.RunAsync();
+return 0;
 
 public partial class Program;

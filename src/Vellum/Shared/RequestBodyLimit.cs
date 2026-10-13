@@ -36,6 +36,14 @@ public static class RequestBodyLimits
             return;
         }
 
+        // An endpoint that is read before its role check has its own limit (RequestLimits);
+        // that middleware has already bounded the body.
+        if (endpoint.Metadata.GetMetadata<BodyLimitMetadata>() is not null)
+        {
+            await next(http);
+            return;
+        }
+
         var limit = endpoint.Metadata.GetMetadata<RequestBodyLimit>() ?? new RequestBodyLimit(RequestBodyLimit.Default);
         if (http.Request.ContentLength > limit.MaxBytes)
         {

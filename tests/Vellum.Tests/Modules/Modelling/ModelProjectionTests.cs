@@ -68,7 +68,7 @@ public class ModelProjectionTests
         var client = CreateClient(factory);
         var email = $"test-{Guid.NewGuid():N}@vellum.local";
         await client.PostAsJsonAsync("/api/auth/register",
-            new { email, password = "Test123!", displayName = "Test User" });
+            new { email, password = "Test12345!", displayName = "Test User" });
         return client;
     }
 
