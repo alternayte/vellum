@@ -120,6 +120,12 @@ function minimapNodeColor(node: Node): string {
   return kind ? kindColor(kind) : 'var(--muted-foreground)'
 }
 
+
+// A fit never enlarges nodes past their designed size: a model with two nodes would
+// otherwise fill the screen at the highest zoom.
+const FIT_INITIAL = { maxZoom: 1, padding: 0.2 }
+const FIT_ALL = { ...FIT_INITIAL, duration: 300 }
+const FIT_ONE = { maxZoom: 1.25, padding: 0.5, duration: 300 }
 export function CanvasView(props: CanvasViewProps) {
   return (
     <ReactFlowProvider>
@@ -178,13 +184,13 @@ function CanvasViewInner({
   const { selectElement, selectRelationship, selectMessage, focusElementId, clearFocusElement } = useShellStore()
 
   useEffect(() => {
-    onFitViewReady?.(() => fitView())
+    onFitViewReady?.(() => fitView(FIT_ALL))
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fitView])
 
   useEffect(() => {
     if (focusElementId) {
-      fitView({ nodes: [{ id: focusElementId }], duration: 300, padding: 0.5 })
+      fitView({ nodes: [{ id: focusElementId }], ...FIT_ONE })
       clearFocusElement()
     }
   }, [focusElementId, fitView, clearFocusElement])
@@ -510,7 +516,7 @@ function CanvasViewInner({
 
   const handleSearchFocusNode = useCallback(
     (nodeId: string) => {
-      fitView({ nodes: [{ id: nodeId }], duration: 300, padding: 0.5 })
+      fitView({ nodes: [{ id: nodeId }], ...FIT_ONE })
     },
     [fitView],
   )
@@ -730,6 +736,7 @@ function CanvasViewInner({
         multiSelectionKeyCode="Shift"
         panOnDrag
         fitView
+        fitViewOptions={FIT_INITIAL}
         colorMode="dark"
         onlyRenderVisibleElements
         snapToGrid
@@ -818,7 +825,7 @@ function CanvasViewInner({
           onClose={() => setContextMenu(null)}
           onAddElement={(kind) => onAddElementAtPosition?.(kind)}
           onTidy={() => onTidy?.()}
-          onZoomToFit={() => fitView()}
+          onZoomToFit={() => fitView(FIT_ALL)}
         />
       )}
 
