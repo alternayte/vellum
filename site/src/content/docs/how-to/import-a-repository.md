@@ -12,7 +12,8 @@ An import proposes. It changes nothing in the model until you accept a proposal.
 1. Open the project and select **Import from GitHub** in the left toolbar.
 2. Give the repository as `owner/name` or as its GitHub URL.
 3. Give a branch or a tag, or leave the field empty to use the default branch.
-4. Select **Scan repository**.
+4. To read only a part of the repository, give its folders in **Only these folders**. Separate the folders with commas. Leave the field empty to read all folders.
+5. Select **Scan repository**.
 
 Vellum finds the commit that the branch points to and reads the files at that commit. It does not run the code. It does not download a file that looks like a secret store or a binary.
 
@@ -77,6 +78,8 @@ Start a new scan of the same repository to compare the model with newer code.
 When a scan looks at the source of an accepted fact and no longer finds it, Vellum marks the fact **stale** and proposes its removal. The canvas shows the mark. The fact stays in the model until you accept the removal.
 
 A scan judges a fact only when it read the files that the fact came from. A scan with fewer paths, a partial scan, or a scan that left a file out says nothing about the facts in those files. The review tells you how many facts the scan did not look at.
+
+A scan of some folders can find a thing that the model already has, and not see all of it. An example is a consumer whose message contract is in another folder. Vellum does not propose that thing as new. Scan all folders to judge it.
 
 A later scan that finds the evidence again clears the mark.
 

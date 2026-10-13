@@ -103,6 +103,7 @@ public sealed record OutboundCall(string Provider, string Operation, Uri BaseUrl
     internal static readonly HttpRequestOptionsKey<IPAddress> ChosenAddressKey = new("vellum.outbound.address");
     internal static readonly HttpRequestOptionsKey<string> PathKey = new("vellum.outbound.path");
     internal static readonly HttpRequestOptionsKey<int> AttemptsKey = new("vellum.outbound.attempts");
+    internal static readonly HttpRequestOptionsKey<int> FailedConnectionsKey = new("vellum.outbound.failed-connections");
 
     public OutboundCredential? Credential { get; init; }
     public long MaxResponseBytes { get; init; } = DefaultMaxResponseBytes;

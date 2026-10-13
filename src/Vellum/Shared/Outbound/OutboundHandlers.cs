@@ -73,9 +73,11 @@ public sealed class OutboundRetryHandler(OutboundLimits limits) : DelegatingHand
     {
         var read = request.Method == HttpMethod.Get || request.Method == HttpMethod.Head;
         var waited = TimeSpan.Zero;
+        var failedConnections = 0;
         for (var attempt = 1; ; attempt++)
         {
             request.Options.Set(OutboundCall.AttemptsKey, attempt);
+            request.Options.Set(OutboundCall.FailedConnectionsKey, failedConnections);
             HttpResponseMessage? response = null;
             OutboundException? failure = null;
             try
@@ -85,6 +87,7 @@ public sealed class OutboundRetryHandler(OutboundLimits limits) : DelegatingHand
             catch (OutboundException ex) when (ex.Failure == OutboundFailure.ConnectionFailed)
             {
                 failure = ex;
+                failedConnections++;
             }
 
             var again = response is null || (int)response.StatusCode is 429 or 503 or 529
@@ -146,12 +149,13 @@ public sealed class OutboundAttemptHandler(OutboundUrlPolicy policy, HostResolve
         // once, so the connection goes to these addresses and a later answer of the name
         // cannot move it.
         var addresses = verdict.Addresses.Count > 0 ? verdict.Addresses : await ResolveAsync(target, call, ct);
-        var attempt = request.Options.TryGetValue(OutboundCall.AttemptsKey, out var count) ? count : 1;
+        var failedConnections = request.Options.TryGetValue(OutboundCall.FailedConnectionsKey, out var count) ? count : 0;
 
         request.RequestUri = target;
         request.Options.Set(OutboundCall.PinnedAddressesKey, addresses);
-        // One address per attempt. A retry after a failed connection takes the next one.
-        request.Options.Set(OutboundCall.ChosenAddressKey, addresses[(attempt - 1) % addresses.Count]);
+        // One address per attempt. A retry after a failed connection takes the next one. A
+        // retry after an answer stays on the address that answered.
+        request.Options.Set(OutboundCall.ChosenAddressKey, addresses[failedConnections % addresses.Count]);
 
         // Until the headers arrive the limit is the timeout. After them, a streamed response
         // gets its total limit and a whole response keeps the time that is left.

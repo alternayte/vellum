@@ -289,9 +289,12 @@ public class OutboundHardeningTests
         private readonly TcpListener _listener = new(IPAddress.Loopback, 0);
         private readonly CancellationTokenSource _stop = new();
         private int _connections;
+        private int _unavailable;
 
-        public Listener(string name)
+        /// <param name="unavailableFirst">The number of requests that get 503 before the server answers 200.</param>
+        public Listener(string name, int unavailableFirst = 0)
         {
+            _unavailable = unavailableFirst;
             _listener.Start();
             Port = ((IPEndPoint)_listener.LocalEndpoint).Port;
             _ = Task.Run(async () =>
@@ -337,8 +340,9 @@ public class OutboundHardeningTests
                     Requests.Enqueue((connection, pending.ToString()));
                     pending.Clear();
                     var body = "{\"server\":\"" + name + "\"}";
+                    var status = Interlocked.Decrement(ref _unavailable) >= 0 ? "503 Service Unavailable" : "200 OK";
                     await stream.WriteAsync(Encoding.ASCII.GetBytes(
-                        $"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {body.Length}\r\n\r\n{body}"), _stop.Token);
+                        $"HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {body.Length}\r\n\r\n{body}"), _stop.Token);
                 }
             }
             catch (Exception ex) when (ex is IOException or OperationCanceledException)
@@ -421,6 +425,26 @@ public class OutboundHardeningTests
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal([IPAddress.Parse(AddressA), IPAddress.Parse(AddressB)], dialed.ToArray());
+    }
+
+    [Fact]
+    public async Task A_retry_after_an_answer_stays_on_the_address_that_answered()
+    {
+        using var listener = new Listener("first", unavailableFirst: 1);
+        var dialed = new ConcurrentQueue<IPAddress>();
+        await using var provider = Build(Fixed(AddressA, AddressB), services => services.AddSingleton<SocketDialer>((endpoint, ct) =>
+        {
+            dialed.Enqueue(endpoint.Address);
+            return endpoint.Address.ToString() == AddressA
+                ? PinnedConnector.DialSocketAsync(new IPEndPoint(IPAddress.Loopback, listener.Port), ct)
+                : throw new SocketException((int)SocketError.ConnectionRefused);
+        }));
+
+        using var response = await provider.GetRequiredService<IGitHubApi>().GetRateLimit(Call("http://two.example:8080", null), default);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(2, listener.Requests.Count);
+        Assert.DoesNotContain(IPAddress.Parse(AddressB), dialed);
     }
 
     [Fact]
