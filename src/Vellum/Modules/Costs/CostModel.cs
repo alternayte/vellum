@@ -49,6 +49,12 @@ public static class AssumptionKind
     public const string Other = "other";
 
     public static readonly string[] All = [Requests, Storage, Egress, Messages, Other];
+
+    /// <summary>
+    /// True for a number that counts what passes in a period: requests, egress and messages.
+    /// A number of the kind <c>storage</c> or <c>other</c> is an amount that is held.
+    /// </summary>
+    public static bool IsFlow(string kind) => kind is Requests or Egress or Messages;
 }
 
 /// <summary>A usage-based price line of a resource: one unit price times one named assumption.</summary>
@@ -100,16 +106,24 @@ public static class CostEvent
         ImmutableList<CostResource> Resources, ImmutableList<CostAssumption> Assumptions, string By, DateTimeOffset At);
 }
 
-/// <summary>The resources and the workload assumptions of one model branch of one project.</summary>
+/// <summary>What a sheet held right after its last copy from another branch.</summary>
+public sealed record SheetBase(Guid FromBranchId, ImmutableList<CostResource> Resources, ImmutableList<CostAssumption> Assumptions);
+
+/// <summary>
+/// The resources and the workload assumptions of one model branch of one project.
+/// <paramref name="Base"/> is the common ancestor for the merge of a draft's sheet into the
+/// sheet it was copied from; null for a sheet that was never a copy.
+/// </summary>
 public sealed record CostSheetState(
     Guid? ProjectId,
     Guid? BranchId,
     ImmutableList<CostResource> Resources,
     ImmutableList<CostAssumption> Assumptions,
-    DateTimeOffset? UpdatedAt)
+    DateTimeOffset? UpdatedAt,
+    SheetBase? Base)
     : IState<CostSheetState>
 {
-    public static CostSheetState Initial => new(null, null, [], [], null);
+    public static CostSheetState Initial => new(null, null, [], [], null, null);
 
     public static CostSheetState Evolve(CostSheetState state, object @event) => @event switch
     {
@@ -132,7 +146,13 @@ public sealed record CostSheetState(
             UpdatedAt = e.At,
         },
         CostEvent.AssumptionRemoved e => state with { Assumptions = state.Assumptions.RemoveAll(a => a.Id == e.AssumptionId), UpdatedAt = e.At },
-        CostEvent.SheetCopied e => state with { Resources = e.Resources, Assumptions = e.Assumptions, UpdatedAt = e.At },
+        CostEvent.SheetCopied e => state with
+        {
+            Resources = e.Resources,
+            Assumptions = e.Assumptions,
+            UpdatedAt = e.At,
+            Base = new SheetBase(e.FromBranchId, e.Resources, e.Assumptions),
+        },
         _ => state,
     };
 }

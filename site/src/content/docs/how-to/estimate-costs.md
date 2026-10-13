@@ -18,9 +18,13 @@ You need the owner role in the workspace.
 
 Vellum does not pick a row for you. When you pick a row, Vellum reads that row again from the Azure API. It stores the price, the meter ID and the effective date of that answer.
 
+Some meters have price tiers. The price then depends on the amount that you use, and the first tier is often free. Vellum shows the rows of such a meter and stores none of them. Enter the price that you pay as a custom price.
+
 Vellum fetches prices from Azure only. Enter the prices of AWS, Google Cloud and your own infrastructure as custom prices.
 
 To change a price, add a new entry. An entry never changes.
+
+Vellum records each added, fetched and deleted price in the audit log of the workspace. Open **Settings**, then **Audit log** to read it.
 
 ## Add resources
 
@@ -32,6 +36,10 @@ You need the editor role.
 4. Enter the quantity for one month and its unit, for example `2` `instances` or `50` `GB`.
 5. Select a price entry. Without one, the line is unknown.
 6. Select **Save**.
+
+Select a price entry of the same provider as the resource. When the resource and the price entry each name a region, the two regions must be the same. If they are not, the line is unknown.
+
+Enter the quantity that one month holds. For stored data, enter the GB that are stored, for example `50` `GB`. Do not enter the GB that you add on each day.
 
 ## Add assumptions and usage lines
 
@@ -50,7 +58,13 @@ The flyout shows one total for each currency. Vellum converts no currency.
 - **Unknown** lists each line that has no amount, with the reason.
 - Select **Lines, saved estimates and compare** to see each line with its quantity, its price, the unit conversion and the amount.
 
-Each number shows its label. A quantity shows `declared`, `measured` or `inferred`. A price shows `custom` or `fetched` with the date.
+Each number shows its label. A quantity shows `declared`, `measured` or `inferred`. A price shows its provider, its region and its SKU, then `custom` or `fetched` with the date.
+
+A line is also unknown in these cases:
+
+- The price entry is for another provider or another region than the resource.
+- The element of the resource is no longer in the model. Remove the resource, or give it to another element.
+- The amount is too large to compute.
 
 ## Save an estimate
 
@@ -61,14 +75,26 @@ A saved estimate keeps its numbers. When a resource, an assumption, a price or a
 
 ## Compare two variants
 
-1. In the **Costs** flyout, select **New variant from main** and give the variant a name. The cost sheet of the variant starts as a copy of the sheet that you see.
+1. In the **Costs** flyout, select **New variant from main** and give the variant a name. The cost sheet of the variant starts as a copy of the sheet that you see. Vellum makes the variant and the copy together. If one of them fails, Vellum makes neither.
 2. Change the resources of the variant.
 3. Select **Lines, saved estimates and compare**, then **Compare**.
 4. Select the two branches.
 
-Vellum says which side costs less only when both sides have no unknown line and all amounts are in one currency. In all other cases it shows **Not comparable** and the reason.
+Vellum says which side costs less only when both sides have lines, no line is unknown and all amounts are in one currency. In all other cases it shows **Not comparable** and the reason.
 
-A draft has its own cost sheet too. Select **Copy the sheet of main** to start it. When you merge a draft, Vellum does not merge its cost sheet into main.
+An empty cost sheet is not a cost of zero. When one side has no lines, Vellum shows no difference and does not say that the empty side costs less.
+
+## Use a cost sheet in a draft
+
+A draft has its own cost sheet. The sheet is empty at first. Select **Copy the sheet of main** to start it.
+
+When you merge the draft, Vellum merges its cost sheet into the sheet of main in the same step:
+
+- A resource or an assumption that you changed, added or removed only in the draft changes main in the same way.
+- A resource or an assumption that changed only on main stays as it is on main.
+- If the draft and main changed the same resource or assumption in different ways, Vellum refuses the merge and shows the reason. Change one of the two sheets until they agree. Then merge again.
+
+When a draft is merged or abandoned, Vellum deletes the cost sheet and the saved estimates of the draft.
 
 ## Settings
 
@@ -83,7 +109,7 @@ Open **Settings**, then **Cost**.
 - Vellum has no price list of its own.
 - Vellum does not fetch prices from AWS or Google Cloud.
 - Vellum stores Azure consumption prices only. It does not store reservation prices or savings plan prices.
-- Vellum does not model price tiers. It stores the price that applies from zero units.
+- Vellum does not model price tiers. It stores no price of a meter that has tiers.
 - Vellum does not convert currencies.
 - Vellum does not add discounts, taxes or support plans.
 - Vellum does not add the cost of people to a total.

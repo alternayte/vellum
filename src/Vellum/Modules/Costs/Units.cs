@@ -75,10 +75,14 @@ public sealed partial record UnitExpression(decimal Size, string Dimension, stri
     /// amount of one month; a quantity per day or per hour is multiplied up to a month. A
     /// price per hour or per day charges a quantity with no period for every hour or day of
     /// the month.</item>
+    /// <item>A price per month is a price for an amount that is held for a month, such as
+    /// stored GB. A quantity per day or per hour is multiplied up against it only when
+    /// <c>flow</c> is true: 5 GB of new data on each day is not 152 GB held all month.</item>
     /// <item>A count of instances against a price per time unit: each instance runs for the whole month.</item>
     /// </list>
     /// </summary>
-    public static decimal? MonthlyUnits(decimal value, UnitExpression of, UnitExpression price, out string conversion, out string? mismatch)
+    /// <param name="flow">True when the quantity is an amount that passes in a period, such as egress or requests, and not an amount that is held.</param>
+    public static decimal? MonthlyUnits(decimal value, UnitExpression of, UnitExpression price, bool flow, out string conversion, out string? mismatch)
     {
         mismatch = null;
         decimal amount;
@@ -107,6 +111,14 @@ public sealed partial record UnitExpression(decimal Size, string Dimension, stri
             }
             else if (of.Period is Hour or Day)
             {
+                if (price.Period is Month && !flow)
+                {
+                    conversion = "";
+                    mismatch = $"The quantity is for each {of.Period} ('{of}') and the price is for an amount that is held for a month ('{price}'). "
+                               + "Vellum multiplies a quantity for each hour or day up to a month only for a flow: a resource of the category egress, "
+                               + "or an assumption of the kind requests, egress or messages. Enter the amount that is held in one month.";
+                    return null;
+                }
                 amount = quantity * PeriodsPerMonth(of.Period);
                 conversion = $"{Text(quantity)} {of.Dimension} per {of.Period} × {Text(PeriodsPerMonth(of.Period))} {of.Period} per month = {Text(amount)} {of.Dimension}";
             }

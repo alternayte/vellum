@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input'
 import { selectClass } from '@/components/settings/fields'
 import { shownInline } from '@/lib/mutation-errors'
 import {
-  CATEGORIES, PROVIDERS, UNKNOWN_REASON, FLAG_LABEL, costsApi, describeError, describePrice, formatAmount, priceEntryLabel, priceLabel,
+  CATEGORIES, PROVIDERS, UNKNOWN_REASON, FLAG_LABEL, costsApi, describeError, describePrice, formatAmount, priceEntryLabel, priceFor, priceLabel,
   type CostAssumption, type CostResource, type EstimateLine, type PriceEntry, type ResourceInput,
 } from '@/lib/costs-api'
 
@@ -49,7 +49,7 @@ function LineResult({ line }: { line: EstimateLine | undefined }) {
   return (
     <p className="mt-1 text-[11px] text-muted-foreground">
       <span className="font-mono tabular-nums text-foreground">{formatAmount(line.amount!)} {line.currency}</span> for one month · {line.conversion}
-      {' · '}quantity {line.quantity!.label} · price {priceLabel(line.price!)}
+      {' · '}quantity {line.quantity!.label} · price {priceFor(line.price!)} · {priceLabel(line.price!)}
       {line.flags.map((flag) => <span key={flag} className="ml-1.5 text-[var(--trace-retry)]">{FLAG_LABEL[flag] ?? flag}</span>)}
     </p>
   )

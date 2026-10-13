@@ -182,10 +182,8 @@ public class CostEndpointTests(IntegrationFixture fixture)
 
         var variant = (await Ok(owner.PostAsJsonAsync($"/api/projects/{projectId}/variants", new { id = Guid.NewGuid(), name = "smaller" }), HttpStatusCode.Created))["streamId"]!.GetValue<Guid>();
 
-        // A new variant has no sheet. It gets one as a copy of main, then changes it.
-        Assert.Empty((await Ok(owner.GetAsync(Costs(projectId, "", variant))))["resources"]!.AsArray());
-        var copied = await Ok(owner.PostAsJsonAsync(Costs(projectId, "/copy", variant), new { from = "main" }));
-        var api = Assert.Single(copied["resources"]!.AsArray())!;
+        // A new variant starts with a copy of the sheet of main, made in the transaction that makes the variant.
+        var api = Assert.Single((await Ok(owner.GetAsync(Costs(projectId, "", variant))))["resources"]!.AsArray())!;
         await Ok(owner.PutAsJsonAsync(Costs(projectId, $"/resources/{api["id"]}", variant), Resource(element, "API", 60, price)));
 
         var compare = Costs(projectId, $"/compare?left=main&right={variant}&asOf={AsOf}");
@@ -211,6 +209,124 @@ public class CostEndpointTests(IntegrationFixture fixture)
 
         await Status(HttpStatusCode.BadRequest, owner.GetAsync(Costs(projectId, $"/compare?left=main&right={Guid.NewGuid()}")), "unknown branch");
         await Status(HttpStatusCode.BadRequest, owner.GetAsync(Costs(projectId, "/compare?left=main&right=nonsense")), "not a branch");
+    }
+
+    [Fact]
+    public async Task A_request_without_its_number_is_refused_with_the_field_and_is_not_read_as_zero()
+    {
+        using var factory = TestHost.Create(fixture);
+        using var owner = await TestHost.SignInAsync(factory);
+        var (workspaceId, projectId) = await TestHost.CreateProjectAsync(owner);
+
+        var assumption = await Ok(owner.PostAsJsonAsync(Costs(projectId, "/assumptions"),
+            new { name = "Requests", kind = "requests", unit = "requests/month", label = "declared", effectiveDate = "2026-01-01" }), HttpStatusCode.BadRequest);
+        Assert.Equal("value", Assert.Single(assumption["errors"]!.AsArray())!["field"]!.GetValue<string>());
+        Assert.Empty((await Ok(owner.GetAsync(Costs(projectId))))["assumptions"]!.AsArray());
+
+        var price = await Ok(owner.PostAsJsonAsync(Prices(workspaceId),
+            new { provider = "custom", sku = "small", unit = "hour", currency = "USD", effectiveDate = "2026-01-01" }), HttpStatusCode.BadRequest);
+        Assert.Equal("unitPrice", Assert.Single(price["errors"]!.AsArray())!["field"]!.GetValue<string>());
+        Assert.Empty((await Ok(owner.GetAsync(Prices(workspaceId))))["items"]!.AsArray());
+    }
+
+    [Fact]
+    public async Task Adding_and_deleting_a_price_writes_an_audit_entry_with_the_actor_and_the_entry()
+    {
+        using var factory = TestHost.Create(fixture);
+        using var owner = await TestHost.SignInAsync(factory);
+        var (workspaceId, _) = await TestHost.CreateProjectAsync(owner);
+
+        var price = await PriceAsync(owner, workspaceId, 0.25m);
+        await Status(HttpStatusCode.NoContent, owner.DeleteAsync(Prices(workspaceId, $"/{price}")), "delete price");
+
+        var audit = (await Ok(owner.GetAsync($"/api/workspaces/{workspaceId}/audit"))).AsArray()
+            .Where(a => a!["action"]!.GetValue<string>().StartsWith("price.", StringComparison.Ordinal)).ToList();
+        // Newest first.
+        Assert.Equal(["price.deleted", "price.added"], audit.Select(a => a!["action"]!.GetValue<string>()));
+        Assert.All(audit, a => Assert.Equal($"price:{price} custom sku:small region:local 0.25 USD per hour", a!["target"]!.GetValue<string>()));
+        Assert.All(audit, a => Assert.True(Guid.TryParse(a!["actorId"]!.GetValue<string>(), out _)));
+    }
+
+    [Fact]
+    public async Task A_merge_takes_the_cost_sheet_of_the_draft_to_main_or_is_refused_and_a_closed_draft_keeps_no_cost_data()
+    {
+        using var factory = TestHost.Create(fixture);
+        using var owner = await TestHost.SignInAsync(factory);
+        var (workspaceId, projectId) = await TestHost.CreateProjectAsync(owner);
+        var element = await ElementAsync(owner, projectId);
+        var price = await PriceAsync(owner, workspaceId);
+        var sheet = await Ok(owner.PostAsJsonAsync(Costs(projectId, "/resources"), Resource(element, "API", 100, price)), HttpStatusCode.Created);
+        var api = sheet["resources"]![0]!["id"]!.GetValue<Guid>();
+        sheet = await Ok(owner.PostAsJsonAsync(Costs(projectId, "/resources"), Resource(element, "Worker", 10, price)), HttpStatusCode.Created);
+        var worker = sheet["resources"]!.AsArray().Single(r => r!["name"]!.GetValue<string>() == "Worker")!["id"]!.GetValue<Guid>();
+
+        async Task<DraftDto> DraftAsync(string name)
+        {
+            var draft = (await (await TestHost.Created(owner.PostAsJsonAsync($"/api/projects/{projectId}/drafts", new { id = Guid.NewGuid(), name })))
+                .Content.ReadFromJsonAsync<DraftDto>())!;
+            await Ok(owner.PostAsJsonAsync(Costs(projectId, "/copy", draft.StreamId), new { from = "main" }));
+            return draft;
+        }
+
+        Task<JsonNode> PreviewAsync(DraftDto draft) => Ok(owner.PostAsync($"/api/projects/{projectId}/drafts/{draft.Id}/merge/preview", null));
+
+        async Task<HttpResponseMessage> MergeAsync(DraftDto draft) => await owner.PostAsJsonAsync(
+            $"/api/projects/{projectId}/drafts/{draft.Id}/merge/execute",
+            new { resolutions = Array.Empty<object>(), expectedMainVersion = (await PreviewAsync(draft))["mainVersion"]!.GetValue<int>() });
+
+        async Task<(bool Sheet, bool Estimates, bool Stream)> CostDataAsync(DraftDto draft)
+        {
+            using var scope = factory.Services.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<CostsDbContext>();
+            var stream = true;
+            try
+            {
+                await scope.ServiceProvider.GetRequiredService<IEventStore>().Load<CostSheetState>(StreamId.From(CostAccess.SheetStreamId(draft.StreamId)));
+            }
+            catch (DeedboxException)
+            {
+                stream = false;
+            }
+            return (await db.Sheets.AnyAsync(s => s.BranchId == draft.StreamId), await db.Estimates.AnyAsync(e => e.BranchId == draft.StreamId), stream);
+        }
+
+        // The draft adds an element with a resource and changes the API. Main changes the worker.
+        var first = await DraftAsync("Add auth");
+        var auth = Guid.NewGuid();
+        await TestHost.Created(owner.PostAsJsonAsync($"/api/projects/{projectId}/elements?branchId={first.StreamId}", new { id = auth, kind = "system", name = "Auth" }));
+        await Ok(owner.PostAsJsonAsync(Costs(projectId, "/resources", first.StreamId), Resource(auth, "Auth instances", 5, price)), HttpStatusCode.Created);
+        await Ok(owner.PutAsJsonAsync(Costs(projectId, $"/resources/{api}", first.StreamId), Resource(element, "API", 60, price)));
+        await Ok(owner.PostAsJsonAsync(Costs(projectId, "/estimates", first.StreamId), new { name = "On the draft" }), HttpStatusCode.Created);
+        await Ok(owner.PutAsJsonAsync(Costs(projectId, $"/resources/{worker}"), Resource(element, "Worker", 20, price)));
+        Assert.Equal((true, true, true), await CostDataAsync(first));
+
+        var costSheet = (await PreviewAsync(first))["costSheet"]!;
+        Assert.Equal((2, 0), (costSheet["changes"]!.GetValue<int>(), costSheet["conflicts"]!.AsArray().Count));
+        await Status(HttpStatusCode.OK, MergeAsync(first), "merge");
+
+        // Main holds the draft's changes and its own. Nothing of the draft's sheet was dropped.
+        var merged = (await Ok(owner.GetAsync(Costs(projectId))))["resources"]!.AsArray();
+        Assert.Equal(
+            [("API", 60m, "Orders API"), ("Auth instances", 5m, "Auth"), ("Worker", 20m, "Orders API")],
+            merged.Select(r => (r!["name"]!.GetValue<string>(), r["quantity"]!.GetValue<decimal>(), r["elementName"]!.GetValue<string>()))
+                .OrderBy(r => r.Item1, StringComparer.Ordinal));
+        // The closed draft keeps no sheet, no stream and no saved estimate.
+        Assert.Equal((false, false, false), await CostDataAsync(first));
+
+        // Both sides change the API in different ways. The merge is refused, with the reason, and writes nothing.
+        var second = await DraftAsync("Shrink");
+        await Ok(owner.PutAsJsonAsync(Costs(projectId, $"/resources/{api}", second.StreamId), Resource(element, "API", 50, price)));
+        await Ok(owner.PutAsJsonAsync(Costs(projectId, $"/resources/{api}"), Resource(element, "API", 70, price)));
+        Assert.Contains("'API' is changed on both sides", Assert.Single((await PreviewAsync(second))["costSheet"]!["conflicts"]!.AsArray())!.GetValue<string>());
+        var refused = await Ok(MergeAsync(second), HttpStatusCode.Conflict);
+        Assert.Equal("cost_sheet_conflict", refused["type"]!.GetValue<string>());
+        Assert.Contains("'API' is changed on both sides", refused["detail"]!.GetValue<string>());
+        Assert.Equal(70m, (await Ok(owner.GetAsync(Costs(projectId))))["resources"]!.AsArray().Single(r => r!["name"]!.GetValue<string>() == "API")!["quantity"]!.GetValue<decimal>());
+        Assert.Equal(50m, (await Ok(owner.GetAsync(Costs(projectId, "", second.StreamId))))["resources"]!.AsArray().Single(r => r!["name"]!.GetValue<string>() == "API")!["quantity"]!.GetValue<decimal>());
+
+        // An abandoned draft keeps no cost data either.
+        await Status(HttpStatusCode.OK, owner.PostAsync($"/api/projects/{projectId}/drafts/{second.Id}/abandon", null), "abandon");
+        Assert.Equal((false, false, false), await CostDataAsync(second));
     }
 
     [Fact]

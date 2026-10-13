@@ -70,6 +70,12 @@ export interface Money {
 
 export interface PriceSource {
   priceId: string
+  /** What the price is for. Null only in an estimate that engine cost-1 saved. */
+  provider: string | null
+  region: string | null
+  sku: string | null
+  /** The provider's own ID of the meter. Null for a custom price. */
+  meterId: string | null
   unitPrice: number
   unit: string
   currency: string
@@ -290,8 +296,11 @@ export const costsApi = {
       ...variants.filter((v) => v.status === 'open').map((v) => ({ id: v.streamId, label: `Variant: ${v.name}` })),
     ]
   },
-  createVariant: (projectId: string, name: string) =>
-    api<{ streamId: string }>('POST', `/api/projects/${projectId}/variants`, { id: crypto.randomUUID(), name, baseRevisionId: null }),
+  /** A variant forks the model of main. The server copies the cost sheet of `costSheetFrom` into it in the same transaction. */
+  createVariant: (projectId: string, name: string, costSheetFrom: string | null) =>
+    api<{ streamId: string }>('POST', `/api/projects/${projectId}/variants`, {
+      id: crypto.randomUUID(), name, baseRevisionId: null, costSheetFrom: costSheetFrom ?? 'main',
+    }),
 
   /** The whole price book of the workspace. The server bounds it at 2000 entries. */
   priceBook: async (workspaceId: string): Promise<PriceEntry[]> => {
@@ -343,6 +352,11 @@ export function priceLabel(price: { source: string; observedOn: string }): strin
   return `${price.source} ${price.observedOn}`
 }
 
+/** What a price is for, next to the number that used it: "azure · westeurope · D2s v5". */
+export function priceFor(price: { provider: string | null; region: string | null; sku: string | null }): string {
+  return [price.provider, price.region, price.sku].filter((part) => part).join(' · ')
+}
+
 export function priceEntryLabel(entry: PriceEntry): string {
   return entry.source === 'fetched' ? `fetched ${entry.fetched!.fetchedAt.slice(0, 10)}` : `custom ${entry.acceptedAt.slice(0, 10)}`
 }
@@ -358,6 +372,10 @@ export const UNKNOWN_REASON: Record<string, string> = {
   'unit-mismatch': 'Units do not convert',
   'missing-assumption': 'Assumption missing',
   'assumption-not-effective': 'Assumption not yet effective',
+  'element-not-in-model': 'Element removed from the model',
+  'price-provider-mismatch': 'Price is for another provider',
+  'price-region-mismatch': 'Price is for another region',
+  'amount-out-of-range': 'Amount too large',
 }
 
 export const NOT_COMPARABLE: Record<string, string> = {
@@ -365,6 +383,14 @@ export const NOT_COMPARABLE: Record<string, string> = {
   'right-has-unknown-lines': 'The right side has lines with no known cost.',
   'both-sides-have-unknown-lines': 'Both sides have lines with no known cost.',
   'several-currencies': 'The amounts are in more than one currency. Vellum converts no currency.',
+  'left-has-no-lines': 'The left side has an empty cost sheet.',
+  'right-has-no-lines': 'The right side has an empty cost sheet.',
+  'both-sides-have-no-lines': 'Both sides have an empty cost sheet.',
+}
+
+/** The reasons that say a side has no cost sheet, as opposed to a line with no known cost. */
+export function isEmptySide(reason: string | null): boolean {
+  return reason === 'left-has-no-lines' || reason === 'right-has-no-lines' || reason === 'both-sides-have-no-lines'
 }
 
 export const FLAG_LABEL: Record<string, string> = {

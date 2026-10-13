@@ -7,7 +7,8 @@ namespace Vellum.Modules.Settings.Audit;
 
 /// <summary>
 /// The record of who changed a sensitive setting. An entry names the thing that changed and
-/// never holds a value, with one exception: a changed URL setting records its new origin.
+/// never holds a value, with two exceptions: a changed URL setting records its new origin,
+/// and a price book entry records its price, which is no secret (see <c>PriceAudit</c>).
 /// A null workspace marks an instance-level entry.
 /// </summary>
 public static class AuditLog

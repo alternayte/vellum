@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text.Json;
 using Vellum.Modules.Trace.Engine;
@@ -8,16 +9,22 @@ namespace Vellum.Modules.Costs;
 /// A price as the estimate reads it. <paramref name="ObservedOn"/> is the day the number was
 /// last taken from its source: the day a person entered a custom price, or the day Vellum
 /// fetched a provider price. The age of a price is counted from that day.
+/// <paramref name="Provider"/>, <paramref name="Region"/>, <paramref name="Sku"/> and
+/// <paramref name="MeterId"/> say what the price is for. An empty region is a price for no
+/// region in particular. The meter ID is the provider's own, and null for a custom price.
 /// </summary>
 public sealed record Price(
-    Guid Id, string Unit, decimal UnitPrice, string Currency, DateOnly EffectiveDate, string Source, DateOnly ObservedOn);
+    Guid Id, string Provider, string Region, string Sku, string? MeterId,
+    string Unit, decimal UnitPrice, string Currency, DateOnly EffectiveDate, string Source, DateOnly ObservedOn);
 
+/// <param name="Elements">The IDs of the elements of the model of the branch. A resource of another element is unknown.</param>
 /// <param name="Currency">The currency of the workspace. A line in another currency is computed and flagged; nothing is converted.</param>
 /// <param name="StaleAfterDays">A price observed more than this many days before <paramref name="AsOf"/> is flagged.</param>
 public sealed record EstimateInput(
     IReadOnlyList<CostResource> Resources,
     IReadOnlyList<CostAssumption> Assumptions,
     IReadOnlyDictionary<Guid, Price> Prices,
+    ISet<Guid> Elements,
     DateOnly AsOf,
     string Currency,
     int StaleAfterDays);
@@ -43,6 +50,14 @@ public static class UnknownReason
     public const string MissingAssumption = "missing-assumption";
     /// <summary>The effective date of the assumption is after the date of the estimate.</summary>
     public const string AssumptionNotEffective = "assumption-not-effective";
+    /// <summary>The element of the resource is not in the model of the branch.</summary>
+    public const string ElementNotInModel = "element-not-in-model";
+    /// <summary>The price is for another provider than the resource.</summary>
+    public const string PriceProviderMismatch = "price-provider-mismatch";
+    /// <summary>The price and the resource both name a region, and the two differ.</summary>
+    public const string PriceRegionMismatch = "price-region-mismatch";
+    /// <summary>The amount is above <see cref="Estimator.MaxAmount"/>, or decimal arithmetic cannot hold a step of the calculation.</summary>
+    public const string AmountOutOfRange = "amount-out-of-range";
 }
 
 /// <summary>A mark on a line that has an amount. The amount is in its total.</summary>
@@ -56,8 +71,14 @@ public static class LineFlag
 /// <summary>The quantity of a line and where it comes from: the resource (its fact status) or an assumption (its label).</summary>
 public sealed record QuantitySource(decimal Value, string Unit, string Label, Guid? AssumptionId);
 
+/// <summary>
+/// The price a line used, with what the price is for. <paramref name="Provider"/>,
+/// <paramref name="Region"/> and <paramref name="Sku"/> are null only in an estimate that
+/// engine <c>cost-1</c> saved. <paramref name="MeterId"/> is null for a custom price.
+/// </summary>
 public sealed record PriceSource(
-    Guid PriceId, decimal UnitPrice, string Unit, string Currency, string Source, DateOnly EffectiveDate, DateOnly ObservedOn);
+    Guid PriceId, string? Provider, string? Region, string? Sku, string? MeterId,
+    decimal UnitPrice, string Unit, string Currency, string Source, DateOnly EffectiveDate, DateOnly ObservedOn);
 
 /// <param name="Id">The resource ID for the baseline line; the resource ID, a colon and the usage line ID for a usage line.</param>
 /// <param name="Units">The number of price units the quantity is, after <paramref name="Conversion"/>.</param>
@@ -96,8 +117,14 @@ public sealed record Estimate(
 /// </summary>
 public static class Estimator
 {
-    public const string EngineVersion = "cost-1";
+    public const string EngineVersion = "cost-2";
     public const int AmountDecimals = 4;
+
+    /// <summary>
+    /// The largest amount of one line. A sheet holds a bounded number of lines, so a sum of
+    /// line amounts stays far inside the range of a decimal.
+    /// </summary>
+    public const decimal MaxAmount = 1_000_000_000_000_000m;
 
     public const string Baseline = "baseline";
     public const string Usage = "usage";
@@ -110,12 +137,26 @@ public static class Estimator
         foreach (var resource in input.Resources
                      .OrderBy(r => r.ElementId).ThenBy(r => r.Name, StringComparer.Ordinal).ThenBy(r => r.Id))
         {
+            // The model no longer has the element, so nothing runs on the resource. Its lines
+            // stay in the estimate as unknown lines until a person removes the resource.
+            if (!input.Elements.Contains(resource.ElementId))
+            {
+                const string gone = "The element of the resource is not in the model of the branch.";
+                var baseline = resource is { Quantity: { } q, Unit: { } u } ? new QuantitySource(q, u, resource.FactStatus, null) : null;
+                if (baseline is not null || resource.Usage.Count == 0)
+                    lines.Add(Unknown(resource, null, "Baseline", Baseline, baseline, null, UnknownReason.ElementNotInModel, gone));
+                foreach (var usage in resource.Usage.OrderBy(u => u.Name, StringComparer.Ordinal).ThenBy(u => u.Id))
+                    lines.Add(Unknown(resource, usage, usage.Name, Usage, null, null, UnknownReason.ElementNotInModel, gone));
+                continue;
+            }
+
             // A resource with usage lines only has no baseline. A resource with neither has
             // nothing that could be priced, and says so with one unknown line.
             if (resource.Quantity is { } quantity && resource.Unit is { } unit)
             {
                 lines.Add(Line(input, resource, null, "Baseline", Baseline,
-                    new QuantitySource(quantity, unit, resource.FactStatus, null), resource.PriceRef));
+                    new QuantitySource(quantity, unit, resource.FactStatus, null), resource.PriceRef,
+                    flow: resource.Category == CostCategory.Egress));
             }
             else if (resource.Usage.Count == 0)
             {
@@ -135,8 +176,9 @@ public static class Estimator
                 var source = new QuantitySource(assumption.Value, assumption.Unit, assumption.Label, assumption.Id);
                 lines.Add(assumption.EffectiveDate > input.AsOf
                     ? Unknown(resource, usage, usage.Name, Usage, source, null, UnknownReason.AssumptionNotEffective,
-                        $"The assumption '{assumption.Name}' is effective from {assumption.EffectiveDate:yyyy-MM-dd}.")
-                    : Line(input, resource, usage, usage.Name, Usage, source, usage.PriceRef));
+                        $"The assumption '{assumption.Name}' is effective from {Day(assumption.EffectiveDate)}.")
+                    : Line(input, resource, usage, usage.Name, Usage, source, usage.PriceRef,
+                        flow: resource.Category == CostCategory.Egress || AssumptionKind.IsFlow(assumption.Kind)));
             }
         }
 
@@ -165,7 +207,8 @@ public static class Estimator
         .ToList();
 
     private static EstimateLine Line(
-        EstimateInput input, CostResource resource, UsageLine? usage, string name, string kind, QuantitySource quantity, Guid? priceRef)
+        EstimateInput input, CostResource resource, UsageLine? usage, string name, string kind, QuantitySource quantity, Guid? priceRef,
+        bool flow)
     {
         if (priceRef is not { } priceId)
             return Unknown(resource, usage, name, kind, quantity, null, UnknownReason.NoPrice, "The line names no price entry.");
@@ -175,11 +218,26 @@ public static class Estimator
                 $"The price entry {priceId} is not in the price book of the workspace.");
         }
 
-        var source = new PriceSource(price.Id, price.UnitPrice, price.Unit, price.Currency, price.Source, price.EffectiveDate, price.ObservedOn);
+        var source = new PriceSource(
+            price.Id, price.Provider, price.Region, price.Sku, price.MeterId,
+            price.UnitPrice, price.Unit, price.Currency, price.Source, price.EffectiveDate, price.ObservedOn);
+        // A price is the price of one provider, and of one region when it names one. A price
+        // for something else is no price of this resource, so the line gets no amount.
+        if (!string.Equals(price.Provider, resource.Provider, StringComparison.Ordinal))
+        {
+            return Unknown(resource, usage, name, kind, quantity, source, UnknownReason.PriceProviderMismatch,
+                $"The resource is on '{resource.Provider}' and the price is for '{price.Provider}'.");
+        }
+        if (resource.Region.Trim() is { Length: > 0 } resourceRegion && price.Region.Trim() is { Length: > 0 } priceRegion
+            && !string.Equals(resourceRegion, priceRegion, StringComparison.OrdinalIgnoreCase))
+        {
+            return Unknown(resource, usage, name, kind, quantity, source, UnknownReason.PriceRegionMismatch,
+                $"The resource is in '{resourceRegion}' and the price is for '{priceRegion}'.");
+        }
         if (price.EffectiveDate > input.AsOf)
         {
             return Unknown(resource, usage, name, kind, quantity, source, UnknownReason.PriceNotEffective,
-                $"The price is effective from {price.EffectiveDate:yyyy-MM-dd}.");
+                $"The price is effective from {Day(price.EffectiveDate)}.");
         }
         if (UnitExpression.Parse(quantity.Unit) is not { } quantityUnit)
         {
@@ -191,8 +249,27 @@ public static class Estimator
             return Unknown(resource, usage, name, kind, quantity, source, UnknownReason.UnitMismatch,
                 $"Vellum does not read the unit '{price.Unit}' of the price.");
         }
-        if (UnitExpression.MonthlyUnits(quantity.Value, quantityUnit, priceUnit, out var conversion, out var mismatch) is not { } units)
-            return Unknown(resource, usage, name, kind, quantity, source, UnknownReason.UnitMismatch, mismatch!);
+
+        // Inputs that pass validation can still multiply past the range of a decimal. Such a
+        // line has no amount; it does not fail the estimate.
+        decimal units, amount;
+        string conversion;
+        try
+        {
+            if (UnitExpression.MonthlyUnits(quantity.Value, quantityUnit, priceUnit, flow, out conversion, out var mismatch) is not { } converted)
+                return Unknown(resource, usage, name, kind, quantity, source, UnknownReason.UnitMismatch, mismatch!);
+            units = converted;
+            amount = Math.Round(units * price.UnitPrice, AmountDecimals, MidpointRounding.AwayFromZero);
+        }
+        catch (OverflowException)
+        {
+            return TooLarge();
+        }
+        if (amount > MaxAmount)
+            return TooLarge();
+
+        EstimateLine TooLarge() => Unknown(resource, usage, name, kind, quantity, source, UnknownReason.AmountOutOfRange,
+            $"The amount is above {UnitExpression.Text(MaxAmount)}, the largest amount of one line. Check the quantity, the units and the price.");
 
         var flags = new List<string>();
         if (input.AsOf.DayNumber - price.ObservedOn.DayNumber > input.StaleAfterDays)
@@ -200,7 +277,6 @@ public static class Estimator
         if (!string.Equals(price.Currency, input.Currency, StringComparison.Ordinal))
             flags.Add(LineFlag.CurrencyMismatch);
 
-        var amount = Math.Round(units * price.UnitPrice, AmountDecimals, MidpointRounding.AwayFromZero);
         return new EstimateLine(
             LineId(resource, usage), resource.Id, usage?.Id, resource.ElementId, resource.Name, name, kind,
             resource.Category, resource.Provider, resource.Region,
@@ -214,6 +290,9 @@ public static class Estimator
         LineId(resource, usage), resource.Id, usage?.Id, resource.ElementId, resource.Name, name, kind,
         resource.Category, resource.Provider, resource.Region,
         LineStatus.Unknown, reason, detail, [], quantity, price, null, null, null, null);
+
+    /// <summary>A date as text that is the same under every culture of the server.</summary>
+    internal static string Day(DateOnly date) => date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
 
     private static string LineId(CostResource resource, UsageLine? usage) =>
         usage is null ? resource.Id.ToString() : $"{resource.Id}:{usage.Id}";

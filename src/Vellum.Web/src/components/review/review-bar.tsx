@@ -17,6 +17,9 @@ export function ReviewBar({ projectId, onMergeSuccess }: ReviewBarProps) {
   const conflictCount = reviewData.conflicts.length
   const resolvedCount = reviewData.conflicts.filter((c) => resolutions[c.entityId] !== undefined).length
   const allConflictsResolved = conflictCount === 0 || resolvedCount === conflictCount
+  // A conflict between the two cost sheets has no resolution to pick here. The server refuses the merge.
+  const costSheet = reviewData.costSheet
+  const sheetConflicts = costSheet.conflicts
 
   const handleMerge = async () => {
     if (!activeDraftId) return
@@ -24,11 +27,16 @@ export function ReviewBar({ projectId, onMergeSuccess }: ReviewBarProps) {
       entityId,
       resolution,
     }))
-    await executeMerge.mutateAsync({
-      draftId: activeDraftId,
-      resolutions: resolutionList,
-      expectedMainVersion: reviewData.mainVersion,
-    })
+    try {
+      await executeMerge.mutateAsync({
+        draftId: activeDraftId,
+        resolutions: resolutionList,
+        expectedMainVersion: reviewData.mainVersion,
+      })
+    } catch {
+      // Nothing was merged. The draft stays open and the reason is shown in the bar.
+      return
+    }
     exitReviewMode()
     setActiveDraft(null, null)
     onMergeSuccess?.()
@@ -39,7 +47,7 @@ export function ReviewBar({ projectId, onMergeSuccess }: ReviewBarProps) {
   }
 
   return (
-    <footer className="flex h-10 items-center gap-3 border-t border-border bg-card px-4">
+    <footer className="flex min-h-10 flex-wrap items-center gap-x-3 gap-y-1 border-t border-border bg-card px-4 py-1.5">
       <span className="text-xs text-muted-foreground">
         {totalChanges} {totalChanges === 1 ? 'change' : 'changes'}
         {conflictCount > 0 && (
@@ -48,7 +56,14 @@ export function ReviewBar({ projectId, onMergeSuccess }: ReviewBarProps) {
             {resolvedCount > 0 && ` (${resolvedCount} resolved)`}
           </span>
         )}
+        {costSheet.changes > 0 && ` · ${costSheet.changes} cost sheet ${costSheet.changes === 1 ? 'change' : 'changes'}`}
       </span>
+      {sheetConflicts.length > 0 && (
+        <span role="alert" className="text-xs text-amber-500">
+          The cost sheets do not merge: {sheetConflicts.join('; ')}. Change the cost sheet of the draft or of main until the two agree.
+        </span>
+      )}
+      {executeMerge.isError && <span role="alert" className="text-xs text-destructive">{executeMerge.error.message}</span>}
 
       <div className="flex-1" />
 
@@ -65,7 +80,7 @@ export function ReviewBar({ projectId, onMergeSuccess }: ReviewBarProps) {
         size="sm"
         className="h-7 text-xs"
         onClick={handleMerge}
-        disabled={!allConflictsResolved || executeMerge.isPending}
+        disabled={!allConflictsResolved || sheetConflicts.length > 0 || executeMerge.isPending}
       >
         {executeMerge.isPending ? 'Merging…' : 'Merge'}
       </Button>

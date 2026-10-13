@@ -18,7 +18,11 @@ export function PriceBook({ workspaceId, currency }: { workspaceId: string; curr
   const queryClient = useQueryClient()
   const key = ['workspaces', workspaceId, 'prices']
   const book = useQuery({ queryKey: key, queryFn: () => costsApi.priceBook(workspaceId) })
-  const refresh = () => queryClient.invalidateQueries({ queryKey: key })
+  // Each change of the book writes an audit entry, so the audit log is read again too.
+  const refresh = () => {
+    void queryClient.invalidateQueries({ queryKey: ['workspaces', workspaceId, 'audit'] })
+    return queryClient.invalidateQueries({ queryKey: key })
+  }
   const remove = useMutation({ mutationFn: (id: string) => costsApi.removePrice(workspaceId, id), onSuccess: refresh, onError: shownInline })
 
   return (

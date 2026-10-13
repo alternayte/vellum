@@ -19,6 +19,8 @@ public class AzureRetailPricesTests(SharedOutboundHost shared) : IClassFixture<S
 {
     private const string StorageMeter = "10e5ee74-8fd6-4972-909f-65a83f92f0ce";
     private const string StorageSku = "DZH318Z0BPH7/00BJ";
+    private const string VmMeter = "0561adcb-1c48-542e-9e0c-10dea22fc392";
+    private const string VmSku = "DZH318Z08M9W/0092";
 
     private readonly OutboundHost _host = shared.Host;
 
@@ -29,8 +31,8 @@ public class AzureRetailPricesTests(SharedOutboundHost shared) : IClassFixture<S
         public Task<HttpResponseMessage> SearchAsync(string query = "serviceName=Virtual%20Machines") =>
             Owner.GetAsync(Url($"/azure/meters?{query}"));
 
-        public Task<HttpResponseMessage> ImportAsync(string currency = "EUR", string? skuId = StorageSku) =>
-            Owner.PostAsJsonAsync(Url("/azure"), new { meterId = StorageMeter, skuId, armRegionName = "westeurope", currency });
+        public Task<HttpResponseMessage> ImportAsync(string currency = "USD", string? skuId = VmSku, string meterId = VmMeter) =>
+            Owner.PostAsJsonAsync(Url("/azure"), new { meterId, skuId, armRegionName = "westeurope", currency });
 
         public async Task<JsonArray> BookAsync() =>
             (await Owner.GetFromJsonAsync<JsonObject>(Url()))!["items"]!.AsArray();
@@ -129,33 +131,59 @@ public class AzureRetailPricesTests(SharedOutboundHost shared) : IClassFixture<S
     }
 
     [Fact]
-    public async Task An_import_reads_the_row_again_and_stores_what_the_api_holds()
+    public async Task An_import_reads_the_row_again_stores_what_the_api_holds_and_is_audited()
     {
         var azure = await CreateAsync();
-        azure.Stub.Json(Fixture("azure-storage-hot-lrs-meter.json"));
+        azure.Stub.Json(Fixture("azure-vm-d2s-v5.json"));
         var before = DateTimeOffset.UtcNow;
 
         var entry = await Body(azure.ImportAsync(), HttpStatusCode.Created);
 
         Assert.Equal(
-            $"?api-version=2023-01-01-preview&currencyCode='EUR'&$filter=armRegionName eq 'westeurope' and meterId eq '{StorageMeter}' and skuId eq '{StorageSku}' and priceType eq 'Consumption'",
+            $"?api-version=2023-01-01-preview&currencyCode='USD'&$filter=armRegionName eq 'westeurope' and meterId eq '{VmMeter}' and skuId eq '{VmSku}' and priceType eq 'Consumption'",
             Uri.UnescapeDataString(Assert.Single(azure.Stub.Requests).Uri.Query));
 
-        // Three rows share the meter: one price from zero and two for higher tiers. Only the first is a price Vellum stores.
+        // The answer holds six rows. The one with the meter and the SKU of the request is stored.
         Assert.Equal(
-            ("azure", "westeurope", "Hot LRS", "General Block Blob v2 · Hot LRS Data Stored", "1 GB/Month", 0.017247m, "EUR", "2017-02-03", "fetched", true),
+            ("azure", "westeurope", "Standard_D2s_v5", "Virtual Machines Dsv5 Series · D2s v5", "1 Hour", 0.115m, "USD", "2021-11-01", "fetched", true),
             (entry["provider"]!.GetValue<string>(), entry["region"]!.GetValue<string>(), entry["sku"]!.GetValue<string>(),
                 entry["description"]!.GetValue<string>(), entry["unit"]!.GetValue<string>(), entry["unitPrice"]!.GetValue<decimal>(),
                 entry["currency"]!.GetValue<string>(), entry["effectiveDate"]!.GetValue<string>(), entry["source"]!.GetValue<string>(),
                 entry["unitReadable"]!.GetValue<bool>()));
         var fetched = entry["fetched"]!;
-        Assert.Equal((StorageMeter, "2017-02-03"), (fetched["meterId"]!.GetValue<string>(), fetched["providerEffectiveDate"]!.GetValue<string>()));
+        Assert.Equal((VmMeter, "2021-11-01"), (fetched["meterId"]!.GetValue<string>(), fetched["providerEffectiveDate"]!.GetValue<string>()));
         Assert.StartsWith($"https://{azure.HostName}/api/retail/prices?", fetched["url"]!.GetValue<string>());
         Assert.InRange(fetched["fetchedAt"]!.GetValue<DateTimeOffset>(), before.AddSeconds(-1), DateTimeOffset.UtcNow.AddSeconds(1));
 
         var stored = Assert.Single(await azure.BookAsync())!;
         Assert.Equal(entry["id"]!.GetValue<Guid>(), stored["id"]!.GetValue<Guid>());
-        Assert.Equal(0.017247m, stored["unitPrice"]!.GetValue<decimal>());
+        Assert.Equal(0.115m, stored["unitPrice"]!.GetValue<decimal>());
+
+        var audit = (await azure.Owner.GetFromJsonAsync<JsonArray>($"/api/workspaces/{azure.WorkspaceId}/audit"))!;
+        var imported = Assert.Single(audit, a => a!["action"]!.GetValue<string>() == "price.imported")!;
+        Assert.Equal($"price:{entry["id"]} azure sku:Standard_D2s_v5 region:westeurope 0.115 USD per 1 Hour meter:{VmMeter}", imported["target"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task A_meter_with_price_tiers_is_not_imported_and_its_first_tier_is_not_stored_as_its_price()
+    {
+        // Three rows share the meter, the SKU and the region: one from 0 units and two for higher tiers.
+        // The first tier is free here, as it is for data transfer out. It is not the price of the meter.
+        var answer = JsonNode.Parse(Fixture("azure-storage-hot-lrs-meter.json"))!.AsObject();
+        answer["Items"]![0]!["retailPrice"] = 0.0;
+
+        var azure = await CreateAsync();
+        azure.Stub.Json(answer.ToJsonString()).Json(answer.ToJsonString());
+
+        var refused = await Body(azure.ImportAsync("EUR", StorageSku, StorageMeter), HttpStatusCode.Conflict);
+        Assert.Equal("price_tiered", refused["type"]!.GetValue<string>());
+        Assert.Contains("custom price", refused["detail"]!.GetValue<string>());
+        Assert.Empty(await azure.BookAsync());
+
+        // The search says the same on every row of the meter, the row from 0 included.
+        var page = await Body(azure.SearchAsync("serviceName=Storage&currency=EUR"), HttpStatusCode.OK);
+        Assert.Equal([0m, 51200m, 512000m], page["items"]!.AsArray().Select(i => i!["tierMinimumUnits"]!.GetValue<decimal>()));
+        Assert.All(page["items"]!.AsArray(), item => Assert.Contains("tiers", item!["notImportable"]!.GetValue<string>()));
     }
 
     [Fact]
@@ -163,10 +191,10 @@ public class AzureRetailPricesTests(SharedOutboundHost shared) : IClassFixture<S
     {
         // Two products share the meter. Without the SKU the meter names two rows.
         var azure = await CreateAsync();
-        var answer = JsonNode.Parse(Fixture("azure-storage-hot-lrs-meter.json"))!.AsObject();
+        var answer = JsonNode.Parse(Fixture("azure-vm-d2s-v5.json"))!.AsObject();
         var second = answer["Items"]![0]!.DeepClone();
-        second["skuId"] = "DZH318Z0BNZJ/008R";
-        second["productName"] = "Blob Storage";
+        second["skuId"] = "DZH318Z08M9W/00ZZ";
+        second["productName"] = "Virtual Machines Dsv5 Series Other";
         answer["Items"]!.AsArray().Add(second);
         azure.Stub.Json(answer.ToJsonString());
         var conflict = await Body(azure.ImportAsync(skuId: null), HttpStatusCode.Conflict);
@@ -174,8 +202,8 @@ public class AzureRetailPricesTests(SharedOutboundHost shared) : IClassFixture<S
 
         // The API answers in another currency than the one asked for: no row is taken.
         var wrongCurrency = await CreateAsync();
-        wrongCurrency.Stub.Json(Fixture("azure-storage-hot-lrs-meter.json"));
-        var none = await Body(wrongCurrency.ImportAsync(currency: "USD"), HttpStatusCode.Conflict);
+        wrongCurrency.Stub.Json(Fixture("azure-vm-d2s-v5.json"));
+        var none = await Body(wrongCurrency.ImportAsync(currency: "EUR"), HttpStatusCode.Conflict);
         Assert.Contains("no row", none["title"]!.GetValue<string>());
 
         Assert.Empty(await azure.BookAsync());

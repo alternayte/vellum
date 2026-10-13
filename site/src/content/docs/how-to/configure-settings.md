@@ -91,8 +91,10 @@ Vellum always removes secrets from text before it goes to an AI provider.
 
 ## Read the audit log
 
-**Audit log** lists changes to settings, credentials, keys and members: the time, the action, the target and the account. Entries cannot be changed or deleted.
+**Audit log** lists changes to settings, credentials, keys, members and the price book: the time, the action, the target and the account. Entries cannot be changed or deleted.
 
 An entry for a settings change names each field that changed. It holds no value, with one exception: for a URL field it holds the new origin, so that you can see where a credential can go.
+
+An entry for a price names the price entry and holds its unit price. A price is not a secret.
 
 An entry for a master key rotation shows only that a rotation took place. The instance administrator reads who did it, and with which key, in the instance audit log (`GET /api/instance/audit`).

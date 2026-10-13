@@ -30,6 +30,10 @@ public static class NotComparable
     public const string BothHaveUnknown = "both-sides-have-unknown-lines";
     /// <summary>The known amounts are not all in one currency, and Vellum converts no currency.</summary>
     public const string SeveralCurrencies = "several-currencies";
+    /// <summary>The side has no line at all: its sheet is empty. No cost is not a cost of zero.</summary>
+    public const string LeftEmpty = "left-has-no-lines";
+    public const string RightEmpty = "right-has-no-lines";
+    public const string BothEmpty = "both-sides-have-no-lines";
 }
 
 public static class Cheaper
@@ -42,7 +46,7 @@ public static class Cheaper
 /// <summary>
 /// The difference between two estimates. <paramref name="Cheaper"/> and
 /// <paramref name="Difference"/> are set only when <paramref name="Comparable"/> is true:
-/// both sides have no unknown line and every amount is in one currency.
+/// both sides have at least one line and no unknown line, and every amount is in one currency.
 /// </summary>
 public sealed record Comparison(
     bool Comparable, string? Reason, string? Cheaper, Money? Difference,
@@ -56,7 +60,10 @@ public static class Comparer
 {
     public static Comparison Run(Estimate left, Estimate right)
     {
-        var totals = Deltas(left.Totals, right.Totals, complete: left.Unknown.Count == 0 && right.Unknown.Count == 0);
+        // A side with no line has no estimate. A difference against it would read as the whole
+        // cost of the other side, so no row gets one.
+        var bothHaveLines = left.Lines.Count > 0 && right.Lines.Count > 0;
+        var totals = Deltas(left.Totals, right.Totals, complete: bothHaveLines && left.Unknown.Count == 0 && right.Unknown.Count == 0);
 
         var categories = CostCategory.All
             .Select(category => (
@@ -66,7 +73,7 @@ public static class Comparer
             .Where(c => c.Left is not null || c.Right is not null)
             .Select(c => new CategoryDelta(
                 c.Category,
-                Deltas(c.Left?.Known ?? [], c.Right?.Known ?? [], (c.Left?.UnknownLines ?? 0) + (c.Right?.UnknownLines ?? 0) == 0),
+                Deltas(c.Left?.Known ?? [], c.Right?.Known ?? [], bothHaveLines && (c.Left?.UnknownLines ?? 0) + (c.Right?.UnknownLines ?? 0) == 0),
                 c.Left?.UnknownLines ?? 0, c.Right?.UnknownLines ?? 0))
             .ToList();
 
@@ -80,7 +87,7 @@ public static class Comparer
                 var r = rightResources.GetValueOrDefault(key);
                 var leftUnknown = l?.Count(x => x.Status == LineStatus.Unknown) ?? 0;
                 var rightUnknown = r?.Count(x => x.Status == LineStatus.Unknown) ?? 0;
-                var amounts = Deltas(Estimator.Sum(l ?? []), Estimator.Sum(r ?? []), leftUnknown + rightUnknown == 0);
+                var amounts = Deltas(Estimator.Sum(l ?? []), Estimator.Sum(r ?? []), bothHaveLines && leftUnknown + rightUnknown == 0);
                 var change = l is null ? ResourceChange.Added
                     : r is null ? ResourceChange.Removed
                     : SameLines(l, r) ? ResourceChange.Same
@@ -89,22 +96,28 @@ public static class Comparer
             })
             .ToList();
 
-        var reason = (left.Unknown.Count > 0, right.Unknown.Count > 0) switch
+        var reason = (left.Lines.Count == 0, right.Lines.Count == 0) switch
         {
-            (true, true) => NotComparable.BothHaveUnknown,
-            (true, false) => NotComparable.LeftHasUnknown,
-            (false, true) => NotComparable.RightHasUnknown,
-            _ => totals.Count > 1 ? NotComparable.SeveralCurrencies : null,
+            (true, true) => NotComparable.BothEmpty,
+            (true, false) => NotComparable.LeftEmpty,
+            (false, true) => NotComparable.RightEmpty,
+            _ => (left.Unknown.Count > 0, right.Unknown.Count > 0) switch
+            {
+                (true, true) => NotComparable.BothHaveUnknown,
+                (true, false) => NotComparable.LeftHasUnknown,
+                (false, true) => NotComparable.RightHasUnknown,
+                _ => totals.Count > 1 ? NotComparable.SeveralCurrencies : null,
+            },
         };
         if (reason is not null)
             return new Comparison(false, reason, null, null, totals, categories, resources, left.Unknown, right.Unknown);
 
-        // No unknown line and at most one currency. Two empty estimates are equal.
-        var delta = totals.Count == 0 ? 0m : totals[0].Delta!.Value;
+        // Each side has a line and every line is known, so there is exactly one total.
+        var delta = totals[0].Delta!.Value;
         return new Comparison(
             true, null,
             delta < 0 ? Cheaper.Right : delta > 0 ? Cheaper.Left : Cheaper.Equal,
-            totals.Count == 0 ? null : new Money(totals[0].Currency, Math.Abs(delta)),
+            new Money(totals[0].Currency, Math.Abs(delta)),
             totals, categories, resources, left.Unknown, right.Unknown);
     }
 

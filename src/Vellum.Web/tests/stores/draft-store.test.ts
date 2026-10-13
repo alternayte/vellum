@@ -13,7 +13,7 @@ describe('draft store', () => {
   })
 
   it('enterReviewMode sets review data', () => {
-    const data = { autoResolved: [], conflicts: [], mainVersion: 5 }
+    const data = { autoResolved: [], conflicts: [], mainVersion: 5, costSheet: { changes: 0, conflicts: [] } }
     useDraftStore.getState().enterReviewMode(data)
     expect(useDraftStore.getState().isReviewMode).toBe(true)
     expect(useDraftStore.getState().reviewData).toEqual(data)

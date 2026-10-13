@@ -23,6 +23,7 @@ export interface ReviewData {
   autoResolved: MergeChange[]
   conflicts: MergeConflict[]
   mainVersion: number
+  costSheet: { changes: number; conflicts: string[] }
 }
 
 interface DraftStore {

@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using Microsoft.EntityFrameworkCore;
+using Vellum.Modules.Settings.Audit;
 using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Shared;
 
@@ -13,8 +14,25 @@ public static class PriceSourceKind
     public const string Fetched = "fetched";
 }
 
+/// <param name="UnitPrice">Necessary. It is nullable so that a body without it is refused and not stored as a price of 0.</param>
 public sealed record CustomPriceRequest(
-    string Provider, string? Region, string Sku, string? Description, string Unit, decimal UnitPrice, string Currency, DateOnly EffectiveDate);
+    string Provider, string? Region, string Sku, string? Description, string Unit, decimal? UnitPrice, string Currency, DateOnly EffectiveDate);
+
+/// <summary>
+/// The audit actions of the price book. The target of an entry names the price entry and
+/// holds its number: a price is no secret, and the entry itself is gone after a delete.
+/// </summary>
+public static class PriceAudit
+{
+    public const string Added = "price.added";
+    public const string Imported = "price.imported";
+    public const string Deleted = "price.deleted";
+
+    public static string Target(PriceEntryEntity entry) =>
+        $"price:{entry.Id} {entry.Provider} sku:{entry.Sku}{(entry.Region.Length > 0 ? $" region:{entry.Region}" : "")} "
+        + $"{UnitExpression.Text(entry.UnitPrice)} {entry.Currency} per {entry.Unit}"
+        + (entry.MeterId is null ? "" : $" meter:{entry.MeterId}");
+}
 
 /// <summary>Where a fetched price came from: the address, the time, the provider's meter ID and the provider's effective date.</summary>
 public sealed record FetchedFrom(string Url, DateTimeOffset FetchedAt, string MeterId, DateOnly? ProviderEffectiveDate);
@@ -62,7 +80,10 @@ public static class PriceRules
         Add(TextRule.Line("sku", request.Sku));
         Add(TextRule.Line("description", request.Description));
         Add(CostRules.Unit("unit", request.Unit));
-        Add(UnitPrice("unitPrice", request.UnitPrice));
+        if (request.UnitPrice is { } unitPrice)
+            Add(UnitPrice("unitPrice", unitPrice));
+        else
+            errors.Add(new("unitPrice", "A unit price is required"));
         if (!AzureRetailPrices.IsCurrency(request.Currency))
             errors.Add(new("currency", "Must be a three-letter currency code in upper case, for example USD."));
         if (request.EffectiveDate == default)
@@ -118,13 +139,13 @@ public static class PriceBook
             Sku = request.Sku.Trim(),
             Description = string.IsNullOrWhiteSpace(request.Description) ? null : request.Description.Trim(),
             Unit = request.Unit.Trim(),
-            UnitPrice = request.UnitPrice,
+            UnitPrice = request.UnitPrice!.Value,
             Currency = request.Currency,
             EffectiveDate = request.EffectiveDate,
             Source = PriceSourceKind.Custom,
             AcceptedBy = userId,
             AcceptedAt = time.GetUtcNow(),
-        }, ct);
+        }, PriceAudit.Added, ct);
     }
 
     /// <summary>A pinned entry stays: a project said that it depends on it.</summary>
@@ -132,7 +153,8 @@ public static class PriceBook
         Guid workspaceId, Guid priceId,
         ClaimsPrincipal user, WorkspaceAuthorizationService auth, CostsDbContext db, CancellationToken ct)
     {
-        await auth.RequireRoleAsync(workspaceId, UserId(user), WorkspaceRole.Owner, ct);
+        var userId = UserId(user);
+        await auth.RequireRoleAsync(workspaceId, userId, WorkspaceRole.Owner, ct);
 
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         // The row lock makes a pin and this delete take turns.
@@ -150,12 +172,17 @@ public static class PriceBook
         }
 
         await db.PriceEntries.Where(p => p.Id == priceId).ExecuteDeleteAsync(ct);
+        await AuditLog.AppendAsync(db, workspaceId, userId, PriceAudit.Deleted, PriceAudit.Target(locked[0]), ct);
         await transaction.CommitAsync(ct);
         return Results.NoContent();
     }
 
-    /// <summary>Adds the entry unless the book is full.</summary>
-    internal static async Task<IResult> AddAsync(CostsDbContext db, PriceEntryEntity entry, CancellationToken ct)
+    /// <summary>
+    /// Adds the entry unless the book is full, and records who added it. The audit entry
+    /// commits with the price entry.
+    /// </summary>
+    /// <param name="action"><see cref="PriceAudit.Added"/> or <see cref="PriceAudit.Imported"/>.</param>
+    internal static async Task<IResult> AddAsync(CostsDbContext db, PriceEntryEntity entry, string action, CancellationToken ct)
     {
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         // One writer of a workspace's book at a time, so the count is the count at the insert.
@@ -165,6 +192,7 @@ public static class PriceBook
 
         db.PriceEntries.Add(entry);
         await db.SaveChangesAsync(ct);
+        await AuditLog.AppendAsync(db, entry.WorkspaceId, entry.AcceptedBy, action, PriceAudit.Target(entry), ct);
         await transaction.CommitAsync(ct);
         return Results.Created($"/api/workspaces/{entry.WorkspaceId}/prices/{entry.Id}", PriceEntryDto.From(entry));
     }

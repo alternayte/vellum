@@ -8,6 +8,7 @@ using Vellum.Modules.Modelling.Model;
 using Vellum.Modules.Workspaces;
 using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Shared;
+using Decision = Vellum.Shared.CommandResult<System.Collections.Generic.IReadOnlyList<object>>;
 
 namespace Vellum.Modules.Costs;
 
@@ -21,8 +22,9 @@ public sealed record ResourceRequest(
     decimal? Quantity, string? Unit, Guid? PriceRef, IReadOnlyList<UsageLineRequest>? Usage,
     string? FactStatus, ProvenanceInput? Provenance);
 
+/// <param name="Value">Necessary. It is nullable so that a body without it is refused and not read as 0.</param>
 public sealed record AssumptionRequest(
-    Guid? Id, string Name, string Kind, Guid? SubjectId, decimal Value, string Unit,
+    Guid? Id, string Name, string Kind, Guid? SubjectId, decimal? Value, string Unit,
     string Label, string? Source, DateOnly EffectiveDate);
 
 /// <param name="From">The branch to copy from: <c>main</c>, or the stream ID of a draft or a variant.</param>
@@ -49,11 +51,23 @@ internal static class CostAccess
     public static Guid SheetStreamId(Guid branchId) =>
         new(SHA256.HashData(Encoding.UTF8.GetBytes($"vellum.costs.sheet:{branchId:N}")).AsSpan(0, 16));
 
+    /// <summary>The sheet of a branch. A branch that was closed since the caller resolved it has no sheet.</summary>
     public static async Task<(CostSheetState State, long Version)> LoadSheetAsync(IEventStore store, Guid branchId, CancellationToken ct)
     {
-        var (state, version) = await store.Load<CostSheetState>(StreamId.From(SheetStreamId(branchId)), ct);
-        return (state, version);
+        try
+        {
+            var (state, version) = await store.Load<CostSheetState>(StreamId.From(SheetStreamId(branchId)), ct);
+            return (state, version);
+        }
+        catch (DeedboxException ex) when (ex.Code == DeedboxError.StreamDeleted)
+        {
+            return (CostSheetState.Initial, 0);
+        }
     }
+
+    /// <summary>The answer to a write that reached the sheet of a branch after the branch was closed.</summary>
+    public static IResult BranchClosed() =>
+        Results.BadRequest(new ErrorResponse("invalid_branch", "Branch not found or not open for this project"));
 
     public static async Task<(ModelState Model, long Version)> LoadModelAsync(IEventStore store, Guid branchId, CancellationToken ct)
     {
@@ -65,12 +79,6 @@ internal static class CostAccess
     public static async Task<CostWorld> WorldAsync(
         IServiceProvider services, Guid projectId, ModelState model, IEnumerable<Guid> priceRefs, CancellationToken ct)
     {
-        var elements = model.Elements.Keys.Select(id => id.Value).ToHashSet();
-        var subjects = elements
-            .Concat(model.Operations.Keys.Select(id => id.Value))
-            .Concat(model.Channels.Keys.Select(id => id.Value))
-            .ToHashSet();
-
         var refs = priceRefs.Distinct().ToList();
         var prices = new HashSet<Guid>();
         if (refs.Count > 0)
@@ -83,8 +91,20 @@ internal static class CostAccess
                 .ToListAsync(ct)).ToHashSet();
         }
 
+        return World(model, prices);
+    }
+
+    public static CostWorld World(ModelState model, IReadOnlySet<Guid> prices)
+    {
+        var elements = ElementIds(model);
+        var subjects = elements
+            .Concat(model.Operations.Keys.Select(id => id.Value))
+            .Concat(model.Channels.Keys.Select(id => id.Value))
+            .ToHashSet();
         return new CostWorld(elements, subjects, prices);
     }
+
+    public static HashSet<Guid> ElementIds(ModelState model) => model.Elements.Keys.Select(id => id.Value).ToHashSet();
 
     public static CostSheetDto ToDto(Guid branchId, CostSheetState state, long version, ModelState model) => new(
         branchId, version,
@@ -128,14 +148,16 @@ public static class CostSheets
 
     public static Task<IResult> AddAssumption(
         Guid projectId, Guid? branchId, AssumptionRequest request, HttpContext http, IEventStore store, TimeProvider time, CancellationToken ct) =>
-        WriteAsync(http, store, projectId, branchId, [], ct, (state, branch, world, userId) =>
-            CostDecider.AddAssumption(state, projectId, branch, ToAssumption(request, request.Id ?? Guid.NewGuid()), world, userId, time.GetUtcNow()),
+        WriteAsync(http, store, projectId, branchId, [], ct, (state, branch, world, userId) => request.Value is not { } value
+            ? NoValue
+            : CostDecider.AddAssumption(state, projectId, branch, ToAssumption(request, request.Id ?? Guid.NewGuid(), value), world, userId, time.GetUtcNow()),
             created: true);
 
     public static Task<IResult> ChangeAssumption(
         Guid projectId, Guid assumptionId, Guid? branchId, AssumptionRequest request, HttpContext http, IEventStore store, TimeProvider time, CancellationToken ct) =>
-        WriteAsync(http, store, projectId, branchId, [], ct, (state, _, world, userId) =>
-            CostDecider.ChangeAssumption(state, ToAssumption(request, assumptionId), world, userId, time.GetUtcNow()));
+        WriteAsync(http, store, projectId, branchId, [], ct, (state, _, world, userId) => request.Value is not { } value
+            ? NoValue
+            : CostDecider.ChangeAssumption(state, ToAssumption(request, assumptionId, value), world, userId, time.GetUtcNow()));
 
     public static Task<IResult> RemoveAssumption(
         Guid projectId, Guid assumptionId, Guid? branchId, HttpContext http, IEventStore store, TimeProvider time, CancellationToken ct) =>
@@ -144,7 +166,8 @@ public static class CostSheets
 
     /// <summary>
     /// Replaces the sheet of the branch with a copy of the sheet of another branch of the
-    /// project. A new draft or variant starts with no sheet; this is how it gets one.
+    /// project. A new draft starts with no sheet; this is how it gets one. A new variant
+    /// starts with a copy already (see <see cref="CostBranches.ForkAsync"/>).
     /// </summary>
     public static Task<IResult> Copy(
         Guid projectId, Guid? branchId, CopySheetRequest request, HttpContext http, IEventStore store, TimeProvider time, CancellationToken ct) =>
@@ -159,11 +182,18 @@ public static class CostSheets
             var (source, sourceVersion) = await CostAccess.LoadSheetAsync(store, from, ct);
             var (model, _) = await CostAccess.LoadModelAsync(store, branch, ct);
             var world = await CostAccess.WorldAsync(http.RequestServices, projectId, model, [], ct);
-            var result = await store.Decide<CostSheetState, CostSheetState>(
-                CostAccess.SheetStreamId(branch),
-                state => CostDecider.Copy(state, projectId, branch, source, from, sourceVersion, world, userId, time.GetUtcNow()),
-                state => state, ct);
-            return await RespondAsync(result, store, branch, model, created: false, ct);
+            try
+            {
+                var result = await store.Decide<CostSheetState, CostSheetState>(
+                    CostAccess.SheetStreamId(branch),
+                    state => CostDecider.Copy(state, projectId, branch, source, from, sourceVersion, world, userId, time.GetUtcNow()),
+                    state => state, ct);
+                return await RespondAsync(result, store, branch, model, created: false, ct);
+            }
+            catch (DeedboxException ex) when (ex.Code == DeedboxError.StreamDeleted)
+            {
+                return CostAccess.BranchClosed();
+            }
         }, ct);
 
     /// <summary>
@@ -205,8 +235,11 @@ public static class CostSheets
             ? new Provenance(provenance.Source, provenance.Revision, provenance.Confidence, Guid.Parse(userId), time.GetUtcNow())
             : null);
 
-    private static CostAssumption ToAssumption(AssumptionRequest request, Guid id) => new(
-        id, request.Name?.Trim()!, request.Kind, request.SubjectId, request.Value, request.Unit?.Trim()!,
+    /// <summary>A body without the number. The number is not read as 0.</summary>
+    private static readonly Decision NoValue = new Decision.Invalid([new ValidationError("value", "A value is required")]);
+
+    private static CostAssumption ToAssumption(AssumptionRequest request, Guid id, decimal value) => new(
+        id, request.Name?.Trim()!, request.Kind, request.SubjectId, value, request.Unit?.Trim()!,
         request.Label, string.IsNullOrWhiteSpace(request.Source) ? null : request.Source.Trim(), request.EffectiveDate);
 
     private static Task<IResult> WriteAsync(
@@ -216,9 +249,17 @@ public static class CostSheets
         {
             var (model, _) = await CostAccess.LoadModelAsync(store, branch, ct);
             var world = await CostAccess.WorldAsync(http.RequestServices, projectId, model, priceRefs, ct);
-            var result = await store.Decide<CostSheetState, CostSheetState>(
-                CostAccess.SheetStreamId(branch), state => decide(state, branch, world, userId), state => state, ct);
-            return await RespondAsync(result, store, branch, model, created, ct);
+            try
+            {
+                var result = await store.Decide<CostSheetState, CostSheetState>(
+                    CostAccess.SheetStreamId(branch), state => decide(state, branch, world, userId), state => state, ct);
+                return await RespondAsync(result, store, branch, model, created, ct);
+            }
+            catch (DeedboxException ex) when (ex.Code == DeedboxError.StreamDeleted)
+            {
+                // The branch was merged or abandoned between the check above and this write.
+                return CostAccess.BranchClosed();
+            }
         }, ct);
 
     /// <summary>Every write answers with the whole sheet, so a client shows what is stored.</summary>

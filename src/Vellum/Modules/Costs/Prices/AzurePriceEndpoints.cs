@@ -46,6 +46,7 @@ public static class AzurePriceEndpoints
     /// <summary>
     /// Stores the picked row as a fetched price entry. The row must be the only importable
     /// row the API returns for the meter, the SKU and the region; else nothing is stored.
+    /// A meter with price tiers has no importable row: its first tier is not its price.
     /// </summary>
     public static async Task<IResult> Import(
         Guid workspaceId, AzureImportRequest request,
@@ -73,11 +74,18 @@ public static class AzurePriceEndpoints
             return Refuse(failure);
 
         var page = result.Value!;
-        var rows = page.Items
-            .Where(m => m.NotImportable is null && m.MeterId == request.MeterId
+        var matching = page.Items
+            .Where(m => m.MeterId == request.MeterId
                         && (string.IsNullOrEmpty(request.SkuId) || m.SkuId == request.SkuId)
                         && (string.IsNullOrEmpty(request.ArmRegionName) || m.ArmRegionName == request.ArmRegionName))
             .ToList();
+        var rows = matching.Where(m => m.NotImportable is null).ToList();
+        if (rows.Count == 0 && matching.Any(m => m.NotImportable == AzureRetailPrices.Tiered))
+        {
+            return Results.Conflict(new ErrorResponse("price_tiered",
+                "The price of this meter has tiers",
+                "The price depends on the amount that is used, and Vellum does not model price tiers. Nothing was stored. Enter the price that you pay as a custom price."));
+        }
         if (page.More || rows is not [var meter])
         {
             return Results.Conflict(new ErrorResponse("conflict",
@@ -106,7 +114,7 @@ public static class AzurePriceEndpoints
             FetchedAt = now,
             MeterId = meter.MeterId,
             ProviderEffectiveDate = meter.EffectiveStartDate,
-        }, ct);
+        }, PriceAudit.Imported, ct);
     }
 
     /// <summary>A failure of the price API is a 502 or a 409 with a fixed sentence. No text of the remote answer is passed on.</summary>

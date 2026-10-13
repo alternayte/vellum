@@ -13,16 +13,19 @@ public sealed record InputMark(string Name, string Hash);
 
 /// <summary>
 /// The hash of each input of an estimate, by ID. Two indexes that differ say which resource,
-/// assumption, price or setting changed.
+/// assumption, price or setting changed. The mark of a resource covers whether its element
+/// is in the model. <paramref name="Engine"/> is the engine that made the marks; it is null
+/// in an index that engine <c>cost-1</c> stored. Marks of two engines do not compare.
 /// </summary>
 public sealed record EstimateInputsIndex(
     IReadOnlyDictionary<Guid, InputMark> Resources,
     IReadOnlyDictionary<Guid, InputMark> Assumptions,
     IReadOnlyDictionary<Guid, InputMark> Prices,
     string Currency,
-    int StaleAfterDays);
+    int StaleAfterDays,
+    string? Engine = null);
 
-/// <param name="Kind"><c>resource</c>, <c>assumption</c>, <c>price</c> or <c>setting</c>.</param>
+/// <param name="Kind"><c>resource</c>, <c>assumption</c>, <c>price</c>, <c>setting</c> or <c>engine</c>.</param>
 /// <param name="Change"><c>added</c>, <c>removed</c> or <c>changed</c>.</param>
 public sealed record InputChange(string Kind, Guid? Id, string Name, string Change);
 
@@ -54,7 +57,8 @@ public sealed class EstimateReader(IEventStore store, CostsDbContext db, Setting
     internal async Task<Built> BuildAsync(Guid projectId, Guid branch, DateOnly asOf, CancellationToken ct)
     {
         var (sheet, sheetVersion) = await CostAccess.LoadSheetAsync(store, branch, ct);
-        var (_, modelVersion) = await CostAccess.LoadModelAsync(store, branch, ct);
+        var (model, modelVersion) = await CostAccess.LoadModelAsync(store, branch, ct);
+        var elements = CostAccess.ElementIds(model);
 
         var workspaceId = await auth.GetProjectWorkspaceIdAsync(projectId, ct);
         var cost = (await settings.GetWorkspaceAsync(workspaceId, ct)).Effective.Cost;
@@ -68,12 +72,12 @@ public sealed class EstimateReader(IEventStore store, CostsDbContext db, Setting
             : await db.PriceEntries.AsNoTracking().Where(p => p.WorkspaceId == workspaceId && refs.Contains(p.Id)).ToListAsync(ct);
         var prices = entries.ToDictionary(p => p.Id, ToPrice);
 
-        var estimate = Estimator.Run(new EstimateInput(sheet.Resources, sheet.Assumptions, prices, asOf, cost.Currency, cost.StalePriceAfterDays));
+        var estimate = Estimator.Run(new EstimateInput(sheet.Resources, sheet.Assumptions, prices, elements, asOf, cost.Currency, cost.StalePriceAfterDays));
         var inputs = new EstimateInputsIndex(
-            sheet.Resources.ToDictionary(r => r.Id, r => new InputMark(r.Name, CostJson.Hash(r))),
+            sheet.Resources.ToDictionary(r => r.Id, r => new InputMark(r.Name, CostJson.Hash(new { Resource = r, ElementInModel = elements.Contains(r.ElementId) }))),
             sheet.Assumptions.ToDictionary(a => a.Id, a => new InputMark(a.Name, CostJson.Hash(a))),
             entries.ToDictionary(p => p.Id, p => new InputMark($"{p.Provider} {p.Sku}".Trim(), CostJson.Hash(prices[p.Id]))),
-            cost.Currency, cost.StalePriceAfterDays);
+            cost.Currency, cost.StalePriceAfterDays, Estimator.EngineVersion);
 
         return new Built(
             new EstimateDto(branch, modelVersion, sheetVersion, CostJson.Hash(inputs), CostJson.Hash(estimate), estimate),
@@ -81,12 +85,17 @@ public sealed class EstimateReader(IEventStore store, CostsDbContext db, Setting
     }
 
     private static Price ToPrice(PriceEntryEntity entry) => new(
-        entry.Id, entry.Unit, entry.UnitPrice, entry.Currency, entry.EffectiveDate, entry.Source,
+        entry.Id, entry.Provider, entry.Region, entry.Sku, entry.MeterId, entry.Unit, entry.UnitPrice, entry.Currency, entry.EffectiveDate, entry.Source,
         DateOnly.FromDateTime((entry.FetchedAt ?? entry.AcceptedAt).UtcDateTime));
 
     internal static IReadOnlyList<InputChange> Changes(EstimateInputsIndex saved, EstimateInputsIndex now)
     {
         var changes = new List<InputChange>();
+        // Another engine made the saved marks from other fields. They say which inputs were
+        // added or removed, and nothing about a change of an input that is on both sides.
+        var sameEngine = saved.Engine == now.Engine;
+        if (!sameEngine)
+            changes.Add(new InputChange("engine", null, now.Engine ?? "", "changed"));
         Diff("resource", saved.Resources, now.Resources);
         Diff("assumption", saved.Assumptions, now.Assumptions);
         Diff("price", saved.Prices, now.Prices);
@@ -106,7 +115,7 @@ public sealed class EstimateReader(IEventStore store, CostsDbContext db, Setting
                     changes.Add(new InputChange(kind, id, isNow!.Name, "added"));
                 else if (isNow is null)
                     changes.Add(new InputChange(kind, id, was.Name, "removed"));
-                else if (was.Hash != isNow.Hash)
+                else if (sameEngine && was.Hash != isNow.Hash)
                     changes.Add(new InputChange(kind, id, isNow.Name, "changed"));
             }
         }
@@ -155,7 +164,7 @@ public static class Estimates
         ModelBranches.RunAsync(http, projectId, branchId, WorkspaceRole.Editor, async (branch, userId) =>
         {
             var asOf = request.AsOf ?? Today(time);
-            var name = string.IsNullOrWhiteSpace(request.Name) ? $"Estimate {asOf:yyyy-MM-dd}" : request.Name.Trim();
+            var name = string.IsNullOrWhiteSpace(request.Name) ? $"Estimate {Estimator.Day(asOf)}" : request.Name.Trim();
             if (TextRule.Line("name", name) is { } error)
                 return PriceBook.Invalid([error]);
 

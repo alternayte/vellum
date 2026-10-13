@@ -3,6 +3,7 @@ using System.Security.Claims;
 using System.Text.Json;
 using Deedbox;
 using Microsoft.EntityFrameworkCore;
+using Vellum.Modules.Costs;
 using Vellum.Modules.Drafts.Merge;
 using Vellum.Modules.Modelling.Model;
 using Vellum.Modules.Workspaces.Authorization;
@@ -10,10 +11,12 @@ using Vellum.Shared;
 
 namespace Vellum.Modules.Drafts;
 
+/// <param name="CostSheet">What the merge does to the cost sheet of main. A merge is refused while it lists a conflict.</param>
 public sealed record MergePreviewResponse(
     IReadOnlyList<MergeChange> AutoResolved,
     IReadOnlyList<MergeConflict> Conflicts,
-    int MainVersion);
+    int MainVersion,
+    SheetMergePreview CostSheet);
 
 public static class PreviewMerge
 {
@@ -46,6 +49,10 @@ public static class PreviewMerge
 
         var result = ThreeWayMerge.Compute(baseState, oursState, theirsState);
 
-        return Results.Ok(new MergePreviewResponse(result.AutoResolved, result.Conflicts, checked((int)mainVersion)));
+        var (oursSheet, _) = await CostAccess.LoadSheetAsync(store, draft.BaseStreamId, ct);
+        var (theirsSheet, _) = await CostAccess.LoadSheetAsync(store, draft.StreamId, ct);
+        var sheet = SheetMerge.Preview(SheetMerge.Plan(oursSheet, theirsSheet, projectId, draft.BaseStreamId, userId, DateTimeOffset.UtcNow));
+
+        return Results.Ok(new MergePreviewResponse(result.AutoResolved, result.Conflicts, checked((int)mainVersion), sheet));
     }
 }
