@@ -789,7 +789,7 @@ function ProjectWorkspace() {
                 placeholder="Element name"
                 value={newElementName}
                 onChange={(e) => setNewElementName(e.target.value)}
-                autoFocus
+                data-autofocus
               />
             </div>
             <DialogFooter className="mt-4">

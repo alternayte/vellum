@@ -82,7 +82,7 @@ public class TelemetryRedactionTests
         builder.Services.ConfigureOpenTelemetryLoggerProvider(logging => logging.AddInMemoryExporter(logs));
         builder.Services.ConfigureOpenTelemetryMeterProvider(metering => metering.AddInMemoryExporter(metrics));
 
-        await using var app = builder.Build();
+        var app = builder.Build();
         using var outbound = new HttpClient();
         app.MapGet("/inner/{id}", () => Results.Ok());
         app.MapGet("/outer/{id}", async (string id, HttpContext http, ILogger<TelemetryRedactionTests> logger) =>
@@ -115,6 +115,11 @@ public class TelemetryRedactionTests
         app.Services.GetRequiredService<TracerProvider>().ForceFlush();
         app.Services.GetRequiredService<LoggerProvider>().ForceFlush();
         app.Services.GetRequiredService<MeterProvider>().ForceFlush();
+
+        // The providers listen to the whole process, and other tests run beside this one. The
+        // host ends here, so the lists do not change while they are read.
+        await app.StopAsync();
+        await app.DisposeAsync();
 
         // Every piece of text that an exporter writes.
         var exported = new List<string>();
@@ -160,8 +165,6 @@ public class TelemetryRedactionTests
 
         foreach (var secret in Secrets)
             Assert.DoesNotContain(exported, text => text.Contains(secret, StringComparison.Ordinal));
-
-        await app.StopAsync();
     }
 
     private static string Text(object? value) => value switch

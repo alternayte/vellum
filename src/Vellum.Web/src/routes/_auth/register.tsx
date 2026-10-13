@@ -32,12 +32,14 @@ function RegisterPage() {
       <form onSubmit={handleSubmit} className="space-y-3">
         <Input
           type="text"
+          aria-label="Display name (optional)"
           placeholder="Display name (optional)"
           value={displayName}
           onChange={(e) => setDisplayName(e.target.value)}
         />
         <Input
           type="email"
+          aria-label="Email"
           placeholder="Email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
@@ -45,6 +47,7 @@ function RegisterPage() {
         />
         <Input
           type="password"
+          aria-label="Password"
           placeholder="Password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}

@@ -1,0 +1,106 @@
+# The hosted profile: many workspaces, sign-in over HTTPS only, behind a reverse proxy that
+# ends TLS. Copy this file, then give the five required values in the environment or in an
+# env file:
+#
+#   VELLUM_MASTER_KEY         base64 of 32 random bytes: `openssl rand -base64 32`. Keep a backup.
+#                             Without this key the stored credentials cannot be read.
+#   VELLUM_SETUP_TOKEN        at least 16 random characters: `openssl rand -hex 24`. The first
+#                             visitor needs it to create the instance admin. It has no use after that.
+#   VELLUM_HOSTS              the public host names of the instance, separated by ';', for
+#                             example `vellum.example.com`. A request for another host name gets 400.
+#   VELLUM_POSTGRES_PASSWORD  the password of the database user.
+#   VELLUM_TRUSTED_PROXIES    the addresses or CIDR ranges of your reverse proxies, separated by
+#                             ';'. See "The reverse proxy" below.
+#
+#   docker compose -f docker-compose.hosted.example.yml --env-file hosted.env up -d
+#
+# The hosted profile refuses to start without a master key, with `AllowedHosts=*`, with
+# insecure cookies, or with no setup token while no user exists. The log states the fix.
+#
+# The reverse proxy
+# -----------------
+# The app listens on plain HTTP on port 8080. This file publishes that port on this machine
+# only (127.0.0.1). Put a proxy that ends TLS in front of it (Caddy, nginx, Traefik, a cloud
+# load balancer) and let nothing else reach the port. The proxy must
+#
+#   - pass the `Host` header on unchanged (it must be one of VELLUM_HOSTS),
+#   - set `X-Forwarded-Proto` to the scheme the browser used, and
+#   - set or append `X-Forwarded-For` with the address of the client.
+#
+# Vellum reads those two headers only from a sender in VELLUM_TRUSTED_PROXIES, and only the
+# last hop, which is the value your proxy wrote. From any other sender they are ignored: a
+# client cannot choose the address that the sign-in rate limit counts, and cannot claim HTTPS.
+# The address the app sees for a proxy on this machine is the gateway of the network below
+# (172.30.250.1); a proxy in this Compose project has an address in 172.30.250.0/24. Name the
+# narrowest range that holds your proxy. Do not set ASPNETCORE_FORWARDEDHEADERS_ENABLED: it
+# trusts the headers from every sender.
+#
+# The session cookie is always `Secure`, `HttpOnly` and `SameSite=Strict` in this profile,
+# whatever scheme the app itself sees. `Strict-Transport-Security` is sent on each request
+# that arrived over HTTPS according to a trusted proxy.
+#
+# Telemetry is off. To export traces, metrics and logs, set OTEL_EXPORTER_OTLP_ENDPOINT to the
+# address of an OTLP collector (and, if needed, OTEL_EXPORTER_OTLP_PROTOCOL and
+# OTEL_EXPORTER_OTLP_HEADERS). Instance settings, Telemetry shows the state.
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: vellum
+      POSTGRES_PASSWORD: ${VELLUM_POSTGRES_PASSWORD:?Set VELLUM_POSTGRES_PASSWORD}
+      POSTGRES_DB: vellum
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vellum -d vellum"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    # The database is reached from the app only. No port is published.
+
+  vellum:
+    build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "${VELLUM_BIND:-127.0.0.1}:${VELLUM_PORT:-8080}:8080"
+    environment:
+      Vellum__Profile: hosted
+      Vellum__DataDirectory: /data
+      Vellum__MasterKey: ${VELLUM_MASTER_KEY:?Set VELLUM_MASTER_KEY to the output of 'openssl rand -base64 32'}
+      # Set this beside the new key to rotate the master key. Empty means "not set".
+      Vellum__PreviousMasterKey: ${VELLUM_PREVIOUS_MASTER_KEY:-}
+      Vellum__SetupToken: ${VELLUM_SETUP_TOKEN:?Set VELLUM_SETUP_TOKEN to at least 16 random characters}
+      AllowedHosts: ${VELLUM_HOSTS:?Set VELLUM_HOSTS to the public host names of this instance}
+      Vellum__TrustedProxies: ${VELLUM_TRUSTED_PROXIES:?Set VELLUM_TRUSTED_PROXIES to the addresses of your reverse proxies}
+      ConnectionStrings__DefaultConnection: Host=postgres;Database=vellum;Username=vellum;Password=${VELLUM_POSTGRES_PASSWORD}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+    volumes:
+      - vellum-data:/data
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "dotnet", "Vellum.dll", "health"]
+      interval: 15s
+      timeout: 6s
+      start_period: 40s
+      retries: 5
+
+networks:
+  default:
+    ipam:
+      config:
+        # A fixed range, so the addresses in VELLUM_TRUSTED_PROXIES stay true after a restart.
+        # If Docker answers "Pool overlaps with other one on this address space", set
+        # VELLUM_SUBNET to a free range and name its gateway (the first address) as the proxy.
+        - subnet: ${VELLUM_SUBNET:-172.30.250.0/24}
+
+volumes:
+  pgdata:
+  vellum-data:

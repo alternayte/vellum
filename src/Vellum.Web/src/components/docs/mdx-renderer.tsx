@@ -1,33 +1,8 @@
 // src/Vellum.Web/src/components/docs/mdx-renderer.tsx
-import { useMemo, useState, useEffect, Fragment } from 'react'
-import { evaluate } from '@mdx-js/mdx'
-import { jsx, jsxs } from 'react/jsx-runtime'
-import remarkGfm from 'remark-gfm'
-import rehypePrettyCode from 'rehype-pretty-code'
+import { useMemo, useState, useEffect, type ReactNode } from 'react'
 import { ElementLink } from './element-link'
 import { LiveViewCard } from './live-view-card'
-
-interface MdNode {
-  type: string
-  children?: MdNode[]
-}
-
-function remarkStripExpressions() {
-  return (tree: MdNode) => {
-    function strip(node: MdNode) {
-      if (node.children) {
-        node.children = node.children.filter(
-          (child) =>
-            child.type !== 'mdxFlowExpression' &&
-            child.type !== 'mdxTextExpression' &&
-            child.type !== 'mdxjsEsm'
-        )
-        node.children.forEach(strip)
-      }
-    }
-    strip(tree)
-  }
-}
+import { renderPage, type PageComponents } from './page-tree'
 
 interface MdxRendererProps {
   content: string
@@ -36,13 +11,14 @@ interface MdxRendererProps {
 }
 
 export function MdxRenderer({ content, elements, views }: MdxRendererProps) {
-  const [MdxContent, setMdxContent] = useState<React.ComponentType | null>(null)
+  const [page, setPage] = useState<ReactNode>(null)
+  const [rendered, setRendered] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const elementsKey = useMemo(() => elements.map(e => e.id).join(','), [elements])
   const viewsKey = useMemo(() => views.map(v => v.id).join(','), [views])
 
-  const components = useMemo(
+  const components = useMemo<PageComponents>(
     () => ({
       ElementLink: (props: { id: string }) => <ElementLink id={props.id} elements={elements} />,
       LiveView: (props: { id: string }) => <LiveViewCard id={props.id} views={views} />,
@@ -56,22 +32,16 @@ export function MdxRenderer({ content, elements, views }: MdxRendererProps) {
 
     async function compile() {
       try {
-        const { default: Content } = await evaluate(content, {
-          jsx,
-          jsxs,
-          Fragment,
-          remarkPlugins: [remarkStripExpressions, remarkGfm],
-          rehypePlugins: [[rehypePrettyCode, { theme: 'one-dark-pro' }]],
-          useMDXComponents: () => components,
-        })
+        const next = await renderPage(content, components)
         if (!cancelled) {
-          setMdxContent(() => Content as React.ComponentType)
+          setPage(next)
+          setRendered(true)
           setError(null)
         }
       } catch (e) {
         if (!cancelled) {
           setError(e instanceof Error ? e.message : 'Failed to render MDX')
-          setMdxContent(null)
+          setRendered(false)
         }
       }
     }
@@ -82,20 +52,16 @@ export function MdxRenderer({ content, elements, views }: MdxRendererProps) {
 
   if (error) {
     return (
-      <div className="rounded border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
+      <div role="alert" className="rounded border border-destructive/50 bg-destructive/10 p-4 text-sm text-destructive">
         <p className="font-medium">MDX render error</p>
         <pre className="mt-1 text-xs">{error}</pre>
       </div>
     )
   }
 
-  if (!MdxContent) {
+  if (!rendered) {
     return <div className="text-sm text-muted-foreground">Rendering...</div>
   }
 
-  return (
-    <div className="prose prose-sm prose-invert max-w-none">
-      <MdxContent />
-    </div>
-  )
+  return page
 }

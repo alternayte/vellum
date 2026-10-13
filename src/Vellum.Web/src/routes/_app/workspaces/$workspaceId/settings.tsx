@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useMemo, useState } from 'react'
+import { useId, useMemo, useState } from 'react'
 import { ArrowLeft, CircleCheck, CircleX, Plus, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -424,11 +424,12 @@ function ProviderList({
 }
 
 function LabelledInput({ label, value, onChange, error, ...input }: { label: string; value: string; onChange: (value: string) => void; error?: string; type?: string; placeholder?: string }) {
+  const errorId = useId()
   return (
     <label className="block text-xs font-medium text-muted-foreground">
       {label}
-      <Input className="mt-1" value={value} aria-invalid={error ? true : undefined} onChange={(e) => onChange(e.target.value)} {...input} />
-      {error && <span role="alert" className="mt-1 block font-normal text-destructive">{error}</span>}
+      <Input className="mt-1" value={value} aria-invalid={error ? true : undefined} aria-describedby={error ? errorId : undefined} onChange={(e) => onChange(e.target.value)} {...input} />
+      {error && <span id={errorId} role="alert" className="mt-1 block font-normal text-destructive">{error}</span>}
     </label>
   )
 }

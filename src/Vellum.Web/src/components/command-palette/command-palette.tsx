@@ -42,7 +42,7 @@ export function CommandPalette({ elements, onAddElement, onTidy, onZoomToFit }: 
           placeholder="Search elements, actions..."
           className="w-full border-b border-border bg-transparent px-4 py-3 text-sm outline-none placeholder:text-muted-foreground"
           aria-label="Search elements and actions"
-          autoFocus
+          data-autofocus
         />
         <Command.List className="max-h-80 overflow-y-auto p-2">
           <Command.Empty className="py-4 text-center text-sm text-muted-foreground">
