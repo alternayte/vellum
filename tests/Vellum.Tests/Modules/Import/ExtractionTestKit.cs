@@ -24,6 +24,37 @@ internal static class Repo
 
     public static ExtractionResult Extract(params (string Path, string Content)[] files) => EvidenceExtractor.Extract(Of(files));
 
+    /// <summary>
+    /// Extracts one hostile file (with the given sound files beside it) and holds the extractors
+    /// to their bounds. The operation count is the bound that no machine changes; the time and
+    /// the allocation show that the count is honest.
+    /// </summary>
+    public static (ExtractionResult Result, long Work) ExtractBounded(string path, string content, params (string Path, string Content)[] others)
+    {
+        var bytes = System.Text.Encoding.UTF8.GetByteCount(content);
+        Assert.True(bytes <= ExtractionLimits.Default.MaxFileBytes, $"{path} is over the file bound and would be refused unread");
+
+        var input = Of([(path, content), .. others]);
+        // Once before the measurement, so that the JIT is not what is measured.
+        EvidenceExtractor.Extract(Of((path, content.Length > 2048 ? content[..2048] : content)));
+
+        var allocatedBefore = GC.GetAllocatedBytesForCurrentThread();
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        var result = EvidenceExtractor.Extract(input, null, out var work);
+        watch.Stop();
+        var allocated = GC.GetAllocatedBytesForCurrentThread() - allocatedBefore;
+        var spent = work.GetValueOrDefault(path);
+
+        Assert.DoesNotContain(result.Notes, n =>
+            n.Reason.StartsWith("extractor-failure", StringComparison.Ordinal) || n.Reason.StartsWith("out-of-memory", StringComparison.Ordinal));
+        // The budget is 64 operations for each byte of the largest file. One charge can step over it by its own size.
+        Assert.True(spent <= 2 * ExtractionLimits.Default.MaxWorkPerFile, $"{path}: {spent} operations");
+        Assert.True(watch.Elapsed < TimeSpan.FromSeconds(2), $"{path}: {watch.Elapsed.TotalMilliseconds:F0} ms for {bytes} bytes ({spent} operations)");
+        Assert.True(allocated < 256L * 1024 * 1024, $"{path}: {allocated / (1024 * 1024)} MiB allocated for {bytes} bytes");
+        Assert.True(System.Text.Encoding.UTF8.GetByteCount(ExtractionJson.Serialize(result)) < 4 * 1024 * 1024, $"{path}: output too large");
+        return (result, spent);
+    }
+
     public static ExtractedFact Fact(this ExtractionResult result, string key) =>
         result.Facts.SingleOrDefault(f => f.Key == key)
         ?? throw new Xunit.Sdk.XunitException($"No fact '{key}'. Facts:\n{string.Join("\n", result.Facts.Select(f => f.Key))}");

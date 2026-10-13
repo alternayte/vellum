@@ -73,7 +73,11 @@ public class OrdersFixtureTests
     {
         var operation = Result.Fact("operation:orders-api:GET /orders/{id}");
 
-        Assert.Equal("/orders/{id:guid}", operation.Attr("routeTemplate"));
+        Assert.Equal("/orders/{id}", operation.Attr("path"));
+        Assert.Equal("/orders/{}", operation.Attr("routeTemplate"));
+        Assert.Equal("/orders/{id:guid}", operation.Attr("declaredRoute"));
+        // The OpenAPI document names the parameter the same way here; the template is what matches when it does not.
+        Assert.Equal(operation.Attr("routeTemplate"), Result.Fact("operation:openapi.yaml:GET /orders/{id}").Attr("routeTemplate"));
         Assert.Equal(["orders-api/Program.cs:52-53"], operation.Lines());
         Assert.StartsWith("orders.MapGet(\"/{id:guid}\"", Input.Text("orders-api/Program.cs", 52, 53));
     }
@@ -98,43 +102,70 @@ public class OrdersFixtureTests
     }
 
     [Fact]
-    public void OrderCreated_is_one_message_with_its_contract_and_its_payload_schema()
+    public void OrderCreated_is_a_code_contract_and_a_document_entry_that_do_not_share_a_key()
     {
-        var message = Result.Fact("message:OrderCreated");
-
-        Assert.Equal(FactKind.Message, message.Kind);
-        Assert.Equal("Orders.Contracts.OrderCreated", message.Attr("clrType"));
-        Assert.Equal("CreatedAt:DateTimeOffset;CustomerId:Guid;OrderId:Guid;Total:decimal", message.Attr("fields"));
-        Assert.Equal("schema:asyncapi.yaml#/components/schemas/OrderCreated", message.Attr("payloadSchema"));
-        Assert.Equal(["asyncapi.yaml:32-37", "contracts/OrderCreated.cs:7-11"], message.Lines());
+        var contract = Result.Fact("message:Orders.Contracts.OrderCreated");
+        Assert.Equal(FactKind.Message, contract.Kind);
+        Assert.Equal("OrderCreated", contract.Name);
+        Assert.Equal("Orders.Contracts.OrderCreated", contract.Attr("clrType"));
+        Assert.Equal("contracts/Orders.Contracts.csproj", contract.Attr("declaredIn"));
+        Assert.Equal("CreatedAt:DateTimeOffset;CustomerId:Guid;OrderId:Guid;Total:decimal", contract.Attr("fields"));
+        Assert.Equal(["contracts/OrderCreated.cs:7-11"], contract.Lines());
         Assert.StartsWith("public sealed record OrderCreated(", Input.Text("contracts/OrderCreated.cs", 7, 11));
+
+        // The AsyncAPI entry is another claim about the same event. Nothing merges the two.
+        var entry = Result.Fact("message:asyncapi.yaml#OrderCreated");
+        Assert.Equal(FactKind.Message, entry.Kind);
+        Assert.Equal("schema:asyncapi.yaml#/components/schemas/OrderCreated", entry.Attr("payloadSchema"));
+        Assert.Null(entry.Attr("fields"));
+        Assert.Equal(["asyncapi.yaml:32-37"], entry.Lines());
         Assert.StartsWith("    OrderCreated:", Input.Text("asyncapi.yaml", 32, 37));
+        Assert.False(Result.Has("message:OrderCreated"));
 
         var schema = Result.Fact("schema:asyncapi.yaml#/components/schemas/OrderCreated");
         Assert.Contains("\"total\":{\"type\":\"number\"}", schema.Attr("schema"));
     }
 
     [Fact]
+    public void The_go_worker_reads_OrderCreated_through_the_structs_it_decodes_a_delivery_into()
+    {
+        var envelope = Result.Fact("message:github.com/acme/orders/inventory-worker.envelope");
+        Assert.Equal("message:orderCreated;messageId:string", envelope.Attr("fields"));
+        Assert.Equal(["inventory-worker/consumer.go:26-29", "inventory-worker/consumer.go:63-63"], envelope.Lines());
+        Assert.StartsWith("type envelope struct {", Input.Text("inventory-worker/consumer.go", 26, 29));
+        Assert.Contains("json.Unmarshal(delivery.Body, &event)", Input.Text("inventory-worker/consumer.go", 63, 63));
+
+        var payload = Result.Fact("message:github.com/acme/orders/inventory-worker.orderCreated");
+        Assert.Equal("customerId:string;orderId:string;total:float64", payload.Attr("fields"));
+        Assert.Equal(["inventory-worker/consumer.go:19-23"], payload.Lines());
+        Assert.StartsWith("type orderCreated struct {", Input.Text("inventory-worker/consumer.go", 19, 23));
+    }
+
+    [Fact]
     public void Orders_api_publishes_OrderCreated_to_the_order_events_exchange()
     {
-        var publication = Result.Fact("publication:orders-api:OrderCreated");
+        var publication = Result.Fact("publication:orders-api:Orders.Contracts.OrderCreated");
 
         Assert.Equal(FactKind.Publication, publication.Kind);
         Assert.Equal("service:orders-api", publication.Attr("service"));
-        Assert.Equal("message:OrderCreated", publication.Attr("message"));
-        Assert.Equal("channel:order-events", publication.Attr("channel"));
+        Assert.Equal("message:Orders.Contracts.OrderCreated", publication.Attr("message"));
+        Assert.Equal("channel:amqp:order-events", publication.Attr("channel"));
         Assert.Equal(["orders-api/Program.cs:46-46"], publication.Lines());
         Assert.Contains("publisher.Publish(new OrderCreated(", Input.Text("orders-api/Program.cs", 46, 46));
 
-        var exchange = Result.Fact("channel:order-events");
+        var exchange = Result.Fact("channel:amqp:order-events");
         Assert.Equal("exchange", exchange.Attr("kind"));
         Assert.Equal("fanout", exchange.Attr("amqp.exchange.type"));
-        Assert.Equal("message:OrderCreated", exchange.Attr("entityOf"));
-        // Three sources agree on the exchange: the AsyncAPI document, the Go declaration, the .NET entity name.
-        Assert.Equal(
-            ["asyncapi.yaml:10-21", "inventory-worker/consumer.go:33-33", "orders-api/Program.cs:25-25"],
-            exchange.Lines());
+        Assert.Equal("message:Orders.Contracts.OrderCreated", exchange.Attr("entityOf"));
+        // Two code sources agree on the exchange: the Go declaration and the .NET entity name.
+        Assert.Equal(["inventory-worker/consumer.go:33-33", "orders-api/Program.cs:25-25"], exchange.Lines());
+        Assert.DoesNotContain(exchange.Attributes.Keys, name => name.StartsWith("conflict.", StringComparison.Ordinal));
         Assert.DoesNotContain(Result.Notes, n => n.Kind == NoteKind.Conflict);
+
+        // The AsyncAPI channel is a document entry with its own key. It names the same address.
+        var declared = Result.Fact("channel:asyncapi.yaml#orderEvents");
+        Assert.Equal(("order-events", "fanout"), (declared.Attr("address"), declared.Attr("amqp.exchange.type")));
+        Assert.Equal(["asyncapi.yaml:10-21"], declared.Lines());
     }
 
     [Fact]
@@ -142,7 +173,9 @@ public class OrdersFixtureTests
     {
         var outbox = Result.Fact("outbox:orders-api:masstransit-entity-framework");
 
-        Assert.Equal(FactKind.Publication, outbox.Kind);
+        // A pattern of the service, not a publication.
+        Assert.Equal(FactKind.Pattern, outbox.Kind);
+        Assert.Equal(["outbox:orders-api:masstransit-entity-framework"], Result.Facts.Where(f => f.Kind == FactKind.Pattern).Select(f => f.Key));
         Assert.Equal("transactional-outbox", outbox.Attr("pattern"));
         Assert.Equal("service:orders-api", outbox.Attr("service"));
         Assert.Equal("OrdersDbContext", outbox.Attr("dbContext"));
@@ -162,17 +195,17 @@ public class OrdersFixtureTests
     [Fact]
     public void Billing_consumes_OrderCreated_from_its_queue()
     {
-        var subscription = Result.Fact("subscription:billing:OrderCreatedConsumer:OrderCreated");
+        var subscription = Result.Fact("subscription:billing:Billing.OrderCreatedConsumer:Orders.Contracts.OrderCreated");
 
         Assert.Equal(FactKind.Subscription, subscription.Kind);
         Assert.Equal("service:billing", subscription.Attr("service"));
-        Assert.Equal("message:OrderCreated", subscription.Attr("message"));
-        Assert.Equal("channel:billing.order-created", subscription.Attr("queue"));
+        Assert.Equal("message:Orders.Contracts.OrderCreated", subscription.Attr("message"));
+        Assert.Equal("channel:amqp:billing.order-created", subscription.Attr("queue"));
         Assert.Equal(["billing/OrderCreatedConsumer.cs:7-9", "billing/Program.cs:16-20"], subscription.Lines());
         Assert.Contains(": IConsumer<OrderCreated>", Input.Text("billing/OrderCreatedConsumer.cs", 7, 9));
         Assert.StartsWith("        cfg.ReceiveEndpoint(\"billing.order-created\"", Input.Text("billing/Program.cs", 16, 20));
 
-        Assert.Equal("queue", Result.Fact("channel:billing.order-created").Attr("kind"));
+        Assert.Equal("queue", Result.Fact("channel:amqp:billing.order-created").Attr("kind"));
     }
 
     [Fact]
@@ -180,23 +213,24 @@ public class OrdersFixtureTests
     {
         var subscription = Result.Fact("subscription:inventory-worker:amqp:inventory.order-created");
         Assert.Equal("service:inventory-worker", subscription.Attr("service"));
-        Assert.Equal("channel:inventory.order-created", subscription.Attr("queue"));
-        Assert.Equal(["inventory-worker/consumer.go:50-50"], subscription.Lines());
+        Assert.Equal("channel:amqp:inventory.order-created", subscription.Attr("queue"));
+        Assert.Equal("message:github.com/acme/orders/inventory-worker.envelope", subscription.Attr("message"));
+        Assert.Equal(["inventory-worker/consumer.go:50-50", "inventory-worker/consumer.go:63-63"], subscription.Lines());
         Assert.Contains("ch.Consume(orderCreatedQueue,", Input.Text("inventory-worker/consumer.go", 50, 50));
 
-        var binding = Result.Fact("binding:inventory.order-created:order-events");
+        var binding = Result.Fact("binding:inventory-worker:amqp:inventory.order-created:order-events");
         Assert.Equal(FactKind.Subscription, binding.Kind);
-        Assert.Equal("channel:inventory.order-created", binding.Attr("queue"));
-        Assert.Equal("channel:order-events", binding.Attr("exchange"));
+        Assert.Equal("channel:amqp:inventory.order-created", binding.Attr("queue"));
+        Assert.Equal("channel:amqp:order-events", binding.Attr("exchange"));
         Assert.Equal(["inventory-worker/consumer.go:46-46"], binding.Lines());
 
-        var queue = Result.Fact("channel:inventory.order-created");
+        var queue = Result.Fact("channel:amqp:inventory.order-created");
         Assert.Equal("queue", queue.Attr("kind"));
-        Assert.Equal("channel:order-events.dlx", queue.Attr("deadLetterExchange"));
+        Assert.Equal("channel:amqp:order-events.dlx", queue.Attr("deadLetterExchange"));
         Assert.Equal(["inventory-worker/consumer.go:40-42"], queue.Lines());
         Assert.Contains("\"x-dead-letter-exchange\": deadLetterExchange,", Input.Text("inventory-worker/consumer.go", 40, 42));
 
-        var deadLetters = Result.Fact("channel:order-events.dlx");
+        var deadLetters = Result.Fact("channel:amqp:order-events.dlx");
         Assert.Equal("exchange", deadLetters.Attr("kind"));
         Assert.Equal(["inventory-worker/consumer.go:36-36"], deadLetters.Lines());
         Assert.Contains("ch.ExchangeDeclare(deadLetterExchange, \"fanout\"", Input.Text("inventory-worker/consumer.go", 36, 36));
@@ -205,10 +239,10 @@ public class OrdersFixtureTests
     [Fact]
     public void Data_stores_and_data_access_are_found()
     {
-        Assert.Equal("postgres", Result.Fact("datastore:postgres").Attr("kind"));
-        Assert.Equal("POSTGRES_DB,POSTGRES_PASSWORD,POSTGRES_USER", Result.Fact("datastore:postgres").Attr("environment"));
+        Assert.Equal("postgres", Result.Fact("datastore:.:postgres").Attr("kind"));
+        Assert.Equal("POSTGRES_DB,POSTGRES_PASSWORD,POSTGRES_USER", Result.Fact("datastore:.:postgres").Attr("environment"));
 
-        var context = Result.Fact("dataaccess:orders-api:OrdersDbContext");
+        var context = Result.Fact("dataaccess:orders-api:Orders.Api.OrdersDbContext");
         Assert.Equal("Order", context.Attr("entities"));
         Assert.Equal("postgres", context.Attr("storeKind"));
         Assert.Equal("postgres", Result.Fact("dataaccess:inventory-worker:sql:pgx").Attr("storeKind"));
@@ -223,22 +257,32 @@ public class OrdersFixtureTests
 
         var delta = FactDiff.Compare(Result.Facts, head.Facts);
 
+        // Exactly three things: the outbox is gone, the field of OrderCreated has a new name (in the
+        // .NET contract and in the struct the Go worker decodes), and the AsyncAPI schema follows it.
         Assert.Empty(delta.Added);
-        Assert.Equal(["outbox:orders-api:masstransit-entity-framework"], delta.Removed.Select(f => f.Key));
+        Assert.Equal(["Pattern outbox:orders-api:masstransit-entity-framework"], delta.Removed.Select(f => $"{f.Kind} {f.Key}"));
         Assert.Equal(
-            ["message:OrderCreated|fields", "schema:asyncapi.yaml#/components/schemas/OrderCreated|schema"],
+            [
+                "message:Orders.Contracts.OrderCreated|fields",
+                "message:github.com/acme/orders/inventory-worker.orderCreated|fields",
+                "schema:asyncapi.yaml#/components/schemas/OrderCreated|schema",
+            ],
             delta.Changed.Select(c => $"{c.Key}|{string.Join(",", c.Attributes)}"));
 
         Assert.Equal(
             "CreatedAt:DateTimeOffset;CustomerId:Guid;OrderId:Guid;TotalAmount:decimal",
-            head.Fact("message:OrderCreated").Attr("fields"));
+            head.Fact("message:Orders.Contracts.OrderCreated").Attr("fields"));
+        Assert.Equal(
+            "customerId:string;orderId:string;totalAmount:float64",
+            head.Fact("message:github.com/acme/orders/inventory-worker.orderCreated").Attr("fields"));
         Assert.Contains("\"totalAmount\":{\"type\":\"number\"}", head.Fact("schema:asyncapi.yaml#/components/schemas/OrderCreated").Attr("schema"));
+        Assert.DoesNotContain(head.Facts, f => f.Kind == FactKind.Pattern);
 
         // The publication is still there: the event is still published, now without the outbox.
         // Its lines moved; its key and attributes did not.
-        var publication = head.Fact("publication:orders-api:OrderCreated");
+        var publication = head.Fact("publication:orders-api:Orders.Contracts.OrderCreated");
         Assert.Equal(["orders-api/Program.cs:38-38"], publication.Lines());
-        Assert.Equal(Result.Fact("publication:orders-api:OrderCreated").Attributes, publication.Attributes);
+        Assert.Equal(Result.Fact("publication:orders-api:Orders.Contracts.OrderCreated").Attributes, publication.Attributes);
         Assert.Equal(Result.Facts.Count - 1, head.Facts.Count);
     }
 }

@@ -19,7 +19,7 @@ const (
 type orderCreated struct {
 	OrderID    string  `json:"orderId"`
 	CustomerID string  `json:"customerId"`
-	Total      float64 `json:"total"`
+	Total      float64 `json:"totalAmount"`
 }
 
 // envelope is the MassTransit message envelope.

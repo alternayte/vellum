@@ -4,73 +4,141 @@ namespace Vellum.Modules.Import.Extraction;
 
 /// <summary>
 /// .NET projects and C# source. Nothing is compiled, restored or loaded: a project file is
-/// read as XML, and source is read as tokens (see <see cref="CSharpLexer"/>). A C# file
-/// belongs to the nearest project file at or above its directory; a file with no project is
-/// noted and not read. <c>&lt;slug&gt;</c> is the project file name in lower case with other
-/// characters as '-' (<c>Orders.Api.csproj</c> gives <c>orders-api</c>).
-/// <para>Rules, and what each does not recognise:</para>
+/// read as XML, and source is read as tokens (see <see cref="CSharpLexer"/> for strings,
+/// comments and the preprocessor, and <see cref="CSharpFile"/> for declarations and scopes).
+/// <para>Ownership. A C# file belongs to the project file in the nearest directory at or above
+/// it. A file with no project above it, under a project file that does not parse, or in a
+/// directory with two project files (nothing says which one compiles it) is noted and not read.</para>
+/// <para>Keys. <c>&lt;pid&gt;</c> is <see cref="ExtractionContext.ProjectId"/>: the directory of the
+/// project file. A type is named with its namespace and enclosing types
+/// (<c>Orders.Contracts.OrderCreated</c>). A type name written at a use site is resolved to
+/// one declaration of the scan by the rule of <see cref="TypeIndex"/>; a partial type is one
+/// type made of its parts in one project.</para>
+/// <para>Conditional compilation. A fact from a token in a preprocessor branch whose condition
+/// the scan cannot evaluate has the attribute <c>conditional</c> with the condition; its key is
+/// the same as without. Branches that are not compiled give nothing. The condition is that of
+/// the site of the fact (the call, the type keyword, the action), not of every token the rule reads.</para>
+/// <para>Rules (all version 2), the exact recognition rule of each, and what it does not recognise:</para>
 /// <list type="bullet">
-/// <item><c>dotnet.project</c> — <c>service:&lt;slug&gt;</c> when the SDK is Web or Worker, or the
-/// output type is Exe. Not: <c>Directory.Build.props</c>, imports, conditions, old-style
-/// project files without an <c>Sdk</c> attribute that are not Exe.</item>
-/// <item><c>dotnet.package-reference</c> — <c>dependency:&lt;slug&gt;:nuget:&lt;package&gt;</c> and
-/// <c>dependency:&lt;slug&gt;:project:&lt;name&gt;</c>. Not: central package versions, transitive packages.</item>
-/// <item><c>dotnet.minimal-api-route</c> — <c>MapGet/Post/Put/Patch/Delete("literal", …)</c> on a
-/// receiver whose prefix is known from this file: a variable assigned from <c>….Build()</c>,
-/// a <c>WebApplication</c> parameter, or a chain of <c>MapGroup("literal")</c> from one of
-/// those. Not: <c>MapMethods</c>, <c>MapFallback</c>, a route that is not one string literal,
-/// a receiver that is an <c>IEndpointRouteBuilder</c> or <c>RouteGroupBuilder</c> parameter
-/// (the prefix is set by a caller this rule does not follow), a prefix from another file.</item>
-/// <item><c>dotnet.controller-route</c> — <c>[HttpGet]</c> and the other verb attributes on
-/// members of a class with <c>[ApiController]</c> or a <c>ControllerBase</c>/<c>Controller</c>
-/// base, joined with the class <c>[Route]</c>; <c>[controller]</c> and <c>[action]</c>
-/// replaced. Not: <c>[AcceptVerbs]</c>, conventional routing (a verb attribute with no template
-/// on a class with no route is noted), <c>[area]</c>, a template that
-/// is a constant or an expression, a route inherited from a base class.</item>
-/// <item><c>dotnet.masstransit-consumer</c> — <c>class X : IConsumer&lt;T&gt;</c>. Not: consumers
-/// registered by convention without the interface, sagas, routing slips.</item>
-/// <item><c>dotnet.masstransit-receive-endpoint</c> — <c>ReceiveEndpoint("literal", e =&gt; … ConfigureConsumer&lt;X&gt; …)</c>
-/// gives the queue of consumer X. Not: endpoint name formatters, <c>ConsumerDefinition</c>,
-/// <c>ConfigureEndpoints</c> conventions (the queue is then unknown and left out).</item>
-/// <item><c>dotnet.masstransit-publish</c> — <c>.Publish&lt;T&gt;(…)</c>, <c>.Publish(new T…)</c>,
-/// <c>.Send&lt;T&gt;(…)</c>, <c>.Send(new T…)</c> on a receiver declared in the same file as
-/// <c>IPublishEndpoint</c>, <c>IBus</c>, <c>IBusControl</c>, <c>ISendEndpoint</c>,
-/// <c>ISendEndpointProvider</c> or <c>ConsumeContext</c>. A message passed as a variable is
-/// noted, not guessed. Not: any other receiver (silently, because <c>Send</c> and
-/// <c>Publish</c> are common names), <c>PublishBatch</c>, scheduled messages.</item>
-/// <item><c>dotnet.masstransit-entity-name</c> — <c>Message&lt;T&gt;(m =&gt; m.SetEntityName("literal"))</c>
-/// gives the channel of T.</item>
-/// <item><c>dotnet.masstransit-outbox</c> — <c>AddEntityFrameworkOutbox&lt;TContext&gt;</c>, with
-/// <c>UseBusOutbox</c> and the outbox entity mappings as more evidence; and
-/// <c>AddInMemoryOutbox</c>/<c>UseInMemoryOutbox</c> as a separate, weaker fact.</item>
-/// <item><c>dotnet.outbox-handwritten</c> — both of: a <c>DbSet&lt;T&gt;</c> whose entity name starts
-/// with <c>Outbox</c>, and in the same project a class derived from <c>BackgroundService</c>
-/// or implementing <c>IHostedService</c> whose body names that set or entity. Not: an outbox
-/// table without a dispatcher in the same project, a dispatcher in another process, other
-/// libraries (CAP, NServiceBus, Wolverine).</item>
-/// <item><c>dotnet.efcore-dbcontext</c> — a class derived from <c>DbContext</c> or an Identity
-/// context, with its <c>DbSet&lt;T&gt;</c> members. The store kind comes from the one EF Core
-/// provider package of the project, else <c>unknown</c>. Not: entities mapped only in
-/// <c>OnModelCreating</c>, Dapper or raw SQL access, a context derived from a custom base.</item>
-/// <item><c>dotnet.message-contract</c> — the <c>record</c>/<c>class</c>/<c>interface</c>
-/// declaration of a type that a consumer, publish or send names: positional parameters and
-/// public properties as fields. Not: inherited members, a type declared outside the scan.</item>
+/// <item><c>dotnet.project</c> — <c>service:&lt;pid&gt;</c> when the SDK is Web or Worker, or the
+/// output type is Exe or WinExe. Not: <c>Directory.Build.props</c>, imports, <c>Condition</c>
+/// attributes, old-style project files without an <c>Sdk</c> attribute that are not Exe.</item>
+/// <item><c>dotnet.package-reference</c> — <c>dependency:&lt;pid&gt;:nuget:&lt;package&gt;</c> for each
+/// <c>PackageReference</c>, and <c>dependency:&lt;pid&gt;:project:&lt;name&gt;</c> for each
+/// <c>ProjectReference</c>. Not: central package versions, transitive packages; two references
+/// to projects with one file name share a key.</item>
+/// <item><c>dotnet.minimal-api-route</c> — <c>x.MapGet/Post/Put/Patch/Delete("literal", handler…)</c>
+/// where the receiver is, in the scope of the call, an endpoint builder with a prefix that the
+/// text fixes: a name declared as <c>WebApplication</c> (prefix empty); a name whose every
+/// assignment is <c>b.Build()</c> with <c>b</c> a <c>WebApplicationBuilder</c> or assigned from
+/// <c>WebApplication.CreateBuilder/CreateSlimBuilder/CreateEmptyBuilder(…)</c>, or is
+/// <c>WebApplication.Create(…)</c>; or <c>MapGroup("literal")</c> on one of those, through the
+/// calls that return their group (<c>WithTags</c>, <c>RequireAuthorization</c>, …), directly or
+/// through variables (at most 32 variables deep, 64 groups, 400 characters). Top-level
+/// statements are one scope; a method, local function or lambda is its own, and its
+/// parameters hide outer names. A receiver that is a builder, or may be one, without such a
+/// prefix (an <c>IEndpointRouteBuilder</c> or <c>RouteGroupBuilder</c> parameter such as the
+/// <c>this</c> parameter of an extension method, a lambda parameter, a name with no visible
+/// declaration, a name with two different assignments, <c>MapGroup(expression)</c>) gives a
+/// note. A receiver declared with any other type, or constructed with <c>new</c>, gives nothing.
+/// Not: <c>MapMethods</c>, <c>MapFallback</c>, a route that is not one string literal (noted),
+/// a prefix set by the caller of an extension method or in another file, fields of another
+/// part of a partial class, <c>UsePathBase</c>.</item>
+/// <item><c>dotnet.controller-route</c> — verb attributes (<c>[HttpGet]</c> … <c>[HttpOptions]</c>) on
+/// public instance methods of a class that is a controller: it or a base class has
+/// <c>[ApiController]</c>, or its base class chain ends at <c>ControllerBase</c> or
+/// <c>Controller</c>. The chain is followed through base classes declared in the scan (at most
+/// 8). The class route is the <c>[Route]</c> set of the nearest class of the chain that has one;
+/// actions of base classes are inherited; <c>[controller]</c> is the name of the concrete class
+/// and <c>[action]</c> the method. An abstract or static class gives no routes itself. No facts
+/// and a note when the route cannot be established: a first base type that is not declared in
+/// the scan (it can be a class with a route), a partial class with one part in the scan, two
+/// declarations of one name, a template that is not one literal, more than 8 route or verb
+/// attributes on one declaration, an inherited action that the derived class declares again, a
+/// verb attribute with no template on a class with no route (conventional routing).
+/// Attributes on properties, fields, delegates, events and non-public or static methods give nothing.
+/// Not: <c>[AcceptVerbs]</c>, <c>[area]</c>, controllers by naming convention only, <c>[NonController]</c>.</item>
+/// <item><c>dotnet.masstransit-consumer</c> — <c>class X : IConsumer&lt;T&gt;</c> with T a plain type
+/// name, in a project with a MassTransit package or a file with <c>using MassTransit</c>. T a
+/// type parameter gives nothing; a constructed generic T is noted. The key is
+/// <c>subscription:&lt;pid&gt;:&lt;consumer type&gt;:&lt;message type&gt;</c>; when T resolves to no one
+/// type of the scan the last part is <c>unresolved:&lt;name as written&gt;</c>, there is no
+/// <c>message</c> attribute, and a note. <c>messageType</c> is always the name as written.
+/// Not: consumers registered by convention without the interface, sagas, routing slips.</item>
+/// <item><c>dotnet.masstransit-receive-endpoint</c> — <c>x.ReceiveEndpoint("literal", …)</c> with
+/// <c>.ConfigureConsumer&lt;X&gt;</c> or <c>.Consumer&lt;X&gt;</c> inside its call gives the queue
+/// <c>channel:&lt;broker&gt;:&lt;queue&gt;</c>, and the <c>queue</c> of the subscriptions of X when X
+/// resolves to one type and has one queue. The broker is that of the one MassTransit transport
+/// package of the project of the endpoint (<c>amqp</c>, <c>kafka</c>, <c>azure-service-bus</c>,
+/// <c>amazon-sqs</c>), else <c>masstransit</c>. A name that is not a literal is noted. An
+/// endpoint inside another endpoint is noted and not read. Not: endpoint name formatters,
+/// <c>ConsumerDefinition</c>, <c>ConfigureEndpoints</c> conventions (the queue is then unknown).</item>
+/// <item><c>dotnet.masstransit-publish</c> — <c>r.Publish&lt;T&gt;(…)</c>, <c>r.Publish(new T…)</c>,
+/// <c>r.Send&lt;T&gt;(…)</c>, <c>r.Send(new T…)</c> where r (or <c>this.r</c>) is a name whose declaration
+/// in the scope of the call (parameter, lambda parameter with a type, local, field, primary
+/// constructor parameter of the enclosing class) has the type <c>IPublishEndpoint</c>,
+/// <c>IBus</c>, <c>IBusControl</c>, <c>ISendEndpoint</c>, <c>ISendEndpointProvider</c> or
+/// <c>ConsumeContext</c>. Key <c>publication:&lt;pid&gt;:&lt;message type&gt;</c>, resolved as for a
+/// consumer. T a type parameter gives nothing. A message passed as a variable is noted. Not:
+/// any other receiver, silently (<c>IMediator.Send</c>, a bus configurator, a name declared in
+/// another file or part), <c>PublishBatch</c>, scheduled messages.</item>
+/// <item><c>dotnet.masstransit-entity-name</c> — <c>x.Message&lt;T&gt;(m =&gt; … m.SetEntityName("literal") …)</c>
+/// gives <c>channel:&lt;broker&gt;:&lt;name&gt;</c> with <c>entityOf</c> the message key, and is the
+/// <c>channel</c> of the publications of T in that project when T has one entity name. Its
+/// <c>kind</c> is <c>exchange</c> for amqp, <c>topic</c> for the other known brokers, and absent
+/// when the broker is not known. Exchange type and durability are not in the text and are not stated.</item>
+/// <item><c>dotnet.masstransit-outbox</c> — kind <c>Pattern</c>, not a publication.
+/// <c>outbox:&lt;pid&gt;:masstransit-entity-framework</c> (<c>pattern=transactional-outbox</c>) needs
+/// <c>AddEntityFrameworkOutbox&lt;TContext&gt;(…)</c>; <c>UseBusOutbox</c> and the outbox entity
+/// mappings are more evidence. <c>outbox:&lt;pid&gt;:masstransit-in-memory</c>
+/// (<c>pattern=in-memory-outbox</c>) is <c>AddInMemoryOutbox</c> or <c>UseInMemoryOutbox</c>.</item>
+/// <item><c>dotnet.outbox-handwritten</c> — kind <c>Pattern</c>, <c>outbox:&lt;pid&gt;:hand-written</c>.
+/// All of, in one project: (1) a <c>DbSet&lt;E&gt;</c> of a DbContext where the simple name of E is
+/// <c>Outbox</c>, <c>OutboxMessage</c>, <c>OutboxMessages</c>, <c>OutboxEvent</c>, <c>OutboxEvents</c>,
+/// <c>OutboxEntry</c>, <c>OutboxEntries</c> or <c>IntegrationEventLogEntry</c>, or has <c>Outbox</c>
+/// followed later by <c>Message</c>, or <c>IntegrationEvent</c> followed later by <c>Log</c> (case-sensitive);
+/// (2) a class declaration with the base <c>BackgroundService</c> or <c>IHostedService</c> that
+/// reads that set: <c>r.SetName</c> not followed by <c>.Add/AddRange/Remove/RemoveRange/Update/UpdateRange/Attach/AttachRange</c>
+/// (or their Async forms) or <c>=</c>, or <c>r.Set&lt;E&gt;()</c>, where the declared type of r is that DbContext
+/// (by its type name, <c>GetRequiredService&lt;T&gt;()</c> and the like, or <c>CreateDbContext[Async]()</c> on an
+/// <c>IDbContextFactory&lt;T&gt;</c>); and (3) in the same class declaration a call of a publish API on a typed
+/// receiver: <c>Publish</c>/<c>Send</c> on the MassTransit types above, <c>Produce</c>/<c>ProduceAsync</c> on
+/// <c>IProducer</c>/<c>ITopicProducer</c>, <c>BasicPublish</c>/<c>BasicPublishAsync</c> on <c>IModel</c>/<c>IChannel</c>,
+/// <c>SendMessageAsync</c>/<c>SendMessagesAsync</c> on <c>ServiceBusSender</c>. At most 16 sets and 16
+/// dispatchers of a project are read. Not: a dispatcher in another project or split over
+/// partial parts, a context injected through a property, entities mapped only in
+/// <c>OnModelCreating</c>, other libraries (CAP, NServiceBus, Wolverine), in-process mediators.</item>
+/// <item><c>dotnet.efcore-dbcontext</c> — <c>dataaccess:&lt;pid&gt;:&lt;context type&gt;</c> for a class with
+/// the base <c>DbContext</c>, <c>IdentityDbContext</c>, <c>IdentityUserContext</c> or
+/// <c>ApiAuthorizationDbContext</c>, with its <c>DbSet&lt;T&gt; Name</c> members. The store kind
+/// comes from the one EF Core provider package of the project, else <c>unknown</c>. Not:
+/// entities mapped only in <c>OnModelCreating</c>, Dapper or raw SQL, a context derived from a custom base.</item>
+/// <item><c>dotnet.message-contract</c> — <c>message:&lt;type&gt;</c> for each type that a consumer,
+/// publish, send or entity name resolved to: positional parameters of a record and public
+/// instance properties with an accessor block as <c>Name:Type</c> fields (names, checked one by
+/// one; a field named <c>Token</c> stays). Not: inherited members, expression-bodied
+/// properties, fields, a type declared outside the scan.</item>
 /// </list>
+/// <para>Bounds. Every loop charges the <see cref="WorkMeter"/> of the file it reads, and each
+/// fact costs <see cref="FactCost"/> operations of the file that gives it. Nesting is bounded
+/// and documented where it occurs: types and namespaces (<see cref="CSharpFile.MaxNesting"/>),
+/// preprocessor groups (<see cref="CSharpLexer.MaxConditionalDepth"/>), base classes, variable
+/// chains. Names longer than <see cref="CSharpFile.MaxNameLength"/> are not kept.</para>
 /// </summary>
-internal sealed class DotNetExtractor : IExtractor
+internal sealed partial class DotNetExtractor : IExtractor
 {
-    private static readonly ExtractionRule ProjectRule = new("dotnet.project", 1);
-    private static readonly ExtractionRule PackageRule = new("dotnet.package-reference", 1);
-    private static readonly ExtractionRule MinimalApi = new("dotnet.minimal-api-route", 1);
-    private static readonly ExtractionRule ControllerRoute = new("dotnet.controller-route", 1);
-    private static readonly ExtractionRule Consumer = new("dotnet.masstransit-consumer", 1);
-    private static readonly ExtractionRule ReceiveEndpoint = new("dotnet.masstransit-receive-endpoint", 1);
-    private static readonly ExtractionRule Publish = new("dotnet.masstransit-publish", 1);
-    private static readonly ExtractionRule EntityName = new("dotnet.masstransit-entity-name", 1);
-    private static readonly ExtractionRule Outbox = new("dotnet.masstransit-outbox", 1);
-    private static readonly ExtractionRule HandwrittenOutbox = new("dotnet.outbox-handwritten", 1);
-    private static readonly ExtractionRule DbContextRule = new("dotnet.efcore-dbcontext", 1);
-    private static readonly ExtractionRule Contract = new("dotnet.message-contract", 1);
+    private static readonly ExtractionRule ProjectRule = new("dotnet.project", 2);
+    private static readonly ExtractionRule PackageRule = new("dotnet.package-reference", 2);
+    private static readonly ExtractionRule MinimalApi = new("dotnet.minimal-api-route", 2);
+    private static readonly ExtractionRule ControllerRoute = new("dotnet.controller-route", 2);
+    private static readonly ExtractionRule Consumer = new("dotnet.masstransit-consumer", 2);
+    private static readonly ExtractionRule ReceiveEndpoint = new("dotnet.masstransit-receive-endpoint", 2);
+    private static readonly ExtractionRule Publish = new("dotnet.masstransit-publish", 2);
+    private static readonly ExtractionRule EntityName = new("dotnet.masstransit-entity-name", 2);
+    private static readonly ExtractionRule Outbox = new("dotnet.masstransit-outbox", 2);
+    private static readonly ExtractionRule HandwrittenOutbox = new("dotnet.outbox-handwritten", 2);
+    private static readonly ExtractionRule DbContextRule = new("dotnet.efcore-dbcontext", 2);
+    private static readonly ExtractionRule Contract = new("dotnet.message-contract", 2);
 
     public string Id => "dotnet";
     public IReadOnlyList<ExtractionRule> Rules =>
@@ -118,10 +186,10 @@ internal sealed class DotNetExtractor : IExtractor
         ["MapGet"] = "GET", ["MapPost"] = "POST", ["MapPut"] = "PUT", ["MapPatch"] = "PATCH", ["MapDelete"] = "DELETE",
     };
 
-    private static readonly HashSet<string> Modifiers = new(StringComparer.Ordinal)
+    private static readonly HashSet<string> MemberModifiers = new(StringComparer.Ordinal)
     {
         "public", "private", "protected", "internal", "static", "sealed", "abstract", "partial", "readonly",
-        "unsafe", "new", "file", "ref", "virtual", "override", "async", "extern", "required", "record",
+        "unsafe", "new", "file", "ref", "virtual", "override", "async", "extern", "required",
     };
 
     private static readonly HashSet<string> BusTypes = new(StringComparer.Ordinal)
@@ -129,9 +197,40 @@ internal sealed class DotNetExtractor : IExtractor
         "IPublishEndpoint", "IBus", "IBusControl", "ISendEndpoint", "ISendEndpointProvider", "ConsumeContext",
     };
 
+    /// <summary>The publish, send and produce calls that a hand-written outbox dispatcher makes, with the declared types of their receivers.</summary>
+    private static readonly Dictionary<string, HashSet<string>> PublishApis = new(StringComparer.Ordinal)
+    {
+        ["Publish"] = BusTypes, ["Send"] = BusTypes,
+        ["Produce"] = ["IProducer", "ITopicProducer"], ["ProduceAsync"] = ["IProducer", "ITopicProducer"],
+        ["BasicPublish"] = ["IModel", "IChannel"], ["BasicPublishAsync"] = ["IModel", "IChannel"],
+        ["SendMessageAsync"] = ["ServiceBusSender"], ["SendMessagesAsync"] = ["ServiceBusSender"],
+    };
+
+    private static readonly HashSet<string> SetWrites = new(StringComparer.Ordinal)
+    {
+        "Add", "AddAsync", "AddRange", "AddRangeAsync", "Remove", "RemoveRange", "Update", "UpdateRange", "Attach", "AttachRange",
+    };
+
+    /// <summary>Calls whose type argument is the type of what they return.</summary>
+    private static readonly HashSet<string> ServiceGetters = new(StringComparer.Ordinal)
+    {
+        "GetRequiredService", "GetService", "GetRequiredKeyedService", "GetKeyedService",
+    };
+
+    private static readonly HashSet<string> ApplicationBuilderFactories = new(StringComparer.Ordinal)
+    {
+        "CreateBuilder", "CreateSlimBuilder", "CreateEmptyBuilder",
+    };
+
     private static readonly HashSet<string> DbContextBases = new(StringComparer.Ordinal)
     {
         "DbContext", "IdentityDbContext", "IdentityUserContext", "ApiAuthorizationDbContext",
+    };
+
+    private static readonly HashSet<string> OutboxEntities = new(StringComparer.Ordinal)
+    {
+        "Outbox", "OutboxMessage", "OutboxMessages", "OutboxEvent", "OutboxEvents", "OutboxEntry", "OutboxEntries",
+        "IntegrationEventLogEntry",
     };
 
     // Calls that return the route group they were called on.
@@ -142,85 +241,115 @@ internal sealed class DotNetExtractor : IExtractor
         "ProducesValidationProblem", "CacheOutput", "ExcludeFromDescription", "DisableRateLimiting",
     };
 
-    // Bounds that keep the work linear in the size of a file that was written to be slow.
-    private const int MaxStatementTokens = 256;
-    private const int MaxCallTokens = 4096;
-    private const int MaxTypeNesting = 8;
-
-    private sealed record Site(string Path, int Start, int End);
-
-    private sealed class Project(string path, string directory, string name)
+    private static readonly HashSet<string> ReadAttributes = new(HttpVerbs.Keys, StringComparer.Ordinal)
     {
-        public string Path { get; } = path;
-        public string Directory { get; } = directory;
-        public string Name { get; } = name;
-        public string Slug { get; } = TextUtil.Slug(name);
-        public string? ServiceKey { get; set; }
-        public bool UsesMassTransit { get; set; }
-        public HashSet<string> EfStores { get; } = new(StringComparer.Ordinal);
+        "Route", "ApiController", "NonAction",
+    };
 
-        public List<(string Class, string Message, Site Site)> Consumers { get; } = [];
-        public List<(string Consumer, string Queue, Site Site)> Endpoints { get; } = [];
-        public List<(string Message, string Mode, Site Site)> Publishes { get; } = [];
-        public List<(string Message, string Entity, Site Site)> EntityNames { get; } = [];
-        public List<(string Call, string? DbContext, Site Site)> OutboxCalls { get; } = [];
-        public List<(string Context, string Set, string Entity, Site Site)> DbSets { get; } = [];
-        public List<(string Class, HashSet<string> Names, Site Site)> HostedServices { get; } = [];
-
-        public IEnumerable<(string, string?)> Owner => [("service", ServiceKey), ("project", Path)];
-    }
-
-    private sealed record AttributeUse(string Name, int ArgsOpen, int Line);
-    private sealed record BaseType(string Name, List<string> TypeArguments);
-    private sealed record TypeDecl(
-        string Keyword, string Name, int KeywordIndex, int StartIndex, List<AttributeUse> Attributes,
-        int ParametersOpen, List<BaseType> Bases, int BodyOpen, int EndIndex, string Namespace);
+    /// <summary>
+    /// The operations charged for one fact. Adding a fact checks its key, name and every
+    /// attribute value for the shape of a credential, which is far more than one step.
+    /// </summary>
+    private const int FactCost = 512;
+    /// <summary>Route or verb attributes on one class or one action. More is noted and gives no routes.</summary>
+    private const int MaxRouteAttributes = 8;
+    /// <summary>The longest route prefix with its template. A longer one cannot be a key.</summary>
+    private const int MaxRouteLength = 400;
+    private const int MaxGroupSegments = 64;
+    /// <summary>The longest chain of variables that the route prefix of a builder is followed through.</summary>
+    private const int MaxPrefixDepth = 32;
+    /// <summary>The longest chain of base classes that a controller is followed through.</summary>
+    private const int MaxBaseDepth = 8;
+    /// <summary>Evidence of one kind on one fact from a list the input controls (the endpoints of a consumer, the dispatchers of an outbox).</summary>
+    private const int MaxEvidenceItems = 16;
 
     public void Run(ExtractionContext context)
     {
         var projects = new List<Project>();
+        var byDirectory = new Dictionary<string, List<Project>>(StringComparer.Ordinal);
         foreach (var file in context.Files)
-            if (file.Extension == ".csproj" && ReadProject(context, file) is { } project)
-                projects.Add(project);
+        {
+            if (file.Extension != ".csproj")
+                continue;
+            var project = new Project(file.Path, file.Directory, file.Name[..^".csproj".Length], context.ProjectId(file));
+            context.Guarded(Id, file.Path, () => ReadProject(context, file, project));
+            projects.Add(project);
+            if (!byDirectory.TryGetValue(file.Directory, out var list))
+                byDirectory[file.Directory] = list = [];
+            list.Add(project);
+        }
 
-        var sources = new List<(SourceText File, Project Project, TokenList Tokens, List<TypeDecl> Types)>();
         foreach (var file in context.Files)
         {
             if (context.Stopped)
                 return;
             if (file.Extension != ".cs")
                 continue;
-            // The nearest project: the longest directory that holds the file.
-            var owner = projects.Where(p => file.IsUnder(p.Directory))
-                .OrderByDescending(p => p.Directory.Length).ThenBy(p => p.Path, StringComparer.Ordinal).FirstOrDefault();
+            var owner = OwnerOf(file, byDirectory, out var reason);
             if (owner is null)
             {
-                context.Note(NoteKind.Undecided, "no-owning-project", file.Path);
+                context.Note(NoteKind.Undecided, reason, file.Path);
                 continue;
             }
-            var tokens = CSharpLexer.Tokenize(file.Content);
-            var types = ReadTypes(tokens);
-            sources.Add((file, owner, tokens, types));
-            new SourceReader(context, file, owner, tokens, types).Read();
+            context.Guarded(Id, file.Path, () => ReadSource(context, file, owner));
         }
 
-        var messages = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var project in projects)
+        var readable = projects.Where(p => p.IsReadable).ToList();
+        var index = new TypeIndex(context, readable);
+        context.Guarded(Id, "", () => EmitControllers(context, index));
+        context.Guarded(Id, "", () => EmitDataAccess(context, index));
+        context.Guarded(Id, "", () => EmitMessaging(context, readable, index));
+        foreach (var project in readable)
+            context.Guarded(Id, project.Path, () => EmitOutbox(context, project, index));
+    }
+
+    /// <summary>The project of the nearest directory at or above the file that has a project file.</summary>
+    private static Project? OwnerOf(SourceText file, Dictionary<string, List<Project>> byDirectory, out string reason)
+    {
+        reason = "no-owning-project";
+        var directory = file.Directory;
+        while (true)
         {
-            Emit(context, project);
-            messages.UnionWith(project.Consumers.Select(c => c.Message));
-            messages.UnionWith(project.Publishes.Select(p => p.Message));
+            if (byDirectory.TryGetValue(directory, out var found))
+            {
+                if (found.Count > 1)
+                    reason = "ambiguous-owning-project";
+                return found.Count == 1 && found[0].IsReadable ? found[0] : null;
+            }
+            if (directory.Length == 0)
+                return null;
+            var slash = directory.LastIndexOf('/');
+            directory = slash < 0 ? "" : directory[..slash];
         }
-        foreach (var (file, project, tokens, types) in sources)
-            foreach (var type in types.Where(t => t.Keyword != "struct" && messages.Contains(t.Name)))
-                AddContract(context, file, project, tokens, type);
+    }
+
+    private static void ReadSource(ExtractionContext context, SourceText file, Project project)
+    {
+        var meter = context.Meter(file);
+        var source = CSharpLexer.Tokenize(file.Content, meter);
+        if (meter.Exhausted)
+            return;
+        foreach (var (reason, line) in source.Notes)
+            context.Note(NoteKind.Undecided, reason, file.Path, line);
+        var code = new CSharpFile(source.Tokens, meter, ReadAttributes.Contains);
+        foreach (var (reason, line) in code.Notes)
+            context.Note(NoteKind.Undecided, reason, file.Path, line);
+        if (!code.IsComplete)
+            return;
+
+        var model = new FileModel(file, project) { Usings = code.Usings, Aliases = code.Aliases };
+        project.Files.Add(model);
+        project.GlobalUsings.UnionWith(code.GlobalUsings);
+        new SourceReader(context, file, project, model, source, code, meter).Read();
     }
 
     // ---- project files ----------------------------------------------------------------
 
-    private static Project? ReadProject(ExtractionContext context, SourceText file)
+    private static void ReadProject(ExtractionContext context, SourceText file, Project project)
     {
-        var project = new Project(file.Path, file.Directory, file.Name[..^".csproj".Length]);
+        // One pass of the XML reader over the text.
+        if (!context.Meter(file).Charge(file.Content.Length + 1))
+            return;
         string? sdk = null, outputType = null, framework = null;
         var projectLine = 1;
         var packages = new List<(string Name, string? Version, int Line)>();
@@ -262,13 +391,14 @@ internal sealed class DotNetExtractor : IExtractor
         catch (XmlException exception)
         {
             context.Note(NoteKind.ParseFailure, "xml-syntax", file.Path, Math.Max(1, exception.LineNumber));
-            return null;
+            return;
         }
         catch (InvalidOperationException)
         {
             context.Note(NoteKind.ParseFailure, "xml-syntax", file.Path);
-            return null;
+            return;
         }
+        project.IsReadable = true;
 
         var kind = sdk is null ? null
             : sdk.StartsWith("Microsoft.NET.Sdk.Web", StringComparison.OrdinalIgnoreCase) ? "web"
@@ -278,34 +408,42 @@ internal sealed class DotNetExtractor : IExtractor
             kind = "executable";
         if (kind is not null)
         {
-            project.ServiceKey = "service:" + project.Slug;
+            project.ServiceKey = "service:" + project.Id;
             context.Add(FactKind.Service, project.ServiceKey, project.Name, ProjectRule.At(file.Path, projectLine, projectLine),
                 ("language", "dotnet"), ("kind", kind), ("project", file.Path), ("sdk", sdk),
                 ("outputType", outputType), ("targetFramework", framework));
         }
 
+        var meter = context.Meter(file);
         foreach (var (name, version, line) in packages)
         {
+            if (!meter.Charge(FactCost))
+                return;
             var known = Known(name);
             if (known?.Technology == "masstransit")
+            {
                 project.UsesMassTransit = true;
+                if (known.Value.Detail is { } transport)
+                    project.Transports.Add(transport == "rabbitmq" ? "amqp" : transport);
+            }
             if (known is { Technology: "efcore", Detail: { } store })
                 project.EfStores.Add(store);
-            context.Add(FactKind.Dependency, $"dependency:{project.Slug}:nuget:{name}", name, PackageRule.At(file.Path, line, line),
+            context.Add(FactKind.Dependency, $"dependency:{project.Id}:nuget:{name}", name, PackageRule.At(file.Path, line, line),
                 ("ecosystem", "nuget"), ("package", name), ("version", version), ("project", file.Path),
                 ("service", project.ServiceKey), ("technology", known?.Technology), ("role", known?.Role),
                 (known?.Role == "data" ? "store" : "broker", known?.Detail));
         }
         foreach (var (reference, line) in references)
         {
+            if (!meter.Charge(FactCost))
+                return;
             var slash = reference.LastIndexOf('/');
             var name = reference[(slash + 1)..];
             if (name.EndsWith(".csproj", StringComparison.OrdinalIgnoreCase))
                 name = name[..^".csproj".Length];
-            context.Add(FactKind.Dependency, $"dependency:{project.Slug}:project:{name}", name, PackageRule.At(file.Path, line, line),
+            context.Add(FactKind.Dependency, $"dependency:{project.Id}:project:{name}", name, PackageRule.At(file.Path, line, line),
                 ("ecosystem", "project"), ("reference", reference), ("project", file.Path), ("service", project.ServiceKey));
         }
-        return project;
     }
 
     private static (string Package, string Technology, string Role, string? Detail)? Known(string package)
@@ -318,789 +456,293 @@ internal sealed class DotNetExtractor : IExtractor
         return null;
     }
 
-    // ---- type declarations ------------------------------------------------------------
+    /// <summary>The condition of a fact that two conditional sites establish together.</summary>
+    private static string? Both(string? first, string? second) =>
+        first is null ? second : second is null || second == first ? first : $"{first} && {second}";
 
-    private static List<TypeDecl> ReadTypes(TokenList t)
+    // ---- EF Core ----------------------------------------------------------------------
+
+    private static void EmitDataAccess(ExtractionContext context, TypeIndex index)
     {
-        var types = new List<TypeDecl>();
-        var enclosing = new Stack<int>();   // end index of each type around the current token
-        var ns = "";
-        for (var i = 0; i < t.Count; i++)
+        foreach (var logical in index.All)
         {
-            if (!t.Id(i))
+            if (logical.Keyword != "class" || !logical.Parts.Any(IsDbContext))
                 continue;
-            var keyword = t[i].Text;
-            if (keyword == "namespace" && t.Id(i + 1))
+            var first = logical.Parts[0];
+            var meter = context.Meter(first.File.File);
+            if (!meter.Charge(FactCost))
+                continue;
+            if (!logical.IsConsistent)
             {
-                var end = i + 1;
-                while (t.P(end + 1, '.') && t.Id(end + 2))
-                    end += 2;
-                ns = t.Text(i + 1, end);
+                context.Note(NoteKind.Undecided, "ambiguous-type-declaration", first.File.File.Path, first.Line);
                 continue;
             }
-            if (keyword is not ("class" or "record" or "interface" or "struct"))
-                continue;
-            // "where T : class", "x.record", "typeof(struct)".
-            if (t.P(i - 1, ':') || t.P(i - 1, ',') || t.P(i - 1, '.') || t.P(i - 1, '('))
-                continue;
-            var nameIndex = i + 1;
-            if (keyword == "record" && (t.Id(nameIndex, "class") || t.Id(nameIndex, "struct")))
-                nameIndex++;
-            if (!t.Id(nameIndex))
-                continue;
-
-            var j = nameIndex + 1;
-            if (t.P(j, '<'))
-            {
-                var close = t.CloseAngle(j);
-                if (close < 0)
-                    continue;
-                j = close + 1;
-            }
-            if (!(t.P(j, '(') || t.P(j, ':') || t.P(j, '{') || t.P(j, ';') || t.Id(j, "where")))
-                continue;
-            var parametersOpen = -1;
-            if (t.P(j, '('))
-            {
-                if (t.Match[j] < 0)
-                    continue;
-                parametersOpen = j;
-                j = t.Match[j] + 1;
-            }
-
-            var bases = new List<BaseType>();
-            if (t.P(j, ':'))
-            {
-                j++;
-                while (t.Id(j) && !t.Id(j, "where"))
-                {
-                    while (t.P(j + 1, '.') && t.Id(j + 2))
-                        j += 2;
-                    var baseName = t[j].Text;
-                    j++;
-                    var arguments = new List<string>();
-                    if (t.P(j, '<'))
-                    {
-                        var close = t.CloseAngle(j);
-                        if (close < 0)
-                            break;
-                        arguments = SplitTypeArguments(t, j + 1, close - 1);
-                        j = close + 1;
-                    }
-                    if (t.P(j, '(') && t.Match[j] > j)
-                        j = t.Match[j] + 1;
-                    bases.Add(new BaseType(baseName, arguments));
-                    if (!t.P(j, ','))
-                        break;
-                    j++;
-                }
-            }
-
-            // Constraints, up to the body or the ';' of a declaration without one.
-            var limit = j + 200;
-            while (j < t.Count && j < limit && !t.P(j, '{') && !t.P(j, ';'))
-                j = t.Match[j] > j ? t.Match[j] + 1 : j + 1;
-            if (j >= t.Count || j >= limit)
-                continue;
-            var bodyOpen = t.P(j, '{') && t.Match[j] > j ? j : -1;
-            var endIndex = bodyOpen >= 0 ? t.Match[j] : j;
-            // A type nested deeper than any real code nests is not read: each level reads its body again.
-            while (enclosing.Count > 0 && enclosing.Peek() < i)
-                enclosing.Pop();
-            if (enclosing.Count > MaxTypeNesting)
-                continue;
-            if (bodyOpen >= 0)
-                enclosing.Push(endIndex);
-            var (attributes, start) = AttributesBefore(t, i);
-            types.Add(new TypeDecl(keyword, t[nameIndex].Text, i, start, attributes, parametersOpen, bases, bodyOpen, endIndex, ns));
-        }
-        return types;
-    }
-
-    private static List<string> SplitTypeArguments(TokenList t, int start, int end)
-    {
-        var result = new List<string>();
-        int depth = 0, from = start;
-        for (var i = start; i <= end; i++)
-        {
-            if (t.P(i, '<')) depth++;
-            else if (t.P(i, '>')) depth--;
-            else if (t.P(i, ',') && depth == 0)
-            {
-                result.Add(t.Text(from, i - 1));
-                from = i + 1;
-            }
-        }
-        result.Add(t.Text(from, end));
-        return result;
-    }
-
-    /// <summary>The attributes written before a declaration, and the index of its first token.</summary>
-    private static (List<AttributeUse> Attributes, int Start) AttributesBefore(TokenList t, int index)
-    {
-        var attributes = new List<AttributeUse>();
-        var j = index - 1;
-        while (j >= 0)
-        {
-            if (t.Id(j) && Modifiers.Contains(t[j].Text))
-            {
-                j--;
-            }
-            else if (t.P(j, ']') && t.Match[j] >= 0)
-            {
-                ReadAttributeGroup(t, t.Match[j], attributes);
-                j = t.Match[j] - 1;
-            }
-            else
-            {
-                break;
-            }
-        }
-        return (attributes, j + 1);
-    }
-
-    private static void ReadAttributeGroup(TokenList t, int open, List<AttributeUse> attributes)
-    {
-        foreach (var (start, end) in t.Args(open))
-        {
-            var s = start;
-            if (t.Id(s) && t.P(s + 1, ':'))
-                s += 2;
-            while (t.Id(s) && t.P(s + 1, '.') && s + 2 <= end)
-                s += 2;
-            if (!t.Id(s) || s > end)
-                continue;
-            var name = t[s].Text;
-            if (name.Length > "Attribute".Length && name.EndsWith("Attribute", StringComparison.Ordinal))
-                name = name[..^"Attribute".Length];
-            attributes.Add(new AttributeUse(name, t.P(s + 1, '(') && t.Match[s + 1] > s ? s + 1 : -1, t.Line(open)));
-        }
-    }
-
-    private enum Template { None, Static, Dynamic }
-
-    /// <summary>The route template of an attribute: its first positional argument when that is one string literal.</summary>
-    private static (Template Kind, string Value) TemplateOf(TokenList t, AttributeUse attribute)
-    {
-        if (attribute.ArgsOpen < 0)
-            return (Template.None, "");
-        var args = t.Args(attribute.ArgsOpen);
-        if (args.Count == 0)
-            return (Template.None, "");
-        var (start, end) = args[0];
-        if (start == end && t.StaticString(start) is { } value)
-            return (Template.Static, value);
-        if (t.Id(start) && t.P(start + 1, ':') && end == start + 2 && t.StaticString(end) is { } named)
-            return (Template.Static, named);
-        // "Name = …", "Order = …": a property of the attribute, not a template.
-        return t.Id(start) && t.P(start + 1, '=') ? (Template.None, "") : (Template.Dynamic, "");
-    }
-
-    // ---- one source file --------------------------------------------------------------
-
-    private sealed class SourceReader(ExtractionContext context, SourceText file, Project project, TokenList t, List<TypeDecl> types)
-    {
-        private readonly Dictionary<string, string?> _builders = new(StringComparer.Ordinal);
-        private readonly HashSet<string> _resolving = new(StringComparer.Ordinal);
-        private readonly Dictionary<string, bool> _busReceivers = new(StringComparer.Ordinal);
-        private Dictionary<string, List<int>>? _positions;
-
-        /// <summary>Where an identifier stands in the file. Built once, so a lookup does not scan the file again.</summary>
-        private List<int> PositionsOf(string name)
-        {
-            if (_positions is null)
-            {
-                _positions = new Dictionary<string, List<int>>(StringComparer.Ordinal);
-                for (var i = 0; i < t.Count; i++)
-                {
-                    if (!t.Id(i))
-                        continue;
-                    if (!_positions.TryGetValue(t[i].Text, out var list))
-                        _positions[t[i].Text] = list = [];
-                    list.Add(i);
-                }
-            }
-            return _positions.TryGetValue(name, out var found) ? found : [];
-        }
-
-        private Site SiteOf(int startToken, int endToken) =>
-            new(file.Path, t.Line(startToken), Math.Max(t.Line(startToken), t.EndLine(endToken)));
-
-        public void Read()
-        {
-            var massTransit = project.UsesMassTransit;
-            for (var i = 0; i + 1 < t.Count && !massTransit; i++)
-                massTransit = t.Id(i, "using") && t.Id(i + 1, "MassTransit");
-
-            foreach (var type in types)
-            {
-                if (type.Keyword == "class" && IsController(type))
-                    ReadController(type);
-                if (type.Keyword == "class" && type.Bases.Any(b => DbContextBases.Contains(b.Name)))
-                    ReadDbContext(type);
-                if (type.Keyword == "class" && type.BodyOpen >= 0 && type.Bases.Any(b => b.Name is "BackgroundService" or "IHostedService"))
-                {
-                    var names = new HashSet<string>(StringComparer.Ordinal);
-                    for (var i = type.BodyOpen; i < type.EndIndex; i++)
-                        if (t.Id(i))
-                            names.Add(t[i].Text);
-                    project.HostedServices.Add((type.Name, names, SiteOf(type.StartIndex, type.BodyOpen)));
-                }
-                if (!massTransit)
-                    continue;
-                foreach (var consumer in type.Bases.Where(b => b.Name == "IConsumer" && b.TypeArguments.Count == 1))
-                {
-                    if (SimpleName(consumer.TypeArguments[0]) is { } message)
-                        project.Consumers.Add((type.Name, message, SiteOf(type.StartIndex, type.BodyOpen >= 0 ? type.BodyOpen : type.EndIndex)));
-                    else
-                        context.Note(NoteKind.Undecided, "dynamic-message-type", file.Path, t.Line(type.KeywordIndex));
-                }
-            }
-
-            for (var i = 1; i + 1 < t.Count; i++)
-            {
-                if (!t.P(i - 1, '.') || !t.Id(i))
-                    continue;
-                var name = t[i].Text;
-                if (MapVerbs.TryGetValue(name, out var verb) && t.P(i + 1, '(') && t.Match[i + 1] > i)
-                    ReadMinimalRoute(i, verb);
-                else if (massTransit)
-                    ReadMassTransitCall(i, name);
-            }
-        }
-
-        // ---- minimal API ----
-
-        private void ReadMinimalRoute(int method, string verb)
-        {
-            var args = t.Args(method + 1);
-            if (args.Count < 2)
-                return;
-            var line = t.Line(method);
-            if (args[0].Start != args[0].End || t.StaticString(args[0].Start) is not { } template)
-            {
-                context.Note(NoteKind.Undecided, "dynamic-route", file.Path, line);
-                return;
-            }
-            if (ResolveBuilder(method - 2, 0) is not { } prefix)
-            {
-                context.Note(NoteKind.Undecided, "unresolved-route-prefix", file.Path, line);
-                return;
-            }
-            var raw = RoutePath.Join(prefix, template);
-            var path = RoutePath.Normalize(raw);
-            context.Add(FactKind.Operation, $"operation:{project.Slug}:{verb} {path}", $"{verb} {path}",
-                [MinimalApi.At(file.Path, line, t.EndLine(t.Match[method + 1]))],
-                [
-                    .. project.Owner, ("transport", "http"), ("method", verb), ("path", path),
-                    ("routeTemplate", raw), ("framework", "aspnetcore-minimal-api"),
-                ]);
-        }
-
-        /// <summary>
-        /// The route prefix of the endpoint builder that an expression ending at
-        /// <paramref name="end"/> gives, or null when the text of this file does not fix it.
-        /// </summary>
-        private string? ResolveBuilder(int end, int depth)
-        {
-            if (depth > 16 || end < 0)
-                return null;
-            if (t.Id(end))
-                return t.P(end - 1, '.') ? null : ResolveBuilderName(t[end].Text, depth);
-            if (!t.P(end, ')'))
-                return null;
-            var open = t.Match[end];
-            var method = open - 1;
-            if (open < 2 || !t.Id(method) || !t.P(method - 1, '.'))
-                return null;
-            var name = t[method].Text;
-            if (name == "Build")
-                return "";
-            if (name == "MapGroup")
-            {
-                var args = t.Args(open);
-                if (args.Count != 1 || args[0].Start != args[0].End || t.StaticString(args[0].Start) is not { } segment)
-                    return null;
-                return ResolveBuilder(method - 2, depth + 1) is { } parent ? RoutePath.Join(parent, segment) : null;
-            }
-            return GroupPassThrough.Contains(name) ? ResolveBuilder(method - 2, depth + 1) : null;
-        }
-
-        private string? ResolveBuilderName(string name, int depth)
-        {
-            if (_builders.TryGetValue(name, out var known))
-                return known;
-            if (!_resolving.Add(name))
-                return null;
-
-            var values = new HashSet<string?>();
-            foreach (var i in PositionsOf(name))
-            {
-                if (t.P(i - 1, '.'))
-                    continue;
-                if (t.Id(i - 1, "WebApplication") && (t.P(i + 1, ',') || t.P(i + 1, ')')))
-                {
-                    values.Add("");
-                }
-                else if (t.P(i + 1, '=') && !t.P(i + 2, '=') && !t.P(i + 2, '>'))
-                {
-                    // Every assignment to the name must give the same prefix.
-                    var end = -1;
-                    for (int k = i + 2, steps = 0; k < t.Count && steps < MaxStatementTokens; k++, steps++)
-                    {
-                        if (t.Match[k] > k)
-                            k = t.Match[k];
-                        else if (t.P(k, ';'))
-                        {
-                            end = k - 1;
-                            break;
-                        }
-                        else if (t.P(k, ',') || t.P(k, ')') || t.P(k, '}') || t.P(k, ']'))
-                            break;
-                    }
-                    values.Add(end < 0 ? null : ResolveBuilder(end, depth + 1));
-                }
-            }
-            _resolving.Remove(name);
-            var result = values.Count == 1 ? values.First() : null;
-            _builders[name] = result;
-            return result;
-        }
-
-        // ---- controllers ----
-
-        private static bool IsController(TypeDecl type) =>
-            type.BodyOpen >= 0 && (type.Attributes.Any(a => a.Name == "ApiController")
-                || type.Bases.Any(b => b.Name is "ControllerBase" or "Controller"));
-
-        private void ReadController(TypeDecl type)
-        {
-            var classRoutes = new List<string>();
-            foreach (var route in type.Attributes.Where(a => a.Name == "Route"))
-            {
-                var (kind, value) = TemplateOf(t, route);
-                if (kind != Template.Static)
-                {
-                    context.Note(NoteKind.Undecided, "dynamic-route", file.Path, route.Line);
-                    return;
-                }
-                classRoutes.Add(value);
-            }
-            var hasClassRoute = classRoutes.Count > 0;
-            if (!hasClassRoute)
-                classRoutes.Add("");
-
-            var controller = type.Name.EndsWith("Controller", StringComparison.Ordinal) && type.Name.Length > "Controller".Length
-                ? type.Name[..^"Controller".Length] : type.Name;
-
-            for (var i = type.BodyOpen + 1; i < type.EndIndex; i++)
-            {
-                if (!t.P(i, '[') || t.Parent[i] != type.BodyOpen || t.Match[i] < 0)
-                    continue;
-                var attributes = new List<AttributeUse>();
-                var first = i;
-                while (t.P(i, '[') && t.Match[i] > i)
-                {
-                    ReadAttributeGroup(t, i, attributes);
-                    i = t.Match[i] + 1;
-                }
-                // The member: the first '(' before anything that says this is not a method.
-                var signature = -1;
-                for (var k = i; k < type.EndIndex; k++)
-                {
-                    if (t.P(k, '('))
-                    {
-                        signature = k;
-                        break;
-                    }
-                    if (t.P(k, ';') || t.P(k, '{') || t.P(k, '=') || t.P(k, '}'))
-                        break;
-                }
-                i--;
-                if (signature < 0 || t.Match[signature] < 0 || !attributes.Any(a => HttpVerbs.ContainsKey(a.Name)))
-                    continue;
-                var action = t.IdText(signature - 1);
-                var site = SiteOf(first, t.Match[signature]);
-
-                var memberRoutes = new List<string>();
-                var undecided = false;
-                foreach (var route in attributes.Where(a => a.Name == "Route"))
-                {
-                    var (kind, value) = TemplateOf(t, route);
-                    undecided |= kind != Template.Static;
-                    memberRoutes.Add(value);
-                }
-                foreach (var attribute in attributes.Where(a => HttpVerbs.ContainsKey(a.Name)))
-                {
-                    var (kind, value) = TemplateOf(t, attribute);
-                    if (kind == Template.Dynamic || undecided)
-                    {
-                        context.Note(NoteKind.Undecided, "dynamic-route", file.Path, attribute.Line);
-                        continue;
-                    }
-                    // A verb attribute with no template anywhere only limits the verb. The path
-                    // then comes from conventional routing, which is set up in other code.
-                    if (kind == Template.None && memberRoutes.Count == 0 && !hasClassRoute)
-                    {
-                        context.Note(NoteKind.Undecided, "conventional-route", file.Path, attribute.Line);
-                        continue;
-                    }
-                    var templates = kind == Template.Static ? [value] : memberRoutes.Count > 0 ? memberRoutes : [""];
-                    foreach (var template in templates)
-                        foreach (var classRoute in classRoutes)
-                            AddControllerRoute(HttpVerbs[attribute.Name], classRoute, template, controller, action, type.Name, site, attribute.Line);
-                }
-            }
-        }
-
-        private void AddControllerRoute(
-            string verb, string classRoute, string template, string controller, string? action, string className, Site site, int line)
-        {
-            // A template that starts with '/' or '~/' does not take the class route.
-            var raw = template.StartsWith('/') ? template
-                : template.StartsWith("~/", StringComparison.Ordinal) ? template[1..]
-                : RoutePath.Join(classRoute, template);
-            raw = raw.Replace("[controller]", controller, StringComparison.OrdinalIgnoreCase);
-            if (action is not null)
-                raw = raw.Replace("[action]", action, StringComparison.OrdinalIgnoreCase);
-            if (raw.Contains('['))
-            {
-                context.Note(NoteKind.Undecided, "dynamic-route", file.Path, line);
-                return;
-            }
-            var path = RoutePath.Normalize(raw);
-            context.Add(FactKind.Operation, $"operation:{project.Slug}:{verb} {path}", $"{verb} {path}",
-                [ControllerRoute.At(site.Path, site.Start, site.End)],
-                [
-                    .. project.Owner, ("transport", "http"), ("method", verb), ("path", path), ("routeTemplate", raw),
-                    ("framework", "aspnetcore-controller"), ("controller", className), ("action", action),
-                ]);
-        }
-
-        // ---- EF Core ----
-
-        private void ReadDbContext(TypeDecl type)
-        {
-            var evidence = new List<SourceEvidence>
-            {
-                DbContextRule.At(file.Path, t.Line(type.StartIndex), t.Line(type.BodyOpen >= 0 ? type.BodyOpen : type.EndIndex)),
-            };
+            var evidence = new List<SourceEvidence>();
             var entities = new List<string>();
-            for (var i = type.BodyOpen + 1; type.BodyOpen >= 0 && i < type.EndIndex; i++)
+            foreach (var part in logical.Parts)
             {
-                if (!t.Id(i, "DbSet") || !t.P(i + 1, '<'))
-                    continue;
-                var close = t.CloseAngle(i + 1);
-                if (close < 0 || !t.Id(close + 1))
-                    continue;
-                var entity = t.Text(i + 2, close - 1);
-                entities.Add(entity);
-                evidence.Add(DbContextRule.At(file.Path, t.Line(i), t.Line(close + 1)));
-                project.DbSets.Add((type.Name, t[close + 1].Text, entity, new Site(file.Path, t.Line(i), t.Line(close + 1))));
-                i = close + 1;
+                evidence.Add(DbContextRule.At(part.Header.Path, part.Header.Start, part.Header.End));
+                foreach (var set in part.DbSets)
+                {
+                    if (!meter.Charge())
+                        break;
+                    entities.Add(set.Entity);
+                    if (evidence.Count <= context.Limits.MaxListItems)
+                        evidence.Add(DbContextRule.At(set.Site.Path, set.Site.Start, set.Site.End));
+                }
             }
-            context.Add(FactKind.DataAccess, $"dataaccess:{project.Slug}:{type.Name}", type.Name, evidence,
+            var project = logical.Project;
+            context.Add(FactKind.DataAccess, $"dataaccess:{project.Id}:{logical.QualifiedName}", logical.Name, evidence,
             [
-                .. project.Owner, ("technology", "efcore"), ("dbContext", type.Name),
-                ("entities", TextUtil.JoinSorted(entities)),
+                .. project.Owner, ("technology", "efcore"), ("dbContext", logical.Name),
+                ("entities", context.Names(entities, "entities", first.Header.Path, first.Line)),
                 ("storeKind", project.EfStores.Count == 1 ? project.EfStores.First() : "unknown"),
+                ("conditional", first.Conditional),
             ]);
         }
-
-        // ---- MassTransit ----
-
-        private void ReadMassTransitCall(int method, string name)
-        {
-            switch (name)
-            {
-                case "Publish" or "Send":
-                    ReadPublish(method, name == "Publish" ? "publish" : "send");
-                    break;
-                case "ReceiveEndpoint" when t.P(method + 1, '(') && t.Match[method + 1] > method:
-                {
-                    var open = method + 1;
-                    var args = t.Args(open);
-                    if (args.Count < 2)
-                        break;
-                    if (args[0].Start != args[0].End || t.StaticString(args[0].Start) is not { } queue)
-                    {
-                        context.Note(NoteKind.Undecided, "dynamic-queue-name", file.Path, t.Line(method));
-                        break;
-                    }
-                    var site = SiteOf(method, t.Match[open]);
-                    for (var i = args[1].Start; i < t.Match[open] && i < open + MaxCallTokens; i++)
-                        if ((t.Id(i, "ConfigureConsumer") || t.Id(i, "Consumer")) && t.P(i - 1, '.') && t.P(i + 1, '<')
-                            && t.CloseAngle(i + 1) is > 0 and var close && SimpleName(t.Text(i + 2, close - 1)) is { } consumer)
-                            project.Endpoints.Add((consumer, queue, site));
-                    break;
-                }
-                case "Message" when t.P(method + 1, '<') && t.CloseAngle(method + 1) is > 0 and var close && t.P(close + 1, '(') && t.Match[close + 1] > close:
-                {
-                    if (SimpleName(t.Text(method + 2, close - 1)) is not { } message)
-                        break;
-                    for (var i = close + 2; i < t.Match[close + 1] && i < close + MaxStatementTokens; i++)
-                        if (t.Id(i, "SetEntityName") && t.P(i + 1, '(') && t.P(i + 3, ')') && t.StaticString(i + 2) is { } entity)
-                            project.EntityNames.Add((message, entity, SiteOf(method, t.Match[close + 1])));
-                    break;
-                }
-                case "AddEntityFrameworkOutbox" when t.P(method + 1, '<') && t.CloseAngle(method + 1) is > 0 and var close && t.P(close + 1, '(') && t.Match[close + 1] > close:
-                    project.OutboxCalls.Add((name, SimpleName(t.Text(method + 2, close - 1)), SiteOf(method, t.Match[close + 1])));
-                    break;
-                case "UseBusOutbox" or "AddOutboxMessageEntity" or "AddOutboxStateEntity" or "AddInboxStateEntity"
-                    or "AddInMemoryOutbox" or "UseInMemoryOutbox" when t.P(method + 1, '(') && t.Match[method + 1] > method:
-                    project.OutboxCalls.Add((name, null, SiteOf(method, t.Match[method + 1])));
-                    break;
-            }
-        }
-
-        private void ReadPublish(int method, string mode)
-        {
-            string? message = null;
-            int open;
-            var after = method + 1;
-            if (t.P(after, '<'))
-            {
-                var close = t.CloseAngle(after);
-                if (close < 0 || !t.P(close + 1, '('))
-                    return;
-                open = close + 1;
-                message = SimpleName(t.Text(after + 1, close - 1));
-            }
-            else if (t.P(after, '('))
-            {
-                open = after;
-                if (t.Id(open + 1, "new") && t.Id(open + 2))
-                {
-                    var last = open + 2;
-                    while (t.P(last + 1, '.') && t.Id(last + 2))
-                        last += 2;
-                    if (t.P(last + 1, '(') || t.P(last + 1, '{'))
-                        message = t[last].Text;
-                }
-            }
-            else
-            {
-                return;
-            }
-            if (t.Match[open] < 0 || !IsBusReceiver(method - 2))
-                return;
-            if (message is null)
-            {
-                context.Note(NoteKind.Undecided, "dynamic-message-type", file.Path, t.Line(method));
-                return;
-            }
-            project.Publishes.Add((message, mode, SiteOf(method, t.Match[open])));
-        }
-
-        /// <summary>True when the receiver is a name that this file declares with a MassTransit bus type.</summary>
-        private bool IsBusReceiver(int receiver)
-        {
-            if (!t.Id(receiver) || (t.P(receiver - 1, '.') && !t.Id(receiver - 2, "this")))
-                return false;
-            var name = t[receiver].Text;
-            if (_busReceivers.TryGetValue(name, out var known))
-                return known;
-            var found = false;
-            foreach (var i in PositionsOf(name))
-            {
-                if (found)
-                    break;
-                if (t.Id(i - 1))
-                {
-                    found = BusTypes.Contains(t[i - 1].Text);
-                }
-                else if (t.P(i - 1, '>'))
-                {
-                    // "ConsumeContext<OrderCreated> context": back to the '<' of this '>'.
-                    var depth = 0;
-                    for (var k = i - 1; k > 0 && k > i - 32; k--)
-                    {
-                        if (t.P(k, '>')) depth++;
-                        else if (t.P(k, '<') && --depth == 0)
-                        {
-                            found = t.Id(k - 1) && BusTypes.Contains(t[k - 1].Text);
-                            break;
-                        }
-                    }
-                }
-            }
-            _busReceivers[name] = found;
-            return found;
-        }
     }
 
-    /// <summary>"Orders.Contracts.OrderCreated" gives "OrderCreated". Null for a generic or array type.</summary>
-    private static string? SimpleName(string type)
+    private static bool IsDbContext(TypeInfo type) => type.Bases.Any(b => DbContextBases.Contains(b.Name));
+
+    // ---- MassTransit ------------------------------------------------------------------
+
+    private static void EmitMessaging(ExtractionContext context, List<Project> projects, TypeIndex index)
     {
-        if (type.Length == 0)
-            return null;
-        foreach (var c in type)
-            if (!(char.IsLetterOrDigit(c) || c is '_' or '.'))
-                return null;
-        var name = type[(type.LastIndexOf('.') + 1)..];
-        return name.Length == 0 ? null : name;
-    }
+        var contracts = new HashSet<LogicalType>();
 
-    // ---- facts of one project ---------------------------------------------------------
-
-    private static void Emit(ExtractionContext context, Project project)
-    {
-        var entityNames = project.EntityNames.GroupBy(e => e.Message, StringComparer.Ordinal)
-            .ToDictionary(g => g.Key, g => g.Select(e => e.Entity).Distinct(StringComparer.Ordinal).ToList(), StringComparer.Ordinal);
-
-        foreach (var (message, entity, site) in project.EntityNames)
-            context.Add(FactKind.Channel, "channel:" + entity, entity, EntityName.At(site.Path, site.Start, site.End),
-                ("entityOf", "message:" + message));
-
-        foreach (var (message, mode, site) in project.Publishes)
-            context.Add(FactKind.Publication, $"publication:{project.Slug}:{message}", message,
-                [Publish.At(site.Path, site.Start, site.End)],
-                [
-                    .. project.Owner, ("transport", "masstransit"), ("mode", mode), ("message", "message:" + message),
-                    ("channel", entityNames.TryGetValue(message, out var entities) && entities.Count == 1 ? "channel:" + entities[0] : null),
-                ]);
-
-        var endpointsOf = project.Endpoints.ToLookup(e => e.Consumer, StringComparer.Ordinal);
-        foreach (var (consumer, message, site) in project.Consumers)
+        // What a written message type is: the key part, and the key of its contract when it resolves.
+        (string KeyPart, string? Message) MessageOf(TypeRef reference, WorkMeter meter)
         {
-            var endpoints = endpointsOf[consumer].ToList();
-            var queues = endpoints.Select(e => e.Queue).Distinct(StringComparer.Ordinal).ToList();
-            var evidence = new List<SourceEvidence> { Consumer.At(site.Path, site.Start, site.End) };
-            evidence.AddRange(endpoints.Select(e => ReceiveEndpoint.At(e.Site.Path, e.Site.Start, e.Site.End)));
-            context.Add(FactKind.Subscription, $"subscription:{project.Slug}:{consumer}:{message}", $"{consumer} consumes {message}", evidence,
+            if (index.Resolve(reference, meter) is { } resolved)
+            {
+                contracts.Add(resolved);
+                return (resolved.QualifiedName, "message:" + resolved.QualifiedName);
+            }
+            context.Note(NoteKind.Undecided, "unresolved-message-type", reference.File.File.Path, reference.Line);
+            return ("unresolved:" + reference.Written, null);
+        }
+
+        // Queues: the channel of each endpoint, and the endpoints of each consumer type.
+        var endpointsOf = new Dictionary<LogicalType, ConsumerEndpoints>();
+        foreach (var project in projects)
+            foreach (var endpoint in project.Endpoints)
+            {
+                var meter = context.Meter(endpoint.Site.Path);
+                if (!meter.Charge(FactCost))
+                    continue;
+                var channel = $"channel:{project.Broker}:{endpoint.Queue}";
+                context.Add(FactKind.Channel, channel, endpoint.Queue, ReceiveEndpoint.At(endpoint.Site.Path, endpoint.Site.Start, endpoint.Site.End),
+                    ("kind", "queue"), ("transport", project.Broker), ("conditional", endpoint.Conditional));
+                foreach (var consumer in endpoint.Consumers)
+                {
+                    if (!meter.Charge())
+                        break;
+                    if (index.Resolve(consumer, meter) is not { } resolved)
+                    {
+                        context.Note(NoteKind.Undecided, "unresolved-consumer-type", consumer.File.File.Path, consumer.Line);
+                        continue;
+                    }
+                    if (!endpointsOf.TryGetValue(resolved, out var known))
+                        endpointsOf[resolved] = known = new ConsumerEndpoints(channel);
+                    known.HasOneQueue &= known.Channel == channel;
+                    // The first endpoints are the evidence. Every endpoint counts for the queue.
+                    if (known.Sites.Count < MaxEvidenceItems)
+                        known.Sites.Add(endpoint.Site);
+                    else
+                        context.LimitReached("list-items", endpoint.Site.Path, stop: false, endpoint.Site.Start);
+                }
+            }
+
+        foreach (var logical in index.All)
+        {
+            if (!logical.Parts.Exists(p => p.Consumes.Count > 0))
+                continue;
+            var endpoints = logical.IsConsistent ? endpointsOf.GetValueOrDefault(logical) : null;
+            var queue = endpoints is { HasOneQueue: true } ? endpoints.Channel : null;
+            foreach (var part in logical.Parts)
+            {
+                var meter = context.Meter(part.File.File);
+                foreach (var consumed in part.Consumes)
+                {
+                    if (!meter.Charge(FactCost))
+                        break;
+                    var (keyPart, message) = MessageOf(consumed, meter);
+                    var evidence = new List<SourceEvidence> { Consumer.At(part.Header.Path, part.Header.Start, part.Header.End) };
+                    if (endpoints is not null)
+                        foreach (var site in endpoints.Sites)
+                            evidence.Add(ReceiveEndpoint.At(site.Path, site.Start, site.End));
+                    context.Add(FactKind.Subscription, $"subscription:{logical.Project.Id}:{part.QualifiedName}:{keyPart}",
+                        $"{part.Name} consumes {consumed.Simple}", evidence,
+                        [
+                            .. logical.Project.Owner, ("transport", "masstransit"), ("message", message), ("messageType", consumed.Written),
+                            ("consumer", part.Name), ("clrType", part.QualifiedName), ("queue", queue), ("conditional", part.Conditional),
+                        ]);
+                }
+            }
+        }
+
+        foreach (var project in projects)
+        {
+            // The entity names of each message type of this project. A publication has a channel when its type has exactly one.
+            var entitiesOf = new Dictionary<string, (string Channel, bool Single)>(StringComparer.Ordinal);
+            var kind = project.Broker switch { "amqp" => "exchange", "masstransit" => null, _ => "topic" };
+            foreach (var entity in project.EntityNames)
+            {
+                var meter = context.Meter(entity.Site.Path);
+                if (!meter.Charge(FactCost))
+                    continue;
+                var (keyPart, message) = MessageOf(entity.Message, meter);
+                var channel = $"channel:{project.Broker}:{entity.Entity}";
+                context.Add(FactKind.Channel, channel, entity.Entity, EntityName.At(entity.Site.Path, entity.Site.Start, entity.Site.End),
+                    ("kind", kind), ("transport", project.Broker), ("entityOf", message), ("messageType", entity.Message.Written),
+                    ("conditional", entity.Conditional));
+                if (message is not null)
+                    entitiesOf[keyPart] = entitiesOf.TryGetValue(keyPart, out var known) ? (known.Channel, known.Single && known.Channel == channel) : (channel, true);
+            }
+            foreach (var publish in project.Publishes)
+            {
+                var meter = context.Meter(publish.Site.Path);
+                if (!meter.Charge(FactCost))
+                    continue;
+                var (keyPart, message) = MessageOf(publish.Message, meter);
+                context.Add(FactKind.Publication, $"publication:{project.Id}:{keyPart}", publish.Message.Simple,
+                    [Publish.At(publish.Site.Path, publish.Site.Start, publish.Site.End)],
+                    [
+                        .. project.Owner, ("transport", "masstransit"), ("mode", publish.Mode), ("message", message),
+                        ("messageType", publish.Message.Written),
+                        ("channel", message is not null && entitiesOf.TryGetValue(keyPart, out var entity) && entity.Single ? entity.Channel : null),
+                        ("conditional", publish.Conditional),
+                    ]);
+            }
+        }
+
+        // The contract of every type that a use site resolved to, once, from all its parts.
+        foreach (var logical in index.All)
+        {
+            if (!contracts.Contains(logical))
+                continue;
+            var first = logical.Parts[0];
+            var meter = context.Meter(first.File.File);
+            if (!meter.Charge(FactCost))
+                continue;
+            var fields = new List<string>();
+            var evidence = new List<SourceEvidence>();
+            foreach (var part in logical.Parts)
+            {
+                if (evidence.Count < MaxEvidenceItems)
+                    evidence.Add(Contract.At(part.Whole.Path, part.Whole.Start, part.Whole.End));
+                if (fields.Count <= context.Limits.MaxListItems)
+                    fields.AddRange(part.Fields);
+            }
+            context.Add(FactKind.Message, "message:" + logical.QualifiedName, logical.Name, evidence,
             [
-                .. project.Owner, ("transport", "masstransit"), ("message", "message:" + message), ("consumer", consumer),
-                ("queue", queues.Count == 1 ? "channel:" + queues[0] : null),
+                ("clrType", logical.QualifiedName), ("declaredIn", logical.Project.Path),
+                ("fields", context.Names(fields, "fields", first.Whole.Path, first.Line, sorted: true, separator: ";")),
+                ("conditional", first.Conditional),
             ]);
         }
-        foreach (var (_, queue, site) in project.Endpoints)
-            context.Add(FactKind.Channel, "channel:" + queue, queue, ReceiveEndpoint.At(site.Path, site.Start, site.End),
-                ("kind", "queue"), ("transport", "masstransit"));
 
-        // MassTransit outbox. The fact needs the registration; the other calls are more evidence.
+        foreach (var project in projects)
+            EmitMassTransitOutbox(context, project);
+    }
+
+    private static void EmitMassTransitOutbox(ExtractionContext context, Project project)
+    {
+        // The fact needs the registration; the other calls are more evidence.
         var registrations = project.OutboxCalls.Where(c => c.Call == "AddEntityFrameworkOutbox").ToList();
         if (registrations.Count > 0)
         {
             var related = project.OutboxCalls.Where(c => c.Call is not ("AddInMemoryOutbox" or "UseInMemoryOutbox")).ToList();
-            var contexts = registrations.Select(r => r.DbContext).OfType<string>().Distinct(StringComparer.Ordinal).ToList();
-            context.Add(FactKind.Publication, $"outbox:{project.Slug}:masstransit-entity-framework", "Transactional outbox",
-                related.Select(c => Outbox.At(c.Site.Path, c.Site.Start, c.Site.End)).ToList(),
+            var contexts = registrations.Select(r => r.DbContext).OfType<string>().Distinct(StringComparer.Ordinal).Take(2).ToList();
+            context.Add(FactKind.Pattern, $"outbox:{project.Id}:masstransit-entity-framework", "Transactional outbox",
+                related.Take(MaxEvidenceItems).Select(c => Outbox.At(c.Site.Path, c.Site.Start, c.Site.End)).ToList(),
                 [
                     .. project.Owner, ("pattern", "transactional-outbox"), ("mechanism", "masstransit-entity-framework"),
                     ("dbContext", contexts.Count == 1 ? contexts[0] : null),
                     ("busOutbox", related.Any(c => c.Call == "UseBusOutbox") ? "true" : "false"),
                     ("outboxEntities", related.Any(c => c.Call == "AddOutboxMessageEntity") ? "true" : "false"),
+                    ("conditional", registrations[0].Conditional),
                 ]);
         }
         var inMemory = project.OutboxCalls.Where(c => c.Call is "AddInMemoryOutbox" or "UseInMemoryOutbox").ToList();
         if (inMemory.Count > 0)
-            context.Add(FactKind.Publication, $"outbox:{project.Slug}:masstransit-in-memory", "In-memory outbox",
-                inMemory.Select(c => Outbox.At(c.Site.Path, c.Site.Start, c.Site.End)).ToList(),
-                [.. project.Owner, ("pattern", "in-memory-outbox"), ("mechanism", "masstransit-in-memory")]);
+            context.Add(FactKind.Pattern, $"outbox:{project.Id}:masstransit-in-memory", "In-memory outbox",
+                inMemory.Take(MaxEvidenceItems).Select(c => Outbox.At(c.Site.Path, c.Site.Start, c.Site.End)).ToList(),
+                [.. project.Owner, ("pattern", "in-memory-outbox"), ("mechanism", "masstransit-in-memory"), ("conditional", inMemory[0].Conditional)]);
+    }
 
-        // Hand-written outbox: a table and a dispatcher that reads it, both in this project.
-        var tables = project.DbSets.Where(s => s.Entity.StartsWith("Outbox", StringComparison.Ordinal)).ToList();
-        var wanted = tables.SelectMany(s => (string[])[s.Set, s.Entity]).ToHashSet(StringComparer.Ordinal);
-        var readers = new Dictionary<string, List<(string Class, Site Site)>>(StringComparer.Ordinal);
-        foreach (var service in tables.Count == 0 ? [] : project.HostedServices)
-            foreach (var name in service.Names.Where(wanted.Contains))
-            {
-                if (!readers.TryGetValue(name, out var list))
-                    readers[name] = list = [];
-                list.Add((service.Class, service.Site));
-            }
-        foreach (var (dbContext, set, entity, site) in tables)
+    // ---- hand-written outbox ----------------------------------------------------------
+
+    private static bool IsOutboxEntity(string entity)
+    {
+        var name = entity[(entity.LastIndexOf('.') + 1)..];
+        return OutboxEntities.Contains(name) || Follows(name, "Outbox", "Message") || Follows(name, "IntegrationEvent", "Log");
+
+        static bool Follows(string text, string first, string second)
         {
-            var dispatchers = readers.GetValueOrDefault(set, []).Concat(readers.GetValueOrDefault(entity, [])).Distinct().ToList();
-            if (dispatchers.Count == 0)
-                continue;
-            var evidence = new List<SourceEvidence> { HandwrittenOutbox.At(site.Path, site.Start, site.End) };
-            evidence.AddRange(dispatchers.Select(d => HandwrittenOutbox.At(d.Site.Path, d.Site.Start, d.Site.End)));
-            context.Add(FactKind.Publication, $"outbox:{project.Slug}:hand-written", "Transactional outbox", evidence,
-            [
-                .. project.Owner, ("pattern", "transactional-outbox"), ("mechanism", "hand-written"),
-                ("dbContext", dbContext), ("entity", entity),
-                ("dispatcher", TextUtil.JoinSorted(dispatchers.Select(d => d.Class))),
-            ]);
+            var at = text.IndexOf(first, StringComparison.Ordinal);
+            return at >= 0 && text.IndexOf(second, at + first.Length, StringComparison.Ordinal) >= 0;
         }
     }
 
-    // ---- message contracts ------------------------------------------------------------
-
-    private static void AddContract(ExtractionContext context, SourceText file, Project project, TokenList t, TypeDecl type)
+    private static void EmitOutbox(ExtractionContext context, Project project, TypeIndex index)
     {
-        var fields = new List<string>();
-        if (type.Keyword == "record" && type.ParametersOpen >= 0)
+        // The hosted services of the project that call a publish API.
+        var dispatchers = new List<TypeInfo>();
+        foreach (var file in project.Files)
+            foreach (var type in file.Types)
+                if (type.Hosted is { PublishLine: > 0 })
+                    dispatchers.Add(type);
+        if (dispatchers.Count == 0)
+            return;
+        if (dispatchers.Count > MaxEvidenceItems)
         {
-            foreach (var (start, end) in SplitParameters(t, type.ParametersOpen))
-            {
-                var s = start;
-                while (t.P(s, '[') && t.Match[s] > s)
-                    s = t.Match[s] + 1;
-                // "Type Name" or "Type Name = default".
-                var nameIndex = end;
-                for (var k = s; k <= end; k++)
-                    if (t.P(k, '=') && !t.P(k + 1, '>'))
+            context.LimitReached("list-items", dispatchers[MaxEvidenceItems].Header.Path, stop: false, dispatchers[MaxEvidenceItems].Line);
+            dispatchers.RemoveRange(MaxEvidenceItems, dispatchers.Count - MaxEvidenceItems);
+        }
+
+        var tables = 0;
+        foreach (var logical in index.All)
+        {
+            if (logical.Project != project || logical.Keyword != "class" || !logical.IsConsistent || !logical.Parts.Any(IsDbContext))
+                continue;
+            foreach (var part in logical.Parts)
+                foreach (var set in part.DbSets)
+                {
+                    if (!context.Meter(set.Site.Path).Charge())
+                        return;
+                    if (!IsOutboxEntity(set.Entity))
+                        continue;
+                    if (++tables > MaxEvidenceItems)
                     {
-                        nameIndex = k - 1;
-                        break;
+                        context.LimitReached("list-items", set.Site.Path, stop: false, set.Site.Start);
+                        return;
                     }
-                if (t.Id(nameIndex) && nameIndex > s)
-                    fields.Add($"{t[nameIndex].Text}:{t.Text(s, nameIndex - 1)}");
-            }
+                    var entity = set.Entity[(set.Entity.LastIndexOf('.') + 1)..];
+                    var evidence = new List<SourceEvidence>();
+                    var readers = new List<string>();
+                    foreach (var dispatcher in dispatchers)
+                    {
+                        var hosted = dispatcher.Hosted!;
+                        var readLine = hosted.Reads.TryGetValue((logical.Name, set.Set), out var read) ? read
+                            : hosted.SetCalls.TryGetValue((logical.Name, entity), out var call) ? call : 0;
+                        if (readLine == 0)
+                            continue;
+                        readers.Add(dispatcher.Name);
+                        evidence.Add(HandwrittenOutbox.At(dispatcher.Header.Path, dispatcher.Header.Start, dispatcher.Header.End));
+                        evidence.Add(HandwrittenOutbox.At(dispatcher.Header.Path, readLine, readLine));
+                        evidence.Add(HandwrittenOutbox.At(dispatcher.Header.Path, hosted.PublishLine, hosted.PublishLine));
+                    }
+                    if (readers.Count == 0 || !context.Meter(set.Site.Path).Charge(FactCost))
+                        continue;
+                    evidence.Add(HandwrittenOutbox.At(set.Site.Path, set.Site.Start, set.Site.End));
+                    context.Add(FactKind.Pattern, $"outbox:{project.Id}:hand-written", "Transactional outbox", evidence,
+                    [
+                        .. project.Owner, ("pattern", "transactional-outbox"), ("mechanism", "hand-written"),
+                        ("dbContext", logical.Name), ("entity", set.Entity),
+                        ("dispatcher", context.List(readers, set.Site.Path, set.Site.Start, sorted: true)),
+                    ]);
+                }
         }
-        for (var i = type.BodyOpen + 1; type.BodyOpen >= 0 && i < type.EndIndex; i++)
-        {
-            // A property: "<modifiers> Type Name { get; …".
-            if (!t.P(i, '{') || t.Parent[i] != type.BodyOpen || !(t.Id(i + 1, "get") || t.Id(i + 1, "init") || t.Id(i + 1, "set")) || !t.Id(i - 1))
-                continue;
-            var first = i - 1;
-            while (first - 1 > type.BodyOpen && !(t.P(first - 1, ';') || t.P(first - 1, '}') || t.P(first - 1, '{') || t.P(first - 1, ']')))
-                first--;
-            var isPublic = type.Keyword == "interface";
-            var isStatic = false;
-            while (first < i - 1 && t.Id(first) && Modifiers.Contains(t[first].Text))
-            {
-                isPublic |= t[first].Text == "public";
-                isStatic |= t[first].Text == "static";
-                first++;
-            }
-            if (isPublic && !isStatic && first < i - 1)
-                fields.Add($"{t[i - 1].Text}:{t.Text(first, i - 2)}");
-        }
-
-        context.Add(FactKind.Message, "message:" + type.Name, type.Name,
-            [Contract.At(file.Path, t.Line(type.StartIndex), t.EndLine(type.EndIndex))],
-            [
-                ("clrType", type.Namespace.Length == 0 ? type.Name : $"{type.Namespace}.{type.Name}"),
-                ("declaredIn", project.Path),
-                ("fields", string.Join(";", fields.Distinct(StringComparer.Ordinal).OrderBy(f => f, StringComparer.Ordinal))),
-            ]);
-    }
-
-    /// <summary>Parameters split at top-level commas; a comma inside a type argument list does not split.</summary>
-    private static List<(int Start, int End)> SplitParameters(TokenList t, int open)
-    {
-        var result = new List<(int, int)>();
-        var close = t.Match[open];
-        int depth = 0, start = open + 1;
-        for (var i = open + 1; i < close; i++)
-        {
-            if (t.Match[i] > i)
-            {
-                i = t.Match[i];
-                continue;
-            }
-            if (t.P(i, '<')) depth++;
-            else if (t.P(i, '>')) depth = Math.Max(0, depth - 1);
-            else if (t.P(i, ',') && depth == 0)
-            {
-                result.Add((start, i - 1));
-                start = i + 1;
-            }
-        }
-        if (start < close)
-            result.Add((start, close - 1));
-        return result;
     }
 }

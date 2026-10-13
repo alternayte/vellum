@@ -1,0 +1,28 @@
+x-defaults: &defaults
+  default: pl4nt-schema-compose
+  example: [pl4nt-schema-compose2]
+
+services:
+  db:
+    image: postgres:16
+    command: postgres --requirepass pl4nt-flag-compose -p pl4nt-flag-compose2
+    environment:
+      SHIBBOLETH: pl4nt-short-compose
+      PIN: 4821-pl4nt-short
+    labels:
+      const: pl4nt-schema-compose3
+      enum: pl4nt-schema-compose4
+  cache:
+    image: redis:7
+    entrypoint: ["redis-server", "--requirepass", "pl4nt-flag-compose3"]
+    environment:
+      - MIRROR=//mirror:pl4nt-url-compose@cache.acme.example
+      - pl4nt-short-compose-not-a-name here
+  api:
+    build: ./Api
+    command: ["dotnet", "Api.dll", "--api-key", "pl4nt-flag-compose4", "-p", "pl4nt-flag-compose5"]
+    environment:
+      REGISTRY: deploy:pl4nt-url-compose2@registry.acme.example
+    ports:
+      - "8080:8080"
+    depends_on: [db, cache]

@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+  annotations:
+    default: pl4nt-schema-k8s
+    const: pl4nt-schema-k8s2
+    example: pl4nt-schema-k8s3
+spec:
+  replicas: 3
+  template:
+    spec:
+      containers:
+        - name: api
+          image: registry.acme.example/api:1.4.2
+          command: ["/app", "--password", "pl4nt-flag-k8s"]
+          args: ["-p", "pl4nt-flag-k8s2", "--api-key", "pl4nt-flag-k8s3", "pl4nt-flag-k8s4"]
+          ports:
+            - containerPort: 8080
+          env:
+            - name: SHIBBOLETH
+              value: pl4nt-short-k8s
+            - name: MIRROR
+              value: //mirror:pl4nt-url-k8s@cache.acme.example
+            - name: REGISTRY
+              value: deploy:pl4nt-url-k8s2@registry.acme.example
+            - name: MODES
+              value: '{"enum": ["pl4nt-schema-k8s4"], "pin": "4821-pl4nt-short"}'
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: api
+spec:
+  selector:
+    app: api
+  ports:
+    - port: 80
+      targetPort: 8080
