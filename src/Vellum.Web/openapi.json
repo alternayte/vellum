@@ -19708,6 +19708,12 @@
             "items": {
               "$ref": "#/components/schemas/PinnedStream"
             }
+          },
+          "seal": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -27115,7 +27121,8 @@
           "expectedBundleHash",
           "actualBundleHash",
           "files",
-          "selfCheck"
+          "selfCheck",
+          "issued"
         ],
         "type": "object",
         "properties": {
@@ -27166,6 +27173,9 @@
           },
           "selfCheck": {
             "$ref": "#/components/schemas/SelfCheck"
+          },
+          "issued": {
+            "type": "boolean"
           }
         }
       },

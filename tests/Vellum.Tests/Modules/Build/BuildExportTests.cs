@@ -228,7 +228,7 @@ public class BuildExportTests(IntegrationFixture fixture)
                 $"scenarios/{orders.ScenarioId}.json", $"scenarios/{s.RefundScenario}.json",
             }.Order(StringComparer.Ordinal),
             manifest["files"]!.AsArray().Select(f => f!["path"]!.GetValue<string>()));
-        Assert.Equal(("vellum-bundle/3", "vellum-build", orders.ProjectId), (
+        Assert.Equal(("vellum-bundle/4", "vellum-build", orders.ProjectId), (
             manifest["format"]!.GetValue<string>(), manifest["generator"]!["name"]!.GetValue<string>(),
             manifest["pinned"]!["projectId"]!.GetValue<Guid>()));
         Assert.Null(manifest["pinned"]!["revisionId"]);

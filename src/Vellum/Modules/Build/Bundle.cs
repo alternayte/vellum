@@ -67,10 +67,19 @@ public sealed record BuildManifest(
 public sealed class Bundle
 {
     /// <summary>
-    /// Format 3 adds the review: the decision streams are pinned, <c>decisions/</c> holds the
-    /// accepted decisions, and a blocking finding that no decision settles is a blocker.
+    /// Format 4 adds <c>pinned.seal</c> to the manifest: the mark that Vellum issued the pinned
+    /// state. Every other file is the file of format 3, so the generator version, the file
+    /// hashes and the bundle hash of a state are those of its format 3 bundle.
     /// </summary>
-    public const string Format = "vellum-bundle/3";
+    public const string Format = "vellum-bundle/4";
+
+    /// <summary>
+    /// Format 3 adds the review: the decision streams are pinned, <c>decisions/</c> holds the
+    /// accepted decisions, and a blocking finding that no decision settles is a blocker. Its
+    /// pinned state has no seal. A manifest of it is still generated, byte for byte, to check
+    /// it; an export refuses its pinned state.
+    /// </summary>
+    public const string FormatWithoutSeal = "vellum-bundle/3";
     public const string GeneratorVersion = "3";
 
     /// <summary>
@@ -102,7 +111,12 @@ public sealed class Bundle
     /// <summary>The generator version that a pinned state is generated with: that of its format.</summary>
     internal static string GeneratorVersionOf(BuildView view) => view.Reviewed ? GeneratorVersion : GeneratorVersionWithoutReview;
 
-    public static Bundle Build(BuildInput input, BuildLimits limits)
+    /// <param name="seal">
+    /// Gives the seal of the pinned state: the seal Vellum issues for an export, or the seal a
+    /// manifest under check already has. Null, or a null result, gives a manifest with no seal,
+    /// of the format <see cref="FormatWithoutSeal"/>. A state with no review is never sealed.
+    /// </param>
+    public static Bundle Build(BuildInput input, BuildLimits limits, Func<PinnedState, string?>? seal = null)
     {
         var view = new BuildView(input);
         var files = new SortedDictionary<string, byte[]>(StringComparer.Ordinal);
@@ -162,9 +176,10 @@ public sealed class Bundle
         Add(SddDocument.Path, SddDocument.Write(view, routes, Slices.Of(view), blockers, notWritten.Keys.ToHashSet(StringComparer.Ordinal)));
 
         var listed = files.Select(f => new BundleFile(f.Key, BuildText.Sha256(f.Value), f.Value.Length)).ToList();
+        var pinned = view.Reviewed && seal?.Invoke(input.Pinned) is { } issued ? input.Pinned with { Seal = issued } : input.Pinned;
         var manifest = new BuildManifest(
-            view.Reviewed ? Format : FormatWithoutReview, Generator with { Version = GeneratorVersionOf(view) },
-            input.Pinned,
+            !view.Reviewed ? FormatWithoutReview : pinned.Seal is null ? FormatWithoutSeal : Format, Generator with { Version = GeneratorVersionOf(view) },
+            pinned,
             listed, BundleHash(listed.Select(f => (f.Path, f.Sha256))), blockers.Count == 0, blockers, selfCheck);
         var bundle = new Bundle(files, manifest);
         // The manifest is sent back to verify and to export again, so it has the bound those requests have.
