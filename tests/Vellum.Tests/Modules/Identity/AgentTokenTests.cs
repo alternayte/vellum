@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json.Nodes;
 using Deedbox;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.AspNetCore.Routing;
@@ -147,7 +148,7 @@ public class AgentTokenTests(IntegrationFixture fixture)
         var reader = await TestHost.CreateAgentAsync(factory, owner, workspaceId, ["read"]);
         await Json(reader.Client.GetAsync(Promises(projectA)), HttpStatusCode.OK);
         await Refused(reader.Client.PostAsJsonAsync(Promises(projectA), Promise()), AgentBoundary.AgentNotAllowedError);
-        await Refused(reader.Client.GetAsync($"/api/projects/{projectA}/build/manifest"), AgentBoundary.AgentNotAllowedError);
+        await Refused(reader.Client.PostAsJsonAsync($"/api/projects/{projectA}/build/brief", new { }), AgentBoundary.AgentNotAllowedError);
 
         // Without read: writes a draft, and reads nothing.
         var writer = await TestHost.CreateAgentAsync(factory, owner, workspaceId, ["propose"]);
@@ -170,7 +171,7 @@ public class AgentTokenTests(IntegrationFixture fixture)
 
         // An endpoint that did not opt in, with every scope.
         await Refused(wide.Client.GetAsync("/api/workspaces"), AgentBoundary.AgentNotAllowedError);
-        await Refused(wide.Client.GetAsync($"/api/projects/{projectA}/elements"), AgentBoundary.AgentNotAllowedError);
+        await Refused(wide.Client.GetAsync($"/api/projects/{projectA}/views"), AgentBoundary.AgentNotAllowedError);
         await Refused(wide.Client.GetAsync("/api/auth/me"), AgentBoundary.AgentNotAllowedError);
         await Refused(wide.Client.GetAsync(Tokens(otherWorkspace)), AgentBoundary.HumanOnlyError);
 
@@ -451,84 +452,211 @@ public class AgentTokenTests(IntegrationFixture fixture)
         Assert.Equal(HttpStatusCode.Unauthorized, (await TestHost.BearerClient(after, unused).GetAsync(Promises(projectId))).StatusCode);
     }
 
+    /// <summary>The endpoints a caller with no credential may call, by design. Each gives nothing of a workspace.</summary>
+    private static readonly string[] Anonymous =
+    [
+        "* /health",
+        "GET /api/setup/status",
+        "POST /api/setup/",
+        "POST /api/auth/register",
+        "POST /api/auth/login",
+        "GET /api/auth/external/{provider}",
+        "GET /api/auth/external/callback",
+        // One bit of the instance: whether document scoring has an AI client.
+        "GET /api/scoring/status",
+        "GET /llms.txt",
+        "GET /llms-full.txt",
+        "GET /skills/vellum/SKILL.md",
+        // The app shell, for a path that is no file and no endpoint.
+        "GET {*path:nonfile}",
+        "HEAD {*path:nonfile}",
+    ];
+
+    /// <summary>Only a person signed in to Vellum.</summary>
+    private static readonly string[] ForAPerson =
+    [
+        "POST /api/projects/{projectId}/promises/{promiseId:guid}/approve",
+        "PUT /api/projects/{projectId}/promises/prefix",
+        "PUT /api/instance/settings",
+        "POST /api/instance/keys/rotate",
+        "PUT /api/workspaces/{workspaceId}/settings",
+        "PUT /api/workspaces/{workspaceId}/secrets/{name}",
+        "DELETE /api/workspaces/{workspaceId}/secrets/{name}",
+        "POST /api/workspaces/{workspaceId}/members/",
+        "DELETE /api/workspaces/{workspaceId}/members/{memberUserId}",
+        "POST /api/workspaces/{workspaceId}/agent-tokens/",
+        "GET /api/workspaces/{workspaceId}/agent-tokens/",
+        "DELETE /api/workspaces/{workspaceId}/agent-tokens/{tokenId}",
+        "POST /api/projects/{projectId}/imports/{importId}/proposals/decide",
+        "POST /api/projects/{projectId}/ai/flow-proposals/",
+        "POST /api/projects/{projectId}/ai/flow-proposals/{proposalId}/accept",
+        "POST /api/projects/{projectId}/ai/flow-proposals/{proposalId}/missing/{alias}/create",
+        "POST /api/projects/{projectId}/ai/architecture-proposals/",
+        "POST /api/projects/{projectId}/ai/architecture-proposals/{proposalId}/decide",
+    ];
+
     /// <summary>
-    /// The two lists are the contract. An endpoint that opens itself to agents, or a
-    /// human-only endpoint that loses its mark, fails here and not in production.
+    /// Open to an agent token, with the scopes of which the token needs one. No scope: the
+    /// endpoint takes a token of any scope, and checks each call itself or gives nothing of a
+    /// workspace.
+    /// </summary>
+    private static readonly Dictionary<string, string> ForAnAgent = new()
+    {
+        ["GET /api/workspaces/{workspaceId}/projects/"] = "read",
+        ["GET /api/projects/{projectId}/elements/"] = "read",
+        ["GET /api/projects/{projectId}/elements/{elementId}"] = "read",
+        ["GET /api/projects/{projectId}/relationships/"] = "read",
+        ["GET /api/projects/{projectId}/relationships/{relationshipId}"] = "read",
+        ["GET /api/projects/{projectId}/messages/"] = "read",
+        ["GET /api/projects/{projectId}/messages/{messageId}"] = "read",
+        ["GET /api/projects/{projectId}/operations/"] = "read",
+        ["GET /api/projects/{projectId}/channels/"] = "read",
+        ["GET /api/projects/{projectId}/subscriptions/"] = "read",
+        ["GET /api/projects/{projectId}/bindings/"] = "read",
+        ["GET /api/projects/{projectId}/schemas/"] = "read",
+        ["GET /api/projects/{projectId}/schemas/{schemaId}"] = "read",
+        ["GET /api/projects/{projectId}/revisions/"] = "read",
+        ["GET /api/projects/{projectId}/revisions/{revisionId}"] = "read",
+        ["GET /api/projects/{projectId}/scenarios/"] = "read",
+        ["GET /api/projects/{projectId}/scenarios/{scenarioId}"] = "read",
+        ["POST /api/projects/{projectId}/scenarios/{scenarioId}/run"] = "read",
+        ["GET /api/projects/{projectId}/promises/"] = "read",
+        ["GET /api/projects/{projectId}/promises/prefix"] = "read",
+        ["GET /api/projects/{projectId}/promises/{promiseId:guid}"] = "read",
+        ["GET /api/projects/{projectId}/promises/{promiseId:guid}/runs"] = "read",
+        ["POST /api/projects/{projectId}/promises/"] = "propose",
+        ["PUT /api/projects/{projectId}/promises/{promiseId:guid}"] = "propose",
+        ["POST /api/projects/{projectId}/promises/{promiseId:guid}/revise"] = "propose",
+        ["DELETE /api/projects/{projectId}/promises/{promiseId:guid}"] = "propose",
+        ["POST /api/projects/{projectId}/promises/{promiseId:guid}/obligations/"] = "propose",
+        ["POST /api/projects/{projectId}/promises/{promiseId:guid}/obligations/generate"] = "propose",
+        ["PUT /api/projects/{projectId}/promises/{promiseId:guid}/obligations/{obligationKey}"] = "propose",
+        ["DELETE /api/projects/{projectId}/promises/{promiseId:guid}/obligations/{obligationKey}"] = "propose",
+        ["POST /api/projects/{projectId}/promises/{promiseId:guid}/obligations/{obligationKey}/run"] = "propose",
+        ["POST /api/projects/{projectId}/promises/{promiseId:guid}/obligations/{obligationKey}/evidence"] = "propose",
+        ["GET /api/projects/{projectId}/build/manifest"] = "read or export",
+        ["POST /api/projects/{projectId}/build/export"] = "export",
+        ["POST /api/projects/{projectId}/build/brief"] = "export",
+        ["POST /api/projects/{projectId}/build/verify"] = "export",
+        ["GET /api/agent/capabilities"] = "",
+        ["POST /mcp/"] = "",
+        ["GET /llms.txt"] = "",
+        ["GET /llms-full.txt"] = "",
+        ["GET /skills/vellum/SKILL.md"] = "",
+    };
+
+    /// <summary>
+    /// Every mapped endpoint is of exactly one class: open with no credential (listed), for a
+    /// person only (listed), open to an agent token with named scopes (listed), or for a
+    /// signed-in session, which is what an endpoint is when nobody decided otherwise. The
+    /// class comes from the endpoint data source, so an endpoint that is added later is
+    /// classed here too: it fails this test when it is open with no credential or open to
+    /// agents and no list names it. Then a real token with every scope calls every endpoint
+    /// that is not open to agents and gets 403, and a token that lacks the scope of an
+    /// endpoint gets 403 there.
     /// </summary>
     [Fact]
-    public void The_endpoints_open_to_agents_and_the_human_only_endpoints_are_exactly_the_agreed_lists()
+    public async Task Every_endpoint_is_of_one_class_and_an_agent_token_gets_403_wherever_it_is_not_let_in()
     {
-        using var factory = TestHost.Create(fixture);
+        var (factory, owner, workspaceId, projectId) = await StartAsync();
+        using var _ = factory;
         var endpoints = factory.Services.GetRequiredService<EndpointDataSource>().Endpoints.OfType<RouteEndpoint>()
             .SelectMany(e => (e.Metadata.GetMetadata<HttpMethodMetadata>()?.HttpMethods ?? ["*"])
-                .Select(method => (Name: $"{method} {e.RoutePattern.RawText}", Endpoint: e)))
+                .Select(method => (Name: $"{method} {e.RoutePattern.RawText}", Method: method, Endpoint: e)))
             .ToList();
-        Assert.True(endpoints.Count > 100);
+        Assert.True(endpoints.Count > 150);
+        Assert.Equal(endpoints.Count, endpoints.Select(e => e.Name).Distinct().Count());
 
-        const string promises = "/api/projects/{projectId}/promises";
-        const string obligations = promises + "/{promiseId:guid}/obligations";
-        const string build = "/api/projects/{projectId}/build";
-        var expected = new Dictionary<string, AgentScope>
+        var anonymous = new List<string>();
+        var forAPerson = new List<string>();
+        var forAnAgent = new Dictionary<string, string>();
+        var forASession = new List<string>();
+        foreach (var (name, _, endpoint) in endpoints)
         {
-            [$"GET {promises}/"] = AgentScope.Read,
-            [$"GET {promises}/prefix"] = AgentScope.Read,
-            [$"GET {promises}/{{promiseId:guid}}"] = AgentScope.Read,
-            [$"GET {promises}/{{promiseId:guid}}/runs"] = AgentScope.Read,
-            [$"POST {promises}/"] = AgentScope.Propose,
-            [$"PUT {promises}/{{promiseId:guid}}"] = AgentScope.Propose,
-            [$"POST {promises}/{{promiseId:guid}}/revise"] = AgentScope.Propose,
-            [$"DELETE {promises}/{{promiseId:guid}}"] = AgentScope.Propose,
-            [$"POST {obligations}/"] = AgentScope.Propose,
-            [$"POST {obligations}/generate"] = AgentScope.Propose,
-            [$"PUT {obligations}/{{obligationKey}}"] = AgentScope.Propose,
-            [$"DELETE {obligations}/{{obligationKey}}"] = AgentScope.Propose,
-            [$"POST {obligations}/{{obligationKey}}/run"] = AgentScope.Propose,
-            [$"POST {obligations}/{{obligationKey}}/evidence"] = AgentScope.Propose,
-            [$"POST {build}/export"] = AgentScope.Export,
-            [$"GET {build}/manifest"] = AgentScope.Export,
-            [$"POST {build}/brief"] = AgentScope.Export,
-            [$"POST {build}/verify"] = AgentScope.Export,
-        };
+            var needsNoCredential = endpoint.Metadata.GetMetadata<IAllowAnonymous>() is not null
+                || endpoint.Metadata.GetOrderedMetadata<IAuthorizeData>().Count == 0;
+            var humanOnly = endpoint.Metadata.GetMetadata<HumanOnly>() is not null;
+            var agent = endpoint.Metadata.GetMetadata<AgentAllowed>();
 
-        var open = endpoints.Where(e => e.Endpoint.Metadata.GetMetadata<AgentAllowed>() is not null).ToList();
-        var api = open.Where(e => e.Endpoint.RoutePattern.RawText!.StartsWith("/api", StringComparison.Ordinal))
-            .ToDictionary(e => e.Name, e => e.Endpoint.Metadata.GetMetadata<AgentAllowed>()!.Scope);
-        Assert.Equal(
-            expected.OrderBy(e => e.Key, StringComparer.Ordinal).Select(e => $"{e.Key} = {e.Value}"),
-            api.OrderBy(e => e.Key, StringComparer.Ordinal).Select(e => $"{e.Key} = {e.Value}"));
+            // An endpoint for a person is never open to an agent, and never open with no credential.
+            Assert.False(humanOnly && (agent is not null || needsNoCredential), name);
+            // A scope is checked against the identity of a token, so an endpoint with a scope needs a credential.
+            Assert.False(needsNoCredential && agent is { Scopes.Count: > 0 }, name);
 
-        // Everything else that is open to agents is the MCP endpoint, which checks each call
-        // itself and takes no session cookie. Every route of it carries the mark.
-        var mcp = endpoints.Where(e => !e.Endpoint.RoutePattern.RawText!.StartsWith("/api", StringComparison.Ordinal)
-            && e.Endpoint.RoutePattern.RawText.Contains("mcp", StringComparison.Ordinal)).ToList();
-        Assert.NotEmpty(mcp);
-        Assert.Equal(mcp.Select(e => e.Name).Order(), open.Where(e => !api.ContainsKey(e.Name)).Select(e => e.Name).Order());
-        Assert.All(mcp, e => Assert.Null(e.Endpoint.Metadata.GetMetadata<AgentAllowed>()!.Scope));
+            if (needsNoCredential)
+                anonymous.Add(name);
+            if (agent is not null)
+                forAnAgent[name] = string.Join(" or ", agent.Scopes.Select(AgentScopes.Name));
+            if (humanOnly)
+                forAPerson.Add(name);
+            else if (!needsNoCredential && agent is null)
+                forASession.Add(name);
+        }
 
-        var humanOnly = endpoints.Where(e => e.Endpoint.Metadata.GetMetadata<HumanOnly>() is not null).Select(e => e.Name).Order(StringComparer.Ordinal);
-        Assert.Equal(new[]
+        // A list that differs is shown whole: the names that are only on one side.
+        static void Same(string what, IEnumerable<string> expected, IEnumerable<string> actual)
         {
-            $"POST {promises}/{{promiseId:guid}}/approve",
-            $"PUT {promises}/prefix",
-            "PUT /api/instance/settings",
-            "POST /api/instance/keys/rotate",
-            "PUT /api/workspaces/{workspaceId}/settings",
-            "PUT /api/workspaces/{workspaceId}/secrets/{name}",
-            "DELETE /api/workspaces/{workspaceId}/secrets/{name}",
-            "POST /api/workspaces/{workspaceId}/members/",
-            "DELETE /api/workspaces/{workspaceId}/members/{memberUserId}",
-            "POST /api/workspaces/{workspaceId}/agent-tokens/",
-            "GET /api/workspaces/{workspaceId}/agent-tokens/",
-            "DELETE /api/workspaces/{workspaceId}/agent-tokens/{tokenId}",
-            "POST /api/projects/{projectId}/imports/{importId}/proposals/decide",
-            "POST /api/projects/{projectId}/ai/flow-proposals/",
-            "POST /api/projects/{projectId}/ai/flow-proposals/{proposalId}/accept",
-            "POST /api/projects/{projectId}/ai/flow-proposals/{proposalId}/missing/{alias}/create",
-            "POST /api/projects/{projectId}/ai/architecture-proposals/",
-            "POST /api/projects/{projectId}/ai/architecture-proposals/{proposalId}/decide",
-        }.Order(StringComparer.Ordinal), humanOnly);
+            var (want, have) = (expected.ToHashSet(StringComparer.Ordinal), actual.ToHashSet(StringComparer.Ordinal));
+            Assert.True(want.SetEquals(have),
+                $"{what}\nnot in the list: {string.Join(" | ", have.Except(want).Order(StringComparer.Ordinal))}\nonly in the list: {string.Join(" | ", want.Except(have).Order(StringComparer.Ordinal))}");
+        }
+        Same("open with no credential", Anonymous, anonymous);
+        Same("for a person only", ForAPerson, forAPerson);
+        Same("open to agents", ForAnAgent.Select(e => $"{e.Key} = {e.Value}"), forAnAgent.Select(e => $"{e.Key} = {e.Value}"));
 
-        // No endpoint is both.
-        Assert.DoesNotContain(open, e => e.Endpoint.Metadata.GetMetadata<HumanOnly>() is not null);
+        // Everything else needs a signed-in session: the model, the views, the docs, the
+        // drafts, the imports, the AI, the settings that are read, and the workspaces.
+        Assert.True(forASession.Count > 80, $"{forASession.Count} of {endpoints.Count}");
+        Assert.Equal(endpoints.Count, anonymous.Count + forAPerson.Count + forASession.Count + forAnAgent.Keys.Except(anonymous).Count());
+
+        // The calls. A route value is the workspace or the project of the token, or an ID that names nothing.
+        string Url(RouteEndpoint endpoint) => "/" + string.Join('/', endpoint.RoutePattern.RawText!.Trim('/').Split('/').Select(part =>
+            !part.StartsWith('{') ? part
+            : part.StartsWith("{*", StringComparison.Ordinal) ? "some/page"
+            : part.Trim('{', '}').Split(':')[0] switch
+            {
+                "workspaceId" => workspaceId.ToString(),
+                "projectId" => projectId.ToString(),
+                "provider" or "name" or "alias" or "obligationKey" => "x",
+                _ => Guid.NewGuid().ToString(),
+            }));
+        async Task<HttpResponseMessage> SendAsync(HttpClient client, string method, RouteEndpoint endpoint)
+        {
+            var request = new HttpRequestMessage(new HttpMethod(method == "*" ? "GET" : method), Url(endpoint));
+            if (request.Method != HttpMethod.Get)
+                request.Content = JsonContent.Create(new { });
+            return await client.SendAsync(request);
+        }
+
+        // A token with every scope, whose user is an Owner: 403 on every endpoint that is not open to agents.
+        var every = await TestHost.CreateAgentAsync(factory, owner, workspaceId);
+        foreach (var (name, method, endpoint) in endpoints.Where(e => !ForAnAgent.ContainsKey(e.Name)))
+        {
+            using var response = await SendAsync(every.Client, method, endpoint);
+            Assert.True(response.StatusCode == HttpStatusCode.Forbidden, $"{name}: {(int)response.StatusCode}");
+            if (method == "HEAD")
+                continue;
+            var refusal = (await response.Content.ReadFromJsonAsync<JsonObject>())!["type"]!.GetValue<string>();
+            Assert.Equal(ForAPerson.Contains(name) ? AgentBoundary.HumanOnlyError : AgentBoundary.AgentNotAllowedError, refusal);
+        }
+
+        // A token that lacks the scope of an endpoint: 403 there, before the endpoint runs.
+        var lacking = new Dictionary<string, HttpClient>();
+        foreach (var scope in new[] { "read", "propose", "export" })
+            lacking[scope] = (await TestHost.CreateAgentAsync(factory, owner, workspaceId, [scope])).Client;
+        foreach (var (name, method, endpoint) in endpoints.Where(e => ForAnAgent.GetValueOrDefault(e.Name) is { Length: > 0 }))
+        {
+            var needed = ForAnAgent[name].Split(" or ");
+            using var response = await SendAsync(lacking.First(token => !needed.Contains(token.Key)).Value, method, endpoint);
+            Assert.True(response.StatusCode == HttpStatusCode.Forbidden, $"{name}: {(int)response.StatusCode}");
+            Assert.Equal(AgentBoundary.AgentNotAllowedError, (await response.Content.ReadFromJsonAsync<JsonObject>())!["type"]!.GetValue<string>());
+        }
+
+        // And the token is let in where a list says so: no endpoint that is open to it answers 403 or 401.
+        foreach (var (name, method, endpoint) in endpoints.Where(e => ForAnAgent.ContainsKey(e.Name) && e.Method == "GET"))
+        {
+            using var response = await SendAsync(every.Client, method, endpoint);
+            Assert.True(response.StatusCode != HttpStatusCode.Forbidden && response.StatusCode != HttpStatusCode.Unauthorized, $"{name}: {(int)response.StatusCode}");
+        }
     }
 }

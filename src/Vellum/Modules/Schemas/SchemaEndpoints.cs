@@ -1,3 +1,4 @@
+using Vellum.Modules.Identity.AgentTokens;
 using System.Security.Claims;
 using Vellum.Shared;
 using Vellum.Modules.Workspaces.Authorization;
@@ -38,7 +39,7 @@ public static class SchemaEndpoints
             var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
             await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Viewer, ct);
             return await ListSchemas.Handle(projectId, cursor, limit, db, ct);
-        });
+        }).AllowAgent(AgentScope.Read);
 
         schemas.MapGet("/{schemaId}", async (
             Guid projectId, Guid schemaId,
@@ -49,7 +50,7 @@ public static class SchemaEndpoints
             var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
             await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Viewer, ct);
             return await GetSchema.Handle(projectId, schemaId, db, ct);
-        });
+        }).AllowAgent(AgentScope.Read);
 
         schemas.MapPatch("/{schemaId}", async (
             Guid projectId, Guid schemaId,

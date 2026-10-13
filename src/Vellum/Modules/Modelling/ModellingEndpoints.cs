@@ -1,3 +1,4 @@
+using Vellum.Modules.Identity.AgentTokens;
 using System.Security.Claims;
 using Deedbox;
 using Microsoft.EntityFrameworkCore;
@@ -62,7 +63,7 @@ public static class ModellingEndpoints
             if (refusal is not null)
                 return refusal;
             return await ListElements.Handle(projectId, streamId, kind, status, parentId, cursor, limit, db, ct);
-        });
+        }).AllowAgent(AgentScope.Read);
 
         elements.MapGet("/{elementId}", async (
             Guid projectId, Guid elementId, Guid? branchId,
@@ -78,7 +79,7 @@ public static class ModellingEndpoints
             if (refusal is not null)
                 return refusal;
             return await GetElement.Handle(projectId, streamId, elementId, db, ct);
-        });
+        }).AllowAgent(AgentScope.Read);
 
         elements.MapPatch("/{elementId}", async (
             Guid projectId, Guid elementId,
@@ -163,7 +164,7 @@ public static class ModellingEndpoints
             if (refusal is not null)
                 return refusal;
             return await ListRelationships.Handle(projectId, streamId, fromId, toId, cursor, limit, db, ct);
-        });
+        }).AllowAgent(AgentScope.Read);
 
         relationships.MapGet("/{relationshipId}", async (
             Guid projectId, Guid relationshipId, Guid? branchId,
@@ -179,7 +180,7 @@ public static class ModellingEndpoints
             if (refusal is not null)
                 return refusal;
             return await GetRelationship.Handle(projectId, streamId, relationshipId, db, ct);
-        });
+        }).AllowAgent(AgentScope.Read);
 
         relationships.MapPatch("/{relationshipId}", async (
             Guid projectId, Guid relationshipId,
@@ -259,7 +260,7 @@ public static class ModellingEndpoints
             if (refusal is not null)
                 return refusal;
             return await ListMessages.Handle(projectId, streamId, producerId, cursor, limit, db, ct);
-        });
+        }).AllowAgent(AgentScope.Read);
 
         messages.MapGet("/{messageId}", async (
             Guid projectId, Guid messageId, Guid? branchId,
@@ -274,7 +275,7 @@ public static class ModellingEndpoints
             if (refusal is not null)
                 return refusal;
             return await GetMessage.Handle(projectId, streamId, messageId, db, ct);
-        });
+        }).AllowAgent(AgentScope.Read);
 
         messages.MapPatch("/{messageId}", async (
             Guid projectId, Guid messageId, Guid? branchId,

@@ -1,0 +1,79 @@
+---
+title: Declare a promise
+description: State what must always hold, bind it to the model, add obligations and approve it.
+---
+
+This guide shows you how to declare a promise. A promise is a requirement with a stable ID, such as `ORD-014`. You need the editor role to write a draft and the owner role to approve it.
+
+## Set the prefix
+
+Each project has one prefix for its requirement IDs. You set it one time. It cannot change, because issued IDs contain it.
+
+1. Open **Promises** in the left toolbar.
+2. Select **Set the prefix**.
+3. Enter 2 to 6 upper-case letters, for example `ORD`.
+
+## Write the draft
+
+1. Select **New promise**.
+2. Enter a **Title**.
+3. Enter the **Claim**. Write one statement that a check can show to be true or false.
+4. Enter the **Scope**, the **Preconditions**, the **Expected outcome** and the **Forbidden outcome**.
+5. In **What counts as evidence**, say what result you accept.
+6. Below **Linked to**, select the scenarios, operations, channels, subscriptions, messages and elements that the promise is about.
+7. Select **Create draft**.
+
+Vellum gives the draft the next requirement ID. The ID never changes and is never used again.
+
+A draft is not a requirement. The SDD and the brief list it as not approved.
+
+## Add obligations
+
+An obligation is one check that gives evidence for the promise. A promise with no obligation has no evidence.
+
+1. Open the draft.
+2. Select **Generate from the links**. Vellum calls no AI for this.
+3. Edit each obligation. Add the faults and the assertions that the claim needs.
+4. For a test plan, name the evidence source: the repository, the workflow and, if needed, the job. A test plan with no evidence source can get no result.
+
+**Generate from the links** adds these obligations.
+
+| Link | Obligation |
+|---|---|
+| A scenario that has an assertion | A scenario check that plays the scenario. |
+| A subscription | A failure test plan for redelivery, duplicate delivery and the dead-letter path. |
+| An operation | A contract test plan. |
+| A required source pattern | A source pattern check. |
+
+[Promises and evidence](/reference/promises-and-evidence/) lists the kinds of obligation.
+
+## Approve
+
+1. Read the draft.
+2. Select **Approve revision 1**.
+
+Only a workspace owner approves, and only in the app. An agent token cannot approve, whatever scopes it has.
+
+The approval binds the text that you read. If the draft changed after you opened it, Vellum refuses the approval and shows the draft as it is now.
+
+After approval, the text and the obligations of the revision do not change.
+
+## Check the promise
+
+1. Open the promise.
+2. Select **Run** next to a scenario check or a source pattern check.
+3. For a test plan, run the test in your CI. Then enter the URL of the workflow run and select **Record run**.
+
+The promise shows the result of each obligation and a list of **Evidence gaps**. Vellum never shows a promise as verified. Read the counts and the gaps.
+
+## Change an approved promise
+
+1. Open the promise.
+2. Select **Start a new revision**.
+3. Edit the draft and approve it.
+
+The earlier revision stays in the history. A result of the earlier revision does not count for the new one.
+
+## Let an agent propose
+
+An agent with the `propose` scope can write a draft. Its origin is `agent-suggested`. You approve it, or you do not. See [Connect a coding agent](/how-to/connect-a-coding-agent/).

@@ -44,6 +44,9 @@
   <ItemGroup>
     <EmbeddedResource Include="../Vellum.Web/src/rubrics/*.md" LinkBase="Rubrics" />
     <EmbeddedResource Include="Modules/Ai/Design/Prompts/*.md" />
+    <!-- The agent skill has one source, at the root of the repository. The app serves it at /skills/vellum/SKILL.md.
+         Its resource name does not end in .md: the scoring module reads every resource that does as a rubric. -->
+    <EmbeddedResource Include="../../skills/vellum/SKILL.md" LogicalName="Vellum.Skills.vellum.skill" />
   </ItemGroup>
 
 </Project>

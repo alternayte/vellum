@@ -1,3 +1,4 @@
+using Vellum.Modules.Identity.AgentTokens;
 using Vellum.Modules.Trace.Engine;
 using Vellum.Shared;
 
@@ -14,14 +15,14 @@ public static class ScenarioEndpoints
             .WithBodyLimit(RequestBodyLimit.Document)
             .WithTags("Scenarios");
 
-        scenarios.MapGet("/", ReadScenarios.List)
+        scenarios.MapGet("/", ReadScenarios.List).AllowAgent(AgentScope.Read)
             .Produces<Page<ScenarioSummaryDto>>();
 
         scenarios.MapPost("/", SaveScenario.Create)
             .Accepts<Scenario>("application/json")
             .Produces<Scenario>(StatusCodes.Status201Created);
 
-        scenarios.MapGet("/{scenarioId}", ReadScenarios.Get)
+        scenarios.MapGet("/{scenarioId}", ReadScenarios.Get).AllowAgent(AgentScope.Read)
             .Produces<ScenarioDto>();
 
         scenarios.MapPut("/{scenarioId}", SaveScenario.Update)
@@ -31,8 +32,9 @@ public static class ScenarioEndpoints
         scenarios.MapDelete("/{scenarioId}", DeleteScenario.Handle)
             .Produces(StatusCodes.Status204NoContent);
 
-        // A run reads a pinned model and writes nothing, so a Viewer may run.
-        scenarios.MapPost("/{scenarioId}/run", RunScenario.Handle)
+        // A run reads a pinned model and writes nothing, so a Viewer may run, and so may an
+        // agent token that only reads.
+        scenarios.MapPost("/{scenarioId}/run", RunScenario.Handle).AllowAgent(AgentScope.Read)
             .Produces<RunScenarioResponse>();
 
         return app;

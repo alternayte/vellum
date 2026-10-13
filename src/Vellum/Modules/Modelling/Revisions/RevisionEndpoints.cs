@@ -1,3 +1,5 @@
+using Vellum.Modules.Identity.AgentTokens;
+
 namespace Vellum.Modules.Modelling.Revisions;
 
 public static class RevisionEndpoints
@@ -9,8 +11,8 @@ public static class RevisionEndpoints
             .WithTags("Revisions");
 
         group.MapPost("/", CreateRevision.Handle);
-        group.MapGet("/", ListRevisions.Handle);
-        group.MapGet("/{revisionId}", GetRevision.Handle);
+        group.MapGet("/", ListRevisions.Handle).AllowAgent(AgentScope.Read);
+        group.MapGet("/{revisionId}", GetRevision.Handle).AllowAgent(AgentScope.Read);
 
         return app;
     }

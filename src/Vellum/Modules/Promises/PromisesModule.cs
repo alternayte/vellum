@@ -1,7 +1,7 @@
+using System.Globalization;
 using System.Security.Claims;
 using System.Threading.RateLimiting;
 using Deedbox;
-using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Vellum.Modules.Identity.AgentTokens;
@@ -27,17 +27,7 @@ public static class PromisesModule
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton(PromiseLimits.Default);
 
-        // Every run and every piece of evidence is an event of a promise stream. One caller
-        // records a bounded number of them in a minute, whichever promise they are for.
-        services.Configure<RateLimiterOptions>(options => options.AddPolicy(PromiseLimits.RunPolicy, http =>
-            RateLimitPartition.GetFixedWindowLimiter(
-                http.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? http.Connection.RemoteIpAddress?.ToString() ?? "unknown",
-                _ => new FixedWindowRateLimiterOptions
-                {
-                    PermitLimit = http.RequestServices.GetRequiredService<PromiseLimits>().RunsPerMinute,
-                    Window = TimeSpan.FromMinutes(1),
-                    QueueLimit = 0,
-                })));
+        services.TryAddSingleton<PromiseRunRate>();
         return services;
     }
 
@@ -97,13 +87,50 @@ public static class PromisesModule
             .Accepts<RunObligationRequest>("application/json")
             .Produces<VerificationRun>()
             .Produces<ErrorResponse>(StatusCodes.Status429TooManyRequests)
-            .RequireRateLimiting(PromiseLimits.RunPolicy);
+            .AddEndpointFilter(PromiseRunRate.Filter);
         obligations.MapPost("/{obligationKey}/evidence", ObligationWrites.Evidence).AllowAgent(AgentScope.Propose)
             .Accepts<RecordEvidenceRequest>("application/json")
             .Produces<VerificationRun>()
             .Produces<ErrorResponse>(StatusCodes.Status429TooManyRequests)
-            .RequireRateLimiting(PromiseLimits.RunPolicy);
+            .AddEndpointFilter(PromiseRunRate.Filter);
 
         return app;
     }
+}
+
+/// <summary>
+/// The rate limit of runs and evidence. Every run and every piece of evidence is an event of
+/// a promise stream, so one caller records a bounded number of them in a minute, whichever
+/// promise they are for. It is a filter of the endpoint and not a policy of the rate limiting
+/// middleware: a call that reaches the endpoint without that middleware (an MCP tool) counts
+/// in the same window as a call over HTTP.
+/// </summary>
+internal sealed class PromiseRunRate(PromiseLimits limits) : IDisposable
+{
+    private readonly PartitionedRateLimiter<string> _limiter = PartitionedRateLimiter.Create<string, string>(caller =>
+        RateLimitPartition.GetFixedWindowLimiter(caller, _ => new FixedWindowRateLimiterOptions
+        {
+            PermitLimit = limits.RunsPerMinute,
+            Window = TimeSpan.FromMinutes(1),
+            QueueLimit = 0,
+        }));
+
+    public static async ValueTask<object?> Filter(EndpointFilterInvocationContext context, EndpointFilterDelegate next)
+    {
+        var http = context.HttpContext;
+        var caller = http.User.FindFirstValue(ClaimTypes.NameIdentifier) ?? http.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+        using var lease = http.RequestServices.GetRequiredService<PromiseRunRate>()._limiter.AttemptAcquire(caller);
+        if (lease.IsAcquired)
+            return await next(context);
+
+        // The same answer as the rate limiting middleware gives (RequestLimits).
+        var wait = lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfter) ? retryAfter : TimeSpan.FromMinutes(1);
+        var seconds = Math.Max(1, (int)Math.Ceiling(wait.TotalSeconds));
+        http.Response.Headers.RetryAfter = seconds.ToString(CultureInfo.InvariantCulture);
+        return Results.Json(
+            new ErrorResponse("rate_limited", "Too many attempts", $"Wait {seconds} seconds and try again."),
+            statusCode: StatusCodes.Status429TooManyRequests);
+    }
+
+    public void Dispose() => _limiter.Dispose();
 }

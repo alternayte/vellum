@@ -10,12 +10,13 @@ using Vellum.Shared;
 namespace Vellum.Modules.Identity.AgentTokens;
 
 /// <summary>
-/// Endpoint metadata: an agent token may call the endpoint. With a scope, the token needs
-/// that scope and the route's <c>{workspaceId}</c> or <c>{projectId}</c> must be inside the
+/// Endpoint metadata: an agent token may call the endpoint. With scopes, the token needs one
+/// of them and the route's <c>{workspaceId}</c> or <c>{projectId}</c> must be inside the
 /// token's workspace and project restriction. Without a scope the endpoint checks each call
-/// itself (the MCP endpoint: its tools name the project in the message, not in the route).
+/// itself (the MCP endpoint: its tools name the project in the message, not in the route) or
+/// gives nothing of a workspace (the agent reference).
 /// </summary>
-public sealed record AgentAllowed(AgentScope? Scope);
+public sealed record AgentAllowed(IReadOnlyList<AgentScope> Scopes);
 
 /// <summary>Endpoint metadata: only a person signed in to Vellum calls the endpoint.</summary>
 public sealed class HumanOnly
@@ -35,9 +36,16 @@ public static class AgentBoundary
     public const string HumanOnlyError = "human_only";
     public const string AgentNotAllowedError = "agent_not_allowed";
 
-    /// <summary>Opens the endpoint to an agent token that has <paramref name="scope"/>.</summary>
-    public static TBuilder AllowAgent<TBuilder>(this TBuilder builder, AgentScope scope) where TBuilder : IEndpointConventionBuilder =>
-        builder.WithMetadata(new AgentAllowed(scope));
+    /// <summary>Opens the endpoint to an agent token that has <paramref name="scope"/>, or one of <paramref name="or"/>.</summary>
+    public static TBuilder AllowAgent<TBuilder>(this TBuilder builder, AgentScope scope, params AgentScope[] or) where TBuilder : IEndpointConventionBuilder =>
+        builder.WithMetadata(new AgentAllowed([scope, .. or]));
+
+    /// <summary>
+    /// Opens the endpoint to an agent token of any scope, beside the callers it already has.
+    /// For an endpoint that names no workspace and no project and gives nothing of either.
+    /// </summary>
+    public static TBuilder AllowAnyAgent<TBuilder>(this TBuilder builder) where TBuilder : IEndpointConventionBuilder =>
+        builder.WithMetadata(new AgentAllowed([]));
 
     /// <summary>
     /// The endpoint takes agent tokens and nothing else: a session cookie gets 401. The
@@ -46,7 +54,7 @@ public static class AgentBoundary
     public static TBuilder RequireAgent<TBuilder>(this TBuilder builder) where TBuilder : IEndpointConventionBuilder =>
         builder
             .RequireAuthorization(new AuthorizationPolicyBuilder(AgentPrincipal.Scheme).RequireAuthenticatedUser().Build())
-            .WithMetadata(new AgentAllowed(null));
+            .WithMetadata(new AgentAllowed([]));
 
     /// <summary>
     /// Only a person signed in to Vellum calls the endpoint. No credential gets 401. An agent
@@ -97,8 +105,11 @@ public static class AgentBoundary
 
         var access = http.RequestServices.GetRequiredService<AgentAccess>();
         string? refusal;
-        if (allowed.Scope is { } scope)
+        if (allowed.Scopes.Count > 0)
         {
+            // The scope the token has, or the first one, which then is the scope it lacks.
+            var scope = allowed.Scopes.Where(s => AgentPrincipal.HasScope(http.User, s)).DefaultIfEmpty(allowed.Scopes[0]).First();
+
             // The route names what the call works on. A value that is present and is not an
             // ID, and a route that names neither, are outside every token.
             var workspace = RouteId(http, "workspaceId");

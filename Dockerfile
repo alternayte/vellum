@@ -17,6 +17,8 @@ RUN dotnet restore src/Vellum/Vellum.csproj
 COPY src/Vellum/ src/Vellum/
 # The rubric files are linked into the API project from the web tree.
 COPY src/Vellum.Web/src/rubrics/ src/Vellum.Web/src/rubrics/
+# The agent skill is embedded in the API from the root of the repository.
+COPY skills/ skills/
 COPY --from=web /src/Vellum/wwwroot/ src/Vellum/wwwroot/
 RUN dotnet publish src/Vellum/Vellum.csproj -c Release -o /app --no-restore
 

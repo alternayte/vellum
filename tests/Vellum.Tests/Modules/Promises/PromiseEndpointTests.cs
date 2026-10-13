@@ -238,15 +238,16 @@ public class PromiseEndpointTests(ImportHost import) : IClassFixture<ImportHost>
     [Fact]
     public void No_mcp_tool_approves_a_promise()
     {
-        var tools = typeof(Program).Assembly.GetTypes()
-            .SelectMany(t => t.GetMethods(BindingFlags.Public | BindingFlags.Static | BindingFlags.Instance))
-            .Select(m => (Method: m, Tool: m.GetCustomAttribute<McpServerToolAttribute>()))
-            .Where(x => x.Tool is not null)
-            .ToList();
+        // The tools are the catalog; no method carries the tool attribute any more.
+        var tools = Vellum.Modules.Mcp.AgentTools.All;
+        Assert.DoesNotContain(typeof(Program).Assembly.GetTypes()
+            .SelectMany(t => t.GetMethods(BindingFlags.Public | BindingFlags.Static | BindingFlags.Instance)),
+            m => m.GetCustomAttribute<McpServerToolAttribute>() is not null);
 
         Assert.NotEmpty(tools);
-        Assert.DoesNotContain(tools, x => (x.Tool!.Name ?? x.Method.Name).Contains("approve", StringComparison.OrdinalIgnoreCase));
-        Assert.DoesNotContain(tools, x => x.Method.DeclaringType!.Namespace!.Contains("Promises", StringComparison.Ordinal));
+        Assert.DoesNotContain(tools, x => x.Name.Contains("approve", StringComparison.OrdinalIgnoreCase) || x.Handler.Method.Name.Contains("approve", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(tools, x => x.Endpoint is { } endpoint && endpoint.Pattern.Contains("approve", StringComparison.OrdinalIgnoreCase));
+        Assert.DoesNotContain(tools, x => x.Handler.Method.DeclaringType!.Namespace!.Contains("Promises", StringComparison.Ordinal));
     }
 
     [Fact]
