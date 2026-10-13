@@ -171,7 +171,7 @@ public class ReviewEndpointTests(IntegrationFixture fixture)
         var zip = await (await s.Owner.PostAsJsonAsync(s.Url("build/export"), new { format = "bundle" })).Content.ReadAsByteArrayAsync();
         var files = Unzip(zip);
         var manifest = JsonNode.Parse(files["manifest.json"])!;
-        Assert.Equal("vellum-bundle/3", (string)manifest["format"]!);
+        Assert.Equal("vellum-bundle/4", (string)manifest["format"]!);
         Assert.Equal((Guid)adr1["id"]!, (Guid)Assert.Single(manifest["pinned"]!["decisions"]!.AsArray())!["id"]!);
         var adr = Encoding.UTF8.GetString(files["decisions/ADR-0001.md"]);
         Assert.StartsWith("# ADR-0001: The relay has no schema\n", adr);
@@ -354,7 +354,7 @@ public class ReviewEndpointTests(IntegrationFixture fixture)
                 var response = await client.PostAsJsonAsync(s.Url("build/export"), new { format, pinned });
                 var refusal = await Ok(Task.FromResult(response), HttpStatusCode.Conflict);
                 Assert.Equal("pinned_format_not_exported", (string)refusal["type"]!);
-                Assert.Contains("vellum-bundle/3", (string)refusal["detail"]!);
+                Assert.Contains("vellum-bundle/4", (string)refusal["detail"]!);
                 Assert.False(response.Headers.Contains("X-Vellum-Build-Ready"));
             }
         }
@@ -363,7 +363,7 @@ public class ReviewEndpointTests(IntegrationFixture fixture)
         var again = await exporter.Client.PostAsJsonAsync(s.Url("build/export"), new { format = "bundle", pinned = manifest["pinned"] });
         Assert.Equal((HttpStatusCode.OK, "false"), (again.StatusCode, again.Headers.GetValues("X-Vellum-Build-Ready").Single()));
         var current = JsonNode.Parse(Unzip(await again.Content.ReadAsByteArrayAsync())["manifest.json"])!;
-        Assert.Equal("vellum-bundle/3", (string)current["format"]!);
+        Assert.Equal("vellum-bundle/4", (string)current["format"]!);
         Assert.Contains(current["blockers"]!.AsArray(), b => (string)b!["code"]! == "review-CON-001");
 
         // A bundle of the old format that someone holds is still what its pinned versions generate.

@@ -40,7 +40,8 @@ internal static class BuildTools
         // One pinned state gives both the manifest and the SDD: the manifest is read first, and
         // the SDD is generated from exactly the versions it pins. So the hash, the version and
         // the manifest of the result are of the SDD of the result, also when the model moves
-        // between the two calls.
+        // between the two calls. The export takes the pinned state because the manifest carries
+        // the seal that Vellum gave it: a state that this tool or its caller made is refused.
         var pinned = await call.SendToAsync(AgentTools.Find("get_build_manifest").Endpoint!, query: Pin(revisionId, branchId));
         if (!pinned.Succeeded)
             return call.Refused(pinned);
@@ -55,6 +56,7 @@ internal static class BuildTools
             ["bundleHash"] = reply.Headers["X-Vellum-Bundle-Hash"].ToString(),
             ["streamVersion"] = long.Parse(reply.Headers["X-Vellum-Stream-Version"].ToString(), System.Globalization.CultureInfo.InvariantCulture),
             ["buildReady"] = reply.Headers["X-Vellum-Build-Ready"].ToString() == "true",
+            ["current"] = reply.Headers["X-Vellum-Current"].ToString() == "true",
             ["bytes"] = reply.Body.Length,
             ["markdown"] = reply.Text(),
         };
@@ -66,7 +68,7 @@ internal static class BuildTools
         data["manifest"] = manifest;
         Bound(manifest, "");
         return call.Ok(data, notice:
-            $"The SDD has {reply.Body.Length} bytes, more than one result holds, so it is not here. The manifest in the result is the manifest of that SDD, with its long lists cut; totals has the real counts. POST /api/projects/{projectId}/build/export with the body {{\"format\":\"sdd\"}} gives the SDD of the model as it is then; the same token works there. Its X-Vellum-Bundle-Hash header equals bundleHash here unless the model moved. To get the SDD of exactly this state, send the pinned member of GET /api/projects/{projectId}/build/manifest as pinned in that body.");
+            $"The SDD has {reply.Body.Length} bytes, more than one result holds, so it is not here. The manifest in the result is the manifest of that SDD, with its long lists cut; totals has the real counts. POST /api/projects/{projectId}/build/export with the body {{\"format\":\"sdd\"}} gives the SDD of the model as it is then; the same token works there. Its X-Vellum-Bundle-Hash header equals bundleHash here unless the model moved. To get the SDD of exactly this state, send the pinned member of GET /api/projects/{projectId}/build/manifest as pinned in that body, whole and unchanged: its seal says that Vellum issued it, and the export refuses a state with no seal or with a changed member (409 pinned_not_issued). The pinned member in this result has cut lists, so it is not that state.");
     }
 
     public static async Task<CallToolResult> ExportBrief(
@@ -116,6 +118,7 @@ internal static class BuildTools
             ["matchesPinned"] = verified["matchesPinned"]?.DeepClone(),
             ["current"] = verified["current"]?.DeepClone(),
             ["moved"] = verified["moved"]?.DeepClone(),
+            ["issued"] = verified["issued"]?.DeepClone(),
             ["manifest"] = verified["manifest"]?.DeepClone(),
             ["manifestDifferences"] = verified["manifestDifferences"]?.DeepClone(),
             ["expectedBundleHash"] = verified["expectedBundleHash"]?.DeepClone(),

@@ -164,13 +164,18 @@ export interface VerifyResult {
   archive: string | null
   /** True when the pinned versions are still the latest. */
   current: boolean
+  /** True when the pinned state has a seal that this instance issued for this project. Only such a state is exported again. */
+  issued: boolean
   moved: { kind: string; id: string; pinned: string | null; current: string | null }[]
   files: { path: string; status: string; expectedSha256: string | null; actualSha256: string | null }[]
 }
 
 export interface BuildManifest {
-  /** `decisions` names the pinned decision streams. A manifest of the format before the review has none. */
-  pinned: { projectId: string; projectName: string; branch: string; streamVersion: number; revisionId: string | null; decisions?: { id: string; version: number }[] | null }
+  /**
+   * `decisions` names the pinned decision streams. A manifest of the format before the review has none.
+   * `seal` says that Vellum issued the state. An export takes a pinned state only whole, with its seal.
+   */
+  pinned: { projectId: string; projectName: string; branch: string; streamVersion: number; revisionId: string | null; decisions?: { id: string; version: number }[] | null; seal?: string | null }
   files: { path: string; sha256: string; bytes: number }[]
   bundleHash: string
   buildReady: boolean

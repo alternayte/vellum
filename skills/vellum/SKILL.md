@@ -145,6 +145,9 @@ promise, stop and tell the user. Only a person changes an approved promise.
 a `subject` (the ID of the thing it is about) and a `message`.
 
 - `buildReady: false` means that one blocker or more is open. The export still works.
+- `buildReady` is of the state that Vellum pinned. Do not write or change a `pinned` state
+  to export from. Vellum refuses a state that it did not issue. Send the `pinned` member of
+  a manifest whole, with its `seal`, or send none.
 - Read each blocker. If its subject is in the part you build, do not guess the missing
   part. Tell the user the code, the subject and the message.
 - A blocker outside your part does not stop you. Say that it exists.

@@ -114,6 +114,9 @@ export function BuildFlyout({ projectId }: { projectId: string }) {
                   {verify.data.moved.slice(0, 8).map((m) => (
                     <p key={m.kind + m.id} className="font-mono text-[11px] text-muted-foreground">{m.kind} {m.id.slice(0, 8)} · {m.pinned ?? 'none'} → {m.current ?? 'none'}</p>
                   ))}
+                  {!verify.data.issued && (
+                    <p className="text-muted-foreground">The bundle has no seal of this Vellum instance, so Vellum does not export its state again. A bundle of an older format has no seal.</p>
+                  )}
                 </div>
               )}
             </section>

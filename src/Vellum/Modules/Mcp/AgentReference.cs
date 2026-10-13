@@ -195,7 +195,7 @@ public sealed class AgentReference(IEnumerable<McpServerTool> registered, AgentE
             text.Append("- `").Append(type).Append("`: ").Append(meaning).Append('\n');
         text.Append($$"""
 
-            An endpoint has more types of its own, such as `no_approved_revision`, `not_runnable`, `not_a_test_plan`, `promise_too_large`, `too_many_drafts`, `bundle_too_large`, `invalid_bundle` and `invalid_branch`. A tool passes them on with the `title` and `detail` of the endpoint.
+            An endpoint has more types of its own, such as `no_approved_revision`, `not_runnable`, `not_a_test_plan`, `promise_too_large`, `too_many_drafts`, `bundle_too_large`, `invalid_bundle`, `pinned_not_issued` and `invalid_branch`. `pinned_not_issued` means that an export got a pinned state that Vellum did not issue: read the manifest again and send its `pinned` member whole, with its `seal`. A tool passes them on with the `title` and `detail` of the endpoint.
 
             ## Limits
 
