@@ -40,8 +40,34 @@ export interface FlowStep {
   [field: string]: unknown
 }
 
+/** `ai` for a proposal of the assistant. For a submitted proposal: `agent-token:<id>` or `user:<id>`. */
+export type ProposalOrigin = string
+
+/** One line of a list of proposals. */
+export interface ProposalSummary {
+  id: string
+  status: 'draft' | 'accepted' | 'rejected' | 'decided'
+  name: string
+  request: string
+  origin: ProposalOrigin
+  createdAt: string
+}
+
+/** A submitted proposal that waits for a person, with its kind. */
+export interface PendingProposal extends ProposalSummary {
+  kind: 'flow' | 'architecture'
+}
+
+/** Who a proposal is from, for the sentence under its title. */
+export function describeOrigin(proposal: { origin: ProposalOrigin; provider: { model: string } }): string {
+  if (proposal.origin.startsWith('agent-token:')) return `Submitted by an agent with the token ${proposal.origin.slice('agent-token:'.length, 'agent-token:'.length + 8)}.`
+  if (proposal.origin.startsWith('user:')) return 'Submitted over the API by a member of the workspace.'
+  return `A suggestion from ${proposal.provider.model}.`
+}
+
 export interface FlowProposal {
   id: string
+  origin: ProposalOrigin
   status: 'draft' | 'accepted' | 'rejected'
   request: string
   name: string
@@ -80,6 +106,7 @@ export interface ArchitectureItem {
 
 export interface ArchitectureProposal {
   id: string
+  origin: ProposalOrigin
   status: 'draft' | 'decided'
   request: string
   summary: string
@@ -107,6 +134,14 @@ export const designApi = {
   acceptFlow: (projectId: string, id: string, acceptWithIssues: boolean) =>
     api<{ scenarioId: string }>('POST', `${base(projectId)}/flow-proposals/${id}/accept`, { name: null, acceptWithIssues }),
   getFlow: (projectId: string, id: string) => api<FlowProposal>('GET', `${base(projectId)}/flow-proposals/${id}`),
+  getArchitecture: (projectId: string, id: string) => api<ArchitectureProposal>('GET', `${base(projectId)}/architecture-proposals/${id}`),
+  /** The proposals that an agent or a caller of the API submitted and that nobody decided yet, the newest first. */
+  pending: async (projectId: string): Promise<PendingProposal[]> => {
+    const list = async (kind: PendingProposal['kind']) =>
+      (await api<{ items: ProposalSummary[] }>('GET', `${base(projectId)}/${kind}-proposals?status=draft&submitted=true&limit=50`)).items.map((item) => ({ ...item, kind }))
+    const [flows, additions] = await Promise.all([list('flow'), list('architecture')])
+    return [...flows, ...additions].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+  },
   rejectFlow: (projectId: string, id: string) => api<FlowProposal>('POST', `${base(projectId)}/flow-proposals/${id}/reject`),
   createMissing: (projectId: string, id: string, alias: string) =>
     api<FlowProposal>('POST', `${base(projectId)}/flow-proposals/${id}/missing/${encodeURIComponent(alias)}/create`),

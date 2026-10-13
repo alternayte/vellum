@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { shownInline } from '@/lib/mutation-errors'
 import { OpenQuestions } from './open-questions'
-import { childLists, describeStep, designApi, type FlowProposal, type FlowStep, type MissingEntry } from '@/lib/design-api'
+import { childLists, describeOrigin, describeStep, designApi, type FlowProposal, type FlowStep, type MissingEntry } from '@/lib/design-api'
 
 interface Props {
   projectId: string
@@ -41,7 +41,11 @@ export function FlowProposalDialog({ projectId, proposal: initial, labels, onClo
     onSuccess: async ({ scenarioId }) => { await refreshModel(); onAccepted(scenarioId) },
     onError: shownInline,
   })
-  const reject = useMutation({ mutationFn: () => designApi.rejectFlow(projectId, proposal.id), onSuccess: onClose, onError: shownInline })
+  const reject = useMutation({
+    mutationFn: () => designApi.rejectFlow(projectId, proposal.id),
+    onSuccess: async () => { await queryClient.invalidateQueries({ queryKey: ['projects', projectId, 'proposals'] }); onClose() },
+    onError: shownInline,
+  })
   // The model changed between the proposal and the accept: show what is true now and ask again.
   const wentStale = accept.error instanceof ApiError && accept.error.status === 409 && /changed|stale/i.test(accept.error.message)
   const reload = useMutation({ mutationFn: () => designApi.getFlow(projectId, proposal.id), onSuccess: (next) => { setProposal(next); accept.reset() }, onError: shownInline })
@@ -51,6 +55,8 @@ export function FlowProposalDialog({ projectId, proposal: initial, labels, onClo
   const allLabels = { ...labels, ...Object.fromEntries(proposal.missing.filter((m) => m.createdId).map((m) => [m.createdId!, m.name])) }
   const created = new Set(proposal.missing.filter((m) => m.createdId).map((m) => m.alias))
   const steps = proposal.scenario.steps
+  // The author of the proposal, in the sentences below.
+  const who = proposal.origin === 'ai' ? 'the assistant' : 'the agent'
   const canAccept = proposal.status === 'draft' && steps.length > 0 && !proposal.issues.some((i) => i.code === 'not-storable')
 
   return (
@@ -59,7 +65,7 @@ export function FlowProposalDialog({ projectId, proposal: initial, labels, onClo
         <DialogHeader>
           <DialogTitle>{proposal.name || 'Proposed flow'}</DialogTitle>
           <DialogDescription>
-            A suggestion from {proposal.provider.model}. It describes declared behaviour. It is not saved, and nothing is verified, until you decide.
+            {describeOrigin(proposal)} It describes declared behaviour. It is not saved, and nothing is verified, until you decide.
           </DialogDescription>
         </DialogHeader>
 
@@ -67,7 +73,7 @@ export function FlowProposalDialog({ projectId, proposal: initial, labels, onClo
           {proposal.summary && <p className="text-foreground">{proposal.summary}</p>}
           {(proposal.stale || wentStale) && (
             <div role="status" className="rounded-md border border-[var(--trace-retry)]/60 px-3 py-2 text-xs text-foreground">
-              The model changed after the assistant made this proposal.{' '}
+              The model changed after {who} made this proposal.{' '}
               {wentStale ? 'Load the current check, then decide again.' : 'The steps and problems below are checked against the model as it is now.'}
               {wentStale && (
                 <Button variant="secondary" size="sm" className="ml-2 h-6 text-xs" disabled={reload.isPending} onClick={() => reload.mutate()}>Load the current check</Button>
@@ -81,7 +87,7 @@ export function FlowProposalDialog({ projectId, proposal: initial, labels, onClo
           )}
           {proposal.resolvedToExisting.length > 0 && (
             <p className="text-xs text-muted-foreground">
-              The assistant asked for {proposal.resolvedToExisting.map((r) => r.name).join(', ')}. The model has {proposal.resolvedToExisting.length === 1 ? 'it' : 'them'} already, so the flow uses the existing {proposal.resolvedToExisting.length === 1 ? 'part' : 'parts'}.
+              The proposal asked for {proposal.resolvedToExisting.map((r) => r.name).join(', ')}. The model has {proposal.resolvedToExisting.length === 1 ? 'it' : 'them'} already, so the flow uses the existing {proposal.resolvedToExisting.length === 1 ? 'part' : 'parts'}.
             </p>
           )}
 
@@ -137,7 +143,7 @@ export function FlowProposalDialog({ projectId, proposal: initial, labels, onClo
           {proposal.rejectedReferences.length > 0 && (
             <section aria-labelledby="flow-dropped">
               <h3 id="flow-dropped" className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Left out</h3>
-              <p className="mt-1 text-xs text-muted-foreground">The assistant referred to things that do not exist. Vellum left those parts out.</p>
+              <p className="mt-1 text-xs text-muted-foreground">The proposal referred to things that do not exist. Vellum left those parts out.</p>
               <ul className="mt-1 space-y-0.5 font-mono text-[11px] text-muted-foreground">
                 {proposal.rejectedReferences.map((r, i) => <li key={i}>{r.where}: {r.reason}</li>)}
               </ul>
@@ -158,14 +164,14 @@ export function FlowProposalDialog({ projectId, proposal: initial, labels, onClo
 
           {proposal.openQuestions.length > 0 && (
             <section aria-labelledby="flow-questions">
-              <h3 id="flow-questions" className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Questions the assistant could not answer</h3>
+              <h3 id="flow-questions" className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Questions {who} could not answer</h3>
               <OpenQuestions projectId={projectId} proposalId={proposal.id} questions={proposal.openQuestions} />
             </section>
           )}
 
           {proposal.reasoningSummary && (
             <details className="text-xs text-muted-foreground">
-              <summary className="cursor-pointer rounded hover:text-foreground focus-visible:outline-2 focus-visible:outline-primary">Why the assistant proposed this</summary>
+              <summary className="cursor-pointer rounded hover:text-foreground focus-visible:outline-2 focus-visible:outline-primary">Why {who} proposed this</summary>
               <p className="mt-1 leading-relaxed">{proposal.reasoningSummary}</p>
             </details>
           )}

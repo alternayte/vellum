@@ -175,11 +175,11 @@ public static partial class ScanRequests
 
         // Newest first. The cursor holds the creation time of the last row as ticks.
         var query = db.Scans.AsNoTracking().Where(s => s.ProjectId == projectId);
-        if (CursorEncoder.Decode(cursor) is { } after
-            && long.TryParse(after.SortKey, NumberStyles.None, CultureInfo.InvariantCulture, out var ticks)
-            && ticks <= DateTimeOffset.MaxValue.UtcTicks)
+        if (CursorEncoder.DecodeNumber(cursor) is { } after)
         {
-            var createdAt = new DateTimeOffset(ticks, TimeSpan.Zero);
+            if (after.Number > DateTimeOffset.MaxValue.UtcTicks)
+                throw new InvalidCursorException();
+            var createdAt = new DateTimeOffset(after.Number, TimeSpan.Zero);
             query = query.Where(s => s.CreatedAt < createdAt || (s.CreatedAt == createdAt && s.Id.CompareTo(after.Id) < 0));
         }
 

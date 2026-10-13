@@ -77,3 +77,9 @@ The earlier revision stays in the history. A result of the earlier revision does
 ## Let an agent propose
 
 An agent with the `propose` scope can write a draft. Its origin is `agent-suggested`. You approve it, or you do not. See [Connect a coding agent](/how-to/connect-a-coding-agent/).
+
+An agent can also change a draft that a person wrote. The origin of the promise stays `human`. The draft then shows this notice: "An agent token changed this draft after the last change by a person." The notice names the token and the time. The list of promises shows "draft changed by an agent".
+
+Read every field and every obligation of such a draft before you approve. An obligation that an agent wrote, or changed last, has the mark "by an agent" or "changed by an agent".
+
+An agent cannot delete a promise that a person wrote or changed. It cannot change or remove an obligation that a person wrote or changed.

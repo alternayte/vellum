@@ -4,9 +4,10 @@ using Microsoft.EntityFrameworkCore.Design;
 namespace Vellum.Modules.Ai.Design;
 
 /// <summary>
-/// One AI proposal: a flow (<c>flow</c>) or additions to the architecture (<c>architecture</c>).
-/// A proposal is a suggestion that a person reviews. It is not part of the model and not a
-/// scenario; accepting it writes through the same decisions as a person's own edit.
+/// One proposal: a flow (<c>flow</c>) or additions to the architecture (<c>architecture</c>).
+/// The in-app assistant generates it, or a caller submits it (an agent token, over HTTP or
+/// MCP). A proposal is a suggestion that a person reviews. It is not part of the model and
+/// not a scenario; accepting it writes through the same decisions as a person's own edit.
 /// </summary>
 public class ProposalEntity
 {
@@ -25,6 +26,11 @@ public class ProposalEntity
     /// <summary>The proposal as JSON text, written and read by this feature only.</summary>
     public string Document { get; set; } = null!;
     public string CreatedBy { get; set; } = null!;
+    /// <summary>
+    /// Null for a proposal the in-app assistant generated. For a submitted proposal: who
+    /// submitted it, <c>agent-token:&lt;id&gt;</c> or <c>user:&lt;id&gt;</c>, from the credential of the call.
+    /// </summary>
+    public string? Origin { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public string? DecidedBy { get; set; }
     public DateTimeOffset? DecidedAt { get; set; }
@@ -51,6 +57,7 @@ public class AiDesignDbContext(DbContextOptions<AiDesignDbContext> options) : Db
             // must be accepted exactly as it was previewed.
             b.Property(p => p.Document).HasColumnType("text");
             b.Property(p => p.CreatedBy).HasMaxLength(100);
+            b.Property(p => p.Origin).HasMaxLength(100);
             b.Property(p => p.DecidedBy).HasMaxLength(100);
             b.HasIndex(p => new { p.ProjectId, p.Kind, p.CreatedAt, p.Id });
         });

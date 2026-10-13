@@ -41,6 +41,7 @@ public static class DesignModule
                    .UseSnakeCaseNamingConvention());
         services.AddScoped<PrivateSources>();
         services.AddSingleton<ExplainStreams>();
+        services.AddSingleton<ProposalSubmitRate>();
 
         // The limiter runs for every request and limits only an endpoint that carries
         // AiGenerationLimit. It runs after authorization, so the user is known.
@@ -78,6 +79,16 @@ public static class DesignModule
             .Produces<ErrorResponse>(StatusCodes.Status404NotFound)
             .Produces<ErrorResponse>(StatusCodes.Status409Conflict)
             .Produces<ErrorResponse>(StatusCodes.Status429TooManyRequests);
+        // A caller that wrote the flow itself submits it: an agent token with the propose scope,
+        // or a person. It is stored as a draft that only a person accepts. No provider is called.
+        flows.MapPost("/submit", FlowProposals.Submit).AllowAgent(AgentScope.Propose)
+            .WithBodyLimit(RequestBodyLimit.Document)
+            .AddEndpointFilter(CallerRate.Filter<ProposalSubmitRate>)
+            .Produces<FlowProposalDto>(StatusCodes.Status201Created)
+            .Produces<ErrorResponse>(StatusCodes.Status400BadRequest)
+            .Produces<ErrorResponse>(StatusCodes.Status404NotFound)
+            .Produces<ErrorResponse>(StatusCodes.Status409Conflict)
+            .Produces<ErrorResponse>(StatusCodes.Status429TooManyRequests);
         flows.MapGet("/", FlowProposals.List).Produces<Page<ProposalSummary>>();
         flows.MapGet("/{proposalId}", FlowProposals.Get)
             .Produces<FlowProposalDto>()
@@ -106,6 +117,13 @@ public static class DesignModule
             .WithMetadata(generates)
             .Produces<ArchitectureProposalDto>(StatusCodes.Status201Created)
             .Produces<AiUnavailable>()
+            .Produces<ErrorResponse>(StatusCodes.Status400BadRequest)
+            .Produces<ErrorResponse>(StatusCodes.Status409Conflict)
+            .Produces<ErrorResponse>(StatusCodes.Status429TooManyRequests);
+        architecture.MapPost("/submit", ArchitectureProposals.Submit).AllowAgent(AgentScope.Propose)
+            .WithBodyLimit(RequestBodyLimit.Document)
+            .AddEndpointFilter(CallerRate.Filter<ProposalSubmitRate>)
+            .Produces<ArchitectureProposalDto>(StatusCodes.Status201Created)
             .Produces<ErrorResponse>(StatusCodes.Status400BadRequest)
             .Produces<ErrorResponse>(StatusCodes.Status409Conflict)
             .Produces<ErrorResponse>(StatusCodes.Status429TooManyRequests);

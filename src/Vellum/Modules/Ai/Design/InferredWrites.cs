@@ -32,9 +32,13 @@ internal sealed record AdditionRefused(Guid Id, string Reason, bool Conflict);
 /// </summary>
 internal static class InferredWrites
 {
-    /// <summary>The source pointer of a fact that came from a proposal, for example <c>ai:anthropic/model-x#flow-proposal:&lt;id&gt;</c>.</summary>
-    public static string Source(ProposalProvider provider, string proposalKind, Guid proposalId) =>
-        $"ai:{provider.Kind}/{provider.Model}#{proposalKind}-proposal:{proposalId}";
+    /// <summary>
+    /// The source pointer of a fact that came from a proposal: <c>ai:anthropic/model-x#flow-proposal:&lt;id&gt;</c>
+    /// for one the assistant generated, <c>agent-token:&lt;token id&gt;#flow-proposal:&lt;id&gt;</c> for one that was submitted.
+    /// </summary>
+    /// <param name="origin">Who submitted the proposal. Null for a proposal the assistant generated.</param>
+    public static string Source(ProposalProvider provider, string? origin, string proposalKind, Guid proposalId) =>
+        $"{origin ?? $"ai:{provider.Kind}/{provider.Model}"}#{proposalKind}-proposal:{proposalId}";
 
     /// <summary>
     /// Appends the additions inside the transaction of <paramref name="pinned"/>, a store from

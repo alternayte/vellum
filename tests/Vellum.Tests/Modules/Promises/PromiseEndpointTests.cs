@@ -165,7 +165,19 @@ public class PromiseEndpointTests(ImportHost import) : IClassFixture<ImportHost>
         var revised = await Ok(Post(owner, Url(projectId, $"/{id}/revise")));
         Assert.Equal((2, 1, "approved"), (revised["latestRevision"]!.GetValue<int>(), revised["inForceRevision"]!.GetValue<int>(), revised["state"]!.GetValue<string>()));
         Assert.Equal(("draft", 2), (revised["draft"]!["status"]!.GetValue<string>(), revised["draft"]!["revision"]!.GetValue<int>()));
-        Assert.Equal(revised["current"]!["obligations"]!.ToJsonString(), revised["draft"]!["obligations"]!.ToJsonString());
+        // The copy holds the same obligations. It does not say who added them to the first draft: a person approved them.
+        static string Content(JsonNode obligations)
+        {
+            var copy = obligations.DeepClone().AsArray();
+            foreach (var obligation in copy)
+            {
+                obligation!.AsObject().Remove("addedBy");
+                obligation.AsObject().Remove("lastChangedBy");
+            }
+            return copy.ToJsonString();
+        }
+        Assert.All(revised["draft"]!["obligations"]!.AsArray(), o => Assert.False(o!.AsObject().ContainsKey("addedBy")));
+        Assert.Equal(Content(revised["current"]!["obligations"]!), revised["draft"]!["obligations"]!.ToJsonString());
         await Refused(Post(owner, Url(projectId, $"/{id}/revise")), HttpStatusCode.Conflict);
 
         var changed = orders.Ord014();
@@ -328,9 +340,14 @@ public class PromiseEndpointTests(ImportHost import) : IClassFixture<ImportHost>
         Assert.Equal("transactional-outbox", obligations[3]!["recipe"]!["sourcePattern"]!["pattern"]!.GetValue<string>());
 
         // The same promise on the same model gives the same obligations. Only the scenario and schema IDs differ: they are per project.
-        string Normal(JsonObject generated, OrdersReference orders) =>
-            generated["promise"]!["current"]!["obligations"]!.ToJsonString()
-                .Replace(orders.ScenarioId.ToString(), "SCENARIO").Replace(orders.OrderRequestSchema.ToString(), "SCHEMA");
+        // Who asked for the generation is not part of what was generated.
+        string Normal(JsonObject generated, OrdersReference orders)
+        {
+            var copy = generated["promise"]!["current"]!["obligations"]!.DeepClone().AsArray();
+            foreach (var obligation in copy)
+                obligation!.AsObject().Remove("addedBy");
+            return copy.ToJsonString().Replace(orders.ScenarioId.ToString(), "SCENARIO").Replace(orders.OrderRequestSchema.ToString(), "SCHEMA");
+        }
         Assert.Equal(Normal(one, first), Normal(two, second));
 
         // Generating again adds nothing. After a person removed one, it adds that one again under a new ID.

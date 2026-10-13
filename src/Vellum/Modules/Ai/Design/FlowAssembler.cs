@@ -184,8 +184,10 @@ internal static partial class FlowAssembler
     /// <param name="output">An answer that went through <see cref="Normalize"/>.</param>
     /// <param name="aliases">The alias table of the request that produced the answer.</param>
     /// <param name="created">The missing aliases that a person has created, with the real ID of each.</param>
+    /// <param name="submitted">True for a submitted proposal, whose table lists things under their IDs (<see cref="SubmittedProposal.References"/>).</param>
     public static FlowBuild Build(
-        FlowOutput output, IReadOnlyDictionary<string, AliasRef> aliases, IReadOnlyDictionary<string, Guid> created, ScenarioId scenarioId)
+        FlowOutput output, IReadOnlyDictionary<string, AliasRef> aliases, IReadOnlyDictionary<string, Guid> created, ScenarioId scenarioId,
+        bool submitted = false)
     {
         var rejected = new List<RejectedReference>();
         var issues = new List<ScenarioIssue>();
@@ -225,9 +227,11 @@ internal static partial class FlowAssembler
                 return created.TryGetValue(alias, out var id) ? (RefState.Resolved, id, null) : (RefState.Blocked, default, null);
             }
 
-            return (RefState.Rejected, default, Guid.TryParse(alias, out _)
-                ? "A raw ID is not a reference. A thing is referenced by its alias from the table."
-                : "The alias is not in the alias table and is not declared in 'missing'.");
+            return (RefState.Rejected, default, submitted
+                ? "The reference is not the ID of a thing of the model and is not an alias that 'missing' declares."
+                : Guid.TryParse(alias, out _)
+                    ? "A raw ID is not a reference. A thing is referenced by its alias from the table."
+                    : "The alias is not in the alias table and is not declared in 'missing'.");
         }
 
         var nodes = output.Steps.Select((step, index) => new Node(step, index)).ToList();

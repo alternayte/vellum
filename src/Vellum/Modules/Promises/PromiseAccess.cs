@@ -3,6 +3,7 @@ using System.Text.Json;
 using Deedbox;
 using Microsoft.AspNetCore.Http.Json;
 using Microsoft.Extensions.Options;
+using Vellum.Modules.Identity;
 using Vellum.Modules.Identity.AgentTokens;
 using Vellum.Shared;
 
@@ -11,7 +12,8 @@ namespace Vellum.Modules.Promises;
 /// <summary>The bounds on verification runs. A test host gives smaller ones.</summary>
 /// <param name="MaxRunsPerObligation">The most runs one obligation of one revision holds. Every run is an event of the promise stream.</param>
 /// <param name="RunsPerMinute">The most runs and pieces of evidence one caller records in a minute.</param>
-public sealed record PromiseLimits(int MaxRunsPerObligation = 1_000, int RunsPerMinute = 120)
+/// <param name="DraftWritesPerMinute">The most draft writes (create a promise, change a draft, add an obligation, generate obligations) one caller makes in a minute.</param>
+public sealed record PromiseLimits(int MaxRunsPerObligation = 1_000, int RunsPerMinute = 120, int DraftWritesPerMinute = 120)
 {
     public static readonly PromiseLimits Default = new();
 }
@@ -35,6 +37,31 @@ internal readonly record struct PromiseWrite(CommandResult<PromiseState> Result,
 internal static class PromiseAccess
 {
     public static string UserId(ClaimsPrincipal user) => user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+
+    /// <summary>
+    /// Who makes the call, for the events: <c>agent-token:&lt;id&gt;</c> for an agent token,
+    /// else <c>user:&lt;id&gt;</c>. It comes from the authentication scheme, never from the body.
+    /// </summary>
+    public static string Actor(ClaimsPrincipal user) => AgentPrincipal.Actor(user)!;
+
+    /// <summary>
+    /// 403 <c>human_only</c> for a change that an agent token asked for and that is for a
+    /// person: what a person wrote or changed is not deleted, changed or removed by a token.
+    /// The refusal is in the audit log of the token's workspace.
+    /// </summary>
+    public static async Task<IResult> HumanOnlyAsync(HttpContext http, string detail)
+    {
+        if (AgentPrincipal.TokenId(http.User) is { } tokenId && AgentPrincipal.WorkspaceId(http.User) is { } workspaceId)
+        {
+            await AgentTokenAudit.RefusedAsync(
+                http.RequestServices.GetRequiredService<AppIdentityDbContext>(), tokenId, workspaceId, "human-authored",
+                AgentTokenAudit.Describe(http), http.RequestServices.GetRequiredService<TimeProvider>().GetUtcNow(), http.RequestAborted);
+        }
+
+        return Results.Json(
+            new ErrorResponse(AgentBoundary.HumanOnlyError, "Only a person signed in to Vellum does this", detail),
+            statusCode: StatusCodes.Status403Forbidden);
+    }
 
     /// <summary>
     /// The origin of a new promise, from who calls. An agent token always gives

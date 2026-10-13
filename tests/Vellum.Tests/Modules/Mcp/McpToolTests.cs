@@ -39,6 +39,10 @@ public class McpToolTests(IntegrationFixture fixture)
         ["run_scenario"] = "read",
         ["list_promises"] = "read",
         ["get_promise"] = "read",
+        ["list_promise_runs"] = "read",
+        ["get_review_findings"] = "read",
+        ["list_decisions"] = "read",
+        ["list_questions"] = "read",
         ["get_build_manifest"] = "read",
         ["propose_promise"] = "propose",
         ["update_promise_draft"] = "propose",
@@ -46,6 +50,10 @@ public class McpToolTests(IntegrationFixture fixture)
         ["generate_obligations"] = "propose",
         ["run_obligation"] = "propose",
         ["record_evidence"] = "propose",
+        ["propose_decision"] = "propose",
+        ["propose_question"] = "propose",
+        ["propose_architecture"] = "propose",
+        ["propose_flow"] = "propose",
         ["export_sdd"] = "export",
         ["export_brief"] = "export",
         ["verify_bundle_manifest"] = "export",
@@ -61,7 +69,11 @@ public class McpToolTests(IntegrationFixture fixture)
             "get_element" or "get_dependencies" or "get_dependents" => new JsonObject { ["elementId"] = id },
             "get_schema" => new JsonObject { ["schemaId"] = id },
             "get_scenario" or "run_scenario" => new JsonObject { ["scenarioId"] = id },
-            "get_promise" or "generate_obligations" => new JsonObject { ["promiseId"] = id },
+            "get_promise" or "generate_obligations" or "list_promise_runs" => new JsonObject { ["promiseId"] = id },
+            "propose_decision" => new JsonObject { ["title"] = "A decision", ["decision"] = "We do this." },
+            "propose_question" => new JsonObject { ["text"] = "What happens then?" },
+            "propose_architecture" => new JsonObject { ["request"] = "Add a part.", ["proposal"] = new JsonObject { ["summary"] = "Nothing", ["items"] = new JsonArray() } },
+            "propose_flow" => new JsonObject { ["request"] = "Show a flow.", ["flow"] = new JsonObject { ["name"] = "A flow", ["steps"] = new JsonArray() } },
             "propose_promise" => new JsonObject { ["title"] = "A promise", ["claim"] = "Something must always hold." },
             "update_promise_draft" => new JsonObject { ["promiseId"] = id, ["title"] = "A promise", ["claim"] = "Something must always hold." },
             "propose_obligation" => new JsonObject
@@ -275,8 +287,26 @@ public class McpToolTests(IntegrationFixture fixture)
         Assert.Equal("Orders API", element["element"]!["name"]!.GetValue<string>());
         Assert.Equal("declared", Assert.Single(element["outboundRelationships"]!.AsArray())!["factStatus"]!.GetValue<string>());
         Assert.Single(element["producedMessages"]!.AsArray());
-        Assert.Single((await DataAsync(mcp, "get_dependents", Project(("elementId", OrdersReference.OrdersApi))))["data"]!["outboundRelationships"]!.AsArray());
-        Assert.Single((await DataAsync(mcp, "get_dependencies", Project(("elementId", OrdersReference.Billing))))["data"]!["consumedMessages"]!.AsArray());
+
+        // What the Orders API depends on: the store it points at. It consumes nothing.
+        var apiNeeds = (await DataAsync(mcp, "get_dependencies", Project(("elementId", OrdersReference.OrdersApi))))["data"]!.AsObject();
+        Assert.Equal(["elementId", "outboundRelationships", "consumedMessages"], apiNeeds.Select(member => member.Key));
+        Assert.Equal(OrdersReference.OrdersDb, Assert.Single(apiNeeds["outboundRelationships"]!.AsArray())!["toId"]!.GetValue<Guid>());
+        Assert.Empty(apiNeeds["consumedMessages"]!.AsArray());
+        // Billing depends on the producer of the message it consumes.
+        var billingNeeds = (await DataAsync(mcp, "get_dependencies", Project(("elementId", OrdersReference.Billing))))["data"]!;
+        Assert.Equal(OrdersReference.OrdersApi, Assert.Single(billingNeeds["consumedMessages"]!.AsArray())!["producerId"]!.GetValue<Guid>());
+        Assert.Empty(billingNeeds["outboundRelationships"]!.AsArray());
+
+        // What depends on the store: the API that points at it. What depends on the API: the consumers of its message.
+        var dbNeededBy = (await DataAsync(mcp, "get_dependents", Project(("elementId", OrdersReference.OrdersDb))))["data"]!.AsObject();
+        Assert.Equal(["elementId", "inboundRelationships", "producedMessages"], dbNeededBy.Select(member => member.Key));
+        Assert.Equal(OrdersReference.OrdersApi, Assert.Single(dbNeededBy["inboundRelationships"]!.AsArray())!["fromId"]!.GetValue<Guid>());
+        var apiNeededBy = (await DataAsync(mcp, "get_dependents", Project(("elementId", OrdersReference.OrdersApi))))["data"]!;
+        Assert.Empty(apiNeededBy["inboundRelationships"]!.AsArray());
+        Assert.Equal(
+            new[] { OrdersReference.Inventory, OrdersReference.Billing }.Order(),
+            Assert.Single(apiNeededBy["producedMessages"]!.AsArray())!["consumerIds"]!.AsArray().Select(c => c!.GetValue<Guid>()).Order());
 
         var message = Assert.Single((await DataAsync(mcp, "list_messages", Project()))["data"]!["messages"]!.AsArray())!;
         Assert.Equal(("Orders API", 2), (message["producer"]!["name"]!.GetValue<string>(), message["consumers"]!.AsArray().Count));
@@ -648,6 +678,145 @@ public class McpToolTests(IntegrationFixture fixture)
     }
 
     [Fact]
+    public async Task A_cursor_that_no_list_gave_is_refused_and_is_never_read_as_the_first_page()
+    {
+        using var factory = TestHost.Create(fixture);
+        var owner = await TestHost.SignInAsync(factory);
+        var (workspaceId, projectId) = await TestHost.CreateProjectAsync(owner);
+        var orders = await OrdersReference.SeedAsync(owner, projectId);
+        var promiseId = (await orders.CreateOrd014Async(requiresPattern: false))["id"]!.GetValue<Guid>();
+        var agent = await TestHost.CreateAgentAsync(factory, owner, workspaceId, ["read"]);
+        var mcp = new McpWire(agent.Client);
+
+        // Tools that read the model themselves, tools over a list the endpoint pages, and tools that page a whole list.
+        foreach (var (tool, more) in new (string, JsonObject)[]
+        {
+            ("list_projects", []),
+            ("find_elements", []),
+            ("list_messages", []),
+            ("get_contracts", new JsonObject { ["kind"] = "channels" }),
+            ("list_scenarios", []),
+            ("list_promises", []),
+            ("list_promise_runs", new JsonObject { ["promiseId"] = promiseId }),
+            ("run_scenario", new JsonObject { ["scenarioId"] = orders.ScenarioId }),
+            ("get_review_findings", []),
+            ("list_decisions", []),
+            ("list_questions", []),
+        })
+        {
+            foreach (var cursor in new[] { "not-a-cursor", "eyJzIjoiYSJ9", "e30=" })
+            {
+                var arguments = more.DeepClone().AsObject();
+                if (tool != "list_projects")
+                    arguments["projectId"] = projectId;
+                arguments["cursor"] = cursor;
+                var (isError, text) = await mcp.ToolAsync(tool, arguments);
+                Assert.True(isError, $"{tool} {cursor}: {text}");
+                Assert.Equal("validation_error", Error(text).Type);
+                Assert.Equal("cursor", JsonNode.Parse(text)!["error"]!["errors"]![0]!["field"]!.GetValue<string>());
+            }
+        }
+
+        // The HTTP lists: 400 on the field cursor, where there was page one.
+        foreach (var url in new[]
+        {
+            $"/api/projects/{projectId}/elements", $"/api/projects/{projectId}/relationships", $"/api/projects/{projectId}/messages",
+            $"/api/projects/{projectId}/operations", $"/api/projects/{projectId}/schemas", $"/api/projects/{projectId}/scenarios",
+            $"/api/projects/{projectId}/promises", $"/api/projects/{projectId}/promises/{promiseId}/runs",
+        })
+        {
+            using var response = await agent.Client.GetAsync($"{url}?cursor=not-a-cursor");
+            Assert.True(response.StatusCode == HttpStatusCode.BadRequest, $"{url}: {(int)response.StatusCode}");
+            var error = (await response.Content.ReadFromJsonAsync<JsonObject>())!;
+            Assert.Equal(("validation_error", "cursor"), (error["type"]!.GetValue<string>(), error["errors"]![0]!["field"]!.GetValue<string>()));
+        }
+        // A cursor of a list whose key is a number, with a key that is no number.
+        var wrongKey = Vellum.Shared.CursorEncoder.Encode("abc", Guid.NewGuid());
+        Assert.Equal(HttpStatusCode.BadRequest, (await agent.Client.GetAsync($"/api/projects/{projectId}/promises?cursor={Uri.EscapeDataString(wrongKey)}")).StatusCode);
+
+        // No cursor, and an empty one, are still the first page.
+        Assert.Equal(HttpStatusCode.OK, (await agent.Client.GetAsync($"/api/projects/{projectId}/elements?cursor=")).StatusCode);
+    }
+
+    [Fact]
+    public async Task A_first_event_over_the_bound_comes_without_its_payload_with_a_cursor_past_it()
+    {
+        using var factory = TestHost.Create(fixture);
+        var owner = await TestHost.SignInAsync(factory);
+        var (workspaceId, projectId) = await TestHost.CreateProjectAsync(owner);
+        var orders = await OrdersReference.SeedAsync(owner, projectId);
+
+        // A request inside the payload limit that is larger than one result as JSON text: each letter is written as six bytes.
+        var scenario = orders.WithoutOutbox();
+        scenario["steps"]![0]!["request"]!["sku"] = new string('\u00e9', 20_000);
+        // The body holds each letter as two bytes of UTF-8, as a client that does not escape sends it.
+        var body = scenario.ToJsonString(new System.Text.Json.JsonSerializerOptions { Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping });
+        var saved = await owner.PutAsync(orders.Url($"scenarios/{orders.ScenarioId}"), new StringContent(body, Encoding.UTF8, "application/json"));
+        Assert.True(saved.StatusCode == HttpStatusCode.OK, await saved.Content.ReadAsStringAsync());
+        var mcp = new McpWire((await TestHost.CreateAgentAsync(factory, owner, workspaceId, ["read"])).Client);
+        JsonObject Run(string? cursor) => new() { ["projectId"] = projectId, ["scenarioId"] = orders.ScenarioId, ["includePayloads"] = true, ["cursor"] = cursor };
+
+        var first = await DataAsync(mcp, "run_scenario", Run(null));
+        var events = first["data"]!["events"]!.AsArray();
+        var only = Assert.Single(events)!.AsObject();
+        Assert.False(only.ContainsKey("payload"));
+        Assert.False(only.ContainsKey("headers"));
+        Assert.Equal(only["sequence"]!.GetValue<int>().ToString(), first["nextCursor"]!.GetValue<string>());
+        var notice = first["notice"]!.GetValue<string>();
+        Assert.Contains($"Event {only["sequence"]} is larger than one result holds", notice);
+        Assert.Contains($"POST /api/projects/{projectId}/scenarios/{orders.ScenarioId}/run", notice);
+        Assert.DoesNotContain("fewer events", notice);
+
+        // The cursor goes past the event: every event of the run comes once.
+        var seen = new List<int> { only["sequence"]!.GetValue<int>() };
+        var cursor = first["nextCursor"]?.GetValue<string>();
+        for (var pages = 0; cursor is not null && pages < 20; pages++)
+        {
+            var page = await DataAsync(mcp, "run_scenario", Run(cursor));
+            Assert.NotEmpty(page["data"]!["events"]!.AsArray());
+            seen.AddRange(page["data"]!["events"]!.AsArray().Select(e => e!["sequence"]!.GetValue<int>()));
+            cursor = page["nextCursor"]?.GetValue<string>();
+        }
+        Assert.Equal(Enumerable.Range(seen[0], first["data"]!["eventCount"]!.GetValue<int>()), seen);
+    }
+
+    [Fact]
+    public async Task An_exported_sdd_and_its_manifest_are_of_one_pinned_state_while_the_model_moves()
+    {
+        using var factory = TestHost.Create(fixture);
+        var owner = await TestHost.SignInAsync(factory);
+        var (workspaceId, projectId) = await TestHost.CreateProjectAsync(owner);
+        // An SDD over the bound, so that the result holds the manifest.
+        var description = new string('d', 4_000);
+        for (var i = 0; i < 40; i++)
+            await TestHost.Created(owner.PostAsJsonAsync($"/api/projects/{projectId}/elements", new { id = Guid.NewGuid(), kind = "system", name = $"Service {i:D2}", description }));
+        var mcp = new McpWire((await TestHost.CreateAgentAsync(factory, owner, workspaceId, ["export"])).Client);
+
+        // A person edits the model the whole time.
+        using var stop = new CancellationTokenSource();
+        var edits = Task.Run(async () =>
+        {
+            for (var i = 0; !stop.IsCancellationRequested; i++)
+                await owner.PostAsJsonAsync($"/api/projects/{projectId}/elements", new { id = Guid.NewGuid(), kind = "actor", name = $"Person {i:D4}" });
+        });
+        try
+        {
+            for (var i = 0; i < 6; i++)
+            {
+                var sdd = (await DataAsync(mcp, "export_sdd", new JsonObject { ["projectId"] = projectId }))["data"]!;
+                Assert.Null(sdd["markdown"]);
+                Assert.Equal(sdd["streamVersion"]!.GetValue<long>(), sdd["manifest"]!["pinned"]!["streamVersion"]!.GetValue<long>());
+                Assert.Equal(sdd["bundleHash"]!.GetValue<string>(), sdd["manifest"]!["bundleHash"]!.GetValue<string>());
+            }
+        }
+        finally
+        {
+            await stop.CancelAsync();
+            await edits;
+        }
+    }
+
+    [Fact]
     public async Task Hostile_text_in_the_model_comes_back_as_data_in_a_field()
     {
         using var factory = TestHost.Create(fixture);
@@ -741,18 +910,29 @@ public class McpToolTests(IntegrationFixture fixture)
         }
         Assert.False((await open.ToolAsync("get_model_summary", new JsonObject { ["projectId"] = projectId })).IsError);
 
-        // No long-lived stream exists that a revoked token could keep: the server maps no GET
-        // that would open one, so the request is one to an endpoint that is not open to agents.
-        using (var stream = await revoked.Client.SendAsync(new HttpRequestMessage(HttpMethod.Get, "/mcp") { Headers = { { "Accept", "text/event-stream" } } }))
+        // No long-lived stream exists that a revoked token could keep. A client of the
+        // streamable HTTP transport asks for one with a GET after it initialized, and ends a
+        // session with a DELETE. The answer the transport gives a server with no stream and
+        // no session is 405 with the method the endpoint takes. Any other refusal (a 403)
+        // makes a real client give up the whole endpoint and list no tool.
+        foreach (var method in new[] { HttpMethod.Get, HttpMethod.Delete })
         {
-            Assert.Equal(HttpStatusCode.Forbidden, stream.StatusCode);
+            using var stream = await revoked.Client.SendAsync(new HttpRequestMessage(method, "/mcp") { Headers = { { "Accept", "text/event-stream" } } });
+            Assert.Equal(HttpStatusCode.MethodNotAllowed, stream.StatusCode);
+            Assert.Equal(["POST"], stream.Content.Headers.Allow);
             Assert.NotEqual("text/event-stream", stream.Content.Headers.ContentType?.MediaType);
         }
-        Assert.DoesNotContain(
+        // Without a token, and with the session of a person, the endpoint says nothing but 401.
+        Assert.Equal(HttpStatusCode.Unauthorized, (await factory.CreateClient().GetAsync("/mcp")).StatusCode);
+        Assert.Equal(HttpStatusCode.Unauthorized, (await owner.GetAsync("/mcp")).StatusCode);
+        // After the 405 the client goes on: the list holds every tool.
+        Assert.Equal(Allowed.Count, (await open.RequestAsync("tools/list"))["result"]!["tools"]!.AsArray().Count);
+        // No endpoint is a stream: the only methods of the MCP path are POST and the two that answer 405.
+        Assert.Equal(
+            ["DELETE", "GET", "POST"],
             factory.Services.GetRequiredService<EndpointDataSource>().Endpoints.OfType<RouteEndpoint>()
                 .Where(e => e.RoutePattern.RawText!.Contains("mcp", StringComparison.Ordinal) || e.RoutePattern.RawText.Contains("sse", StringComparison.Ordinal))
-                .SelectMany(e => e.Metadata.GetMetadata<HttpMethodMetadata>()!.HttpMethods),
-            method => method != "POST");
+                .SelectMany(e => e.Metadata.GetMetadata<HttpMethodMetadata>()!.HttpMethods).Order(StringComparer.Ordinal));
 
         // Revoked: the next message of the same client is refused, before any tool runs.
         Assert.Equal(HttpStatusCode.NoContent, (await owner.DeleteAsync($"/api/workspaces/{workspaceId}/agent-tokens/{revoked.TokenId}")).StatusCode);

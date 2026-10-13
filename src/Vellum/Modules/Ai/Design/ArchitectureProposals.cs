@@ -18,6 +18,19 @@ namespace Vellum.Modules.Ai.Design;
 /// </param>
 public sealed record CreateArchitectureProposalRequest(string? Request, Guid? BranchId, IReadOnlyList<Guid>? Selection = null);
 
+/// <summary>
+/// Additions to the main model that the caller wrote. The server checks them as it checks an
+/// answer of the assistant, stores them as a draft and changes nothing else.
+/// </summary>
+/// <param name="Request">What the additions are for, for the person who decides. At most 4,000 characters.</param>
+/// <param name="Proposal">
+/// The additions in the flat form of <see cref="ArchitectureOutput"/>. Each item has an
+/// alias <c>N1</c>, <c>N2</c>, …. A reference (<c>parent</c>, <c>from</c>, <c>to</c>,
+/// <c>owner</c>, <c>channel</c>, <c>consumer</c>, <c>producer</c>, <c>consumers</c>) is the
+/// ID of a thing of the model, or the alias of another item.
+/// </param>
+public sealed record SubmitArchitectureProposalRequest(string? Request, ArchitectureOutput? Proposal);
+
 /// <summary>Item IDs. An ID is in one list at most.</summary>
 public sealed record DecideArchitectureProposalRequest(IReadOnlyList<Guid>? Accept, IReadOnlyList<Guid>? Reject);
 
@@ -55,6 +68,11 @@ public sealed record ArchitectureItemDto(
 /// <param name="ItemIssues">For a draft: the pending items that cannot be accepted against the model as it is now, with the reason. A decision that accepts one is refused.</param>
 /// <param name="Omitted">How many things the alias table of the request left out because the model is large.</param>
 /// <param name="OmittedPrivate">Set when private-sourced things were left out of the prompt because a setting forbids sending them.</param>
+/// <param name="Origin">
+/// <c>ai</c> for a proposal the in-app assistant generated. For a submitted proposal: who
+/// submitted it, <c>agent-token:&lt;id&gt;</c> or <c>user:&lt;id&gt;</c>; <c>provider</c> then
+/// holds that kind and that ID, and <c>usage</c> holds nothing.
+/// </param>
 public sealed record ArchitectureProposalDto(
     Guid Id, Guid ProjectId, Guid? BranchId, string Request, string Status, string Scope,
     string Summary, string ReasoningSummary, IReadOnlyList<string> OpenQuestions,
@@ -67,7 +85,7 @@ public sealed record ArchitectureProposalDto(
     AliasOmitted Omitted,
     OmittedPrivate? OmittedPrivate,
     ProposalProvider Provider, string PromptTemplateVersion, ProposalUsage Usage,
-    string CreatedBy, DateTimeOffset CreatedAt, string? DecidedBy, DateTimeOffset? DecidedAt);
+    string CreatedBy, DateTimeOffset CreatedAt, string? DecidedBy, DateTimeOffset? DecidedAt, string Origin);
 
 public sealed record ProposalItemFailure(Guid ItemId, string Reason);
 
@@ -78,7 +96,8 @@ internal sealed record ArchitectureDocument(
     string Summary, string ReasoningSummary, IReadOnlyList<string> OpenQuestions,
     IReadOnlyList<ArchitectureItemDto> Items, IReadOnlyList<RejectedReference> RejectedReferences,
     long ModelVersion, ProposalProvider Provider, string PromptTemplateVersion, ProposalUsage Usage,
-    IReadOnlyList<ResolvedToExisting>? ResolvedToExisting = null, AliasOmitted? Omitted = null, OmittedPrivate? OmittedPrivate = null);
+    IReadOnlyList<ResolvedToExisting>? ResolvedToExisting = null, AliasOmitted? Omitted = null, OmittedPrivate? OmittedPrivate = null,
+    string? Origin = null);
 
 /// <summary>
 /// Natural language to additions to the model, as a proposal. Each item is a suggestion with
@@ -160,11 +179,74 @@ public static partial class ArchitectureProposals
             $"/api/projects/{projectId}/ai/architecture-proposals/{row.Id}", ToDto(row, document, snapshot));
     }
 
+    /// <summary>
+    /// Stores additions that the caller wrote as a draft proposal of the main model. The
+    /// items go through the checks of <see cref="Create"/>: an item that is not an addition,
+    /// that the model holds already, or that references an ID that names nothing is dropped
+    /// and listed in <c>rejectedReferences</c>. Nothing but the proposal row is written: the
+    /// model does not change. A person accepts or rejects each item.
+    /// </summary>
+    public static async Task<IResult> Submit(
+        Guid projectId, SubmitArchitectureProposalRequest body, HttpContext http,
+        IEventStore store, SchemasDbContext schemasDb, AiDesignDbContext db, CancellationToken ct)
+    {
+        var (caller, refusal) = await DesignAccess.ResolveAsync(http, projectId, null, WorkspaceRole.Editor, forWrite: true, ct);
+        if (caller is null)
+            return refusal!;
+        if (FlowProposals.RequestText(body.Request) is { } invalid)
+            return invalid;
+        if (body.Proposal is not { } proposal)
+            return DesignAccess.Invalid("proposal", "A proposal is required: an object with summary, items, openQuestions and reasoningSummary");
+        if (await ProposalStore.DraftsFullAsync(db, projectId, ct))
+            return ProposalStore.TooManyDrafts();
+
+        var snapshot = await BranchSnapshot.LoadAsync(store, schemasDb, projectId, caller.StreamId, ct);
+        // A caller that leaves the action out proposes an addition. Any other action is dropped by the checks.
+        var given = (proposal.Items ?? []).Where(i => i is not null).Take(MaxItems + 1)
+            .Select(i => i.Action is null ? i with { Action = "add" } : i).ToList();
+        var references = SubmittedProposal.References(
+            given.SelectMany(i => new[] { i.Parent, i.From, i.To, i.Owner, i.Channel, i.Consumer, i.Producer }.Concat(i.Consumers ?? []))
+                .Select(r => r?.Trim()),
+            snapshot.Model);
+        var (items, resolved, rejected) = Build(proposal with { Items = given }, references, snapshot.Model, byId: true);
+
+        var origin = SubmittedProposal.OriginOf(http.User);
+        var document = new ArchitectureDocument(
+            DesignText.Lines(proposal.Summary), DesignText.Lines(proposal.ReasoningSummary, TextRule.MaxDescription),
+            DesignText.List(proposal.OpenQuestions, FlowAssembler.MaxQuestions),
+            items, rejected, snapshot.Version,
+            SubmittedProposal.Provider(origin), SubmittedProposal.NoTemplate, SubmittedProposal.NoUsage,
+            resolved, AliasOmitted.None, null, origin);
+
+        var name = DesignText.Line(proposal.Summary);
+        var row = new ProposalEntity
+        {
+            Id = Guid.NewGuid(),
+            Kind = Kind,
+            WorkspaceId = caller.WorkspaceId,
+            ProjectId = projectId,
+            BranchId = null,
+            // A proposal with no item has nothing to decide.
+            Status = items.Count > 0 ? "draft" : "decided",
+            Name = name.Length > 0 ? name : "Proposed additions",
+            Request = body.Request!,
+            Document = JsonSerializer.Serialize(document, DesignJson.Options),
+            CreatedBy = caller.UserId,
+            Origin = origin,
+            CreatedAt = DateTimeOffset.UtcNow,
+        };
+        if (!await ProposalStore.InsertDraftAsync(db, row, ct))
+            return ProposalStore.TooManyDrafts();
+
+        return Results.Created(
+            $"/api/projects/{projectId}/ai/architecture-proposals/{row.Id}", ToDto(row, document, snapshot));
+    }
+
     public static async Task<IResult> List(
-        Guid projectId, string? cursor, int? limit, HttpContext http, AiDesignDbContext db, CancellationToken ct)
+        Guid projectId, string? cursor, int? limit, string? status, bool? submitted, HttpContext http, AiDesignDbContext db, CancellationToken ct)
     {
         await DesignAccess.RequireAsync(http, projectId, WorkspaceRole.Viewer, ct);
-        return Results.Ok(await ProposalStore.ListAsync(db, projectId, Kind, cursor, limit, ct));
+        return ProposalStore.StatusFilter(status) ?? Results.Ok(await ProposalStore.ListAsync(db, projectId, Kind, cursor, limit, status, submitted, ct));
     }
 
     /// <summary>
@@ -297,7 +379,7 @@ public static partial class ArchitectureProposals
                 }
 
                 var refused = await InferredWrites.ApplyAsync(
-                    store, streamId, additions, InferredWrites.Source(document.Provider, Kind, row.Id), userId, ct);
+                    store, streamId, additions, InferredWrites.Source(document.Provider, document.Origin, Kind, row.Id), userId, ct);
                 if (refused is not null)
                     return Refused([new(refused.Id, refused.Reason)]);
             }
@@ -441,8 +523,9 @@ public static partial class ArchitectureProposals
     /// or that references an alias that names nothing is dropped and listed; so is every item
     /// that depends on a dropped item, and every item that depends on itself.
     /// </summary>
+    /// <param name="byId">True for a submitted proposal, whose table lists things under their IDs (<see cref="SubmittedProposal.References"/>).</param>
     internal static (List<ArchitectureItemDto> Items, List<ResolvedToExisting> Resolved, List<RejectedReference> Rejected) Build(
-        ArchitectureOutput output, IReadOnlyDictionary<string, AliasRef> table, ModelState model)
+        ArchitectureOutput output, IReadOnlyDictionary<string, AliasRef> table, ModelState model, bool byId = false)
     {
         // An item that turns out to exist is added to this copy of the table under its own alias.
         var aliases = new Dictionary<string, AliasRef>(table, StringComparer.Ordinal);
@@ -561,9 +644,11 @@ public static partial class ArchitectureProposals
 
                         rejected.Add(new($"item:{alias}.{field}", reference ?? "", reference is null
                             ? $"{AliasKinds.WithArticle(candidate.Output.EntityKind)} needs '{field}'. The item was dropped."
-                            : Guid.TryParse(reference, out _)
-                                ? "A raw ID is not a reference. A thing is referenced by its alias from the table. The item was dropped."
-                                : $"The alias does not name {AliasKinds.WithArticle(kind)} of the table or of the proposal. The item was dropped."));
+                            : byId
+                                ? $"The reference is not the ID of {AliasKinds.WithArticle(kind)} of the model and is not the alias of {AliasKinds.WithArticle(kind)} of the proposal. The item was dropped."
+                                : Guid.TryParse(reference, out _)
+                                    ? "A raw ID is not a reference. A thing is referenced by its alias from the table. The item was dropped."
+                                    : $"The alias does not name {AliasKinds.WithArticle(kind)} of the table or of the proposal. The item was dropped."));
                         candidates.Remove(alias);
                         changed = true;
                         break;
@@ -714,5 +799,5 @@ public static partial class ArchitectureProposals
         current is not null && row.Status == "draft" ? ItemIssues(document, current.Model) : [],
         document.Omitted ?? AliasOmitted.None, document.OmittedPrivate,
         document.Provider, document.PromptTemplateVersion, document.Usage,
-        row.CreatedBy, row.CreatedAt, row.DecidedBy, row.DecidedAt);
+        row.CreatedBy, row.CreatedAt, row.DecidedBy, row.DecidedAt, document.Origin ?? SubmittedProposal.AiOrigin);
 }

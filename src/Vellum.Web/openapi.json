@@ -4484,6 +4484,20 @@
               ],
               "format": "int32"
             }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "submitted",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            }
           }
         ],
         "responses": {
@@ -4493,6 +4507,86 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/PageOfProposalSummary"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/ai/flow-proposals/submit": {
+      "post": {
+        "tags": [
+          "AI design"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubmitFlowProposalRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FlowProposalDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -4931,6 +5025,20 @@
               ],
               "format": "int32"
             }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "submitted",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            }
           }
         ],
         "responses": {
@@ -4940,6 +5048,76 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/PageOfProposalSummary"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/ai/architecture-proposals/submit": {
+      "post": {
+        "tags": [
+          "AI design"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SubmitArchitectureProposalRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArchitectureProposalDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -5988,6 +6166,16 @@
                 }
               }
             }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -6162,6 +6350,16 @@
                 }
               }
             }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       },
@@ -6192,6 +6390,16 @@
         "responses": {
           "204": {
             "description": "No Content"
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -6424,6 +6632,16 @@
                 }
               }
             }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -6460,6 +6678,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/GenerateObligationsResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -6520,6 +6748,26 @@
                 }
               }
             }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
           }
         }
       },
@@ -6562,6 +6810,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/PromiseDto"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }
@@ -11622,6 +11880,186 @@
           }
         }
       },
+      "ArchitectureItemOutput": {
+        "required": [
+          "alias",
+          "action",
+          "target",
+          "entityKind",
+          "name",
+          "description",
+          "technology",
+          "elementKind",
+          "parent",
+          "from",
+          "to",
+          "label",
+          "relationshipKind",
+          "owner",
+          "transport",
+          "channelKind",
+          "channel",
+          "consumer",
+          "producer",
+          "consumers",
+          "confidence",
+          "rationale"
+        ],
+        "type": "object",
+        "properties": {
+          "alias": {
+            "type": "string"
+          },
+          "action": {
+            "type": "string"
+          },
+          "target": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "entityKind": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "technology": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "elementKind": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "parent": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "from": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "to": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "label": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "relationshipKind": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "owner": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "transport": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "channelKind": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "channel": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "consumer": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "producer": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "consumers": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "confidence": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "rationale": {
+            "type": "string"
+          }
+        }
+      },
+      "ArchitectureOutput": {
+        "required": [
+          "summary",
+          "items",
+          "openQuestions",
+          "reasoningSummary"
+        ],
+        "type": "object",
+        "properties": {
+          "summary": {
+            "type": "string"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ArchitectureItemOutput"
+            }
+          },
+          "openQuestions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "reasoningSummary": {
+            "type": "string"
+          }
+        }
+      },
       "ArchitectureProposalDto": {
         "required": [
           "id",
@@ -11647,7 +12085,8 @@
           "createdBy",
           "createdAt",
           "decidedBy",
-          "decidedAt"
+          "decidedAt",
+          "origin"
         ],
         "type": "object",
         "properties": {
@@ -11763,6 +12202,9 @@
               "string"
             ],
             "format": "date-time"
+          },
+          "origin": {
+            "type": "string"
           }
         }
       },
@@ -15987,6 +16429,59 @@
           }
         }
       },
+      "FlowAssertionOutput": {
+        "required": [
+          "id",
+          "type",
+          "step",
+          "expected",
+          "eventKind",
+          "target",
+          "expectedCount"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "step": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "expected": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "eventKind": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "target": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "expectedCount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          }
+        }
+      },
       "FlowDiff": {
         "required": [
           "addedSteps",
@@ -16036,6 +16531,46 @@
           },
           "why": {
             "type": "string"
+          }
+        }
+      },
+      "FlowEvidenceOutput": {
+        "required": [
+          "alias",
+          "why"
+        ],
+        "type": "object",
+        "properties": {
+          "alias": {
+            "type": "string"
+          },
+          "why": {
+            "type": "string"
+          }
+        }
+      },
+      "FlowFaultOutput": {
+        "required": [
+          "target",
+          "kind",
+          "failFirst"
+        ],
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "failFirst": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
           }
         }
       },
@@ -16151,6 +16686,148 @@
           }
         }
       },
+      "FlowMissingOutput": {
+        "required": [
+          "alias",
+          "kind",
+          "name",
+          "elementKind",
+          "parentAlias",
+          "ownerAlias",
+          "transport",
+          "channelKind",
+          "channelAlias",
+          "consumerAlias",
+          "reason",
+          "confidence"
+        ],
+        "type": "object",
+        "properties": {
+          "alias": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "elementKind": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "parentAlias": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "ownerAlias": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "transport": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "channelKind": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "channelAlias": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "consumerAlias": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "confidence": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          }
+        }
+      },
+      "FlowOutput": {
+        "required": [
+          "name",
+          "summary",
+          "steps",
+          "faults",
+          "assertions",
+          "missing",
+          "openQuestions",
+          "reasoningSummary",
+          "evidence"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "summary": {
+            "type": "string"
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FlowStepOutput"
+            }
+          },
+          "faults": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FlowFaultOutput"
+            }
+          },
+          "assertions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FlowAssertionOutput"
+            }
+          },
+          "missing": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FlowMissingOutput"
+            }
+          },
+          "openQuestions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "reasoningSummary": {
+            "type": "string"
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/FlowEvidenceOutput"
+            }
+          }
+        }
+      },
       "FlowPreview": {
         "required": [
           "hash",
@@ -16209,7 +16886,8 @@
           "createdBy",
           "createdAt",
           "decidedBy",
-          "decidedAt"
+          "decidedAt",
+          "origin"
         ],
         "type": "object",
         "properties": {
@@ -16367,6 +17045,9 @@
               "string"
             ],
             "format": "date-time"
+          },
+          "origin": {
+            "type": "string"
           }
         }
       },
@@ -16404,6 +17085,145 @@
           },
           "latency": {
             "$ref": "#/components/schemas/LatencySummary"
+          }
+        }
+      },
+      "FlowStepOutput": {
+        "required": [
+          "id",
+          "parentStepId",
+          "slot",
+          "slotKey",
+          "order",
+          "type",
+          "from",
+          "operation",
+          "channel",
+          "message",
+          "by",
+          "store",
+          "dataset",
+          "whenStep",
+          "is",
+          "requestJson",
+          "responseJson",
+          "payloadJson",
+          "changeJson"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "parentStepId": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "slot": {
+            "type": "string"
+          },
+          "slotKey": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "order": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "type": {
+            "type": "string"
+          },
+          "from": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "operation": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "channel": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "message": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "by": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "store": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "dataset": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "whenStep": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "is": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "requestJson": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "responseJson": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "payloadJson": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "changeJson": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "routingKey": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -17897,6 +18717,18 @@
           },
           "source": {
             "type": "string"
+          },
+          "addedBy": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "lastChangedBy": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -19574,6 +20406,19 @@
           },
           "evidenceStatus": {
             "$ref": "#/components/schemas/EvidenceStatusDto"
+          },
+          "lastChangedBy": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "lastChangedAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
           }
         }
       },
@@ -19642,6 +20487,12 @@
           "updatedAt": {
             "type": "string",
             "format": "date-time"
+          },
+          "draftLastChangedBy": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -19987,7 +20838,8 @@
           "createdBy",
           "createdAt",
           "decidedBy",
-          "decidedAt"
+          "decidedAt",
+          "origin"
         ],
         "type": "object",
         "properties": {
@@ -20030,6 +20882,9 @@
               "string"
             ],
             "format": "date-time"
+          },
+          "origin": {
+            "type": "string"
           }
         }
       },
@@ -24646,6 +25501,64 @@
               "string"
             ],
             "format": "double"
+          }
+        }
+      },
+      "SubmitArchitectureProposalRequest": {
+        "required": [
+          "request",
+          "proposal"
+        ],
+        "type": "object",
+        "properties": {
+          "request": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "proposal": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ArchitectureOutput"
+              }
+            ]
+          }
+        }
+      },
+      "SubmitFlowProposalRequest": {
+        "required": [
+          "request",
+          "reviseScenarioId",
+          "flow"
+        ],
+        "type": "object",
+        "properties": {
+          "request": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "reviseScenarioId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "flow": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/FlowOutput"
+              }
+            ]
           }
         }
       },

@@ -57,9 +57,8 @@ public static class PromiseReads
 
         var pageSize = Math.Clamp(limit ?? 50, 1, 200);
         var query = db.Promises.AsNoTracking().Where(p => p.ProjectId == projectId);
-        if (CursorEncoder.Decode(cursor) is { } decoded
-            && int.TryParse(decoded.SortKey, NumberStyles.None, CultureInfo.InvariantCulture, out var afterNumber))
-            query = query.Where(p => p.Number > afterNumber);
+        if (CursorEncoder.DecodeNumber(cursor) is { } after)
+            query = query.Where(p => p.Number > after.Number);
 
         var rows = await query.OrderBy(p => p.Number).Take(pageSize + 1).ToListAsync(ct);
         string? next = null;
@@ -103,9 +102,8 @@ public static class PromiseReads
         var query = db.Runs.AsNoTracking().Where(r => r.PromiseId == promiseId);
         if (!string.IsNullOrEmpty(obligation))
             query = query.Where(r => r.ObligationId == obligation || r.ObligationId.EndsWith("/" + obligation));
-        if (CursorEncoder.Decode(cursor) is { } decoded
-            && long.TryParse(decoded.SortKey, NumberStyles.None, CultureInfo.InvariantCulture, out var beforeVersion))
-            query = query.Where(r => r.Version < beforeVersion);
+        if (CursorEncoder.DecodeNumber(cursor) is { } before)
+            query = query.Where(r => r.Version < before.Number);
 
         var rows = await query.OrderByDescending(r => r.Version).Take(pageSize + 1)
             .Select(r => new { r.Id, r.Version, r.Document })
