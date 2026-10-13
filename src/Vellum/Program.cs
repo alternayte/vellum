@@ -77,6 +77,7 @@ builder.Services.AddOpenApi(options => options.AddSchemaTransformer((schema, con
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<UnauthorizedExceptionHandler>();
 builder.Services.AddExceptionHandler<ConcurrencyExceptionHandler>();
+builder.Services.AddExceptionHandler<InvalidCursorExceptionHandler>();
 builder.Services.AddRequestLimits();
 
 // Event store. Each module registers its own streams and projections. The connection

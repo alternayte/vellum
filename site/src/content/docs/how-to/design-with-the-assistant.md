@@ -71,3 +71,16 @@ Parts of the model that came from a private repository go to an AI provider only
 ## Limits
 
 A project holds at most 50 undecided proposals. Accept, reject or delete old ones to make room. The assistant also limits how many requests one person and one project can make in a minute.
+
+## Decide on a proposal from an agent
+
+A coding agent with the `propose` scope can submit a flow or additions to the model. Vellum checks such a proposal as it checks a proposal of the assistant. A part that refers to an ID that names nothing is left out and listed. Nothing is in the model and no scenario is saved until you accept.
+
+1. Open the assistant panel.
+2. Below **Waiting for you**, select a proposal. Each line shows the token that submitted it.
+3. Read the proposal. The line below the title names the token.
+4. Accept or reject it, as you do for a proposal of the assistant.
+
+A part of the model that you accept from such a proposal has the label `inferred`. Its source names the token and the proposal. An agent token cannot accept or reject a proposal.
+
+A project holds at most 50 undecided proposals. Reject or accept one to make room.

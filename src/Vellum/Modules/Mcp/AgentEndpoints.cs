@@ -30,6 +30,8 @@ public sealed class AgentEndpoints(EndpointDataSource source)
             .Where(e => e.Metadata.GetMetadata<AgentAllowed>() is not null && e.Metadata.GetMetadata<HumanOnly>() is null)
             .SelectMany(e => Methods(e).Select(method =>
                 new AgentEndpoint(method, Plain(e.RoutePattern.RawText), e.Metadata.GetMetadata<AgentAllowed>()!.Scopes)))
+            // The MCP endpoint takes POST. Its other methods only answer 405.
+            .Where(e => e.Pattern != AgentReference.McpPath || e.Method == HttpMethods.Post)
             .Distinct(AgentEndpointComparer.Instance)
             .OrderBy(e => e.Pattern, StringComparer.Ordinal).ThenBy(e => e.Method, StringComparer.Ordinal),
     ];

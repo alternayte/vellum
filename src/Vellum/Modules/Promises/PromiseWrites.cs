@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Deedbox;
 using Microsoft.EntityFrameworkCore;
+using Vellum.Modules.Identity.AgentTokens;
 using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Shared;
 
@@ -106,7 +107,7 @@ public static class PromiseWrites
                     {
                         var decision = PromiseDecider.Create(
                             state, projectId, PromiseRules.RequirementId(numbering.Prefix, numbering.Number), numbering.Number,
-                            origin, content, world.Known, userId, now);
+                            origin, content, world.Known, userId, PromiseAccess.Actor(http.User), now);
                         tooLarge = decision is CommandResult<IReadOnlyList<object>>.Success success && PromiseAccess.PassesRevisionLimit(state, success.Value);
                         return tooLarge ? new CommandResult<IReadOnlyList<object>>.Conflict("The revision would pass its size limit.") : decision;
                     },
@@ -137,7 +138,7 @@ public static class PromiseWrites
         var world = await PromiseWorld.LoadAsync(http.RequestServices, projectId, [], ct);
         var now = time.GetUtcNow();
         var result = await PromiseAccess.DecideAsync(store, promiseId,
-            state => PromiseDecider.ChangeDraft(state, projectId, request.ToContent(), world.Known, userId, now), ct);
+            state => PromiseDecider.ChangeDraft(state, projectId, request.ToContent(), world.Known, userId, PromiseAccess.Actor(http.User), now), ct);
         return await RespondAsync(result, reader, projectId, promiseId, ct);
     }
 
@@ -153,7 +154,7 @@ public static class PromiseWrites
 
         var now = time.GetUtcNow();
         var result = await PromiseAccess.DecideAsync(store, promiseId,
-            state => PromiseDecider.Revise(state, projectId, request?.Retire ?? false, userId, now), ct);
+            state => PromiseDecider.Revise(state, projectId, request?.Retire ?? false, userId, PromiseAccess.Actor(http.User), now), ct);
         return await RespondAsync(result, reader, projectId, promiseId, ct);
     }
 
@@ -206,15 +207,34 @@ public static class PromiseWrites
         return await RespondAsync(result, reader, projectId, promiseId, ct);
     }
 
+    /// <summary>
+    /// Deletes a promise that was never approved. An agent token deletes only a promise that
+    /// agent tokens alone wrote: one that a person wrote or changed gets 403 <c>human_only</c>.
+    /// The stream is locked from the check to the append, so a change by a person that comes
+    /// first is seen.
+    /// </summary>
     public static async Task<IResult> Delete(
-        Guid projectId, Guid promiseId, ClaimsPrincipal user,
+        Guid projectId, Guid promiseId, HttpContext http,
         WorkspaceAuthorizationService auth, IEventStore store, TimeProvider time, CancellationToken ct)
     {
-        var userId = PromiseAccess.UserId(user);
+        var userId = PromiseAccess.UserId(http.User);
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
 
         var now = time.GetUtcNow();
-        var result = await PromiseAccess.DecideAsync(store, promiseId, state => PromiseDecider.Delete(state, projectId, userId, now), ct);
+        var (actor, agent) = (PromiseAccess.Actor(http.User), AgentPrincipal.IsAgent(http.User));
+        var humanOnly = false;
+        var result = await PromiseAccess.DecideAsync(store, promiseId, state =>
+        {
+            humanOnly = agent && state.ExistsIn(projectId) && !PromiseDecider.AgentAlone(state);
+            return humanOnly
+                ? new CommandResult<IReadOnlyList<object>>.Conflict("A person wrote or changed this promise.")
+                : PromiseDecider.Delete(state, projectId, userId, actor, now);
+        }, ct);
+        if (humanOnly)
+        {
+            return await PromiseAccess.HumanOnlyAsync(http,
+                "A person wrote, changed or approved this promise. An agent token deletes only a draft promise that agent tokens alone wrote. Ask a person to delete it in the app.");
+        }
         return result.Succeeded ? Results.NoContent() : result.Refusal();
     }
 

@@ -52,7 +52,11 @@ export interface Obligation {
   execution: 'deterministic' | 'external-evidence' | 'none'
   title: string
   recipe: ObligationRecipe
-  source: 'generated' | 'manual'
+  /** Who wrote the obligation first: the generator, a person, or an agent token. */
+  source: 'generated' | 'manual' | 'agent'
+  /** Who added it to this draft: `user:<id>` or `agent-token:<id>`. Absent for an obligation of an approved revision. */
+  addedBy?: string | null
+  lastChangedBy?: string | null
 }
 
 export interface AssertionRecord {
@@ -109,6 +113,9 @@ export interface PromiseRevision {
   obligations: Obligation[]
   approvedBy: string | null
   approvedAt: string | null
+  /** Who changed the revision last: `user:<id>` for a person, `agent-token:<id>` for an agent token. Absent when it was not recorded. */
+  lastChangedBy?: string | null
+  lastChangedAt?: string | null
   evidenceStatus: { counts: PromiseCounts; obligations: ObligationStatus[]; gaps: string[] }
 }
 
@@ -122,6 +129,8 @@ export interface PromiseSummary {
   needsReview: boolean
   hasGaps: boolean
   counts: PromiseCounts
+  /** Who changed the draft last, when the promise has a draft. */
+  draftLastChangedBy?: string | null
 }
 
 export interface PromiseDetail extends Omit<PromiseSummary, 'counts' | 'hasDraft' | 'hasGaps' | 'title'> {
@@ -221,6 +230,18 @@ export async function downloadBuild(projectId: string, format: 'sdd' | 'bundle')
   link.download = name
   link.click()
   URL.revokeObjectURL(url)
+}
+
+const AGENT_ACTOR = 'agent-token:'
+
+/** True when an actor, as the server names it, is an agent token and not a person. */
+export function isAgentActor(actor: string | null | undefined): actor is string {
+  return typeof actor === 'string' && actor.startsWith(AGENT_ACTOR)
+}
+
+/** The start of a token ID, enough to find the token in the list of agent tokens. */
+export function shortAgent(actor: string): string {
+  return actor.slice(AGENT_ACTOR.length, AGENT_ACTOR.length + 8)
 }
 
 export const RESULT_LABEL: Record<ObligationResult, string> = {

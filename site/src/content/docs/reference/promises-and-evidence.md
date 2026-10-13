@@ -31,6 +31,20 @@ A promise that was approved is not deleted. To end it, approve a revision that r
 
 Whatever the origin, only a workspace owner in the app approves.
 
+The origin does not change. A draft revision also has `lastChangedBy` and `lastChangedAt`: who changed its text or its obligations last. The value is `user:<id>` for a person and `agent-token:<id>` for an agent token. A revision that was last changed before Vellum recorded this has no value.
+
+An obligation has a `source`.
+
+| Source | Who wrote the obligation first |
+|---|---|
+| `generated` | Vellum, from the links of the promise. |
+| `manual` | A person. |
+| `agent` | An agent token. |
+
+In a draft, an obligation also has `addedBy`, and `lastChangedBy` after a change. An obligation that a new revision copied from an approved one has neither: a person approved it.
+
+An agent token deletes only a draft promise that agent tokens alone wrote. It changes or removes only an obligation that a token added to the draft and that no person changed since. The answer for anything else is 403 with the type `human_only`.
+
 ## Kinds of obligation
 
 | Kind | Who runs it | What it shows |

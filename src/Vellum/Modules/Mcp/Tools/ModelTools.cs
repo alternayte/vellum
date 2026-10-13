@@ -32,7 +32,8 @@ internal static class ModelTools
         [Description(Limit)] int? limit = null)
     {
         var size = McpOutput.PageSize(limit);
-        var after = CursorEncoder.Decode(cursor);
+        if (!Decode(cursor, out var after, out var badCursor))
+            return badCursor;
         var (projects, refusal) = await call.Service<McpProjects>().VisibleAsync(call.User, AgentScope.Read, after, size + 1, call.Aborted);
         if (projects is null)
             return McpOutput.Error(AgentBoundary.AgentNotAllowedError, "This agent token cannot do this", refusal);
@@ -99,7 +100,9 @@ internal static class ModelTools
         }
         if (!string.IsNullOrWhiteSpace(tag))
             query = query.Where(e => e.Tags.Contains(tag));
-        if (CursorEncoder.Decode(cursor) is var (afterName, afterId))
+        if (!Decode(cursor, out var after, out var badCursor))
+            return badCursor;
+        if (after is var (afterName, afterId))
             query = query.Where(e => string.Compare(e.Name, afterName) > 0 || (e.Name == afterName && e.Id.CompareTo(afterId) > 0));
 
         var size = McpOutput.PageSize(limit);
@@ -139,12 +142,13 @@ internal static class ModelTools
         McpCall call,
         [Description("The ID of the project.")] Guid projectId,
         [Description("The ID of the element.")] Guid elementId) =>
+        // A relationship from X to Y says that X uses Y. A consumer depends on the producer of what it consumes.
         Capped(call, new JsonObject
         {
             ["elementId"] = elementId,
-            ["inboundRelationships"] = await RelationshipsAsync(call, r => r.ToId == elementId),
+            ["outboundRelationships"] = await RelationshipsAsync(call, r => r.FromId == elementId),
             ["consumedMessages"] = await MessagesAsync(call, m => m.ConsumerIds.Contains(elementId)),
-        }, "inboundRelationships", "consumedMessages");
+        }, "outboundRelationships", "consumedMessages");
 
     public static async Task<CallToolResult> GetDependents(
         McpCall call,
@@ -153,9 +157,9 @@ internal static class ModelTools
         Capped(call, new JsonObject
         {
             ["elementId"] = elementId,
-            ["outboundRelationships"] = await RelationshipsAsync(call, r => r.FromId == elementId),
+            ["inboundRelationships"] = await RelationshipsAsync(call, r => r.ToId == elementId),
             ["producedMessages"] = await MessagesAsync(call, m => m.ProducerId == elementId),
-        }, "outboundRelationships", "producedMessages");
+        }, "inboundRelationships", "producedMessages");
 
     public static async Task<CallToolResult> ListMessages(
         McpCall call,
@@ -165,7 +169,9 @@ internal static class ModelTools
     {
         var (db, branch, ct) = (call.Service<ModellingDbContext>(), call.Project.StreamId, call.Aborted);
         var query = db.Messages.AsNoTracking().Where(m => m.ProjectId == projectId && m.Branch == branch);
-        if (CursorEncoder.Decode(cursor) is var (afterName, afterId))
+        if (!Decode(cursor, out var after, out var badCursor))
+            return badCursor;
+        if (after is var (afterName, afterId))
             query = query.Where(m => string.Compare(m.Name, afterName) > 0 || (m.Name == afterName && m.Id.CompareTo(afterId) > 0));
 
         var size = McpOutput.PageSize(limit);
@@ -215,6 +221,8 @@ internal static class ModelTools
             return Invalid("kind", $"A kind is one of: {string.Join(", ", ContractKinds)}");
         if (cursor is not null && kind is null)
             return Invalid("cursor", "A cursor is of one kind. Give kind with it.");
+        if (!Decode(cursor, out var after, out var badCursor))
+            return badCursor;
 
         var (model, _) = await call.Service<IEventStore>().Load<ModelState>(StreamId.From(call.Project.StreamId), call.Aborted);
         if (elementId is { } id && !model.Elements.ContainsKey(new ElementId(id)))
@@ -250,7 +258,6 @@ internal static class ModelTools
             : [];
 
         var size = McpOutput.PageSize(limit);
-        var after = CursorEncoder.Decode(cursor);
         var data = new JsonObject();
         var lists = new List<(JsonObject Section, JsonArray Items, Func<int, string?> CursorAt)>();
 
@@ -352,13 +359,32 @@ internal static class ModelTools
                 longer.Add(name);
         }
         return call.Ok(data, notice: longer.Count > 0
-            ? $"These lists have more items than the result holds: {string.Join(", ", longer)}. The HTTP endpoint of the agent reference gives every item, in pages."
+            ? $"These lists have more items than the result holds: {string.Join(", ", longer)}. GET /api/projects/{call.Project.Id}/relationships (with fromId or toId) and GET /api/projects/{call.Project.Id}/messages give every item, in pages."
             : null);
     }
 
     private static string? Notice(int cut, string what) => cut > 0
         ? $"The result was cut to fit the byte bound: {cut} fewer {what} than the limit. nextCursor gets the next ones."
         : null;
+
+    /// <summary>
+    /// The cursor of a tool that reads the model itself. False for text that is not a cursor:
+    /// the result is then the validation error of an HTTP list, never the first page.
+    /// </summary>
+    private static bool Decode(string? cursor, out (string SortKey, Guid Id)? after, [System.Diagnostics.CodeAnalysis.NotNullWhen(false)] out CallToolResult? invalid)
+    {
+        (after, invalid) = (null, null);
+        try
+        {
+            after = CursorEncoder.Decode(cursor);
+            return true;
+        }
+        catch (InvalidCursorException)
+        {
+            invalid = Invalid(InvalidCursorException.Field, InvalidCursorException.Text);
+            return false;
+        }
+    }
 
     internal static CallToolResult Invalid(string field, string message) => McpOutput.Error(
         "validation_error", "Validation failed",

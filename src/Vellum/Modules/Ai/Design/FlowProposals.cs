@@ -21,6 +21,20 @@ namespace Vellum.Modules.Ai.Design;
 /// </param>
 public sealed record CreateFlowProposalRequest(string? Request, Guid? BranchId, Guid? ReviseScenarioId, IReadOnlyList<Guid>? Selection = null);
 
+/// <summary>
+/// A flow proposal that the caller wrote, for the main model. The server checks it as it
+/// checks an answer of the assistant, stores it as a draft and changes nothing else.
+/// </summary>
+/// <param name="Request">What the flow shows and why it is proposed, for the person who decides. At most 4,000 characters.</param>
+/// <param name="ReviseScenarioId">A scenario of the project that the flow replaces when a person accepts it. Null proposes a new scenario.</param>
+/// <param name="Flow">
+/// The flow in the flat form of <see cref="FlowOutput"/>. A reference (<c>from</c>,
+/// <c>operation</c>, <c>channel</c>, <c>message</c>, <c>by</c>, <c>store</c>, the
+/// <c>slotKey</c> of a handler, a <c>target</c>) is the ID of a thing of the model, or the
+/// alias (<c>N1</c>, <c>N2</c>, …) of an entry of <c>missing</c>. A payload is JSON text.
+/// </param>
+public sealed record SubmitFlowProposalRequest(string? Request, Guid? ReviseScenarioId, FlowOutput? Flow);
+
 /// <param name="AcceptWithIssues">
 /// True accepts the proposal as it resolves against the model now, when that differs from
 /// what the proposal showed when it was last stored. Without it such an accept is refused
@@ -42,9 +56,10 @@ public sealed record AcceptFlowProposalResponse(Guid ScenarioId);
 public sealed record ProposalStale(string Type, string Title, IReadOnlyList<ScenarioIssue> Issues, FlowPreview? Preview, long ModelVersion);
 
 /// <summary>What a list of proposals shows for one proposal.</summary>
+/// <param name="Origin"><c>ai</c> for a proposal the in-app assistant generated. For a submitted proposal: <c>agent-token:&lt;id&gt;</c> or <c>user:&lt;id&gt;</c>.</param>
 public sealed record ProposalSummary(
     Guid Id, string Status, string Name, string Request, Guid? BranchId,
-    string CreatedBy, DateTimeOffset CreatedAt, string? DecidedBy, DateTimeOffset? DecidedAt);
+    string CreatedBy, DateTimeOffset CreatedAt, string? DecidedBy, DateTimeOffset? DecidedAt, string Origin);
 
 /// <summary>
 /// A playback of the proposed scenario on the branch. It is declared behaviour replayed over
@@ -81,6 +96,11 @@ public sealed record FlowEvidenceDto(string Alias, Guid Id, string Name, string 
 /// </param>
 /// <param name="Omitted">How many things the alias table of the request left out because the model is large.</param>
 /// <param name="OmittedPrivate">Set when private-sourced things were left out of the prompt because a setting forbids sending them.</param>
+/// <param name="Origin">
+/// <c>ai</c> for a proposal the in-app assistant generated. For a submitted proposal: who
+/// submitted it, <c>agent-token:&lt;id&gt;</c> or <c>user:&lt;id&gt;</c>; <c>provider</c> then
+/// holds that kind and that ID, and <c>usage</c> holds nothing.
+/// </param>
 public sealed record FlowProposalDto(
     Guid Id, Guid ProjectId, Guid? BranchId, string Request, string Status,
     string Name, string Summary, string ReasoningSummary, IReadOnlyList<string> OpenQuestions,
@@ -99,7 +119,7 @@ public sealed record FlowProposalDto(
     AliasOmitted Omitted,
     OmittedPrivate? OmittedPrivate,
     ProposalProvider Provider, string PromptTemplateVersion, ProposalUsage Usage,
-    string CreatedBy, DateTimeOffset CreatedAt, string? DecidedBy, DateTimeOffset? DecidedAt);
+    string CreatedBy, DateTimeOffset CreatedAt, string? DecidedBy, DateTimeOffset? DecidedAt, string Origin);
 
 /// <summary>What a flow proposal resolves to against one version of a branch.</summary>
 internal sealed record FlowView(
@@ -127,6 +147,10 @@ internal sealed record FlowView(
 /// </para>
 /// A proposal written before this form holds the answer and the alias table under the same
 /// names, so it reads as a draft's inputs; the members it lacks are null.
+/// <para>
+/// <see cref="Origin"/> is null for a proposal the assistant generated. A submitted proposal
+/// names who submitted it, and its table lists things under their IDs.
+/// </para>
 /// </summary>
 internal sealed record FlowDocument(
     Guid ScenarioId, Guid? ReviseScenarioId, string? BaseScenarioHash,
@@ -135,7 +159,7 @@ internal sealed record FlowDocument(
     FlowCarried? Carried, FlowView? Decided, string? Fingerprint,
     long ModelVersion,
     ProposalProvider Provider, string PromptTemplateVersion, ProposalUsage Usage,
-    AliasOmitted? Omitted, OmittedPrivate? OmittedPrivate);
+    AliasOmitted? Omitted, OmittedPrivate? OmittedPrivate, string? Origin = null);
 
 /// <summary>A branch's model at one version, with the content of the schemas it names.</summary>
 internal sealed record BranchSnapshot(ModelState Model, long Version, IReadOnlyDictionary<SchemaId, string> Schemas)
@@ -274,11 +298,73 @@ public static class FlowProposals
         return Results.Created($"/api/projects/{projectId}/ai/flow-proposals/{row.Id}", ToDto(row, document, view, stale: false));
     }
 
+    /// <summary>
+    /// Stores a flow that the caller wrote as a draft proposal of the main model. The flow goes
+    /// through the checks of <see cref="Create"/>: every reference must name a thing of the
+    /// model or an entry of <c>missing</c>, and a reference that names nothing is dropped
+    /// with what holds it and listed in <c>rejectedReferences</c>. Nothing but the proposal
+    /// row is written: no scenario, and nothing in the model. A person accepts or rejects it.
+    /// </summary>
+    public static async Task<IResult> Submit(
+        Guid projectId, SubmitFlowProposalRequest body, HttpContext http,
+        IEventStore store, SchemasDbContext schemasDb, AiDesignDbContext db, CancellationToken ct)
+    {
+        var (caller, refusal) = await DesignAccess.ResolveAsync(http, projectId, null, WorkspaceRole.Editor, forWrite: true, ct);
+        if (caller is null)
+            return refusal!;
+        if (RequestText(body.Request) is { } invalid)
+            return invalid;
+        if (body.Flow is null)
+            return DesignAccess.Invalid("flow", "A flow is required: an object with name, summary, steps, faults, assertions, missing, openQuestions, reasoningSummary and evidence");
+        if (await ProposalStore.DraftsFullAsync(db, projectId, ct))
+            return ProposalStore.TooManyDrafts();
+
+        Scenario? revised = null;
+        if (body.ReviseScenarioId is { } reviseId)
+        {
+            revised = (await ScenarioStreams.LoadAsync(store, reviseId, ct)).DocumentIn(projectId);
+            if (revised is null)
+                return DesignAccess.NotFound("Scenario");
+        }
+
+        var snapshot = await BranchSnapshot.LoadAsync(store, schemasDb, projectId, caller.StreamId, ct);
+        var (output, ingestIssues) = FlowAssembler.Normalize(body.Flow);
+        var origin = SubmittedProposal.OriginOf(http.User);
+        var document = new FlowDocument(
+            body.ReviseScenarioId ?? Guid.NewGuid(), body.ReviseScenarioId, revised is null ? null : ScenarioHash(revised),
+            output, ingestIssues, SubmittedProposal.References(Named(output), snapshot.Model), new Dictionary<string, Guid>(),
+            FlowCarried.None, null, null, snapshot.Version,
+            SubmittedProposal.Provider(origin), SubmittedProposal.NoTemplate, SubmittedProposal.NoUsage,
+            AliasOmitted.None, null, origin);
+        var view = Resolve(document, snapshot, revised);
+        document = document with { Fingerprint = Fingerprint(view) };
+
+        var row = new ProposalEntity
+        {
+            Id = Guid.NewGuid(),
+            Kind = Kind,
+            WorkspaceId = caller.WorkspaceId,
+            ProjectId = projectId,
+            BranchId = null,
+            Status = "draft",
+            Name = output.Name,
+            Request = body.Request!,
+            Document = Write(document),
+            CreatedBy = caller.UserId,
+            Origin = origin,
+            CreatedAt = DateTimeOffset.UtcNow,
+        };
+        if (!await ProposalStore.InsertDraftAsync(db, row, ct))
+            return ProposalStore.TooManyDrafts();
+
+        return Results.Created($"/api/projects/{projectId}/ai/flow-proposals/{row.Id}", ToDto(row, document, view, stale: false));
+    }
+
     public static async Task<IResult> List(
-        Guid projectId, string? cursor, int? limit, HttpContext http, AiDesignDbContext db, CancellationToken ct)
+        Guid projectId, string? cursor, int? limit, string? status, bool? submitted, HttpContext http, AiDesignDbContext db, CancellationToken ct)
     {
         await DesignAccess.RequireAsync(http, projectId, WorkspaceRole.Viewer, ct);
-        return Results.Ok(await ProposalStore.ListAsync(db, projectId, Kind, cursor, limit, ct));
+        return ProposalStore.StatusFilter(status) ?? Results.Ok(await ProposalStore.ListAsync(db, projectId, Kind, cursor, limit, status, submitted, ct));
     }
 
     /// <summary>
@@ -360,7 +446,8 @@ public static class FlowProposals
                 return DesignAccess.Conflict($"The proposed scenario cannot be stored. {unstorable.Message}");
 
             var scenario = view.Scenario with { Name = body?.Name ?? row.Name };
-            var origin = new ScenarioOrigin(ScenarioOrigin.AiProposal, row.Id, document.Provider.Kind, document.Provider.Model);
+            var origin = new ScenarioOrigin(
+                document.Origin is null ? ScenarioOrigin.AiProposal : ScenarioOrigin.SubmittedProposal, row.Id, document.Provider.Kind, document.Provider.Model);
             CommandResult<Scenario> written;
             if (document.ReviseScenarioId is { } reviseId)
             {
@@ -500,7 +587,7 @@ public static class FlowProposals
 
             var refused = await InferredWrites.ApplyAsync(
                 store, caller.StreamId, [(addition, entry.Confidence)],
-                InferredWrites.Source(document.Provider, Kind, row.Id), caller.UserId, ct);
+                InferredWrites.Source(document.Provider, document.Origin, Kind, row.Id), caller.UserId, ct);
             if (refused is not null)
                 return refused.Conflict ? DesignAccess.Conflict(refused.Reason) : DesignAccess.Invalid(alias, refused.Reason);
 
@@ -528,7 +615,7 @@ public static class FlowProposals
         var (withCarried, table, carryIssues) = FlowAssembler.WithCarried(
             document.Output, document.Aliases ?? new Dictionary<string, AliasRef>(), document.Carried);
         var (output, aliases, resolved, matchRejected) = FlowAssembler.MatchExisting(withCarried, table, created, snapshot.Model);
-        var build = FlowAssembler.Build(output, aliases, created, document.ScenarioId);
+        var build = FlowAssembler.Build(output, aliases, created, document.ScenarioId, submitted: document.Origin is not null);
 
         // "not-storable" decides whether the proposal can be accepted. It comes first, so the bound below does not cut it.
         var issues = new List<ScenarioIssue>([
@@ -662,20 +749,21 @@ public static class FlowProposals
         }
     }
 
+    /// <summary>Every reference of an answer, as it is written.</summary>
+    private static IEnumerable<string?> Named(FlowOutput output) =>
+    [
+        .. output.Steps.SelectMany(s => new[] { s.From, s.Operation, s.Channel, s.Message, s.By, s.Store, s.SlotKey }),
+        .. output.Faults.Select(f => f.Target),
+        .. output.Assertions.Select(a => a.Target),
+        .. output.Missing.SelectMany(m => new[] { m.ParentAlias, m.OwnerAlias, m.ChannelAlias, m.ConsumerAlias }),
+        .. output.Evidence.Select(e => e.Alias),
+    ];
+
     /// <summary>The part of the alias table that the answer names. Only that part is stored.</summary>
     private static Dictionary<string, AliasRef> Referenced(FlowOutput output, ModelAliases aliases)
     {
-        IEnumerable<string?> named =
-        [
-            .. output.Steps.SelectMany(s => new[] { s.From, s.Operation, s.Channel, s.Message, s.By, s.Store, s.SlotKey }),
-            .. output.Faults.Select(f => f.Target),
-            .. output.Assertions.Select(a => a.Target),
-            .. output.Missing.SelectMany(m => new[] { m.ParentAlias, m.OwnerAlias, m.ChannelAlias, m.ConsumerAlias }),
-            .. output.Evidence.Select(e => e.Alias),
-        ];
-
         var referenced = new Dictionary<string, AliasRef>(StringComparer.Ordinal);
-        foreach (var alias in named)
+        foreach (var alias in Named(output))
         {
             if (aliases.Find(alias) is { } found)
                 referenced[alias!] = found;
@@ -741,7 +829,7 @@ public static class FlowProposals
         view.Preview, view.Diff, view.Evidence, document.ReviseScenarioId, document.ModelVersion, stale,
         document.Omitted ?? AliasOmitted.None, document.OmittedPrivate,
         document.Provider, document.PromptTemplateVersion, document.Usage,
-        row.CreatedBy, row.CreatedAt, row.DecidedBy, row.DecidedAt);
+        row.CreatedBy, row.CreatedAt, row.DecidedBy, row.DecidedAt, document.Origin ?? SubmittedProposal.AiOrigin);
 }
 
 /// <summary>Reads and limits that both kinds of proposal share.</summary>
@@ -761,8 +849,8 @@ internal static class ProposalStore
 
     public static IResult TooManyDrafts() => Results.Conflict(new ErrorResponse(
         "too_many_drafts",
-        $"The project holds {MaxDraftsPerProject} undecided AI proposals, which is the most it can hold.",
-        "Accept, reject or delete a draft proposal, then ask again. Nothing was generated."));
+        $"The project holds {MaxDraftsPerProject} undecided proposals, which is the most it can hold.",
+        "Accept, reject or delete a draft proposal in the app, then ask again. Only a person does that. Nothing was generated and nothing was stored."));
 
     /// <summary>
     /// Stores a proposal. A draft is counted and inserted under a lock on the project, so two
@@ -782,18 +870,32 @@ internal static class ProposalStore
         return true;
     }
 
+    private static readonly string[] Statuses = ["draft", "accepted", "rejected", "decided"];
+
+    /// <summary>Null when <paramref name="status"/> is absent or is a status a proposal can have, else the 400.</summary>
+    public static IResult? StatusFilter(string? status) =>
+        status is null || Statuses.Contains(status, StringComparer.Ordinal)
+            ? null
+            : DesignAccess.Invalid("status", $"A status is one of: {string.Join(", ", Statuses)}");
+
     /// <summary>The newest first. The cursor is the creation time and the ID of the last item of a page.</summary>
+    /// <param name="status">Only the proposals with this status.</param>
+    /// <param name="submitted">True: only the proposals that a caller submitted. False: only those the assistant generated.</param>
     public static async Task<Page<ProposalSummary>> ListAsync(
-        AiDesignDbContext db, Guid projectId, string kind, string? cursor, int? limit, CancellationToken ct)
+        AiDesignDbContext db, Guid projectId, string kind, string? cursor, int? limit, string? status, bool? submitted, CancellationToken ct)
     {
         var pageSize = Math.Clamp(limit ?? 50, 1, 200);
         var query = db.Proposals.AsNoTracking().Where(p => p.ProjectId == projectId && p.Kind == kind);
+        if (status is not null)
+            query = query.Where(p => p.Status == status);
+        if (submitted is { } wanted)
+            query = query.Where(p => (p.Origin != null) == wanted);
 
-        if (CursorEncoder.Decode(cursor) is { } decoded
-            && long.TryParse(decoded.SortKey, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var ticks)
-            && ticks <= DateTimeOffset.MaxValue.UtcTicks)
+        if (CursorEncoder.DecodeNumber(cursor) is { } decoded)
         {
-            var before = new DateTimeOffset(ticks, TimeSpan.Zero);
+            if (decoded.Number > DateTimeOffset.MaxValue.UtcTicks)
+                throw new InvalidCursorException();
+            var before = new DateTimeOffset(decoded.Number, TimeSpan.Zero);
             var afterId = decoded.Id;
             query = query.Where(p => p.CreatedAt < before || (p.CreatedAt == before && p.Id.CompareTo(afterId) > 0));
         }
@@ -801,7 +903,8 @@ internal static class ProposalStore
         var items = await query
             .OrderByDescending(p => p.CreatedAt).ThenBy(p => p.Id)
             .Take(pageSize + 1)
-            .Select(p => new ProposalSummary(p.Id, p.Status, p.Name, p.Request, p.BranchId, p.CreatedBy, p.CreatedAt, p.DecidedBy, p.DecidedAt))
+            .Select(p => new ProposalSummary(
+                p.Id, p.Status, p.Name, p.Request, p.BranchId, p.CreatedBy, p.CreatedAt, p.DecidedBy, p.DecidedAt, p.Origin ?? SubmittedProposal.AiOrigin))
             .ToListAsync(ct);
 
         string? next = null;

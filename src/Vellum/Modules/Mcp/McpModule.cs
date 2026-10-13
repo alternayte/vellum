@@ -36,6 +36,20 @@ public static class McpModule
     {
         app.MapMcp(AgentReference.McpPath).RequireAgent().WithBodyLimit(RequestBodyLimit.Document);
 
+        // The server is stateless: it offers no stream to listen on and has no session to end.
+        // The streamable HTTP transport says what a server answers then: 405 with the method
+        // it takes. Without these endpoints a GET falls to the page of the app, which an agent
+        // token may not read, and a client reads that 403 as a refusal of the whole endpoint.
+        app.MapMethods(AgentReference.McpPath, [HttpMethods.Get, HttpMethods.Delete], (HttpContext http) =>
+            {
+                http.Response.Headers.Allow = HttpMethods.Post;
+                return Results.Json(
+                    new ErrorResponse("method_not_allowed", "The MCP endpoint takes POST only",
+                        "The server is stateless: it opens no stream and keeps no session. Send each message as one POST."),
+                    statusCode: StatusCodes.Status405MethodNotAllowed);
+            })
+            .RequireAgent().ExcludeFromDescription();
+
         app.MapGet(AgentReference.CapabilitiesPath, AgentCapabilities.Handle)
             .RequireAuthorization().AllowAnyAgent()
             .Produces<AgentCapabilities>()

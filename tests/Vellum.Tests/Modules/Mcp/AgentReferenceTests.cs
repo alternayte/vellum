@@ -168,11 +168,11 @@ public class AgentReferenceTests(IntegrationFixture fixture)
         var close = Array.IndexOf(lines, "---", 1);
         Assert.Contains("name: vellum", lines[1..close]);
         Assert.Contains(lines[1..close], line => line.StartsWith("description: ", StringComparison.Ordinal) && line.Length > 80);
-        Assert.True(lines.Length - close <= 160, $"{lines.Length - close} lines");
+        Assert.True(lines.Length - close <= 170, $"{lines.Length - close} lines");
 
         // Every tool it names is a tool, and it names every tool.
         var named = System.Text.RegularExpressions.Regex.Matches(served, "`([a-z]+(?:_[a-z]+)+)`").Select(m => m.Groups[1].Value)
-            .Where(word => word is not ("agent_not_allowed" or "not_found" or "validation_error" or "no_approved_revision" or "not_runnable" or "not_a_test_plan" or "rate_limited" or "result_too_large"))
+            .Where(word => word is not ("agent_not_allowed" or "not_found" or "validation_error" or "no_approved_revision" or "not_runnable" or "not_a_test_plan" or "rate_limited" or "result_too_large" or "human_only"))
             .ToHashSet();
         Assert.Equal(AgentTools.All.Select(tool => tool.Name).Order(), named.Order());
     }

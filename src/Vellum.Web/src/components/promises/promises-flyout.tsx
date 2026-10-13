@@ -4,7 +4,7 @@ import { Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { shownInline } from '@/lib/mutation-errors'
-import { describeCounts, promisesApi } from '@/lib/promises-api'
+import { describeCounts, isAgentActor, promisesApi } from '@/lib/promises-api'
 import type { ScenarioReference } from '@/components/trace/scenario-editor'
 import { PromiseDialog } from './promise-dialog'
 
@@ -83,6 +83,7 @@ export function PromisesFlyout({ projectId, references, scenarios }: PromisesFly
                 </p>
                 <p className="mt-1 flex flex-wrap items-center gap-x-2 text-[11px] text-muted-foreground">
                   <span className="rounded-full border border-border px-1.5">{promise.state}{promise.hasDraft && promise.state !== 'draft' ? ' · draft pending' : ''}</span>
+                  {promise.hasDraft && isAgentActor(promise.draftLastChangedBy) && <span className="text-[var(--trace-retry)]">draft changed by an agent</span>}
                   <span>{describeCounts(promise.counts)}</span>
                   {promise.needsReview && <span className="text-[var(--trace-retry)]">a linked part is gone</span>}
                 </p>

@@ -137,7 +137,8 @@ public sealed class McpCall(IServiceProvider services, AgentEndpoints endpoints,
     /// <c>projectId</c>; <c>truth</c>, the label of every fact in <c>data</c> that has no
     /// <c>factStatus</c> of its own, and <c>truthNote</c>; <c>data</c>; <c>nextCursor</c>, the
     /// value that gets the next page, or null; and <c>notice</c>, a sentence of the server
-    /// when the result was cut, or null. Text of the model is only ever inside <c>data</c>.
+    /// when the result was cut, or null. In a result that worked, text of the model is only
+    /// inside <c>data</c>. A tool error is another document (<see cref="Refused"/>).
     /// </summary>
     public CallToolResult Ok(JsonObject data, string? nextCursor = null, string? notice = null)
     {
@@ -153,7 +154,15 @@ public sealed class McpCall(IServiceProvider services, AgentEndpoints endpoints,
         return McpOutput.Text(text);
     }
 
-    /// <summary>The refusal of an endpoint as a tool error: its own error document, and the status it had over HTTP.</summary>
+    /// <summary>
+    /// The refusal of an endpoint as a tool error: its own error document, and the status it
+    /// had over HTTP. The <c>title</c>, the <c>detail</c> and the messages of <c>errors</c> are
+    /// the endpoint's own sentences, and such a sentence can quote a name or a value of the
+    /// model or of the call (the name of a thing that exists already, a value that is not
+    /// valid). So text of the model can be in an error too. It is data there as well: the
+    /// description of every tool says so for the whole result, and the agent reference says
+    /// it for errors.
+    /// </summary>
     public CallToolResult Refused(EndpointReply reply)
     {
         JsonObject? error = null;
