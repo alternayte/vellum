@@ -23,6 +23,8 @@ namespace Vellum.Modules.Build;
 /// <param name="Pinned">
 /// The <c>pinned</c> state of a manifest. With it the export is made again from exactly the
 /// versions it names, and <paramref name="RevisionId"/> and <paramref name="BranchId"/> must be absent.
+/// It names its decisions: a state of the format <c>vellum-bundle/2</c>, which names none, is
+/// refused with 409 <c>pinned_format_not_exported</c>.
 /// </param>
 public sealed record ExportRequest(Guid? RevisionId = null, Guid? BranchId = null, string Format = "bundle", PinnedState? Pinned = null);
 
@@ -129,6 +131,15 @@ public static partial class BuildModule
                 return Invalid("pinned", "Give a pinned state, or a revision or a branch, not both");
             if (CheckPinned(pin, projectId, limits, "pinned") is { } invalid)
                 return invalid;
+            // A state that names no decision is generated with no review, so its bundle has no
+            // review blocker whatever the review says now. A caller could take the decisions
+            // out of any pinned state to get that. Such a state is checked, never exported.
+            if (pin.Decisions is null)
+            {
+                return Results.Conflict(new ErrorResponse("pinned_format_not_exported",
+                    $"The pinned state names no decision. It is of the format {Bundle.FormatWithoutReview}, which holds no review, and that format is not exported any more.",
+                    $"Export again in the format {Bundle.Format}: send the revision or the branch, or a pinned state that names its decisions. POST build/verify still checks a bundle of the format {Bundle.FormatWithoutReview}."));
+            }
             (bundle, refusal) = await BuildPinnedAsync(http.RequestServices, projectId, pin, limits, "pinned", ct);
         }
         else
@@ -433,7 +444,8 @@ public static partial class BuildModule
             return Results.BadRequest(new ErrorResponse("invalid_bundle",
                 $"The pinned state does not name the version of every input. Only a manifest of the format {Bundle.FormatWithoutReview} or {Bundle.Format} can be generated again."));
         }
-        // A state of the format before the review names no decision stream. That is not an error.
+        // A state of the format before the review names no decision stream. That is not an error
+        // here: verify generates it as it was. Export refuses it.
         var decisions = pin.Decisions ?? [];
         if (pin.Scenarios.Count + pin.Schemas.Count + pin.Promises.Count + decisions.Count > limits.MaxFiles
             || pin.Runs.Count > limits.MaxPinnedRuns || pin.Sources.Count > limits.MaxFiles)

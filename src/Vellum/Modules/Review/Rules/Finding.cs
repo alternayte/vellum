@@ -46,9 +46,9 @@ public sealed record Cited(string Kind, Guid Id, string Name);
 /// <param name="WouldChange">What change of the model gives another result.</param>
 /// <param name="Question">For an overengineering rule: the question the finding asks. A decision answers it.</param>
 /// <param name="Fingerprint">
-/// A hash of the result, the severity, the cited IDs and the reason. A disposition records
-/// it; when it differs later, the facts of the subject changed and the disposition needs a
-/// new review.
+/// A hash of the result, the severity, the cited IDs, the reason and, where the reason is a
+/// summary, the facts it sums up. A disposition records it; when it differs later, the facts
+/// of the subject changed and the disposition needs a new review.
 /// </param>
 public sealed record Finding(
     string RuleId, int RuleVersion, string Category, string Severity, string Result,
@@ -59,9 +59,15 @@ public sealed record Finding(
 }
 
 /// <summary>What a rule gives for one subject, before the engine adds the rule's identity and the fingerprint.</summary>
+/// <param name="Cites">Every fact of the model the result rests on, and the scenarios, schemas and promises it names.</param>
+/// <param name="Basis">
+/// The facts behind the result that the reason only sums up ("3 payloads", "2 more datasets"),
+/// one line for each, in a fixed order. They are part of the fingerprint, so a finding whose
+/// sentence stays the same while its facts change is another finding.
+/// </param>
 internal sealed record RuleOutcome(
     string Result, Guid SubjectId, IReadOnlyList<Guid> Cites, string Reason, string WouldChange,
-    string Severity = Severity.Warning, string? Question = null);
+    string Severity = Severity.Warning, string? Question = null, IReadOnlyList<string>? Basis = null);
 
 /// <param name="Reads">What the rule reads, for the reference page and the rule list.</param>
 /// <param name="Settle">How a concern of the rule is settled.</param>

@@ -5,7 +5,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from '@/components/ui/input'
 import { shownInline } from '@/lib/mutation-errors'
 import { ApiError } from '@/lib/settings-api'
-import { emptyDecision, reviewApi, type Decision, type DecisionInput, type FindingView } from '@/lib/review-api'
+import { RESULT_LABEL, emptyDecision, modelLabel, reviewApi, type Decision, type DecisionInput, type FindingView } from '@/lib/review-api'
 import type { ScenarioReference } from '@/components/trace/scenario-editor'
 import { areaClass, selectClass } from './styles'
 
@@ -62,8 +62,20 @@ export function DecisionDialog({ projectId, branchId, decision: initial, superse
     mutationFn: () => (decision ? reviewApi.updateDecision(projectId, decision.id, form) : reviewApi.createDecision(projectId, form)),
     onSuccess: store, onError: shownInline,
   })
-  const accept = useMutation({ mutationFn: () => reviewApi.acceptDecision(projectId, decision!.id), onSuccess: store, onError: shownInline })
-  const reject = useMutation({ mutationFn: () => reviewApi.rejectDecision(projectId, decision!.id, rejectReason.trim() || null), onSuccess: store, onError: shownInline })
+  // Both name the content hash of the decision on the screen, so the server refuses a decision that changed since.
+  // The acceptance records the findings of the model that this dialog lists them for.
+  const accept = useMutation({ mutationFn: () => reviewApi.acceptDecision(projectId, decision!, branchId), onSuccess: store, onError: shownInline })
+  const reject = useMutation({ mutationFn: () => reviewApi.rejectDecision(projectId, decision!, rejectReason.trim() || null), onSuccess: store, onError: shownInline })
+  const reload = useMutation({
+    mutationFn: async () => (await reviewApi.decisions(projectId)).find((d) => d.id === decision!.id) ?? null,
+    onSuccess: (fresh) => {
+      accept.reset()
+      reject.reset()
+      if (fresh) store(fresh)
+      else { refresh(); onClose() }
+    },
+    onError: shownInline,
+  })
   const remove = useMutation({ mutationFn: () => reviewApi.deleteDecision(projectId, decision!.id), onSuccess: () => { refresh(); onClose() }, onError: shownInline })
   const settle = useMutation({
     mutationFn: (view: FindingView) => reviewApi.setDisposition(projectId, branchId, view.finding, 'accepted-by-decision', { decisionId: decision!.id }),
@@ -74,14 +86,18 @@ export function DecisionDialog({ projectId, branchId, decision: initial, superse
     },
     onError: shownInline,
   })
-  const failure = save.error ?? accept.error ?? reject.error ?? remove.error ?? settle.error
+  const failure = save.error ?? accept.error ?? reject.error ?? remove.error ?? settle.error ?? reload.error
+  // 409: the decision is not the one on the screen any more, or its status does not allow the act.
+  const conflict = [accept.error, reject.error].some((e) => e instanceof ApiError && e.status === 409)
+  const findingOf = (ruleId: string, subjectId: string) =>
+    findings.data?.findings.find((f) => f.finding.ruleId === ruleId && f.finding.subject.id === subjectId)
 
   const fired = (findings.data?.findings ?? []).filter((f) => f.finding.fired)
   const keyOf = (ruleId: string, subjectId: string) => `${ruleId}:${subjectId}`
-  const findingLabel = (ruleId: string, subjectId: string) => {
-    const found = findings.data?.findings.find((f) => f.finding.ruleId === ruleId && f.finding.subject.id === subjectId)
-    return `${ruleId} · ${found?.finding.subject.name ?? references.find((r) => r.id === subjectId)?.label ?? subjectId}`
-  }
+  const subjectName = (ruleId: string, subjectId: string) =>
+    findings.data?.findings.find((f) => f.finding.ruleId === ruleId && f.finding.subject.id === subjectId)?.finding.subject.name
+    ?? references.find((r) => r.id === subjectId)?.label ?? subjectId
+  const findingLabel = (ruleId: string, subjectId: string) => `${ruleId} · ${subjectName(ruleId, subjectId)}`
   const toggleSettles = (ruleId: string, subjectId: string) => {
     const has = form.settles.some((s) => s.ruleId === ruleId && s.subjectId === subjectId)
     set('settles', has ? form.settles.filter((s) => !(s.ruleId === ruleId && s.subjectId === subjectId)) : [...form.settles, { ruleId, subjectId }])
@@ -177,7 +193,7 @@ export function DecisionDialog({ projectId, branchId, decision: initial, superse
                     ))}
                   </ul>
                   {fired.length === 0 && <p className="mt-1 text-xs text-muted-foreground">The review has no concern and no unknown.</p>}
-                  <p className="mt-1 text-[11px] text-muted-foreground">The decision settles these findings when an owner accepts it.</p>
+                  <p className="mt-1 text-[11px] text-muted-foreground">These are the findings of {modelLabel(branchId)}. The decision settles the ones you select when an owner accepts it.</p>
                 </>
               ) : (
                 <ul className="mt-1 space-y-0.5 text-xs text-foreground">
@@ -196,9 +212,40 @@ export function DecisionDialog({ projectId, branchId, decision: initial, superse
             </select>
           </label>
 
+          {decision?.status === 'proposed' && (
+            <section aria-labelledby="decision-accept-records" className="rounded-md border border-border p-2.5">
+              <h3 id="decision-accept-records" className="text-xs font-medium uppercase tracking-wider text-muted-foreground">What an acceptance records</h3>
+              <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                An acceptance records each finding below as it is now on {modelLabel(branchId)}. The decision settles exactly that finding. When the finding changes, or is another one on another model, it needs a new review there.
+              </p>
+              {findings.isLoading && <p className="mt-1 text-xs text-muted-foreground">Reading the findings…</p>}
+              {findings.isError && <p role="alert" className="mt-1 text-xs text-destructive">{findings.error.message}</p>}
+              {findings.isSuccess && (
+                <ul className="mt-1.5 space-y-1.5">
+                  {decision.settles.length === 0 && <li className="text-xs text-muted-foreground">The decision names no finding, so an acceptance records none.</li>}
+                  {decision.settles.map((s) => {
+                    const found = findingOf(s.ruleId, s.subjectId)
+                    return (
+                      <li key={keyOf(s.ruleId, s.subjectId)} className="text-xs">
+                        <p className="text-foreground">
+                          <span className="font-mono">{s.ruleId}</span> · {subjectName(s.ruleId, s.subjectId)}
+                          {found && <span className="text-muted-foreground"> · {RESULT_LABEL[found.finding.result]}</span>}
+                        </p>
+                        <p className="mt-0.5 leading-relaxed text-muted-foreground">
+                          {found ? found.finding.reason : `The rule gives no finding for this subject on ${modelLabel(branchId)}. The acceptance records that, and a finding that appears later needs a review.`}
+                        </p>
+                      </li>
+                    )
+                  })}
+                </ul>
+              )}
+              {edited && <p className="mt-1.5 text-[11px] text-[var(--trace-retry)]">You have changes that are not saved. The list shows the saved decision. Save first, then accept.</p>}
+            </section>
+          )}
+
           {decision?.status === 'accepted' && (
             <section aria-labelledby="decision-settle">
-              <h3 id="decision-settle" className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Settle a finding with this decision</h3>
+              <h3 id="decision-settle" className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Settle a finding of {modelLabel(branchId)} with this decision</h3>
               {open.length === 0 ? (
                 <p className="mt-1 text-xs text-muted-foreground">No open finding.</p>
               ) : (
@@ -234,6 +281,12 @@ export function DecisionDialog({ projectId, branchId, decision: initial, superse
             {failure instanceof ApiError && failure.fields.length > 0 && (
               <ul className="mt-0.5 list-disc pl-4">{failure.fields.map((e, i) => <li key={i}>{e.field}: {e.message}</li>)}</ul>
             )}
+            {conflict && (
+              <p className="mt-1 flex flex-wrap items-center gap-2 text-foreground">
+                Nothing was accepted or rejected. Read the decision as it is now, then decide again.
+                <Button variant="secondary" size="sm" className="h-6 px-2 text-xs" disabled={reload.isPending} onClick={() => reload.mutate()}>Reload the decision</Button>
+              </p>
+            )}
           </div>
         )}
 
@@ -260,7 +313,7 @@ export function DecisionDialog({ projectId, branchId, decision: initial, superse
             </Button>
           )}
           {decision?.status === 'proposed' && (
-            <Button size="sm" disabled={accept.isPending || edited !== null} title={edited ? 'Save your changes first' : 'Needs the Owner role'} onClick={() => accept.mutate()}>Accept</Button>
+            <Button size="sm" disabled={accept.isPending || edited !== null || !findings.isSuccess} title={edited ? 'Save your changes first' : 'Needs the Owner role'} onClick={() => accept.mutate()}>Accept</Button>
           )}
         </div>
       </DialogContent>

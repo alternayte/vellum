@@ -175,8 +175,9 @@ public static class ReviewEndpoints
         var at = time.GetUtcNow();
         var settledBy = state.Book.InForce
             .Where(d => d.State.Content!.Settles.Any(s => s.RuleId == finding.RuleId && s.SubjectId == finding.Subject.Id)).ToList();
-        var row = await db.Dispositions.FirstOrDefaultAsync(
-            d => d.ProjectId == projectId && d.RuleId == finding.RuleId && d.SubjectId == finding.Subject.Id, ct);
+        // Each write of the answer is one statement, so two people who answer one finding at
+        // the same time both succeed and the later answer stands.
+        var answer = db.Dispositions.Where(d => d.ProjectId == projectId && d.RuleId == finding.RuleId && d.SubjectId == finding.Subject.Id);
 
         switch (request.Status)
         {
@@ -192,11 +193,14 @@ public static class ReviewEndpoints
                 if (settledBy.Count > 0)
                     return ReviewAccess.Conflict($"{DecisionState.Label(settledBy[0].State.Number)} names this finding. Set the finding to open first.");
 
-                if (row is null)
-                    db.Dispositions.Add(row = new DispositionEntity { ProjectId = projectId, RuleId = finding.RuleId, SubjectId = finding.Subject.Id });
-                (row.Status, row.Reason, row.RuleVersion, row.Fingerprint, row.DecidedBy, row.DecidedAt) =
-                    (DispositionStatus.WontFix, request.Reason.Trim(), finding.RuleVersion, finding.Fingerprint, userId, at);
-                await db.SaveChangesAsync(ct);
+                var (ruleId, subjectId, reason) = (finding.RuleId, finding.Subject.Id, request.Reason.Trim());
+                await db.Database.ExecuteSqlAsync($"""
+                    INSERT INTO review.dispositions (project_id, rule_id, subject_id, rule_version, fingerprint, status, reason, decided_by, decided_at)
+                    VALUES ({projectId}, {ruleId}, {subjectId}, {finding.RuleVersion}, {finding.Fingerprint}, {DispositionStatus.WontFix}, {reason}, {userId}, {at})
+                    ON CONFLICT (project_id, rule_id, subject_id) DO UPDATE SET
+                        rule_version = EXCLUDED.rule_version, fingerprint = EXCLUDED.fingerprint, status = EXCLUDED.status,
+                        reason = EXCLUDED.reason, decided_by = EXCLUDED.decided_by, decided_at = EXCLUDED.decided_at
+                    """, ct);
                 break;
 
             case DispositionStatus.AcceptedByDecision:
@@ -214,11 +218,7 @@ public static class ReviewEndpoints
                     s, projectId, new SettlementStamp(finding.RuleId, finding.Subject.Id, finding.RuleVersion, finding.Fingerprint), userId, at), ct);
                 if (recorded is not CommandResult<DecisionState>.Success)
                     return recorded.ToHttpResult();
-                if (row is not null)
-                {
-                    db.Dispositions.Remove(row);
-                    await db.SaveChangesAsync(ct);
-                }
+                await answer.ExecuteDeleteAsync(ct);
                 break;
 
             default:
@@ -231,11 +231,7 @@ public static class ReviewEndpoints
                     if (removed is not CommandResult<DecisionState>.Success)
                         return removed.ToHttpResult();
                 }
-                if (row is not null)
-                {
-                    db.Dispositions.Remove(row);
-                    await db.SaveChangesAsync(ct);
-                }
+                await answer.ExecuteDeleteAsync(ct);
                 break;
         }
 

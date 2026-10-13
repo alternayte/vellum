@@ -57,6 +57,13 @@ public class ReviewEndpointTests(IntegrationFixture fixture)
     private static Task<HttpResponseMessage> DisposeAsync(HttpClient client, Seeded s, string ruleId, Guid subject, string status, Guid? decisionId = null, string? reason = null) =>
         client.PutAsJsonAsync(s.Url("review/dispositions"), new { ruleId, subjectId = subject, status, decisionId, reason });
 
+    /// <summary>Accepts or rejects a decision as a person does: reads it, then names the content hash that was read.</summary>
+    private static async Task<HttpResponseMessage> DecideAsync(HttpClient client, Seeded s, JsonObject decision, string act, string? reason = null, Guid? branchId = null)
+    {
+        var read = await Ok(s.Owner.GetAsync(s.Url($"decisions/{decision["id"]}")));
+        return await client.PostAsJsonAsync(s.Url($"decisions/{decision["id"]}/{act}"), new { contentHash = (string)read["contentHash"]!, reason, branchId });
+    }
+
     private static object Decision(string title, (string, Guid)[]? settles = null, Guid? supersedes = null, string? origin = null) => new
     {
         title,
@@ -81,7 +88,7 @@ public class ReviewEndpointTests(IntegrationFixture fixture)
         Assert.Equal(first, second);
 
         var report = JsonNode.Parse(first)!.AsObject();
-        Assert.Equal(("review-rules/1", 64, 64), ((string)report["ruleSetVersion"]!, ((string)report["hash"]!).Length, ((string)report["inputsFingerprint"]!).Length));
+        Assert.Equal(("review-rules/2", 64, 64), ((string)report["ruleSetVersion"]!, ((string)report["hash"]!).Length, ((string)report["inputsFingerprint"]!).Length));
         var fired = report["findings"]!.AsArray().Select(f => f!["finding"]!)
             .Where(f => (string)f["result"]! is "concern" or "unknown")
             .Select(f => ((string)f["ruleId"]!, (string)f["result"]!, (string)f["severity"]!, (Guid)f["subject"]!["id"]!)).ToList();
@@ -147,8 +154,8 @@ public class ReviewEndpointTests(IntegrationFixture fixture)
 
         // A person with the Owner role accepts it. An Editor does not.
         var editor = await TestHost.SignInMemberAsync(factory, s.Owner, s.WorkspaceId, "Editor");
-        Assert.Equal(HttpStatusCode.Forbidden, (await editor.PostAsync(s.Url($"decisions/{adr1["id"]}/accept"), null)).StatusCode);
-        var accepted = await Ok(s.Owner.PostAsync(s.Url($"decisions/{adr1["id"]}/accept"), null));
+        Assert.Equal(HttpStatusCode.Forbidden, (await DecideAsync(editor, s, adr1, "accept")).StatusCode);
+        var accepted = await Ok(DecideAsync(s.Owner, s, adr1, "accept"));
         Assert.Equal("accepted", (string)accepted["status"]!);
         Assert.NotNull(accepted["acceptedBy"]);
         Assert.Equal(64, ((string)accepted["stamps"]![0]!["fingerprint"]!).Length);
@@ -183,7 +190,7 @@ public class ReviewEndpointTests(IntegrationFixture fixture)
         var adr2 = await Ok(s.Owner.PostAsJsonAsync(s.Url("decisions"), Decision("The relay gets a schema later", supersedes: (Guid)adr1["id"]!)), HttpStatusCode.Created);
         Assert.Equal("ADR-0002", (string)adr2["number"]!);
         Assert.Empty(await ReviewBlockersAsync(s));
-        await Ok(s.Owner.PostAsync(s.Url($"decisions/{adr2["id"]}/accept"), null));
+        await Ok(DecideAsync(s.Owner, s, adr2, "accept"));
         var superseded = await Ok(s.Owner.GetAsync(s.Url($"decisions/{adr1["id"]}")));
         Assert.Equal(("superseded", (Guid)adr2["id"]!), ((string)superseded["status"]!, (Guid)superseded["supersededBy"]!));
         Assert.Equal(blocked, await ReviewBlockersAsync(s));
@@ -195,10 +202,10 @@ public class ReviewEndpointTests(IntegrationFixture fixture)
         Assert.Contains(drifted["moved"]!.AsArray(), m => (string)m!["kind"]! == "decision");
 
         // The superseding decision is withdrawn: the first one is in force again and settles the finding again.
-        await Ok(s.Owner.PostAsJsonAsync(s.Url($"decisions/{adr2["id"]}/reject"), new { reason = "We keep the first decision." }));
+        await Ok(DecideAsync(s.Owner, s, adr2, "reject", "We keep the first decision."));
         Assert.Empty(await ReviewBlockersAsync(s));
         // The first decision is rejected too: nothing settles the finding.
-        Assert.Equal("rejected", (string)(await Ok(s.Owner.PostAsync(s.Url($"decisions/{adr1["id"]}/reject"), null)))["status"]!);
+        Assert.Equal("rejected", (string)(await Ok(DecideAsync(s.Owner, s, adr1, "reject")))["status"]!);
         Assert.Equal(blocked, await ReviewBlockersAsync(s));
         // An accepted decision is a record. It is not deleted, and its text is not changed.
         Assert.Equal(HttpStatusCode.Conflict, (await s.Owner.DeleteAsync(s.Url($"decisions/{adr1["id"]}"))).StatusCode);
@@ -206,7 +213,7 @@ public class ReviewEndpointTests(IntegrationFixture fixture)
 
         // A person settles the finding from another accepted decision. Then the subject changes.
         var adr3 = await Ok(s.Owner.PostAsJsonAsync(s.Url("decisions"), Decision("The relay has no schema, again")), HttpStatusCode.Created);
-        await Ok(s.Owner.PostAsync(s.Url($"decisions/{adr3["id"]}/accept"), null));
+        await Ok(DecideAsync(s.Owner, s, adr3, "accept"));
         Assert.Equal(HttpStatusCode.Forbidden, (await DisposeAsync(editor, s, "CON-001", relay, "accepted-by-decision", (Guid)adr3["id"]!)).StatusCode);
         var again = await Ok(DisposeAsync(s.Owner, s, "CON-001", relay, "accepted-by-decision", (Guid)adr3["id"]!));
         Assert.Equal(("accepted-by-decision", "ADR-0003", true), ((string)again["status"]!, (string)again["decision"]!, (bool)again["settled"]!));
@@ -325,30 +332,166 @@ public class ReviewEndpointTests(IntegrationFixture fixture)
     }
 
     [Fact]
-    public async Task A_pinned_state_of_the_format_before_the_review_is_generated_as_it_was()
+    public async Task A_pinned_state_without_decisions_is_not_exported_and_a_bundle_of_that_format_still_verifies()
     {
         using var factory = TestHost.Create(fixture);
         var s = await SeedAsync(factory);
-        var manifest = await Ok(s.Owner.GetAsync(s.Url("build/manifest")));
+        var exporter = await TestHost.CreateAgentAsync(factory, s.Owner, s.WorkspaceId, ["read", "export"]);
+        var viewer = await TestHost.SignInMemberAsync(factory, s.Owner, s.WorkspaceId, "Viewer");
+
+        // A token that reads and exports reads the manifest. The state has a review blocker.
+        var manifest = await Ok(exporter.Client.GetAsync(s.Url("build/manifest")));
+        Assert.False((bool)manifest["buildReady"]!);
         Assert.Contains(manifest["blockers"]!.AsArray(), b => (string)b!["code"]! == "review-CON-001");
 
-        // The pinned state of a vellum-bundle/2 manifest names no decision stream.
+        // It takes the decisions out of the pinned state: the state of a vellum-bundle/2 manifest, which holds no review.
         var pinned = manifest["pinned"]!.DeepClone().AsObject();
         Assert.True(pinned.Remove("decisions"));
-        var zip = await (await s.Owner.PostAsJsonAsync(s.Url("build/export"), new { format = "bundle", pinned })).Content.ReadAsByteArrayAsync();
+        foreach (var client in new[] { exporter.Client, viewer, s.Owner })
+        {
+            foreach (var format in new[] { "bundle", "sdd" })
+            {
+                var response = await client.PostAsJsonAsync(s.Url("build/export"), new { format, pinned });
+                var refusal = await Ok(Task.FromResult(response), HttpStatusCode.Conflict);
+                Assert.Equal("pinned_format_not_exported", (string)refusal["type"]!);
+                Assert.Contains("vellum-bundle/3", (string)refusal["detail"]!);
+                Assert.False(response.Headers.Contains("X-Vellum-Build-Ready"));
+            }
+        }
+
+        // The pinned state as the manifest names it is exported again, with its review.
+        var again = await exporter.Client.PostAsJsonAsync(s.Url("build/export"), new { format = "bundle", pinned = manifest["pinned"] });
+        Assert.Equal((HttpStatusCode.OK, "false"), (again.StatusCode, again.Headers.GetValues("X-Vellum-Build-Ready").Single()));
+        var current = JsonNode.Parse(Unzip(await again.Content.ReadAsByteArrayAsync())["manifest.json"])!;
+        Assert.Equal("vellum-bundle/3", (string)current["format"]!);
+        Assert.Contains(current["blockers"]!.AsArray(), b => (string)b!["code"]! == "review-CON-001");
+
+        // A bundle of the old format that someone holds is still what its pinned versions generate.
+        byte[] zip;
+        using (var scope = factory.Services.CreateScope())
+        {
+            var pin = System.Text.Json.JsonSerializer.Deserialize<Vellum.Modules.Build.PinnedState>(pinned.ToJsonString(), Vellum.Modules.Promises.PromiseJson.Options)!;
+            var store = scope.ServiceProvider.GetRequiredService<Deedbox.IEventStore>();
+            var model = await Vellum.Modules.Promises.PinnedModel.AtVersionAsync(store, pin.Branch, pin.StreamVersion, CancellationToken.None);
+            var input = await Vellum.Modules.Build.BuildInput.LoadAsync(
+                scope.ServiceProvider, s.Orders.ProjectId,
+                new Vellum.Modules.Promises.PinnedModel(new Vellum.Modules.Promises.ModelPin(pin.Branch, pin.StreamVersion, null, null), model!),
+                Vellum.Modules.Build.BuildLimits.Default, CancellationToken.None, pin);
+            zip = Vellum.Modules.Build.Bundle.Build(input, Vellum.Modules.Build.BuildLimits.Default).Zip();
+        }
         var files = Unzip(zip);
         var old = JsonNode.Parse(files["manifest.json"])!.AsObject();
-
         Assert.Equal(("vellum-bundle/2", "2"), ((string)old["format"]!, (string)old["generator"]!["version"]!));
         Assert.False(old["pinned"]!.AsObject().ContainsKey("decisions"));
-        Assert.DoesNotContain(old["blockers"]!.AsArray(), b => ((string)b!["code"]!).StartsWith("review-", StringComparison.Ordinal));
         Assert.DoesNotContain(files.Keys, path => path.StartsWith("decisions/", StringComparison.Ordinal));
         Assert.DoesNotContain("### Decisions", Encoding.UTF8.GetString(files["SDD.md"]));
         Assert.False(JsonNode.Parse(files["architecture.json"])!.AsObject().ContainsKey("decisions"));
-
-        // It verifies against itself: nothing of the review is part of it.
         var verified = await Ok(VerifyZipAsync(s, zip));
         Assert.Equal((true, true), ((bool)verified["identical"]!, (bool)verified["matchesPinned"]!));
+    }
+
+    [Fact]
+    public async Task An_acceptance_and_a_rejection_bind_the_decision_that_was_read()
+    {
+        using var factory = TestHost.Create(fixture);
+        var s = await SeedAsync(factory);
+        var relay = OrdersReference.RelayOutbox;
+        var editor = await TestHost.SignInMemberAsync(factory, s.Owner, s.WorkspaceId, "Editor");
+        var adr = await Ok(s.Owner.PostAsJsonAsync(s.Url("decisions"), Decision("The relay has no schema", [("CON-001", relay)])), HttpStatusCode.Created);
+        var read = (string)adr["contentHash"]!;
+        string Url(string act) => s.Url($"decisions/{adr["id"]}/{act}");
+
+        // An acceptance names what was read.
+        Assert.Equal(HttpStatusCode.BadRequest, (await s.Owner.PostAsJsonAsync(Url("accept"), new { })).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await s.Owner.PostAsJsonAsync(Url("reject"), new { reason = "No" })).StatusCode);
+
+        // After the owner read it, an editor makes it answer one more finding.
+        await Ok(editor.PutAsJsonAsync(s.Url($"decisions/{adr["id"]}"), Decision("The relay has no schema", [("CON-001", relay), ("REL-001", OrdersReference.BillingSub)])));
+        var refused = await Ok(s.Owner.PostAsJsonAsync(Url("accept"), new { contentHash = read }), HttpStatusCode.Conflict);
+        var now = await Ok(s.Owner.GetAsync(s.Url($"decisions/{adr["id"]}")));
+        Assert.Equal(("decision_changed", (string)now["contentHash"]!), ((string)refused["type"]!, (string)refused["contentHash"]!));
+        Assert.NotEqual(read, (string)now["contentHash"]!);
+        // Nothing was accepted: the decision is a proposal, and neither finding is settled.
+        Assert.Equal("proposed", (string)now["status"]!);
+        Assert.Equal("open", (string)(await FindingAsync(s, "REL-001", OrdersReference.BillingSub))["status"]!);
+        Assert.Equal(HttpStatusCode.Conflict, (await s.Owner.PostAsJsonAsync(Url("reject"), new { contentHash = read })).StatusCode);
+
+        // The owner reads it again and accepts what is there.
+        var proposed = (string)now["contentHash"]!;
+        Assert.Equal("accepted", (string)(await Ok(s.Owner.PostAsJsonAsync(Url("accept"), new { contentHash = proposed })))["status"]!);
+
+        // A person who still looks at the proposal does not withdraw the accepted decision with one click.
+        var stale = await Ok(s.Owner.PostAsJsonAsync(Url("reject"), new { contentHash = proposed, reason = "Not yet" }), HttpStatusCode.Conflict);
+        Assert.Equal("decision_changed", (string)stale["type"]!);
+        Assert.Equal("accepted", (string)(await Ok(s.Owner.GetAsync(s.Url($"decisions/{adr["id"]}"))))["status"]!);
+        Assert.Equal("rejected", (string)(await Ok(s.Owner.PostAsJsonAsync(Url("reject"), new { contentHash = stale["contentHash"], reason = "Withdrawn" })))["status"]!);
+    }
+
+    [Fact]
+    public async Task An_acceptance_records_the_findings_of_the_model_the_person_read()
+    {
+        using var factory = TestHost.Create(fixture);
+        var s = await SeedAsync(factory);
+        var relay = OrdersReference.RelayOutbox;
+        var draft = (Guid)(await Ok(s.Owner.PostAsJsonAsync(s.Url("drafts"), new { id = Guid.NewGuid(), name = "Rename the relay" }), HttpStatusCode.Created))["streamId"]!;
+        await Ok(s.Owner.PatchAsJsonAsync(s.Url($"operations/{relay}") + $"?branchId={draft}", new { name = "Relay the outbox" }));
+
+        async Task<string> FingerprintAsync(Guid? branchId) =>
+            (string)(await Ok(s.Owner.GetAsync(s.Url("review/findings") + (branchId is null ? "" : $"?branchId={branchId}"))))["findings"]!.AsArray()
+                .Single(f => (string)f!["finding"]!["ruleId"]! == "CON-001" && (Guid)f["finding"]!["subject"]!["id"]! == relay)!["finding"]!["fingerprint"]!;
+        var (onMain, onDraft) = (await FingerprintAsync(null), await FingerprintAsync(draft));
+        Assert.NotEqual(onMain, onDraft);
+
+        // The person reads the findings of the draft and accepts there: the stamp is the finding of the draft.
+        var first = await Ok(s.Owner.PostAsJsonAsync(s.Url("decisions"), Decision("The relay has no schema", [("CON-001", relay)])), HttpStatusCode.Created);
+        var accepted = await Ok(DecideAsync(s.Owner, s, first, "accept", branchId: draft));
+        Assert.Equal(onDraft, (string)accepted["stamps"]![0]!["fingerprint"]!);
+        // On the main model the finding is another one, so the decision does not settle it there.
+        Assert.Equal((true, true), ((bool)(await FindingAsync(s, "CON-001", relay))["needsReReview"]!, (bool)(await FindingAsync(s, "CON-001", relay))["blocks"]!));
+
+        // With no branch named, the stamp is the finding of the main model.
+        await Ok(DecideAsync(s.Owner, s, first, "reject"));
+        var second = await Ok(s.Owner.PostAsJsonAsync(s.Url("decisions"), Decision("The relay has no schema, on main", [("CON-001", relay)])), HttpStatusCode.Created);
+        Assert.Equal(onMain, (string)(await Ok(DecideAsync(s.Owner, s, second, "accept")))["stamps"]![0]!["fingerprint"]!);
+        Assert.False((bool)(await FindingAsync(s, "CON-001", relay))["blocks"]!);
+    }
+
+    [Fact]
+    public async Task A_question_is_answered_or_dropped_once()
+    {
+        using var factory = TestHost.Create(fixture);
+        var s = await SeedAsync(factory);
+        var question = await Ok(s.Owner.PostAsJsonAsync(s.Url("questions"), new { text = "Who reads the dead-letter queue?" }), HttpStatusCode.Created);
+        string Url(string act) => s.Url($"questions/{question["id"]}/{act}");
+
+        // Many people answer at the same time: one answer is stored and every other is refused.
+        var answers = await Task.WhenAll(Enumerable.Range(0, 8).Select(i => s.Owner.PostAsJsonAsync(Url("answer"), new { answer = $"Answer {i}" })));
+        var stored = await Ok(Task.FromResult(Assert.Single(answers, a => a.StatusCode == HttpStatusCode.OK)));
+        Assert.Equal(7, answers.Count(a => a.StatusCode == HttpStatusCode.Conflict));
+
+        // An answered question is not answered again and is not dropped: the answer stands.
+        Assert.Equal(HttpStatusCode.Conflict, (await s.Owner.PostAsJsonAsync(Url("answer"), new { answer = "Another answer" })).StatusCode);
+        var refused = await Ok(s.Owner.PostAsync(Url("drop"), null), HttpStatusCode.Conflict);
+        Assert.Contains("answered", (string)refused["title"]!);
+        var kept = (await Ok(s.Owner.GetAsync(s.Url("questions"))))["items"]!.AsArray().Single()!;
+        Assert.Equal(("answered", (string)stored["answer"]!), ((string)kept["status"]!, (string)kept["answer"]!));
+    }
+
+    [Fact]
+    public async Task Two_people_who_answer_one_finding_at_the_same_time_both_get_an_answer()
+    {
+        using var factory = TestHost.Create(fixture);
+        var s = await SeedAsync(factory);
+
+        var answers = await Task.WhenAll(Enumerable.Range(0, 12).Select(i =>
+            DisposeAsync(s.Owner, s, "REL-001", OrdersReference.BillingSub, "wont-fix", reason: $"Reason {i}")));
+        Assert.All(answers, a => Assert.Equal(HttpStatusCode.OK, a.StatusCode));
+        Assert.Equal("wont-fix", (string)(await FindingAsync(s, "REL-001", OrdersReference.BillingSub))["status"]!);
+
+        // And to open again, at the same time.
+        var opened = await Task.WhenAll(Enumerable.Range(0, 12).Select(_ => DisposeAsync(s.Owner, s, "REL-001", OrdersReference.BillingSub, "open")));
+        Assert.All(opened, a => Assert.Equal(HttpStatusCode.OK, a.StatusCode));
+        Assert.Equal("open", (string)(await FindingAsync(s, "REL-001", OrdersReference.BillingSub))["status"]!);
     }
 
     [Fact]
@@ -357,7 +500,7 @@ public class ReviewEndpointTests(IntegrationFixture fixture)
         using var factory = TestHost.Create(fixture);
         var s = await SeedAsync(factory);
         var decision = await Ok(s.Owner.PostAsJsonAsync(s.Url("decisions"), Decision("The relay has no schema", [("CON-001", OrdersReference.RelayOutbox)])), HttpStatusCode.Created);
-        await Ok(s.Owner.PostAsync(s.Url($"decisions/{decision["id"]}/accept"), null));
+        await Ok(DecideAsync(s.Owner, s, decision, "accept"));
         var question = await Ok(s.Owner.PostAsJsonAsync(s.Url("questions"), new { text = "Who reads the dead-letter queue?" }), HttpStatusCode.Created);
         var snapshot = await Ok(s.Owner.PostAsJsonAsync(s.Url("review/snapshots"), new { }), HttpStatusCode.Created);
         await Ok(DisposeAsync(s.Owner, s, "REL-001", OrdersReference.BillingSub, "wont-fix", reason: "Accepted"));
@@ -379,7 +522,7 @@ public class ReviewEndpointTests(IntegrationFixture fixture)
         // The IDs of this project name nothing in the stranger's own project.
         string Theirs(string path) => $"/api/projects/{theirs}/{path}";
         await Status(HttpStatusCode.NotFound, stranger.GetAsync(Theirs($"decisions/{decision["id"]}")), "GET foreign decision");
-        await Status(HttpStatusCode.NotFound, stranger.PostAsync(Theirs($"decisions/{decision["id"]}/reject"), null), "reject foreign decision");
+        await Status(HttpStatusCode.NotFound, stranger.PostAsJsonAsync(Theirs($"decisions/{decision["id"]}/reject"), new { contentHash = decision["contentHash"] }), "reject foreign decision");
         await Status(HttpStatusCode.NotFound, stranger.PutAsJsonAsync(Theirs($"decisions/{decision["id"]}"), Decision("Taken over")), "PUT foreign decision");
         await Status(HttpStatusCode.NotFound, stranger.DeleteAsync(Theirs($"decisions/{decision["id"]}")), "DELETE foreign decision");
         await Status(HttpStatusCode.NotFound, stranger.GetAsync(Theirs($"review/snapshots/{snapshot["id"]}")), "GET foreign snapshot");

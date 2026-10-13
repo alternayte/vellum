@@ -103,14 +103,17 @@ public static class ReviewModule
         decisions.MapDelete("/{decisionId:guid}", DecisionEndpoints.Delete)
             .Produces(StatusCodes.Status204NoContent).Produces<ErrorResponse>(StatusCodes.Status409Conflict);
         decisions.MapPost("/{decisionId:guid}/accept", DecisionEndpoints.Accept).RequireHuman()
+            .Accepts<AcceptDecisionRequest>("application/json")
             .Produces<DecisionDto>()
+            .Produces<ErrorResponse>(StatusCodes.Status400BadRequest)
             .Produces<ErrorResponse>(StatusCodes.Status403Forbidden)
-            .Produces<ErrorResponse>(StatusCodes.Status409Conflict);
+            .Produces<DecisionChangedResponse>(StatusCodes.Status409Conflict);
         decisions.MapPost("/{decisionId:guid}/reject", DecisionEndpoints.Reject).RequireHuman()
             .Accepts<RejectDecisionRequest>("application/json")
             .Produces<DecisionDto>()
+            .Produces<ErrorResponse>(StatusCodes.Status400BadRequest)
             .Produces<ErrorResponse>(StatusCodes.Status403Forbidden)
-            .Produces<ErrorResponse>(StatusCodes.Status409Conflict);
+            .Produces<DecisionChangedResponse>(StatusCodes.Status409Conflict);
 
         var questions = app.MapGroup("/api/projects/{projectId}/questions")
             .RequireAuthorization().WithBodyLimit(RequestBodyLimit.Default).WithTags("Questions");
@@ -127,9 +130,9 @@ public static class ReviewModule
             .Produces<ErrorResponse>(StatusCodes.Status404NotFound);
         questions.MapPost("/{questionId:guid}/answer", Questions.Answer).RequireHuman()
             .Accepts<AnswerQuestionRequest>("application/json")
-            .Produces<QuestionDto>().Produces<ErrorResponse>(StatusCodes.Status404NotFound);
+            .Produces<QuestionDto>().Produces<ErrorResponse>(StatusCodes.Status404NotFound).Produces<ErrorResponse>(StatusCodes.Status409Conflict);
         questions.MapPost("/{questionId:guid}/drop", Questions.Drop).RequireHuman()
-            .Produces<QuestionDto>().Produces<ErrorResponse>(StatusCodes.Status404NotFound);
+            .Produces<QuestionDto>().Produces<ErrorResponse>(StatusCodes.Status404NotFound).Produces<ErrorResponse>(StatusCodes.Status409Conflict);
         questions.MapDelete("/{questionId:guid}", Questions.Delete).RequireHuman()
             .Produces(StatusCodes.Status204NoContent).Produces<ErrorResponse>(StatusCodes.Status404NotFound);
 

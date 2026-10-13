@@ -67,9 +67,13 @@ A snapshot keeps the findings of one model version, with their answers.
 
 The list shows the model version and the hash of each snapshot. It says **same findings** when the hash is the hash of the findings now.
 
+Select the note or the date of a snapshot to open it. The dialog shows the findings and their answers as they were saved. It shows the model version, the version of the rule set, the hash of the findings and the hash of the inputs. You cannot change a snapshot. A snapshot is a record. It is not the current state: read the **Findings** tab for that.
+
 ## Keep open questions
 
 Select the **Questions** tab. Add what the design leaves undecided. Answer a question, or drop it.
+
+You answer or drop only an open question. When another person closed the question first, Vellum refuses with the status 409 and keeps the first answer.
 
 A question that the assistant asks in a flow proposal, an architecture proposal or a critique has a **Keep** button. The button makes it an open question of the project.
 
@@ -85,7 +89,7 @@ The answer is in its own frame with the label **Suggestions of the assistant**. 
 
 | Part | Meaning |
 |---|---|
-| Risks that a finding supports | A risk that rests on a finding of a rule for a part it names. The finding is the fact. The sentence is the assistant's. |
+| Risks that a finding supports | A risk that rests on a finding of a rule for a part it names. Each risk shows two sentences. **Finding** is the sentence of the rule, with its result. **The assistant's sentence** is the claim. The rule found only what the finding says. No check supports the wording of the assistant. |
 | Questions | What the assistant asks you. |
 | Suspicions the model does not show | A claim with no finding behind it. Vellum shows it as a question and says why the model does not show it. |
 | Proposed decisions | A decision that you can keep as a proposal. Only an owner accepts it. |
@@ -94,3 +98,7 @@ The answer is in its own frame with the label **Suggestions of the assistant**. 
 The assistant sees the parts of your model as a numbered table, without their real IDs. Vellum removes each item that names something outside the table. Vellum also removes each item that states that something is verified, proven, safe, secure, scalable, compliant, guaranteed or resolved.
 
 When the model changes after the answer, the answer is stale. Ask again before you keep a proposed decision.
+
+The project keeps the newest 50 answers. They are below **Stored answers**. Select one to read it again. Each line shows the date, the question, and whether the answer is about the main model or about a draft or a variant.
+
+While the setting `privacy.sendPrivateCodeToAi` is off, the assistant gets no part that came from a private repository. It also gets no scenario, no promise and no finding whose text holds the name of such a part. The answer says how many were held back.

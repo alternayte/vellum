@@ -5,7 +5,11 @@ import type { Critique } from '../../../src/lib/review-api'
 
 const critique: Critique = {
   id: 'c1', branchId: null, question: '',
-  risks: [{ about: [{ kind: 'subscription', id: 's1', name: 'Billing on order-events' }], claim: 'A failed delivery to Billing is lost.', ruleId: 'REL-001', subjectId: 's1' }],
+  risks: [{
+    about: [{ kind: 'subscription', id: 's1', name: 'Billing on order-events' }], claim: 'A failed delivery to Billing is lost.', claimSource: 'assistant',
+    ruleId: 'REL-001', subjectId: 's1', findingResult: 'concern',
+    findingReason: "The subscription 'Billing on order-events' has one delivery attempt and no dead-letter channel, so a message whose delivery fails is lost.",
+  }],
   questions: [
     { about: [], text: 'Who reads the dead-letter queue?', why: 'Nothing consumes it.', source: 'assistant', note: null, keptAs: null },
     {
@@ -28,6 +32,10 @@ describe('CritiquePanel', () => {
 
     const risks = within(screen.getByTestId('critique-risks'))
     expect(risks.getByText('A failed delivery to Billing is lost.')).toBeTruthy()
+    // The sentence of the finding is beside the claim, and each sentence names its author.
+    expect(risks.getByText(/has one delivery attempt and no dead-letter channel/)).toBeTruthy()
+    expect(risks.getByText(/Finding/).textContent).toContain('REL-001 · Concern')
+    expect(risks.getByText("The assistant's sentence")).toBeTruthy()
     expect(risks.queryByText(/no authentication/)).toBeNull()
 
     const suspicions = within(screen.getByTestId('critique-suspicions'))

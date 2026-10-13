@@ -43,25 +43,38 @@ internal sealed class ReviewFacts
             }
         }
 
-        // What an on-path contract hangs from is on the path too: the service that serves an
-        // operation, the channel and the consumer of a subscription, the producer of a message
-        // and the bindings that leave an on-path channel.
-        foreach (var (id, promises) in _path.ToList())
+        // What an on-path thing hangs from is on the path too, and so is what hangs from that:
+        // the expansion runs until nothing new is found.
+        var open = new Queue<Guid>(_path.Keys);
+        while (open.TryDequeue(out var id))
         {
-            IEnumerable<Guid> more =
-                Model.Operations.TryGetValue(id, out var operation) ? [operation.OwnerId]
-                : Model.Subscriptions.TryGetValue(id, out var subscription)
-                    ? new Guid?[] { subscription.ChannelId, subscription.ConsumerId, subscription.DeadLetterChannelId?.Value }.OfType<Guid>()
-                : Model.Messages.TryGetValue(id, out var message) ? [message.ProducerId]
-                : Model.Channels.ContainsKey(id) ? Model.Bindings.Values.Where(b => b.SourceChannelId.Value == id).SelectMany(b => new Guid[] { b.Id, b.TargetChannelId })
-                : [];
-            foreach (var extra in more.ToList())
+            foreach (var extra in HangsFrom(id))
             {
-                foreach (var promise in promises)
-                    OnPath(extra, promise);
+                var added = false;
+                foreach (var promise in _path[id].ToList())
+                    added |= OnPath(extra, promise);
+                if (added)
+                    open.Enqueue(extra);
             }
         }
     }
+
+    /// <summary>
+    /// What a thing on a promise path brings with it: the service that serves an operation;
+    /// the channel, the consumer and the dead-letter channel of a subscription; the producer
+    /// of a message; the subscriptions on a channel, the bindings that leave it and the
+    /// channels those lead to.
+    /// </summary>
+    private IEnumerable<Guid> HangsFrom(Guid id) =>
+        Model.Operations.TryGetValue(id, out var operation) ? [operation.OwnerId]
+        : Model.Subscriptions.TryGetValue(id, out var subscription)
+            ? new Guid?[] { subscription.ChannelId, subscription.ConsumerId, subscription.DeadLetterChannelId?.Value }.OfType<Guid>()
+        : Model.Messages.TryGetValue(id, out var message) ? [message.ProducerId]
+        : Model.Bindings.TryGetValue(id, out var binding) ? [binding.TargetChannelId]
+        : Model.Channels.ContainsKey(id)
+            ? Model.Subscriptions.Values.Where(s => s.ChannelId.Value == id).Select(s => s.Id.Value)
+                .Concat(Model.Bindings.Values.Where(b => b.SourceChannelId.Value == id).Select(b => b.Id.Value))
+        : [];
 
     public BuildView View { get; }
     public ModelState Model { get; }
@@ -79,7 +92,7 @@ internal sealed class ReviewFacts
         _ => [],
     };
 
-    /// <summary>The approved promises whose path holds the thing: a link, or a step of a linked scenario.</summary>
+    /// <summary>The approved promises whose path holds the thing: a link, a step of a linked scenario, or what such a thing hangs from.</summary>
     public IReadOnlyList<PromiseDto> PromisesOn(Guid id) =>
         _path.TryGetValue(id, out var promises) ? [.. promises.Select(p => _promises[p]).OrderBy(p => p.RequirementId, StringComparer.Ordinal)] : [];
 
@@ -153,13 +166,43 @@ internal sealed class ReviewFacts
         return [.. View.Subscriptions.Where(s => reached.Contains(s.ChannelId))];
     }
 
+    /// <summary>
+    /// The facts a message passes on its way from the channel to the subscriptions behind it:
+    /// each binding that leaves a reached channel, and each channel behind such a binding. A
+    /// rule that reads <see cref="ReachableSubscriptions"/> reads these too.
+    /// </summary>
+    public IReadOnlyList<Guid> Route(ChannelId channel)
+    {
+        var reached = ChannelRouting.Reachable(Trace, channel);
+        return [.. reached.Where(c => c != channel).Select(c => c.Value)
+            .Concat(View.Bindings.Where(b => reached.Contains(b.SourceChannelId)).Select(b => b.Id.Value)).Order()];
+    }
+
+    /// <summary>
+    /// The channels and the bindings on a way from one channel to another through bindings,
+    /// with both ends. Empty when no way exists.
+    /// </summary>
+    public IReadOnlyList<Guid> Between(ChannelId from, ChannelId to)
+    {
+        var onWay = ChannelRouting.Reachable(Trace, from).Where(c => ChannelRouting.Reachable(Trace, c).Contains(to)).ToHashSet();
+        return [.. onWay.Select(c => c.Value)
+            .Concat(View.Bindings.Where(b => onWay.Contains(b.SourceChannelId) && onWay.Contains(b.TargetChannelId)).Select(b => b.Id.Value)).Order()];
+    }
+
+    /// <summary><see cref="Doubt"/> for a list of IDs.</summary>
+    public string? DoubtAmong(IEnumerable<Guid> ids) => Doubt([.. ids.Select(id => (Guid?)id)]);
+
+    /// <summary>The IDs among <paramref name="ids"/> that name a fact of the model. A scenario, a schema and a promise have no truth label.</summary>
+    public IEnumerable<Guid> Facts(IEnumerable<Guid> ids) => ids.Where(id => Fact(id) is not null);
+
     private IEnumerable<(Scenario Scenario, T Step)> Steps<T>() where T : Step =>
         View.Scenarios.SelectMany(scenario => View.Steps[scenario.Id.Value].Select(s => s.Step).OfType<T>().Select(step => (scenario, step)));
 
-    private void OnPath(Guid id, Guid promiseId)
+    /// <returns>True when the promise was not on the thing before.</returns>
+    private bool OnPath(Guid id, Guid promiseId)
     {
         if (!_path.TryGetValue(id, out var promises))
             _path[id] = promises = [];
-        promises.Add(promiseId);
+        return promises.Add(promiseId);
     }
 }

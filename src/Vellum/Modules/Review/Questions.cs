@@ -32,7 +32,7 @@ public sealed record QuestionDto(
 /// <summary>
 /// The open questions of a project: what the design leaves undecided. A person, an agent
 /// token with the <c>propose</c> scope or a kept AI suggestion opens one. Only a person
-/// answers or drops one.
+/// answers or drops one, and only while it is open: an answer is not replaced.
 /// </summary>
 public static class Questions
 {
@@ -143,14 +143,24 @@ public static class Questions
         return await CloseAsync(db, projectId, questionId, QuestionStatus.Dropped, null, userId, time.GetUtcNow(), ct);
     }
 
+    /// <summary>
+    /// Answers or drops an open question. The status is checked in the statement that writes
+    /// it, so of two people who close one question at the same time one is first, and the
+    /// other gets a 409 and not the first answer overwritten.
+    /// </summary>
     private static async Task<IResult> CloseAsync(
         ReviewDbContext db, Guid projectId, Guid questionId, string status, string? answer, string userId, DateTimeOffset now, CancellationToken ct)
     {
-        if (await db.Questions.FirstOrDefaultAsync(q => q.Id == questionId && q.ProjectId == projectId, ct) is not { } row)
+        var closed = await db.Questions
+            .Where(q => q.Id == questionId && q.ProjectId == projectId && q.Status == QuestionStatus.Open)
+            .ExecuteUpdateAsync(set => set
+                .SetProperty(q => q.Status, status).SetProperty(q => q.Answer, answer)
+                .SetProperty(q => q.AnsweredBy, userId).SetProperty(q => q.AnsweredAt, now), ct);
+        if (await db.Questions.AsNoTracking().FirstOrDefaultAsync(q => q.Id == questionId && q.ProjectId == projectId, ct) is not { } row)
             return ReviewAccess.NotFound("Question");
-        (row.Status, row.Answer, row.AnsweredBy, row.AnsweredAt) = (status, answer, userId, now);
-        await db.SaveChangesAsync(ct);
-        return Results.Ok(ToDto(row));
+        return closed == 1
+            ? Results.Ok(ToDto(row))
+            : ReviewAccess.Conflict($"The question is {row.Status}. Only an open question is answered or dropped. Read the questions again.");
     }
 
     public static async Task<IResult> Delete(

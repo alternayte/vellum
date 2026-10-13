@@ -89,20 +89,40 @@ public static class DecisionDecider
             : new Outcome.Success([new DecisionEvent.DecisionChanged(content, userId, now)]);
     }
 
-    /// <param name="stamp">Gives, for a finding the decision settles, what that finding is now.</param>
-    public static Outcome Accept(DecisionState state, Guid projectId, Func<Settles, SettlementStamp> stamp, string userId, DateTimeOffset now)
+    public const string ChangedMessage = "The decision changed after it was read. Read it again before you accept or reject it.";
+
+    /// <summary>
+    /// The content hash of the decision as it is now, when it is not the one the person read.
+    /// Null when the hash names exactly this decision, and when the decision does not exist.
+    /// </summary>
+    public static string? Changed(DecisionState state, Guid projectId, string? contentHash)
     {
         if (!state.ExistsIn(projectId))
-            return new Outcome.NotFound(NotFoundMessage);
-        if (state.Status != DecisionStatus.Proposed)
-            return new Outcome.Conflict($"The decision is {state.Status}. Only a proposed decision is accepted.");
-        return new Outcome.Success([new DecisionEvent.DecisionAccepted(userId, now, [.. state.Content!.Settles.Select(stamp)])]);
+            return null;
+        var current = DecisionContentHash.Of(state);
+        return string.Equals(current, contentHash, StringComparison.Ordinal) ? null : current;
     }
 
-    public static Outcome Reject(DecisionState state, Guid projectId, string? reason, string userId, DateTimeOffset now)
+    /// <param name="contentHash">The hash of what the person read. The acceptance binds that decision and no other.</param>
+    /// <param name="stamp">Gives, for a finding the decision settles, what that finding is now.</param>
+    public static Outcome Accept(DecisionState state, Guid projectId, string? contentHash, Func<Settles, SettlementStamp> stamp, string userId, DateTimeOffset now)
     {
         if (!state.ExistsIn(projectId))
             return new Outcome.NotFound(NotFoundMessage);
+        if (Changed(state, projectId, contentHash) is not null)
+            return new Outcome.Conflict(ChangedMessage);
+        if (state.Status != DecisionStatus.Proposed)
+            return new Outcome.Conflict($"The decision is {state.Status}. Only a proposed decision is accepted.");
+        return new Outcome.Success([new DecisionEvent.DecisionAccepted(userId, now, [.. state.Content!.Settles.Select(stamp)], contentHash)]);
+    }
+
+    /// <param name="contentHash">The hash of what the person read: a proposal to reject, or an accepted decision to withdraw.</param>
+    public static Outcome Reject(DecisionState state, Guid projectId, string? contentHash, string? reason, string userId, DateTimeOffset now)
+    {
+        if (!state.ExistsIn(projectId))
+            return new Outcome.NotFound(NotFoundMessage);
+        if (Changed(state, projectId, contentHash) is not null)
+            return new Outcome.Conflict(ChangedMessage);
         if (state.Status == DecisionStatus.Rejected)
             return new Outcome.Conflict("The decision is rejected already.");
         if (TextRule.Lines("reason", reason) is { } error)

@@ -59,8 +59,21 @@ internal static class CritiqueSchema
 /// <param name="KeptAs">The open question of the project that a person made of it.</param>
 public sealed record CritiqueQuestion(IReadOnlyList<Cited> About, string Text, string? Why, string Source, string? Note, Guid? KeptAs = null);
 
-/// <summary>A risk the assistant named that a finding of a rule supports. The finding is the fact; the sentence is the assistant's.</summary>
-public sealed record CritiqueRisk(IReadOnlyList<Cited> About, string Claim, string RuleId, Guid SubjectId);
+/// <summary>
+/// A risk the assistant named that a finding of a rule supports. The finding is the fact. The
+/// claim is the assistant's sentence: the server checks that the rule fired for a part the
+/// risk names, and it does not check what the sentence says. A reader gets the sentence of
+/// the finding beside it, and the claim is never the result of the rule.
+/// </summary>
+/// <param name="Claim">The sentence of the assistant.</param>
+/// <param name="RuleId">The rule whose finding supports the risk.</param>
+/// <param name="SubjectId">The subject of that finding.</param>
+/// <param name="FindingResult">The result of that finding: <c>concern</c> or <c>unknown</c>. Null in a critique that was stored before it was kept.</param>
+/// <param name="FindingReason">The sentence of that finding, as the rule gave it when the critique was made. Null in a critique that was stored before it was kept.</param>
+/// <param name="ClaimSource">Always <c>assistant</c>: who wrote <paramref name="Claim"/>.</param>
+public sealed record CritiqueRisk(
+    IReadOnlyList<Cited> About, string Claim, string RuleId, Guid SubjectId,
+    string? FindingResult = null, string? FindingReason = null, string ClaimSource = "assistant");
 
 /// <param name="Settles">The findings the decision would answer: only findings that the named rule gave for a named part.</param>
 /// <param name="KeptAs">The proposed decision that a person made of it.</param>
@@ -170,7 +183,7 @@ internal static partial class CritiqueGrounding
                               ?? fired[ruleId].FirstOrDefault(f => about.Any(a => f.Cites.Any(c => c.Id == a.Id)));
                 if (support is not null)
                 {
-                    risks.Add(new(about, claim, support.RuleId, support.Subject.Id));
+                    risks.Add(new(about, claim, support.RuleId, support.Subject.Id, support.Result, support.Reason));
                     continue;
                 }
                 note = RuleSet.IsRule(ruleId)

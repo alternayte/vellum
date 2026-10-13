@@ -45,7 +45,8 @@ public sealed record PinnedSource(
 /// The decision streams, from the format <c>vellum-bundle/3</c> on. Null in a pinned state of
 /// the format <c>vellum-bundle/2</c>, which was made before the review existed: such a state
 /// is generated as it was then, with no review and no decision, and the member is left out of
-/// its JSON so that its manifest keeps its bytes.
+/// its JSON so that its manifest keeps its bytes. Only <c>POST build/verify</c> generates such a
+/// state; an export refuses it, because a state with no review has no review blocker.
 /// </param>
 public sealed record PinnedState(
     Guid ProjectId, string ProjectName, Guid Branch, long StreamVersion, Guid? RevisionId,

@@ -14,7 +14,8 @@ function QuestionRow({ projectId, question, onChanged }: { projectId: string; qu
         : action === 'drop' ? reviewApi.dropQuestion(projectId, question.id)
         : reviewApi.deleteQuestion(projectId, question.id),
     onSuccess: () => { setAnswering(false); onChanged() },
-    onError: shownInline,
+    // A refusal can mean that another person closed the question first: the list is read again, so the stored answer shows.
+    onError: () => { shownInline(); onChanged() },
   })
 
   return (

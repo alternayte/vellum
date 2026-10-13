@@ -10,10 +10,10 @@ internal static class TruthRules
     public static readonly Rule[] All =
     [
         new("TRU-001", 1, RuleCategory.Truth, "An approved promise stands on confirmed facts",
-            "Each fact on the path of an approved promise (its links, the steps of its linked scenarios and what those contracts hang from): the truth label and the stale mark.",
+            "Each fact on the path of an approved promise: the truth label and the stale mark. The path is the links of the promise, the steps of its linked scenarios and, from each of those to the end, the service of an operation, the channel, the consumer and the dead-letter channel of a subscription, the producer of a message, and the subscriptions and bindings of a channel.",
             "Confirm the fact or remove it. An accepted decision settles the finding, and it does not change the label: the Build blocker of the fact itself stays until a person confirms the fact.",
             UnconfirmedOnPath),
-        new("TRU-002", 1, RuleCategory.Truth, "A promise in force has current evidence",
+        new("TRU-002", 2, RuleCategory.Truth, "A promise in force has current evidence",
             "Each promise: the evidence status that the Promises module computes for the revision in force. The rule does not compute it again.",
             "Run the checks on the pinned inputs, or record evidence for the commit the model follows.",
             PromiseEvidence),
@@ -66,13 +66,19 @@ internal static class TruthRules
             if (missing.Count > 0) parts.Add($"{string.Join(", ", missing)} has no result");
             if (status.Gaps.Count > 0) parts.Add($"its status lists {Count(status.Gaps.Count, "gap")}");
 
+            // The sentence counts the failed obligations and the gaps; the fingerprint holds each of them.
+            string[] basis =
+            [
+                .. status.Obligations.Select(o => $"{o.ObligationId} {o.Result} {(o.Current == true ? "current" : "not current")}").Order(StringComparer.Ordinal),
+                .. status.Gaps.Order(StringComparer.Ordinal),
+            ];
             yield return parts.Count == 0
                 ? new(RuleResult.Verified, id, [],
                     $"The declared model satisfies the rule: every obligation of {promise.RequirementId} has a result that passed on the pinned inputs. Each result covers only what its check names.",
                     "The result is a concern when a result is missing, failed or for inputs that moved.")
                 : new(RuleResult.Concern, id, [],
                     $"The evidence of {promise.RequirementId} is not current: {string.Join("; ", parts)}.",
-                    "The result is verified when every obligation has a passed result on the pinned inputs and the status has no gap.");
+                    "The result is verified when every obligation has a passed result on the pinned inputs and the status has no gap.", Basis: basis);
         }
     }
 }

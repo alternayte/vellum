@@ -79,29 +79,37 @@ public class RuleTests
     }
 
     [Fact]
-    public void REL_004_a_publish_to_a_topic_that_no_subscription_can_be_reached_from_is_a_concern_and_blocks_on_a_promise_path()
+    public void REL_004_a_publish_to_a_channel_that_no_subscription_can_be_reached_from_is_a_concern_and_blocks_on_a_promise_path()
     {
         Fixture Model() => Shop()
             .Message(40, "OrderCreated", 3)
             .Channel(20, "lonely").Channel(21, "routed", ChannelKind.Exchange).Channel(22, "work", ChannelKind.Queue).Channel(23, "idle")
-            .Channel(24, "doubtful")
+            .Channel(24, "doubtful").Channel(25, "unread", ChannelKind.Queue).Channel(26, "forwarded", ChannelKind.Queue)
             .Binding(35, 21, 22).Subscription(30, 22, 4, attempts: 2)
             .Subscription(31, 24, 4, attempts: 2).Label(31, FactStatus.Declared, stale: true)
-            .Scenario(60, "Publish", Publish("p1", 3, 20, 40), Publish("p2", 3, 21, 40), Publish("p3", 3, 22, 40), Publish("p4", 3, 24, 40));
+            .Binding(36, 26, 22)
+            .Scenario(60, "Publish", Publish("p1", 3, 20, 40), Publish("p2", 3, 21, 40), Publish("p3", 3, 22, 40), Publish("p4", 3, 24, 40),
+                Publish("p5", 3, 25, 40), Publish("p6", 3, 26, 40));
 
         var report = Model().Review();
         Assert.Equal((Concern, Severity.Warning), (report.Result("REL-004", 20), report.Of("REL-004", 20).Severity));
         // The exchange reaches the subscription on the queue through its binding.
         Assert.Equal(Verified, report.Result("REL-004", 21));
         Assert.Contains("declared model satisfies", report.Of("REL-004", 21).Reason);
-        Assert.Equal(NotApplicable, report.Result("REL-004", 22));
+        // A queue with a consumer, and a queue whose binding leads to one.
+        Assert.Equal(Verified, report.Result("REL-004", 22));
+        Assert.Equal(Verified, report.Result("REL-004", 26));
         Assert.Equal(NotApplicable, report.Result("REL-004", 23));
         // The only subscription behind it is stale: the rule does not count it and does not say "concern".
         Assert.Equal(Unknown, report.Result("REL-004", 24));
+        // A queue that a scenario publishes to and that nothing consumes: the message stays there.
+        Assert.Equal((Concern, Severity.Warning), (report.Result("REL-004", 25), report.Of("REL-004", 25).Severity));
+        Assert.Contains("queue 'unread'", report.Of("REL-004", 25).Reason);
 
         var promised = Model().Promise(80, "ORD-001", scenarios: [60]).Review();
         Assert.Equal((Concern, Severity.Blocking), (promised.Result("REL-004", 20), promised.Of("REL-004", 20).Severity));
         Assert.Contains("ORD-001", promised.Of("REL-004", 20).Reason);
+        Assert.Equal((Concern, Severity.Blocking), (promised.Result("REL-004", 25), promised.Of("REL-004", 25).Severity));
     }
 
     [Fact]
@@ -185,7 +193,8 @@ public class RuleTests
             .Review();
 
         Assert.Equal(Verified, report.Result("CON-003", 60));
-        Assert.Equal([G(70)], report.Of("CON-003", 60).Cites.Select(c => c.Id));
+        // It cites the schema and the operation that names it.
+        Assert.Equal([G(70), G(10)], report.Of("CON-003", 60).Cites.Select(c => c.Id));
         Assert.Equal((Concern, Severity.Blocking), (report.Result("CON-003", 61), report.Of("CON-003", 61).Severity));
         Assert.Contains("schema-mismatch", report.Of("CON-003", 61).Reason);
         // Nothing was validated, so the rule does not say "verified".
@@ -238,6 +247,59 @@ public class RuleTests
         Assert.Equal([G(80)], report.Of("TRU-001", 11).Cites.Select(c => c.Id));
         // A draft promise has no path: the fact it links gets no finding of this rule.
         Assert.Null(report.Find("TRU-001", 13));
+    }
+
+    [Fact]
+    public void TRU_001_reaches_the_subscriptions_on_a_linked_channel_and_behind_its_bindings()
+    {
+        var report = Shop()
+            .Element(6, ElementKind.App, "Shipping", 2)
+            .Channel(20, "events", ChannelKind.Exchange).Channel(21, "billing", ChannelKind.Queue).Channel(22, "billing.dlq", ChannelKind.Queue)
+            .Channel(23, "off-path")
+            .Binding(35, 20, 21)
+            .Subscription(30, 20, 4, attempts: 2).Label(30, FactStatus.Inferred)
+            .Subscription(31, 21, 6, attempts: 2, deadLetter: 22).Label(31, FactStatus.Inferred).Label(6, FactStatus.Inferred)
+            .Subscription(32, 22, 3, attempts: 2).Label(32, FactStatus.Declared, stale: true)
+            .Subscription(33, 23, 4).Label(33, FactStatus.Inferred)
+            .Promise(80, "ORD-001", channels: [20])
+            .Review();
+
+        // The subscription on the linked channel, the one behind its binding, the consumer of
+        // that one, and the reader of its dead-letter channel: the promise stands on each.
+        foreach (var fact in new[] { 30, 31, 6, 32 })
+            Assert.Equal((Concern, Severity.Blocking), (report.Result("TRU-001", fact), report.Of("TRU-001", fact).Severity));
+        foreach (var fact in new[] { 20, 35, 21, 22, 4, 3 })
+            Assert.Equal(Verified, report.Result("TRU-001", fact));
+        Assert.Null(report.Find("TRU-001", 33));
+        Assert.Null(report.Find("TRU-001", 23));
+    }
+
+    [Fact]
+    public void The_fingerprint_of_a_finding_changes_when_a_fact_changes_that_its_sentence_only_counts()
+    {
+        Fixture Payloads(string second) => Shop()
+            .Schema(70, "OrderRequest").Operation(10, 3, "POST /orders", request: 70)
+            .Scenario(60, "Invalid", Call("a", 1, 10, """{"id":7}"""), Call(second, 1, 10, """{"id":8}"""));
+        var (first, other) = (Payloads("b").Review().Of("CON-003", 60), Payloads("c").Review().Of("CON-003", 60));
+        // Two refused payloads, the first is the same: the sentence is the same and the finding is not.
+        Assert.Equal((Concern, first.Reason), (first.Result, other.Reason));
+        Assert.NotEqual(first.Fingerprint, other.Fingerprint);
+
+        Fixture Datasets(string second, int writer) => Shop()
+            .Element(6, ElementKind.App, "Shipping", 2)
+            .Scenario(60, "Writes",
+                Write("w1", 3, 5, "a-orders"), Write("w2", 4, 5, "a-orders"), Write("w3", 3, 5, second), Write("w4", writer, 5, second),
+                Write("w5", 4, 5, "c-parcels"), Write("w6", 6, 5, "c-parcels"));
+        var shared = Datasets("b-audit", 4).Review().Of("CON-005", 5);
+        Assert.Equal(Concern, shared.Result);
+        // Another dataset is shared, and then the same dataset has another writer. The sentence and the cited elements are the same.
+        foreach (var changed in new[] { Datasets("b-ledger", 4), Datasets("b-audit", 6) })
+        {
+            var finding = changed.Review().Of("CON-005", 5);
+            Assert.Equal(shared.Reason, finding.Reason);
+            Assert.Equal(shared.Cites, finding.Cites);
+            Assert.NotEqual(shared.Fingerprint, finding.Fingerprint);
+        }
     }
 
     [Fact]
@@ -399,30 +461,61 @@ public class RuleTests
         static Fixture Sound() => new Fixture()
             .Element(1, ElementKind.Actor, "Customer").Element(2, ElementKind.System, "Shop")
             .Element(3, ElementKind.App, "Orders", 2).Element(4, ElementKind.App, "Billing", 2).Element(5, ElementKind.Store, "Orders DB", 2)
+            // Only a relationship names the ledger.
+            .Element(6, ElementKind.Store, "Ledger", 2).Relationship(50, 1, 6)
+            .Element(7, ElementKind.App, "Shipping", 2)
             .Schema(70, "Order")
             .Operation(10, 3, "POST /orders", request: 70).Operation(11, 4, "POST /charges", request: 70, timeoutMs: 500)
             .Message(40, "OrderCreated", 3, schema: 70)
             .Channel(20, "exchange", ChannelKind.Exchange).Channel(21, "queue", ChannelKind.Queue).Channel(22, "dlq", ChannelKind.Queue)
             .Binding(35, 20, 21, "order.*")
-            .Subscription(30, 21, 4, attempts: 3, deadLetter: 22).Subscription(31, 22, 3, attempts: 2)
+            .Subscription(30, 21, 7, attempts: 3, deadLetter: 22).Subscription(31, 22, 3, attempts: 2)
             .Scenario(60, "Place",
                 Call("a", 1, 10, """{"id":"o-1"}""", Call("b", 3, 11, """{"id":"o-1"}"""), Write("w", 3, 5, "orders")),
                 Publish("p", 3, 20, 40, """{"id":"o-1"}""", "order.created"))
             .Promise(80, "ORD-001", scenarios: [60]);
 
         var sound = Sound().Review();
-        Assert.DoesNotContain(sound.Findings, f => f.Result == Concern && f.Category != RuleCategory.Overengineering);
+        Assert.DoesNotContain(sound.Findings, f => f.Result == Concern);
+        // Every rule that can say "verified" says it here, so every such rule is under test below.
+        Assert.Equal(
+            RuleSet.Catalogue.Select(r => r.Id).Except(["REL-003"]),
+            sound.Findings.Where(f => f.Result == Verified).Select(f => f.RuleId).Distinct());
+
+        // What each rule reads for one subject beside the subject itself.
+        (string Rule, int Subject, int[] Reads)[] reads =
+        [
+            ("REL-001", 30, [21, 7, 22]),
+            ("REL-002", 60, [10, 11]),
+            ("REL-004", 20, [35, 21, 30]),
+            ("REL-005", 22, [30, 31]),
+            ("REL-006", 35, [20, 21]),
+            ("CON-001", 10, [3]), ("CON-001", 40, [3]),
+            ("CON-003", 60, [10, 11, 40]),
+            ("CON-004", 40, [3]),
+            ("CON-005", 5, [3]),
+            ("OVR-001", 4, [3, 11]), ("OVR-001", 7, [30]), ("OVR-001", 3, [1, 4, 10, 11, 5, 20, 40, 31]),
+            ("OVR-002", 20, [3, 30, 7, 35, 21, 22, 2]),
+            ("OVR-003", 2, [3, 4, 5, 6, 7, 1, 10, 50]),
+            ("OVR-004", 20, [35, 21, 30]), ("OVR-004", 22, [31]),
+            ("OVR-005", 6, [50]),
+        ];
+        Assert.All(reads, r => Assert.Equal(Verified, sound.Result(r.Rule, r.Subject)));
 
         foreach (var (status, stale) in new[] { (FactStatus.Inferred, false), (FactStatus.Unknown, false), (FactStatus.Declared, true) })
         {
-            foreach (var fact in new[] { 3, 4, 10, 11, 20, 21, 22, 30, 31, 35, 40 })
+            foreach (var fact in new[] { 1, 2, 3, 4, 5, 6, 7, 10, 11, 20, 21, 22, 30, 31, 35, 40, 50 })
             {
                 var report = Sound().Label(fact, status, stale).Review();
-                // The fact itself is never the subject of a verified result, in any rule.
-                Assert.True(!report.Findings.Any(f => f.Subject.Id == G(fact) && f.Result == Verified),
-                    $"{status}{(stale ? " stale" : "")} fact {fact}: {string.Join(", ", report.Findings.Where(f => f.Subject.Id == G(fact) && f.Result == Verified).Select(f => f.RuleId))}");
-                // And on the path of the promise (a step of its scenario, or what such a contract hangs from) it is a blocking concern.
-                if (fact is not (22 or 30 or 31))
+                var doubt = $"{status}{(stale ? " stale" : "")} fact {fact}";
+                // No verified result of any rule is about the fact or cites it.
+                var promoted = report.Findings.Where(f => f.Result == Verified && (f.Subject.Id == G(fact) || f.Cites.Any(c => c.Id == G(fact))));
+                Assert.True(!promoted.Any(), $"{doubt}: {string.Join(", ", promoted.Select(f => $"{f.RuleId} {f.Subject.Name}"))}");
+                // No rule that reads the fact for another subject says verified or concern there.
+                Assert.All(reads.Where(r => r.Reads.Contains(fact)), r =>
+                    Assert.True(report.Result(r.Rule, r.Subject) == Unknown, $"{doubt}: {r.Rule} for {r.Subject} is {report.Result(r.Rule, r.Subject)}"));
+                // On the path of the promise it is a blocking concern. The system and the ledger are not on the path.
+                if (fact is not (2 or 6 or 50))
                     Assert.Equal((Concern, Severity.Blocking), (report.Result("TRU-001", fact), report.Of("TRU-001", fact).Severity));
             }
         }
