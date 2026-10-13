@@ -15,6 +15,9 @@ import { TraceDock } from '@/components/trace/trace-dock'
 import { ContractsFlyout } from '@/components/trace/contracts-flyout'
 import { ScenariosFlyout } from '@/components/trace/scenarios-flyout'
 import { ImportFlyout } from '@/components/import/import-flyout'
+import { AssistantFlyout } from '@/components/assistant/assistant-flyout'
+import { useRunScenario } from '@/hooks/use-scenarios'
+import { useTraceStore } from '@/stores/trace-store'
 import type { ScenarioReference } from '@/components/trace/scenario-editor'
 import { useChannels, useOperations, useSubscriptions } from '@/hooks/use-contracts'
 import { useElements, useAddElement, useUpdateElement, useRemoveElement } from '@/hooks/use-elements'
@@ -70,6 +73,9 @@ function ProjectWorkspace() {
       ...(messages ?? []).map((m) => ({ group: 'Messages' as const, id: m.id, label: m.name })),
     ]
   }, [elements, operations, channels, subscriptions, messages])
+  const referenceLabels = useMemo(() => Object.fromEntries(scenarioReferences.map((r) => [r.id, r.label])), [scenarioReferences])
+  const runScenario = useRunScenario(projectId, contractBranchId)
+  const playingScenarioId = useTraceStore((s) => s.scenarioId)
   const { data: schemas } = useSchemas(projectId)
   const { data: views } = useViews(projectId)
   const { data: docs } = useDocs(projectId)
@@ -626,6 +632,15 @@ function ProjectWorkspace() {
             <ScenariosFlyout projectId={projectId} branchId={contractBranchId} references={scenarioReferences} />
           )}
           {activeFlyout === 'import' && <ImportFlyout projectId={projectId} />}
+          {activeFlyout === 'assistant' && (
+            <AssistantFlyout
+              projectId={projectId}
+              branchId={contractBranchId}
+              labels={referenceLabels}
+              playingScenarioId={playingScenarioId}
+              onPlayScenario={(scenarioId) => runScenario.mutate(scenarioId, { onSuccess: (run) => useTraceStore.getState().load(run, scenarioId) })}
+            />
+          )}
           {activeFlyout === 'search' && null /* ⌘K handles search for now */}
         </LeftToolbar>
         <main className="relative flex-1">

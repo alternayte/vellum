@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <StartArguments>--password pl4nt-flag-csproj -p pl4nt-flag-csproj2 --api-key pl4nt-flag-csproj3</StartArguments>
+    <RestoreSources>//deploy:pl4nt-url-csproj@nuget.acme.example/v3/index.json;deploy:pl4nt-url-csproj2@nuget2.acme.example</RestoreSources>
+    <Shibboleth>pl4nt-short-csproj</Shibboleth>
+    <Pin>4821-pl4nt-short</Pin>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MassTransit.RabbitMQ" Version="8.3.4" />
+    <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.2" />
+    <Content Include="schema.json" default="pl4nt-schema-csproj" const="pl4nt-schema-csproj2" example="pl4nt-schema-csproj3">
+      <enum>pl4nt-schema-csproj4</enum>
+    </Content>
+  </ItemGroup>
+
+</Project>

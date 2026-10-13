@@ -109,7 +109,7 @@ public class ExtractionSafetyTests
         // The YAML bomb reached a bound, so the result does not claim to be complete.
         Assert.False(result.IsComplete);
         // The files that can be read were read.
-        Assert.True(result.Has("operation:api:GET /orders"));
+        Assert.True(result.Has("operation:Api:GET /orders"));
         Assert.True(result.Has("operation:worker:GET /stock/{sku}"));
         Assert.True(result.Has("operation:openapi.yaml:GET /orders"));
     }
@@ -159,8 +159,8 @@ public class ExtractionSafetyTests
 
         // The route with a token in its path is not a fact; its neighbour is.
         Assert.Equal(
-            ["operation:api:GET /orders"],
-            result.Facts.Where(f => f.Kind == FactKind.Operation && f.Attr("service") == "service:api").Select(f => f.Key));
+            ["operation:Api:GET /orders"],
+            result.Facts.Where(f => f.Kind == FactKind.Operation && f.Attr("service") == "service:Api").Select(f => f.Key));
         Assert.Contains(new ExtractionNote(NoteKind.Redacted, "credential-like-value", "Api/Program.cs", 25), result.Notes);
         Assert.Contains(new ExtractionNote(NoteKind.Redacted, "credential-like-value", "Api/Program.cs", 26), result.Notes);
 
@@ -169,27 +169,31 @@ public class ExtractionSafetyTests
         // A summary with a password in it is dropped; the operation stays.
         Assert.Null(result.Fact("operation:openapi.yaml:GET /orders").Attr("summary"));
         Assert.Contains(new ExtractionNote(NoteKind.Redacted, "credential-like-value:summary", "openapi.yaml", 9), result.Notes);
-        // In a schema: the default of a property with a sensitive name is left out, a value
-        // that looks like a credential is replaced, and examples are never kept.
+        // A schema body holds structure and no value: no default and no example, whatever the property is named.
         Assert.Equal(
-            """{"properties":{"apiToken":{"type":"string"},"note":{"default":"[redacted]","type":"string"}},"type":"object"}""",
+            """{"properties":{"apiToken":{"type":"string"},"note":{"type":"string"}},"type":"object"}""",
             result.Fact("schema:openapi.yaml#/components/schemas/Login").Attr("schema"));
 
         // The image with a credential is dropped; the fact keeps what is safe.
-        var deployment = result.Fact("deployment:k8s:deployment/api");
+        var deployment = result.Fact("deployment:k8s:k8s/app.yaml#deployment/default/api");
         Assert.Null(deployment.Attr("images"));
         Assert.Equal("3", deployment.Attr("replicas"));
-        Assert.Null(result.Fact("deployment:k8s:service/api").Attr("selector"));
+        // The selector holds a label named like a credential: the safe label stays, the other is noted.
+        Assert.Equal("app=api", result.Fact("deployment:k8s:k8s/app.yaml#service/default/api").Attr("selector"));
+        Assert.Contains(new ExtractionNote(NoteKind.Redacted, "selector-not-emitted", "k8s/app.yaml", 25), result.Notes);
         var image = result.Fact("deployment:dockerfile:Dockerfile");
-        Assert.Equal(("alpine:3.20", "8080", null, null, null), (image.Attr("baseImage"), image.Attr("ports"), image.Attr("entrypoint"), image.Attr("command"), image.Attr("stageImages")));
-        Assert.Equal("POSTGRES_PASSWORD", result.Fact("datastore:db").Attr("environment"));
-        Assert.Null(result.Fact("deployment:compose:api").Attr("image"));
+        // The executable and the NAMES of the flags stay. The values, and the image with user information, do not.
+        Assert.Equal(("alpine:3.20", "8080", "/app --password", "--api-key", "alpine:3.20"), (image.Attr("baseImage"), image.Attr("ports"), image.Attr("entrypoint"), image.Attr("command"), image.Attr("stageImages")));
+        Assert.Contains(new ExtractionNote(NoteKind.Redacted, "image-reference-not-safe", "Dockerfile", 1), result.Notes);
+        Assert.Equal("POSTGRES_PASSWORD", result.Fact("datastore:.:db").Attr("environment"));
+        Assert.Null(result.Fact("deployment:compose:.:api").Attr("image"));
+        Assert.Equal("ConnectionStrings__App,GITHUB_TOKEN", result.Fact("deployment:compose:.:api").Attr("environment"));
 
         // A queue, exchange, topic or subject that is a token is not a channel.
         Assert.Equal(
-            ["channel:stock.reserved"],
+            ["channel:asyncapi.json#stock.reserved", "channel:nats:stock.reserved"],
             result.Facts.Where(f => f.Kind == FactKind.Channel).Select(f => f.Key));
-        Assert.Null(result.Fact("subscription:api:AuditConsumer:Audited").Attr("queue"));
+        Assert.Null(result.Fact("subscription:Api:AuditConsumer:Audited").Attr("queue"));
     }
 
     [Theory]
@@ -310,9 +314,9 @@ public class ExtractionSafetyTests
     {
         var result = Repo.Extract(
             ("Api/Api.csproj", """<Project Sdk="Microsoft.NET.Sdk.Web" />"""),
-            ("Api/Program.cs", "var app = builder.Build();\r\n// two\r// three\n\r\n\rapp.MapGet(\"/six\", () => 1);\r\n"));
+            ("Api/Program.cs", "var builder = WebApplication.CreateBuilder(args); var app = builder.Build();\r\n// two\r// three\n\r\n\rapp.MapGet(\"/six\", () => 1);\r\n"));
 
-        Assert.Equal(["Api/Program.cs:6-6"], result.Fact("operation:api:GET /six").Lines());
+        Assert.Equal(["Api/Program.cs:6-6"], result.Fact("operation:Api:GET /six").Lines());
     }
 
     // ---- bounds ----
@@ -355,7 +359,7 @@ public class ExtractionSafetyTests
             result.Notes.Where(n => n is { Kind: NoteKind.LimitReached, Reason: "limit:file-bytes" }).Select(n => n.Path));
         Assert.False(result.Has("operation:orders-api:POST /orders"));
         Assert.True(result.Has("service:orders-api"));
-        Assert.True(result.Has("datastore:postgres"));
+        Assert.True(result.Has("datastore:.:postgres"));
     }
 
     [Fact]
@@ -519,46 +523,115 @@ public class ExtractionSafetyTests
         "Dockerfile", "k8s/app.yml", ".github/workflows/ci.yml",
     ];
 
+    private static readonly (string Path, string Content)[] SoundOwners =
+    [
+        ("Api/Api.csproj", """<Project Sdk="Microsoft.NET.Sdk.Web"><ItemGroup><PackageReference Include="MassTransit.RabbitMQ" Version="8.3.4" /></ItemGroup></Project>"""),
+        ("svc/go.mod", "module github.com/acme/svc\n"),
+    ];
+
+    /// <summary>
+    /// The bound of one file: at most 64 operations for each byte, no failure note, and under
+    /// two seconds. The count is what holds on every machine; the clock shows the count is honest.
+    /// </summary>
+    private static string? Unbounded(string name, string path, string content)
+    {
+        // The .cs and .go rules need an owner, so a sound project and module stand beside the bad file.
+        var input = Repo.Of([(path, content), .. SoundOwners.Where(o => o.Path != path)]);
+        var bytes = Encoding.UTF8.GetByteCount(content);
+        var watch = Stopwatch.StartNew();
+        try
+        {
+            var result = EvidenceExtractor.Extract(input, null, out var work);
+            watch.Stop();
+            var json = ExtractionJson.Serialize(result);
+            var spent = work.GetValueOrDefault(path);
+            if (result.Notes.Any(n => n.Reason.StartsWith("extractor-failure", StringComparison.Ordinal) || n.Reason.StartsWith("out-of-memory", StringComparison.Ordinal)))
+                return $"{name} as {path}: extractor failure";
+            if (spent > 64L * bytes + 4096)
+                return $"{name} as {path}: {spent} operations for {bytes} bytes";
+            if (watch.Elapsed > TimeSpan.FromSeconds(2))
+                return $"{name} as {path}: {watch.Elapsed.TotalMilliseconds:F0} ms for {bytes} bytes";
+            if (Encoding.UTF8.GetByteCount(json) > 4 * 1024 * 1024)
+                return $"{name} as {path}: output of {json.Length} characters";
+            return null;
+        }
+        catch (Exception exception)
+        {
+            return $"{name} as {path}: {exception.GetType().Name}";
+        }
+    }
+
     [Fact]
-    public void No_input_makes_extraction_throw_or_run_away()
+    public void No_input_makes_extraction_throw_or_leave_its_bounds()
     {
         var failures = new List<string>();
-        var slowest = (Elapsed: TimeSpan.Zero, Case: "");
         foreach (var (name, content) in Malformed())
         {
             // A case over the size bound would be refused unread and would test nothing.
             Assert.True(Encoding.UTF8.GetByteCount(content) <= ExtractionLimits.Default.MaxFileBytes, $"{name} is over the file bound");
             foreach (var path in Names)
-            {
-                // The .cs and .go rules need an owner, so a sound project and module stand beside the bad file.
-                var files = new List<(string, string)> { (path, content) };
-                if (path != "Api/Api.csproj")
-                    files.Add(("Api/Api.csproj", """<Project Sdk="Microsoft.NET.Sdk.Web"><ItemGroup><PackageReference Include="MassTransit" Version="8.3.4" /></ItemGroup></Project>"""));
-                if (path != "svc/go.mod")
-                    files.Add(("svc/go.mod", "module github.com/acme/svc\n"));
-
-                var watch = Stopwatch.StartNew();
-                try
-                {
-                    var result = EvidenceExtractor.Extract(Repo.Of([.. files]));
-                    var json = ExtractionJson.Serialize(result);
-                    // An extractor that threw would have been caught and noted. None may.
-                    if (result.Notes.Any(n => n.Reason.StartsWith("extractor-failure", StringComparison.Ordinal)))
-                        failures.Add($"{name} as {path}: extractor failure");
-                    if (Encoding.UTF8.GetByteCount(json) > 4 * 1024 * 1024)
-                        failures.Add($"{name} as {path}: output of {json.Length} characters");
-                }
-                catch (Exception exception)
-                {
-                    failures.Add($"{name} as {path}: {exception.GetType().Name}");
-                }
-                if (watch.Elapsed > slowest.Elapsed)
-                    slowest = (watch.Elapsed, $"{name} as {path}");
-            }
+                if (Unbounded(name, path, content) is { } failure)
+                    failures.Add(failure);
         }
 
         Assert.Empty(failures);
-        Assert.True(slowest.Elapsed < TimeSpan.FromSeconds(10), $"{slowest.Case} took {slowest.Elapsed}");
+    }
+
+    private const int FileBound = 256 * 1024;
+
+    /// <summary>The unit repeated up to the file bound.</summary>
+    private static string Fill(string unit, string prefix = "", string suffix = "") =>
+        prefix + string.Concat(Enumerable.Repeat(unit, (FileBound - prefix.Length - suffix.Length) / unit.Length)) + suffix;
+
+    /// <summary>Openers nested up to the file bound, and then closed.</summary>
+    private static string Nest(string open, string close, string prefix)
+    {
+        var count = (FileBound - prefix.Length) / (open.Length + close.Length);
+        return prefix + string.Concat(Enumerable.Repeat(open, count)) + string.Concat(Enumerable.Repeat(close, count));
+    }
+
+    /// <summary>Each stage starts from the stage before it and exposes more ports, up to the file bound.</summary>
+    private static string ChainedStages()
+    {
+        var builder = new StringBuilder(FileBound);
+        for (var i = 0; ; i++)
+        {
+            var stage = $"FROM s{i} AS s{i + 1}\nEXPOSE 1 2 3 4 5 6 7 8 9 10 11 12 13\n";
+            if (builder.Length + stage.Length > FileBound)
+                return builder.ToString();
+            builder.Append(stage);
+        }
+    }
+
+    /// <summary>
+    /// The inputs of the review, each at the file bound. Before the fix (measured on this
+    /// code base at commit d63214f): 83 s, 84 s, 208 s, 53 s, 1.7 s with 412 MiB, 30 s with
+    /// 12.9 GiB, 36 s with 21 GiB, and 2 s with 3253 MiB.
+    /// </summary>
+    public static TheoryData<string, string, string> ReviewInputs() => new()
+    {
+        { "a run of dollars", "Api/Code.cs", Fill("$") },
+        { "an interpolation hole of dollars", "Api/Code.cs", Fill("$", "var s = $\"{") },
+        { "controller attribute groups on members without an end", "Api/Code.cs", Fill("[A] x ", "[ApiController] class A : ControllerBase { ", " }") },
+        { "controller verb attributes on members without an end", "Api/Code.cs", Fill("[HttpGet] x ", "[ApiController] class A : ControllerBase { ", " }") },
+        { "nested receive endpoints", "Api/Code.cs", Nest("x.ReceiveEndpoint(\"q\", e => { e.ConfigureConsumer<C>(x); ", "});", "using MassTransit; ") },
+        { "nested const blocks with names", "svc/main.go", Nest("const (\na = \"b\"\n", ")\n", "package main\n") },
+        { "nested const blocks", "svc/main.go", Nest("const (\n", ")\n", "package main\n") },
+        { "chained stages with ports", "Dockerfile", ChainedStages() },
+    };
+
+    [Theory]
+    [MemberData(nameof(ReviewInputs))]
+    public void Each_input_of_the_review_stays_near_linear_at_the_file_bound(string name, string path, string content)
+    {
+        Assert.InRange(Encoding.UTF8.GetByteCount(content), FileBound - 256, FileBound);
+
+        Assert.Null(Unbounded(name, path, content));
+        // The allocation bound, and the same bounds once more with a warm runtime.
+        var (result, work) = Repo.ExtractBounded(path, content, [.. SoundOwners.Where(o => o.Path != path)]);
+        Assert.InRange(work, 1, 64L * FileBound);
+        // No route is declared in any of them.
+        Assert.DoesNotContain(result.Facts, f => f.Kind == FactKind.Operation);
     }
 
     [Fact]
@@ -598,5 +671,307 @@ public class ExtractionSafetyTests
         Assert.Equal(ExtractionJson.Serialize(one), ExtractionJson.Serialize(other));
         Assert.Equal([new ExtractionNote(NoteKind.Skipped, "duplicate-path", "openapi.yaml", 0)], one.Notes);
         Assert.True(one.Has("operation:openapi.yaml:GET /a"));
+    }
+
+    // ---- the core: guard, keys, conflicts, bounds ----
+
+    [Theory]
+    // Space-separated flags, in shell form and as the items of a JSON array.
+    [InlineData("./app --password hunter2", true)]
+    [InlineData("redis-server --requirepass hunter2", true)]
+    [InlineData("mysql -p hunter2", true)]
+    [InlineData("[\"redis-server\", \"--requirepass\", \"hunter2\"]", true)]
+    [InlineData("app --api-key abc123 --verbose", true)]
+    // Flag NAMES without values are what a reduced command line holds.
+    [InlineData("./app --password --api-key", false)]
+    [InlineData("redis-server --requirepass -p", false)]
+    // Quoted keys, any casing, prefixes and suffixes.
+    [InlineData("{\"password\":\"x\"}", true)]
+    [InlineData("{'ApiKey' : 'x'}", true)]
+    [InlineData("DB_PASSWORD=x", true)]
+    [InlineData("myApiKey: x", true)]
+    [InlineData("client-secret-value=x", true)]
+    [InlineData("PASSWD=x", true)]
+    // User information without a scheme.
+    [InlineData("//admin:hunter2@api.example.com/v1", true)]
+    [InlineData("admin:hunter2@plain.example.com", true)]
+    [InlineData("https://u:p@ss/word@host/x", true)]
+    // An address and an action reference hold no user information.
+    [InlineData("ops@example.com", false)]
+    [InlineData("docker/build-push-action@v6", false)]
+    public void The_credential_guard_knows_the_shapes_the_review_found(string value, bool secret)
+    {
+        Assert.Equal(secret, CredentialGuard.LooksSecret(value));
+    }
+
+    [Theory]
+    [InlineData("Token:string;Password:string", false)]
+    [InlineData("ghp_abcdefghijklmnopqrstuvwxyz0123456789", true)]
+    public void A_declared_name_is_checked_for_the_shape_of_a_token_only(string value, bool secret)
+    {
+        Assert.Equal(secret, CredentialGuard.LooksSecretToken(value));
+        Assert.True(CredentialGuard.IsCredentialName("DB_PASSWORD") && CredentialGuard.IsCredentialName("apiToken") && !CredentialGuard.IsCredentialName("orderId"));
+        Assert.True(CredentialGuard.IsIdentifierToken("order.created-v2") && !CredentialGuard.IsIdentifierToken("two words") && !CredentialGuard.IsIdentifierToken(new string('a', 41)));
+    }
+
+    [Theory]
+    [InlineData("https://api.example.com/v1", "https://api.example.com/v1")]
+    [InlineData("https://admin:hunter2@api.example.com:8443/v1?token=x#frag", "https://api.example.com:8443/v1")]
+    [InlineData("//admin:hunter2@api.example.com/v1", "//api.example.com/v1")]
+    [InlineData("admin:hunter2@plain.example.com", "plain.example.com")]
+    [InlineData("amqp://u:p@1@broker:5672", "amqp://broker:5672")]
+    [InlineData("https://{env}.example.com:{port}/v1", "https://{env}.example.com:{port}/v1")]
+    [InlineData("https://[::1]:8080/x", "https://[::1]:8080/x")]
+    [InlineData("/v1?key=x", "/v1")]
+    // An '@' after the first '/' is a '/' in a password or an '@' in the path. Nothing says which.
+    [InlineData("https://u:p@ss/word@host/x", null)]
+    [InlineData("https://host/users/@me", null)]
+    [InlineData("https://u:p?x@host/", null)]
+    [InlineData("https://ho st/x", null)]
+    [InlineData("https://host:port/x", null)]
+    [InlineData("https://", null)]
+    [InlineData("", null)]
+    public void A_server_url_keeps_scheme_host_port_and_path_or_is_refused(string url, string? expected)
+    {
+        Assert.Equal(expected, CredentialGuard.SafeUrl(url));
+    }
+
+    [Theory]
+    [InlineData("/orders/", "/orders", "/orders")]
+    [InlineData("orders//{id:guid}/", "/orders/{id}", "/orders/{}")]
+    [InlineData("/orders/{orderId}", "/orders/{orderId}", "/orders/{}")]
+    [InlineData("/files/{*rest}", "/files/{rest}", "/files/{}")]
+    [InlineData("/files/{path...}", "/files/{path}", "/files/{}")]
+    [InlineData("/", "/", "/")]
+    [InlineData("", "/", "/")]
+    public void Every_extractor_spells_a_route_the_same_way(string raw, string path, string template)
+    {
+        Assert.Equal(path, RoutePath.Normalize(raw));
+        Assert.Equal(template, RoutePath.Template(RoutePath.Normalize(raw)));
+    }
+
+    private static SourceEvidence At(string path, int line) => new(path, line, line, "test.rule", 1);
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void Sources_that_disagree_on_an_attribute_give_a_conflict_and_no_winner_in_any_order(bool reversed)
+    {
+        (SourceEvidence At, (string, string?)[] Attributes)[] sources =
+        [
+            (At("b/consumer.go", 3), [("kind", "exchange"), ("type", "topic")]),
+            (At("a/Program.cs", 7), [("kind", "exchange"), ("type", "fanout"), ("durable", "true")]),
+            (At("a/Program.cs", 2), [("type", "fanout")]),
+        ];
+        var context = new ExtractionContext(ExtractionLimits.Default);
+        foreach (var source in reversed ? sources.Reverse() : sources)
+            context.Add(FactKind.Channel, "channel:amqp:order-events", "order-events", [source.At], source.Attributes);
+
+        var result = context.Result("r", "s");
+        var fact = Assert.Single(result.Facts);
+
+        Assert.Equal(
+            [("conflict.type", "fanout @ a/Program.cs:2-2 | topic @ b/consumer.go:3-3"), ("durable", "true"), ("kind", "exchange")],
+            fact.Attributes.Select(a => (a.Key, a.Value)));
+        Assert.Equal(["a/Program.cs:2-2", "a/Program.cs:7-7", "b/consumer.go:3-3"], fact.Lines());
+        Assert.Equal([new ExtractionNote(NoteKind.Conflict, "attribute:type", "a/Program.cs", 2)], result.Notes);
+    }
+
+    [Fact]
+    public void A_project_is_identified_by_its_directory_and_two_projects_never_share_an_identity()
+    {
+        var context = new ExtractionContext(ExtractionLimits.Default);
+        context.Accept(
+        [
+            new SourceFile("a/Api/Api.csproj", "<Project />"), new SourceFile("b/Api/Api.csproj", "<Project />"),
+            new SourceFile("src/One.csproj", "<Project />"), new SourceFile("src/Two.csproj", "<Project />"),
+            new SourceFile("Tool.csproj", "<Project />"), new SourceFile("Tool/Tool.csproj", "<Project />"),
+            new SourceFile("go.mod", "// tool\nmodule github.com/acme/worker/v2 // comment\n"),
+            new SourceFile("svc/worker/go.mod", "module github.com/acme/worker\n"),
+        ]);
+
+        Assert.Equal(
+            [
+                "Tool.csproj=Tool#Tool.csproj", "Tool/Tool.csproj=Tool#Tool/Tool.csproj", "a/Api/Api.csproj=a/Api", "b/Api/Api.csproj=b/Api",
+                "go.mod=worker", "src/One.csproj=src#src/One.csproj", "src/Two.csproj=src#src/Two.csproj", "svc/worker/go.mod=svc/worker",
+            ],
+            context.Files.Select(f => $"{f.Path}={context.ProjectId(f)}"));
+    }
+
+    [Fact]
+    public void The_work_budget_of_a_file_stops_at_the_same_count_and_marks_the_result_incomplete()
+    {
+        var context = new ExtractionContext(new ExtractionLimits(MaxWorkPerFile: 100));
+        var meter = context.Meter("a.cs");
+
+        Assert.True(meter.Charge(100));
+        Assert.False(meter.Charge());
+        Assert.False(meter.Charge());
+        Assert.True(context.Meter("b.cs").Charge(100));
+
+        var result = context.Result("r", "s");
+        Assert.False(result.IsComplete);
+        Assert.Equal([new ExtractionNote(NoteKind.LimitReached, "work-limit", "a.cs", 0)], result.Notes);
+        Assert.Equal((101L, 100L), (context.WorkSpent()["a.cs"], context.WorkSpent()["b.cs"]));
+    }
+
+    [Fact]
+    public void Nothing_that_an_extractor_throws_on_one_file_leaves_and_the_reason_is_a_fixed_code()
+    {
+        var context = new ExtractionContext(ExtractionLimits.Default);
+
+        context.Guarded("dotnet", "a.cs", () => throw new InvalidOperationException("repository text: hunter2"));
+        context.Guarded("go", "b.go", () => throw new OutOfMemoryException());
+        context.Guarded("go", "c.go", () => context.Add(FactKind.Service, "service:c", "c", At("c.go", 1)));
+
+        var result = context.Result("r", "s");
+        Assert.False(result.IsComplete);
+        Assert.Equal(
+            [
+                new ExtractionNote(NoteKind.ParseFailure, "extractor-failure:dotnet", "a.cs", 0),
+                new ExtractionNote(NoteKind.ParseFailure, "out-of-memory:go", "b.go", 0),
+            ],
+            result.Notes);
+        Assert.Equal(["service:c"], result.Facts.Select(f => f.Key));
+    }
+
+    [Fact]
+    public void One_file_cannot_take_every_fact_and_one_attribute_cannot_grow_without_bound()
+    {
+        var context = new ExtractionContext(new ExtractionLimits(MaxFactsPerFile: 2, MaxListItems: 3));
+        for (var i = 0; i < 5; i++)
+            context.Add(FactKind.Operation, $"operation:a:GET /{i}", $"GET /{i}", At("a.cs", i + 1));
+        context.Add(FactKind.Operation, "operation:b:GET /x", "GET /x", At("b.cs", 1));
+        var ports = context.List(Enumerable.Range(1, 50_000).Select(i => i.ToString(CultureInfo.InvariantCulture)), "Dockerfile", 4);
+
+        var result = context.Result("r", "s");
+        Assert.Equal("1,2,3", ports);
+        Assert.Equal(["operation:a:GET /0", "operation:a:GET /1", "operation:b:GET /x"], result.Facts.Select(f => f.Key));
+        Assert.False(result.IsComplete);
+        Assert.Equal(
+            [
+                new ExtractionNote(NoteKind.LimitReached, "limit:list-items", "Dockerfile", 4),
+                new ExtractionNote(NoteKind.LimitReached, "limit:facts-per-file", "a.cs", 0),
+            ],
+            result.Notes);
+    }
+
+    [Fact]
+    public void A_list_of_names_keeps_a_name_that_reads_like_a_credential_and_drops_an_item_that_is_a_token()
+    {
+        var context = new ExtractionContext(ExtractionLimits.Default);
+        var fields = context.Names(["Token:string", "Password:string", "ghp_abcdefghijklmnopqrstuvwxyz0123456789:string", "Id:Guid"], "fields", "a.cs", 3, separator: ";");
+        context.Add(FactKind.Message, "message:A.Login", "Login", At("a.cs", 3), ("fields", fields), ("summary", "Token:string"));
+
+        var result = context.Result("r", "s");
+        Assert.Equal("Id:Guid;Password:string;Token:string", fields);
+        // The same text in an attribute that holds free text is refused: there it can be a value.
+        Assert.Equal([("fields", fields)], result.Facts[0].Attributes.Select(a => (a.Key, a.Value)));
+        Assert.Equal(
+            [
+                new ExtractionNote(NoteKind.Redacted, "credential-like-value:fields", "a.cs", 3),
+                new ExtractionNote(NoteKind.Redacted, "credential-like-value:summary", "a.cs", 3),
+            ],
+            result.Notes);
+    }
+
+    // ---- planted credentials: every shape in every file type ----
+
+    private static readonly ExtractionInput PlantedRepo = Repo.Load("planted");
+
+    private static readonly string[] PlantedFiles =
+    [
+        "Api/Api.csproj", "Api/Program.cs", "worker/go.mod", "worker/main.go", "docker-compose.yml", "openapi.yaml",
+        "asyncapi.json", "Dockerfile", "k8s/app.yaml", ".github/workflows/deploy.yml",
+    ];
+
+    /// <summary>
+    /// Every planted value holds "pl4nt". The four shapes: a flag with its value after a space,
+    /// user information in a URL without a scheme, a value under default/const/enum/example,
+    /// and a short value with no shape under a key that no list names.
+    /// </summary>
+    private static readonly string[] PlantedShapes = ["pl4nt-flag", "pl4nt-url", "pl4nt-schema", "pl4nt-short"];
+
+    [Fact]
+    public void The_planted_repository_holds_each_shape_in_each_file_type_an_extractor_reads()
+    {
+        // Guards the test below: it means nothing if the fixture loses a planted value.
+        Assert.Equal(PlantedFiles.Order(StringComparer.Ordinal), PlantedRepo.Files.Select(f => f.Path).Order(StringComparer.Ordinal));
+        foreach (var file in PlantedRepo.Files)
+            foreach (var shape in PlantedShapes)
+                Assert.True(file.Content.Contains(shape, StringComparison.Ordinal), $"{file.Path} has no {shape}");
+
+        string[] forms =
+        [
+            "--password pl4nt-flag", "-p pl4nt-flag", "\"--requirepass\", \"pl4nt-flag", "//deploy:pl4nt-url", "admin:pl4nt-url-openapi2@",
+            "https://u:pl4nt-url/openapi3@", "default: pl4nt-schema", "const: pl4nt-schema", "enum: [pl4nt-schema", "example: pl4nt-schema",
+            "SHIBBOLETH: pl4nt-short", "4821-pl4nt-short",
+        ];
+        foreach (var form in forms)
+            Assert.Contains(PlantedRepo.Files, f => f.Content.Contains(form, StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void No_planted_value_reaches_a_fact_a_key_a_name_an_attribute_a_note_or_the_serialized_result()
+    {
+        var result = EvidenceExtractor.Extract(PlantedRepo);
+
+        foreach (var fact in result.Facts)
+        {
+            Assert.DoesNotContain("pl4nt", fact.Key);
+            Assert.DoesNotContain("pl4nt", fact.Name);
+            foreach (var (name, value) in fact.Attributes)
+            {
+                Assert.DoesNotContain("pl4nt", name);
+                Assert.False(value.Contains("pl4nt", StringComparison.Ordinal), $"{fact.Key} {name}: {value}");
+            }
+        }
+        foreach (var note in result.Notes)
+            Assert.DoesNotContain("pl4nt", note.Reason + note.Path);
+        Assert.DoesNotContain("pl4nt", ExtractionJson.Serialize(result), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Every_planted_file_is_read_and_what_it_declares_is_still_a_fact()
+    {
+        // The test above means nothing if a file is refused: each file gives facts.
+        var result = EvidenceExtractor.Extract(PlantedRepo);
+        Assert.Equal(
+            PlantedFiles.Order(StringComparer.Ordinal),
+            result.Facts.SelectMany(f => f.Evidence).Select(e => e.Path).Distinct().Order(StringComparer.Ordinal));
+
+        // A field that is NAMED like a credential is a name. Its default value is not read.
+        Assert.Equal(
+            "ApiKey:string;Password:string;SessionId:Guid;Token:string",
+            result.Fact("message:Planted.Api.SessionOpened").Attr("fields"));
+        Assert.True(result.Has("operation:Api:GET /sessions"));
+        Assert.Equal("PIN,SHIBBOLETH", result.Fact("datastore:.:db").Attr("environment"));
+        Assert.True(result.Has("operation:worker:GET /stock/{sku}"));
+        Assert.True(result.Has("channel:amqp:planted.stock"));
+
+        // Server URLs: user information and query are gone; the URL that cannot be parsed safely is not there.
+        var contract = result.Fact("contract:openapi.yaml");
+        Assert.Equal("//api.acme.example/v1,plain.acme.example,https://api.acme.example/v2", contract.Attr("servers"));
+        Assert.Contains(new ExtractionNote(NoteKind.Undecided, "server-url-not-safe", "openapi.yaml", 9), result.Notes);
+        Assert.Equal("mirror.acme.example,//broker.acme.example:5672", result.Fact("contract:asyncapi.json").Attr("serverUrls"));
+
+        // A schema body keeps structure and an enum of identifiers, and no value.
+        Assert.Equal(
+            """{"properties":{"mode":{"enum":["basic","sso"],"type":"string"},"nested":{"allOf":[{"properties":{"deep":{"oneOf":[{"type":"string"},{"items":{"anyOf":[{}]},"type":"array"}]}},"type":"object"}]},"pin":{"type":"string"},"user":{"type":"string"}},"required":["user","pin"],"type":"object"}""",
+            result.Fact("schema:openapi.yaml#/components/schemas/Login").Attr("schema"));
+
+        // Commands keep the executable and the names of flags.
+        var image = result.Fact("deployment:dockerfile:Dockerfile");
+        // A CMD beside an ENTRYPOINT is a list of arguments: its first word is a value, not an executable.
+        Assert.Equal(("alpine:3.20", "8080", "./app --password --api-key", "--requirepass -p"),
+            (image.Attr("baseImage"), image.Attr("ports"), image.Attr("entrypoint"), image.Attr("command")));
+        Assert.Equal("postgres --requirepass -p", result.Fact("datastore:.:db").Attr("command"));
+        Assert.Equal("redis-server --requirepass", result.Fact("datastore:.:cache").Attr("entrypoint"));
+        Assert.Equal("MIRROR", result.Fact("datastore:.:cache").Attr("environment"));
+        Assert.Equal("dotnet --api-key -p", result.Fact("deployment:compose:.:api").Attr("command"));
+        var workload = result.Fact("deployment:k8s:k8s/app.yaml#deployment/default/api");
+        Assert.Equal(("/app --password", "-p --api-key"), (workload.Attr("command.api"), workload.Attr("args.api")));
+        var workflow = result.Fact("deployment:workflow:.github/workflows/deploy.yml");
+        Assert.Equal(("image", "deploy"), (workflow.Attr("buildJobs"), workflow.Attr("deployJobs")));
     }
 }

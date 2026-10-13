@@ -22,6 +22,8 @@ public enum FactKind
 {
     Service, Operation, Channel, Message, Subscription, Publication,
     DataStore, DataAccess, Dependency, Schema, Deployment,
+    /// <summary>An architecture pattern the source declares, such as a transactional outbox. Not a publication.</summary>
+    Pattern,
 }
 
 /// <summary>
@@ -49,7 +51,10 @@ public enum NoteKind
     Undecided,
     /// <summary>A value looked like a credential or was too long, and was dropped.</summary>
     Redacted,
-    /// <summary>Two sources gave different values for one attribute of one fact. The first was kept.</summary>
+    /// <summary>
+    /// Two sources gave different values for one attribute of one fact. No value was chosen: the
+    /// fact has no such attribute and lists the values in <c>conflict.&lt;attribute&gt;</c>.
+    /// </summary>
     Conflict,
 }
 
@@ -76,6 +81,13 @@ public sealed record ExtractionResult(
 /// <param name="MaxSchemaBytes">Size of one schema body in a fact. A larger body is left out.</param>
 /// <param name="MaxNesting">Depth of a JSON or YAML document. A deeper document is not read.</param>
 /// <param name="MaxNotes">Notes kept. Later notes are dropped; completeness is tracked apart from the notes.</param>
+/// <param name="MaxFactsPerFile">Distinct facts whose first evidence is in one file. Later facts of that file are left out.</param>
+/// <param name="MaxWorkPerFile">
+/// Operations one extractor may spend on one file. It is a counter, not a clock, so the same
+/// input stops at the same place on every machine. The default is 64 operations for each byte
+/// of the largest file.
+/// </param>
+/// <param name="MaxListItems">Items in one list attribute (ports, stages, fields). Later items are left out.</param>
 public sealed record ExtractionLimits(
     int MaxFiles = 2000,
     long MaxFileBytes = 256 * 1024,
@@ -83,7 +95,10 @@ public sealed record ExtractionLimits(
     int MaxFacts = 20_000,
     int MaxSchemaBytes = 64 * 1024,
     int MaxNesting = 64,
-    int MaxNotes = 2000)
+    int MaxNotes = 2000,
+    int MaxFactsPerFile = 2000,
+    long MaxWorkPerFile = 64L * 256 * 1024,
+    int MaxListItems = 200)
 {
     public static readonly ExtractionLimits Default = new();
 }

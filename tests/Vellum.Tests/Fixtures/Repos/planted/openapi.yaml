@@ -1,0 +1,54 @@
+openapi: 3.1.0
+info:
+  title: Planted API
+  version: 0.1.0
+  x-start: api --password pl4nt-flag-openapi -p pl4nt-flag-openapi2
+servers:
+  - url: //admin:pl4nt-url-openapi@api.acme.example/v1
+  - url: admin:pl4nt-url-openapi2@plain.acme.example
+  - url: https://u:pl4nt-url/openapi3@host.acme.example/x
+  - url: https://api.acme.example/v2?pin=4821-pl4nt-short
+paths:
+  /sessions:
+    post:
+      operationId: openSession
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Login'
+      responses:
+        '200':
+          description: ok
+components:
+  schemas:
+    Login:
+      type: object
+      required: [user, pin]
+      x-shibboleth: pl4nt-short-openapi
+      properties:
+        user:
+          type: string
+          default: pl4nt-schema-openapi
+          examples: [pl4nt-schema-openapi2]
+        pin:
+          type: string
+          const: 4821-pl4nt-schema
+          enum: [pl4nt-schema-openapi3, 'pl4nt schema openapi4']
+        mode:
+          type: string
+          enum: [basic, sso]
+        nested:
+          allOf:
+            - type: object
+              properties:
+                deep:
+                  oneOf:
+                    - type: string
+                      default: pl4nt-schema-openapi5
+                    - type: array
+                      items:
+                        anyOf:
+                          - const: pl4nt-schema-openapi6
+                            example: pl4nt-schema-openapi7
+                            x-note: start with -p pl4nt-flag-openapi3

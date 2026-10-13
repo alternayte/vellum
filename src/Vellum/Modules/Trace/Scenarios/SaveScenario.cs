@@ -45,10 +45,20 @@ public static class SaveScenario
                 Errors: [new FieldError("id", "A scenario needs an ID")]));
         }
 
+        var result = await CreateAsync(http.RequestServices, projectId, document, ct);
+        return result.ToCreatedResult($"/api/projects/{projectId}/scenarios/{document.Id}");
+    }
+
+    /// <summary>
+    /// Creates a scenario from a document that is inside the limits of <see cref="ScenarioShape"/>.
+    /// The HTTP create and the acceptance of an AI flow proposal both write through here.
+    /// </summary>
+    internal static Task<CommandResult<Scenario>> CreateAsync(
+        IServiceProvider requestServices, Guid projectId, Scenario document, CancellationToken ct) =>
         // The count and the new row commit together, and creates of one project take turns on
         // an advisory lock, so two of them cannot both take the last place. The lock is taken
         // before the stream lock and nothing asks for it later, so it adds no wait cycle.
-        var result = await SharedTransaction.RunAsync(http.RequestServices, async services =>
+        SharedTransaction.RunAsync(requestServices, async services =>
         {
             var db = services.GetRequiredService<ScenariosDbContext>();
             await using var transaction = await db.Database.BeginTransactionAsync(ct);
@@ -80,8 +90,6 @@ public static class SaveScenario
             await transaction.CommitAsync(ct);
             return created;
         }, ct);
-        return result.ToCreatedResult($"/api/projects/{projectId}/scenarios/{document.Id}");
-    }
 
     public static async Task<IResult> Update(
         Guid projectId, Guid scenarioId,

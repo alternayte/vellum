@@ -24,7 +24,7 @@ export function ScenariosFlyout({ projectId, branchId, references }: ScenariosFl
     setError(null)
     run.mutate(scenarioId, {
       onSuccess: (result) => {
-        useTraceStore.getState().load(result)
+        useTraceStore.getState().load(result, scenarioId)
         closeFlyout()
       },
       onError: (e) => setError(e.message),
