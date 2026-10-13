@@ -25,6 +25,9 @@ internal sealed class ScanStop : Exception
     public static ScanStop Waiting(DateTimeOffset retryAt) => new(ScanStatus.Waiting, null, retryAt);
 
     public static ScanStop Cancelled() => new(ScanStatus.Cancelled, null, null);
+
+    /// <summary>The scan waits and is taken again at <paramref name="retryAt"/>, with the error visible until then.</summary>
+    public static ScanStop Retry(ScanError error, DateTimeOffset retryAt) => new(ScanStatus.Waiting, error, retryAt);
 }
 
 /// <summary>
@@ -43,7 +46,22 @@ internal static class ScanFailures
         "The project of this scan no longer exists. The scan has no model to compare with.");
 
     public static readonly ScanError Internal = new("internal_error",
-        "An unexpected error stopped the scan. Resume it. If it stops again, report the scan ID to the operator of this instance.");
+        "An unexpected error stopped the scan on every automatic attempt. Report the scan ID to the operator of this instance. You can resume the scan.");
+
+    public static readonly ScanError InternalRetry = new("internal_error",
+        "An unexpected error stopped the scan. It starts again by itself at the time in retryAt.");
+
+    public static readonly ScanError WorkerCrashed = new("worker_crashed",
+        "The worker that ran this scan stopped without a word, twice in a row. The scan is not started again by itself. Report the scan ID to the operator of this instance. You can resume the scan.");
+
+    public static readonly ScanError ModelBusy = new("model_busy",
+        "The project's model changed each time the scan compared its result with it. Nothing was written. Resume the scan when the model is not being edited.");
+
+    public static readonly ScanError StoredContentMissing = new("stored_content_missing",
+        "The stored content of a file of this scan is missing, so the scan has no result. Resume the scan: it fetches the file again at the same commit.");
+
+    public static readonly ScanError RepositoryRenamed = new("scan_in_progress",
+        "GitHub knows this repository under another name, and a scan of that name is already queued or running for this project. Wait for it, or cancel it.");
 
     public static readonly ScanError RateLimitNeverCleared = new("rate_limited",
         "GitHub's rate limit stayed used up through many retries. Resume the scan later. A workspace token (github:token) has a higher limit than anonymous access.");

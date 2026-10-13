@@ -22,7 +22,8 @@ public static class ImportModule
         services.AddSingleton<ScanWorker>();
 
         // Import:Worker:Enabled=false turns the worker of this instance off; scans then wait
-        // for an instance that runs one.
+        // for an instance that runs one. Import:Worker:Parallelism is how many scans one
+        // instance runs at a time.
         services.AddSingleton(provider =>
         {
             var section = provider.GetRequiredService<IConfiguration>().GetSection("Import:Worker");
@@ -32,6 +33,8 @@ public static class ImportModule
                 Enabled = section.GetValue("Enabled", defaults.Enabled),
                 PollInterval = TimeSpan.FromSeconds(Math.Clamp(section.GetValue("PollSeconds", defaults.PollInterval.TotalSeconds), 0.05, 3600)),
                 LeaseDuration = TimeSpan.FromSeconds(Math.Clamp(section.GetValue("LeaseSeconds", defaults.LeaseDuration.TotalSeconds), 5, 3600)),
+                Parallelism = Math.Clamp(section.GetValue("Parallelism", defaults.Parallelism), 1, 32),
+                RetentionInterval = TimeSpan.FromSeconds(Math.Clamp(section.GetValue("RetentionSeconds", defaults.Retention.TotalSeconds), 1, 86400)),
             };
         });
 
@@ -65,10 +68,20 @@ public static class ImportModule
 
         imports.MapPost("/{importId}/resume", ScanRequests.Resume)
             .Produces(StatusCodes.Status202Accepted)
+            .Produces<ErrorResponse>(StatusCodes.Status409Conflict)
+            .Produces<ErrorResponse>(StatusCodes.Status429TooManyRequests);
+
+        imports.MapPost("/{importId}/track", ScanRequests.Track)
+            .Produces<ScanDetailDto>()
+            .Produces<ErrorResponse>(StatusCodes.Status404NotFound)
             .Produces<ErrorResponse>(StatusCodes.Status409Conflict);
 
         imports.MapGet("/{importId}/proposals", ProposalReads.List)
-            .Produces<Page<ProposalDto>>();
+            .Produces<ProposalPage>();
+
+        imports.MapGet("/{importId}/proposals/{proposalId}", ProposalReads.Get)
+            .Produces<ProposalDto>()
+            .Produces<ErrorResponse>(StatusCodes.Status404NotFound);
 
         imports.MapPost("/{importId}/proposals/decide", DecideProposals.Handle)
             .Produces<DecideProposalsResponse>()
@@ -80,7 +93,9 @@ public static class ImportModule
 
         imports.MapGet("/{importId}/source", SourceWindow.Handle)
             .Produces<SourceWindowDto>()
-            .Produces<ErrorResponse>(StatusCodes.Status404NotFound);
+            .Produces<ErrorResponse>(StatusCodes.Status403Forbidden)
+            .Produces<ErrorResponse>(StatusCodes.Status404NotFound)
+            .Produces<ErrorResponse>(StatusCodes.Status409Conflict);
 
         return app;
     }

@@ -11,10 +11,15 @@ public class SnapshotEntity
     public string Host { get; set; } = null!;
     public string Repository { get; set; } = null!;
     public string CommitSha { get; set; } = null!;
-    /// <summary>False when the scan or the extraction reached a bound. Absence of a fact then proves nothing.</summary>
+    /// <summary>False when a bound or a failure cut the scan or the extraction short.</summary>
     public bool IsComplete { get; set; }
     /// <summary>A JSON list of <c>{ rule, version }</c>: the extraction rules this snapshot was made with.</summary>
     public string RuleVersions { get; set; } = "[]";
+    /// <summary>
+    /// <see cref="RuleSet.Fingerprint"/> of <see cref="RuleVersions"/>. Null for a snapshot
+    /// made before fingerprints were recorded.
+    /// </summary>
+    public string? RuleFingerprint { get; set; }
     public string Limits { get; set; } = null!;
     public int FactCount { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
@@ -28,7 +33,7 @@ public static class FactDisposition
     public const string Folded = "folded";
     /// <summary>The model has no place for the fact yet. It stays readable as evidence.</summary>
     public const string EvidenceOnly = "evidence-only";
-    /// <summary>The fact maps to an entity, and something it needs is missing or was rejected.</summary>
+    /// <summary>The fact maps to an entity, and something it needs is missing, was rejected or waits for a relink decision.</summary>
     public const string Blocked = "blocked";
 }
 
@@ -54,7 +59,7 @@ public static class ProposalStatus
     public const string Pending = "pending";
     public const string Accepted = "accepted";
     public const string Rejected = "rejected";
-    /// <summary>A later scan of the same repository completed before a person decided.</summary>
+    /// <summary>A later tracking scan of the same repository completed before a person decided, or the scan was planned again.</summary>
     public const string Superseded = "superseded";
 }
 
@@ -64,6 +69,19 @@ public static class ProposalAction
     public const string Change = "change";
     public const string Remove = "remove";
     public const string Conflict = "conflict";
+    /// <summary>
+    /// The extraction rules changed and the exact rule did not say which new fact an accepted
+    /// fact is. A person names the fact, or says that none is. It changes the link only.
+    /// </summary>
+    public const string Relink = "relink";
+}
+
+/// <summary>What a link or a proposal is about: a fact of an extractor, or the repository itself.</summary>
+public static class Subject
+{
+    public const string Fact = "fact";
+    /// <summary>The repository as the system that holds its services. No extractor makes this one; its fact key is empty.</summary>
+    public const string Repository = "repository";
 }
 
 /// <summary>
@@ -80,9 +98,10 @@ public class ProposalEntity
     public string EntityKind { get; set; } = null!;
     /// <summary>The entity the proposal is about. For <c>add</c> it is the ID the new entity gets.</summary>
     public Guid EntityId { get; set; }
+    public string Subject { get; set; } = Proposals.Subject.Fact;
     public string FactKey { get; set; } = null!;
     public string Name { get; set; } = null!;
-    /// <summary>A JSON object: the values the source establishes. Null for <c>remove</c>.</summary>
+    /// <summary>A JSON object: the values the source establishes. Null for <c>remove</c>. For <c>relink</c>: <c>{ candidates: [...] }</c>.</summary>
     public string? Proposed { get; set; }
     /// <summary>A JSON object: the values of the entity when the scan completed. Null for <c>add</c>.</summary>
     public string? Current { get; set; }
@@ -92,9 +111,11 @@ public class ProposalEntity
     public string Evidence { get; set; } = "[]";
     /// <summary>The fact's attributes, kept on the link when the proposal is accepted.</summary>
     public string Attributes { get; set; } = "{}";
+    /// <summary>For a message: a JSON list of the fact keys of the services whose subscriptions name it.</summary>
+    public string ConsumerKeys { get; set; } = "[]";
     public Guid[] DependsOn { get; set; } = [];
     public string Status { get; set; } = ProposalStatus.Pending;
-    /// <summary>True when the scan was not complete.</summary>
+    /// <summary>True when a limit or a failure cut the scan short.</summary>
     public bool Partial { get; set; }
     /// <summary>Identifies what is proposed, so a rejected proposal is not made again.</summary>
     public string Fingerprint { get; set; } = null!;
@@ -108,16 +129,29 @@ public class ProposalEntity
 /// </summary>
 public class FactLinkEntity
 {
+    public Guid Id { get; set; }
     public Guid ProjectId { get; set; }
     public string Host { get; set; } = null!;
+    /// <summary>The repository's name in lower case. It follows a rename; <see cref="RepositoryId"/> does not change.</summary>
     public string Repository { get; set; } = null!;
+    public long? RepositoryId { get; set; }
+    public string Subject { get; set; } = Proposals.Subject.Fact;
     public string FactKey { get; set; } = null!;
+    /// <summary><see cref="Scans.KeyHash"/> of <see cref="FactKey"/>: the indexed form.</summary>
+    public string FactKeyHash { get; set; } = null!;
     public string EntityKind { get; set; } = null!;
     public Guid EntityId { get; set; }
     public Guid ScanId { get; set; }
     public string CommitSha { get; set; } = null!;
+    /// <summary>
+    /// The fingerprint of the extraction rules that made <see cref="FactKey"/>. Null when it
+    /// is unknown. A scan with other rules relinks the row before it compares it.
+    /// </summary>
+    public string? RuleFingerprint { get; set; }
     /// <summary>The fact's attributes as accepted.</summary>
     public string Attributes { get; set; } = "{}";
+    /// <summary>For a message: a JSON list of the fact keys of the consumers it was accepted with.</summary>
+    public string ConsumerKeys { get; set; } = "[]";
     /// <summary>The entity's values as accepted. An entity that differs from them was edited by a person since.</summary>
     public string Accepted { get; set; } = "{}";
     public string Evidence { get; set; } = "[]";
@@ -128,10 +162,14 @@ public class FactLinkEntity
 /// <summary>A rejected proposal, remembered by its fingerprint.</summary>
 public class RejectionEntity
 {
+    public Guid Id { get; set; }
     public Guid ProjectId { get; set; }
     public string Host { get; set; } = null!;
     public string Repository { get; set; } = null!;
+    public long? RepositoryId { get; set; }
+    public string Subject { get; set; } = Proposals.Subject.Fact;
     public string FactKey { get; set; } = null!;
+    public string FactKeyHash { get; set; } = null!;
     public string Fingerprint { get; set; } = null!;
     public Guid ScanId { get; set; }
     public string RejectedBy { get; set; } = null!;

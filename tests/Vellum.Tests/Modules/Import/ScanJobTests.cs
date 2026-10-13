@@ -114,7 +114,7 @@ public class ScanJobTests(ImportHost import) : IClassFixture<ImportHost>
         s.GitHub.Commit(ImportScenario.Commit2, FixtureGitHub.Load("orders-outbox-removed"));
         Assert.False(await s.Worker.RunOnceAsync("worker-b", CancellationToken.None));
 
-        import.Time.Advance(TimeSpan.FromSeconds(61));
+        Assert.Equal(1, await s.ExpireLeaseAsync(id));
         Assert.True(await s.Worker.RunOnceAsync("worker-b", CancellationToken.None));
 
         // The second worker finished the scan of the first commit, with the three blobs the
@@ -288,15 +288,18 @@ public class ScanJobTests(ImportHost import) : IClassFixture<ImportHost>
         // A refused path has no source view. A line of a read file that looks like a credential is withheld.
         foreach (var path in refused)
             Assert.Equal(HttpStatusCode.NotFound, (await s.Owner.GetAsync(s.Url($"/{scan.Id()}/source?path={Uri.EscapeDataString(path)}"))).StatusCode);
-        var shown = new List<string>();
+        // No window of a read file is served unless it is the evidence of a fact: a window
+        // that somebody makes up is refused, whatever file it names.
         foreach (var path in s.GitHub.BlobRequests.Distinct())
+            Assert.Equal(HttpStatusCode.NotFound, (await s.Owner.GetAsync(s.Url($"/{scan.Id()}/source?path={Uri.EscapeDataString(path)}&startLine=1&endLine=200"))).StatusCode);
+        var shown = new List<string>();
+        foreach (var (path, start, end) in await s.EvidenceWindowsAsync(scan.Id()))
         {
-            var response = await s.Owner.GetAsync(s.Url($"/{scan.Id()}/source?path={Uri.EscapeDataString(path)}&startLine=1&endLine=200"));
+            var response = await s.Owner.GetAsync(s.Url($"/{scan.Id()}/source?path={Uri.EscapeDataString(path)}&startLine={start}&endLine={end}"));
             if (response.StatusCode == HttpStatusCode.OK)
                 shown.Add(await response.Content.ReadAsStringAsync());
         }
         Assert.NotEmpty(shown);
-        Assert.Contains(shown, text => text.Contains("[withheld: this line looks like a credential]", StringComparison.Ordinal));
 
         // The planted credentials are in no proposal, no evidence and no log, and the
         // planted token is in no source view.

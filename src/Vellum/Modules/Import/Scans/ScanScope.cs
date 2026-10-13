@@ -2,20 +2,27 @@ using System.Text;
 using System.Text.RegularExpressions;
 using Vellum.Modules.GitHub;
 using Vellum.Modules.Import.Extraction;
+using Vellum.Shared;
 
 namespace Vellum.Modules.Import.Scans;
 
-/// <summary>The files of a commit that a scan reads, and why the others are not read.</summary>
+/// <summary>One file of the tree with what the scan does with it.</summary>
+/// <param name="Reason">Null for a file the scan reads. Else why it does not: a note code or a code of <see cref="CoverageGap"/>.</param>
+internal sealed record ListedFile(GitHubTreeEntry Entry, string? Reason);
+
+/// <summary>The files of a commit, each with whether the scan reads it, and why the others are not read.</summary>
+/// <param name="Files">Every file of the commit that a scan can record, in path order.</param>
 /// <param name="Listed">Every file of the commit.</param>
 /// <param name="Skipped">The files that are not read, for any reason.</param>
 /// <param name="Partial">True when a bound left out a file that would have been read.</param>
 internal sealed record ScanSelection(
-    IReadOnlyList<GitHubTreeEntry> Files, int Listed, int Skipped, bool Partial, IReadOnlyList<ScanNote> Notes);
+    IReadOnlyList<ListedFile> Files, int Listed, int Skipped, bool Partial, IReadOnlyList<ScanNote> Notes);
 
 /// <summary>
 /// Decides from the file list alone which blobs a scan asks GitHub for. Nothing is fetched
 /// to make the decision: a path that looks like a secret, a binary, a dependency directory
-/// or a file outside the scope is never requested.
+/// or a file outside the scope is never requested. Every file keeps the reason it was left
+/// out, so the scan can say later where it looked and where it did not.
 /// </summary>
 internal static class ScanScope
 {
@@ -25,20 +32,25 @@ internal static class ScanScope
     {
         var globs = limits.ExcludeGlobs.Select(Glob).ToList();
         var notes = new List<ScanNote>();
-        var selected = new List<GitHubTreeEntry>();
+        var files = new List<ListedFile>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
         var blobs = entries.Where(e => e.Type == "blob").OrderBy(e => e.Path, StringComparer.Ordinal).ToList();
         long total = 0;
+        var selected = 0;
         var partial = false;
-        var cut = false;
+        string? cut = null;
 
         foreach (var entry in blobs)
         {
-            // The extraction filter runs first, so its refusals are reported even for a path
-            // that the scope would leave out anyway.
-            if (PathFilter.SkipReason(entry.Path, out var notePath) is { } reason)
+            // A path that cannot be a key or a text column gets a note and no row.
+            if (entry.Path.Length > ScanFileEntity.MaxPath)
             {
-                notes.Add(ScanNotes.Of(reason, notePath));
+                notes.Add(ScanNotes.Of("path-too-long", ""));
+                continue;
+            }
+            if (TextRule.Line("path", entry.Path, ScanFileEntity.MaxPath) is not null)
+            {
+                notes.Add(ScanNotes.Of("invalid-path", ""));
                 continue;
             }
             if (!seen.Add(entry.Path))
@@ -47,39 +59,88 @@ internal static class ScanScope
                 continue;
             }
 
-            var name = entry.Path[(entry.Path.LastIndexOf('/') + 1)..];
-            if (cut || !PathFilter.IsRelevant(name) || !InScope(entry.Path, includePaths, excludePaths)
-                || globs.Any(glob => glob.IsMatch(entry.Path)))
+            if (StaticGap(entry.Path, globs, includePaths, excludePaths, out var notePath, out var noted) is { } gap)
+            {
+                // The refusals of the extraction filter are reported, even outside the scope.
+                if (noted)
+                    notes.Add(ScanNotes.Of(gap, notePath));
+                files.Add(new ListedFile(entry, gap));
                 continue;
+            }
+
+            if (cut is not null)
+            {
+                files.Add(new ListedFile(entry, cut));
+                continue;
+            }
 
             var size = entry.Size ?? 0;
             if (size > limits.MaxFileBytes)
             {
                 notes.Add(ScanNotes.Of("limit:file-bytes", entry.Path));
+                files.Add(new ListedFile(entry, "limit:file-bytes"));
                 partial = true;
                 continue;
             }
 
             // Reaching a bound ends the intake: the files after it in path order are not
             // read, so the files read do not depend on which of them are small.
-            if (selected.Count >= limits.MaxFiles)
+            if (cut is null && selected >= limits.MaxFiles)
             {
                 notes.Add(ScanNotes.Of("limit:files", entry.Path));
-                partial = cut = true;
-                continue;
+                cut = "limit:files";
             }
-            if (total + size > limits.MaxTotalBytes)
+            else if (cut is null && total + size > limits.MaxTotalBytes)
             {
                 notes.Add(ScanNotes.Of("limit:total-bytes", entry.Path));
-                partial = cut = true;
+                cut = "limit:total-bytes";
+            }
+            if (cut is not null)
+            {
+                files.Add(new ListedFile(entry, cut));
+                partial = true;
                 continue;
             }
 
             total += size;
-            selected.Add(entry);
+            selected++;
+            files.Add(new ListedFile(entry, null));
         }
 
-        return new ScanSelection(selected, blobs.Count, blobs.Count - selected.Count, partial, [.. notes.Distinct()]);
+        return new ScanSelection(files, blobs.Count, blobs.Count - selected, partial, [.. notes.Distinct()]);
+    }
+
+    /// <summary>
+    /// For a path that is not in the tree: null when this scan would have read a file there,
+    /// so its absence means the file is gone. Else the reason the scan would not have read it.
+    /// </summary>
+    public static string? AbsentGap(
+        string path, ScanLimits limits, IReadOnlyList<string> includePaths, IReadOnlyList<string> excludePaths) =>
+        StaticGap(path, [.. limits.ExcludeGlobs.Select(Glob)], includePaths, excludePaths, out _, out _);
+
+    /// <summary>A function over paths for <see cref="AbsentGap"/>, with the globs compiled once.</summary>
+    public static Func<string, string?> AbsentGap(ScanLimits limits, IReadOnlyList<string> includePaths, IReadOnlyList<string> excludePaths)
+    {
+        var globs = limits.ExcludeGlobs.Select(Glob).ToList();
+        return path => StaticGap(path, globs, includePaths, excludePaths, out _, out _);
+    }
+
+    /// <summary>Why the path is left out by what does not depend on the tree: the path filter, the file type, the scope and the globs.</summary>
+    private static string? StaticGap(
+        string path, IReadOnlyList<Regex> globs, IReadOnlyList<string> includePaths, IReadOnlyList<string> excludePaths,
+        out string notePath, out bool noted)
+    {
+        noted = false;
+        if (PathFilter.SkipReason(path, out notePath) is { } reason)
+        {
+            noted = true;
+            return reason;
+        }
+        if (!PathFilter.IsRelevant(path[(path.LastIndexOf('/') + 1)..]))
+            return CoverageGap.NotRelevant;
+        if (!InScope(path, includePaths, excludePaths))
+            return CoverageGap.OutOfScope;
+        return globs.Any(glob => glob.IsMatch(path)) ? CoverageGap.ExcludedGlob : null;
     }
 
     /// <summary>A path is in scope when an include prefix holds it, or there is none, and no exclude prefix holds it.</summary>

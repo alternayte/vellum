@@ -1,5 +1,9 @@
 using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
+using Vellum.Modules.Import.Extraction;
 
 namespace Vellum.Modules.Import.Proposals;
 
@@ -19,8 +23,67 @@ internal static class ProposalJson
     public static Dictionary<string, string> ReadAttributes(string json) =>
         JsonSerializer.Deserialize<Dictionary<string, string>>(json, Options) ?? [];
 
-    public static Dictionary<string, string?> ReadValues(string json) =>
-        JsonSerializer.Deserialize<Dictionary<string, string?>>(json, Options) ?? [];
+    public static List<string> ReadKeys(string json) =>
+        JsonSerializer.Deserialize<List<string>>(json, Options) ?? [];
+
+    /// <summary>
+    /// An entity's values by field name. A list of IDs is a JSON array in the column and the
+    /// one canonical text of <see cref="ModelIndex.JoinIds"/> in memory, so two sets of the
+    /// same IDs compare equal.
+    /// </summary>
+    public static Dictionary<string, string?> ReadValues(string json)
+    {
+        var values = new Dictionary<string, string?>(StringComparer.Ordinal);
+        if (JsonNode.Parse(json) is not JsonObject fields)
+            return values;
+        foreach (var (field, node) in fields)
+        {
+            values[field] = node switch
+            {
+                null => null,
+                JsonArray ids => ModelIndex.JoinIds(ids.Select(id => Guid.Parse(id!.GetValue<string>()))),
+                _ => node.GetValue<string>(),
+            };
+        }
+        return values;
+    }
+
+    public static string WriteValues(IReadOnlyDictionary<string, string?> values)
+    {
+        var fields = new JsonObject();
+        foreach (var (field, value) in values.OrderBy(v => v.Key, StringComparer.Ordinal))
+        {
+            fields[field] = field == Field.ConsumerIds
+                ? new JsonArray([.. ModelIndex.SplitIds(value).Select(id => (JsonNode)id.ToString())])
+                : value;
+        }
+        return fields.ToJsonString(Options);
+    }
+}
+
+/// <summary>A rule of an extractor and the version of it that made a snapshot.</summary>
+public sealed record RuleVersion(string Rule, int Version);
+
+/// <summary>The extraction rules as one value: a fact key means the same thing only under the same set of rules.</summary>
+public static class RuleSet
+{
+    /// <summary>The rules this build extracts with.</summary>
+    public static IReadOnlyList<RuleVersion> Current { get; } =
+        [.. EvidenceExtractor.Rules.Select(r => new RuleVersion(r.Id, r.Version))];
+
+    public static string CurrentFingerprint { get; } = Fingerprint(Current);
+
+    /// <summary>
+    /// SHA-256 over every rule ID with its version, in the order of the IDs. Another version
+    /// of one rule, a new rule or a removed rule gives another fingerprint.
+    /// </summary>
+    public static string Fingerprint(IEnumerable<RuleVersion> rules)
+    {
+        var text = new StringBuilder();
+        foreach (var rule in rules.OrderBy(r => r.Rule, StringComparer.Ordinal).ThenBy(r => r.Version))
+            text.Append(rule.Rule.Length).Append(':').Append(rule.Rule).Append('=').Append(rule.Version.ToString(CultureInfo.InvariantCulture)).Append('\n');
+        return Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(text.ToString())));
+    }
 }
 
 /// <summary>The two ways a reader follows evidence: the pointer stored on a fact, and the page that shows the lines.</summary>

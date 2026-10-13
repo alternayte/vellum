@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Security.Claims;
 using System.Text.RegularExpressions;
+using Deedbox;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using Vellum.Modules.Import.Proposals;
@@ -22,23 +23,61 @@ public sealed record ScanProgressDto(int FilesListed, int FilesRead, int FilesSk
 
 public sealed record ProposalCountsDto(int Pending, int Accepted, int Rejected);
 
-/// <param name="IsComplete">True only for a completed scan that read everything in its scope. Any other scan is not a full result.</param>
-/// <param name="RetryAt">When a scan that waits for GitHub's rate limit starts again.</param>
+/// <summary>
+/// The accepted facts of the repository that the scan could judge, and those it could not,
+/// by reason. A fact that is not covered got no removal proposal and no stale mark, and
+/// kept the mark it had.
+/// </summary>
+/// <param name="Scope">The scope, an exclude glob or the path filter left out a file of the fact's evidence.</param>
+/// <param name="Limit">A bound of the scan left out a file of the fact's evidence.</param>
+/// <param name="Withheld">A file of the fact's evidence holds a secret or is not text, and is not kept.</param>
+/// <param name="Failed">A file of the fact's evidence could not be fetched, verified or parsed.</param>
+public sealed record LinkedFactCoverageDto(int Covered, int NotCovered, int Scope, int Limit, int Withheld, int Failed)
+{
+    internal static LinkedFactCoverageDto? From(LinkCoverage? c) => c is null
+        ? null
+        : new(c.Covered, c.Scope + c.Limit + c.Withheld + c.Failed, c.Scope, c.Limit, c.Withheld, c.Failed);
+}
+
+/// <param name="FilesListed">Every file of the commit.</param>
+/// <param name="FilesExtracted">The files whose content the extractors read. Only these were looked at.</param>
+/// <param name="LinkedFacts">Null until the scan completes.</param>
+public sealed record ScanCoverageDto(int FilesListed, int FilesExtracted, LinkedFactCoverageDto? LinkedFacts);
+
+/// <param name="Repository"><c>owner/name</c> in lower case: the name the scan is filed under.</param>
+/// <param name="RepositoryName">The name as GitHub writes it. Null until the scan asked GitHub.</param>
+/// <param name="Ref">The ref the caller asked for, or null.</param>
+/// <param name="ResolvedRef">The name of the ref the scan read. Null for a scan of a bare commit.</param>
+/// <param name="IsComplete">True only for a completed scan that no limit and no failure cut short. It says nothing about the scope: see <paramref name="Coverage"/>.</param>
+/// <param name="Kind"><c>tracking</c> or <c>comparison</c>.</param>
+/// <param name="TrackedRef">The ref that the accepted facts of the repository follow in this project. Null when there is none yet. Empty when it is the default ref and no scan named it yet.</param>
+/// <param name="CanDecide">True when the proposals of the scan can be decided: the scan is completed and is a tracking scan.</param>
+/// <param name="CanDecideReason">Why not, when <paramref name="CanDecide"/> is false and the scan is completed.</param>
+/// <param name="Relinked">Links that the scan moved to a new fact key after the extraction rules changed.</param>
+/// <param name="NeedsReview">Links that it could not move by the exact rule. Each has a <c>relink</c> proposal.</param>
+/// <param name="RetryAt">When a scan that waits starts again.</param>
 public sealed record ScanDto(
-    Guid Id, string Repository, string? Ref, string? CommitSha, string Status, bool IsComplete,
+    Guid Id, string Repository, string? RepositoryName, string? Ref, string? ResolvedRef, string? CommitSha, string Status, bool IsComplete,
+    string Kind, string? TrackedRef, bool CanDecide, string? CanDecideReason,
+    ScanCoverageDto Coverage, int Relinked, int NeedsReview,
     ScanProgressDto Progress, ProposalCountsDto ProposalCounts, ScanError? Error,
     DateTimeOffset? RetryAt, string RequestedBy, DateTimeOffset CreatedAt, DateTimeOffset? CompletedAt);
 
 public sealed record ScanDetailDto(
-    Guid Id, string Repository, string? Ref, string? CommitSha, string Status, bool IsComplete,
+    Guid Id, string Repository, string? RepositoryName, string? Ref, string? ResolvedRef, string? CommitSha, string Status, bool IsComplete,
+    string Kind, string? TrackedRef, bool CanDecide, string? CanDecideReason,
+    ScanCoverageDto Coverage, int Relinked, int NeedsReview,
     ScanProgressDto Progress, ProposalCountsDto ProposalCounts, ScanError? Error,
     DateTimeOffset? RetryAt, string RequestedBy, DateTimeOffset CreatedAt, DateTimeOffset? CompletedAt,
-    IReadOnlyList<ScanNote> Notes, IReadOnlyList<RuleVersion> RuleVersions);
+    IReadOnlyList<ScanNote> Notes, IReadOnlyList<RuleVersion> RuleVersions,
+    string? TrackedBy, DateTimeOffset? TrackedAt);
 
 public static partial class ScanRequests
 {
     public const int MaxScopePaths = 50;
     public const int MaxScopePathLength = 400;
+    /// <summary>How many times a person can resume one scan. Each resume gives the scan its automatic attempts back.</summary>
+    public const int MaxManualResumes = 3;
 
     [GeneratedRegex(@"^[A-Za-z0-9_.-]{1,100}$")]
     private static partial Regex RepositoryPart();
@@ -71,7 +110,6 @@ public static partial class ScanRequests
             return Invalid("excludePaths", pathError);
 
         var now = time.GetUtcNow();
-        var limit = workspace.Effective.Usage.MaxScansPerDay;
         var import = workspace.Effective.Import;
         var scan = new ScanEntity
         {
@@ -85,17 +123,8 @@ public static partial class ScanRequests
         // The count and the insert are one transaction under a lock for the workspace, so
         // two requests at once cannot both take the last scan of the day.
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
-        await db.Database.ExecuteSqlAsync($"SELECT pg_advisory_xact_lock(hashtextextended({"import-scans:" + workspaceId}, 0))", ct);
-
-        var dayStart = new DateTimeOffset(now.UtcDateTime.Date, TimeSpan.Zero);
-        var today = await db.Scans.CountAsync(s => s.WorkspaceId == workspaceId && s.CreatedAt >= dayStart, ct);
-        if (today >= limit)
-        {
-            return Results.Json(new ErrorResponse("scan_limit_reached",
-                string.Create(CultureInfo.InvariantCulture,
-                    $"This workspace started {today} scans today (UTC). The limit usage.maxScansPerDay is {limit}. Start the scan tomorrow, or raise the limit in the workspace settings.")),
-                statusCode: StatusCodes.Status429TooManyRequests);
-        }
+        if (await ChargeAsync(db, workspaceId, scan.Id, workspace.Effective.Usage.MaxScansPerDay, now, ct) is { } refused)
+            return refused;
 
         db.Scans.Add(scan);
         try
@@ -111,6 +140,30 @@ public static partial class ScanRequests
 
         signal.Notify();
         return Results.Accepted($"/api/projects/{projectId}/imports/{scan.Id}", new StartScanResponse(scan.Id));
+    }
+
+    /// <summary>
+    /// Takes one unit of <c>usage.maxScansPerDay</c> for the workspace, inside the caller's
+    /// transaction and under a lock for the workspace. Returns the refusal when the day's
+    /// units are used up. A started scan is one unit; so is a resume that asks GitHub again.
+    /// </summary>
+    private static async Task<IResult?> ChargeAsync(
+        ImportDbContext db, Guid workspaceId, Guid scanId, int limit, DateTimeOffset now, CancellationToken ct)
+    {
+        await db.Database.ExecuteSqlAsync($"SELECT pg_advisory_xact_lock(hashtextextended({"import-scans:" + workspaceId}, 0))", ct);
+
+        var dayStart = new DateTimeOffset(now.UtcDateTime.Date, TimeSpan.Zero);
+        var today = await db.ScanCharges.CountAsync(c => c.WorkspaceId == workspaceId && c.ChargedAt >= dayStart, ct);
+        if (today >= limit)
+        {
+            return Results.Json(new ErrorResponse("scan_limit_reached",
+                string.Create(CultureInfo.InvariantCulture,
+                    $"This workspace started {today} scans today (UTC). The limit usage.maxScansPerDay is {limit}. Start the scan tomorrow, or raise the limit in the workspace settings.")),
+                statusCode: StatusCodes.Status429TooManyRequests);
+        }
+
+        db.ScanCharges.Add(new ScanChargeEntity { Id = Guid.NewGuid(), WorkspaceId = workspaceId, ScanId = scanId, ChargedAt = now });
+        return null;
     }
 
     public static async Task<IResult> List(
@@ -139,7 +192,8 @@ public static partial class ScanRequests
         }
 
         var counts = await CountsAsync(db, [.. rows.Select(r => r.Id)], ct);
-        return Results.Ok(new Page<ScanDto>([.. rows.Select(r => ToDto(r, counts.GetValueOrDefault(r.Id)))], next));
+        var tracked = await db.TrackedRefs.AsNoTracking().Where(t => t.ProjectId == projectId).ToListAsync(ct);
+        return Results.Ok(new Page<ScanDto>([.. rows.Select(r => ToDto(r, counts.GetValueOrDefault(r.Id), TrackedOf(tracked, r)))], next));
     }
 
     public static async Task<IResult> Get(
@@ -148,17 +202,23 @@ public static partial class ScanRequests
     {
         await auth.RequireProjectRoleAsync(projectId, user.FindFirstValue(ClaimTypes.NameIdentifier)!, WorkspaceRole.Viewer, ct);
         var scan = await db.Scans.AsNoTracking().FirstOrDefaultAsync(s => s.Id == importId && s.ProjectId == projectId, ct);
-        if (scan is null)
-            return NotFound();
+        return scan is null ? NotFound() : Results.Ok(await DetailAsync(db, scan, ct));
+    }
 
+    private static async Task<ScanDetailDto> DetailAsync(ImportDbContext db, ScanEntity scan, CancellationToken ct)
+    {
         var counts = await CountsAsync(db, [scan.Id], ct);
         var rules = await db.Snapshots.AsNoTracking().Where(s => s.ScanId == scan.Id).Select(s => s.RuleVersions).FirstOrDefaultAsync(ct);
-        var dto = ToDto(scan, counts.GetValueOrDefault(scan.Id));
-        return Results.Ok(new ScanDetailDto(
-            dto.Id, dto.Repository, dto.Ref, dto.CommitSha, dto.Status, dto.IsComplete, dto.Progress, dto.ProposalCounts, dto.Error,
-            dto.RetryAt, dto.RequestedBy, dto.CreatedAt, dto.CompletedAt,
+        var tracked = await db.TrackedRefs.AsNoTracking()
+            .FirstOrDefaultAsync(t => t.ProjectId == scan.ProjectId && t.Host == scan.Host && t.Repository == scan.Repository, ct);
+        var dto = ToDto(scan, counts.GetValueOrDefault(scan.Id), tracked);
+        return new ScanDetailDto(
+            dto.Id, dto.Repository, dto.RepositoryName, dto.Ref, dto.ResolvedRef, dto.CommitSha, dto.Status, dto.IsComplete,
+            dto.Kind, dto.TrackedRef, dto.CanDecide, dto.CanDecideReason, dto.Coverage, dto.Relinked, dto.NeedsReview,
+            dto.Progress, dto.ProposalCounts, dto.Error, dto.RetryAt, dto.RequestedBy, dto.CreatedAt, dto.CompletedAt,
             ScanNotes.Read(scan.Notes),
-            rules is null ? [] : System.Text.Json.JsonSerializer.Deserialize<List<RuleVersion>>(rules, System.Text.Json.JsonSerializerOptions.Web) ?? []));
+            rules is null ? [] : System.Text.Json.JsonSerializer.Deserialize<List<RuleVersion>>(rules, System.Text.Json.JsonSerializerOptions.Web) ?? [],
+            scan.TrackedBy, scan.TrackedAt);
     }
 
     /// <summary>
@@ -193,19 +253,57 @@ public static partial class ScanRequests
             : NotFound();
     }
 
-    /// <summary>A failed or cancelled scan goes back to the queue with its checkpoint: the same commit, the blobs it has.</summary>
+    /// <summary>
+    /// A failed or cancelled scan goes back to the queue with its checkpoint: the same
+    /// commit, the blobs it has. Three rules bound it:
+    /// <list type="bullet">
+    /// <item>A scan that stopped longer ago than <see cref="ImportRetention.ResumableFor"/>
+    /// is expired: its blobs are no longer kept, so it is not resumed.</item>
+    /// <item>A scan is resumed by hand at most <see cref="MaxManualResumes"/> times. Each
+    /// resume gives it its automatic attempts back.</item>
+    /// <item>A resume that has to ask GitHub again is one unit of <c>usage.maxScansPerDay</c>,
+    /// like a new scan. A resume that only has to extract what is stored is free.</item>
+    /// </list>
+    /// </summary>
     public static async Task<IResult> Resume(
         Guid projectId, Guid importId, ClaimsPrincipal user,
-        WorkspaceAuthorizationService auth, ImportDbContext db, ScanSignal signal, TimeProvider time, CancellationToken ct)
+        WorkspaceAuthorizationService auth, SettingsResolver settings, ImportDbContext db,
+        ScanSignal signal, TimeProvider time, CancellationToken ct)
     {
         await auth.RequireProjectRoleAsync(projectId, user.FindFirstValue(ClaimTypes.NameIdentifier)!, WorkspaceRole.Editor, ct);
         var now = time.GetUtcNow();
+
+        var scan = await db.Scans.AsNoTracking().FirstOrDefaultAsync(s => s.Id == importId && s.ProjectId == projectId, ct);
+        if (scan is null)
+            return NotFound();
+        if (scan.Status is not (ScanStatus.Failed or ScanStatus.Cancelled))
+            return Results.Conflict(new ErrorResponse("scan_not_resumable", "Only a failed or cancelled scan can be resumed."));
+        if (ImportRetention.IsExpired(scan, now))
+        {
+            return Results.Conflict(new ErrorResponse("scan_expired", string.Create(CultureInfo.InvariantCulture,
+                $"The scan stopped more than {ImportRetention.ResumableFor.TotalDays:0} days ago, and the files it read are no longer kept. Start a new scan.")));
+        }
+        if (scan.ManualResumes >= MaxManualResumes)
+        {
+            return Results.Conflict(new ErrorResponse("resume_limit_reached",
+                $"The scan was resumed {MaxManualResumes} times and stopped each time. Start a new scan. If it stops in the same way, report the scan ID to the operator of this instance."));
+        }
+
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        if (await HasToFetchAsync(db, scan, ct))
+        {
+            var workspace = await settings.GetWorkspaceAsync(scan.WorkspaceId, ct);
+            if (await ChargeAsync(db, scan.WorkspaceId, scan.Id, workspace.Effective.Usage.MaxScansPerDay, now, ct) is { } refused)
+                return refused;
+            await db.SaveChangesAsync(ct);
+        }
 
         int resumed;
         try
         {
             resumed = await db.Scans
-                .Where(s => s.Id == importId && s.ProjectId == projectId && (s.Status == ScanStatus.Failed || s.Status == ScanStatus.Cancelled))
+                .Where(s => s.Id == importId && s.ProjectId == projectId
+                    && (s.Status == ScanStatus.Failed || s.Status == ScanStatus.Cancelled) && s.ManualResumes == scan.ManualResumes)
                 .ExecuteUpdateAsync(set => set
                     .SetProperty(s => s.Status, ScanStatus.Queued)
                     .SetProperty(s => s.CancelRequested, false)
@@ -213,6 +311,9 @@ public static partial class ScanRequests
                     .SetProperty(s => s.ErrorMessage, (string?)null)
                     .SetProperty(s => s.CompletedAt, (DateTimeOffset?)null)
                     .SetProperty(s => s.Attempts, 0)
+                    .SetProperty(s => s.InternalFailures, 0)
+                    .SetProperty(s => s.Crashes, 0)
+                    .SetProperty(s => s.ManualResumes, s => s.ManualResumes + 1)
                     .SetProperty(s => s.UpdatedAt, now), ct);
         }
         catch (Exception ex) when (IsUniqueViolation(ex))
@@ -220,16 +321,92 @@ public static partial class ScanRequests
             return Results.Conflict(new ErrorResponse("scan_in_progress",
                 "Another scan of this repository is already queued or running for this project. Wait for it, or cancel it."));
         }
+        if (resumed == 0)
+            return Results.Conflict(new ErrorResponse("scan_not_resumable", "Only a failed or cancelled scan can be resumed."));
 
-        if (resumed == 1)
+        await transaction.CommitAsync(ct);
+        signal.Notify();
+        return Results.Accepted();
+    }
+
+    /// <summary>True when the scan cannot finish from what is stored: no commit, no file list, a file not fetched yet, or a fetched file whose content is gone.</summary>
+    private static async Task<bool> HasToFetchAsync(ImportDbContext db, ScanEntity scan, CancellationToken ct)
+    {
+        if (scan.CommitSha is null || !scan.TreeListed)
+            return true;
+        var workspaceId = scan.WorkspaceId;
+        return await db.ScanFiles.AnyAsync(f => f.ScanId == scan.Id
+            && ((f.State == ScanFileEntity.Pending && !db.Blobs.Any(b => b.WorkspaceId == workspaceId && b.BlobSha == f.BlobSha))
+                || (f.State == ScanFileEntity.Read && !db.Blobs.Any(b => b.WorkspaceId == workspaceId && b.BlobSha == f.BlobSha && b.Content != null))), ct);
+    }
+
+    /// <summary>
+    /// Makes the ref of a completed comparison scan the tracked ref of its repository in this
+    /// project, and plans the scan again as a tracking scan: its proposals can then be
+    /// decided, and it may mark facts stale. The scan row records who did it and when. Only
+    /// the newest completed scan of a ref can be tracked, and a scan of a bare commit cannot.
+    /// </summary>
+    public static async Task<IResult> Track(
+        Guid projectId, Guid importId, ClaimsPrincipal user, HttpContext http,
+        WorkspaceAuthorizationService auth, ImportDbContext db, TimeProvider time, CancellationToken ct)
+    {
+        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
+
+        var scan = await db.Scans.AsNoTracking().FirstOrDefaultAsync(s => s.Id == importId && s.ProjectId == projectId, ct);
+        if (scan is null)
+            return NotFound();
+        if (scan.Status != ScanStatus.Completed || scan.CommitSha is null)
+            return Results.Conflict(new ErrorResponse("import_not_completed", "Only a completed scan can be made the tracked one."));
+        if (scan.IsBareCommit() || scan.ResolvedRef is null)
         {
-            signal.Notify();
-            return Results.Accepted();
+            return Results.Conflict(new ErrorResponse("ref_not_trackable",
+                "This scan read a commit and no ref, so there is no line of history to follow. Scan a branch or a tag, then track that scan."));
         }
 
-        return await db.Scans.AnyAsync(s => s.Id == importId && s.ProjectId == projectId, ct)
-            ? Results.Conflict(new ErrorResponse("scan_not_resumable", "Only a failed or cancelled scan can be resumed."))
-            : NotFound();
+        var tracked = await db.TrackedRefs.AsNoTracking()
+            .FirstOrDefaultAsync(t => t.ProjectId == projectId && t.Host == scan.Host && t.Repository == scan.Repository, ct);
+        if (tracked is not null && tracked.RefName == scan.ResolvedRef)
+            return Results.Conflict(new ErrorResponse("already_tracked", $"The accepted facts of this repository already follow '{tracked.RefName}'."));
+
+        var newer = await db.Scans.AnyAsync(s =>
+            s.ProjectId == projectId && s.Host == scan.Host && s.Repository == scan.Repository && s.Id != scan.Id
+            && s.Status == ScanStatus.Completed && s.ResolvedRef == scan.ResolvedRef && s.CompletedAt > scan.CompletedAt, ct);
+        if (newer)
+            return Results.Conflict(new ErrorResponse("newer_scan_exists", "A newer scan of this ref is completed. Track that scan."));
+
+        var files = await db.ScanFiles.AsNoTracking().Where(f => f.ScanId == scan.Id)
+            .Select(f => new { f.Path, f.State, f.Reason }).ToListAsync(ct);
+        var coverageFiles = files.ToDictionary(
+            f => f.Path, f => f.State == ScanFileEntity.Read ? null : f.Reason ?? CoverageGap.ParseFailure, StringComparer.Ordinal);
+        var absent = ScanScope.AbsentGap(ScanLimits.FromJson(scan.Limits), scan.IncludePaths, scan.ExcludePaths);
+        var facts = await SnapshotWriter.StoredFactsAsync(db, scan.Id, ct);
+
+        // The marks that follow are conclusions of the scan. The scan row says who asked.
+        http.RequestServices.GetRequiredService<DeedboxContext>().Metadata = new EventMetadata
+        {
+            Actor = "system:import-scan",
+            CorrelationId = scan.Id.ToString(),
+        };
+        var now = time.GetUtcNow();
+        var outcome = await SnapshotWriter.WriteAsync(
+            http.RequestServices, scan, WriteMode.Track(userId),
+            new SnapshotInput(facts, scan.IsComplete, scan.ExtractionGap, scan.Notes,
+                () => new ScanCoverage(coverageFiles, absent, scan.ExtractionGap), scan.FilesExtracted),
+            now, ct);
+        switch (outcome)
+        {
+            case SnapshotOutcome.ProjectGone:
+                return NotFound();
+            case SnapshotOutcome.ModelBusy:
+                return Results.Conflict(new ErrorResponse("model_busy",
+                    "The project's model changed each time the scan was compared with it. Nothing was written. Try again."));
+            case SnapshotOutcome.LeaseLost:
+                return Results.Conflict(new ErrorResponse("scan_changed", "The scan changed while it was planned again. Nothing was written. Try again."));
+        }
+
+        var after = await db.Scans.AsNoTracking().FirstAsync(s => s.Id == importId, ct);
+        return Results.Ok(await DetailAsync(db, after, ct));
     }
 
     /// <summary>The index <c>ix_scans_one_active_per_repository</c> refused a second active scan.</summary>
@@ -260,7 +437,8 @@ public static partial class ScanRequests
     /// <summary>
     /// Reads <c>owner/name</c> or a page address on <paramref name="host"/>. The result is in
     /// lower case: GitHub names do not depend on case, and the name is part of every
-    /// evidence pointer and of the key of every accepted fact.
+    /// evidence pointer. What identifies the repository across renames is its GitHub ID,
+    /// which the scan reads.
     /// </summary>
     internal static bool TryReadRepository(string? value, string host, out string repository, out string error)
     {
@@ -293,6 +471,13 @@ public static partial class ScanRequests
 
         repository = $"{parts[0]}/{name}".ToLowerInvariant();
         return true;
+    }
+
+    /// <summary>True for <c>owner/name</c> in the form a scan is filed under.</summary>
+    internal static bool IsRepositoryName(string value)
+    {
+        var parts = value.Split('/');
+        return parts.Length == 2 && IsPart(parts[0]) && IsPart(parts[1]);
     }
 
     private static bool IsPart(string value) => value is not ("." or "..") && RepositoryPart().IsMatch(value);
@@ -343,12 +528,23 @@ public static partial class ScanRequests
             g.Where(r => r.Status == ProposalStatus.Rejected).Sum(r => r.Count)));
     }
 
-    private static ScanDto ToDto(ScanEntity scan, ProposalCountsDto? counts) => new(
-        scan.Id, scan.Repository, scan.RequestedRef, scan.CommitSha, scan.Status, scan.IsComplete,
-        new ScanProgressDto(scan.FilesListed, scan.FilesRead, scan.FilesSkipped, scan.BytesRead),
-        counts ?? new ProposalCountsDto(0, 0, 0),
-        scan.ErrorCode is null ? null : new ScanError(scan.ErrorCode, scan.ErrorMessage ?? ""),
-        scan.RetryAt, scan.RequestedBy, scan.CreatedAt, scan.CompletedAt);
+    private static TrackedRefEntity? TrackedOf(List<TrackedRefEntity> tracked, ScanEntity scan) =>
+        tracked.FirstOrDefault(t => t.Host == scan.Host && t.Repository == scan.Repository);
+
+    private static ScanDto ToDto(ScanEntity scan, ProposalCountsDto? counts, TrackedRefEntity? tracked)
+    {
+        var kind = ScanKindInfo.Of(scan, tracked);
+        var completed = scan.Status == ScanStatus.Completed;
+        return new ScanDto(
+            scan.Id, scan.Repository, scan.RepositoryName, scan.RequestedRef, scan.ResolvedRef, scan.CommitSha, scan.Status, scan.IsComplete,
+            kind.Kind, tracked?.RefName, completed && kind.Tracking, completed ? ScanKindInfo.Describe(kind, tracked) : null,
+            new ScanCoverageDto(scan.FilesListed, scan.FilesExtracted, LinkedFactCoverageDto.From(LinkCoverage.FromJson(scan.Coverage))),
+            scan.Relinked, scan.NeedsReview,
+            new ScanProgressDto(scan.FilesListed, scan.FilesRead, scan.FilesSkipped, scan.BytesRead),
+            counts ?? new ProposalCountsDto(0, 0, 0),
+            scan.ErrorCode is null ? null : new ScanError(scan.ErrorCode, scan.ErrorMessage ?? ""),
+            scan.RetryAt, scan.RequestedBy, scan.CreatedAt, scan.CompletedAt);
+    }
 
     private static IResult Invalid(string field, string message) =>
         Results.BadRequest(new ErrorResponse("validation_error", "Validation failed", Errors: [new FieldError(field, message)]));

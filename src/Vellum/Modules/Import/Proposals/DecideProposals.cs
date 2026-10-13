@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using System.Text.Json.Nodes;
 using Deedbox;
 using Microsoft.EntityFrameworkCore;
 using Vellum.Modules.Import.Scans;
@@ -11,15 +12,26 @@ using Vellum.Shared;
 
 namespace Vellum.Modules.Import.Proposals;
 
-public sealed record DecideProposalsRequest(Guid[]? Accept, Guid[]? Reject);
+/// <param name="Id">A proposal of action <c>relink</c>.</param>
+/// <param name="FactKey">The fact key of one of its candidates, or null to say that none of them is the accepted fact.</param>
+public sealed record RelinkChoice(Guid Id, string? FactKey);
+
+/// <param name="Accept">Proposals to apply to the model.</param>
+/// <param name="Reject">Proposals to refuse. A refused proposal is not made again while it says the same thing.</param>
+/// <param name="Relink">Decisions on <c>relink</c> proposals. They change links only, never the model.</param>
+/// <param name="AcknowledgeImpact">
+/// Must be true to accept a removal that breaks a stored scenario, or leaves an entity
+/// pointing at what is removed. Without it such a decision fails and names what would break.
+/// </param>
+public sealed record DecideProposalsRequest(Guid[]? Accept, Guid[]? Reject, RelinkChoice[]? Relink = null, bool AcknowledgeImpact = false);
 
 public sealed record DecisionFailure(Guid Id, string Reason);
 
 /// <summary>
-/// When <paramref name="Failed"/> holds anything, nothing was applied and the other two lists
+/// When <paramref name="Failed"/> holds anything, nothing was applied and the other lists
 /// are empty: a decision is applied whole or not at all.
 /// </summary>
-public sealed record DecideProposalsResponse(Guid[] Accepted, Guid[] Rejected, DecisionFailure[] Failed);
+public sealed record DecideProposalsResponse(Guid[] Accepted, Guid[] Rejected, DecisionFailure[] Failed, Guid[] Relinked);
 
 /// <summary>
 /// The one place where something a scan found reaches the model: a person with the Editor
@@ -27,9 +39,15 @@ public sealed record DecideProposalsResponse(Guid[] Accepted, Guid[] Rejected, D
 /// through the model's own deciders; the events, the link rows, the rejections and the
 /// proposal statuses commit in one transaction.
 /// <para>
+/// Only the proposals of a tracking scan can be decided. The first accepted decision for a
+/// repository makes the ref of its scan the tracked ref; from then on a scan of another ref
+/// is a preview.
+/// </para>
+/// <para>
 /// A decision is all or nothing. When any named proposal cannot be applied (it is not pending,
-/// something it depends on is not accepted, the model refuses its values, or the model changed
-/// since the scan), nothing is written and every such proposal is named with its reason.
+/// something it depends on is not accepted, the model refuses its values, the model changed
+/// since the scan, or it breaks something and the request does not acknowledge that), nothing
+/// is written and every such proposal is named with its reason.
 /// </para>
 /// </summary>
 public static class DecideProposals
@@ -48,12 +66,17 @@ public static class DecideProposals
 
         var accept = (request.Accept ?? []).Distinct().ToArray();
         var reject = (request.Reject ?? []).Distinct().ToArray();
-        if (accept.Length == 0 && reject.Length == 0)
-            return Invalid("accept", "Name at least one proposal to accept or to reject.");
-        if (accept.Length + reject.Length > MaxProposals)
+        var relink = (request.Relink ?? []).Where(r => r is not null).ToArray();
+        if (accept.Length == 0 && reject.Length == 0 && relink.Length == 0)
+            return Invalid("accept", "Name at least one proposal to accept, to reject or to relink.");
+        if (accept.Length + reject.Length + relink.Length > MaxProposals)
             return Invalid("accept", $"One decision names at most {MaxProposals} proposals.");
         if (accept.Intersect(reject).Any())
             return Invalid("reject", "A proposal cannot be accepted and rejected in one decision.");
+        if (relink.Select(r => r.Id).Distinct().Count() != relink.Length
+            || relink.Any(r => accept.Contains(r.Id) || reject.Contains(r.Id))
+            || relink.Any(r => r.FactKey is { } key && (key.Length == 0 || TextRule.Line("factKey", key, FactMapping.MaxFactKey) is not null)))
+            return Invalid("relink", "A relink names a relink proposal once, with the fact key of one of its candidates or with null.");
 
         var scan = await db.Scans.AsNoTracking().FirstOrDefaultAsync(s => s.Id == importId && s.ProjectId == projectId, ct);
         if (scan is null)
@@ -74,14 +97,13 @@ public static class DecideProposals
         if (schemaIds.Contains(project.StreamId))
             return Invalid("accept", "A schema proposal names the ID of the project's model stream.");
 
-        var response = await SharedTransaction.RunAsync(http.RequestServices, services =>
-            ApplyAsync(services, scan, project.StreamId, schemaIds, accept, reject, userId, time.GetUtcNow(), ct), ct);
-        return Results.Ok(response);
+        return await SharedTransaction.RunAsync(http.RequestServices, services =>
+            ApplyAsync(services, scan, project.StreamId, schemaIds, accept, reject, relink, request.AcknowledgeImpact, userId, time.GetUtcNow(), ct), ct);
     }
 
-    private static async Task<DecideProposalsResponse> ApplyAsync(
+    private static async Task<IResult> ApplyAsync(
         IServiceProvider services, ScanEntity scan, Guid modelStreamId, List<Guid> schemaIds,
-        Guid[] accept, Guid[] reject, string userId, DateTimeOffset now, CancellationToken ct)
+        Guid[] accept, Guid[] reject, RelinkChoice[] relink, bool acknowledgeImpact, string userId, DateTimeOffset now, CancellationToken ct)
     {
         var db = services.GetRequiredService<ImportDbContext>();
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
@@ -107,7 +129,14 @@ public static class DecideProposals
             }
         }
 
-        var named = accept.Concat(reject).ToArray();
+        // Under the lock the tracked ref cannot change, so the kind of the scan is settled here.
+        var tracked = await db.TrackedRefs.FirstOrDefaultAsync(
+            t => t.ProjectId == scan.ProjectId && t.Host == scan.Host && t.Repository == scan.Repository, ct);
+        var kind = ScanKindInfo.Of(scan, tracked);
+        if (!kind.Tracking)
+            return Results.Conflict(new ErrorResponse("comparison_scan", ScanKindInfo.Describe(kind, tracked)!));
+
+        var named = accept.Concat(reject).Concat(relink.Select(r => r.Id)).ToArray();
         var proposals = await db.Proposals.Where(p => p.ScanId == scan.Id && named.Contains(p.Id)).ToDictionaryAsync(p => p.Id, ct);
         var failures = new List<DecisionFailure>();
         foreach (var id in named)
@@ -116,6 +145,10 @@ public static class DecideProposals
                 failures.Add(new DecisionFailure(id, "This is not a proposal of this import."));
             else if (proposal.Status != ProposalStatus.Pending)
                 failures.Add(new DecisionFailure(id, $"The proposal is already {proposal.Status}."));
+            else if (proposal.Action == ProposalAction.Relink && !relink.Any(r => r.Id == id))
+                failures.Add(new DecisionFailure(id, "A relink proposal is decided under 'relink', with the fact key of one of its candidates or with null."));
+            else if (proposal.Action != ProposalAction.Relink && relink.Any(r => r.Id == id))
+                failures.Add(new DecisionFailure(id, "This is not a relink proposal."));
         }
         if (failures.Count > 0)
             return Failed(failures);
@@ -155,6 +188,30 @@ public static class DecideProposals
         }
         if (failures.Count > 0)
             return Failed(failures);
+
+        // What an accepted proposal would break, as the model and the scenarios are now.
+        if (!acknowledgeImpact && accepted.Any(p => p.Action is ProposalAction.Remove or ProposalAction.Change or ProposalAction.Conflict))
+        {
+            var impact = await ProposalImpact.LoadAsync(services, store, scan.ProjectId, model, ct);
+            // An entity that this decision removes or changes is dealt with by the decision.
+            var handled = accepted.Select(p => p.EntityId).ToHashSet();
+            foreach (var proposal in accepted)
+            {
+                var fields = ProposalJson.ReadChanges(proposal.Changes).Select(c => c.Field).ToList();
+                var found = impact.Of(proposal.Action, proposal.EntityKind, proposal.EntityId, fields);
+                var broken = found.Scenarios.Select(s => $"scenario '{s.Name}' ({s.Id}; {string.Join(", ", s.StepIds)})")
+                    .Concat(found.Entities.Where(e => !handled.Contains(e.Id)).Select(e => $"{e.EntityKind} '{e.Name}' ({e.Id})"))
+                    .ToList();
+                if (broken.Count > 0)
+                {
+                    failures.Add(new DecisionFailure(proposal.Id,
+                        $"Accepting it affects {string.Join("; ", broken.Take(20))}{(broken.Count > 20 ? $"; and {broken.Count - 20} more" : "")}. " +
+                        "Send acknowledgeImpact: true to accept it anyway."));
+                }
+            }
+            if (failures.Count > 0)
+                return Failed(failures);
+        }
 
         var repository = $"{scan.Host}/{scan.Repository}";
         var applier = new ProposalApplier(model, schemas, scan.ProjectId, repository, scan.CommitSha!, Guid.Parse(userId), now);
@@ -211,13 +268,16 @@ public static class DecideProposals
             return Failed(failures);
         }
 
+        // The rules that made the keys of this scan's facts. A link remembers them.
+        var ruleFingerprint = await db.Snapshots.AsNoTracking().Where(s => s.ScanId == scan.Id).Select(s => s.RuleFingerprint).FirstOrDefaultAsync(ct);
+
         foreach (var proposal in accepted)
         {
             proposal.Status = ProposalStatus.Accepted;
             proposal.DecidedBy = userId;
             proposal.DecidedAt = now;
 
-            var link = await db.FactLinks.FindAsync([scan.ProjectId, scan.Host, scan.Repository, proposal.FactKey], ct);
+            var link = await FindLinkAsync(db, scan, proposal.Subject, proposal.FactKey, ct);
             if (proposal.Action == ProposalAction.Remove)
             {
                 if (link is not null)
@@ -229,20 +289,60 @@ public static class DecideProposals
             {
                 link = new FactLinkEntity
                 {
-                    ProjectId = scan.ProjectId, Host = scan.Host, Repository = scan.Repository, FactKey = proposal.FactKey,
+                    Id = Guid.NewGuid(), ProjectId = scan.ProjectId, Host = scan.Host, Repository = scan.Repository,
+                    Subject = proposal.Subject, FactKey = proposal.FactKey, FactKeyHash = KeyHash.Of(proposal.FactKey),
                 };
                 db.FactLinks.Add(link);
             }
+            link.RepositoryId = scan.RepositoryId;
             link.EntityKind = proposal.EntityKind;
             link.EntityId = proposal.EntityId;
             link.ScanId = scan.Id;
             link.CommitSha = scan.CommitSha!;
+            link.RuleFingerprint = ruleFingerprint;
             link.Attributes = proposal.Attributes;
-            link.Accepted = ProposalJson.Write(applier.AcceptedValues[proposal.Id]);
+            link.ConsumerKeys = proposal.ConsumerKeys;
+            link.Accepted = ProposalJson.WriteValues(applier.AcceptedValues[proposal.Id]);
             link.Evidence = proposal.Evidence;
             link.AcceptedBy = userId;
             link.AcceptedAt = now;
         }
+
+        // A relink names which fact of this snapshot an accepted fact is, or that none is.
+        // It moves the link and nothing else: no value, no evidence and no event changes.
+        foreach (var choice in relink)
+        {
+            var proposal = proposals[choice.Id];
+            var link = await FindLinkAsync(db, scan, proposal.Subject, proposal.FactKey, ct);
+            if (link is null)
+            {
+                failures.Add(new DecisionFailure(choice.Id, "The accepted fact of this proposal no longer exists. Scan the repository again."));
+                continue;
+            }
+            if (choice.FactKey is { } chosen)
+            {
+                var offered = (JsonNode.Parse(proposal.Proposed ?? "{}")?["candidates"] as JsonArray ?? [])
+                    .Select(c => c?["factKey"]?.GetValue<string>()).ToList();
+                if (!offered.Contains(chosen))
+                {
+                    failures.Add(new DecisionFailure(choice.Id, "The fact key is not one of the candidates of this proposal."));
+                    continue;
+                }
+                if (await FindLinkAsync(db, scan, Subject.Fact, chosen, ct) is { } holder && holder.Id != link.Id)
+                {
+                    failures.Add(new DecisionFailure(choice.Id, "Another accepted fact already has this fact key."));
+                    continue;
+                }
+                link.FactKey = chosen;
+                link.FactKeyHash = KeyHash.Of(chosen);
+            }
+            link.RuleFingerprint = ruleFingerprint;
+            proposal.Status = ProposalStatus.Accepted;
+            proposal.DecidedBy = userId;
+            proposal.DecidedAt = now;
+        }
+        if (failures.Count > 0)
+            return Failed(failures);
 
         foreach (var id in reject)
         {
@@ -252,23 +352,45 @@ public static class DecideProposals
             proposal.DecidedAt = now;
 
             // Remembered by what the proposal says, so the next scan does not make it again.
+            var hash = KeyHash.Of(proposal.FactKey);
             var known = await db.Rejections.AnyAsync(r =>
                 r.ProjectId == scan.ProjectId && r.Host == scan.Host && r.Repository == scan.Repository
-                && r.FactKey == proposal.FactKey && r.Fingerprint == proposal.Fingerprint, ct);
+                && r.Subject == proposal.Subject && r.FactKeyHash == hash && r.Fingerprint == proposal.Fingerprint, ct);
             if (!known)
             {
                 db.Rejections.Add(new RejectionEntity
                 {
-                    ProjectId = scan.ProjectId, Host = scan.Host, Repository = scan.Repository,
-                    FactKey = proposal.FactKey, Fingerprint = proposal.Fingerprint,
-                    ScanId = scan.Id, RejectedBy = userId, RejectedAt = now,
+                    Id = Guid.NewGuid(), ProjectId = scan.ProjectId, Host = scan.Host, Repository = scan.Repository,
+                    RepositoryId = scan.RepositoryId, Subject = proposal.Subject, FactKey = proposal.FactKey, FactKeyHash = hash,
+                    Fingerprint = proposal.Fingerprint, ScanId = scan.Id, RejectedBy = userId, RejectedAt = now,
                 });
+            }
+        }
+
+        // The first accepted decision says which line of history the accepted facts follow.
+        if (accepted.Count > 0)
+        {
+            if (tracked is null)
+                await SnapshotWriter.SetTrackedRefAsync(db, scan, userId, now, ct);
+            else
+            {
+                tracked.CommitSha = scan.CommitSha;
+                tracked.ScanId = scan.Id;
+                tracked.RepositoryId ??= scan.RepositoryId;
             }
         }
 
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
-        return new DecideProposalsResponse(accept, reject, []);
+        return Results.Ok(new DecideProposalsResponse(accept, reject, [], [.. relink.Select(r => r.Id)]));
+    }
+
+    private static Task<FactLinkEntity?> FindLinkAsync(ImportDbContext db, ScanEntity scan, string subject, string factKey, CancellationToken ct)
+    {
+        var hash = KeyHash.Of(factKey);
+        return db.FactLinks.FirstOrDefaultAsync(l =>
+            l.ProjectId == scan.ProjectId && l.Host == scan.Host && l.Repository == scan.Repository
+            && l.Subject == subject && l.FactKeyHash == hash, ct);
     }
 
     /// <summary>
@@ -300,8 +422,8 @@ public static class DecideProposals
         }
     }
 
-    private static DecideProposalsResponse Failed(List<DecisionFailure> failures) =>
-        new([], [], [.. failures.DistinctBy(f => f.Id)]);
+    private static IResult Failed(List<DecisionFailure> failures) =>
+        Results.Ok(new DecideProposalsResponse([], [], [.. failures.DistinctBy(f => f.Id)], []));
 
     private static IResult Invalid(string field, string message) =>
         Results.BadRequest(new ErrorResponse("validation_error", "Validation failed", Errors: [new FieldError(field, message)]));

@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Vellum.Modules.Modelling.Model;
 
 namespace Vellum.Modules.Import.Proposals;
@@ -14,10 +15,19 @@ internal sealed record ModelEntity(
 
 internal sealed record SchemaRow(Guid Id, string Name, string Content);
 
+/// <summary>
+/// The model as the planner reads it. Every lookup is a dictionary read: by ID, and by the
+/// match key of <see cref="MatchKey"/>, which is computed once per entity when the index is
+/// built.
+/// </summary>
 internal sealed class ModelIndex
 {
     private readonly Dictionary<(string Kind, Guid Id), ModelEntity> _byId = [];
-    private readonly Dictionary<string, List<ModelEntity>> _byKind = EntityKinds.All.ToDictionary(k => k, _ => new List<ModelEntity>());
+    private readonly Dictionary<Guid, string> _names = [];
+    private readonly Dictionary<(string Kind, string MatchKey), List<ModelEntity>> _byMatchKey = [];
+    private readonly Dictionary<(string Kind, Guid Id), string> _matchKeys = [];
+
+    public int Count => _byId.Count;
 
     public static ModelIndex From(ModelState model, IEnumerable<SchemaRow> schemas)
     {
@@ -61,30 +71,43 @@ internal sealed class ModelIndex
     public static ModelEntity Of(SchemaRow s) => new(s.Id, EntityKinds.Schema, s.Name, Values(
         (Field.Name, s.Name), (Field.Content, s.Content)), null, null);
 
-    /// <summary>IDs in one fixed order, so two sets of the same IDs compare equal as text.</summary>
+    /// <summary>
+    /// A set of IDs as one text: a JSON array in one fixed order, so two sets of the same IDs
+    /// compare equal as text. No ID list is ever a string joined with a separator.
+    /// </summary>
     public static string JoinIds(IEnumerable<Guid> ids) =>
-        string.Join(",", ids.Distinct().Select(id => id.ToString()).OrderBy(id => id, StringComparer.Ordinal));
+        JsonSerializer.Serialize(ids.Distinct().Select(id => id.ToString()).OrderBy(id => id, StringComparer.Ordinal));
 
     public static IEnumerable<Guid> SplitIds(string? joined) =>
-        string.IsNullOrEmpty(joined) ? [] : joined.Split(',').Select(Guid.Parse);
+        string.IsNullOrEmpty(joined) ? [] : (JsonSerializer.Deserialize<List<string>>(joined) ?? []).Select(Guid.Parse);
 
     /// <summary>The fields a scan can change on an existing entity of <paramref name="entityKind"/>.</summary>
     public static IReadOnlyList<string> ComparedFields(string entityKind) => entityKind switch
     {
         // Not the kind and not the parent: where a person put an element stays their choice.
-        EntityKinds.Element => [Field.Name, Field.Technology],
-        EntityKinds.Operation => [Field.Name, Field.Transport, Field.OwnerId],
-        EntityKinds.Channel => [Field.Name, Field.Kind],
-        EntityKinds.Subscription => [Field.ChannelId, Field.ConsumerId, Field.DeadLetterChannelId],
-        EntityKinds.Message => [Field.Name, Field.ProducerId, Field.ConsumerIds, Field.SchemaId],
-        EntityKinds.Schema => [Field.Name, Field.Content],
+        EntityKinds.Element => ElementFields,
+        EntityKinds.Operation => OperationFields,
+        EntityKinds.Channel => ChannelFields,
+        EntityKinds.Subscription => SubscriptionFields,
+        EntityKinds.Message => MessageFields,
+        EntityKinds.Schema => SchemaFields,
         _ => [],
     };
 
+    private static readonly string[] ElementFields = [Field.Name, Field.Technology];
+    private static readonly string[] OperationFields = [Field.Name, Field.Transport, Field.OwnerId];
+    private static readonly string[] ChannelFields = [Field.Name, Field.Kind];
+    private static readonly string[] SubscriptionFields = [Field.ChannelId, Field.ConsumerId, Field.DeadLetterChannelId];
+    private static readonly string[] MessageFields = [Field.Name, Field.ProducerId, Field.ConsumerIds, Field.SchemaId];
+    private static readonly string[] SchemaFields = [Field.Name, Field.Content];
+
     /// <summary>
-    /// The exact rule that says a fact and a hand-made entity are the same thing: the same
-    /// kind and the same normalised name or route. For an operation the owner must be the
-    /// same element too; a subscription has no name and matches on its channel and consumer.
+    /// The exact rule that says a fact and an entity are the same thing: the same kind and
+    /// the same normalised name or route. For an operation the owner must be the same
+    /// element too; a subscription has no name and matches on its channel and consumer; a
+    /// message, a channel and a schema match on the name alone.
+    /// It is used for two things: to join a fact to a hand-made entity, and to move an
+    /// accepted link to the fact that replaced its key after the extraction rules changed.
     /// </summary>
     public static string MatchKey(string entityKind, IReadOnlyDictionary<string, string?> values) => entityKind switch
     {
@@ -141,23 +164,26 @@ internal sealed class ModelIndex
 
     public ModelEntity? Find(string entityKind, Guid id) => _byId.GetValueOrDefault((entityKind, id));
 
-    public IReadOnlyList<ModelEntity> OfKind(string entityKind) => _byKind[entityKind];
+    /// <summary>The entities of a kind with this match key. The list is empty when there is none.</summary>
+    public IReadOnlyList<ModelEntity> Matching(string entityKind, string matchKey) =>
+        _byMatchKey.TryGetValue((entityKind, matchKey), out var found) ? found : [];
+
+    /// <summary>The match key of an entity of this index, as computed when the index was built.</summary>
+    public string MatchKeyOf(ModelEntity entity) => _matchKeys[(entity.EntityKind, entity.Id)];
 
     /// <summary>The name of any entity, for showing next to an ID.</summary>
-    public string? NameOf(Guid id)
-    {
-        foreach (var kind in EntityKinds.All)
-        {
-            if (_byId.TryGetValue((kind, id), out var entity))
-                return entity.Name;
-        }
-        return null;
-    }
+    public string? NameOf(Guid id) => _names.GetValueOrDefault(id);
 
     private void Add(ModelEntity entity)
     {
         _byId[(entity.EntityKind, entity.Id)] = entity;
-        _byKind[entity.EntityKind].Add(entity);
+        _names.TryAdd(entity.Id, entity.Name);
+
+        var key = MatchKey(entity.EntityKind, entity.Values);
+        _matchKeys[(entity.EntityKind, entity.Id)] = key;
+        if (!_byMatchKey.TryGetValue((entity.EntityKind, key), out var list))
+            _byMatchKey[(entity.EntityKind, key)] = list = [];
+        list.Add(entity);
     }
 
     private static SortedDictionary<string, string?> Values(params (string Name, string? Value)[] values)

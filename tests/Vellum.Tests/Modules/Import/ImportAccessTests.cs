@@ -30,10 +30,16 @@ public class ImportAccessTests(ImportHost import) : IClassFixture<ImportHost>
         var one = proposals.Proposal("element", "orders").Id();
         var before = await s.Owner.GetStringAsync(s.Url($"/{id}/proposals?limit=200"));
 
-        string[] reads = ["", $"/{id}", $"/{id}/proposals", $"/{id}/evidence", $"/{id}/source?path=orders-api/Program.cs&startLine=1&endLine=2"];
+        // The repository of the fixture is public, so a Viewer may read the lines of its evidence.
+        var (sourcePath, sourceStart, sourceEnd) = (await s.EvidenceWindowsAsync(id))[0];
+        string[] reads =
+        [
+            "", $"/{id}", $"/{id}/proposals", $"/{id}/proposals/{one}", $"/{id}/evidence",
+            $"/{id}/source?path={Uri.EscapeDataString(sourcePath)}&startLine={sourceStart}&endLine={sourceEnd}",
+        ];
         (string Path, object Body)[] writes =
         [
-            ("", new { repository = "acme/other" }), ($"/{id}/cancel", new { }), ($"/{id}/resume", new { }),
+            ("", new { repository = "acme/other" }), ($"/{id}/cancel", new { }), ($"/{id}/resume", new { }), ($"/{id}/track", new { }),
             ($"/{id}/proposals/decide", new { accept = new[] { one } }),
         ];
 
@@ -112,12 +118,12 @@ public class ImportAccessTests(ImportHost import) : IClassFixture<ImportHost>
         // Two copies that differ in the mark alone are the same fact: a merge sees no edit.
         Assert.Equal(clean, marked.Elements[id]);
 
-        // Recording the same claim again is a re-acceptance, an edit of an observed value is
-        // a statement about the fact, and a scan can take the mark away. Each clears it.
+        // Recording the same claim again is a re-acceptance, and a scan can take the mark
+        // away. Each clears it. An edit of a value, of any field, does not.
         var again = ModelDecider.RecordElementProvenance(marked, id, FactStatus.ObservedInSource, provenance);
         var reaccepted = Assert.IsType<Vellum.Shared.CommandResult<IReadOnlyList<object>>.Success>(again).Value;
         Assert.Null(reaccepted.Aggregate(marked, ModelState.Evolve).Elements[id].Stale);
-        Assert.Null(ModelState.Evolve(marked, new ModelEvent.ElementRenamed(id, "Orders 2")).Elements[id].Stale);
+        Assert.Equal(mark, ModelState.Evolve(marked, new ModelEvent.ElementRenamed(id, "Orders 2")).Elements[id].Stale);
         Assert.Null(StaleDecider.Mark(marked, id, null).Aggregate(marked, ModelState.Evolve).Elements[id].Stale);
 
         // A description is intent. Writing one says nothing about the evidence.

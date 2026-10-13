@@ -178,7 +178,8 @@ public class OrdersImportTests(ImportHost import) : IClassFixture<ImportHost>
         var gone = await s.Owner.GetAsync(s.Url($"/{scan.Id()}/source?path=orders-api/Program.cs&startLine=40&endLine=50"));
         Assert.Equal(HttpStatusCode.NotFound, gone.StatusCode);
         Assert.Equal("source_not_kept", (await gone.Content.ReadFromJsonAsync<JsonObject>())!.Text("type"));
-        Assert.Equal(HttpStatusCode.OK, (await s.Owner.GetAsync(s.Url($"/{newest.Id()}/source?path=orders-api/Program.cs&startLine=1&endLine=3"))).StatusCode);
+        var (keptPath, keptStart, keptEnd) = (await s.EvidenceWindowsAsync(newest.Id()))[0];
+        Assert.Equal(HttpStatusCode.OK, (await s.Owner.GetAsync(s.Url($"/{newest.Id()}/source?path={Uri.EscapeDataString(keptPath)}&startLine={keptStart}&endLine={keptEnd}"))).StatusCode);
 
         // No text of a file reached a log, and no scan stopped on an unexpected error.
         Assert.DoesNotContain(import.Host.Logs.Lines, line => line.Contains("Goes to the outbox table", StringComparison.Ordinal));

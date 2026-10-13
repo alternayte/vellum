@@ -1,0 +1,77 @@
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.RegularExpressions;
+using Vellum.Modules.Import.Extraction;
+
+namespace Vellum.Modules.Import.Scans;
+
+/// <summary>
+/// The check that content passes before it is stored. It runs on the bytes GitHub returned,
+/// at the moment they arrive: content that fails is never written anywhere, and only the
+/// reason is kept. So no later step, and no failed scan, can serve it.
+/// <para>
+/// The check depends on the content alone and not on the path, because a blob is stored
+/// once for every path that holds it.
+/// </para>
+/// </summary>
+internal static partial class ContentClearance
+{
+    /// <summary>A file is withheld when at least this many of its lines look like credentials and they are at least <see cref="DenseShare"/> of its lines with text.</summary>
+    public const int DenseLines = 5;
+    public const double DenseShare = 0.2;
+
+    [GeneratedRegex(@"^\s*-?\s*[""']?kind[""']?\s*[:=]\s*[""']?Secret[""']?\s*,?\s*$", RegexOptions.CultureInvariant)]
+    private static partial Regex SecretKind();
+
+    [GeneratedRegex(@"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----", RegexOptions.CultureInvariant)]
+    private static partial Regex PrivateKey();
+
+    /// <summary>True when the bytes are the git blob that <paramref name="blobSha"/> names: SHA-1 over <c>blob &lt;length&gt;\0</c> and the bytes.</summary>
+    public static bool IsBlob(byte[] content, string blobSha)
+    {
+        using var sha = IncrementalHash.CreateHash(HashAlgorithmName.SHA1);
+        sha.AppendData(Encoding.ASCII.GetBytes($"blob {content.Length}\0"));
+        sha.AppendData(content);
+        return string.Equals(Convert.ToHexStringLower(sha.GetHashAndReset()), blobSha, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Null when the content may be stored. Else why not: <c>binary-content</c> for bytes
+    /// that are not text, <c>secret-file</c> for a manifest that declares a Secret or text
+    /// that holds a private key, <c>credential-dense</c> for text with many credential-like lines.
+    /// </summary>
+    public static string? Withhold(byte[] content)
+    {
+        if (Array.IndexOf(content, (byte)0) >= 0)
+            return "binary-content";
+
+        string text;
+        try
+        {
+            text = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true).GetString(content);
+        }
+        catch (DecoderFallbackException)
+        {
+            return "binary-content";
+        }
+
+        if (PrivateKey().IsMatch(text))
+            return "secret-file";
+
+        int withText = 0, secret = 0;
+        foreach (var line in text.AsSpan().EnumerateLines())
+        {
+            if (line.IsWhiteSpace())
+                continue;
+            withText++;
+            // A long line costs more to check than it can tell.
+            var checkedLine = line.Length > SourceWindow.MaxLineLength ? line[..SourceWindow.MaxLineLength] : line;
+            var value = checkedLine.ToString();
+            if (SecretKind().IsMatch(value))
+                return "secret-file";
+            if (CredentialGuard.LooksSecret(value))
+                secret++;
+        }
+        return secret >= DenseLines && secret >= withText * DenseShare ? CoverageGap.CredentialDense : null;
+    }
+}

@@ -41,7 +41,8 @@ public readonly record struct GitHubResult<T>(T? Value, GitHubFailure? Failure)
     public static implicit operator GitHubResult<T>(GitHubFailure failure) => new(default, failure);
 }
 
-public sealed record GitHubRepository(string FullName, string DefaultBranch, bool IsPrivate, bool Archived);
+/// <param name="Id">GitHub's numeric ID of the repository. It stays the same when the repository is renamed or moved. Null when the answer holds none.</param>
+public sealed record GitHubRepository(string FullName, string DefaultBranch, bool IsPrivate, bool Archived, long? Id = null);
 /// <param name="Path">The path as the repository holds it. It is not changed: it is the key of the entry, and it is untrusted text.</param>
 public sealed record GitHubTreeEntry(string Path, string Type, string Sha, long? Size, string? Mode);
 public sealed record GitHubTree(string Sha, IReadOnlyList<GitHubTreeEntry> Entries);
@@ -153,7 +154,7 @@ public sealed partial class GitHubConnection
             : SendAsync<GitHubRepository>("get-repository", call => _api.GetRepository(owner, repo, call, ct), async response =>
                 await OutboundBody.ReadJsonAsync<RepositoryDto>(response, ct) is { } dto
                 && Clean(dto.FullName, MaxNameChars) is { } name && Clean(dto.DefaultBranch, MaxRefChars) is { } branch
-                    ? new GitHubRepository(name, branch, dto.Private, dto.Archived)
+                    ? new GitHubRepository(name, branch, dto.Private, dto.Archived, dto.Id > 0 ? dto.Id : null)
                     : Unexpected, ct);
 
     /// <summary>

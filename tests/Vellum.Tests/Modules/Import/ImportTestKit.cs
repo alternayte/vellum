@@ -4,6 +4,7 @@ using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json.Nodes;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Vellum.Modules.Import.Extraction;
 using Vellum.Modules.Import.Proposals;
@@ -41,6 +42,14 @@ internal sealed class FixtureGitHub
     /// <summary>GitHub refuses the token.</summary>
     public bool Unauthorized { get; set; }
     public bool Truncated { get; set; }
+    /// <summary>Branches other than <c>main</c>, by name, with the commit each resolves to.</summary>
+    public Dictionary<string, string> Branches { get; } = new(StringComparer.Ordinal);
+    /// <summary>The name GitHub answers with for a repository, by the lower-case name asked for. Without an entry it is the name asked for.</summary>
+    public Dictionary<string, string> FullNames { get; } = new(StringComparer.Ordinal);
+    /// <summary>GitHub's ID of a repository, by the lower-case name asked for. Without an entry each name has an ID of its own.</summary>
+    public Dictionary<string, long> RepositoryIds { get; } = new(StringComparer.Ordinal);
+    /// <summary>Called with the path of a blob. Bytes it returns are served in place of the file's, under the SHA that was asked for.</summary>
+    public Func<string, byte[]?>? Corrupt { get; set; }
     /// <summary>
     /// Called with the path before a blob is served. A response it returns is served instead.
     /// The token is the request's: a gate that waits on it ends when the caller gives up.
@@ -93,9 +102,14 @@ internal sealed class FixtureGitHub
         if (segments.Length == 3)
         {
             _requests.Enqueue("repository");
+            var asked = $"{owner}/{name}".ToLowerInvariant();
+            // A stable ID per name, as GitHub has one per repository.
+            var id = RepositoryIds.TryGetValue(asked, out var known)
+                ? known
+                : BitConverter.ToUInt32(SHA256.HashData(Encoding.UTF8.GetBytes(asked))) + 1L;
             return Json(HttpStatusCode.OK, new JsonObject
             {
-                ["id"] = 1, ["full_name"] = $"{owner}/{name}", ["private"] = Private,
+                ["id"] = id, ["full_name"] = FullNames.GetValueOrDefault(asked, $"{owner}/{name}"), ["private"] = Private,
                 ["default_branch"] = "main", ["archived"] = false, ["size"] = 10,
             }.ToJsonString());
         }
@@ -105,7 +119,9 @@ internal sealed class FixtureGitHub
             // "List commits" with ?sha=<ref>&per_page=1: the newest commit of the ref, or 404 for no such ref.
             var reference = System.Web.HttpUtility.ParseQueryString(sent.Uri.Query)["sha"] ?? "";
             _requests.Enqueue($"ref:{reference}");
-            var sha = _commits.ContainsKey(reference) ? reference : reference == "main" ? Head : null;
+            var sha = _commits.ContainsKey(reference) ? reference
+                : reference == "main" ? Head
+                : Branches.GetValueOrDefault(reference);
             return sha is null
                 ? NotFound()
                 : Json(HttpStatusCode.OK, new JsonArray(new JsonObject { ["sha"] = sha }).ToJsonString());
@@ -140,13 +156,14 @@ internal sealed class FixtureGitHub
             if (OnBlob is not null && await OnBlob(found.Key, sent.Cancellation) is { } instead)
                 return instead;
 
-            var base64 = Convert.ToBase64String(found.Value);
+            var served = Corrupt?.Invoke(found.Key) ?? found.Value;
+            var base64 = Convert.ToBase64String(served);
             var wrapped = new StringBuilder();
             for (var i = 0; i < base64.Length; i += 60)
                 wrapped.Append(base64, i, Math.Min(60, base64.Length - i)).Append('\n');
             return Json(HttpStatusCode.OK, new JsonObject
             {
-                ["sha"] = blobSha, ["size"] = found.Value.Length, ["encoding"] = "base64", ["content"] = wrapped.ToString(),
+                ["sha"] = blobSha, ["size"] = served.Length, ["encoding"] = "base64", ["content"] = wrapped.ToString(),
             }.ToJsonString());
         }
 
@@ -249,10 +266,21 @@ internal sealed record ImportScenario(
         }
     }
 
-    /// <summary>Asks for a scan, runs it and returns it as the API shows it.</summary>
-    public async Task<JsonObject> ScanAsync(string repository = "acme/orders")
+    /// <summary>Runs a statement on the import tables, for the states that only time or another process brings about.</summary>
+    public async Task<int> SqlAsync(FormattableString sql)
     {
-        var id = await StartAsync(repository);
+        using var scope = Import.Host.Factory.Services.CreateScope();
+        return await scope.ServiceProvider.GetRequiredService<Vellum.Modules.Import.ImportDbContext>().Database.ExecuteSqlAsync(sql);
+    }
+
+    /// <summary>Makes the lease of a running scan run out, as it does when its worker stops renewing it. The lease is on the database clock.</summary>
+    public Task<int> ExpireLeaseAsync(Guid importId) =>
+        SqlAsync($"UPDATE import.scans SET lease_expires_at = now() - interval '1 second' WHERE id = {importId} AND status = 'running'");
+
+    /// <summary>Asks for a scan, runs it and returns it as the API shows it.</summary>
+    public async Task<JsonObject> ScanAsync(string repository = "acme/orders", object? body = null)
+    {
+        var id = await StartAsync(repository, body);
         await DrainAsync();
         return await GetAsync(id);
     }
@@ -280,9 +308,15 @@ internal sealed record ImportScenario(
         return items;
     }
 
-    public async Task<JsonObject> DecideAsync(Guid importId, IEnumerable<Guid>? accept = null, IEnumerable<Guid>? reject = null, HttpClient? client = null)
+    public async Task<JsonObject> DecideAsync(
+        Guid importId, IEnumerable<Guid>? accept = null, IEnumerable<Guid>? reject = null, HttpClient? client = null,
+        bool acknowledgeImpact = false, IEnumerable<(Guid Id, string? FactKey)>? relink = null)
     {
-        var response = await (client ?? Owner).PostAsJsonAsync(Url($"/{importId}/proposals/decide"), new { accept = accept ?? [], reject = reject ?? [] });
+        var response = await (client ?? Owner).PostAsJsonAsync(Url($"/{importId}/proposals/decide"), new
+        {
+            accept = accept ?? [], reject = reject ?? [], acknowledgeImpact,
+            relink = (relink ?? []).Select(r => new { id = r.Id, factKey = r.FactKey }),
+        });
         Assert.True(response.StatusCode == HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
         return (await response.Content.ReadFromJsonAsync<JsonObject>())!;
     }
@@ -299,6 +333,17 @@ internal sealed record ImportScenario(
     }
 
     public Task<List<JsonObject>> ElementsAsync() => AllAsync(Model("elements"));
+
+    /// <summary>The line windows that are evidence of this scan at its commit: the only windows the source view serves.</summary>
+    public async Task<List<(string Path, int Start, int End)>> EvidenceWindowsAsync(Guid importId)
+    {
+        var commit = (await GetAsync(importId)).Text("commitSha")!;
+        var items = (await ProposalsAsync(importId)).Concat(await EvidenceAsync(importId));
+        return [.. items.SelectMany(i => i["evidence"]!.AsArray())
+            .Where(e => e!["pointer"]!.GetValue<string>().Contains($"@{commit}:", StringComparison.Ordinal))
+            .Select(e => (e!["path"]!.GetValue<string>(), e["startLine"]!.GetValue<int>(), e["endLine"]!.GetValue<int>()))
+            .Distinct()];
+    }
 }
 
 /// <summary>
@@ -318,7 +363,8 @@ internal sealed class FixtureFacts
         Result = EvidenceExtractor.Extract(new ExtractionInput(repository, commit,
             [.. s.GitHub.Files(commit).Select(f => new SourceFile(f.Key, System.Text.Encoding.UTF8.GetString(f.Value)))]));
         var mapping = FactMapping.Map(repository, Result.Facts);
-        MappedKeys = [.. mapping.Candidates.Select(c => c.FactKey).Order(StringComparer.Ordinal)];
+        // As a proposal shows them: the repository itself has an empty fact key.
+        MappedKeys = [.. mapping.Candidates.Select(c => FactMapping.StoredKey(c.FactKey)).Order(StringComparer.Ordinal)];
         EvidenceOnly = mapping.Facts.Count(f => f.Disposition == FactDisposition.EvidenceOnly);
         Folded = mapping.Facts.Count(f => f.Disposition == FactDisposition.Folded);
     }

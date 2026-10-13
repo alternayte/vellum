@@ -67,7 +67,7 @@ public class GitHubReaderTests(SharedOutboundHost shared) : IClassFixture<Shared
         var pull = await connection.GetPullRequestAsync("acme", "orders", 7);
         var rate = await connection.GetRateLimitAsync();
 
-        Assert.Equal(new GitHubRepository("acme/orders", "main", true, false), repository.Value);
+        Assert.Equal(new GitHubRepository("acme/orders", "main", true, false, 1296269), repository.Value);
         Assert.Equal(CommitSha, sha.Value);
         Assert.Equal(CommitSha, tree.Value!.Sha);
         Assert.Equal(["README.md", "src", "src/Program.cs"], tree.Value.Entries.Select(e => e.Path));

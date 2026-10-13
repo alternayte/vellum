@@ -1,4 +1,6 @@
 using System.Security.Claims;
+using Vellum.Modules.Import;
+using Vellum.Modules.Import.Scans;
 using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Shared;
 
@@ -6,10 +8,19 @@ namespace Vellum.Modules.Workspaces;
 
 public static class DeleteProject
 {
+    /// <summary>
+    /// Deletes the project, then everything the importer holds for it: scans, snapshots,
+    /// proposals, links and the repository text that nothing else needs. Imported text does
+    /// not outlive the project it was imported for. The second step is safe to repeat, and
+    /// the scan worker repeats it on its timer for a project whose delete was cut short
+    /// between the two.
+    /// </summary>
     public static async Task<IResult> Handle(
         Guid projectId,
         ClaimsPrincipal user,
         WorkspacesDbContext db,
+        ImportDbContext importDb,
+        TimeProvider time,
         WorkspaceAuthorizationService auth,
         CancellationToken ct)
     {
@@ -22,6 +33,9 @@ public static class DeleteProject
 
         db.Projects.Remove(project);
         await db.SaveChangesAsync(ct);
+
+        // The project is gone for every reader. The cleanup does not stop when the caller goes away.
+        await ImportRetention.DeleteProjectAsync(importDb, projectId, time.GetUtcNow(), CancellationToken.None);
         return Results.NoContent();
     }
 }

@@ -25,21 +25,10 @@ namespace Vellum.Modules.Import.Migrations
 
             modelBuilder.Entity("Vellum.Modules.Import.Proposals.FactLinkEntity", b =>
                 {
-                    b.Property<Guid>("ProjectId")
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
                         .HasColumnType("uuid")
-                        .HasColumnName("project_id");
-
-                    b.Property<string>("Host")
-                        .HasColumnType("text")
-                        .HasColumnName("host");
-
-                    b.Property<string>("Repository")
-                        .HasColumnType("text")
-                        .HasColumnName("repository");
-
-                    b.Property<string>("FactKey")
-                        .HasColumnType("text")
-                        .HasColumnName("fact_key");
+                        .HasColumnName("id");
 
                     b.Property<string>("Accepted")
                         .IsRequired()
@@ -65,6 +54,13 @@ namespace Vellum.Modules.Import.Migrations
                         .HasColumnType("text")
                         .HasColumnName("commit_sha");
 
+                    b.Property<string>("ConsumerKeys")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("consumer_keys")
+                        .HasDefaultValueSql("'[]'::jsonb");
+
                     b.Property<Guid>("EntityId")
                         .HasColumnType("uuid")
                         .HasColumnName("entity_id");
@@ -79,15 +75,61 @@ namespace Vellum.Modules.Import.Migrations
                         .HasColumnType("jsonb")
                         .HasColumnName("evidence");
 
+                    b.Property<string>("FactKey")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("fact_key");
+
+                    b.Property<string>("FactKeyHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("fact_key_hash");
+
+                    b.Property<string>("Host")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("host");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("project_id");
+
+                    b.Property<string>("Repository")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("repository");
+
+                    b.Property<long?>("RepositoryId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("repository_id");
+
+                    b.Property<string>("RuleFingerprint")
+                        .HasColumnType("text")
+                        .HasColumnName("rule_fingerprint");
+
                     b.Property<Guid>("ScanId")
                         .HasColumnType("uuid")
                         .HasColumnName("scan_id");
 
-                    b.HasKey("ProjectId", "Host", "Repository", "FactKey")
+                    b.Property<string>("Subject")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("fact")
+                        .HasColumnName("subject");
+
+                    b.HasKey("Id")
                         .HasName("pk_fact_links");
 
                     b.HasIndex("ProjectId", "EntityId")
                         .HasDatabaseName("ix_fact_links_project_id_entity_id");
+
+                    b.HasIndex("ProjectId", "Host", "Repository", "Subject", "FactKeyHash")
+                        .IsUnique()
+                        .HasDatabaseName("ix_fact_links_project_id_host_repository_subject_fact_key_hash");
 
                     b.ToTable("fact_links", "import");
                 });
@@ -113,6 +155,13 @@ namespace Vellum.Modules.Import.Migrations
                         .IsRequired()
                         .HasColumnType("jsonb")
                         .HasColumnName("changes");
+
+                    b.Property<string>("ConsumerKeys")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("consumer_keys")
+                        .HasDefaultValueSql("'[]'::jsonb");
 
                     b.Property<string>("Current")
                         .HasColumnType("jsonb")
@@ -147,7 +196,8 @@ namespace Vellum.Modules.Import.Migrations
 
                     b.Property<string>("FactKey")
                         .IsRequired()
-                        .HasColumnType("text")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
                         .HasColumnName("fact_key");
 
                     b.Property<string>("Fingerprint")
@@ -185,6 +235,14 @@ namespace Vellum.Modules.Import.Migrations
                         .HasColumnType("text")
                         .HasColumnName("status");
 
+                    b.Property<string>("Subject")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("fact")
+                        .HasColumnName("subject");
+
                     b.HasKey("Id")
                         .HasName("pk_proposals");
 
@@ -200,25 +258,36 @@ namespace Vellum.Modules.Import.Migrations
 
             modelBuilder.Entity("Vellum.Modules.Import.Proposals.RejectionEntity", b =>
                 {
-                    b.Property<Guid>("ProjectId")
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
                         .HasColumnType("uuid")
-                        .HasColumnName("project_id");
+                        .HasColumnName("id");
+
+                    b.Property<string>("FactKey")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("fact_key");
+
+                    b.Property<string>("FactKeyHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("fact_key_hash");
+
+                    b.Property<string>("Fingerprint")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("fingerprint");
 
                     b.Property<string>("Host")
+                        .IsRequired()
                         .HasColumnType("text")
                         .HasColumnName("host");
 
-                    b.Property<string>("Repository")
-                        .HasColumnType("text")
-                        .HasColumnName("repository");
-
-                    b.Property<string>("FactKey")
-                        .HasColumnType("text")
-                        .HasColumnName("fact_key");
-
-                    b.Property<string>("Fingerprint")
-                        .HasColumnType("text")
-                        .HasColumnName("fingerprint");
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("project_id");
 
                     b.Property<DateTimeOffset>("RejectedAt")
                         .HasColumnType("timestamp with time zone")
@@ -229,12 +298,33 @@ namespace Vellum.Modules.Import.Migrations
                         .HasColumnType("text")
                         .HasColumnName("rejected_by");
 
+                    b.Property<string>("Repository")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("repository");
+
+                    b.Property<long?>("RepositoryId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("repository_id");
+
                     b.Property<Guid>("ScanId")
                         .HasColumnType("uuid")
                         .HasColumnName("scan_id");
 
-                    b.HasKey("ProjectId", "Host", "Repository", "FactKey", "Fingerprint")
+                    b.Property<string>("Subject")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)")
+                        .HasDefaultValue("fact")
+                        .HasColumnName("subject");
+
+                    b.HasKey("Id")
                         .HasName("pk_rejections");
+
+                    b.HasIndex("ProjectId", "Host", "Repository", "Subject", "FactKeyHash", "Fingerprint")
+                        .IsUnique()
+                        .HasDatabaseName("ix_rejections_project_id_host_repository_subject_fact_key_hash");
 
                     b.ToTable("rejections", "import");
                 });
@@ -281,6 +371,10 @@ namespace Vellum.Modules.Import.Migrations
                         .HasColumnType("text")
                         .HasColumnName("repository");
 
+                    b.Property<string>("RuleFingerprint")
+                        .HasColumnType("text")
+                        .HasColumnName("rule_fingerprint");
+
                     b.Property<string>("RuleVersions")
                         .IsRequired()
                         .HasColumnType("jsonb")
@@ -322,7 +416,8 @@ namespace Vellum.Modules.Import.Migrations
 
                     b.Property<string>("FactKey")
                         .IsRequired()
-                        .HasColumnType("text")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
                         .HasColumnName("fact_key");
 
                     b.Property<string>("Kind")
@@ -380,6 +475,34 @@ namespace Vellum.Modules.Import.Migrations
                     b.ToTable("blobs", "import");
                 });
 
+            modelBuilder.Entity("Vellum.Modules.Import.Scans.ScanChargeEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("ChargedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("charged_at");
+
+                    b.Property<Guid>("ScanId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("scan_id");
+
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("workspace_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_scan_charges");
+
+                    b.HasIndex("WorkspaceId", "ChargedAt")
+                        .HasDatabaseName("ix_scan_charges_workspace_id_charged_at");
+
+                    b.ToTable("scan_charges", "import");
+                });
+
             modelBuilder.Entity("Vellum.Modules.Import.Scans.ScanEntity", b =>
                 {
                     b.Property<Guid>("Id")
@@ -399,6 +522,10 @@ namespace Vellum.Modules.Import.Migrations
                         .HasColumnType("boolean")
                         .HasColumnName("cancel_requested");
 
+                    b.Property<DateTimeOffset?>("ClaimedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("claimed_at");
+
                     b.Property<string>("CommitSha")
                         .HasColumnType("text")
                         .HasColumnName("commit_sha");
@@ -406,6 +533,14 @@ namespace Vellum.Modules.Import.Migrations
                     b.Property<DateTimeOffset?>("CompletedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("completed_at");
+
+                    b.Property<string>("Coverage")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("coverage");
+
+                    b.Property<int>("Crashes")
+                        .HasColumnType("integer")
+                        .HasColumnName("crashes");
 
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone")
@@ -423,6 +558,14 @@ namespace Vellum.Modules.Import.Migrations
                         .IsRequired()
                         .HasColumnType("text[]")
                         .HasColumnName("exclude_paths");
+
+                    b.Property<string>("ExtractionGap")
+                        .HasColumnType("text")
+                        .HasColumnName("extraction_gap");
+
+                    b.Property<int>("FilesExtracted")
+                        .HasColumnType("integer")
+                        .HasColumnName("files_extracted");
 
                     b.Property<int>("FilesListed")
                         .HasColumnType("integer")
@@ -446,6 +589,10 @@ namespace Vellum.Modules.Import.Migrations
                         .HasColumnType("text[]")
                         .HasColumnName("include_paths");
 
+                    b.Property<int>("InternalFailures")
+                        .HasColumnType("integer")
+                        .HasColumnName("internal_failures");
+
                     b.Property<bool>("IsComplete")
                         .HasColumnType("boolean")
                         .HasColumnName("is_complete");
@@ -455,14 +602,26 @@ namespace Vellum.Modules.Import.Migrations
                         .HasColumnName("lease_expires_at");
 
                     b.Property<string>("LeaseOwner")
-                        .IsConcurrencyToken()
                         .HasColumnType("text")
                         .HasColumnName("lease_owner");
+
+                    b.Property<long>("LeaseToken")
+                        .IsConcurrencyToken()
+                        .HasColumnType("bigint")
+                        .HasColumnName("lease_token");
 
                     b.Property<string>("Limits")
                         .IsRequired()
                         .HasColumnType("jsonb")
                         .HasColumnName("limits");
+
+                    b.Property<int>("ManualResumes")
+                        .HasColumnType("integer")
+                        .HasColumnName("manual_resumes");
+
+                    b.Property<int>("NeedsReview")
+                        .HasColumnType("integer")
+                        .HasColumnName("needs_review");
 
                     b.Property<string>("Notes")
                         .IsRequired()
@@ -477,14 +636,26 @@ namespace Vellum.Modules.Import.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("project_id");
 
+                    b.Property<int>("Relinked")
+                        .HasColumnType("integer")
+                        .HasColumnName("relinked");
+
                     b.Property<string>("Repository")
                         .IsRequired()
                         .HasColumnType("text")
                         .HasColumnName("repository");
 
+                    b.Property<long?>("RepositoryId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("repository_id");
+
                     b.Property<bool?>("RepositoryIsPrivate")
                         .HasColumnType("boolean")
                         .HasColumnName("repository_is_private");
+
+                    b.Property<string>("RepositoryName")
+                        .HasColumnType("text")
+                        .HasColumnName("repository_name");
 
                     b.Property<string>("RequestedBy")
                         .IsRequired()
@@ -494,6 +665,10 @@ namespace Vellum.Modules.Import.Migrations
                     b.Property<string>("RequestedRef")
                         .HasColumnType("text")
                         .HasColumnName("requested_ref");
+
+                    b.Property<string>("ResolvedRef")
+                        .HasColumnType("text")
+                        .HasColumnName("resolved_ref");
 
                     b.Property<DateTimeOffset?>("RetryAt")
                         .HasColumnType("timestamp with time zone")
@@ -507,6 +682,14 @@ namespace Vellum.Modules.Import.Migrations
                         .IsRequired()
                         .HasColumnType("text")
                         .HasColumnName("status");
+
+                    b.Property<DateTimeOffset?>("TrackedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("tracked_at");
+
+                    b.Property<string>("TrackedBy")
+                        .HasColumnType("text")
+                        .HasColumnName("tracked_by");
 
                     b.Property<bool>("TreeListed")
                         .HasColumnType("boolean")
@@ -525,6 +708,9 @@ namespace Vellum.Modules.Import.Migrations
 
                     b.HasIndex("Status", "CreatedAt")
                         .HasDatabaseName("ix_scans_status_created_at");
+
+                    b.HasIndex("WorkspaceId", "ClaimedAt")
+                        .HasDatabaseName("ix_scans_workspace_id_claimed_at");
 
                     b.HasIndex("WorkspaceId", "CreatedAt")
                         .HasDatabaseName("ix_scans_workspace_id_created_at");
@@ -546,14 +732,21 @@ namespace Vellum.Modules.Import.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("scan_id");
 
-                    b.Property<string>("Path")
-                        .HasColumnType("text")
-                        .HasColumnName("path");
+                    b.Property<string>("PathHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("path_hash");
 
                     b.Property<string>("BlobSha")
                         .IsRequired()
                         .HasColumnType("text")
                         .HasColumnName("blob_sha");
+
+                    b.Property<string>("Path")
+                        .IsRequired()
+                        .HasMaxLength(1024)
+                        .HasColumnType("character varying(1024)")
+                        .HasColumnName("path");
 
                     b.Property<string>("Reason")
                         .HasColumnType("text")
@@ -568,7 +761,7 @@ namespace Vellum.Modules.Import.Migrations
                         .HasColumnType("text")
                         .HasColumnName("state");
 
-                    b.HasKey("ScanId", "Path")
+                    b.HasKey("ScanId", "PathHash")
                         .HasName("pk_scan_files");
 
                     b.HasIndex("BlobSha")
@@ -578,6 +771,53 @@ namespace Vellum.Modules.Import.Migrations
                         .HasDatabaseName("ix_scan_files_scan_id_state");
 
                     b.ToTable("scan_files", "import");
+                });
+
+            modelBuilder.Entity("Vellum.Modules.Import.Scans.TrackedRefEntity", b =>
+                {
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("project_id");
+
+                    b.Property<string>("Host")
+                        .HasColumnType("text")
+                        .HasColumnName("host");
+
+                    b.Property<string>("Repository")
+                        .HasColumnType("text")
+                        .HasColumnName("repository");
+
+                    b.Property<string>("CommitSha")
+                        .HasColumnType("text")
+                        .HasColumnName("commit_sha");
+
+                    b.Property<string>("RefName")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)")
+                        .HasColumnName("ref_name");
+
+                    b.Property<long?>("RepositoryId")
+                        .HasColumnType("bigint")
+                        .HasColumnName("repository_id");
+
+                    b.Property<Guid?>("ScanId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("scan_id");
+
+                    b.Property<DateTimeOffset>("SetAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("set_at");
+
+                    b.Property<string>("SetBy")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("set_by");
+
+                    b.HasKey("ProjectId", "Host", "Repository")
+                        .HasName("pk_tracked_refs");
+
+                    b.ToTable("tracked_refs", "import");
                 });
 
             modelBuilder.Entity("Vellum.Modules.Import.Proposals.ProposalEntity", b =>

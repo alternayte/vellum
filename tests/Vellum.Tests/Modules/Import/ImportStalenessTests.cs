@@ -60,17 +60,22 @@ public class ImportStalenessTests(ImportHost import) : IClassFixture<ImportHost>
         await s.ScanAndAcceptAllAsync();
         var accepted = await ModelAsync(s);
 
-        // The next commit has no billing service, and the scan may read five files only.
-        s.GitHub.Commit(ImportScenario.Commit2, WithoutBilling());
+        // The next commit holds the same files, and the scan may read five of them only.
+        s.GitHub.Commit(ImportScenario.Commit2, FixtureGitHub.Load("orders"));
         await SettingsAsync(s, new JsonObject { ["maxFiles"] = 5 });
         var partial = await s.ScanAsync();
         Assert.Equal(("completed", false), (partial.Text("status"), partial["isComplete"]!.GetValue<bool>()));
         Assert.Equal(5, partial["progress"]!["filesRead"]!.GetValue<int>());
         Assert.Contains(partial["notes"]!.AsArray(), n => n!["code"]!.GetValue<string>() == "limit:files" && n["message"]!.GetValue<string>().Contains("import.maxFiles"));
 
-        // Most accepted facts are missing from this snapshot. That proves nothing.
+        // Most accepted facts are missing from this snapshot. The scan did not look at
+        // their files, so that proves nothing, and the scan says how many and why.
         var proposals = await s.ProposalsAsync(partial.Id());
         Assert.DoesNotContain(proposals, p => p.Text("action") == "remove");
+        var linked = partial["coverage"]!["linkedFacts"]!;
+        Assert.True(linked["limit"]!.GetValue<int>() > 0);
+        Assert.Equal(linked["limit"]!.GetValue<int>(), linked["notCovered"]!.GetValue<int>());
+        Assert.Equal(5, partial["coverage"]!["filesExtracted"]!.GetValue<int>());
         Assert.All(proposals, p => Assert.True(p["partial"]!.GetValue<bool>()));
         Assert.Equal(accepted, await ModelAsync(s));
 
@@ -161,11 +166,19 @@ public class ImportStalenessTests(ImportHost import) : IClassFixture<ImportHost>
         Assert.Equal(before, await ModelAsync(s));
         Assert.All(await s.ProposalsAsync(scan.Id()), p => Assert.Equal("superseded", p.Text("status")));
 
-        // Stale again, and this time a person edits the fact: that clears the mark.
+        // Stale again. An edit of a value does not clear the mark. A person who states the
+        // status and the provenance of the fact does.
         s.GitHub.Head = ImportScenario.Commit2;
         await s.ScanAsync();
         Assert.NotNull(Stale((await s.ElementsAsync()).Single("name", "Billing")));
         Assert.Equal(HttpStatusCode.OK, (await s.Owner.PatchAsJsonAsync(s.Model($"elements/{billing.Id()}"), new { name = "Billing (legacy)" })).StatusCode);
+        Assert.NotNull(Stale((await s.ElementsAsync()).Single("name", "Billing (legacy)")));
+        var stated = await s.Owner.PatchAsJsonAsync(s.Model($"elements/{billing.Id()}"), new
+        {
+            factStatus = "observed-in-source",
+            provenance = new { source = billing["provenance"]!["source"]!.GetValue<string>(), revision = ImportScenario.Commit1 },
+        });
+        Assert.True(stated.StatusCode == HttpStatusCode.OK, await stated.Content.ReadAsStringAsync());
         Assert.Null(Stale((await s.ElementsAsync()).Single("name", "Billing (legacy)")));
 
         // The removal is a decision like any other. Named in any order, it is applied in the

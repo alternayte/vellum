@@ -1,4 +1,6 @@
 using Vellum.Modules.Import.Extraction;
+using Vellum.Modules.Import.Scans;
+using Vellum.Shared;
 
 namespace Vellum.Modules.Import.Proposals;
 
@@ -43,6 +45,7 @@ internal sealed record Reference(string Field, string? FactKey, bool RequiredToA
 /// What a fact would be in the model, before the model is looked at: the entity kind, the
 /// values the source establishes and the facts it points at.
 /// </summary>
+/// <param name="FactKey">The key of the fact, or <see cref="FactMapping.RepositoryKey"/> for the repository itself.</param>
 /// <param name="Fields">Scalar values by model field name. A null value means the source does not establish it.</param>
 /// <param name="ConsumerKeys">For a message: the services whose subscriptions name it.</param>
 /// <param name="Observed">The fact's attributes that no model field holds. They stay visible on the proposal and the link.</param>
@@ -62,7 +65,9 @@ internal sealed record Candidate(
 /// <summary>A fact of the snapshot with what the mapping decided for it.</summary>
 internal sealed record MappedFact(ExtractedFact Fact, string Disposition, string? Reason);
 
-internal sealed record MappingResult(IReadOnlyList<Candidate> Candidates, IReadOnlyList<MappedFact> Facts);
+/// <param name="Refused">Facts that are not kept at all, each with the path of its first evidence. See <see cref="FactMapping.Refusal"/>.</param>
+internal sealed record MappingResult(
+    IReadOnlyList<Candidate> Candidates, IReadOnlyList<MappedFact> Facts, IReadOnlyList<ExtractedFact> Refused);
 
 /// <summary>
 /// The rules that say which extracted fact is which model entity. They are exact: a fact
@@ -76,30 +81,86 @@ internal sealed record MappingResult(IReadOnlyList<Candidate> Candidates, IReadO
 /// <item><term>Channel</term><description>A channel of kind topic, queue or exchange.</description></item>
 /// <item><term>Subscription</term><description>A subscription of its service to its queue, with the queue's dead-letter exchange. A queue-to-exchange binding stays evidence.</description></item>
 /// <item><term>Message</term><description>A message. Its producer is the one service that a Publication fact names; its consumers are the services whose subscriptions name the message; its schema is its payload schema. A consumer that only a queue binding connects to the message is not added: that is a chain of two facts, not a statement of the source.</description></item>
-/// <item><term>Publication</term><description>Not an entity: it gives a message its producer. The model's relationships join two elements and a channel is not an element, so there is no producer-to-channel edge to write. An outbox fact and a contract-only publication stay evidence.</description></item>
+/// <item><term>Publication</term><description>Not an entity: it gives a message its producer. The model's relationships join two elements and a channel is not an element, so there is no producer-to-channel edge to write. A pattern fact and a contract-only publication stay evidence.</description></item>
 /// <item><term>Schema</term><description>A schema, when the fact holds a JSON Schema body. A contract document as a whole stays evidence.</description></item>
-/// <item><term>DataAccess, Dependency, Deployment</term><description>Evidence only: the model has no home for them yet.</description></item>
+/// <item><term>Every other kind</term><description>Evidence only: the model has no home for it yet.</description></item>
 /// </list>
 /// </summary>
 internal static class FactMapping
 {
     public const string NoModelHome = "no-model-home";
-    /// <summary>The attribute of a message that lists the fact keys of its observed consumers. No extractor writes a name with this prefix.</summary>
-    public const string ObservedConsumers = "vellum.consumers";
+    /// <summary>The longest fact key a snapshot keeps. A fact with a longer key is refused.</summary>
+    public const int MaxFactKey = 1000;
+    /// <summary>The longest fact name a snapshot keeps.</summary>
+    public const int MaxFactName = 1000;
+    /// <summary>The longest attribute value a snapshot keeps. A schema body is the largest attribute.</summary>
+    public const int MaxAttributeValue = 200_000;
     private const int EvidenceCap = 50;
 
-    public static string RepositoryKey(string repository) => "repository:" + repository;
+    /// <summary>
+    /// The in-memory key of the candidate that stands for the repository. It starts with a
+    /// control character, and <see cref="Refusal"/> refuses every fact whose key holds one,
+    /// so no fact can have this key. It is never stored: a row of the repository has the
+    /// subject <see cref="Subject.Repository"/> and an empty fact key.
+    /// </summary>
+    public const string RepositoryKey = "\u0001repository";
+
+    public static string SubjectOf(string key) => key == RepositoryKey ? Subject.Repository : Subject.Fact;
+
+    /// <summary>The fact key as a row holds it.</summary>
+    public static string StoredKey(string key) => key == RepositoryKey ? "" : key;
+
+    /// <summary>The in-memory key of a stored row.</summary>
+    public static string KeyOf(string subject, string factKey) => subject == Subject.Repository ? RepositoryKey : factKey;
+
+    /// <summary>
+    /// Why a fact is not kept, or null. Text from a repository reaches <c>jsonb</c> columns,
+    /// index keys and model names, so <see cref="TextRule"/> applies to it as to any other
+    /// input: no NUL and no other control character in a key, a name, an attribute name or a
+    /// path, tab and line breaks only inside an attribute value, and a bounded length.
+    /// </summary>
+    public static string? Refusal(ExtractedFact fact)
+    {
+        if (fact.Key.Length == 0 || TextRule.Line("key", fact.Key, MaxFactKey) is not null)
+            return "key";
+        if (TextRule.Line("name", fact.Name, MaxFactName) is not null)
+            return "name";
+        foreach (var (attribute, value) in fact.Attributes)
+        {
+            if (TextRule.Line("attribute", attribute, TextRule.MaxName) is not null
+                || TextRule.Lines("attribute", value, MaxAttributeValue) is not null)
+                return "attribute";
+        }
+        if (fact.Evidence.Count == 0)
+            return "evidence";
+        foreach (var evidence in fact.Evidence)
+        {
+            if (TextRule.Line("path", evidence.Path, ScanFileEntity.MaxPath) is not null
+                || TextRule.Line("rule", evidence.Rule, TextRule.MaxName) is not null)
+                return "evidence";
+        }
+        return null;
+    }
 
     /// <param name="repository">For example <c>github.com/acme/orders</c>.</param>
-    public static MappingResult Map(string repository, IReadOnlyList<ExtractedFact> facts)
+    public static MappingResult Map(string repository, IReadOnlyList<ExtractedFact> input)
     {
+        var refused = new List<ExtractedFact>();
+        var facts = new List<ExtractedFact>(input.Count);
+        foreach (var fact in input)
+        {
+            if (Refusal(fact) is null)
+                facts.Add(fact);
+            else
+                refused.Add(fact);
+        }
+
         var byKey = new Dictionary<string, ExtractedFact>(StringComparer.Ordinal);
         foreach (var fact in facts)
             byKey.TryAdd(fact.Key, fact);
 
         var candidates = new List<Candidate>();
         var mapped = new List<MappedFact>();
-        var repositoryKey = RepositoryKey(repository);
         var inSystem = new List<ExtractedFact>();
 
         // A publication is read before the messages: it decides whether a message has a producer.
@@ -119,14 +180,14 @@ internal static class FactMapping
                     inSystem.Add(fact);
                     Add(fact, EntityKinds.Element, fact.Name, 1,
                         Fields((Field.Kind, "app"), (Field.Name, fact.Name), (Field.Technology, fact.Attributes.GetValueOrDefault("language"))),
-                        [new Reference(Field.ParentId, repositoryKey, RequiredToAdd: true)], consumed: ["language"]);
+                        [new Reference(Field.ParentId, RepositoryKey, RequiredToAdd: true)], consumed: ["language"]);
                     break;
 
                 case FactKind.DataStore:
                     inSystem.Add(fact);
                     Add(fact, EntityKinds.Element, fact.Name, 1,
                         Fields((Field.Kind, "store"), (Field.Name, fact.Name), (Field.Technology, fact.Attributes.GetValueOrDefault("kind"))),
-                        [new Reference(Field.ParentId, repositoryKey, RequiredToAdd: true)], consumed: ["kind"]);
+                        [new Reference(Field.ParentId, RepositoryKey, RequiredToAdd: true)], consumed: ["kind"]);
                     break;
 
                 case FactKind.Operation:
@@ -229,7 +290,7 @@ internal static class FactMapping
             // is the first evidence of each of them.
             var name = repository[(repository.LastIndexOf('/') + 1)..];
             candidates.Add(new Candidate(
-                repositoryKey, EntityKinds.Element, name, 0,
+                RepositoryKey, EntityKinds.Element, name, 0,
                 Fields((Field.Kind, "system"), (Field.Name, name)), [], [],
                 new SortedDictionary<string, string>(StringComparer.Ordinal),
                 new Dictionary<string, string>(),
@@ -237,7 +298,7 @@ internal static class FactMapping
         }
 
         return new MappingResult(
-            [.. candidates.OrderBy(c => c.Rank).ThenBy(c => c.FactKey, StringComparer.Ordinal)], mapped);
+            [.. candidates.OrderBy(c => c.Rank).ThenBy(c => c.FactKey, StringComparer.Ordinal)], mapped, refused);
 
         void Add(
             ExtractedFact fact, string entityKind, string name, int rank,
@@ -245,21 +306,15 @@ internal static class FactMapping
             IEnumerable<SourceEvidence>? evidence = null, string? notAddable = null, IReadOnlyList<string>? consumerKeys = null,
             string? matchRoute = null)
         {
-            // The services whose subscriptions name a message are kept with its attributes.
-            // A later complete scan that no longer finds one of them can then say so.
-            var attributes = fact.Attributes;
-            if (consumerKeys is { Count: > 0 })
-                attributes = new Dictionary<string, string>(fact.Attributes) { [ObservedConsumers] = string.Join(",", consumerKeys) };
-
             var observed = new SortedDictionary<string, string>(StringComparer.Ordinal);
-            foreach (var (attribute, value) in attributes)
+            foreach (var (attribute, value) in fact.Attributes)
             {
                 if (!consumed.Contains(attribute))
                     observed[attribute] = value;
             }
 
             candidates.Add(new Candidate(
-                fact.Key, entityKind, name, rank, fields, references, consumerKeys ?? [], observed, attributes,
+                fact.Key, entityKind, name, rank, fields, references, consumerKeys ?? [], observed, fact.Attributes,
                 [.. (evidence ?? fact.Evidence).Select(Ref).Distinct().Take(EvidenceCap)], notAddable, matchRoute));
             mapped.Add(new MappedFact(fact, FactDisposition.Mapped, null));
         }
