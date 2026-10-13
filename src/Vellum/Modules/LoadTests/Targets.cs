@@ -44,12 +44,12 @@ public static class TargetEvent
 
     public sealed record TargetAuthorised(string BaseUrl, string Environment, string By, DateTimeOffset At);
 
-    /// <param name="Cause"><c>revoked</c>, <c>base-url-changed</c> or <c>environment-changed</c>.</param>
+    /// <param name="Cause"><c>revoked</c>, <c>base-url-changed</c>, <c>environment-changed</c> or <c>target-removed</c>.</param>
     public sealed record AuthorisationVoided(string Cause, string By, DateTimeOffset At);
 
     public sealed record OverrideSet(bool AllowNonIdempotent, bool AllowFailureInjection, string Reason, string By, DateTimeOffset At);
 
-    /// <param name="Cause"><c>cleared</c>, <c>base-url-changed</c> or <c>environment-changed</c>.</param>
+    /// <param name="Cause"><c>cleared</c>, <c>base-url-changed</c>, <c>environment-changed</c> or <c>target-removed</c>.</param>
     public sealed record OverrideCleared(string Cause, string By, DateTimeOffset At);
 
     public sealed record TargetRemoved(string By, DateTimeOffset At);
@@ -181,13 +181,19 @@ public static class TargetDecider
         return new Decision.Success(events);
     }
 
-    /// <summary>The caller names the base URL it read. A target that changed since is not authorised by this call.</summary>
-    public static Decision Authorise(TargetState state, Guid projectId, string? baseUrl, string by, DateTimeOffset at)
+    /// <summary>
+    /// The caller names what it read and authorises: the stored base URL and the class. A
+    /// target that holds another URL or another class now is not authorised by this call.
+    /// The version that the caller read is checked with the write (<see cref="Targets.Authorise"/>).
+    /// </summary>
+    public static Decision Authorise(TargetState state, Guid projectId, string? baseUrl, string? environment, string by, DateTimeOffset at)
     {
         if (!state.ExistsIn(projectId))
             return Missing;
-        if (baseUrl is null || TargetRules.Normalise(baseUrl).Url != state.BaseUrl)
-            return new Decision.Conflict("The base URL of the target is not the one you name. Read the target again and authorise what it holds now.");
+        if (!string.Equals(baseUrl, state.BaseUrl, StringComparison.Ordinal))
+            return new Decision.Conflict(Targets.AuthoriseConflict("base URL"));
+        if (!string.Equals(environment, state.Environment, StringComparison.Ordinal))
+            return new Decision.Conflict(Targets.AuthoriseConflict("class"));
         return Ok(new TargetEvent.TargetAuthorised(state.BaseUrl!, state.Environment!, by, at));
     }
 
@@ -215,15 +221,29 @@ public static class TargetDecider
         return Ok(new TargetEvent.OverrideSet(allowNonIdempotent, allowFailureInjection, reason.Trim(), by, at));
     }
 
-    public static Decision Remove(TargetState state, Guid projectId, string by, DateTimeOffset at) =>
-        state.ExistsIn(projectId) ? Ok(new TargetEvent.TargetRemoved(by, at)) : Missing;
+    /// <summary>A removal takes the authorisation and the override with it. Each has its own event, so each has its audit entry.</summary>
+    public static Decision Remove(TargetState state, Guid projectId, string by, DateTimeOffset at)
+    {
+        if (!state.ExistsIn(projectId))
+            return Missing;
+        var events = new List<object>();
+        if (state.Authorisation is not null)
+            events.Add(new TargetEvent.AuthorisationVoided("target-removed", by, at));
+        if (state.Override is not null)
+            events.Add(new TargetEvent.OverrideCleared("target-removed", by, at));
+        events.Add(new TargetEvent.TargetRemoved(by, at));
+        return new Decision.Success(events);
+    }
 }
 
 /// <param name="Environment">Required: <c>development</c>, <c>test</c>, <c>staging</c> or <c>production</c>.</param>
 public sealed record TargetRequest(string? Name, string? BaseUrl, string? Environment);
 
-/// <param name="BaseUrl">The base URL that the caller read and authorises.</param>
-public sealed record AuthoriseTargetRequest(string? BaseUrl);
+/// <summary>What the caller read and authorises. A target that differs in one of the three is not authorised: 409.</summary>
+/// <param name="BaseUrl">The base URL of the target in its stored form.</param>
+/// <param name="Environment">The class of the target.</param>
+/// <param name="Version">The version of the target.</param>
+public sealed record AuthoriseTargetRequest(string? BaseUrl, string? Environment, long? Version);
 
 /// <param name="ConfirmName">The name of the target, typed again.</param>
 public sealed record TargetOverrideRequest(bool AllowNonIdempotent, bool AllowFailureInjection, string? Reason, string? ConfirmName);
@@ -240,6 +260,16 @@ public static class Targets
     public const string AuditAuthorisationVoided = "load-test.target.authorisation-voided";
     public const string AuditOverrideSet = "load-test.target.override-set";
     public const string AuditOverrideCleared = "load-test.target.override-cleared";
+
+    internal static string AuthoriseConflict(string what) =>
+        $"The {what} of the target is not the one you name. Read the target again and authorise what it holds now.";
+
+    /// <summary>
+    /// Writes of one project that count rows, or that check one row and change another, take
+    /// turns on this lock. It is held to the end of the transaction of <paramref name="database"/>.
+    /// </summary>
+    internal static Task LockProjectAsync(Microsoft.EntityFrameworkCore.Infrastructure.DatabaseFacade database, Guid projectId, CancellationToken ct) =>
+        database.ExecuteSqlAsync($"SELECT pg_advisory_xact_lock({LockSpace}, hashtext({projectId.ToString()}))", ct);
 
     internal static string UserId(ClaimsPrincipal user) => user.FindFirstValue(ClaimTypes.NameIdentifier)!;
 
@@ -301,8 +331,10 @@ public static class Targets
     {
         var userId = UserId(http.User);
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Owner, ct);
+        if (request.Version is not { } version)
+            return new CommandResult<TargetDto>.Conflict(AuthoriseConflict("version")).ToHttpResult();
         return (await WriteAsync(http, projectId, targetId, checkPlace: false,
-            state => TargetDecider.Authorise(state, projectId, request.BaseUrl, userId, time.GetUtcNow()), ct)).ToHttpResult();
+            state => TargetDecider.Authorise(state, projectId, request.BaseUrl, request.Environment, userId, time.GetUtcNow()), ct, version)).ToHttpResult();
     }
 
     public static async Task<IResult> Revoke(
@@ -340,7 +372,7 @@ public static class Targets
     /// that give or take a permission. An audit entry never exists without its event.
     /// </summary>
     private static async Task<CommandResult<TargetDto>> WriteAsync(
-        HttpContext http, Guid projectId, Guid targetId, bool checkPlace, Func<TargetState, Decision> decide, CancellationToken ct)
+        HttpContext http, Guid projectId, Guid targetId, bool checkPlace, Func<TargetState, Decision> decide, CancellationToken ct, long? readVersion = null)
     {
         var userId = UserId(http.User);
         var workspaceId = await http.RequestServices.GetRequiredService<WorkspaceAuthorizationService>().GetProjectWorkspaceIdAsync(projectId, ct);
@@ -353,12 +385,13 @@ public static class Targets
             if (checkPlace)
             {
                 // Adds of one project take turns, so two of them cannot both take the last place.
-                await db.Database.ExecuteSqlAsync($"SELECT pg_advisory_xact_lock({LockSpace}, hashtext({projectId.ToString()}))", ct);
+                await LockProjectAsync(db.Database, projectId, ct);
                 if (await db.Targets.CountAsync(t => t.ProjectId == projectId && !t.Removed, ct) >= TargetRules.MaxTargetsPerProject)
                     return new CommandResult<TargetDto>.Conflict($"A project holds at most {TargetRules.MaxTargetsPerProject} load-test targets. Remove one before you add another.");
             }
 
             IReadOnlyList<object> appended = [];
+            var before = TargetState.Initial;
             CommandResult<TargetState> result;
             try
             {
@@ -367,6 +400,7 @@ public static class Targets
                         targetId,
                         state =>
                         {
+                            before = state;
                             var decision = decide(state);
                             appended = decision is Decision.Success success ? success.Value : [];
                             return decision;
@@ -388,10 +422,15 @@ public static class Targets
                 };
             }
 
-            foreach (var entry in appended.Select(e => Audit(targetId, state, e)).OfType<(string Action, string Target)>())
+            var version = (await db.Targets.AsNoTracking().Where(t => t.Id == targetId).Select(t => (long?)t.Version).FirstOrDefaultAsync(ct)) ?? 0;
+            // The stream was locked from the decision to here, so the version before the events is exact.
+            // The transaction ends without a commit: the events of this call are not stored.
+            if (readVersion is { } read && version - appended.Count != read)
+                return new CommandResult<TargetDto>.Conflict(AuthoriseConflict("version"));
+
+            foreach (var entry in appended.Select(e => Audit(targetId, before, e)).OfType<(string Action, string Target)>())
                 await AuditLog.AppendAsync(db, workspaceId, userId, entry.Action, entry.Target, ct);
 
-            var version = (await db.Targets.AsNoTracking().Where(t => t.Id == targetId).Select(t => (long?)t.Version).FirstOrDefaultAsync(ct)) ?? 0;
             await transaction.CommitAsync(ct);
             return new CommandResult<TargetDto>.Success(Dto(targetId, state, version));
         }, ct);
@@ -400,16 +439,22 @@ public static class Targets
     // Any constant works; it keeps this lock apart from other advisory locks in the database.
     private const int LockSpace = 0x4C4F4144;
 
-    /// <summary>The audit entry of an event that gives or takes a permission. It names the origin of the URL, as a settings entry does.</summary>
-    private static (string Action, string Target)? Audit(Guid targetId, TargetState state, object @event)
+    /// <summary>
+    /// The audit entry of an event that gives or takes a permission. It names the class and
+    /// the origin of the URL that the permission is or was for: <paramref name="before"/> is
+    /// the target before the events of the call, so a voided authorisation is named as it was
+    /// given, not as the target is after the change that voids it.
+    /// </summary>
+    private static (string Action, string Target)? Audit(Guid targetId, TargetState before, object @event)
     {
-        var what = $"load-test-target:{targetId} environment:{state.Environment} origin:{OutboundUrlPolicy.OriginOf(state.BaseUrl)}";
+        string What(string? environment, string? baseUrl) =>
+            $"load-test-target:{targetId} environment:{environment} origin:{OutboundUrlPolicy.OriginOf(baseUrl)}";
         return @event switch
         {
-            TargetEvent.TargetAuthorised => (AuditAuthorised, what),
-            TargetEvent.AuthorisationVoided voided => (AuditAuthorisationVoided, $"{what} cause:{voided.Cause}"),
-            TargetEvent.OverrideSet set => (AuditOverrideSet, $"{what} non-idempotent:{(set.AllowNonIdempotent ? "allowed" : "excluded")} failure-injection:{(set.AllowFailureInjection ? "allowed" : "excluded")}"),
-            TargetEvent.OverrideCleared cleared => (AuditOverrideCleared, $"{what} cause:{cleared.Cause}"),
+            TargetEvent.TargetAuthorised given => (AuditAuthorised, What(given.Environment, given.BaseUrl)),
+            TargetEvent.AuthorisationVoided voided => (AuditAuthorisationVoided, $"{What(before.Authorisation?.Environment ?? before.Environment, before.Authorisation?.BaseUrl ?? before.BaseUrl)} cause:{voided.Cause}"),
+            TargetEvent.OverrideSet set => (AuditOverrideSet, $"{What(before.Environment, before.BaseUrl)} non-idempotent:{(set.AllowNonIdempotent ? "allowed" : "excluded")} failure-injection:{(set.AllowFailureInjection ? "allowed" : "excluded")}"),
+            TargetEvent.OverrideCleared cleared => (AuditOverrideCleared, $"{What(before.Environment, before.BaseUrl)} cause:{cleared.Cause}"),
             _ => null,
         };
     }

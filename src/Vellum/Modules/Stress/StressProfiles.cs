@@ -13,7 +13,12 @@ namespace Vellum.Modules.Stress;
 
 public sealed record StressProfileSummaryDto(Guid Id, string Name, Guid ScenarioId, int Version, DateTimeOffset UpdatedAt, int Runs);
 
-public sealed record StressProfileDto(Guid Id, int Version, DateTimeOffset UpdatedAt, StressProfile Profile);
+/// <param name="Measurements">
+/// The measured service times of the profile, each with <c>measurementStale</c>: whether the
+/// k6 result that it names is stale now. A service time that is not here is declared.
+/// </param>
+public sealed record StressProfileDto(
+    Guid Id, int Version, DateTimeOffset UpdatedAt, StressProfile Profile, IReadOnlyList<ProfileMeasurement> Measurements);
 
 /// <summary>
 /// Create, read, replace and delete of stress profiles. A save checks ranges and shape only
@@ -40,12 +45,13 @@ public static class StressProfiles
     }
 
     public static async Task<IResult> Get(
-        Guid projectId, Guid profileId, ClaimsPrincipal user, WorkspaceAuthorizationService auth, StressDbContext db, CancellationToken ct)
+        Guid projectId, Guid profileId, ClaimsPrincipal user, WorkspaceAuthorizationService auth,
+        StressDbContext db, LoadTestsDbContext loadTestsDb, IEventStore store, CancellationToken ct)
     {
         await auth.RequireProjectRoleAsync(projectId, StressAccess.UserId(user), WorkspaceRole.Viewer, ct);
 
         var row = await db.Profiles.AsNoTracking().FirstOrDefaultAsync(p => p.Id == profileId && p.ProjectId == projectId, ct);
-        return row is null ? StressAccess.NotFound("Stress profile") : Results.Ok(Dto(row));
+        return row is null ? StressAccess.NotFound("Stress profile") : Results.Ok(await DtoAsync(row, loadTestsDb, store, ct));
     }
 
     /// <summary>What a profile for the scenario must state, read from the model of the branch.</summary>
@@ -67,17 +73,18 @@ public static class StressProfiles
         var userId = StressAccess.UserId(user);
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
 
-        var (profile, error) = await StressAccess.ReadAsync<StressProfile>(http);
-        if (profile is null)
+        var (sent, error) = await StressAccess.ReadAsync<StressProfile>(http);
+        if (sent is null)
             return error!;
-        if (await RefusalAsync(profile, projectId, store, loadTestsDb, limits, ct) is { } refusal)
-            return refusal;
 
         // The count and the new row commit together, and creates of one project take turns
         // on an advisory lock, so two of them cannot both take the last place.
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         await db.Database.ExecuteSqlAsync(
             $"SELECT pg_advisory_xact_lock({ProjectLockSpace}, hashtext({projectId.ToString()}))", ct);
+        var (profile, refusal) = await ResolveAsync(sent, projectId, db, store, loadTestsDb, limits, ct);
+        if (refusal is not null)
+            return refusal;
         if (await db.Profiles.CountAsync(p => p.ProjectId == projectId, ct) >= policy.MaxProfilesPerProject)
         {
             return Results.Conflict(new ErrorResponse("conflict",
@@ -92,7 +99,7 @@ public static class StressProfiles
         db.Profiles.Add(row);
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
-        return Results.Created($"/api/projects/{projectId}/stress/profiles/{row.Id}", Dto(row));
+        return Results.Created($"/api/projects/{projectId}/stress/profiles/{row.Id}", await DtoAsync(row, loadTestsDb, store, ct));
     }
 
     public static async Task<IResult> Update(
@@ -102,14 +109,16 @@ public static class StressProfiles
         var userId = StressAccess.UserId(user);
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
 
-        var (profile, error) = await StressAccess.ReadAsync<StressProfile>(http);
-        if (profile is null)
+        var (sent, error) = await StressAccess.ReadAsync<StressProfile>(http);
+        if (sent is null)
             return error!;
 
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
         var row = await db.Profiles.FirstOrDefaultAsync(p => p.Id == profileId && p.ProjectId == projectId, ct);
         if (row is null)
             return StressAccess.NotFound("Stress profile");
-        if (await RefusalAsync(profile, projectId, store, loadTestsDb, limits, ct) is { } refusal)
+        var (profile, refusal) = await ResolveAsync(sent, projectId, db, store, loadTestsDb, limits, ct);
+        if (refusal is not null)
             return refusal;
 
         row.Name = profile.Name;
@@ -121,13 +130,14 @@ public static class StressProfiles
         try
         {
             await db.SaveChangesAsync(ct);
+            await transaction.CommitAsync(ct);
         }
         // The version is the concurrency token: another save came first.
         catch (DbUpdateConcurrencyException)
         {
             return Results.Conflict(new ErrorResponse("conflict", "The profile changed while you saved it. Read it again."));
         }
-        return Results.Ok(Dto(row));
+        return Results.Ok(await DtoAsync(row, loadTestsDb, store, ct));
     }
 
     /// <summary>Deletes the profile and its stored runs.</summary>
@@ -142,39 +152,40 @@ public static class StressProfiles
 
     internal static StressProfile Read(string document) => JsonSerializer.Deserialize<StressProfile>(document, StressJson.Options)!;
 
-    private static StressProfileDto Dto(StressProfileEntity row) => new(row.Id, row.Version, row.UpdatedAt, Read(row.Document));
-
-    private static async Task<IResult?> RefusalAsync(
-        StressProfile profile, Guid projectId, IEventStore store, LoadTestsDbContext loadTestsDb, StressLimits limits, CancellationToken ct)
+    private static async Task<StressProfileDto> DtoAsync(StressProfileEntity row, LoadTestsDbContext loadTestsDb, IEventStore store, CancellationToken ct)
     {
-        var errors = StressProfileRules.Check(profile, limits).Select(i => new FieldError(i.Target, i.Message)).ToList();
+        var profile = Read(row.Document);
+        return new(row.Id, row.Version, row.UpdatedAt, profile, await MeasuredServiceTimes.StateAsync(loadTestsDb, store, row.ProjectId, profile, ct));
+    }
 
-        // A value is measured only when it names a measurement that Vellum imported (SDD
-        // guarantee 2): a k6 result of this project. A name that resolves to no such result
-        // is refused, so a person cannot promote a typed number to a measured one.
-        if (errors.Count == 0)
-        {
-            var measured = Labelled(profile).Where(l => l.Label == AssumptionLabel.Measured).ToList();
-            var unresolved = await MeasurementRefs.UnresolvedAsync(loadTestsDb, projectId, [.. measured.Select(l => l.MeasurementRef!)], ct);
-            errors.AddRange(measured.Where(l => unresolved.Contains(l.MeasurementRef!)).Select(l => new FieldError($"{l.Field}.measurementRef",
-                $"A value is 'measured' only when it names a measured result that Vellum imported for this project, as '{MeasurementRefs.Prefix}<result ID>'. "
-                + $"'{l.MeasurementRef}' names none. Import the k6 result first, or use 'declared'.")));
-        }
+    /// <summary>
+    /// The profile to store, or the refusal. A service time with the label <c>measured</c>
+    /// gets its numbers from the k6 result that it names (SDD guarantee 2,
+    /// <see cref="MeasuredServiceTimes"/>): the caller picks the result and the distribution,
+    /// and the numbers that the caller sent for it are not read. Every other label
+    /// <c>measured</c> is refused, so a person cannot promote a typed number to a measured one.
+    /// <para>
+    /// The caller holds a transaction of <paramref name="db"/>. A profile that names a result
+    /// takes the lock of the load-test writes of the project until that transaction ends, so
+    /// the result is not deleted between this check and the commit of the profile.
+    /// </para>
+    /// </summary>
+    private static async Task<(StressProfile Profile, IResult? Refusal)> ResolveAsync(
+        StressProfile sent, Guid projectId, StressDbContext db, IEventStore store, LoadTestsDbContext loadTestsDb, StressLimits limits, CancellationToken ct)
+    {
+        if (sent.ServiceTimes?.Any(t => t is { Label: AssumptionLabel.Measured }) == true)
+            await Targets.LockProjectAsync(db.Database, projectId, ct);
+
+        var (profile, measured) = await MeasuredServiceTimes.ApplyAsync(loadTestsDb, projectId, sent, ct);
+        var errors = measured.Count > 0
+            ? measured.ToList()
+            : StressProfileRules.Check(profile, limits).Select(i => new FieldError(i.Target, i.Message)).ToList();
 
         if (errors.Count == 0 && (await StressAccess.ScenarioAsync(store, projectId, profile.ScenarioId, ct)).Document is null)
             errors.Add(new FieldError("scenarioId", "The scenario does not exist in this project."));
 
         return errors.Count == 0
-            ? null
-            : Results.BadRequest(new ErrorResponse("validation_error", "Validation failed", Errors: errors));
+            ? (profile, null)
+            : (profile, Results.BadRequest(new ErrorResponse("validation_error", "Validation failed", Errors: errors)));
     }
-
-    /// <summary>Every labelled value of the profile, with the field path that a validation error names.</summary>
-    private static IEnumerable<(string Field, AssumptionLabel Label, string? MeasurementRef)> Labelled(StressProfile profile) =>
-        profile.Resources.Select((r, i) => ($"resources[{i}]", r.Label, r.MeasurementRef))
-            .Concat(profile.ServiceTimes.Select((t, i) => ($"serviceTimes[{i}]", t.Label, t.MeasurementRef)))
-            .Concat(profile.Subscriptions.Select((s, i) => ($"subscriptions[{i}]", s.Label, s.MeasurementRef)))
-            .Concat(profile.Branches.Select((b, i) => ($"branches[{i}]", b.Label, b.MeasurementRef)))
-            .Concat(profile.Overrides.Select((o, i) => ($"overrides[{i}]", o.Label, o.MeasurementRef)))
-            .Append(("arrivals", profile.Arrivals.Label, profile.Arrivals.MeasurementRef));
 }

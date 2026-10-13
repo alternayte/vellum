@@ -190,7 +190,7 @@ export function LoadTestsPanel({ projectId, branchId, profiles, scenarios }: Pro
                   <span className="min-w-0 flex-1 truncate text-right text-[11px] text-muted-foreground">{new Date(r.startedAt).toLocaleString()}</span>
                 </span>
                 <span className="mt-1 block font-mono text-[11px] font-semibold text-foreground">
-                  p95 {formatMs(r.flow.latency?.p95Ms)} · {formatNumber(r.flow.throughputPerSecond, 1)}/s{r.flow.failed > 0 ? ` · ${formatNumber(r.flow.failed)} failed` : ''}
+                  p95 {formatMs(r.flow.latency?.p95Ms)} · {formatNumber(r.flow.throughputPerSecond, 1)}/s{r.flow.unexpectedStatus > 0 ? ` · ${formatNumber(r.flow.unexpectedStatus)} failed` : ''}
                 </span>
                 <span className="block truncate text-[10px] text-muted-foreground">
                   {scenarioName(r.scenarioId)} · {r.provenance.targetName} ({r.provenance.environment})

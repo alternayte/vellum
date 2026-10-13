@@ -3,6 +3,7 @@ using System.Security.Claims;
 using System.Text.Json;
 using Deedbox;
 using Microsoft.EntityFrameworkCore;
+using Vellum.Modules.LoadTests;
 using Vellum.Modules.Modelling;
 using Vellum.Modules.Modelling.Model;
 using Vellum.Modules.Schemas;
@@ -45,7 +46,7 @@ public static class StressRuns
     /// </summary>
     public static Task<IResult> Run(
         Guid projectId, Guid profileId, Guid? branchId,
-        HttpContext http, IEventStore store, SchemasDbContext schemasDb, StressDbContext db,
+        HttpContext http, IEventStore store, SchemasDbContext schemasDb, StressDbContext db, LoadTestsDbContext loadTestsDb,
         WorkspaceAuthorizationService auth, StressRunGate gate, StressLimits limits, StressRunPolicy policy, TimeProvider time,
         CancellationToken ct) =>
         ModelBranches.RunAsync(http, projectId, branchId, WorkspaceRole.Editor, async (streamId, userId) =>
@@ -75,10 +76,15 @@ public static class StressRuns
                     "The scenario of this profile does not exist any more. Choose another scenario.")]);
             }
 
+            // A measured service time counts for the confidence level only when its k6 result is of the model
+            // version and the scenario version of this run. A result is never changed, so the same profile
+            // version, model version and scenario version give the same doubts and the same hash.
+            var doubts = await MeasuredServiceTimes.DoubtsAsync(loadTestsDb, projectId, profile, streamId, world.ModelVersion, world.ScenarioVersion, ct);
+
             // The budget is real time. It decides whether there is a result, never what the result is.
             using var budget = CancellationTokenSource.CreateLinkedTokenSource(ct);
             budget.CancelAfter(limits.WallClock);
-            var outcome = await Task.Run(() => StressEngine.Run(world.Model, world.Scenario, profile, limits, budget.Token), CancellationToken.None);
+            var outcome = await Task.Run(() => StressEngine.Run(world.Model, world.Scenario, profile, limits, budget.Token, doubts), CancellationToken.None);
             ct.ThrowIfCancellationRequested();
             if (outcome.Result is not { } result)
                 return Refused(outcome.Issues);

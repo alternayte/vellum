@@ -418,7 +418,10 @@ export function StressResultDialog({ projectId, profileName, run, runs, onClose 
                     <tr key={i} className="border-t border-border">
                       <th scope="row" className={`${td} font-normal text-foreground`}>{a.name} · <span className="font-mono text-[11px]">{a.field}</span>{a.group === 'model-policy' && <span className="ml-1.5 text-[10px] text-muted-foreground">from the model</span>}</th>
                       <td className={`${td} text-foreground`}>{a.value}{a.unit ? ` ${a.unit}` : ''}</td>
-                      <td className={td}>{a.label}{a.measurementRef ? ` · ${a.measurementRef}` : ''}</td>
+                      <td className={td}>
+                        {a.label}{a.measurementRef ? ` · ${a.measurementRef}` : ''}
+                        {a.measurementStale && <span className="ml-1.5 rounded-full border border-[var(--trace-retry)] px-1.5 text-[10px] text-[var(--trace-retry)]">stale measurement</span>}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

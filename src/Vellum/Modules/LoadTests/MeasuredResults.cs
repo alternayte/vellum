@@ -27,13 +27,23 @@ public sealed record MeasuredProvenance(
 public sealed record MeasuredLatencyDto(
     string Label, long Count, double MinMs, double MeanMs, double P50Ms, double P90Ms, double P95Ms, double P99Ms, double MaxMs);
 
-/// <param name="ErrorRate">Failed divided by requests. Null when no request counted.</param>
+/// <param name="UnexpectedStatus">
+/// Requests whose status was not the one the script expected. For a step that expects a
+/// failure, a 2xx status is unexpected, so this is not an error count. A 3xx status is always unexpected.
+/// </param>
+/// <param name="UnexpectedStatusRate">Unexpected status divided by requests. Null when no request counted.</param>
 /// <param name="ThroughputPerSecond">Requests that got the expected status, for each second of the measured window.</param>
+/// <param name="Latency">The durations of the requests that expected a 2xx status and got one.</param>
+/// <param name="ExpectedFailures">Requests that expected a failure and got one.</param>
+/// <param name="ExpectedFailureLatency">The durations of those requests. They are in no success latency.</param>
 public sealed record MeasuredOperationDto(
-    string Label, Guid OperationId, string Name, long Requests, long Failed, double? ErrorRate, double ThroughputPerSecond, MeasuredLatencyDto? Latency);
+    string Label, Guid OperationId, string Name, long Requests, long UnexpectedStatus, double? UnexpectedStatusRate, double ThroughputPerSecond,
+    MeasuredLatencyDto? Latency, long ExpectedFailures, MeasuredLatencyDto? ExpectedFailureLatency);
 
+/// <param name="UnexpectedStatus">Flows in which a request did not get the expected status.</param>
+/// <param name="Latency">Null when no flow counted, and when a step of the flow expects a failure: such a flow has no success latency.</param>
 public sealed record MeasuredFlowDto(
-    string Label, long Iterations, long Failed, long DroppedIterations, double? ErrorRate, double ThroughputPerSecond, MeasuredLatencyDto? Latency);
+    string Label, long Iterations, long UnexpectedStatus, long DroppedIterations, double? UnexpectedStatusRate, double ThroughputPerSecond, MeasuredLatencyDto? Latency);
 
 /// <summary>
 /// One imported result. <paramref name="Stale"/> is true when the scenario or the model
@@ -47,10 +57,13 @@ public sealed record MeasuredResultSummaryDto(
     MeasuredProvenance Provenance, MeasuredFlowDto Flow, bool Stale, IReadOnlyList<string> StaleBecause);
 
 /// <param name="NotCovered">The steps of the scenario that the script did not perform. The result says nothing about them.</param>
+/// <param name="Faults">The faults that the scenario declares. The script injects none: a person injects them in the target.</param>
+/// <param name="ExpectsFailure">True when a step of the script expects a failure.</param>
 public sealed record MeasuredResultDto(
-    MeasuredResultSummaryDto Result, IReadOnlyList<MeasuredOperationDto> Operations, IReadOnlyList<K6NotCovered> NotCovered);
+    MeasuredResultSummaryDto Result, IReadOnlyList<MeasuredOperationDto> Operations, IReadOnlyList<K6NotCovered> NotCovered,
+    int Faults, bool ExpectsFailure);
 
-/// <summary>A file that was not stored. <paramref name="Type"/> is <c>unknown_script</c>, <c>identity_mismatch</c> or <c>target_not_authorised</c>.</summary>
+/// <summary>A file that was not stored. <paramref name="Type"/> is <c>unknown_script</c>, <c>outdated_script</c>, <c>identity_mismatch</c> or <c>target_not_authorised</c>.</summary>
 public sealed record ResultRefusedResponse(string Type, string Title, string Detail, IReadOnlyList<FieldError> Errors);
 
 public static class MeasuredResults
@@ -58,8 +71,11 @@ public static class MeasuredResults
     public const string Measured = "measured";
     public const int MaxResultsPerProject = 200;
 
-    /// <summary>A result may state a start this long before the script existed or after now: clocks differ.</summary>
+    /// <summary>A result may state a start this long before the script existed, and a start or an end this long after now: clocks differ.</summary>
     private static readonly TimeSpan ClockSkew = TimeSpan.FromMinutes(5);
+
+    /// <summary>The database keeps a time to the microsecond, an event to 100 nanoseconds. Two times nearer than this are one time.</summary>
+    private static readonly TimeSpan StoredTimePrecision = TimeSpan.FromMicroseconds(2);
 
     /// <summary>
     /// Imports the result file of a k6 run. The body is the file as k6 wrote it.
@@ -73,6 +89,10 @@ public static class MeasuredResults
     /// comparison would have to remember that this one row means less. The stored script is
     /// what binds the numbers to a scenario version, a model version and an authorised
     /// target, so without it there is nothing to bind.
+    /// </para>
+    /// <para>
+    /// A result is bound to the load of its script too (<see cref="ResultFile"/>): a run with
+    /// other executor options, a shorter run and a run with other iteration counts are refused.
     /// </para>
     /// <para>
     /// The limit of this check: it proves which script the file is for, not that k6 produced
@@ -111,6 +131,12 @@ public static class MeasuredResults
         }
 
         var plan = Scripts.Plan(script);
+        if (plan.Generator != K6ScriptGenerator.Version)
+        {
+            return Refused("outdated_script", "The script of this result is from an older generator",
+                $"The script was generated by {plan.Generator}. This server accepts results of {K6ScriptGenerator.Version}, which binds a run to the load of its profile. Generate the script again, run it, and import its result.",
+                [new("scriptHash", $"The script {scriptHash} is of generator {plan.Generator}.")]);
+        }
         var (parsed, errors) = ResultFile.Read(root, format, scriptHash!, plan);
         if (parsed is null)
             return Invalid(errors);
@@ -123,20 +149,29 @@ public static class MeasuredResults
 
         var now = time.GetUtcNow();
         var startedAt = parsed.StartedAt!.Value;
+        var export = format == ResultFile.SummaryExportFormat;
         if (startedAt < script.CreatedAt - ClockSkew || startedAt > now + ClockSkew)
         {
-            return Invalid([new(format == ResultFile.SummaryExportFormat ? "setup_data.startedAtMs" : "startedAt",
+            return Invalid([new(export ? "setup_data.startedAtMs" : "startedAt",
                 "The run starts before the script was generated, or in the future. A result is from a run of the stored script.")]);
         }
-
-        // A result is attributed to a target only while a person's authorisation of that base URL is in force.
-        var target = await Targets.LoadAsync(store, projectId, script.TargetId, ct);
-        if (target?.State.AuthorisationInForce is not { } authorisation || authorisation.BaseUrl != script.BaseUrl || authorisation.Environment != script.Environment)
+        var endedAt = startedAt + TimeSpan.FromMilliseconds(parsed.Run.ElapsedMs);
+        if (endedAt > now + ClockSkew)
         {
-            return Refused("target_not_authorised", "The target of the script is not authorised now",
+            return Invalid([new(export ? "metrics.vellum_run_elapsed_ms.max" : "window.elapsedMs",
+                "The run ends in the future: its start and its length give an end after now. A result is from a run that has ended.")]);
+        }
+
+        // A result is attributed to a target only while the authorisation that the script was generated under is in
+        // force. A later authorisation, by any person, is another one: it does not admit the scripts of an earlier one.
+        var target = await Targets.LoadAsync(store, projectId, script.TargetId, ct);
+        if (target?.State.AuthorisationInForce is not { } authorisation || authorisation.BaseUrl != script.BaseUrl || authorisation.Environment != script.Environment
+            || authorisation.By != script.AuthorisedBy || (authorisation.At - script.AuthorisedAt).Duration() >= StoredTimePrecision)
+        {
+            return Refused("target_not_authorised", "The authorisation that the script was generated under is not in force",
                 "The target was removed, or its base URL or class changed, or its authorisation was revoked after the script was generated. "
-                + "An owner authorises the target again; then generate a new script and run it.",
-                [new("scriptHash", $"The script is for target '{script.TargetName}' at {script.BaseUrl} ({script.Environment}).")]);
+                + "An authorisation that an owner gave later does not cover this script. Generate a new script and run it.",
+                [new("scriptHash", $"The script is for target '{script.TargetName}' at {script.BaseUrl} ({script.Environment}), under the authorisation of {script.AuthorisedAt:O}.")]);
         }
 
         var row = new ResultEntity
@@ -145,7 +180,7 @@ public static class MeasuredResults
             ScenarioId = script.ScenarioId, ScenarioVersion = script.ScenarioVersion,
             ModelStreamId = script.ModelStreamId, ModelVersion = script.ModelVersion,
             TargetId = script.TargetId, Environment = script.Environment, Format = format,
-            StartedAt = startedAt, EndedAt = startedAt + TimeSpan.FromMilliseconds(parsed.Run.ElapsedMs),
+            StartedAt = startedAt, EndedAt = endedAt, ElapsedMs = parsed.Run.ElapsedMs,
             ContentHash = Convert.ToHexStringLower(SHA256.HashData(bytes.Span)),
             Document = JsonSerializer.Serialize(parsed.Run, Scripts.Json),
             ImportedBy = userId,
@@ -153,8 +188,13 @@ public static class MeasuredResults
             ImportedAt = now,
         };
 
-        if (await db.Results.AsNoTracking().Where(r => r.ProjectId == projectId && r.ContentHash == row.ContentHash).Select(r => (Guid?)r.Id).FirstOrDefaultAsync(ct) is { } same)
-            return Duplicate(same);
+        // The checks and the insert are one unit, and the writes of one project take turns: two imports cannot both
+        // take the last place, and a script that this result names is not removed to make room for another script.
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        await Targets.LockProjectAsync(db.Database, projectId, ct);
+
+        if (await ExistingAsync() is { } same)
+            return Duplicate(same.Id, same.SameFile);
         if (await db.Results.CountAsync(r => r.ProjectId == projectId, ct) >= MaxResultsPerProject)
         {
             return Results.Conflict(new ErrorResponse("conflict",
@@ -165,10 +205,22 @@ public static class MeasuredResults
         try
         {
             await db.SaveChangesAsync(ct);
+            await transaction.CommitAsync(ct);
         }
         catch (DbUpdateException e) when (e.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation })
         {
-            return Duplicate(null);
+            // A writer that does not take the lock stored the same run. The failed statement ended this transaction.
+            await transaction.RollbackAsync(ct);
+            db.ChangeTracker.Clear();
+            var stored = await ExistingAsync();
+            return Duplicate(stored?.Id, stored?.SameFile ?? false);
+        }
+        // The script went with its project, or was removed, between the read and the insert.
+        catch (DbUpdateException e) when (e.InnerException is PostgresException { SqlState: PostgresErrorCodes.ForeignKeyViolation })
+        {
+            return Refused("unknown_script", "The script of this result does not exist any more",
+                "The script was removed while the file was imported. Nothing is stored. Generate the script again, run it, and import its result.",
+                [new("scriptHash", $"No script of this project has the hash {scriptHash}.")]);
         }
 
         return Results.Created($"/api/projects/{projectId}/load-tests/results/{row.Id}",
@@ -180,8 +232,21 @@ public static class MeasuredResults
         static IResult Refused(string type, string title, string detail, IReadOnlyList<FieldError> errors) =>
             Results.Json(new ResultRefusedResponse(type, title, detail, errors), statusCode: StatusCodes.Status422UnprocessableEntity);
 
-        static IResult Duplicate(Guid? existing) => Results.Conflict(new ErrorResponse("conflict", "This file is imported already",
-            existing is { } id ? $"It is the measured result {id}." : null));
+        // The same bytes, or the same run in the other format: a run of a script has one start and one length.
+        async Task<(Guid Id, bool SameFile)?> ExistingAsync()
+        {
+            var found = await db.Results.AsNoTracking()
+                .Where(r => r.ProjectId == projectId
+                    && (r.ContentHash == row.ContentHash || (r.ScriptId == row.ScriptId && r.StartedAt == row.StartedAt && r.ElapsedMs == row.ElapsedMs)))
+                .Select(r => new { r.Id, r.ContentHash }).FirstOrDefaultAsync(ct);
+            return found is null ? null : (found.Id, found.ContentHash == row.ContentHash);
+        }
+
+        static IResult Duplicate(Guid? existing, bool sameFile) => Results.Conflict(new ErrorResponse("conflict",
+            sameFile ? "This file is imported already" : "This run is imported already",
+            existing is { } id
+                ? sameFile ? $"It is the measured result {id}." : $"The file is another format of the same run. The run is the measured result {id}."
+                : null));
     }
 
     private static List<FieldError> Mismatches(ClaimedIdentity claimed, ScriptEntity script)
@@ -235,6 +300,11 @@ public static class MeasuredResults
     {
         await auth.RequireProjectRoleAsync(projectId, Targets.UserId(user), WorkspaceRole.Editor, ct);
 
+        // The check and the delete are one unit. A save of a profile that names a result takes the same lock,
+        // so no profile starts to name this result between the two.
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        await Targets.LockProjectAsync(db.Database, projectId, ct);
+
         var reference = MeasurementRefs.For(resultId);
         var users = await stressDb.Profiles.AsNoTracking().Where(p => p.ProjectId == projectId && p.Document.Contains(reference)).Select(p => p.Name).ToListAsync(ct);
         if (users.Count > 0)
@@ -244,14 +314,22 @@ public static class MeasuredResults
         }
 
         var deleted = await db.Results.Where(r => r.Id == resultId && r.ProjectId == projectId).ExecuteDeleteAsync(ct);
+        await transaction.CommitAsync(ct);
         return deleted == 0 ? Targets.NotFound("Measured result") : Results.NoContent();
     }
 
     /// <summary>A result of the project with its script, or null. A result of another project reads as not found.</summary>
-    internal static async Task<MeasuredResultDto?> ReadAsync(LoadTestsDbContext db, IEventStore store, Guid projectId, Guid resultId, CancellationToken ct)
+    internal static async Task<MeasuredResultDto?> ReadAsync(LoadTestsDbContext db, IEventStore store, Guid projectId, Guid resultId, CancellationToken ct) =>
+        (await ReadWithPlanAsync(db, store, projectId, resultId, ct))?.Result;
+
+    /// <summary>A result of the project with the plan of its script, or null.</summary>
+    internal static async Task<(MeasuredResultDto Result, K6Plan Plan)?> ReadWithPlanAsync(
+        LoadTestsDbContext db, IEventStore store, Guid projectId, Guid resultId, CancellationToken ct)
     {
         var row = await Rows(db, db.Results.Where(r => r.ProjectId == projectId && r.Id == resultId)).FirstOrDefaultAsync(ct);
-        return row is null ? null : Dto(row.Result, row.Script, await new CurrentVersions(store, projectId).BecauseAsync(row.Result, ct));
+        return row is null
+            ? null
+            : (Dto(row.Result, row.Script, await new CurrentVersions(store, projectId).BecauseAsync(row.Result, ct)), Scripts.Plan(row.Script));
     }
 
     private sealed record Row(ResultEntity Result, ScriptEntity Script);
@@ -268,6 +346,7 @@ public static class MeasuredResults
     private static MeasuredResultDto Dto(ResultEntity row, ScriptEntity script, IReadOnlyList<string> staleBecause)
     {
         var run = JsonSerializer.Deserialize<MeasuredRun>(row.Document, Scripts.Json)!;
+        var plan = Scripts.Plan(script);
         var seconds = run.MeasuredSeconds;
         var flow = run.Flow;
         return new MeasuredResultDto(
@@ -278,12 +357,13 @@ public static class MeasuredResults
                     "k6-import", row.Format, row.ScriptId, row.ScriptHash, row.ContentHash,
                     row.TargetId, script.TargetName, script.BaseUrl, row.Environment, row.ImportedBy, row.ImportedVia, row.ImportedAt),
                 new MeasuredFlowDto(
-                    Measured, flow.Iterations, flow.Failed, flow.DroppedIterations,
-                    Share(flow.Failed, flow.Iterations), (flow.Iterations - flow.Failed) / seconds, Latency(flow.Latency)),
+                    Measured, flow.Iterations, flow.UnexpectedStatus, flow.DroppedIterations,
+                    Share(flow.UnexpectedStatus, flow.Iterations), (flow.Iterations - flow.UnexpectedStatus) / seconds, Latency(flow.Latency)),
                 staleBecause.Count > 0, staleBecause),
             [.. run.Operations.Select(o => new MeasuredOperationDto(
-                Measured, o.OperationId, o.Name, o.Requests, o.Failed, Share(o.Failed, o.Requests), (o.Requests - o.Failed) / seconds, Latency(o.Latency)))],
-            Scripts.Plan(script).NotCovered);
+                Measured, o.OperationId, o.Name, o.Requests, o.UnexpectedStatus, Share(o.UnexpectedStatus, o.Requests), (o.Requests - o.UnexpectedStatus) / seconds,
+                Latency(o.Latency), o.ExpectedFailures, Latency(o.ExpectedFailureLatency)))],
+            plan.NotCovered, plan.Faults, plan.ExpectFailure().Count > 0);
 
         static double? Share(long part, long whole) => whole > 0 ? (double)part / whole : null;
 
@@ -292,7 +372,7 @@ public static class MeasuredResults
     }
 
     /// <summary>The versions that the model streams and the scenarios of stored results have now, read once each.</summary>
-    private sealed class CurrentVersions(IEventStore store, Guid projectId)
+    internal sealed class CurrentVersions(IEventStore store, Guid projectId)
     {
         private readonly Dictionary<Guid, long> _models = [];
         private readonly Dictionary<Guid, long?> _scenarios = [];
@@ -317,28 +397,12 @@ public static class MeasuredResults
 }
 
 /// <summary>
-/// The name a stress profile gives to an imported result: <c>k6:{result ID}</c>. A value of a
-/// profile is <c>measured</c> only with such a name, and only when the name resolves to a
-/// result of the same project.
+/// The name a stress profile gives to an imported result: <c>k6:{result ID}</c>. What makes a
+/// value <c>measured</c> is in <see cref="MeasuredServiceTimes"/>.
 /// </summary>
 public static class MeasurementRefs
 {
     public const string Prefix = "k6:";
 
     public static string For(Guid resultId) => $"{Prefix}{resultId}";
-
-    /// <summary>The references that name no imported result of the project.</summary>
-    public static async Task<IReadOnlySet<string>> UnresolvedAsync(
-        LoadTestsDbContext db, Guid projectId, IReadOnlyCollection<string> references, CancellationToken ct)
-    {
-        // One spelling for each result: the ID in lower case with dashes.
-        var ids = references.Distinct(StringComparer.Ordinal)
-            .Where(r => r.StartsWith(Prefix, StringComparison.Ordinal) && Guid.TryParseExact(r[Prefix.Length..], "D", out var id) && For(id) == r)
-            .ToDictionary(r => r, r => Guid.ParseExact(r[Prefix.Length..], "D"), StringComparer.Ordinal);
-        var wanted = ids.Values.Distinct().ToList();
-        var found = wanted.Count == 0
-            ? []
-            : await db.Results.AsNoTracking().Where(r => r.ProjectId == projectId && wanted.Contains(r.Id)).Select(r => r.Id).ToListAsync(ct);
-        return references.Where(r => !ids.TryGetValue(r, out var id) || !found.Contains(id)).ToHashSet(StringComparer.Ordinal);
-    }
 }

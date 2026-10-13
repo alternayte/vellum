@@ -61,7 +61,8 @@ public static class LoadTestsModule
         // result file, as it may record evidence for a promise. The token gets no way around
         // the checks: the same identity check runs for every caller, a result is bound to a
         // script for a target that a person authorised, and the row names the token. Sending a
-        // file marks no value of a profile as measured: only an Editor's save of the profile does.
+        // file marks no value of a profile as measured: only an Editor's save of the profile does,
+        // and that save takes the numbers from the result (MeasuredServiceTimes).
         loadTests.MapPost("/results", MeasuredResults.Import).AllowAgent(AgentScope.Propose)
             .Accepts<object>("application/json")
             .Produces<MeasuredResultDto>(StatusCodes.Status201Created)
@@ -93,8 +94,15 @@ public static class LoadTestRetention
     /// </summary>
     public static async Task DeleteProjectAsync(LoadTestsDbContext db, IEventStore store, Guid projectId, CancellationToken ct)
     {
-        await db.Results.Where(r => r.ProjectId == projectId).ExecuteDeleteAsync(ct);
-        await db.Scripts.Where(s => s.ProjectId == projectId).ExecuteDeleteAsync(ct);
+        // One unit under the lock of the load-test writes: an import that started before the project went
+        // cannot add a result between the two deletes, which would keep its script from being deleted.
+        await using (var transaction = await db.Database.BeginTransactionAsync(ct))
+        {
+            await Targets.LockProjectAsync(db.Database, projectId, ct);
+            await db.Results.Where(r => r.ProjectId == projectId).ExecuteDeleteAsync(ct);
+            await db.Scripts.Where(s => s.ProjectId == projectId).ExecuteDeleteAsync(ct);
+            await transaction.CommitAsync(ct);
+        }
 
         foreach (var targetId in await db.Targets.AsNoTracking().Where(t => t.ProjectId == projectId).Select(t => t.Id).ToListAsync(ct))
             await store.DeleteStream(StreamId.From(targetId), ct);

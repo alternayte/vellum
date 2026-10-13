@@ -12525,6 +12525,12 @@
               "null",
               "string"
             ]
+          },
+          "measurementStale": {
+            "type": [
+              "null",
+              "boolean"
+            ]
           }
         }
       },
@@ -12554,7 +12560,9 @@
       },
       "AuthoriseTargetRequest": {
         "required": [
-          "baseUrl"
+          "baseUrl",
+          "environment",
+          "version"
         ],
         "type": "object",
         "properties": {
@@ -12563,6 +12571,21 @@
               "null",
               "string"
             ]
+          },
+          "environment": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "version": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int64"
           }
         }
       },
@@ -15580,7 +15603,8 @@
           "estimatedLabel",
           "measured",
           "measuredLabel",
-          "difference"
+          "difference",
+          "reason"
         ],
         "type": "object",
         "properties": {
@@ -15635,6 +15659,12 @@
               "string"
             ],
             "format": "double"
+          },
+          "reason": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -17727,6 +17757,39 @@
               "string"
             ],
             "format": "int32"
+          },
+          "load": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "plannedIterations": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "minElapsedMs": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "loadNotes": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "type": "string"
+            }
           }
         }
       },
@@ -18016,9 +18079,9 @@
         "required": [
           "label",
           "iterations",
-          "failed",
+          "unexpectedStatus",
           "droppedIterations",
-          "errorRate",
+          "unexpectedStatusRate",
           "throughputPerSecond",
           "latency"
         ],
@@ -18035,7 +18098,7 @@
             ],
             "format": "int64"
           },
-          "failed": {
+          "unexpectedStatus": {
             "pattern": "^-?(?:0|[1-9]\\d*)$",
             "type": [
               "integer",
@@ -18051,7 +18114,7 @@
             ],
             "format": "int64"
           },
-          "errorRate": {
+          "unexpectedStatusRate": {
             "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
             "type": [
               "null",
@@ -18169,10 +18232,12 @@
           "operationId",
           "name",
           "requests",
-          "failed",
-          "errorRate",
+          "unexpectedStatus",
+          "unexpectedStatusRate",
           "throughputPerSecond",
-          "latency"
+          "latency",
+          "expectedFailures",
+          "expectedFailureLatency"
         ],
         "type": "object",
         "properties": {
@@ -18194,7 +18259,7 @@
             ],
             "format": "int64"
           },
-          "failed": {
+          "unexpectedStatus": {
             "pattern": "^-?(?:0|[1-9]\\d*)$",
             "type": [
               "integer",
@@ -18202,7 +18267,7 @@
             ],
             "format": "int64"
           },
-          "errorRate": {
+          "unexpectedStatusRate": {
             "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
             "type": [
               "null",
@@ -18220,6 +18285,24 @@
             "format": "double"
           },
           "latency": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/MeasuredLatencyDto"
+              }
+            ]
+          },
+          "expectedFailures": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "expectedFailureLatency": {
             "oneOf": [
               {
                 "type": "null"
@@ -18296,7 +18379,9 @@
         "required": [
           "result",
           "operations",
-          "notCovered"
+          "notCovered",
+          "faults",
+          "expectsFailure"
         ],
         "type": "object",
         "properties": {
@@ -18314,6 +18399,17 @@
             "items": {
               "$ref": "#/components/schemas/K6NotCovered"
             }
+          },
+          "faults": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "expectsFailure": {
+            "type": "boolean"
           }
         }
       },
@@ -19982,6 +20078,33 @@
         "properties": {
           "sendPrivateCodeToAi": {
             "type": "boolean"
+          }
+        }
+      },
+      "ProfileMeasurement": {
+        "required": [
+          "target",
+          "measurementRef",
+          "measurementStale",
+          "staleBecause"
+        ],
+        "type": "object",
+        "properties": {
+          "target": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "measurementRef": {
+            "type": "string"
+          },
+          "measurementStale": {
+            "type": "boolean"
+          },
+          "staleBecause": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       },
@@ -24916,7 +25039,8 @@
           "id",
           "version",
           "updatedAt",
-          "profile"
+          "profile",
+          "measurements"
         ],
         "type": "object",
         "properties": {
@@ -24938,6 +25062,12 @@
           },
           "profile": {
             "$ref": "#/components/schemas/StressProfile"
+          },
+          "measurements": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProfileMeasurement"
+            }
           }
         }
       },
