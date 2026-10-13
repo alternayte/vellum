@@ -48,6 +48,25 @@ export interface Subscription {
 
 interface Page<T> {
   items: T[]
+  cursor: string | null
+}
+
+type PageQuery = { branchId?: string; limit: number; cursor?: string }
+
+/** Contract lists are paged; the canvas and the scenario editor need every item. */
+async function allPages<T>(
+  fetchPage: (query: PageQuery) => Promise<{ data?: unknown; error?: unknown }>,
+  branchId: string | null | undefined,
+  fallback: string,
+): Promise<T[]> {
+  const items: T[] = []
+  let cursor: string | undefined
+  do {
+    const page = unwrap<Page<T>>(await fetchPage({ branchId: branchId ?? undefined, limit: 200, cursor }), fallback)
+    items.push(...page.items)
+    cursor = page.cursor ?? undefined
+  } while (cursor)
+  return items
 }
 
 /** The server's reason for a refused write (the shared error envelope), so the UI can say why. */
@@ -71,11 +90,7 @@ const key = (projectId: string, kind: string, branchId?: string | null) =>
 export function useOperations(projectId: string, branchId?: string | null) {
   return useQuery({
     queryKey: key(projectId, 'operations', branchId),
-    queryFn: async () =>
-      unwrap<Page<Operation>>(
-        await getApiProjectsByProjectIdOperations({ path: { projectId }, query: { branchId: branchId ?? undefined } }),
-        'Operations did not load.',
-      ).items,
+    queryFn: () => allPages<Operation>((query) => getApiProjectsByProjectIdOperations({ path: { projectId }, query }), branchId, 'Operations did not load.'),
     staleTime: 30_000,
   })
 }
@@ -83,11 +98,7 @@ export function useOperations(projectId: string, branchId?: string | null) {
 export function useChannels(projectId: string, branchId?: string | null) {
   return useQuery({
     queryKey: key(projectId, 'channels', branchId),
-    queryFn: async () =>
-      unwrap<Page<Channel>>(
-        await getApiProjectsByProjectIdChannels({ path: { projectId }, query: { branchId: branchId ?? undefined } }),
-        'Channels did not load.',
-      ).items,
+    queryFn: () => allPages<Channel>((query) => getApiProjectsByProjectIdChannels({ path: { projectId }, query }), branchId, 'Channels did not load.'),
     staleTime: 30_000,
   })
 }
@@ -95,11 +106,7 @@ export function useChannels(projectId: string, branchId?: string | null) {
 export function useSubscriptions(projectId: string, branchId?: string | null) {
   return useQuery({
     queryKey: key(projectId, 'subscriptions', branchId),
-    queryFn: async () =>
-      unwrap<Page<Subscription>>(
-        await getApiProjectsByProjectIdSubscriptions({ path: { projectId }, query: { branchId: branchId ?? undefined } }),
-        'Subscriptions did not load.',
-      ).items,
+    queryFn: () => allPages<Subscription>((query) => getApiProjectsByProjectIdSubscriptions({ path: { projectId }, query }), branchId, 'Subscriptions did not load.'),
     staleTime: 30_000,
   })
 }

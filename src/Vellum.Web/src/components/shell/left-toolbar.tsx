@@ -31,7 +31,7 @@ export function LeftToolbar({ children }: LeftToolbarProps) {
 
   return (
     <div className="relative z-30 flex flex-shrink-0">
-      <nav className="flex w-12 flex-col items-center gap-1 border-r border-border bg-card py-2">
+      <nav className="relative z-20 flex w-12 flex-col items-center gap-1 border-r border-border bg-card py-2">
         {toolbarItems.map(({ flyout, label, icon: Icon }) => (
           <button
             key={flyout}

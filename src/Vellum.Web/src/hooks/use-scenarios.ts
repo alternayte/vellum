@@ -34,11 +34,20 @@ function unwrap<T>(result: { data?: unknown; error?: unknown }, fallback: string
 export function useScenarios(projectId: string) {
   return useQuery({
     queryKey: ['projects', projectId, 'scenarios'],
-    queryFn: async () =>
-      unwrap<{ items: ScenarioSummary[] }>(
-        await getApiProjectsByProjectIdScenarios({ path: { projectId } }),
-        'Scenarios did not load.',
-      ).items,
+    queryFn: async () => {
+      // The list is paged; the flyout shows every scenario of the project.
+      const items: ScenarioSummary[] = []
+      let cursor: string | undefined
+      do {
+        const page = unwrap<{ items: ScenarioSummary[]; cursor: string | null }>(
+          await getApiProjectsByProjectIdScenarios({ path: { projectId }, query: { limit: 200, cursor } }),
+          'Scenarios did not load.',
+        )
+        items.push(...page.items)
+        cursor = page.cursor ?? undefined
+      } while (cursor)
+      return items
+    },
     staleTime: 30_000,
   })
 }
