@@ -64,3 +64,34 @@ openapi:
     dotnet build src/Vellum
     cp src/Vellum/obj/Vellum.json src/Vellum.Web/openapi.json
     cd src/Vellum.Web && npm run generate
+
+# The documentation site with live reload, at http://localhost:4321.
+docs:
+    cd site && npm install && npm run dev
+
+# Builds the documentation site to site/dist. The build fails on a broken internal link.
+docs-build:
+    cd site && npm ci && npm run build
+
+# The docs checks that need no running Vellum: API paths against openapi.json, and the snippets.
+docs-check:
+    cd site && npm run check
+
+# The docs snippets that need a running Vellum, on a throwaway Compose project. Needs Docker.
+docs-verify-live:
+    site/scripts/verify-live.sh
+
+# The gate before a commit: build, code style, lint, type checks and the focused checks.
+# It does not run the whole backend suite: `just test` does.
+check: check-backend check-web check-docs
+
+check-backend:
+    dotnet build Vellum.slnx
+    diff -u src/Vellum.Web/openapi.json src/Vellum/obj/Vellum.json
+    dotnet format style Vellum.slnx --verify-no-changes --no-restore
+    DOCKER_CONFIG={{justfile_directory()}}/.docker-test dotnet test tests/Vellum.Tests --no-build --filter "FullyQualifiedName~OrdersExampleTests|FullyQualifiedName~ConventionTests"
+
+check-web:
+    cd src/Vellum.Web && npm ci && npm run generate && npx vite build && npm run lint && npx tsc --noEmit && npm test
+
+check-docs: docs-build docs-check

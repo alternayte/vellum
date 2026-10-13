@@ -1,0 +1,75 @@
+/*
+ * Vellum docs theme. The colours come from the app (src/Vellum.Web/tailwind.css):
+ * the dark surface is --background / --card / --border, and the accent is the teal of a
+ * request in a trace (--trace-request, hsl(172 66% 50%)).
+ */
+
+:root {
+  --sl-font: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --sl-font-mono: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+
+  /* Dark theme: Starlight's default selector. */
+  --sl-color-accent-low: hsl(172 50% 13%);
+  --sl-color-accent: hsl(172 66% 38%);
+  --sl-color-accent-high: hsl(172 66% 72%);
+
+  --sl-color-white: hsl(180 4% 96%);
+  --sl-color-gray-1: hsl(210 17% 88%);
+  --sl-color-gray-2: hsl(210 17% 74%);
+  --sl-color-gray-3: hsl(210 17% 60%);
+  --sl-color-gray-4: hsl(213 16% 38%);
+  --sl-color-gray-5: hsl(213 18% 23%);
+  --sl-color-gray-6: hsl(212 17% 14%);
+  --sl-color-black: hsl(210 18% 10%);
+
+  --sl-color-bg-nav: hsl(212 17% 12%);
+  --sl-color-bg-sidebar: hsl(212 17% 12%);
+  --sl-color-hairline: hsl(213 18% 19%);
+  --sl-color-hairline-light: hsl(213 18% 23%);
+}
+
+:root[data-theme='light'] {
+  --sl-color-accent-low: hsl(172 55% 90%);
+  --sl-color-accent: hsl(174 80% 26%);
+  --sl-color-accent-high: hsl(175 80% 15%);
+
+  --sl-color-white: hsl(222 47% 11%);
+  --sl-color-gray-1: hsl(217 33% 17%);
+  --sl-color-gray-2: hsl(215 25% 27%);
+  --sl-color-gray-3: hsl(215 16% 42%);
+  --sl-color-gray-4: hsl(215 16% 60%);
+  --sl-color-gray-5: hsl(214 25% 84%);
+  --sl-color-gray-6: hsl(210 30% 94%);
+  --sl-color-gray-7: hsl(210 20% 97%);
+  --sl-color-black: hsl(210 20% 98%);
+
+  --sl-color-bg-nav: hsl(0 0% 100%);
+  --sl-color-bg-sidebar: hsl(0 0% 100%);
+  --sl-color-hairline: hsl(214 25% 90%);
+  --sl-color-hairline-light: hsl(214 25% 86%);
+}
+
+/* A wide reference table scrolls inside its own box, not the page. */
+.sl-markdown-content table {
+  display: block;
+  overflow-x: auto;
+  font-size: var(--sl-text-sm);
+}
+
+.sl-markdown-content th {
+  white-space: nowrap;
+}
+
+.sl-markdown-content :is(h2, h3) code {
+  font-size: 0.9em;
+}
+
+/* The landing page: one restrained hero, no gradient. */
+.hero {
+  padding-block: clamp(2rem, 8vmin, 5rem);
+}
+
+.hero .tagline {
+  max-width: 44rem;
+  color: var(--sl-color-gray-2);
+}

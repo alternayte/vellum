@@ -1,0 +1,368 @@
+{
+  "version": "1.0",
+  "project": {
+    "name": "Orders"
+  },
+  "elements": [
+    {
+      "id": "e0a1d5c0-15ed-4000-8000-000000000010",
+      "kind": "system",
+      "name": "Shop",
+      "description": "Takes orders and fulfils them.",
+      "technology": null,
+      "status": "current",
+      "parentId": null,
+      "tags": [],
+      "icon": null,
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    },
+    {
+      "id": "e0a1d5c0-15ed-4000-8000-000000000011",
+      "kind": "actor",
+      "name": "Customer",
+      "description": "A person who places an order.",
+      "technology": null,
+      "status": "current",
+      "parentId": null,
+      "tags": [],
+      "icon": null,
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    },
+    {
+      "id": "e0a1d5c0-15ed-4000-8000-000000000012",
+      "kind": "system",
+      "name": "Payment provider",
+      "description": "An external service that charges a card.",
+      "technology": null,
+      "status": "current",
+      "parentId": null,
+      "tags": [],
+      "icon": null,
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    },
+    {
+      "id": "e0a1d5c0-15ed-4000-8000-000000000020",
+      "kind": "app",
+      "name": "Orders API",
+      "description": "Accepts orders, stores them and publishes OrderCreated.",
+      "technology": "ASP.NET Core",
+      "status": "current",
+      "parentId": "e0a1d5c0-15ed-4000-8000-000000000010",
+      "tags": [],
+      "icon": null,
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    },
+    {
+      "id": "e0a1d5c0-15ed-4000-8000-000000000021",
+      "kind": "store",
+      "name": "Orders DB",
+      "description": "Holds the orders.",
+      "technology": "PostgreSQL",
+      "status": "current",
+      "parentId": "e0a1d5c0-15ed-4000-8000-000000000010",
+      "tags": [],
+      "icon": null,
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    },
+    {
+      "id": "e0a1d5c0-15ed-4000-8000-000000000022",
+      "kind": "app",
+      "name": "Inventory",
+      "description": "Reserves stock for an order.",
+      "technology": "Go",
+      "status": "current",
+      "parentId": "e0a1d5c0-15ed-4000-8000-000000000010",
+      "tags": [],
+      "icon": null,
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    },
+    {
+      "id": "e0a1d5c0-15ed-4000-8000-000000000023",
+      "kind": "store",
+      "name": "Inventory DB",
+      "description": "Holds stock levels and reservations.",
+      "technology": "PostgreSQL",
+      "status": "current",
+      "parentId": "e0a1d5c0-15ed-4000-8000-000000000010",
+      "tags": [],
+      "icon": null,
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    },
+    {
+      "id": "e0a1d5c0-15ed-4000-8000-000000000024",
+      "kind": "app",
+      "name": "Billing",
+      "description": "Charges the customer for an order.",
+      "technology": "ASP.NET Core",
+      "status": "current",
+      "parentId": "e0a1d5c0-15ed-4000-8000-000000000010",
+      "tags": [],
+      "icon": null,
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    }
+  ],
+  "relationships": [
+    {
+      "id": "e0a1d5c0-15ed-4000-8000-000000000090",
+      "fromId": "e0a1d5c0-15ed-4000-8000-000000000011",
+      "toId": "e0a1d5c0-15ed-4000-8000-000000000020",
+      "label": "places orders",
+      "technology": "HTTPS",
+      "kind": "structural",
+      "lineShape": null,
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    },
+    {
+      "id": "e0a1d5c0-15ed-4000-8000-000000000091",
+      "fromId": "e0a1d5c0-15ed-4000-8000-000000000020",
+      "toId": "e0a1d5c0-15ed-4000-8000-000000000021",
+      "label": "reads and writes",
+      "technology": "SQL",
+      "kind": "structural",
+      "lineShape": null,
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    },
+    {
+      "id": "e0a1d5c0-15ed-4000-8000-000000000092",
+      "fromId": "e0a1d5c0-15ed-4000-8000-000000000020",
+      "toId": "e0a1d5c0-15ed-4000-8000-000000000022",
+      "label": "reserves stock",
+      "technology": "HTTP",
+      "kind": "structural",
+      "lineShape": null,
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    },
+    {
+      "id": "e0a1d5c0-15ed-4000-8000-000000000093",
+      "fromId": "e0a1d5c0-15ed-4000-8000-000000000022",
+      "toId": "e0a1d5c0-15ed-4000-8000-000000000023",
+      "label": "reads and writes",
+      "technology": "SQL",
+      "kind": "structural",
+      "lineShape": null,
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    },
+    {
+      "id": "e0a1d5c0-15ed-4000-8000-000000000094",
+      "fromId": "e0a1d5c0-15ed-4000-8000-000000000024",
+      "toId": "e0a1d5c0-15ed-4000-8000-000000000012",
+      "label": "charges cards",
+      "technology": "HTTPS",
+      "kind": "structural",
+      "lineShape": null,
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    }
+  ],
+  "messages": [
+    {
+      "id": "e0a1d5c0-15ed-4000-8000-000000000080",
+      "name": "OrderCreated",
+      "description": "An order is accepted and its stock is reserved.",
+      "producerId": "e0a1d5c0-15ed-4000-8000-000000000020",
+      "consumerIds": [
+        "e0a1d5c0-15ed-4000-8000-000000000022",
+        "e0a1d5c0-15ed-4000-8000-000000000024"
+      ],
+      "schemaId": "e0a1d5c0-15ed-4000-8000-000000000032",
+      "tags": [],
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    }
+  ],
+  "schemas": [
+    {
+      "id": "e0a1d5c0-15ed-4000-8000-000000000030",
+      "name": "OrderRequest",
+      "description": "The body of POST /orders.",
+      "content": "{\"type\":\"object\",\"required\":[\"sku\",\"qty\"],\"properties\":{\"sku\":{\"type\":\"string\",\"minLength\":1},\"qty\":{\"type\":\"integer\",\"minimum\":1}},\"additionalProperties\":false}",
+      "version": 1
+    },
+    {
+      "id": "e0a1d5c0-15ed-4000-8000-000000000031",
+      "name": "OrderAccepted",
+      "description": "The answer of POST /orders.",
+      "content": "{\"type\":\"object\",\"required\":[\"orderId\",\"status\"],\"properties\":{\"orderId\":{\"type\":\"string\",\"minLength\":1},\"status\":{\"enum\":[\"accepted\"]}},\"additionalProperties\":false}",
+      "version": 1
+    },
+    {
+      "id": "e0a1d5c0-15ed-4000-8000-000000000032",
+      "name": "OrderCreated",
+      "description": "The event that the Orders API publishes for an accepted order with reserved stock.",
+      "content": "{\"type\":\"object\",\"required\":[\"orderId\",\"sku\",\"qty\"],\"properties\":{\"orderId\":{\"type\":\"string\",\"minLength\":1},\"sku\":{\"type\":\"string\",\"minLength\":1},\"qty\":{\"type\":\"integer\",\"minimum\":1}},\"additionalProperties\":false}",
+      "version": 1
+    },
+    {
+      "id": "e0a1d5c0-15ed-4000-8000-000000000033",
+      "name": "ReservationRequest",
+      "description": "The body of POST /reservations.",
+      "content": "{\"type\":\"object\",\"required\":[\"orderId\",\"sku\",\"qty\"],\"properties\":{\"orderId\":{\"type\":\"string\",\"minLength\":1},\"sku\":{\"type\":\"string\",\"minLength\":1},\"qty\":{\"type\":\"integer\",\"minimum\":1}},\"additionalProperties\":false}",
+      "version": 1
+    },
+    {
+      "id": "e0a1d5c0-15ed-4000-8000-000000000034",
+      "name": "ChargeRequest",
+      "description": "The body of POST /charges.",
+      "content": "{\"type\":\"object\",\"required\":[\"orderId\",\"amount\",\"currency\"],\"properties\":{\"orderId\":{\"type\":\"string\",\"minLength\":1},\"amount\":{\"type\":\"number\",\"exclusiveMinimum\":0},\"currency\":{\"type\":\"string\",\"pattern\":\"^[A-Z]{3}$\"}},\"additionalProperties\":false}",
+      "version": 1
+    }
+  ],
+  "operations": [
+    {
+      "id": "e0a1d5c0-15ed-4000-8000-000000000040",
+      "ownerId": "e0a1d5c0-15ed-4000-8000-000000000020",
+      "name": "POST /orders",
+      "transport": "http",
+      "requestSchemaId": "e0a1d5c0-15ed-4000-8000-000000000030",
+      "responseSchemaId": "e0a1d5c0-15ed-4000-8000-000000000031",
+      "timeoutMs": 5000,
+      "retry": {
+        "maxAttempts": 1,
+        "backoffMs": 0
+      },
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    },
+    {
+      "id": "e0a1d5c0-15ed-4000-8000-000000000041",
+      "ownerId": "e0a1d5c0-15ed-4000-8000-000000000022",
+      "name": "POST /reservations",
+      "transport": "http",
+      "requestSchemaId": "e0a1d5c0-15ed-4000-8000-000000000033",
+      "responseSchemaId": null,
+      "timeoutMs": 500,
+      "retry": {
+        "maxAttempts": 3,
+        "backoffMs": 100
+      },
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    },
+    {
+      "id": "e0a1d5c0-15ed-4000-8000-000000000042",
+      "ownerId": "e0a1d5c0-15ed-4000-8000-000000000012",
+      "name": "POST /charges",
+      "transport": "http",
+      "requestSchemaId": "e0a1d5c0-15ed-4000-8000-000000000034",
+      "responseSchemaId": null,
+      "timeoutMs": 2000,
+      "retry": {
+        "maxAttempts": 2,
+        "backoffMs": 500
+      },
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    }
+  ],
+  "channels": [
+    {
+      "id": "e0a1d5c0-15ed-4000-8000-000000000050",
+      "name": "order-events",
+      "kind": "topic",
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    },
+    {
+      "id": "e0a1d5c0-15ed-4000-8000-000000000051",
+      "name": "inventory.order-created",
+      "kind": "queue",
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    },
+    {
+      "id": "e0a1d5c0-15ed-4000-8000-000000000052",
+      "name": "billing.order-created",
+      "kind": "queue",
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    },
+    {
+      "id": "e0a1d5c0-15ed-4000-8000-000000000053",
+      "name": "order-events.dlq",
+      "kind": "queue",
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    }
+  ],
+  "subscriptions": [
+    {
+      "id": "e0a1d5c0-15ed-4000-8000-000000000060",
+      "channelId": "e0a1d5c0-15ed-4000-8000-000000000051",
+      "consumerId": "e0a1d5c0-15ed-4000-8000-000000000022",
+      "retry": {
+        "maxAttempts": 3,
+        "backoffMs": 200
+      },
+      "deadLetterChannelId": "e0a1d5c0-15ed-4000-8000-000000000053",
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    },
+    {
+      "id": "e0a1d5c0-15ed-4000-8000-000000000061",
+      "channelId": "e0a1d5c0-15ed-4000-8000-000000000052",
+      "consumerId": "e0a1d5c0-15ed-4000-8000-000000000024",
+      "retry": {
+        "maxAttempts": 2,
+        "backoffMs": 1000
+      },
+      "deadLetterChannelId": "e0a1d5c0-15ed-4000-8000-000000000053",
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    }
+  ],
+  "bindings": [
+    {
+      "id": "e0a1d5c0-15ed-4000-8000-000000000070",
+      "sourceChannelId": "e0a1d5c0-15ed-4000-8000-000000000050",
+      "targetChannelId": "e0a1d5c0-15ed-4000-8000-000000000051",
+      "routingKey": "order.created",
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    },
+    {
+      "id": "e0a1d5c0-15ed-4000-8000-000000000071",
+      "sourceChannelId": "e0a1d5c0-15ed-4000-8000-000000000050",
+      "targetChannelId": "e0a1d5c0-15ed-4000-8000-000000000052",
+      "routingKey": "order.*",
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    }
+  ]
+}

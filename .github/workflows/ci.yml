@@ -1,0 +1,141 @@
+# Fast CI (Vellum-SDD.md §9): build, format, type checks and tests for correctness, security
+# and data boundaries. No browser, no screenshots, no paid AI key and no live GitHub access.
+# The five live smoke tests skip, because no VELLUM_LIVE_* value is set.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_NOLOGO: "true"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "true"
+  ASTRO_TELEMETRY_DISABLED: "1"
+
+jobs:
+  backend:
+    name: Backend
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj') }}
+          restore-keys: nuget-${{ runner.os }}-
+
+      # The k6 script tests run each generated script through the real k6. With CI set and
+      # no k6 they fail, so that "the k6 script is valid" (SDD §10) holds in CI.
+      - name: Install k6
+        uses: grafana/setup-k6-action@v1
+        with:
+          k6-version: "2.1.0"
+
+      - name: Restore
+        run: dotnet restore Vellum.slnx
+
+      - name: Build
+        run: dotnet build Vellum.slnx --no-restore
+
+      # The build of the API writes its OpenAPI document. The web client and the HTTP API
+      # reference of the docs are generated from the committed copy, so the two must be equal.
+      - name: The committed OpenAPI document is current
+        run: diff -u src/Vellum.Web/openapi.json src/Vellum/obj/Vellum.json
+
+      # Code style only. The whitespace rules are not a gate: the repository is not clean
+      # for them yet (run `dotnet format whitespace Vellum.slnx --verify-no-changes`).
+      - name: Code style
+        run: dotnet format style Vellum.slnx --verify-no-changes --no-restore
+
+      # The integration tests start Postgres with Testcontainers. Docker is on the runner.
+      - name: Test
+        run: dotnet test Vellum.slnx --no-build --logger "trx;LogFileName=backend.trx" --results-directory test-results
+
+      - name: Keep the test results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-test-results
+          path: test-results
+
+  web:
+    name: Web client
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: src/Vellum.Web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+          cache: npm
+          cache-dependency-path: src/Vellum.Web/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      # The API client is generated from the committed openapi.json and is not in the repository.
+      - name: Generate the API client
+        run: npm run generate
+
+      # The Vite build writes the route tree (src/routeTree.gen.ts), which is not in the
+      # repository. The lint and the type check read it, so the build runs first.
+      - name: Build
+        run: npx vite build
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type check
+        run: npx tsc --noEmit
+
+      - name: Unit tests
+        run: npm test
+
+  docs:
+    name: Docs
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: site
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      # The build writes the HTTP API reference from src/Vellum.Web/openapi.json and fails
+      # on an internal link or a heading anchor that does not resolve.
+      - name: Build and check the links
+        run: npm run build
+
+      # Every /api/ path that a page names is in openapi.json. Every sh block parses, every
+      # json block is valid, and the blocks marked "run" run. The blocks marked "live" need
+      # a running Vellum: site/scripts/verify-live.sh runs them, and it is not part of CI.
+      - name: Check the paths and the snippets
+        run: npm run check

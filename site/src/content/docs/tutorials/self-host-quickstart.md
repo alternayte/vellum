@@ -9,11 +9,22 @@ You need Docker with the Compose plugin.
 
 ## Start it
 
+Get the source and go to its directory:
+
+<!-- snippet: syntax -->
 ```sh
 git clone https://github.com/alternayte/vellum
 cd vellum
-docker compose up -d
 ```
+
+Build the image and start the app and the database:
+
+<!-- snippet: live -->
+```sh
+docker compose up -d --wait
+```
+
+The first start builds the image. `--wait` returns when both services are ready.
 
 Vellum listens on `http://localhost:8080`. To use other ports, set `VELLUM_PORT` and `VELLUM_POSTGRES_PORT` before the command.
 
@@ -25,6 +36,7 @@ Vellum creates its database tables on the first start. It also creates a master 
 
 The first start creates a one-time setup code. The setup screen asks for it. The code proves that you operate this instance.
 
+<!-- snippet: live -->
 ```sh
 docker compose logs vellum | grep "VELLUM SETUP CODE"
 ```
@@ -33,6 +45,7 @@ The line shows the code, for example `VELLUM SETUP CODE: ABCDE-FGHJK-MNPQR-STUVW
 
 The code is also in the file `setup-code` in the data directory:
 
+<!-- snippet: live -->
 ```sh
 docker compose exec vellum cat /data/setup-code
 ```
@@ -41,18 +54,24 @@ Vellum writes the same code to the log on each start until setup is complete.
 
 ## Create the administrator
 
-1. Open `http://localhost:8080`. Vellum shows the setup screen, because the instance has no account.
-2. Give your name, an email and a password. The password has 10 characters or more, with a digit, an upper-case letter and a lower-case letter.
-3. Give the setup code.
-4. Give the first workspace a name and complete the setup.
+1. Open `http://localhost:8080/setup`. An instance that has no account needs setup.
+2. Fill in **Your name**, **Email** and **Password**. The password has 10 characters or more, with a digit, an upper-case letter and a lower-case letter.
+3. Select **Continue**.
+4. Fill in **Workspace name**.
+5. Type the setup code in **Setup code**.
+6. Select **Finish setup**.
 
 You are now signed in as the instance administrator and as the owner of the workspace.
 
 Vellum deletes the `setup-code` file when setup is complete. The code does not work again.
 
-After setup, nobody can register an account by themselves. To change that, open **Settings**, then **Instance**.
+After setup, nobody can register an account by themselves. To change that, select **Settings** on the home screen, then **Instance**, and turn on **Let people register themselves**.
 
-Vellum accepts 10 setup attempts and 10 sign-in attempts in one minute from one address. After that it answers `429` and tells the client how long to wait.
+If the code is wrong, Vellum answers `403` with the error `invalid_setup_token`. A second setup on the same instance gets `409` with the error `already_set_up`.
+
+Vellum accepts 10 setup attempts and 10 sign-in attempts in one minute from one address. After that it answers `429` with the error `rate_limited`. The `Retry-After` header gives the number of seconds to wait.
+
+Five wrong passwords lock an account for 5 minutes.
 
 ## Who can reach it
 
@@ -67,6 +86,7 @@ To let other machines reach the app:
 
 ## Stop and start
 
+<!-- snippet: live -->
 ```sh
 docker compose stop
 docker compose start
@@ -76,9 +96,12 @@ Your session, your settings and your stored credentials survive a restart, becau
 
 `docker compose down -v` deletes both volumes. That deletes the model data and the master key.
 
-Do not delete the `vellum-data` volume by itself. Vellum does not start on a database that holds data under a master key that it does not have. [Rotate the master key](/how-to/rotate-the-master-key/) tells you what to do if the key is lost.
+Do not delete the `vellum-data` volume by itself. Vellum does not start on a database that holds data under a master key that it does not have. [Lost master key](/runbooks/lost-master-key/) tells you what to do if the key is lost.
 
 ## Next
 
+- [Build a first model and trace it](/tutorials/first-model-and-trace/)
 - [Configure a workspace](/how-to/configure-settings/)
-- [Trace a scenario](/how-to/trace-a-scenario/)
+- [Back up and restore](/how-to/back-up-and-restore/)
+- [Bootstrap environment](/reference/bootstrap-environment/)
+- [Start-up refusals](/troubleshooting/start-up-refusals/)

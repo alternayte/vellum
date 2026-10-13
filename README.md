@@ -74,11 +74,15 @@ client for the agent interface.
   real GitHub API or a real AI provider is recorded yet.
 - The newest parts (Review, Costs, Stress, the MCP tools) have automated tests. They have
   not had an independent review yet.
-- Generated k6 load tests and measured results do not exist yet.
+- Generated k6 load tests and measured results were run against a local stand-in service
+  only, not against a deployed system.
 - The hosted, multi-tenant profile exists in the code. It is not ready for use.
-- The documentation site is not built. The pages are Markdown files in
-  `site/src/content/docs/`.
-- There is no CI and no licence file yet.
+- Some features have no screen yet and work through the HTTP API only: drafts, revisions,
+  members, messages, schemas and the model export. The how-to guides say where.
+- The documentation site builds from `site/`. It is not published at a public address.
+- The CI workflows in `.github/workflows` are written and checked with `actionlint`. They
+  have not run on GitHub yet.
+- There is no licence file yet.
 
 `PROGRESS.md` holds the exact state of each build step and the evidence for it.
 
@@ -112,6 +116,16 @@ dotnet test Vellum.slnx
 cd src/Vellum.Web && npx vitest run
 ```
 
+`just check` is the gate before a commit: build, code style, lint, type checks, the docs
+build with its link check, and the docs snippet checks. It needs `just`, Node.js and Docker.
+
+Read the documentation as a site:
+
+```sh
+just docs          # live reload at http://localhost:4321
+just docs-build    # writes site/dist and fails on a broken internal link
+```
+
 ## Layout
 
 | Path | Content |
@@ -119,7 +133,9 @@ cd src/Vellum.Web && npx vitest run
 | `src/Vellum` | The API. A modular monolith on .NET 10 with Postgres. One folder for each feature under `Modules/`. |
 | `src/Vellum.Web` | The web client. React 19 and React Flow. |
 | `tests/Vellum.Tests` | Backend tests and fixture repositories. |
-| `site/src/content/docs` | Tutorials, how-to guides, concepts and reference pages. |
+| `site` | The documentation site (Starlight). The pages are in `site/src/content/docs`: tutorials, how-to guides, concepts, reference, troubleshooting and runbooks. |
+| `examples/orders` | A model of the Orders reference case that you can import, with two scenarios. |
+| `examples/github-standin` | A stand-in for the GitHub API that serves the fixture repositories, for an import with no GitHub account. |
 | `skills/vellum` | The skill that tells a coding agent how to use Vellum. |
 | `Vellum-SDD.md` | The product contract. |
 | `PROGRESS.md` | The build log and the current state. |
@@ -127,6 +143,10 @@ cd src/Vellum.Web && npx vitest run
 ## Read more
 
 - [Run Vellum on your machine](site/src/content/docs/tutorials/self-host-quickstart.md)
+- [Model your first system and trace a flow](site/src/content/docs/tutorials/first-model-and-trace.md)
+- [Import a repository and review the proposals](site/src/content/docs/tutorials/import-and-review.md)
+- [The promise loop: from a question to evidence](site/src/content/docs/tutorials/promise-loop.md)
+- [Back up and restore](site/src/content/docs/runbooks/backup-and-restore.md)
 - [Trace a scenario](site/src/content/docs/how-to/trace-a-scenario.md)
 - [Import a repository](site/src/content/docs/how-to/import-a-repository.md)
 - [Declare a promise](site/src/content/docs/how-to/declare-a-promise.md)
