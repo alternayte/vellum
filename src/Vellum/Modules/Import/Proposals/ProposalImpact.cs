@@ -71,7 +71,7 @@ internal sealed class ProposalImpact
         .Select(s => (s.Id.Value, s.Name, s))]);
 
     /// <param name="changedFields">For a change: the model fields the proposal alters.</param>
-    public ProposalImpactDto Of(string action, string entityKind, Guid entityId, IReadOnlyCollection<string> changedFields)
+    public ProposalImpactDto Of(ProposalAction action, string entityKind, Guid entityId, IReadOnlyCollection<string> changedFields)
     {
         if (action == ProposalAction.Remove)
         {

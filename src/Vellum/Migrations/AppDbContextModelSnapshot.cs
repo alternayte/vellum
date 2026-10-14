@@ -5,6 +5,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
+using Vellum.Modules.Import;
+using Vellum.Modules.Import.Extraction;
 using Vellum.Modules.Workspaces;
 using Vellum.Shared;
 
@@ -22,6 +24,15 @@ namespace Vellum.Migrations
                 .HasAnnotation("ProductVersion", "10.0.9")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
+            NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "import", "coverage_gap", new[] { "failed", "limit", "scope", "withheld" });
+            NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "import", "entity_kind", new[] { "binding", "channel", "element", "message", "operation", "schema", "subscription" });
+            NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "import", "fact_disposition", new[] { "blocked", "evidence_only", "folded", "mapped" });
+            NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "import", "fact_kind", new[] { "channel", "data_access", "data_store", "dependency", "deployment", "message", "operation", "pattern", "publication", "schema", "service", "subscription" });
+            NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "import", "proposal_action", new[] { "add", "change", "conflict", "relink", "remove" });
+            NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "import", "proposal_status", new[] { "accepted", "pending", "rejected", "superseded" });
+            NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "import", "scan_file_state", new[] { "pending", "read", "skipped" });
+            NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "import", "scan_status", new[] { "cancelled", "completed", "failed", "queued", "running", "waiting" });
+            NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "import", "subject", new[] { "fact", "repository" });
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "workspaces", "invitation_status", new[] { "accepted", "declined", "expired", "pending", "revoked" });
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "workspaces", "workspace_role", new[] { "editor", "owner", "viewer" });
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
@@ -1078,9 +1089,8 @@ namespace Vellum.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("entity_id");
 
-                    b.Property<string>("EntityKind")
-                        .IsRequired()
-                        .HasColumnType("text")
+                    b.Property<StoredEntityKind>("EntityKind")
+                        .HasColumnType("import.entity_kind")
                         .HasColumnName("entity_kind");
 
                     b.Property<string>("Evidence")
@@ -1126,12 +1136,10 @@ namespace Vellum.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("scan_id");
 
-                    b.Property<string>("Subject")
-                        .IsRequired()
+                    b.Property<Subject>("Subject")
                         .ValueGeneratedOnAdd()
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)")
-                        .HasDefaultValue("fact")
+                        .HasColumnType("import.subject")
+                        .HasDefaultValue(Subject.Fact)
                         .HasColumnName("subject");
 
                     b.HasKey("Id")
@@ -1154,9 +1162,8 @@ namespace Vellum.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
-                    b.Property<string>("Action")
-                        .IsRequired()
-                        .HasColumnType("text")
+                    b.Property<ProposalAction>("Action")
+                        .HasColumnType("import.proposal_action")
                         .HasColumnName("action");
 
                     b.Property<string>("Attributes")
@@ -1197,9 +1204,8 @@ namespace Vellum.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("entity_id");
 
-                    b.Property<string>("EntityKind")
-                        .IsRequired()
-                        .HasColumnType("text")
+                    b.Property<StoredEntityKind>("EntityKind")
+                        .HasColumnType("import.entity_kind")
                         .HasColumnName("entity_kind");
 
                     b.Property<string>("Evidence")
@@ -1243,17 +1249,14 @@ namespace Vellum.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("seq");
 
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasColumnType("text")
+                    b.Property<ProposalStatus>("Status")
+                        .HasColumnType("import.proposal_status")
                         .HasColumnName("status");
 
-                    b.Property<string>("Subject")
-                        .IsRequired()
+                    b.Property<Subject>("Subject")
                         .ValueGeneratedOnAdd()
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)")
-                        .HasDefaultValue("fact")
+                        .HasColumnType("import.subject")
+                        .HasDefaultValue(Subject.Fact)
                         .HasColumnName("subject");
 
                     b.HasKey("Id")
@@ -1324,12 +1327,10 @@ namespace Vellum.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("scan_id");
 
-                    b.Property<string>("Subject")
-                        .IsRequired()
+                    b.Property<Subject>("Subject")
                         .ValueGeneratedOnAdd()
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)")
-                        .HasDefaultValue("fact")
+                        .HasColumnType("import.subject")
+                        .HasDefaultValue(Subject.Fact)
                         .HasColumnName("subject");
 
                     b.HasKey("Id")
@@ -1426,8 +1427,8 @@ namespace Vellum.Migrations
                         .HasColumnType("text[]")
                         .HasColumnName("exclude_paths");
 
-                    b.Property<string>("ExtractionGap")
-                        .HasColumnType("text")
+                    b.Property<StoredCoverageGap?>("ExtractionGap")
+                        .HasColumnType("import.coverage_gap")
                         .HasColumnName("extraction_gap");
 
                     b.Property<int>("FilesExtracted")
@@ -1553,9 +1554,8 @@ namespace Vellum.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("started_at");
 
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasColumnType("text")
+                    b.Property<ScanStatus>("Status")
+                        .HasColumnType("import.scan_status")
                         .HasColumnName("status");
 
                     b.Property<DateTimeOffset?>("TrackedAt")
@@ -1631,9 +1631,8 @@ namespace Vellum.Migrations
                         .HasColumnType("bigint")
                         .HasColumnName("size");
 
-                    b.Property<string>("State")
-                        .IsRequired()
-                        .HasColumnType("text")
+                    b.Property<ScanFileState>("State")
+                        .HasColumnType("import.scan_file_state")
                         .HasColumnName("state");
 
                     b.HasKey("ScanId", "PathHash")
@@ -1723,9 +1722,8 @@ namespace Vellum.Migrations
                         .HasColumnType("jsonb")
                         .HasColumnName("attributes");
 
-                    b.Property<string>("Disposition")
-                        .IsRequired()
-                        .HasColumnType("text")
+                    b.Property<FactDisposition>("Disposition")
+                        .HasColumnType("import.fact_disposition")
                         .HasColumnName("disposition");
 
                     b.Property<string>("Evidence")
@@ -1739,9 +1737,8 @@ namespace Vellum.Migrations
                         .HasColumnType("character varying(1000)")
                         .HasColumnName("fact_key");
 
-                    b.Property<string>("Kind")
-                        .IsRequired()
-                        .HasColumnType("text")
+                    b.Property<FactKind>("Kind")
+                        .HasColumnType("import.fact_kind")
                         .HasColumnName("kind");
 
                     b.Property<string>("Name")

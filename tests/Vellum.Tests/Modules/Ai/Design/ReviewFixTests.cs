@@ -511,7 +511,7 @@ public class ReviewFixTests(SharedOutboundHost shared) : IClassFixture<SharedOut
             import.FactLinks.Add(new FactLinkEntity
             {
                 ProjectId = projectId, Host = "github.com", Repository = repository, FactKey = $"service:{elementId:N}", FactKeyHash = Vellum.Modules.Import.Scans.KeyHash.Of($"service:{elementId:N}"),
-                EntityKind = EntityKinds.Element, EntityId = elementId, ScanId = scan.Id, CommitSha = "4f9a1c7",
+                EntityKind = StoredEntityKind.Element, EntityId = elementId, ScanId = scan.Id, CommitSha = "4f9a1c7",
                 AcceptedBy = "user:test", AcceptedAt = DateTimeOffset.UtcNow,
             });
             await import.SaveChangesAsync();
@@ -543,7 +543,7 @@ public class ReviewFixTests(SharedOutboundHost shared) : IClassFixture<SharedOut
             var scan = await import.Scans.FirstAsync(s => s.ProjectId == projectId && s.RepositoryIsPrivate == true);
             import.FactLinks.Add(new FactLinkEntity
             {
-                ProjectId = projectId, Host = scan.Host, Repository = scan.Repository, FactKey = "service:orders", FactKeyHash = Vellum.Modules.Import.Scans.KeyHash.Of("service:orders"), EntityKind = EntityKinds.Element,
+                ProjectId = projectId, Host = scan.Host, Repository = scan.Repository, FactKey = "service:orders", FactKeyHash = Vellum.Modules.Import.Scans.KeyHash.Of("service:orders"), EntityKind = StoredEntityKind.Element,
                 EntityId = model.Orders, ScanId = scan.Id, CommitSha = "4f9a1c7", AcceptedBy = "user:test", AcceptedAt = DateTimeOffset.UtcNow,
             });
             return await import.SaveChangesAsync();

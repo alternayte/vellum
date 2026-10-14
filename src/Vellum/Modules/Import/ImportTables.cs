@@ -1,6 +1,9 @@
 using Microsoft.EntityFrameworkCore;
+using Npgsql.EntityFrameworkCore.PostgreSQL.Infrastructure;
+using Vellum.Modules.Import.Extraction;
 using Vellum.Modules.Import.Proposals;
 using Vellum.Modules.Import.Scans;
+using Vellum.Shared;
 
 namespace Vellum.Modules.Import;
 
@@ -17,6 +20,19 @@ namespace Vellum.Modules.Import;
 public static class ImportTables
 {
     public const string Schema = "import";
+
+    public static void MapEnums(NpgsqlDbContextOptionsBuilder npgsql)
+    {
+        npgsql.MapEnum<ScanStatus>("scan_status", Schema, AppDatabase.EnumLabels);
+        npgsql.MapEnum<ScanFileState>("scan_file_state", Schema, AppDatabase.EnumLabels);
+        npgsql.MapEnum<StoredCoverageGap>("coverage_gap", Schema, AppDatabase.EnumLabels);
+        npgsql.MapEnum<FactKind>("fact_kind", Schema, AppDatabase.EnumLabels);
+        npgsql.MapEnum<FactDisposition>("fact_disposition", Schema, AppDatabase.EnumLabels);
+        npgsql.MapEnum<ProposalAction>("proposal_action", Schema, AppDatabase.EnumLabels);
+        npgsql.MapEnum<ProposalStatus>("proposal_status", Schema, AppDatabase.EnumLabels);
+        npgsql.MapEnum<Subject>("subject", Schema, AppDatabase.EnumLabels);
+        npgsql.MapEnum<StoredEntityKind>("entity_kind", Schema, AppDatabase.EnumLabels);
+    }
 
     public static void Configure(ModelBuilder modelBuilder)
     {
@@ -100,7 +116,7 @@ public static class ImportTables
             b.ToTable("proposals", Schema);
             b.HasKey(p => p.Id);
             b.Property(p => p.FactKey).HasMaxLength(FactMapping.MaxFactKey);
-            b.Property(p => p.Subject).HasMaxLength(20).HasDefaultValue(Subject.Fact);
+            b.Property(p => p.Subject).HasDefaultValue(Subject.Fact);
             b.Property(p => p.Proposed).HasColumnType("jsonb");
             b.Property(p => p.Current).HasColumnType("jsonb");
             b.Property(p => p.Changes).HasColumnType("jsonb");
@@ -118,7 +134,7 @@ public static class ImportTables
             b.HasKey(l => l.Id);
             b.Property(l => l.FactKey).HasMaxLength(FactMapping.MaxFactKey);
             b.Property(l => l.FactKeyHash).HasMaxLength(64);
-            b.Property(l => l.Subject).HasMaxLength(20).HasDefaultValue(Subject.Fact);
+            b.Property(l => l.Subject).HasDefaultValue(Subject.Fact);
             b.Property(l => l.Attributes).HasColumnType("jsonb");
             b.Property(l => l.ConsumerKeys).HasColumnType("jsonb").HasDefaultValueSql("'[]'::jsonb");
             b.Property(l => l.Accepted).HasColumnType("jsonb");
@@ -133,7 +149,7 @@ public static class ImportTables
             b.HasKey(r => r.Id);
             b.Property(r => r.FactKey).HasMaxLength(FactMapping.MaxFactKey);
             b.Property(r => r.FactKeyHash).HasMaxLength(64);
-            b.Property(r => r.Subject).HasMaxLength(20).HasDefaultValue(Subject.Fact);
+            b.Property(r => r.Subject).HasDefaultValue(Subject.Fact);
             b.HasIndex(r => new { r.ProjectId, r.Host, r.Repository, r.Subject, r.FactKeyHash, r.Fingerprint }).IsUnique();
         });
     }

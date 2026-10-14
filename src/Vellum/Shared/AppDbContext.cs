@@ -170,5 +170,6 @@ public static class AppDatabase
     private static void MapEnums(NpgsqlDbContextOptionsBuilder npgsql)
     {
         WorkspacesTables.MapEnums(npgsql);
+        ImportTables.MapEnums(npgsql);
     }
 }

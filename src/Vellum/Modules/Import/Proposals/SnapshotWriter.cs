@@ -90,9 +90,7 @@ internal static class SnapshotWriter
         var facts = new List<ExtractedFact>(rows.Count);
         foreach (var row in rows)
         {
-            if (!Enum.TryParse<FactKind>(row.Kind, out var kind))
-                continue;
-            facts.Add(new ExtractedFact(kind, row.FactKey, row.Name, ProposalJson.ReadAttributes(row.Attributes),
+            facts.Add(new ExtractedFact(row.Kind, row.FactKey, row.Name, ProposalJson.ReadAttributes(row.Attributes),
                 [.. ProposalJson.ReadEvidence(row.Evidence).Select(e => new SourceEvidence(e.Path, e.StartLine, e.EndLine, e.Rule, e.RuleVersion))]));
         }
         return facts;
@@ -157,7 +155,7 @@ internal static class SnapshotWriter
             var factSeq = 0;
             db.SnapshotFacts.AddRange(plan.Facts.Select(f => new SnapshotFactEntity
             {
-                ScanId = scan.Id, Seq = factSeq++, Kind = f.Fact.Kind.ToString(), FactKey = f.Fact.Key, Name = f.Fact.Name,
+                ScanId = scan.Id, Seq = factSeq++, Kind = f.Fact.Kind, FactKey = f.Fact.Key, Name = f.Fact.Name,
                 Attributes = ProposalJson.Write(f.Fact.Attributes),
                 Evidence = ProposalJson.Write(f.Fact.Evidence.Select(FactMapping.Ref)),
                 Disposition = f.Disposition, Reason = f.Reason,
@@ -166,8 +164,7 @@ internal static class SnapshotWriter
         else
         {
             // The snapshot stays; what the importer did with each fact is written again.
-            var rows = (await db.SnapshotFacts.Where(f => f.ScanId == scan.Id).OrderBy(f => f.Seq).ToListAsync(ct))
-                .Where(row => Enum.TryParse<FactKind>(row.Kind, out _)).ToList();
+            var rows = await db.SnapshotFacts.Where(f => f.ScanId == scan.Id).OrderBy(f => f.Seq).ToListAsync(ct);
             if (rows.Count != plan.Facts.Count)
                 return SnapshotOutcome.LeaseLost;
             for (var i = 0; i < rows.Count; i++)
@@ -179,7 +176,7 @@ internal static class SnapshotWriter
         db.ImportProposals.AddRange(plan.Proposals.Select(p => new ProposalEntity
         {
             Id = p.Id, ScanId = scan.Id, ProjectId = scan.ProjectId, Seq = seq++,
-            Action = p.Action, EntityKind = p.EntityKind, EntityId = p.EntityId,
+            Action = p.Action, EntityKind = Enum.Parse<StoredEntityKind>(p.EntityKind, ignoreCase: true), EntityId = p.EntityId,
             Subject = FactMapping.SubjectOf(p.FactKey), FactKey = FactMapping.StoredKey(p.FactKey), Name = p.Name,
             Proposed = p.Proposed?.ToJsonString(), Current = p.Current?.ToJsonString(),
             Changes = ProposalJson.Write(p.Changes), Evidence = ProposalJson.Write(p.Evidence),
@@ -236,13 +233,14 @@ internal static class SnapshotWriter
             // The status of the scan is written under the condition that this run still
             // has it. Without the row, nothing above is committed.
             var token = mode.LeaseToken!.Value;
+            StoredCoverageGap? extractionGap = EnumText.TryParse(input.ExtractionGap, out StoredCoverageGap gap) ? gap : null;
             var completed = await db.Scans
                 .Where(s => s.Id == scan.Id && s.LeaseToken == token && s.Status == ScanStatus.Running)
                 .ExecuteUpdateAsync(set => set
                     .SetProperty(s => s.Status, ScanStatus.Completed)
                     .SetProperty(s => s.IsComplete, input.IsComplete)
                     .SetProperty(s => s.Partial, !input.IsComplete)
-                    .SetProperty(s => s.ExtractionGap, input.ExtractionGap)
+                    .SetProperty(s => s.ExtractionGap, extractionGap)
                     .SetProperty(s => s.FilesExtracted, input.FilesExtracted)
                     .SetProperty(s => s.Coverage, plan.Coverage.ToJson())
                     .SetProperty(s => s.Relinked, tracking ? plan.Relinked.Count : 0)
@@ -259,7 +257,7 @@ internal static class SnapshotWriter
                     .SetProperty(s => s.LeaseExpiresAt, (DateTimeOffset?)null), ct);
             if (completed == 0)
                 return SnapshotOutcome.LeaseLost;
-            Vellum.Shared.Telemetry.VellumMetrics.ImportScanEnded(ScanStatus.Completed);
+            Vellum.Shared.Telemetry.VellumMetrics.ImportScanEnded(EnumText.Of(ScanStatus.Completed));
         }
 
         var events = new List<object>();
