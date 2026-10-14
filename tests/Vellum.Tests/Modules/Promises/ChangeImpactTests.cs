@@ -234,6 +234,68 @@ public class ChangeImpactTests(ImportHost import) : IClassFixture<ImportHost>
         Assert.Contains("| `ORD-014` | broken |", brief.Text("brief"));
     }
 
+    [Fact]
+    public async Task A_step_that_consumes_a_message_whose_schema_changed_is_possible_and_names_the_change()
+    {
+        var (s, ordersApi, billing, _, _, _, _, _, _) = await ArrangeAsync();
+        async Task<Guid> IdOf(string kind, string name) => (await s.AllAsync(s.Model(kind))).Single("name", name).Id();
+        var (channel, message, database) = (await IdOf("channels", "order-events"), await IdOf("messages", "OrderCreated"), await IdOf("elements", "postgres"));
+        var subscriptions = await s.AllAsync(s.Model("subscriptions"));
+        var toBilling = subscriptions.Single(x => x!["consumerId"]!.GetValue<Guid>() == billing)!.AsObject();
+        var toInventory = subscriptions.Single(x => x!["consumerId"]!.GetValue<Guid>() != billing)!.AsObject();
+        var inventory = toInventory.Id("consumerId");
+
+        // The fulfilment flow: Orders.Api publishes OrderCreated; Billing and the inventory worker consume it.
+        var flow = Guid.NewGuid();
+        await TestHost.Created(s.Owner.PostAsync(s.Model("scenarios"), OrdersReference.Json(JsonNode.Parse($$"""
+            {
+              "id": "{{flow}}", "name": "Order to fulfilment",
+              "steps": [
+                { "type": "publish", "id": "publish-order-created", "from": "{{ordersApi}}", "channel": "{{channel}}", "message": "{{message}}", "headers": {},
+                  "payload": { "orderId": "7d0f1a6e-3c1b-4f5e-9a51-0f4f0c1d2e3f", "customerId": "2b8a9c10-5d4e-4f60-8a7b-9c0d1e2f3a4b", "total": 4.2, "createdAt": "2026-01-01T10:00:00Z" },
+                  "handlers": {
+                    "{{toBilling.Id()}}": [ { "type": "write", "id": "issue-invoice", "by": "{{billing}}", "store": "{{database}}", "dataset": "invoices", "change": { "orderId": "o-1" } } ],
+                    "{{toInventory.Id()}}": [ { "type": "write", "id": "reserve-stock", "by": "{{inventory}}", "store": "{{database}}", "dataset": "reservations", "change": { "orderId": "o-1" } } ]
+                  } }
+              ],
+              "faults": [], "assertions": []
+            }
+            """)!)));
+
+        Branch(s, FixtureGitHub.Load("orders-outbox-removed"));
+        var comparison = await RemoveOutboxAsync(s);
+        var impact = await Ok(s.Owner.GetAsync(s.Url($"/{comparison.Id()}/impact")));
+        var schema = Items(impact, "changes").Single(c => c.Text("entityKind") == "schema");
+
+        var fulfilment = Items(impact, "flows").Single(f => f.Id("scenarioId") == flow);
+        var steps = fulfilment["steps"]!.AsArray().Select(step => step!.AsObject()).ToDictionary(step => step.Text("stepId")!);
+        Assert.Equal("definite", steps["publish-order-created"].Text("certainty"));
+        // Each consumer step is possible, and its reason is the schema change. Neither is definite: it names no changed contract.
+        foreach (var consumer in new[] { "issue-invoice", "reserve-stock" })
+        {
+            Assert.Equal(("write", "possible"), (steps[consumer].Text("kind"), steps[consumer].Text("certainty")));
+            var reason = Assert.Single(steps[consumer]["reasons"]!.AsArray().Select(r => r!.AsObject()), r => r.Text("changeId") == schema.Text("id"));
+            Assert.Equal("possible", reason.Text("certainty"));
+            Assert.Contains("in a handler of the message 'OrderCreated'", reason.Text("text"));
+        }
+        Assert.Contains("reserve-stock", fulfilment["stepIds"]!.AsArray().Select(step => step!.GetValue<string>()));
+    }
+
+    [Fact]
+    public async Task A_brief_names_a_consumer_that_its_scope_leaves_out_by_name_and_marks_it_out_of_scope()
+    {
+        var (s, ordersApi, billing, _, _, _, _, _, _) = await ArrangeAsync();
+        var message = (await s.AllAsync(s.Model("messages"))).Single("name", "OrderCreated");
+        Assert.Contains(billing, message["consumerIds"]!.AsArray().Select(c => c!.GetValue<Guid>()));
+
+        // Orders.Api brings the message it produces, and not the services that consume it.
+        var brief = (await Ok(s.Owner.PostAsJsonAsync(s.Model("build/brief"), new { elementIds = new[] { ordersApi } }))).Text("brief")!;
+        var row = brief.Split('\n').Single(line => line.StartsWith($"| `{message.Id()}` |", StringComparison.Ordinal));
+        Assert.Contains($"Billing, out of scope (`{billing}`)", row);
+        // No reference anywhere in the brief is a bare ID in place of a name.
+        Assert.DoesNotMatch(@"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12} \(`", brief);
+    }
+
     private static Dictionary<string, byte[]> WithHandWrittenOutbox(string fixture) =>
         new(FixtureGitHub.Load(fixture), StringComparer.Ordinal)
         {

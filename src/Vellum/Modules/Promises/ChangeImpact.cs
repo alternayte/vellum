@@ -122,7 +122,9 @@ public sealed record ChangeImpactDto(
 /// <c>definite</c> (<see cref="ProposalImpact"/>). A step that runs in or against the
 /// service of a changed pattern, or the element that owns a changed contract, is
 /// <c>possible</c>: nothing says that the step needs what changed. It is <c>unknown</c>
-/// when the change itself is. A flow is as sure as its surest step.</item>
+/// when the change itself is. A step in a handler of a step that publishes a message whose
+/// schema changed, or which is removed, consumes it, and is <c>possible</c> too: nothing says
+/// that the consumer reads what changed. A flow is as sure as its surest step.</item>
 /// <item>Promises: a promise that requires a changed pattern, or links a changed contract,
 /// has the certainty of that change. A promise reached only through an affected scenario is
 /// <c>possible</c>. A promise with no reason is not in the report.</item>
@@ -402,6 +404,32 @@ public static class ChangeImpact
             }
         }
 
+        // 3. Steps that consume a message whose payload changed: the steps in a handler of a
+        // step that publishes it. Possible: nothing shows that a consumer reads what changed.
+        foreach (var change in changes.Where(c => c.Kind == "contract" && c.EntityId is not null && c.Action is ProposalAction.Change or ProposalAction.Remove or ProposalAction.Conflict))
+        {
+            var fields = changedFields[change.Id];
+            var remove = change.Action == ProposalAction.Remove;
+            var entity = change.EntityId!.Value;
+            var messages = change.EntityKind switch
+            {
+                EntityKinds.Schema when remove || fields.Contains(Field.Content) =>
+                    model.Messages.Values.Where(m => m.SchemaId?.Value == entity).ToList(),
+                EntityKinds.Message when (remove || fields.Contains(Field.SchemaId)) && model.Messages.TryGetValue(entity, out var message) => [message],
+                _ => [],
+            };
+            var verb = remove ? "removes" : "changes";
+            var what = change.EntityKind == EntityKinds.Schema ? $"its schema '{change.Name}'" : remove ? "the message" : "its schema";
+            foreach (var message in messages.OrderBy(m => m.Name, StringComparer.Ordinal).ThenBy(m => m.Id.Value))
+            {
+                foreach (var scenario in scenarios.Consuming([message.Id.Value]))
+                {
+                    AddFlow(scenario, ImpactCertainty.Possible, change.Id, steps =>
+                        $"{Steps(steps)} {(steps.Count == 1 ? "runs" : "run")} in a handler of the message '{message.Name}', and this change {verb} {what}. Nothing shows that {(steps.Count == 1 ? "the step reads" : "the steps read")} what changed.");
+                }
+            }
+        }
+
         var flows = flowReasons
             .Select(f => new ImpactFlowDto(
                 f.Key, f.Value.Name, [.. f.Value.Steps.Keys.Order(StringComparer.Ordinal)],
@@ -410,7 +438,7 @@ public static class ChangeImpact
             .OrderBy(f => f.Name, StringComparer.Ordinal).ThenBy(f => f.ScenarioId)
             .ToList();
 
-        // 3. Promises.
+        // 4. Promises.
         var all = current.Where(p => p.State != PromiseLifecycle.Retired).ToList();
         // The runs that read this scan. A run against another scan, however new, says nothing about this one.
         List<RunRow> scanRuns = all.Count == 0 ? [] : await services.GetRequiredService<PromisesDbContext>().Runs.AsNoTracking()

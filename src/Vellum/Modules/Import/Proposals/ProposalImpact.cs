@@ -98,6 +98,55 @@ internal sealed class ProposalImpact
     public IReadOnlyList<ImpactScenarioDto> Naming(IReadOnlyCollection<Guid> targets) => Scenarios(targets);
 
     /// <summary>
+    /// The stored scenarios with steps that run in a handler of a step that publishes one of
+    /// <paramref name="messages"/>: the steps that consume the message, and every step nested
+    /// in them. A step that only publishes the message is not one of them.
+    /// </summary>
+    public IReadOnlyList<ImpactScenarioDto> Consuming(IReadOnlyCollection<Guid> messages)
+    {
+        var found = new List<ImpactScenarioDto>();
+        foreach (var (id, name, document) in _scenarios)
+        {
+            var steps = new List<(string, string, string?)>();
+            CollectConsumers(document.Steps, messages, steps);
+            if (steps.Count > 0)
+                found.Add(new ImpactScenarioDto(id, name, [.. steps.Select(s => s.Item1).Distinct()]));
+        }
+        return found;
+    }
+
+    private void CollectConsumers(IEnumerable<Step> steps, IReadOnlyCollection<Guid> messages, List<(string, string, string?)> found)
+    {
+        foreach (var step in steps)
+        {
+            switch (step)
+            {
+                case CallStep call:
+                    CollectConsumers(call.Then, messages, found);
+                    CollectConsumers(call.OnError, messages, found);
+                    break;
+                case PublishStep publish:
+                    foreach (var handler in publish.Handlers.Values)
+                    {
+                        if (messages.Contains(publish.Message.Value))
+                            List(handler, found);
+                        else
+                            CollectConsumers(handler, messages, found);
+                    }
+                    break;
+                case ParallelStep parallel:
+                    foreach (var branch in parallel.Branches)
+                        CollectConsumers(branch, messages, found);
+                    break;
+                case BranchStep branch:
+                    CollectConsumers(branch.Then, messages, found);
+                    CollectConsumers(branch.Else, messages, found);
+                    break;
+            }
+        }
+    }
+
+    /// <summary>
     /// Every step of a stored scenario in the order it is written, nested steps too, with its
     /// kind (<c>call</c>, <c>publish</c>, <c>write</c>, <c>parallel</c>, <c>branch</c>) and the
     /// name of what it calls, publishes or writes to. Empty for a scenario that was not read.

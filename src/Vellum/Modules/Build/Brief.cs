@@ -189,7 +189,9 @@ public static class Brief
             Scenarios = [.. selected.Scenarios],
             Promises = [.. input.Promises.Where(p => requirements.Contains(p.Id) || notApproved.Contains(p.Id))],
         };
-        var view = new BuildView(scopedInput);
+        // Names of what the scope leaves out come from the whole pinned state, never as a bare ID.
+        var whole = new BuildView(input);
+        var view = new BuildView(scopedInput, whole);
 
         // "Approved architecture" leaves out what no person confirmed: inferred, unknown and stale facts.
         static bool Confirmed(FactStatus status, StaleMark? stale) => stale is null && status is not (FactStatus.Inferred or FactStatus.Unknown);
@@ -206,7 +208,7 @@ public static class Brief
                 Bindings = scoped.Bindings.Where(b => Confirmed(b.Value.FactStatus, b.Value.Stale)).ToImmutableDictionary(),
             },
             Scenarios = [],
-        });
+        }, view, "not confirmed");
         var unconfirmed = Blockers.Facts(view).Where(f => !Confirmed(f.Status, f.Stale)).OrderBy(f => f.Kind, StringComparer.Ordinal).ThenBy(f => f.Id).ToList();
 
         var routes = ContractDocuments.Routes(view);
@@ -214,7 +216,7 @@ public static class Brief
         // that the scope leaves out. Its blockers are those about a thing in scope.
         var inScope = gathered.Concat(elements).Concat(requirements).ToHashSet();
         IReadOnlyList<Blocker> blockers =
-            [.. Blockers.Of(view, routes), .. Blockers.FromReview(new BuildView(input).Review.Where(f => inScope.Contains(f.Finding.Subject.Id)))];
+            [.. Blockers.Of(view, routes), .. Blockers.FromReview(whole.Review.Where(f => inScope.Contains(f.Finding.Subject.Id)))];
         var approved = view.Promises.Where(p => requirements.Contains(p.Id)).ToList();
         var drafts = view.Promises.Where(p => notApproved.Contains(p.Id)).ToList();
 

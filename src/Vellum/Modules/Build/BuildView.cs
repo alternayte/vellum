@@ -23,10 +23,18 @@ internal sealed class BuildView
 {
     private readonly Lazy<IReadOnlyDictionary<Guid, TraceResult>> _playbacks;
     private readonly Lazy<IReadOnlyList<FindingView>> _review;
+    private readonly BuildView? _whole;
+    private readonly string _outside;
 
-    public BuildView(BuildInput input)
+    /// <param name="whole">
+    /// For a view of part of the pinned state: the view it is part of. <see cref="Name"/> then
+    /// names a thing that the part leaves out by its name there, marked with <paramref name="outside"/>.
+    /// </param>
+    public BuildView(BuildInput input, BuildView? whole = null, string outside = "out of scope")
     {
         Input = input;
+        _whole = whole;
+        _outside = outside;
         Model = input.Model;
         Elements = [.. Model.Elements.Values.OrderBy(e => e.Name, StringComparer.Ordinal).ThenBy(e => e.Id.Value)];
         Operations = [.. Model.Operations.Values.OrderBy(o => Name(o.OwnerId), StringComparer.Ordinal).ThenBy(o => o.Name, StringComparer.Ordinal).ThenBy(o => o.Id.Value)];
@@ -89,8 +97,20 @@ internal sealed class BuildView
     /// </summary>
     public IReadOnlyList<FindingView> Review => _review.Value;
 
-    /// <summary>The name of whatever the ID names in the model or the scenarios, or the ID itself.</summary>
-    public string Name(Guid id)
+    /// <summary>
+    /// The name of whatever the ID names in the model or the scenarios. In a view of part of
+    /// the pinned state, a thing that the part leaves out is named from the view it is part of,
+    /// with the mark of the part (for example "out of scope"), and a thing that no view holds is
+    /// "not in the model". In a view of the whole state, a thing that it does not hold is named
+    /// by its ID, as it always was: an export keeps its bytes.
+    /// </summary>
+    public string Name(Guid id) =>
+        NameIn(id) ?? (_whole is null ? id.ToString() : _whole.NameIn(id) is { } name ? $"{name}, {_outside}" : _whole.Outside(id));
+
+    private string Outside(Guid id) =>
+        _whole is null ? "not in the model" : _whole.NameIn(id) is { } name ? $"{name}, {_outside}" : _whole.Outside(id);
+
+    private string? NameIn(Guid id)
     {
         if (Model.Elements.TryGetValue(id, out var element)) return element.Name;
         if (Model.Operations.TryGetValue(id, out var operation)) return operation.Name;
@@ -99,7 +119,7 @@ internal sealed class BuildView
         if (Model.Subscriptions.TryGetValue(id, out var subscription)) return ContractDecider.SubscriptionLabel(Model, subscription);
         if (Model.Bindings.TryGetValue(id, out var binding)) return ContractDecider.BindingLabel(Model, binding);
         if (SchemasById is not null && SchemasById.TryGetValue(id, out var schema)) return schema.Name;
-        return Input.Scenarios.FirstOrDefault(s => s.Id.Value == id)?.Name ?? id.ToString();
+        return Input.Scenarios.FirstOrDefault(s => s.Id.Value == id)?.Name;
     }
 
     /// <summary>The messages that scenarios publish to each channel, and who publishes them: the model has no publication of its own.</summary>
