@@ -23,20 +23,22 @@ public sealed class WorkspaceAuthorizationService
     {
         var role = await GetRoleAsync(workspaceId, userId, ct);
         if (role is null || role < minimumRole)
-            throw new UnauthorizedAccessException($"Requires at least {minimumRole} role");
+            throw Refused(minimumRole);
     }
 
-    public async Task<Guid> GetProjectWorkspaceIdAsync(Guid projectId, CancellationToken ct = default)
-    {
-        var project = await _db.Projects.AsNoTracking()
-            .FirstOrDefaultAsync(p => p.Id == projectId, ct)
-            ?? throw new KeyNotFoundException($"Project {projectId} not found");
-        return project.WorkspaceId;
-    }
+    public async Task<Guid> GetProjectWorkspaceIdAsync(Guid projectId, CancellationToken ct = default) =>
+        await FindProjectWorkspaceIdAsync(projectId, ct) ?? throw Refused(WorkspaceRole.Viewer);
 
     public async Task RequireProjectRoleAsync(Guid projectId, string userId, WorkspaceRole minimumRole, CancellationToken ct = default)
     {
-        var workspaceId = await GetProjectWorkspaceIdAsync(projectId, ct);
+        // An unknown project answers exactly as a project the caller cannot reach: the answer
+        // never tells whether an ID exists in another tenant.
+        var workspaceId = await FindProjectWorkspaceIdAsync(projectId, ct) ?? throw Refused(minimumRole);
         await RequireRoleAsync(workspaceId, userId, minimumRole, ct);
     }
+
+    private async Task<Guid?> FindProjectWorkspaceIdAsync(Guid projectId, CancellationToken ct) =>
+        await _db.Projects.AsNoTracking().Where(p => p.Id == projectId).Select(p => (Guid?)p.WorkspaceId).FirstOrDefaultAsync(ct);
+
+    private static UnauthorizedAccessException Refused(WorkspaceRole minimumRole) => new($"Requires at least {minimumRole} role");
 }

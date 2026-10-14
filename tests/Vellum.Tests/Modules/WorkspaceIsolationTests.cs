@@ -202,4 +202,18 @@ public class WorkspaceIsolationTests(IntegrationFixture fixture) : IClassFixture
         foreach (var path in new[] { "spaces", "docs", "views" })
             Assert.DoesNotContain("ecret", await stranger.GetStringAsync(Url(mine, path)));
     }
+
+    [Fact]
+    public async Task An_unknown_project_answers_as_a_project_of_another_tenant()
+    {
+        var factory = fixture.Factory;
+        using var client = await TestHost.SignInAsync(factory);
+        var (_, other) = await TestHost.CreateProjectAsync(await TestHost.SignInAsync(factory));
+
+        var unknown = await client.GetAsync($"/api/projects/{Guid.NewGuid()}/elements");
+        var foreign = await client.GetAsync($"/api/projects/{other}/elements");
+
+        Assert.Equal(System.Net.HttpStatusCode.Forbidden, unknown.StatusCode);
+        Assert.Equal((foreign.StatusCode, await foreign.Content.ReadAsStringAsync()), (unknown.StatusCode, await unknown.Content.ReadAsStringAsync()));
+    }
 }
