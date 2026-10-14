@@ -82,6 +82,7 @@ export interface InstanceSettings {
 export interface InstanceDiagnostics {
   /** Whether traces, metrics and logs are exported, and to which host. Set with OTEL_EXPORTER_OTLP_ENDPOINT at start-up. */
   telemetry: { enabled: boolean; endpointHost: string | null }
+  gitHubEnvironmentToken: { state: 'in_use' | 'ignored_hosted' | 'not_set' }
   [part: string]: unknown
 }
 
@@ -108,6 +109,13 @@ export interface ProviderTestResult {
   reportedModel: string | null
   supportsStructuredOutput: boolean | null
   error: ConnectionTestError | null
+}
+
+/** Which token the GitHub reads of a workspace send. `gh` is the GH_TOKEN of a local instance. */
+export interface GitHubCredential {
+  source: 'workspace' | 'gh' | 'anonymous'
+  ghNotUsed: 'not_admin_owned' | 'other_host' | null
+  login: string | null
 }
 
 export interface GitHubTestResult {

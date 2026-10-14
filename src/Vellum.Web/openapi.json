@@ -2663,6 +2663,36 @@
         }
       }
     },
+    "/api/workspaces/{workspaceId}/github/credential": {
+      "get": {
+        "tags": [
+          "GitHub"
+        ],
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitHubCredentialResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/projects/{projectId}/imports/{importId}/impact": {
       "get": {
         "tags": [
@@ -16019,7 +16049,8 @@
           "masterKeyId",
           "previousMasterKeyLoaded",
           "masterKeysInUse",
-          "telemetry"
+          "telemetry",
+          "gitHubEnvironmentToken"
         ],
         "type": "object",
         "properties": {
@@ -16055,6 +16086,9 @@
           },
           "telemetry": {
             "$ref": "#/components/schemas/TelemetryDiagnostics"
+          },
+          "gitHubEnvironmentToken": {
+            "$ref": "#/components/schemas/GitHubEnvironmentDiagnostics"
           }
         }
       },
@@ -18383,6 +18417,42 @@
             "type": "string"
           },
           "version": {
+            "type": "string"
+          }
+        }
+      },
+      "GitHubCredentialResponse": {
+        "required": [
+          "source",
+          "ghNotUsed",
+          "login"
+        ],
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string"
+          },
+          "ghNotUsed": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "login": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "GitHubEnvironmentDiagnostics": {
+        "required": [
+          "state"
+        ],
+        "type": "object",
+        "properties": {
+          "state": {
             "type": "string"
           }
         }

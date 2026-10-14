@@ -6,6 +6,20 @@ up:
 up-all:
     docker compose up -d --build
 
+# The whole app in containers, reading GitHub with your gh login (GH_TOKEN, not stored).
+up-gh:
+    #!/usr/bin/env sh
+    set -eu
+    if ! command -v gh >/dev/null 2>&1; then
+        echo "gh is not installed. Install the GitHub CLI, then run: gh auth login" >&2
+        exit 1
+    fi
+    if ! token=$(gh auth token 2>/dev/null) || [ -z "$token" ]; then
+        echo "gh is not logged in. Run: gh auth login" >&2
+        exit 1
+    fi
+    GH_TOKEN="$token" docker compose up -d --build
+
 down:
     docker compose down
 

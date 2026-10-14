@@ -46,6 +46,10 @@ Then:
 3. Give the setup code and a name for the first workspace.
 4. Open the workspace and create a project.
 
+To read private GitHub repositories with your GitHub CLI login, start with
+`just up-gh` instead. It passes `gh auth token` to Vellum as `GH_TOKEN`. Vellum does not
+store it. See the docs page "Connect GitHub".
+
 To use other ports, set `VELLUM_PORT` and `VELLUM_POSTGRES_PORT` before the command.
 Compose publishes both ports on `127.0.0.1` only.
 

@@ -226,6 +226,8 @@ if (!generatingOpenApi)
         app.Logger.LogWarning(
             "The key file {Path} is not used, because the environment gives the master key. Keep it only as a backup of an old key.",
             unusedKeyFile);
+    if (app.Services.GetRequiredService<Vellum.Modules.GitHub.EnvironmentGitHubToken>().IgnoredByHostedProfile)
+        app.Logger.LogWarning("GH_TOKEN is set and ignored: the hosted profile uses only workspace tokens.");
 
     await SetupState.PrepareAsync(app.Services);
 }

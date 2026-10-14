@@ -1,7 +1,10 @@
 using System.Globalization;
 using System.Text.RegularExpressions;
+using Microsoft.EntityFrameworkCore;
+using Vellum.Modules.Settings;
 using Vellum.Modules.Settings.Document;
 using Vellum.Modules.Settings.Secrets;
+using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Shared.Outbound;
 
 namespace Vellum.Modules.GitHub;
@@ -83,12 +86,24 @@ public sealed record GitHubRateLimit(int Limit, int Remaining, DateTimeOffset Re
 /// <param name="Login">Null when the workspace has no token; the calls are then anonymous.</param>
 public sealed record GitHubIdentity(string? Login, int? RateLimitRemaining);
 
+/// <summary>Which token the GitHub reads of a workspace send.</summary>
+/// <param name="Source"><c>workspace</c> (its secret <c>github:token</c>), <c>gh</c> (the <c>GH_TOKEN</c> of a local instance) or <c>anonymous</c>.</param>
+/// <param name="GhNotUsed">
+/// Why <c>GH_TOKEN</c> is set and not used for this workspace: <c>not_admin_owned</c> (the
+/// instance admin is not an Owner) or <c>other_host</c> (the base URL is not api.github.com).
+/// Null when it is used, or when the workspace has its own token, or when none is set.
+/// </param>
+public sealed record GitHubCredential(string Source, string? GhNotUsed, string? Token);
+
 /// <summary>
 /// Opens a read-only connection to GitHub for one workspace. The base URL comes from the
-/// workspace's settings and the token from its secret <c>github:token</c>. The token is
-/// optional: without it the calls are anonymous and reach public repositories only.
+/// workspace's settings and the token from its secret <c>github:token</c>. A workspace with no
+/// token of its own on a local instance uses <c>GH_TOKEN</c> (see <see cref="EnvironmentGitHubToken"/>)
+/// when the instance admin owns it and the base URL is api.github.com. Without a token the
+/// calls are anonymous and reach public repositories only.
 /// </summary>
-public sealed class GitHubReader(IServiceProvider services, SettingsResolver settings, SecretReader secrets)
+public sealed class GitHubReader(
+    IServiceProvider services, SettingsResolver settings, SecretReader secrets, EnvironmentGitHubToken environmentToken)
 {
     public async Task<GitHubResult<GitHubConnection>> ConnectAsync(Guid workspaceId, CancellationToken ct = default)
     {
@@ -98,21 +113,39 @@ public sealed class GitHubReader(IServiceProvider services, SettingsResolver set
         // is bound to. A token saved for another host is never sent.
         if (workspace.GithubApiBaseUrl is not SettingsUrl.Usable destination)
             return new GitHubFailure.Unavailable("url_refused");
-        var baseUrl = destination.Url;
 
-        string? token;
+        var credential = await ResolveAsync(workspaceId, destination, ct);
+        if (credential.Failure is { } failure)
+            return failure;
+        var token = credential.Value!.Token;
+
+        // The policy and the https rule come from the same settings read as the URL. The
+        // pipeline applies both to every attempt and to every followed redirect.
+        return new GitHubConnection(
+            services.GetRequiredService<IGitHubApi>(), destination.Url, workspace.Policy.AllowPrivateNetworkUrls, workspace.RequireHttps,
+            token is null ? null : new OutboundCredential("Authorization", "Bearer", token));
+    }
+
+    /// <summary>The token source of the workspace, without the token. Null when the base URL is refused.</summary>
+    public async Task<GitHubCredential?> DescribeCredentialAsync(Guid workspaceId, CancellationToken ct = default)
+    {
+        var workspace = await settings.GetWorkspaceAsync(workspaceId, ct);
+        if (workspace.GithubApiBaseUrl is not SettingsUrl.Usable destination)
+            return null;
+        var credential = await ResolveAsync(workspaceId, destination, ct);
+        return credential.Value is { } found ? found with { Token = null } : new GitHubCredential("workspace", null, null);
+    }
+
+    private async Task<GitHubResult<GitHubCredential>> ResolveAsync(Guid workspaceId, SettingsUrl.Usable destination, CancellationToken ct)
+    {
         try
         {
-            switch (await secrets.ReadAsync(workspaceId, SecretNames.GithubToken, baseUrl, ct))
+            switch (await secrets.ReadAsync(workspaceId, SecretNames.GithubToken, destination.Url, ct))
             {
                 case SecretRead.Found found:
-                    token = found.Value;
-                    break;
+                    return new GitHubCredential("workspace", null, found.Value);
                 case SecretRead.SavedForAnotherHost:
                     return new GitHubFailure.Unavailable("token_saved_for_another_host");
-                default:
-                    token = null;
-                    break;
             }
         }
         catch (SecretUnavailableException)
@@ -120,11 +153,29 @@ public sealed class GitHubReader(IServiceProvider services, SettingsResolver set
             return new GitHubFailure.Unavailable("secret_unavailable");
         }
 
-        // The policy and the https rule come from the same settings read as the URL. The
-        // pipeline applies both to every attempt and to every followed redirect.
-        return new GitHubConnection(
-            services.GetRequiredService<IGitHubApi>(), baseUrl, workspace.Policy.AllowPrivateNetworkUrls, workspace.RequireHttps,
-            token is null ? null : new OutboundCredential("Authorization", "Bearer", token));
+        if (environmentToken.Token is not { } ghToken)
+            return new GitHubCredential("anonymous", null, null);
+        // A github.com token goes to github.com only.
+        if (!string.Equals(destination.Origin, EnvironmentGitHubToken.Origin, StringComparison.OrdinalIgnoreCase))
+            return new GitHubCredential("anonymous", "other_host", null);
+        // The token is the admin's own; another user's workspace does not read with it.
+        if (!await InstanceAdminOwnsAsync(workspaceId, ct))
+            return new GitHubCredential("anonymous", "not_admin_owned", null);
+        return new GitHubCredential("gh", null, ghToken);
+    }
+
+    private async Task<bool> InstanceAdminOwnsAsync(Guid workspaceId, CancellationToken ct)
+    {
+        var admins = await services.GetRequiredService<SettingsDbContext>().InstanceAdmins
+            .AsNoTracking().Select(a => a.UserId).ToListAsync(ct);
+        var auth = services.GetRequiredService<WorkspaceAuthorizationService>();
+        foreach (var admin in admins)
+        {
+            if (await auth.GetRoleAsync(workspaceId, admin, ct) == WorkspaceRole.Owner)
+                return true;
+        }
+
+        return false;
     }
 }
 

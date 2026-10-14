@@ -8,7 +8,7 @@ import { cn } from '@/lib/utils'
 import { shownInline } from '@/lib/mutation-errors'
 import {
   ApiError, PROVIDER_PRESETS, api, countOverrides, effectiveSection, setOverride,
-  type AiProvider, type AiUsage, type AuditEntry, type GitHubTestResult, type InstanceInfo, type InstanceSettings,
+  type AiProvider, type AiUsage, type AuditEntry, type GitHubCredential, type GitHubTestResult, type InstanceInfo, type InstanceSettings,
   type InstanceDiagnostics, type ModelPrice, type ProviderKind, type ProviderTestResult, type RotateKeysResult,
   type SecretStatus, type SettingsDocument, type SettingsOverrides, type SettingsSection, type WorkspaceSettings,
 } from '@/lib/settings-api'
@@ -202,6 +202,7 @@ function SettingsPage() {
                 <TextField label="API base URL" hint="Change this only for GitHub Enterprise Server." {...bind('github', 'apiBaseUrl')} />
                 <TextField label="Default ref" hint="The branch or tag an import reads when you give none. Empty uses the default branch of the repository." {...bind('github', 'defaultRef')} />
                 <div className="mt-4">
+                  {canEdit && <GitHubCredentialLine workspaceId={workspaceId} tokenSet={secretFor('github:token')?.isSet ?? false} />}
                   <SecretControl workspaceId={workspaceId} name="github:token" label="Fine-grained access token (read-only)" status={secretFor('github:token')} canEdit={canEdit} />
                   {canEdit && <ConnectionTest url={`${base}/github/test`} blocked={dirty} kind="github" />}
                 </div>
@@ -654,6 +655,18 @@ function InstancePanel({ info }: { info: InstanceInfo }) {
         </p>
       )}
 
+      <h3 className="mt-8 text-sm font-medium text-foreground">GitHub login from the environment</h3>
+      {diagnostics.data && (
+        <p className="mt-1 max-w-prose text-xs leading-relaxed text-muted-foreground" data-testid="gh-token-state">
+          {diagnostics.data.gitHubEnvironmentToken.state === 'in_use'
+            ? 'In use. Workspaces that you own and that read api.github.com use GH_TOKEN when they have no token of their own.'
+            : diagnostics.data.gitHubEnvironmentToken.state === 'ignored_hosted'
+              ? 'GH_TOKEN is set and ignored: the hosted profile uses only workspace tokens.'
+              : 'Not set.'}
+          {' '}Start Vellum with <span className="font-mono">just up-gh</span> to use your gh login. A change needs a restart.
+        </p>
+      )}
+
       <h3 className="mt-8 text-sm font-medium text-foreground">Diagnostics</h3>
       {diagnostics.data && (
         <pre tabIndex={0} className="mt-2 max-h-96 overflow-auto rounded-lg border border-border bg-background p-3 font-mono text-xs leading-relaxed focus-visible:outline-2 focus-visible:outline-primary">
@@ -727,6 +740,30 @@ function describeProviderTest(result: ProviderTestResult): string {
   const model = result.reportedModel && result.reportedModel !== result.model ? `${result.model} (the provider reports ${result.reportedModel})` : result.model
   const structured = result.supportsStructuredOutput === false ? ' It does not return structured output; turn that capability off.' : ''
   return `${model} answered in ${result.latencyMs} ms.${structured}`
+}
+
+/** Which token the reads use: the workspace's own, the gh login of a local instance, or none. */
+function GitHubCredentialLine({ workspaceId, tokenSet }: { workspaceId: string; tokenSet: boolean }) {
+  const credential = useQuery({
+    queryKey: ['workspaces', workspaceId, 'github-credential', tokenSet],
+    queryFn: () => api<GitHubCredential>('GET', `/api/workspaces/${workspaceId}/github/credential`),
+  })
+  const c = credential.data
+  if (!c) return null
+  const text =
+    c.source === 'workspace' ? 'GitHub: workspace token.'
+    : c.source === 'gh' ? `GitHub: your gh login${c.login ? ` (${c.login})` : ''}, from GH_TOKEN.`
+    : 'GitHub: anonymous. Public repositories only.'
+  const note =
+    c.ghNotUsed === 'not_admin_owned' ? 'The gh login of this instance is for workspaces that the instance admin owns.'
+    : c.ghNotUsed === 'other_host' ? 'The gh login of this instance is for api.github.com only.'
+    : null
+  return (
+    <div role="status" className="mb-3 text-xs">
+      <p className="text-foreground">{text}</p>
+      {note && <p className="mt-0.5 text-muted-foreground">{note}</p>}
+    </div>
+  )
 }
 
 function describeGitHubTest(result: GitHubTestResult): string {

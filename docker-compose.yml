@@ -44,6 +44,10 @@ services:
       # Optional. Empty means "off": Vellum sends no traces, metrics or logs to another
       # machine. Set it to the address of an OTLP collector to turn the export on.
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      # Optional. Empty means "not set". A GitHub token, usually from `gh auth token`
+      # (`just up-gh`). Workspaces that the instance admin owns use it to read api.github.com
+      # when they have no token of their own. It is not stored.
+      GH_TOKEN: ${GH_TOKEN:-}
     volumes:
       - vellum-data:/data
     # The app writes to /data and to a temporary directory in memory, and to nothing else:

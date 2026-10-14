@@ -167,7 +167,14 @@ public sealed record DiagnosticsResponse(
     string MasterKeyId,
     bool PreviousMasterKeyLoaded,
     IReadOnlyList<MasterKeyInUse> MasterKeysInUse,
-    TelemetryDiagnostics Telemetry);
+    TelemetryDiagnostics Telemetry,
+    GitHubEnvironmentDiagnostics GitHubEnvironmentToken);
+
+/// <summary>
+/// The <c>GH_TOKEN</c> of the instance: <c>in_use</c> (a local instance uses it for the
+/// workspaces its admin owns), <c>ignored_hosted</c> or <c>not_set</c>. The token is never in it.
+/// </summary>
+public sealed record GitHubEnvironmentDiagnostics(string State);
 
 /// <summary>
 /// Whether this instance exports traces, metrics and logs. <paramref name="EndpointHost"/> is
@@ -192,6 +199,7 @@ public static class GetDiagnostics
         IServiceProvider services,
         IEventStoreAdmin eventStore,
         TelemetryState telemetry,
+        Vellum.Modules.GitHub.EnvironmentGitHubToken gitHubToken,
         ILoggerFactory loggers,
         CancellationToken ct)
     {
@@ -247,7 +255,8 @@ public static class GetDiagnostics
             bootstrap.Keys.Current.Id,
             bootstrap.Keys.HasPrevious,
             keysInUse,
-            new TelemetryDiagnostics(telemetry.Enabled, telemetry.EndpointHost)));
+            new TelemetryDiagnostics(telemetry.Enabled, telemetry.EndpointHost),
+            new GitHubEnvironmentDiagnostics(gitHubToken.State)));
     }
 }
 

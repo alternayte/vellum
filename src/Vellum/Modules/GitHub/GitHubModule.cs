@@ -9,6 +9,7 @@ public static class GitHubModule
     public static IServiceCollection AddGitHubModule(this IServiceCollection services)
     {
         services.AddOutboundClient<IGitHubApi>();
+        services.AddSingleton<EnvironmentGitHubToken>();
         services.AddScoped<GitHubReader>();
         return services;
     }
@@ -19,6 +20,10 @@ public static class GitHubModule
             .WithTags("GitHub")
             .RequireAuthorization()
             .Produces<GitHubTestResponse>();
+        app.MapGet("/api/workspaces/{workspaceId}/github/credential", GetGitHubCredential.Handle)
+            .WithTags("GitHub")
+            .RequireAuthorization()
+            .Produces<GitHubCredentialResponse>();
         return app;
     }
 }
@@ -30,6 +35,36 @@ public static class GitHubModule
 /// a fixed sentence and holds no text from GitHub.
 /// </summary>
 public sealed record GitHubTestResponse(bool Ok, string? AuthenticatedAs, int? RateLimitRemaining, ConnectionTestError? Error);
+
+/// <summary>
+/// Which token the GitHub reads of the workspace send: <c>workspace</c>, <c>gh</c> (the
+/// <c>GH_TOKEN</c> of a local instance) or <c>anonymous</c>. <c>GhNotUsed</c> says why a set
+/// <c>GH_TOKEN</c> does not apply here. <c>Login</c> is the GitHub account of a <c>gh</c>
+/// token, as GitHub names it; null when GitHub did not answer. The token is never in it.
+/// </summary>
+public sealed record GitHubCredentialResponse(string Source, string? GhNotUsed, string? Login);
+
+public static class GetGitHubCredential
+{
+    public static async Task<IResult> Handle(
+        Guid workspaceId,
+        ClaimsPrincipal user,
+        WorkspaceAuthorizationService auth,
+        GitHubReader reader,
+        CancellationToken ct)
+    {
+        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        await auth.RequireRoleAsync(workspaceId, userId, WorkspaceRole.Owner, ct);
+
+        if (await reader.DescribeCredentialAsync(workspaceId, ct) is not { } credential)
+            return Results.Ok(new GitHubCredentialResponse("anonymous", null, null));
+
+        string? login = null;
+        if (credential.Source == "gh" && await reader.ConnectAsync(workspaceId, ct) is { Value: { } connection })
+            login = (await connection.IdentifyAsync(ct)).Value?.Login;
+        return Results.Ok(new GitHubCredentialResponse(credential.Source, credential.GhNotUsed, login));
+    }
+}
 
 public static class TestGitHubConnection
 {
