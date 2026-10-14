@@ -728,7 +728,9 @@ function CanvasViewInner({
     (event: React.MouseEvent) => {
       // Only proceed when the click target is on the pane itself, excluding all overlays
       const target = event.target as HTMLElement
-      if (readOnly || !target.closest('.react-flow__pane')) return
+      // Nodes and edges render inside the pane, so a double-click on a node (which drills in)
+      // also reaches here. Only the empty pane opens the menu.
+      if (readOnly || !target.closest('.react-flow__pane') || target.closest('.react-flow__node, .react-flow__edge')) return
 
       const flowPos = screenToFlowPosition({ x: event.clientX, y: event.clientY })
       setCreatePopover({
@@ -739,6 +741,15 @@ function CanvasViewInner({
     },
     [screenToFlowPosition, readOnly],
   )
+
+  // The menu belongs to the level and the spot where it opened.
+  useEffect(() => setCreatePopover(null), [currentRootId])
+  useEffect(() => {
+    if (!createPopover) return
+    const close = (event: KeyboardEvent) => { if (event.key === 'Escape') setCreatePopover(null) }
+    window.addEventListener('keydown', close)
+    return () => window.removeEventListener('keydown', close)
+  }, [createPopover])
 
   const handlePopoverSelect = useCallback(
     (kind: string) => {

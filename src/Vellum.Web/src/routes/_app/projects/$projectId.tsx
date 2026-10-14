@@ -199,6 +199,8 @@ function ProjectWorkspace() {
     if (!elements || !relationships) return
     const newPositions = await computeLayout(elements, relationships)
     saveLayout(newPositions)
+    // The layout moves every node, so show the result: fit once the nodes have their new places.
+    requestAnimationFrame(() => requestAnimationFrame(() => fitViewRef.current?.()))
   }
 
   // The parent is a fact of the model: the command carries it. Showing the parent's inside
