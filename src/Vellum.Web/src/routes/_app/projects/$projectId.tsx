@@ -40,6 +40,8 @@ import { useDraftStore } from '@/stores/draft-store'
 import { useUndoStore } from '@/stores/undo-store'
 import type { DiffState } from '@/stores/draft-store'
 import { computeLayout } from '@/lib/layout'
+import { cardSize } from '@/lib/card-size'
+import { visibleCanvasRect } from '@/lib/canvas-insets'
 import { canContain, pathTo, validKindsForContext } from '@/lib/containment-rules'
 import { isPlainShortcut } from '@/lib/shortcuts'
 import { buildDuplicateSet } from '@/lib/duplicate'
@@ -197,7 +199,15 @@ function ProjectWorkspace() {
 
   const handleTidy = async () => {
     if (!elements || !relationships) return
-    const newPositions = await computeLayout(elements, relationships)
+    // Each card gets the room it takes on the canvas, and each level takes the shape of the
+    // canvas that no panel covers.
+    const sized = elements.map((e) => ({
+      id: e.id,
+      parentId: e.parentId ?? null,
+      ...cardSize(e.kind),
+    }))
+    const free = visibleCanvasRect()
+    const newPositions = await computeLayout(sized, relationships, free ? { width: free.width, height: free.height } : undefined, useCanvasStore.getState().expandedNodeIds)
     saveLayout(newPositions)
     // The layout moves every node, so show the result: fit once the nodes have their new places.
     requestAnimationFrame(() => requestAnimationFrame(() => fitViewRef.current?.()))

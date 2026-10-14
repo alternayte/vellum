@@ -21,6 +21,8 @@ export interface C4EdgeData extends Record<string, unknown> {
   diffState?: DiffState
   edgeIndex?: number
   totalParallel?: number
+  /** A trace event runs along this relationship now; its label goes below the path. */
+  labelBelow?: boolean
 }
 
 const diffEdgeColor: Record<string, string> = {
@@ -124,6 +126,7 @@ export const C4Edge = memo(function C4Edge({
             showTechnology={activeLens === 'metadata'}
             x={labelX}
             y={labelY}
+            below={d.labelBelow}
           />
         </EdgeLabelRenderer>
       )}

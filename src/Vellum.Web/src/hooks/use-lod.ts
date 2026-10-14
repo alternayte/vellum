@@ -1,17 +1,17 @@
-const BASE_FONT_SIZE = 14
-const LEGIBILITY_THRESHOLD = 10
-const COMPACT_THRESHOLD = 12.5
+/** Below this zoom a card drops the technology chips of the metadata lens. */
+const COMPACT_BELOW = 0.45
+/** Below this zoom a card becomes a chip with the name only: a card's text is unreadable. */
+const CHIP_BELOW = 0.3
 
 export type LodTier = 'full' | 'compact' | 'chip'
 
 /**
- * Progressive detail: cards show everything when legible, compact cards keep identity and
- * truth labels, chips keep only the name. Detail never carries information alone — every
- * tier still shows the fact-status marker.
+ * Progressive detail: cards show everything when legible, compact cards keep the same shape
+ * with name, kind line and description, chips keep only the name. Detail never carries
+ * information alone — every tier still shows the fact-status marker.
  */
 export function useLod(zoom: number): LodTier {
-  const effectiveSize = BASE_FONT_SIZE * zoom
-  if (effectiveSize >= COMPACT_THRESHOLD) return 'full'
-  if (effectiveSize >= LEGIBILITY_THRESHOLD) return 'compact'
+  if (zoom >= COMPACT_BELOW) return 'full'
+  if (zoom >= CHIP_BELOW) return 'compact'
   return 'chip'
 }

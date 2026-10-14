@@ -4,16 +4,18 @@ interface EdgeLabelCardProps {
   showTechnology: boolean
   x: number
   y: number
+  /** Below the point instead of centred on it: a trace label holds the space above. */
+  below?: boolean
 }
 
-export function EdgeLabelCard({ label, technology, showTechnology, x, y }: EdgeLabelCardProps) {
+export function EdgeLabelCard({ label, technology, showTechnology, x, y, below = false }: EdgeLabelCardProps) {
   if (!label && !technology) return null
 
   return (
     <div
       className="nodrag nopan absolute rounded-md border border-border bg-card/95 px-2.5 py-1 shadow-sm backdrop-blur-sm"
       style={{
-        transform: `translate(-50%, -50%) translate(${x}px, ${y}px)`,
+        transform: below ? `translate(-50%, 0) translate(${x}px, ${y + 6}px)` : `translate(-50%, -50%) translate(${x}px, ${y}px)`,
         pointerEvents: 'all',
       }}
     >

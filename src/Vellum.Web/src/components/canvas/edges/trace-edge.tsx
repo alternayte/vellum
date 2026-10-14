@@ -54,8 +54,9 @@ export const TraceEdge = memo(function TraceEdge({ id, source, target, data }: E
       <EdgeLabelRenderer>
         <div
           className="nodrag nopan pointer-events-none absolute z-10 max-w-56 whitespace-nowrap rounded-md border bg-card px-2 py-1 text-xs font-medium text-foreground shadow-lg"
-          // Sits above the path so a short edge and its arrow stay visible.
-          style={{ transform: `translate(-50%, -100%) translate(${labelX}px, ${labelY - 10}px)`, borderColor: color }}
+          // Sits above the path so a short edge and its arrow stay visible. The label of a
+          // relationship on the same path moves below it (C4Edge `labelBelow`).
+          style={{ transform: `translate(-50%, -100%) translate(${labelX}px, ${labelY - 6}px)`, borderColor: color }}
         >
           {data.label}
         </div>

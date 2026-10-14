@@ -31,9 +31,9 @@ describe('C4ContainerNode', () => {
     expect(screen.getByText('Orders')).toBeTruthy()
   })
 
-  it('renders with dashed border', () => {
+  it('renders with a solid boundary border', () => {
     const { container } = renderContainer()
     const node = container.firstElementChild as HTMLElement
-    expect(node.style.borderStyle).toBe('dashed')
+    expect(node.style.borderStyle).toBe('solid')
   })
 })

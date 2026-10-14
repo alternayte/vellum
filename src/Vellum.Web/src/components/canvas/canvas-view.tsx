@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ReactFlow,
   ReactFlowProvider,
@@ -16,6 +16,7 @@ import {
   SelectionMode,
   useNodesState,
   useEdgesState,
+  type FitViewOptions,
 } from '@xyflow/react'
 import { SearchOverlay } from './search-overlay'
 import { NodeContextMenu } from './context-menus/node-context-menu'
@@ -33,6 +34,8 @@ import { useLod } from '@/hooks/use-lod'
 import { Button } from '@/components/ui/button'
 import type { C4ElementData } from './nodes/c4-element-node'
 import type { C4ContainerData } from './nodes/c4-container-node'
+import type { C4BoundaryData } from './nodes/c4-boundary-node'
+import { canvasOcclusion } from '@/lib/canvas-insets'
 import type { DiffState } from '@/stores/draft-store'
 import type { Provenance, StaleMark } from '@/lib/fact-status'
 import { kindColor } from '@/lib/kind-colors'
@@ -130,6 +133,7 @@ interface CanvasViewProps {
 }
 
 function minimapNodeColor(node: Node): string {
+  if (node.type === 'c4-boundary') return 'transparent'
   const kind = (node.data as { kind?: string }).kind
   return kind ? kindColor(kind) : 'var(--muted-foreground)'
 }
@@ -142,14 +146,26 @@ function minimapNodeColor(node: Node): string {
 // pans to the rest.
 const SMALL_SCREEN = '(max-width: 639px)'
 const SMALL_SCREEN_MIN_FIT_ZOOM = 0.6
-const fitInitial = () => ({
+const isSmallScreen = () => typeof window !== 'undefined' && !!window.matchMedia?.(SMALL_SCREEN).matches
+/** Space a fit keeps between the nodes and the edge of the free canvas, in screen pixels. */
+const FIT_MARGIN = 56
+const FIT_MARGIN_SMALL = 24
+const fitInitial = (): FitViewOptions => ({
   maxZoom: 1, padding: 0.2,
-  ...(typeof window !== 'undefined' && window.matchMedia?.(SMALL_SCREEN).matches ? { minZoom: SMALL_SCREEN_MIN_FIT_ZOOM } : {}),
+  ...(isSmallScreen() ? { minZoom: SMALL_SCREEN_MIN_FIT_ZOOM } : {}),
 })
 // The move of the viewport is an animation of position only. With reduced motion the viewport jumps.
 const fitMs = () => (prefersReducedMotion() ? 0 : 300)
-const fitAll = () => ({ ...fitInitial(), duration: fitMs() })
-const fitOne = () => ({ maxZoom: 1.25, padding: 0.5, duration: fitMs() })
+/** The margin of a fit, plus the part of the canvas that an open flyout or panel covers. */
+function fitPadding(pane: HTMLElement | null, margin: number): FitViewOptions['padding'] {
+  if (!pane) return 0.2
+  const i = canvasOcclusion(pane.getBoundingClientRect())
+  return { top: `${i.top + margin}px`, right: `${i.right + margin}px`, bottom: `${i.bottom + margin}px`, left: `${i.left + margin}px` }
+}
+// Element kinds drawn as cards; the frame of the level and message pills are not.
+const ELEMENT_NODE_TYPES = new Set(['c4-element', 'c4-label-chip', 'c4-container'])
+/** Space between the frame of a level and the cards inside it; the top holds the frame's title. */
+const FRAME_INSET = { x: 40, top: 64, bottom: 40 }
 export function CanvasView(props: CanvasViewProps) {
   // A read-only canvas keeps the callbacks that look and gets none of the ones that write.
   const shown: CanvasViewProps = props.readOnly
@@ -208,9 +224,16 @@ function CanvasViewInner({
   readOnly = false,
 }: CanvasViewProps) {
   const { currentRootId, zoomLevel, setZoom, activeLens, setLens, expandedNodeIds, toggleExpand } = useCanvasStore()
-  const { fitView, screenToFlowPosition } = useReactFlow()
+  const { fitView, screenToFlowPosition, getViewport, setViewport, getInternalNode } = useReactFlow()
   // Read once: the first fit is made at mount.
   const [initialFit] = useState(fitInitial)
+  const paneRef = useRef<HTMLDivElement>(null)
+  // A fit keeps clear of the panels that lie over the canvas, so no node sits behind them.
+  const fitAll = useCallback((): FitViewOptions => {
+    const small = isSmallScreen()
+    return { ...fitInitial(), padding: fitPadding(paneRef.current, small ? FIT_MARGIN_SMALL : FIT_MARGIN), duration: fitMs() }
+  }, [])
+  const fitOne = useCallback((): FitViewOptions => ({ maxZoom: 1.25, padding: fitPadding(paneRef.current, 120), duration: fitMs() }), [])
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([])
   const [contextMenu, setContextMenu] = useState<ContextMenuState>(null)
   const [createPopover, setCreatePopover] = useState<{
@@ -225,14 +248,14 @@ function CanvasViewInner({
   useEffect(() => {
     onFitViewReady?.(() => fitView(fitAll()))
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fitView])
+  }, [fitView, fitAll])
 
   useEffect(() => {
     if (focusElementId) {
       fitView({ nodes: [{ id: focusElementId }], ...fitOne() })
       clearFocusElement()
     }
-  }, [focusElementId, fitView, clearFocusElement])
+  }, [focusElementId, fitView, clearFocusElement, fitOne])
 
   const getViewportCenter = useCallback(() => {
     const pane = document.querySelector('.react-flow__renderer')
@@ -314,6 +337,7 @@ function CanvasViewInner({
             id: el.id,
             kind: el.kind,
             name: el.name,
+            icon: el.icon,
             onResize: onNodeResize ? (width: number, height: number) => onNodeResize(el.id, width, height) : undefined,
             onAddChild: addInside(el),
           } satisfies C4ContainerData,
@@ -515,6 +539,47 @@ function CanvasViewInner({
     }
   }, [traceEvent, traceLabels, traceSpeed, onCanvas])
 
+  // The view follows a playback: when a part of the current event is out of the free canvas
+  // (below its edge, where the dock now is, or behind a panel), it pans by the least distance
+  // that brings both parts in. It zooms out only when both parts cannot fit at this zoom.
+  // Each event moves the view, also one between the same two parts as the last: the person
+  // may have panned away since.
+  const traceNodeKey = traceOverlay && traceEvent ? `${traceEvent.sequence}:${[...traceOverlay.nodeIds].join('|')}` : ''
+  useEffect(() => {
+    if (!traceNodeKey) return
+    const frame = requestAnimationFrame(() => {
+      const pane = paneRef.current
+      if (!pane) return
+      const rect = pane.getBoundingClientRect()
+      const ids = traceNodeKey.slice(traceNodeKey.indexOf(':') + 1).split('|')
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+      for (const id of ids) {
+        const node = getInternalNode(id)
+        if (!node?.measured.width || !node.measured.height) return
+        const { x, y } = node.internals.positionAbsolute
+        minX = Math.min(minX, x)
+        minY = Math.min(minY, y)
+        maxX = Math.max(maxX, x + node.measured.width)
+        maxY = Math.max(maxY, y + node.measured.height)
+      }
+      const margin = isSmallScreen() ? FIT_MARGIN_SMALL : FIT_MARGIN
+      const i = canvasOcclusion(rect)
+      const free = { left: i.left + margin, top: i.top + margin, right: rect.width - i.right - margin, bottom: rect.height - i.bottom - margin }
+      const { x: vx, y: vy, zoom } = getViewport()
+      const screen = { left: minX * zoom + vx, top: minY * zoom + vy, right: maxX * zoom + vx, bottom: maxY * zoom + vy }
+      if (screen.right - screen.left > free.right - free.left || screen.bottom - screen.top > free.bottom - free.top) {
+        fitView({ nodes: ids.map((id) => ({ id })), maxZoom: zoom, padding: fitPadding(pane, margin), duration: fitMs() })
+        return
+      }
+      const shift = (lo: number, hi: number, freeLo: number, freeHi: number) =>
+        lo < freeLo ? freeLo - lo : hi > freeHi ? freeHi - hi : 0
+      const dx = shift(screen.left, screen.right, free.left, free.right)
+      const dy = shift(screen.top, screen.bottom, free.top, free.bottom)
+      if (dx !== 0 || dy !== 0) setViewport({ x: vx + dx, y: vy + dy, zoom }, { duration: fitMs() })
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [traceNodeKey, getInternalNode, getViewport, setViewport, fitView])
+
   // The parts of a promise or of an affected flow, shown from the Promises and the Import
   // flyouts. A part on another level shows as its nearest ancestor here, like a trace end.
   const canvasHighlight = useShellStore((s) => s.canvasHighlight)
@@ -573,6 +638,15 @@ function CanvasViewInner({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canvasHighlight, fitView])
 
+  // A level is shown fitted when it opens, and again when the saved places of the view arrive:
+  // the first fit of the canvas runs before them, on the default grid.
+  const hasPositions = positions.length > 0
+  useEffect(() => {
+    let inner = 0
+    const outer = requestAnimationFrame(() => { inner = requestAnimationFrame(() => fitView({ ...fitAll(), duration: 0 })) })
+    return () => { cancelAnimationFrame(outer); cancelAnimationFrame(inner) }
+  }, [currentRootId, hasPositions, fitView, fitAll])
+
   // Derive the combined node/edge arrays from domain data (same as before)
   const derivedNodes = useMemo(() => {
     const all = [...nodes, ...messageNodes]
@@ -595,12 +669,19 @@ function CanvasViewInner({
       }
     })
   }, [nodes, messageNodes, traceOverlay, highlight])
-  const derivedEdges = useMemo(
-    () => (traceOverlay?.edge
-      ? [...edges, ...messageEdges, traceOverlay.edge]
-      : [...edges, ...messageEdges, ...(highlight?.stepEdges ?? [])]),
-    [edges, messageEdges, traceOverlay, highlight],
-  )
+  const derivedEdges = useMemo(() => {
+    const traceEdge = traceOverlay?.edge
+    if (!traceEdge) return [...edges, ...messageEdges, ...(highlight?.stepEdges ?? [])]
+    // A relationship between the two parts the trace event joins moves its label below the
+    // path, so the label of the trace above the path does not cover it.
+    const traced = (e: Edge) =>
+      (e.source === traceEdge.source && e.target === traceEdge.target) || (e.source === traceEdge.target && e.target === traceEdge.source)
+    return [
+      ...edges.map((e) => (traced(e) ? { ...e, data: { ...e.data, labelBelow: true } } : e)),
+      ...messageEdges,
+      traceEdge,
+    ]
+  }, [edges, messageEdges, traceOverlay, highlight])
 
   // Local state that React Flow controls — synced from derived data,
   // but RF can update positions during drag without waiting for server round-trip
@@ -629,6 +710,43 @@ function CanvasViewInner({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [derivedEdgeFingerprint, setRfEdges])
 
+  // The element whose inside this level shows, as a frame around its children. It follows the
+  // children while they are dragged: it is drawn from the nodes on the canvas, not saved.
+  const rootElement = currentRootId ? elements.find((e) => e.id === currentRootId) ?? null : null
+  const frameNode = useMemo<Node | null>(() => {
+    if (!rootElement) return null
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+    for (const n of rfNodes) {
+      if (n.parentId || !ELEMENT_NODE_TYPES.has(n.type ?? '')) continue
+      const width = n.measured?.width ?? (n.style?.width as number | undefined) ?? 264
+      const height = n.measured?.height ?? (n.style?.height as number | undefined) ?? 112
+      minX = Math.min(minX, n.position.x)
+      minY = Math.min(minY, n.position.y)
+      maxX = Math.max(maxX, n.position.x + width)
+      maxY = Math.max(maxY, n.position.y + height)
+    }
+    if (!Number.isFinite(minX)) return null
+    const width = maxX - minX + FRAME_INSET.x * 2
+    const height = maxY - minY + FRAME_INSET.top + FRAME_INSET.bottom
+    return {
+      id: `frame-${rootElement.id}`,
+      type: 'c4-boundary',
+      position: { x: minX - FRAME_INSET.x, y: minY - FRAME_INSET.top },
+      width,
+      height,
+      // Clicks and double-clicks pass through to the canvas under it.
+      style: { width, height, pointerEvents: 'none' },
+      zIndex: -1,
+      draggable: false,
+      selectable: false,
+      connectable: false,
+      focusable: false,
+      deletable: false,
+      data: { kind: rootElement.kind, name: rootElement.name, icon: rootElement.icon, technology: rootElement.technology } satisfies C4BoundaryData,
+    }
+  }, [rfNodes, rootElement])
+  const shownNodes = useMemo(() => (frameNode ? [frameNode, ...rfNodes] : rfNodes), [frameNode, rfNodes])
+
   const handleSearchMatchChange = useCallback(
     (matchIds: string[], _currentIndex: number) => {
       // Highlighting rewrites the nodes the overlay searches, which reports the same matches
@@ -644,7 +762,7 @@ function CanvasViewInner({
     (nodeId: string) => {
       fitView({ nodes: [{ id: nodeId }], ...fitOne() })
     },
-    [fitView],
+    [fitView, fitOne],
   )
 
   useEffect(() => {
@@ -854,9 +972,9 @@ function CanvasViewInner({
   return (
     // Wrapper div captures double-click for canvas creation; pointer-events:none not needed
     // as the div fills the parent and React Flow handles its own pointer events internally
-    <div className="h-full w-full" onDoubleClick={handlePaneDoubleClick}>
+    <div ref={paneRef} className="h-full w-full" onDoubleClick={handlePaneDoubleClick}>
       <ReactFlow
-        nodes={rfNodes}
+        nodes={shownNodes}
         edges={rfEdges}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}

@@ -58,7 +58,12 @@ describe('C4ElementNode', () => {
   it('renders element name and kind', () => {
     renderNode()
     expect(screen.getByText('Orders')).toBeTruthy()
-    expect(screen.getByText('system')).toBeTruthy()
+    expect(screen.getByText('System')).toBeTruthy()
+  })
+
+  it('renders the technology beside the kind', () => {
+    renderNode()
+    expect(screen.getByText('dotnet')).toBeTruthy()
   })
 
   it('renders description', () => {
@@ -77,22 +82,23 @@ describe('C4ElementNode', () => {
     expect(handles).toHaveLength(4)
   })
 
-  it('renders system nodes at 320px width', () => {
+  // Tidy reserves these widths (lib/card-size), so a card wider than them overlaps its neighbour.
+  it('renders system nodes at 288px width', () => {
     const { container } = renderNode({ ...mockData, kind: 'system' })
     const node = container.firstElementChild as HTMLElement
-    expect(node.style.width).toBe('320px')
+    expect(node.style.width).toBe('288px')
   })
 
-  it('renders component nodes at 240px width', () => {
+  it('renders component nodes at 248px width', () => {
     const { container } = renderNode({ ...mockData, kind: 'component' })
     const node = container.firstElementChild as HTMLElement
-    expect(node.style.width).toBe('240px')
+    expect(node.style.width).toBe('248px')
   })
 
-  it('renders actor nodes at 240px width', () => {
+  it('renders actor nodes at 248px width', () => {
     const { container } = renderNode({ ...mockData, kind: 'actor' })
     const node = container.firstElementChild as HTMLElement
-    expect(node.style.width).toBe('240px')
+    expect(node.style.width).toBe('248px')
   })
 
   it('enters edit mode on name double-click', () => {
@@ -200,10 +206,10 @@ describe('C4ElementNode', () => {
     expect(screen.queryByRole('img')).toBeNull()
   })
 
-  it('hides description and technology at compact detail', () => {
+  it('keeps the description at compact detail', () => {
     renderNode({ ...mockData, lod: 'compact' })
     expect(screen.getByText('Orders')).toBeTruthy()
-    expect(screen.queryByText('Handles order lifecycle')).toBeNull()
+    expect(screen.getByText('Handles order lifecycle')).toBeTruthy()
   })
 })
 

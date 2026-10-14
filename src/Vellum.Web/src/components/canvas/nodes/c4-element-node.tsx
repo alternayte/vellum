@@ -2,6 +2,7 @@ import { memo, useCallback, useRef, useState } from 'react'
 import { Handle, Position, type Node, type NodeProps } from '@xyflow/react'
 import { Plus } from 'lucide-react'
 import { kindColor } from '@/lib/kind-colors'
+import { KIND_WIDTHS } from '@/lib/card-size'
 import { CONTAINMENT_RULES } from '@/lib/containment-rules'
 import { defaultIconForKind, getIconComponent } from '@/lib/default-icons'
 import { useCanvasStore } from '@/stores/canvas-store'
@@ -40,12 +41,12 @@ const diffBorderColor: Record<string, string> = {
   conflict: '#B7791F',
 }
 
-const KIND_WIDTHS: Record<string, number> = {
-  actor: 240,
-  system: 320,
-  app: 280,
-  store: 280,
-  component: 240,
+const KIND_LABELS: Record<string, string> = {
+  actor: 'Actor',
+  system: 'System',
+  app: 'App',
+  store: 'Store',
+  component: 'Component',
 }
 
 export const C4ElementNode = memo(function C4ElementNode({ data }: NodeProps<C4ElementNodeType>) {
@@ -98,6 +99,7 @@ export const C4ElementNode = memo(function C4ElementNode({ data }: NodeProps<C4E
   const showMetadata = activeLens === 'metadata'
   const showStatus = activeLens === 'status'
   const compact = d.lod === 'compact'
+  const color = kindColor(d.kind)
 
   const borderStyle = showStatus && d.status === 'planned' ? 'dashed' : 'solid'
   const bgTint = showStatus && d.status === 'deprecated' ? 'color-mix(in srgb, var(--status-deprecated) 10%, transparent)' : undefined
@@ -105,26 +107,25 @@ export const C4ElementNode = memo(function C4ElementNode({ data }: NodeProps<C4E
   const diff = d.diffState
   const diffOverrideBorder = diff && diff !== 'unchanged' ? diffBorderColor[diff] : undefined
   const diffBg = diff === 'added' ? 'rgba(47, 133, 90, 0.05)' : bgTint
+  // The technology chips of the metadata lens replace the technology in the kind line.
+  const showChips = showMetadata && !!d.technology && !compact
+  // Every card has the same height, so cards in a row line up and their edges run straight.
+  // The add-inside row takes the second line of the description.
+  const addInside = !!d.onAddChild && d.childCount === 0
 
   return (
     <div
       className={cn(
-        'group/node relative rounded-lg border border-border bg-card shadow-sm transition-shadow hover:shadow-md',
+        'group/node relative flex min-h-[128px] flex-col rounded-xl border border-border bg-card shadow-sm transition-shadow hover:shadow-md',
         diff === 'removed' && 'opacity-50',
         diff === 'unchanged' && 'opacity-60',
-        d.kind === 'actor' && 'rounded-2xl',
+        d.kind === 'actor' && 'rounded-3xl',
       )}
       style={{
-        width: `${KIND_WIDTHS[d.kind] ?? 280}px`,
-        borderLeftWidth: '4px',
-        borderLeftColor: diffOverrideBorder ?? kindColor(d.kind),
-        borderLeftStyle: 'solid',
-        borderTopStyle: borderStyle,
-        borderRightStyle: borderStyle,
-        borderBottomStyle: borderStyle,
-        borderTopColor: diffOverrideBorder,
-        borderRightColor: diffOverrideBorder,
-        borderBottomColor: diffOverrideBorder,
+        width: `${KIND_WIDTHS[d.kind] ?? 264}px`,
+        borderStyle,
+        borderColor: diffOverrideBorder,
+        borderWidth: diffOverrideBorder ? 2 : undefined,
         backgroundColor: diffBg,
       }}
     >
@@ -133,14 +134,20 @@ export const C4ElementNode = memo(function C4ElementNode({ data }: NodeProps<C4E
       <Handle type="target" position={Position.Bottom} className="h-2! w-2! bg-primary! opacity-0 transition-opacity group-hover/node:opacity-100" />
       <Handle type="source" position={Position.Left} className="h-2! w-2! bg-primary! opacity-0 transition-opacity group-hover/node:opacity-100" />
 
-      <div className="p-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-1.5">
-            {IconComponent && <IconComponent className="h-4 w-4 text-muted-foreground shrink-0" />}
+      <div className="flex flex-1 flex-col px-3.5 pb-3 pt-3">
+        <div className="flex items-start gap-2.5">
+          <span
+            aria-hidden="true"
+            className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border"
+            style={{ color, borderColor: `color-mix(in oklab, ${color} 40%, transparent)`, backgroundColor: `color-mix(in oklab, ${color} 14%, transparent)` }}
+          >
+            {IconComponent && <IconComponent className="h-4 w-4" />}
+          </span>
+          <div className="min-w-0 flex-1">
             {isEditing ? (
               <input
                 ref={inputRef}
-                className="font-display w-full min-w-0 bg-transparent text-sm font-medium text-foreground outline-none ring-1 ring-primary rounded px-1 -mx-1"
+                className="font-display w-full min-w-0 rounded bg-transparent px-1 -mx-1 text-[15px] font-semibold leading-5 text-foreground outline-none ring-1 ring-primary"
                 value={editValue}
                 onChange={(e) => setEditValue(e.target.value)}
                 onKeyDown={handleKeyDown}
@@ -149,14 +156,24 @@ export const C4ElementNode = memo(function C4ElementNode({ data }: NodeProps<C4E
               />
             ) : (
               <span
-                className={cn("font-display text-sm font-medium text-foreground", d.onRename && "cursor-text")}
+                className={cn('font-display block truncate text-[15px] font-semibold leading-5 text-foreground', d.onRename && 'cursor-text')}
+                title={d.name}
                 onDoubleClick={handleNameDoubleClick}
               >
                 {d.name}
               </span>
             )}
+            <span className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[11px] leading-4 text-muted-foreground">
+              <span className="shrink-0 font-mono uppercase tracking-wider">{KIND_LABELS[d.kind] ?? d.kind}</span>
+              {d.technology && !showChips && (
+                <>
+                  <span aria-hidden="true" className="shrink-0 opacity-60">·</span>
+                  <span className="truncate" title={d.technology}>{d.technology}</span>
+                </>
+              )}
+            </span>
           </div>
-          <div className="flex items-center gap-1">
+          <div className="flex shrink-0 items-center gap-1 pt-0.5">
             {d.onAddChild && (d.childCount ?? 0) > 0 && (
               <button
                 type="button"
@@ -191,22 +208,27 @@ export const C4ElementNode = memo(function C4ElementNode({ data }: NodeProps<C4E
                   .join(' · ')}
               />
             )}
-            <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-              {d.kind}
-            </span>
+            {(d.childCount ?? 0) > 0 && (
+              <span
+                className="rounded-md bg-muted px-1.5 font-mono text-[10px] leading-4 tabular-nums text-muted-foreground"
+                title={`${d.childCount} ${d.childCount === 1 ? 'element' : 'elements'} inside. Double-click to open.`}
+              >
+                {d.childCount}
+              </span>
+            )}
           </div>
         </div>
 
-        {d.description && !compact && (
-          <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
+        {d.description && (
+          <p className={cn('mt-2 text-[12.5px] leading-[1.4] text-muted-foreground', addInside ? 'mb-2.5 line-clamp-1' : 'line-clamp-2')} title={d.description}>
             {d.description}
           </p>
         )}
 
-        {d.onAddChild && d.childCount === 0 && (
+        {addInside && (
           <button
             type="button"
-            className="nodrag nopan mt-2 flex w-full items-center gap-1.5 rounded-md border border-dashed border-border px-2 py-1 text-left text-xs text-muted-foreground hover:border-primary hover:text-foreground focus-visible:outline-2 focus-visible:outline-primary"
+            className="nodrag nopan mt-auto flex w-full items-center gap-1.5 rounded-md border border-dashed border-border px-2 py-1 text-left text-xs text-muted-foreground hover:border-primary hover:text-foreground focus-visible:outline-2 focus-visible:outline-primary"
             onClick={(e) => { e.stopPropagation(); d.onAddChild?.() }}
             onDoubleClick={(e) => e.stopPropagation()}
           >
@@ -215,9 +237,9 @@ export const C4ElementNode = memo(function C4ElementNode({ data }: NodeProps<C4E
           </button>
         )}
 
-        {showMetadata && d.technology && !compact && (
+        {showChips && (
           <div className="mt-2 flex flex-wrap gap-1">
-            {d.technology.split(',').map((tech) => (
+            {d.technology!.split(',').map((tech) => (
               <span
                 key={tech.trim()}
                 className="rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground"

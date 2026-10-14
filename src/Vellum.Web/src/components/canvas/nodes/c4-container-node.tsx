@@ -2,11 +2,13 @@ import { memo } from 'react'
 import { Handle, Position, NodeResizer, type Node, type NodeProps } from '@xyflow/react'
 import { Plus } from 'lucide-react'
 import { kindColor } from '@/lib/kind-colors'
+import { defaultIconForKind, getIconComponent } from '@/lib/default-icons'
 
 export interface C4ContainerData extends Record<string, unknown> {
   id: string
   kind: string
   name: string
+  icon?: string | null
   onResize?: (width: number, height: number) => void
   onAddChild?: () => void
 }
@@ -18,14 +20,17 @@ export const C4ContainerNode = memo(function C4ContainerNode({
   selected,
 }: NodeProps<C4ContainerNodeType>) {
   const color = kindColor(data.kind)
+  const Icon = getIconComponent(data.icon || defaultIconForKind(data.kind))
 
   return (
+    // The same frame as the boundary of a level (C4BoundaryNode), here around an element opened in place.
     <div
-      className="rounded-xl bg-card/5 p-4"
+      className="rounded-2xl px-4 pt-3"
       style={{
-        borderWidth: '2px',
-        borderStyle: 'dashed',
-        borderColor: color,
+        borderWidth: '1.5px',
+        borderStyle: 'solid',
+        borderColor: `color-mix(in oklab, ${color} 55%, transparent)`,
+        backgroundColor: `color-mix(in oklab, ${color} 4%, transparent)`,
         minWidth: '400px',
         minHeight: '200px',
         width: '100%',
@@ -47,13 +52,10 @@ export const C4ContainerNode = memo(function C4ContainerNode({
       <Handle type="target" position={Position.Bottom} className="h-2! w-2! bg-primary! opacity-0" />
       <Handle type="source" position={Position.Left} className="h-2! w-2! bg-primary! opacity-0" />
 
-      <div className="mb-2 flex items-center gap-1.5">
-        <span className="font-mono text-[10px] uppercase tracking-wider text-muted-foreground">
-          {data.kind}
-        </span>
-        <span className="text-xs font-medium text-muted-foreground">
-          {data.name}
-        </span>
+      <div className="mb-2 flex items-center gap-2">
+        {Icon && <Icon className="h-4 w-4 shrink-0" style={{ color }} aria-hidden="true" />}
+        <span className="font-display truncate text-sm font-semibold text-foreground">{data.name}</span>
+        <span className="shrink-0 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">{data.kind}</span>
         {data.onAddChild && (
           <button
             type="button"

@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { useLod } from '../../src/hooks/use-lod'
 
 describe('useLod', () => {
-  it('returns full at zoom 1.0 (14px effective)', () => {
+  it('returns full at zoom 1.0', () => {
     expect(useLod(1.0)).toBe('full')
   })
 
@@ -10,19 +10,19 @@ describe('useLod', () => {
     expect(useLod(3.0)).toBe('full')
   })
 
-  it('returns compact at zoom 0.8 (11.2px effective)', () => {
-    expect(useLod(0.8)).toBe('compact')
+  // A fit of a model of a few levels lands between 0.5 and 0.8: the cards stay cards there.
+  it('returns full at a typical fit zoom', () => {
+    expect(useLod(0.6)).toBe('full')
+    expect(useLod(0.45)).toBe('full')
   })
 
-  it('returns compact at zoom 0.72 (10.08px effective)', () => {
-    expect(useLod(0.72)).toBe('compact')
+  it('returns compact below 0.45', () => {
+    expect(useLod(0.44)).toBe('compact')
+    expect(useLod(0.3)).toBe('compact')
   })
 
-  it('returns chip at zoom 0.71 (9.94px effective)', () => {
-    expect(useLod(0.71)).toBe('chip')
-  })
-
-  it('returns chip at zoom 0.5 (7px effective)', () => {
-    expect(useLod(0.5)).toBe('chip')
+  it('returns chip below 0.3', () => {
+    expect(useLod(0.29)).toBe('chip')
+    expect(useLod(0.1)).toBe('chip')
   })
 })
