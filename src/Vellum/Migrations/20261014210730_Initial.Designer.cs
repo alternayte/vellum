@@ -24,7 +24,7 @@ using Vellum.Shared;
 namespace Vellum.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20261014190037_Initial")]
+    [Migration("20261014210730_Initial")]
     partial class Initial
     {
         /// <inheritdoc />
@@ -3178,6 +3178,160 @@ namespace Vellum.Migrations
                     b.ToTable("workspace_settings", "settings");
                 });
 
+            modelBuilder.Entity("Vellum.Modules.Sharing.ShareLinkEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset?>("AttemptWindowStart")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("attempt_window_start");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("created_by");
+
+                    b.Property<DateTimeOffset?>("ExpiresAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("expires_at");
+
+                    b.Property<int>("FailedAttempts")
+                        .HasColumnType("integer")
+                        .HasColumnName("failed_attempts");
+
+                    b.Property<string>("Label")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("label");
+
+                    b.Property<DateTimeOffset?>("LastAccessedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("last_accessed_at");
+
+                    b.Property<string>("Mode")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("mode");
+
+                    b.Property<string>("PasswordHash")
+                        .HasColumnType("text")
+                        .HasColumnName("password_hash");
+
+                    b.Property<int>("PasswordVersion")
+                        .IsConcurrencyToken()
+                        .HasColumnType("integer")
+                        .HasColumnName("password_version");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("project_id");
+
+                    b.Property<DateTimeOffset?>("RevisionCreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("revision_created_at");
+
+                    b.Property<Guid?>("RevisionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("revision_id");
+
+                    b.Property<string>("RevisionName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("revision_name");
+
+                    b.Property<DateTimeOffset?>("RevokedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("revoked_at");
+
+                    b.Property<string>("RevokedBy")
+                        .HasColumnType("text")
+                        .HasColumnName("revoked_by");
+
+                    b.Property<string>("Scope")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasColumnName("scope");
+
+                    b.Property<bool>("ShowCosts")
+                        .HasColumnType("boolean")
+                        .HasColumnName("show_costs");
+
+                    b.Property<bool>("ShowPromises")
+                        .HasColumnType("boolean")
+                        .HasColumnName("show_promises");
+
+                    b.Property<byte[]>("TokenHash")
+                        .IsRequired()
+                        .HasColumnType("bytea")
+                        .HasColumnName("token_hash");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at")
+                        .HasDefaultValueSql("now()");
+
+                    b.Property<Guid?>("ViewId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("view_id");
+
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("workspace_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_share_links");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique()
+                        .HasDatabaseName("ix_share_links_token_hash");
+
+                    b.HasIndex("WorkspaceId")
+                        .HasDatabaseName("ix_share_links_workspace_id");
+
+                    b.HasIndex("ProjectId", "CreatedAt")
+                        .HasDatabaseName("ix_share_links_project_id_created_at");
+
+                    b.ToTable("share_links", "sharing", t =>
+                        {
+                            t.HasCheckConstraint("ck_share_links_mode", "mode IN ('live', 'pinned')");
+
+                            t.HasCheckConstraint("ck_share_links_revision", "(mode = 'pinned') = (revision_id IS NOT NULL)");
+
+                            t.HasCheckConstraint("ck_share_links_scope", "scope IN ('project', 'view')");
+
+                            t.HasCheckConstraint("ck_share_links_view", "(scope = 'view') = (view_id IS NOT NULL)");
+                        });
+                });
+
+            modelBuilder.Entity("Vellum.Modules.Sharing.ShareSnapshotEntity", b =>
+                {
+                    b.Property<Guid>("LinkId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("link_id");
+
+                    b.Property<string>("Content")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("content");
+
+                    b.HasKey("LinkId")
+                        .HasName("pk_share_snapshots");
+
+                    b.ToTable("share_snapshots", "sharing");
+                });
+
             modelBuilder.Entity("Vellum.Modules.Stress.StressProfileEntity", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3769,6 +3923,16 @@ namespace Vellum.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired()
                         .HasConstraintName("fk_results_scripts_script_id");
+                });
+
+            modelBuilder.Entity("Vellum.Modules.Sharing.ShareSnapshotEntity", b =>
+                {
+                    b.HasOne("Vellum.Modules.Sharing.ShareLinkEntity", null)
+                        .WithOne()
+                        .HasForeignKey("Vellum.Modules.Sharing.ShareSnapshotEntity", "LinkId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_share_snapshots_share_links_link_id");
                 });
 
             modelBuilder.Entity("Vellum.Modules.Stress.StressRunEntity", b =>

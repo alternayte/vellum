@@ -12443,6 +12443,356 @@
           }
         }
       }
+    },
+    "/api/projects/{projectId}/share-links": {
+      "get": {
+        "tags": [
+          "Sharing"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ShareLinkDto"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Sharing"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateShareLinkRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShareLinkCreatedDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/share-links/{linkId}": {
+      "patch": {
+        "tags": [
+          "Sharing"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "linkId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ChangeShareLinkRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShareLinkDto"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/share-links/{linkId}/revoke": {
+      "post": {
+        "tags": [
+          "Sharing"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "linkId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/share/{token}": {
+      "get": {
+        "tags": [
+          "Shared pages"
+        ],
+        "parameters": [
+          {
+            "name": "token",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SharedPage"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/share/{token}/unlock": {
+      "post": {
+        "tags": [
+          "Shared pages"
+        ],
+        "parameters": [
+          {
+            "name": "token",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UnlockShareRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ShareGrantDto"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -15402,6 +15752,57 @@
           }
         }
       },
+      "ChangeShareLinkRequest": {
+        "required": [
+          "label",
+          "showCosts",
+          "showPromises",
+          "password",
+          "removePassword",
+          "expiresAt",
+          "clearExpiry"
+        ],
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "showCosts": {
+            "type": [
+              "null",
+              "boolean"
+            ]
+          },
+          "showPromises": {
+            "type": [
+              "null",
+              "boolean"
+            ]
+          },
+          "password": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "removePassword": {
+            "type": "boolean"
+          },
+          "expiresAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "clearExpiry": {
+            "type": "boolean"
+          }
+        }
+      },
       "ChannelDto": {
         "required": [
           "id",
@@ -16159,6 +16560,67 @@
           },
           "content": {
             "type": "string"
+          }
+        }
+      },
+      "CreateShareLinkRequest": {
+        "required": [
+          "scope",
+          "viewId",
+          "mode",
+          "revisionId",
+          "label",
+          "showCosts",
+          "showPromises",
+          "password",
+          "expiresAt"
+        ],
+        "type": "object",
+        "properties": {
+          "scope": {
+            "type": "string"
+          },
+          "viewId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "revisionId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "label": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "showCosts": {
+            "type": "boolean"
+          },
+          "showPromises": {
+            "type": "boolean"
+          },
+          "password": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "expiresAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
           }
         }
       },
@@ -28202,7 +28664,8 @@
           "simulation",
           "privacy",
           "usage",
-          "notifications"
+          "notifications",
+          "sharing"
         ],
         "type": "object",
         "properties": {
@@ -28229,6 +28692,9 @@
           },
           "notifications": {
             "$ref": "#/components/schemas/NotificationSettings"
+          },
+          "sharing": {
+            "$ref": "#/components/schemas/SharingSettings"
           }
         }
       },
@@ -28361,6 +28827,1422 @@
               "null",
               "string"
             ]
+          }
+        }
+      },
+      "SharedAlternative": {
+        "required": [
+          "title",
+          "whyNot"
+        ],
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "whyNot": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "SharedBinding": {
+        "required": [
+          "id",
+          "sourceChannelId",
+          "targetChannelId",
+          "routingKey",
+          "truthLabel",
+          "citation",
+          "stale"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sourceChannelId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "targetChannelId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "routingKey": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "truthLabel": {
+            "type": "string"
+          },
+          "citation": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "stale": {
+            "type": "boolean"
+          }
+        }
+      },
+      "SharedChannel": {
+        "required": [
+          "id",
+          "name",
+          "kind",
+          "truthLabel",
+          "citation",
+          "stale"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "truthLabel": {
+            "type": "string"
+          },
+          "citation": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "stale": {
+            "type": "boolean"
+          }
+        }
+      },
+      "SharedCostLine": {
+        "required": [
+          "elementId",
+          "resource",
+          "name",
+          "category",
+          "provider",
+          "region",
+          "status",
+          "reason",
+          "amount",
+          "currency"
+        ],
+        "type": "object",
+        "properties": {
+          "elementId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "resource": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "region": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "reason": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "amount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "currency": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "SharedCosts": {
+        "required": [
+          "asOf",
+          "currency",
+          "totals",
+          "lines",
+          "unknownLines"
+        ],
+        "type": "object",
+        "properties": {
+          "asOf": {
+            "type": "string",
+            "format": "date"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "totals": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SharedMoney"
+            }
+          },
+          "lines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SharedCostLine"
+            }
+          },
+          "unknownLines": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          }
+        }
+      },
+      "SharedDecision": {
+        "required": [
+          "id",
+          "label",
+          "status",
+          "title",
+          "context",
+          "decision",
+          "alternatives",
+          "consequences",
+          "affectedIds",
+          "supersedes",
+          "acceptedAt"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "label": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "context": {
+            "type": "string"
+          },
+          "decision": {
+            "type": "string"
+          },
+          "alternatives": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SharedAlternative"
+            }
+          },
+          "consequences": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "affectedIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "supersedes": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "acceptedAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          }
+        }
+      },
+      "SharedDoc": {
+        "required": [
+          "id",
+          "title",
+          "type",
+          "elementId",
+          "space",
+          "content",
+          "updatedAt"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "type": "string"
+          },
+          "type": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "elementId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "space": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "content": {
+            "type": "string"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "SharedElement": {
+        "required": [
+          "id",
+          "kind",
+          "name",
+          "description",
+          "technology",
+          "status",
+          "parentId",
+          "tags",
+          "icon",
+          "truthLabel",
+          "citation",
+          "stale"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "technology": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "status": {
+            "type": "string"
+          },
+          "parentId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "icon": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "truthLabel": {
+            "type": "string"
+          },
+          "citation": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "stale": {
+            "type": "boolean"
+          }
+        }
+      },
+      "SharedEvidenceCounts": {
+        "required": [
+          "passed",
+          "failed",
+          "notRun",
+          "unsupported",
+          "stale"
+        ],
+        "type": "object",
+        "properties": {
+          "passed": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "failed": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "notRun": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "unsupported": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "stale": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          }
+        }
+      },
+      "SharedFlow": {
+        "required": [
+          "id",
+          "name",
+          "steps",
+          "faults",
+          "assertions"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SharedFlowStep"
+            }
+          },
+          "faults": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "assertions": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          }
+        }
+      },
+      "SharedFlowStep": {
+        "required": [
+          "id",
+          "type",
+          "fromId",
+          "targetId",
+          "channelId",
+          "dataset",
+          "whenStep",
+          "is",
+          "groups"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "fromId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "targetId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "channelId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "dataset": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "whenStep": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "is": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "groups": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SharedStepGroup"
+            }
+          }
+        }
+      },
+      "SharedMessage": {
+        "required": [
+          "id",
+          "name",
+          "description",
+          "producerId",
+          "consumerIds",
+          "schemaId",
+          "tags",
+          "truthLabel",
+          "citation",
+          "stale"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "producerId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "consumerIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "schemaId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "truthLabel": {
+            "type": "string"
+          },
+          "citation": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "stale": {
+            "type": "boolean"
+          }
+        }
+      },
+      "SharedModel": {
+        "required": [
+          "elements",
+          "relationships",
+          "messages",
+          "operations",
+          "channels",
+          "subscriptions",
+          "bindings"
+        ],
+        "type": "object",
+        "properties": {
+          "elements": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SharedElement"
+            }
+          },
+          "relationships": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SharedRelationship"
+            }
+          },
+          "messages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SharedMessage"
+            }
+          },
+          "operations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SharedOperation"
+            }
+          },
+          "channels": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SharedChannel"
+            }
+          },
+          "subscriptions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SharedSubscription"
+            }
+          },
+          "bindings": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SharedBinding"
+            }
+          }
+        }
+      },
+      "SharedMoney": {
+        "required": [
+          "currency",
+          "amount"
+        ],
+        "type": "object",
+        "properties": {
+          "currency": {
+            "type": "string"
+          },
+          "amount": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          }
+        }
+      },
+      "SharedObligation": {
+        "required": [
+          "id",
+          "title",
+          "kind",
+          "result",
+          "current",
+          "at",
+          "environment"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "result": {
+            "type": "string"
+          },
+          "current": {
+            "type": [
+              "null",
+              "boolean"
+            ]
+          },
+          "at": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "environment": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "SharedOperation": {
+        "required": [
+          "id",
+          "ownerId",
+          "name",
+          "transport",
+          "requestSchemaId",
+          "responseSchemaId",
+          "timeoutMs",
+          "retry",
+          "truthLabel",
+          "citation",
+          "stale"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "ownerId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "transport": {
+            "type": "string"
+          },
+          "requestSchemaId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "responseSchemaId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "timeoutMs": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "retry": {
+            "$ref": "#/components/schemas/RetryDto"
+          },
+          "truthLabel": {
+            "type": "string"
+          },
+          "citation": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "stale": {
+            "type": "boolean"
+          }
+        }
+      },
+      "SharedPage": {
+        "required": [
+          "projectName",
+          "scope",
+          "mode",
+          "revision",
+          "asOf",
+          "model",
+          "views",
+          "schemas",
+          "flows",
+          "docs",
+          "decisions",
+          "costs",
+          "promises"
+        ],
+        "type": "object",
+        "properties": {
+          "projectName": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string"
+          },
+          "mode": {
+            "type": "string"
+          },
+          "revision": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SharedRevision"
+              }
+            ]
+          },
+          "asOf": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "model": {
+            "$ref": "#/components/schemas/SharedModel"
+          },
+          "views": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SharedView"
+            }
+          },
+          "schemas": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SharedSchema"
+            }
+          },
+          "flows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SharedFlow"
+            }
+          },
+          "docs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SharedDoc"
+            }
+          },
+          "decisions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SharedDecision"
+            }
+          },
+          "costs": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SharedCosts"
+              }
+            ]
+          },
+          "promises": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/SharedPromise"
+            }
+          }
+        }
+      },
+      "SharedPosition": {
+        "required": [
+          "elementId",
+          "x",
+          "y",
+          "width",
+          "height"
+        ],
+        "type": "object",
+        "properties": {
+          "elementId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "x": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "y": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "width": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "height": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ],
+            "format": "double"
+          }
+        }
+      },
+      "SharedPromise": {
+        "required": [
+          "requirementId",
+          "revision",
+          "title",
+          "claim",
+          "scope",
+          "preconditions",
+          "expectedOutcome",
+          "forbiddenOutcome",
+          "approvedAt",
+          "counts",
+          "obligations"
+        ],
+        "type": "object",
+        "properties": {
+          "requirementId": {
+            "type": "string"
+          },
+          "revision": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "title": {
+            "type": "string"
+          },
+          "claim": {
+            "type": "string"
+          },
+          "scope": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "preconditions": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "expectedOutcome": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "forbiddenOutcome": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "approvedAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "counts": {
+            "$ref": "#/components/schemas/SharedEvidenceCounts"
+          },
+          "obligations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SharedObligation"
+            }
+          }
+        }
+      },
+      "SharedRelationship": {
+        "required": [
+          "id",
+          "fromId",
+          "toId",
+          "label",
+          "technology",
+          "kind",
+          "messageId",
+          "lineShape",
+          "truthLabel",
+          "citation",
+          "stale"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "fromId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "toId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "label": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "technology": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "kind": {
+            "type": "string"
+          },
+          "messageId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "lineShape": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "truthLabel": {
+            "type": "string"
+          },
+          "citation": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "stale": {
+            "type": "boolean"
+          }
+        }
+      },
+      "SharedRevision": {
+        "required": [
+          "name",
+          "createdAt"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "SharedSchema": {
+        "required": [
+          "id",
+          "name",
+          "description",
+          "content",
+          "version"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "content": {
+            "type": "string"
+          },
+          "version": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          }
+        }
+      },
+      "SharedStepGroup": {
+        "required": [
+          "name",
+          "steps"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SharedFlowStep"
+            }
+          }
+        }
+      },
+      "SharedSubscription": {
+        "required": [
+          "id",
+          "channelId",
+          "consumerId",
+          "retry",
+          "deadLetterChannelId",
+          "truthLabel",
+          "citation",
+          "stale"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "channelId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "consumerId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "retry": {
+            "$ref": "#/components/schemas/RetryDto"
+          },
+          "deadLetterChannelId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "truthLabel": {
+            "type": "string"
+          },
+          "citation": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "stale": {
+            "type": "boolean"
+          }
+        }
+      },
+      "SharedView": {
+        "required": [
+          "id",
+          "name",
+          "positions"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string"
+          },
+          "positions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SharedPosition"
+            }
+          }
+        }
+      },
+      "ShareGrantDto": {
+        "required": [
+          "grant",
+          "expiresAt"
+        ],
+        "type": "object",
+        "properties": {
+          "grant": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ShareLinkCreatedDto": {
+        "required": [
+          "link",
+          "token",
+          "path",
+          "embedPath"
+        ],
+        "type": "object",
+        "properties": {
+          "link": {
+            "$ref": "#/components/schemas/ShareLinkDto"
+          },
+          "token": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "embedPath": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "ShareLinkDto": {
+        "required": [
+          "id",
+          "label",
+          "scope",
+          "viewId",
+          "viewName",
+          "mode",
+          "revisionId",
+          "revisionName",
+          "revisionCreatedAt",
+          "showCosts",
+          "showPromises",
+          "hasPassword",
+          "expiresAt",
+          "createdBy",
+          "createdAt",
+          "updatedAt",
+          "revokedAt",
+          "lastAccessedAt",
+          "status",
+          "canManage"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "label": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "string"
+          },
+          "viewId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "viewName": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "mode": {
+            "type": "string"
+          },
+          "revisionId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "revisionName": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "revisionCreatedAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "showCosts": {
+            "type": "boolean"
+          },
+          "showPromises": {
+            "type": "boolean"
+          },
+          "hasPassword": {
+            "type": "boolean"
+          },
+          "expiresAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "createdBy": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "revokedAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "lastAccessedAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
+          },
+          "status": {
+            "type": "string"
+          },
+          "canManage": {
+            "type": "boolean"
+          }
+        }
+      },
+      "SharingSettings": {
+        "required": [
+          "linkPolicy",
+          "embedHosts"
+        ],
+        "type": "object",
+        "properties": {
+          "linkPolicy": {
+            "type": "string"
+          },
+          "embedHosts": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         }
       },
@@ -30377,6 +32259,20 @@
           }
         }
       },
+      "UnlockShareRequest": {
+        "required": [
+          "password"
+        ],
+        "type": "object",
+        "properties": {
+          "password": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
       "UnmodelledEffect": {
         "required": [
           "code",
@@ -31635,6 +33531,12 @@
     },
     {
       "name": "Questions"
+    },
+    {
+      "name": "Sharing"
+    },
+    {
+      "name": "Shared pages"
     }
   ]
 }

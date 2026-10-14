@@ -94,6 +94,7 @@ public static class UpdateInstanceSettings
         AppDbContext db,
         SettingsResolver settings,
         SettingsValidator validator,
+        Bootstrap bootstrap,
         CancellationToken ct)
     {
         var userId = await auth.RequireAdminAsync(user, ct);
@@ -120,7 +121,7 @@ public static class UpdateInstanceSettings
             return Invalid(errors);
 
         // A field that the admin leaves out of the defaults takes the built-in default.
-        var defaultsJson = SettingsJson.Merge(SettingsJson.ToJson(SettingsDefaults.BuiltIn), requested!);
+        var defaultsJson = SettingsJson.Merge(SettingsJson.ToJson(SettingsDefaults.For(bootstrap.Profile)), requested!);
         var defaults = SettingsJson.Read(defaultsJson, out var readError);
         if (defaults is null)
             return Invalid([readError! with { Field = Prefix(readError.Field) }]);

@@ -17,6 +17,7 @@ using Vellum.Modules.Promises;
 using Vellum.Modules.Review;
 using Vellum.Modules.Schemas;
 using Vellum.Modules.Settings;
+using Vellum.Modules.Sharing;
 using Vellum.Modules.Stress;
 using Vellum.Modules.Trace;
 using Vellum.Modules.Views;
@@ -127,6 +128,10 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : IdentityDbCo
     public DbSet<ScriptEntity> Scripts => Set<ScriptEntity>();
     public DbSet<ResultEntity> Results => Set<ResultEntity>();
 
+    // sharing
+    public DbSet<ShareLinkEntity> ShareLinks => Set<ShareLinkEntity>();
+    public DbSet<ShareSnapshotEntity> ShareSnapshots => Set<ShareSnapshotEntity>();
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -146,6 +151,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : IdentityDbCo
         CostsTables.Configure(modelBuilder);
         ReviewTables.Configure(modelBuilder);
         LoadTestsTables.Configure(modelBuilder);
+        SharingTables.Configure(modelBuilder);
     }
 }
 
