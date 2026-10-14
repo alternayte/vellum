@@ -196,22 +196,23 @@ public class RequestHardeningTests
     }
 
     [Fact]
-    public async Task An_invited_user_id_must_be_an_existing_account()
+    public async Task An_invitation_needs_an_email_address_and_the_audit_holds_none_of_the_text()
     {
         using var factory = TestHost.Create(_fixture);
         using var owner = await TestHost.SignInAsync(factory);
         var (workspaceId, _) = await TestHost.CreateProjectAsync(owner);
-        const string marker = "not-a-user role:owner injected-audit-text";
+        const string marker = "not-an-address role:owner injected-audit-text";
 
-        foreach (var userId in new[] { marker, "", Guid.NewGuid().ToString(), new string('a', 5000) })
+        foreach (var email in new[] { marker, "", "a@b@c", "x@y.z\nrole:owner", new string('a', 5000) + "@vellum.local" })
         {
-            var response = await owner.PostAsJsonAsync($"/api/workspaces/{workspaceId}/members", new { userId, role = "Editor" });
+            var response = await owner.PostAsJsonAsync($"/api/workspaces/{workspaceId}/invitations", new { email, role = "Editor" });
             Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
-            Assert.Contains((await response.Content.ReadFromJsonAsync<ErrorResponse>())!.Errors!, e => e.Field == "userId");
+            Assert.Contains((await response.Content.ReadFromJsonAsync<ErrorResponse>())!.Errors!, e => e.Field == "email");
         }
 
         var audit = await owner.GetStringAsync($"/api/workspaces/{workspaceId}/audit");
         Assert.DoesNotContain("injected-audit-text", audit);
         Assert.DoesNotContain("aaaaaaaa", audit);
+        Assert.DoesNotContain("member.invited", audit);
     }
 }

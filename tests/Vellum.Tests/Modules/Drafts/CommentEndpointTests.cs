@@ -205,10 +205,8 @@ public class CommentEndpointTests
             new { id = commentId, body = "Author's comment" });
 
         // Second user registers and author invites them as Editor
-        var (otherClient, otherUserId) = await CreateAuthenticatedClientAsync(factory);
-        await authorClient.PostAsJsonAsync(
-            $"/api/workspaces/{workspaceId}/members",
-            new { userId = otherUserId, role = "Editor" });
+        var (otherClient, _) = await CreateAuthenticatedClientAsync(factory);
+        await TestHost.AddMemberAsync(authorClient, otherClient, workspaceId, "Editor");
 
         // Other user is now an Editor but NOT the comment author
         var updateResponse = await otherClient.PatchAsJsonAsync(
@@ -232,10 +230,8 @@ public class CommentEndpointTests
             new { id = commentId, body = "Author's comment" });
 
         // Second user registers and author invites them as Editor
-        var (otherClient, otherUserId) = await CreateAuthenticatedClientAsync(factory);
-        await authorClient.PostAsJsonAsync(
-            $"/api/workspaces/{workspaceId}/members",
-            new { userId = otherUserId, role = "Editor" });
+        var (otherClient, _) = await CreateAuthenticatedClientAsync(factory);
+        await TestHost.AddMemberAsync(authorClient, otherClient, workspaceId, "Editor");
 
         // Other user is Editor but NOT the comment author
         var deleteResponse = await otherClient.DeleteAsync(

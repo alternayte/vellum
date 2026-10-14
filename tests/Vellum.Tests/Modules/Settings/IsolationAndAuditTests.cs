@@ -106,8 +106,7 @@ public class IsolationAndAuditTests
         Assert.Equal(HttpStatusCode.Forbidden, (await admin.GetAsync($"/api/workspaces/{workspaceId}/projects")).StatusCode);
 
         // A membership, and only a membership, opens the workspace.
-        var me = await admin.GetFromJsonAsync<UserInfoResponse>("/api/auth/me");
-        await TestHost.Created(owner.PostAsJsonAsync($"/api/workspaces/{workspaceId}/members", new { userId = me!.Id, role = "Owner" }));
+        await TestHost.AddMemberAsync(owner, admin, workspaceId, "Owner");
         Assert.Equal(HttpStatusCode.OK, (await admin.GetAsync($"/api/workspaces/{workspaceId}/secrets")).StatusCode);
     }
 
@@ -125,7 +124,8 @@ public class IsolationAndAuditTests
         Assert.Equal(HttpStatusCode.NoContent, (await owner.PutAsJsonAsync($"/api/workspaces/{workspaceId}/secrets/github:token", new { value = secret })).StatusCode);
         Assert.Equal(HttpStatusCode.NoContent, (await owner.DeleteAsync($"/api/workspaces/{workspaceId}/secrets/github:token")).StatusCode);
         using var member = await TestHost.SignInMemberAsync(factory, owner, workspaceId, "Editor");
-        var memberId = (await member.GetFromJsonAsync<UserInfoResponse>("/api/auth/me"))!.Id;
+        var memberInfo = (await member.GetFromJsonAsync<UserInfoResponse>("/api/auth/me"))!;
+        var memberId = memberInfo.Id;
         Assert.True((await owner.DeleteAsync($"/api/workspaces/{workspaceId}/members/{memberId}")).IsSuccessStatusCode);
         // Refused calls record nothing.
         Assert.Equal(HttpStatusCode.Forbidden, (await member.PutAsJsonAsync($"/api/workspaces/{workspaceId}/secrets/github:token", new { value = secret })).StatusCode);
@@ -135,17 +135,21 @@ public class IsolationAndAuditTests
         var entries = JsonNode.Parse(body)!.AsArray();
 
         Assert.Equal(
-            ["member.removed", "member.added", "secret.deleted", "secret.set", "settings.updated", "member.added"],
+            ["member.removed", "member.added", "member.invited", "secret.deleted", "secret.set", "settings.updated", "member.added"],
             entries.Select(e => (string)e!["action"]!).Where(a => a != "keys.rotated"));
         var workspaceEntries = entries.Where(e => (string)e!["action"]! != "keys.rotated").ToList();
+        // The invitation is named by its ID; the email address is in no entry.
+        var invitation = ((string)workspaceEntries[2]!["target"]!).Split(' ')[0];
+        Assert.StartsWith("invitation:", invitation);
         Assert.Equal(
-            [$"user:{memberId} role:editor", $"user:{memberId} role:editor", "github:token", "github:token", "workspace-settings fields:notifications.webhookUrl=https://hooks.example.com", $"user:{ownerId} role:owner"],
+            [$"user:{memberId} role:editor", $"user:{memberId} role:editor {invitation}", $"{invitation} role:editor", "github:token", "github:token", "workspace-settings fields:notifications.webhookUrl=https://hooks.example.com", $"user:{ownerId} role:owner"],
             workspaceEntries.Select(e => (string)e!["target"]!));
-        Assert.All(workspaceEntries, e =>
-        {
-            Assert.Equal(ownerId, (string)e!["actorId"]!);
-            Assert.Equal(["action", "actorId", "at", "target"], e.AsObject().Select(p => p.Key).Order());
-        });
+        // The person who accepts is the actor of the membership; the owner of everything else.
+        Assert.Equal(
+            [ownerId, memberId, ownerId, ownerId, ownerId, ownerId, ownerId],
+            workspaceEntries.Select(e => (string)e!["actorId"]!));
+        Assert.All(workspaceEntries, e => Assert.Equal(["action", "actorId", "at", "target"], e.AsObject().Select(p => p.Key).Order()));
+        Assert.DoesNotContain(memberInfo.Email, body);
         var times = entries.Select(e => (DateTimeOffset)e!["at"]!).ToList();
         Assert.Equal(times.OrderByDescending(t => t), times);
         Assert.DoesNotContain(secret, body);
