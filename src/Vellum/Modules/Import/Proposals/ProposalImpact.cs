@@ -91,6 +91,55 @@ internal sealed class ProposalImpact
     /// <summary>The stored scenarios with a step, an assertion or a fault that names one of <paramref name="targets"/>.</summary>
     public IReadOnlyList<ImpactScenarioDto> Naming(IReadOnlyCollection<Guid> targets) => Scenarios(targets);
 
+    /// <summary>
+    /// Every step of a stored scenario in the order it is written, nested steps too, with its
+    /// kind (<c>call</c>, <c>publish</c>, <c>write</c>, <c>parallel</c>, <c>branch</c>) and the
+    /// name of what it calls, publishes or writes to. Empty for a scenario that was not read.
+    /// </summary>
+    public IReadOnlyList<(string Id, string Kind, string? Label)> StepsOf(Guid scenarioId)
+    {
+        var found = new List<(string, string, string?)>();
+        foreach (var (id, _, document) in _scenarios)
+        {
+            if (id == scenarioId)
+                List(document.Steps, found);
+        }
+        return found;
+    }
+
+    private void List(IEnumerable<Step> steps, List<(string, string, string?)> found)
+    {
+        foreach (var step in steps)
+        {
+            switch (step)
+            {
+                case CallStep call:
+                    found.Add((call.Id, "call", _model.Operations.TryGetValue(call.Operation, out var operation) ? operation.Name : null));
+                    List(call.Then, found);
+                    List(call.OnError, found);
+                    break;
+                case PublishStep publish:
+                    found.Add((publish.Id, "publish", _model.Messages.TryGetValue(publish.Message, out var message) ? message.Name : null));
+                    foreach (var handler in publish.Handlers.Values)
+                        List(handler, found);
+                    break;
+                case WriteStep write:
+                    found.Add((write.Id, "write", _model.Elements.TryGetValue(write.Store, out var store) ? $"{store.Name} · {write.Dataset}" : write.Dataset));
+                    break;
+                case ParallelStep parallel:
+                    found.Add((parallel.Id, "parallel", null));
+                    foreach (var branch in parallel.Branches)
+                        List(branch, found);
+                    break;
+                case BranchStep branch:
+                    found.Add((branch.Id, "branch", null));
+                    List(branch.Then, found);
+                    List(branch.Else, found);
+                    break;
+            }
+        }
+    }
+
     private List<ImpactScenarioDto> Scenarios(IReadOnlyCollection<Guid> targets, BindingId? removedBinding = null)
     {
         var found = new List<ImpactScenarioDto>();

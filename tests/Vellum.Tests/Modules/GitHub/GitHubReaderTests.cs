@@ -76,7 +76,7 @@ public class GitHubReaderTests(SharedOutboundHost shared) : IClassFixture<Shared
         Assert.Equal(("ahead", 1, new string('1', 40), false),
             (comparison.Value!.Status, comparison.Value.TotalCommits, comparison.Value.MergeBaseSha, comparison.Value.FilesIncomplete));
         Assert.Equal(new GitHubChangedFile("src/Orders.cs", "renamed", new string('f', 40), "src/Order.cs"), comparison.Value.Files[1]);
-        Assert.Equal(new GitHubPullRequest(7, "open", false, "main", new string('1', 40), "remove-outbox", new string('2', 40), "contributor/orders"), pull.Value);
+        Assert.Equal(new GitHubPullRequest(7, "open", false, "main", new string('1', 40), "remove-outbox", new string('2', 40), "contributor/orders", "Remove the outbox"), pull.Value);
         Assert.Equal((60, 57, DateTimeOffset.FromUnixTimeSeconds(1767225600)), (rate.Value!.Limit, rate.Value.Remaining, rate.Value.ResetAt));
 
         var sent = github.Stub.Requests;

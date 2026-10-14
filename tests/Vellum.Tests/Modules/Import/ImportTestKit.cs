@@ -48,6 +48,8 @@ internal sealed class FixtureGitHub
     public Dictionary<string, string> FullNames { get; } = new(StringComparer.Ordinal);
     /// <summary>GitHub's ID of a repository, by the lower-case name asked for. Without an entry each name has an ID of its own.</summary>
     public Dictionary<string, long> RepositoryIds { get; } = new(StringComparer.Ordinal);
+    /// <summary>"Get a pull request" answers, by number. A number with no entry is 404.</summary>
+    public Dictionary<int, JsonObject> Pulls { get; } = [];
     /// <summary>Called with the path of a blob. Bytes it returns are served in place of the file's, under the SHA that was asked for.</summary>
     public Func<string, byte[]?>? Corrupt { get; set; }
     /// <summary>
@@ -87,6 +89,11 @@ internal sealed class FixtureGitHub
     {
         _authorization.Enqueue(sent.Header("Authorization"));
         var segments = sent.Uri.AbsolutePath.Trim('/').Split('/');
+        if (sent.Method != HttpMethod.Get)
+        {
+            _requests.Enqueue($"write:{sent.Method} {sent.Uri.AbsolutePath}");
+            return Json(HttpStatusCode.MethodNotAllowed, """{"message":"The fixture is read-only."}""");
+        }
 
         if (Unauthorized)
             return Json(HttpStatusCode.Unauthorized, """{"message":"Bad credentials","status":"401"}""");
@@ -125,6 +132,14 @@ internal sealed class FixtureGitHub
             return sha is null
                 ? NotFound()
                 : Json(HttpStatusCode.OK, new JsonArray(new JsonObject { ["sha"] = sha }).ToJsonString());
+        }
+
+        if (segments is [_, _, _, "pulls", var pullNumber])
+        {
+            _requests.Enqueue($"pull:{pullNumber}");
+            return int.TryParse(pullNumber, out var number) && Pulls.TryGetValue(number, out var pull)
+                ? Json(HttpStatusCode.OK, pull.ToJsonString())
+                : NotFound();
         }
 
         if (segments is [_, _, _, "git", "trees", var treeSha])

@@ -59,8 +59,10 @@ public sealed record GitHubComparison(
     IReadOnlyList<GitHubChangedFile> Files, bool FilesIncomplete);
 
 /// <param name="HeadRepository">Null when the head repository was deleted.</param>
+/// <param name="Title">Untrusted text, cut and cleared of control characters. Null when the answer holds none.</param>
 public sealed record GitHubPullRequest(
-    int Number, string State, bool Merged, string BaseRef, string BaseSha, string HeadRef, string HeadSha, string? HeadRepository);
+    int Number, string State, bool Merged, string BaseRef, string BaseSha, string HeadRef, string HeadSha, string? HeadRepository,
+    string? Title = null);
 
 /// <param name="Status"><c>queued</c>, <c>in_progress</c>, <c>completed</c> and the other words GitHub uses.</param>
 /// <param name="Conclusion">Null until the run is completed. Then <c>success</c>, <c>failure</c>, <c>cancelled</c> and so on.</param>
@@ -265,7 +267,8 @@ public sealed partial class GitHubConnection
                     Head: { Sha: { } headSha } head,
                 } dto && IsSha(baseSha) && IsSha(headSha)
                 && Clean(dto.State, MaxWordChars) is { } state && Clean(@base.Ref, MaxRefChars) is { } baseRef && Clean(head.Ref, MaxRefChars) is { } headRef
-                    ? new GitHubPullRequest(dto.Number, state, dto.Merged, baseRef, baseSha, headRef, headSha, Clean(head.Repo?.FullName, MaxNameChars))
+                    ? new GitHubPullRequest(dto.Number, state, dto.Merged, baseRef, baseSha, headRef, headSha, Clean(head.Repo?.FullName, MaxNameChars),
+                        Clean(dto.Title, MaxNameChars))
                     : Unexpected, ct);
 
     /// <summary>A GitHub Actions run by its number: the commit it ran on, its status and its conclusion.</summary>

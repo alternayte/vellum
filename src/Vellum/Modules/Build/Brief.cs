@@ -311,6 +311,10 @@ public static class Brief
     {
         md.Heading(2, $"8. Change under review");
         md.Line($"Scan {Md.Code(change.ScanId)} of {Md.Code(change.Repository)}: ref {Md.Code(change.Head.Ref ?? "none")} at commit {Md.Code(change.Head.CommitSha)}, a {Md.Raw(change.Kind)} scan, compared with ref {Md.Code(change.Base.Ref ?? "none")} at commit {Md.Code(change.Base.CommitSha ?? "none")}.").Blank();
+        if (change.PullRequest is { } pull)
+        {
+            md.Line($"The commit is the head of pull request {Md.Raw($"#{pull.Number}")} ({Md.Text(pull.Title ?? "no title")}), {Md.Raw(pull.Merged ? "merged" : pull.State)}: base {Md.Code(pull.BaseRef)} at {Md.Code(pull.BaseSha)}, head {Md.Code(pull.HeadRef)} at {Md.Code(pull.HeadSha)}{(pull.FromFork ? Md.Raw(", from another repository") : Md.Raw(""))}.").Blank();
+        }
         md.Line($"This section states what the source of that commit changes. It is not a requirement. `definite` stands on the cited diff or source lines; `possible` is reached only through a flow or a service; `unknown` means the scan did not look.").Blank();
         foreach (var limit in change.Limits)
             md.Line($"- {limit}");
@@ -333,6 +337,12 @@ public static class Brief
             md.Table(["Scenario", "Certainty", "Why"], change.Flows.SelectMany(f => f.Reasons.Select(r => new[]
             {
                 Md.Of($"{Md.Text(f.Name)} ({Md.Code(f.ScenarioId)})"), Md.Raw(r.Certainty), Md.Text(r.Text),
+            })));
+            md.Line($"Affected steps. Each names the changes it stands on; their source lines are in the table of changes.").Blank();
+            md.Table(["Scenario", "Step", "Certainty", "Changes"], change.Flows.SelectMany(f => f.Steps.Select(s => new[]
+            {
+                Md.Text(f.Name), Md.Of($"{Md.Code(s.StepId)} {Md.Text(s.Label ?? s.Kind)}"), Md.Raw(s.Certainty),
+                Md.Join(", ", s.Reasons.Select(r => r.ChangeId).Distinct().Select(id => Md.Text(change.Changes.FirstOrDefault(c => c.Id == id)?.Name ?? id))),
             })));
         }
         if (change.Promises.Count > 0)

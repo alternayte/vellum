@@ -118,8 +118,21 @@ public class ChangeImpactTests(ImportHost import) : IClassFixture<ImportHost>
         Assert.Equal((scenario, "definite"), (flow.Id("scenarioId"), flow.Text("certainty")));
         Assert.Contains("publish-order-created", flow["stepIds"]!.AsArray().Select(step => step!.GetValue<string>()));
         var flowReasons = flow["reasons"]!.AsArray().Select(r => r!.AsObject()).ToList();
-        Assert.Equal("definite", flowReasons.Single(r => r.Text("changeId") == schema.Text("id")).Text("certainty"));
+        Assert.Equal(["definite", "possible"], flowReasons.Where(r => r.Text("changeId") == schema.Text("id")).Select(r => r.Text("certainty")));
         Assert.Equal("possible", flowReasons.Single(r => r.Text("changeId") == outbox.Text("id")).Text("certainty"));
+
+        // Each step on its own, in the order the scenario writes them. Only the step that
+        // publishes the message whose schema changed is definite; it stands on the schema diff.
+        var steps = flow["steps"]!.AsArray().Select(step => step!.AsObject()).ToList();
+        Assert.Equal(
+            [("place", "call", "POST /orders", "possible"), ("save-order", "write", "postgres · orders", "possible"), ("publish-order-created", "publish", "OrderCreated", "definite")],
+            steps.Select(step => (step.Text("stepId"), step.Text("kind"), step.Text("label"), step.Text("certainty"))));
+        var published = steps[2]["reasons"]!.AsArray().Select(r => r!.AsObject()).ToList();
+        Assert.Contains(published, r => r.Text("changeId") == schema.Text("id") && r.Text("certainty") == "definite");
+        Assert.DoesNotContain(published, r => r.Text("changeId") == schema.Text("id") && r.Text("certainty") != "definite");
+        // A possible step names what reaches it: the removed outbox of its service and the schema its service produces.
+        Assert.All(steps[..2], step => Assert.Contains(step["reasons"]!.AsArray(), r => r!["changeId"]!.GetValue<string>() == outbox.Text("id") && r["certainty"]!.GetValue<string>() == "possible"));
+        Assert.All(steps[..2], step => Assert.DoesNotContain(step["reasons"]!.AsArray(), r => r!["certainty"]!.GetValue<string>() == "definite"));
 
         // The promises: ORD-014 is at risk on a definite reason; the promise that only plays the flow is possible; the unrelated one is absent.
         var promises = impact["promises"]!.AsArray().Select(p => p!.AsObject()).ToList();

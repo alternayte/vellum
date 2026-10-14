@@ -15,7 +15,12 @@ namespace Vellum.Modules.Import.Scans;
 /// <param name="Ref">A branch, a tag or a commit SHA. Without it the workspace's default ref applies, else the repository's default branch.</param>
 /// <param name="IncludePaths">Path prefixes to scan. Without any, the whole repository is in scope.</param>
 /// <param name="ExcludePaths">Path prefixes to leave out.</param>
-public sealed record StartScanRequest(string? Repository, string? Ref, string[]? IncludePaths, string[]? ExcludePaths);
+/// <param name="PullRequest">
+/// The number of a pull request of the repository, in place of a ref. The scan reads the head
+/// commit of the pull request, records the pull request with both commit SHAs, and is a
+/// comparison: its proposals are a preview. Nothing is written to GitHub.
+/// </param>
+public sealed record StartScanRequest(string? Repository, string? Ref, string[]? IncludePaths, string[]? ExcludePaths, int? PullRequest = null);
 
 public sealed record StartScanResponse(Guid Id);
 
@@ -56,12 +61,15 @@ public sealed record ScanCoverageDto(int FilesListed, int FilesExtracted, Linked
 /// <param name="Relinked">Links that the scan moved to a new fact key after the extraction rules changed.</param>
 /// <param name="NeedsReview">Links that it could not move by the exact rule. Each has a <c>relink</c> proposal.</param>
 /// <param name="RetryAt">When a scan that waits starts again.</param>
+/// <param name="PullRequestNumber">The pull request the caller asked for, or null for a scan of a ref.</param>
+/// <param name="PullRequest">The pull request as GitHub described it when the scan pinned the head commit. Null until then.</param>
 public sealed record ScanDto(
     Guid Id, string Repository, string? RepositoryName, string? Ref, string? ResolvedRef, string? CommitSha, string Status, bool IsComplete,
     string Kind, string? TrackedRef, bool CanDecide, string? CanDecideReason,
     ScanCoverageDto Coverage, int Relinked, int NeedsReview,
     ScanProgressDto Progress, ProposalCountsDto ProposalCounts, ScanError? Error,
-    DateTimeOffset? RetryAt, string RequestedBy, DateTimeOffset CreatedAt, DateTimeOffset? CompletedAt);
+    DateTimeOffset? RetryAt, string RequestedBy, DateTimeOffset CreatedAt, DateTimeOffset? CompletedAt,
+    int? PullRequestNumber, ScanPullRequest? PullRequest);
 
 public sealed record ScanDetailDto(
     Guid Id, string Repository, string? RepositoryName, string? Ref, string? ResolvedRef, string? CommitSha, string Status, bool IsComplete,
@@ -69,6 +77,7 @@ public sealed record ScanDetailDto(
     ScanCoverageDto Coverage, int Relinked, int NeedsReview,
     ScanProgressDto Progress, ProposalCountsDto ProposalCounts, ScanError? Error,
     DateTimeOffset? RetryAt, string RequestedBy, DateTimeOffset CreatedAt, DateTimeOffset? CompletedAt,
+    int? PullRequestNumber, ScanPullRequest? PullRequest,
     IReadOnlyList<ScanNote> Notes, IReadOnlyList<RuleVersion> RuleVersions,
     string? TrackedBy, DateTimeOffset? TrackedAt);
 
@@ -78,6 +87,8 @@ public static partial class ScanRequests
     public const int MaxScopePathLength = 400;
     /// <summary>How many times a person can resume one scan. Each resume gives the scan its automatic attempts back.</summary>
     public const int MaxManualResumes = 3;
+    /// <summary>The largest pull request number a scan accepts. GitHub's numbers are far below it.</summary>
+    public const int MaxPullRequestNumber = 100_000_000;
 
     [GeneratedRegex(@"^[A-Za-z0-9_.-]{1,100}$")]
     private static partial Regex RepositoryPart();
@@ -104,6 +115,13 @@ public static partial class ScanRequests
         var reference = string.IsNullOrWhiteSpace(request.Ref) ? null : request.Ref;
         if (reference is not null && (TextRule.Line("ref", reference, 255) is not null || !IsRef(reference)))
             return Invalid("ref", "A ref is a branch, a tag or a commit SHA of at most 255 characters, with no white space.");
+        if (request.PullRequest is { } number)
+        {
+            if (reference is not null)
+                return Invalid("pullRequest", "Give a branch, a tag, a commit or a pull request number. Not two of them.");
+            if (number is < 1 or > MaxPullRequestNumber)
+                return Invalid("pullRequest", "A pull request number is a whole number from 1.");
+        }
         if (!TryReadPaths(request.IncludePaths, out var include, out var pathError))
             return Invalid("includePaths", pathError);
         if (!TryReadPaths(request.ExcludePaths, out var exclude, out pathError))
@@ -114,7 +132,7 @@ public static partial class ScanRequests
         var scan = new ScanEntity
         {
             Id = Guid.NewGuid(), ProjectId = projectId, WorkspaceId = workspaceId,
-            Host = host, Repository = repository, RequestedRef = reference,
+            Host = host, Repository = repository, RequestedRef = reference, PullRequestNumber = request.PullRequest,
             IncludePaths = include, ExcludePaths = exclude,
             Limits = new ScanLimits(import.MaxFiles, import.MaxFileBytes, import.MaxTotalBytes, [.. import.ExcludeGlobs]).ToJson(),
             Status = ScanStatus.Queued, RequestedBy = userId, CreatedAt = now, UpdatedAt = now,
@@ -216,6 +234,7 @@ public static partial class ScanRequests
             dto.Id, dto.Repository, dto.RepositoryName, dto.Ref, dto.ResolvedRef, dto.CommitSha, dto.Status, dto.IsComplete,
             dto.Kind, dto.TrackedRef, dto.CanDecide, dto.CanDecideReason, dto.Coverage, dto.Relinked, dto.NeedsReview,
             dto.Progress, dto.ProposalCounts, dto.Error, dto.RetryAt, dto.RequestedBy, dto.CreatedAt, dto.CompletedAt,
+            dto.PullRequestNumber, dto.PullRequest,
             ScanNotes.Read(scan.Notes),
             rules is null ? [] : System.Text.Json.JsonSerializer.Deserialize<List<RuleVersion>>(rules, System.Text.Json.JsonSerializerOptions.Web) ?? [],
             scan.TrackedBy, scan.TrackedAt);
@@ -358,6 +377,11 @@ public static partial class ScanRequests
             return NotFound();
         if (scan.Status != ScanStatus.Completed || scan.CommitSha is null)
             return Results.Conflict(new ErrorResponse("import_not_completed", "Only a completed scan can be made the tracked one."));
+        if (scan.IsPullRequest())
+        {
+            return Results.Conflict(new ErrorResponse("ref_not_trackable",
+                "This scan read the head commit of a pull request, which is no line of history to follow. Scan a branch or a tag, then track that scan."));
+        }
         if (scan.IsBareCommit() || scan.ResolvedRef is null)
         {
             return Results.Conflict(new ErrorResponse("ref_not_trackable",
@@ -543,7 +567,8 @@ public static partial class ScanRequests
             new ScanProgressDto(scan.FilesListed, scan.FilesRead, scan.FilesSkipped, scan.BytesRead),
             counts ?? new ProposalCountsDto(0, 0, 0),
             scan.ErrorCode is null ? null : new ScanError(scan.ErrorCode, scan.ErrorMessage ?? ""),
-            scan.RetryAt, scan.RequestedBy, scan.CreatedAt, scan.CompletedAt);
+            scan.RetryAt, scan.RequestedBy, scan.CreatedAt, scan.CompletedAt,
+            scan.PullRequestNumber, ScanPullRequest.FromJson(scan.PullRequest));
     }
 
     private static IResult Invalid(string field, string message) =>

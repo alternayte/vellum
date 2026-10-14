@@ -13,10 +13,12 @@ internal sealed record ScanKindInfo(string Kind, string? Reason)
     /// <summary>
     /// A scan is a tracking scan when it read the tracked ref of its repository, or when
     /// the repository has no tracked ref yet and the scan read a ref. A scan of a bare
-    /// commit follows no line of history and is never one.
+    /// commit or of a pull request follows no line of history and is never one.
     /// </summary>
     public static ScanKindInfo Of(ScanEntity scan, TrackedRefEntity? tracked)
     {
+        if (scan.IsPullRequest())
+            return new ScanKindInfo(ScanKind.Comparison, "pull-request");
         if (scan.IsBareCommit())
             return new ScanKindInfo(ScanKind.Comparison, "bare-commit");
         if (tracked is null || tracked.RefName == (scan.ResolvedRef ?? ""))
@@ -32,6 +34,7 @@ internal sealed record ScanKindInfo(string Kind, string? Reason)
     public static string? Describe(ScanKindInfo kind, TrackedRefEntity? tracked) => kind.Reason switch
     {
         "bare-commit" => "This scan read a commit and no ref. Its proposals are a preview and cannot be decided. Scan a branch or a tag to decide.",
+        "pull-request" => "This scan read the head commit of a pull request. Its proposals are a preview and cannot be decided. Scan the tracked ref after the merge to decide.",
         "other-ref" => $"This scan read another ref than the one the accepted facts follow ({(tracked!.RefName.Length == 0 ? "the default ref" : tracked.RefName)}). " +
             "Its proposals are a preview and cannot be decided. To follow the ref of this scan, make it the tracked ref.",
         _ => null,

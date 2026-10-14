@@ -13813,7 +13813,8 @@
           "changes",
           "flows",
           "promises",
-          "promisesNotAffected"
+          "promisesNotAffected",
+          "pullRequest"
         ],
         "type": "object",
         "properties": {
@@ -13864,6 +13865,16 @@
               "string"
             ],
             "format": "int32"
+          },
+          "pullRequest": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ScanPullRequest"
+              }
+            ]
           }
         }
       },
@@ -18057,7 +18068,8 @@
           "name",
           "stepIds",
           "certainty",
-          "reasons"
+          "reasons",
+          "steps"
         ],
         "type": "object",
         "properties": {
@@ -18081,6 +18093,12 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/ImpactReasonDto"
+            }
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ImpactStepDto"
             }
           }
         }
@@ -18208,6 +18226,39 @@
               "null",
               "string"
             ]
+          }
+        }
+      },
+      "ImpactStepDto": {
+        "required": [
+          "stepId",
+          "kind",
+          "label",
+          "certainty",
+          "reasons"
+        ],
+        "type": "object",
+        "properties": {
+          "stepId": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "label": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "certainty": {
+            "type": "string"
+          },
+          "reasons": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ImpactReasonDto"
+            }
           }
         }
       },
@@ -24492,6 +24543,8 @@
           "requestedBy",
           "createdAt",
           "completedAt",
+          "pullRequestNumber",
+          "pullRequest",
           "notes",
           "ruleVersions",
           "trackedBy",
@@ -24610,6 +24663,25 @@
             ],
             "format": "date-time"
           },
+          "pullRequestNumber": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "pullRequest": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ScanPullRequest"
+              }
+            ]
+          },
           "notes": {
             "type": "array",
             "items": {
@@ -24660,7 +24732,9 @@
           "retryAt",
           "requestedBy",
           "createdAt",
-          "completedAt"
+          "completedAt",
+          "pullRequestNumber",
+          "pullRequest"
         ],
         "type": "object",
         "properties": {
@@ -24774,6 +24848,25 @@
               "string"
             ],
             "format": "date-time"
+          },
+          "pullRequestNumber": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "pullRequest": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ScanPullRequest"
+              }
+            ]
           }
         }
       },
@@ -24860,6 +24953,64 @@
               "string"
             ],
             "format": "int64"
+          }
+        }
+      },
+      "ScanPullRequest": {
+        "required": [
+          "number",
+          "title",
+          "state",
+          "merged",
+          "baseRef",
+          "baseSha",
+          "headRef",
+          "headSha",
+          "headRepository",
+          "fromFork"
+        ],
+        "type": "object",
+        "properties": {
+          "number": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "title": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "state": {
+            "type": "string"
+          },
+          "merged": {
+            "type": "boolean"
+          },
+          "baseRef": {
+            "type": "string"
+          },
+          "baseSha": {
+            "type": "string"
+          },
+          "headRef": {
+            "type": "string"
+          },
+          "headSha": {
+            "type": "string"
+          },
+          "headRepository": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "fromFork": {
+            "type": "boolean"
           }
         }
       },
@@ -25983,6 +26134,15 @@
             "items": {
               "type": "string"
             }
+          },
+          "pullRequest": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
           }
         }
       },
