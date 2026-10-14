@@ -45,6 +45,7 @@ public static class DatabaseMigrations
             // is created first.
             await db.GetService<IHistoryRepository>().CreateIfNotExistsAsync(ct);
             await db.Database.MigrateAsync(ct);
+            await DatabaseObjects.EnsureAsync(connectionString, ct);
         }
         finally
         {

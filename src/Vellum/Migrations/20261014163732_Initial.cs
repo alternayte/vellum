@@ -1,5 +1,4 @@
 using System;
-using Deedbox;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
@@ -8,14 +7,6 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
 namespace Vellum.Migrations
 {
-    /// <summary>
-    /// The whole schema of every module, generated from <c>AppDbContext</c>, plus two parts
-    /// that are not in the EF Core model: the Deedbox event-store tables in the schema
-    /// <c>deedbox</c>, and the trigger that keeps <c>settings.audit_entries</c> append-only.
-    /// The Deedbox script is idempotent and records itself in <c>deedbox.schema_version</c>.
-    /// When a Deedbox upgrade needs a newer schema, add a migration with
-    /// <c>PostgresSchema.Script(fromVersion: n)</c>.
-    /// </summary>
     public partial class Initial : Migration
     {
         /// <inheritdoc />
@@ -1952,30 +1943,11 @@ namespace Vellum.Migrations
                 schema: "views",
                 table: "views",
                 column: "project_id");
-
-            migrationBuilder.Sql(PostgresSchema.Script(fromVersion: 0));
-
-            // The audit log is append-only in the database, not only in the app.
-            migrationBuilder.Sql("""
-                CREATE FUNCTION settings.audit_entries_append_only() RETURNS trigger LANGUAGE plpgsql AS $$
-                BEGIN
-                    RAISE EXCEPTION 'settings.audit_entries is append-only';
-                END $$;
-
-                CREATE TRIGGER audit_entries_no_change BEFORE UPDATE OR DELETE ON settings.audit_entries
-                    FOR EACH ROW EXECUTE FUNCTION settings.audit_entries_append_only();
-
-                CREATE TRIGGER audit_entries_no_truncate BEFORE TRUNCATE ON settings.audit_entries
-                    FOR EACH STATEMENT EXECUTE FUNCTION settings.audit_entries_append_only();
-                """);
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.Sql("DROP FUNCTION IF EXISTS settings.audit_entries_append_only() CASCADE;");
-            migrationBuilder.Sql("DROP SCHEMA IF EXISTS deedbox CASCADE;");
-
             migrationBuilder.DropTable(
                 name: "agent_tokens",
                 schema: "identity");

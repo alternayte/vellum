@@ -201,5 +201,6 @@ internal static class TestDatabase
             .Options;
         await using var db = new AppDbContext(options);
         await db.Database.MigrateAsync();
+        await DatabaseObjects.EnsureAsync(connectionString);
     }
 }

@@ -35,6 +35,12 @@ test-slow:
     DOCKER_CONFIG={{justfile_directory()}}/.docker-test dotnet test Vellum.slnx --filter "Category=Slow"
 
 # A new migration of the one DbContext. Every module's tables are in it, each in its own schema.
+# Before the first release only: replace all migrations with one regenerated Initial.
+# Every existing database must then be recreated (`docker compose down -v`, or drop it, then `just seed`).
+regenerate-initial:
+    rm -f src/Vellum/Migrations/*.cs
+    dotnet ef migrations add Initial --project src/Vellum --context AppDbContext --output-dir Migrations
+
 migration name:
     dotnet ef migrations add {{name}} --project src/Vellum --context AppDbContext --output-dir Migrations
 
