@@ -7,7 +7,7 @@ import {
   postApiWorkspacesByWorkspaceIdProjects,
 } from '@/api/generated'
 import '@/api/client'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -19,6 +19,7 @@ import {
 } from '@/components/ui/dialog'
 import { useAuth } from '@/hooks/use-auth'
 import { MyInvitations } from '@/components/settings/my-invitations'
+import { pendingInvitation } from '@/lib/invitation-link'
 
 interface Workspace {
   id: string
@@ -44,6 +45,12 @@ function WorkspacePicker() {
   const [showCreateProject, setShowCreateProject] = useState(false)
   const [workspaceName, setWorkspaceName] = useState('')
   const [projectName, setProjectName] = useState('')
+
+  // A sign-in that started at an invitation link comes back here: go on to the link.
+  useEffect(() => {
+    const invitationId = pendingInvitation()
+    if (invitationId) navigate({ to: '/invitations/$invitationId', params: { invitationId } })
+  }, [navigate])
 
   const { data: workspaces, isLoading: workspacesLoading } = useQuery({
     queryKey: ['workspaces'],
@@ -118,7 +125,7 @@ function WorkspacePicker() {
 
       <div className="flex flex-1 items-center justify-center">
         <div className="w-full max-w-md rounded-lg border border-border bg-card p-8">
-          <MyInvitations onAccepted={setSelectedWorkspaceId} />
+          <MyInvitations />
           <h1 className="mb-6 font-display text-2xl font-bold">Workspaces</h1>
 
           {workspacesLoading ? (

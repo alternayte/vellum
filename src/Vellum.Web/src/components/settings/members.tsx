@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { SectionHeading, selectClass } from '@/components/settings/fields'
 import { useAuth } from '@/hooks/use-auth'
-import { branchesApi, type Invitation, type Member, type Role } from '@/lib/branches-api'
+import { branchesApi, type Invitation, type IssuedInvitation, type Member, type Role } from '@/lib/branches-api'
 import { ApiError } from '@/lib/settings-api'
 import { cn } from '@/lib/utils'
 import { shownInline } from '@/lib/mutation-errors'
@@ -24,6 +24,9 @@ const describeError = (error: unknown) =>
 const nameOf = (member: Member) => member.displayName || member.email || `user ${member.userId.slice(0, 8)}`
 
 const dateOf = (iso: string) => new Date(iso).toLocaleDateString()
+
+/** The full link of an invitation on this instance. */
+const linkOf = (invitation: IssuedInvitation) => `${window.location.origin}${invitation.path}`
 
 /**
  * The members of the workspace and their roles. Every member reads the list. An owner
@@ -50,10 +53,11 @@ export function Members({ workspaceId, registrationOpen }: { workspaceId: string
     queryClient.invalidateQueries({ queryKey: ['workspaces', workspaceId, 'audit'] })
   }
 
-  const [invited, setInvited] = useState<Invitation | null>(null)
+  const [invited, setInvited] = useState<IssuedInvitation | null>(null)
+  const [copied, setCopied] = useState<'done' | 'failed' | null>(null)
   const invite = useMutation({
     mutationFn: () => branchesApi.invite(workspaceId, email.trim(), role),
-    onSuccess: (invitation) => { setEmail(''); setInvited(invitation); refresh() },
+    onSuccess: (invitation) => { setEmail(''); setCopied(null); setInvited(invitation); refresh() },
     onError: shownInline,
   })
   const revoke = useMutation({
@@ -192,8 +196,8 @@ export function Members({ workspaceId, registrationOpen }: { workspaceId: string
         <form className="mt-6" onSubmit={(e) => { e.preventDefault(); if (email.trim()) { setInvited(null); invite.mutate() } }}>
           <h3 className="text-sm font-medium text-foreground">Invite a person</h3>
           <p id={`${id}-add-hint`} className="mt-1 max-w-prose text-xs leading-relaxed text-muted-foreground">
-            The person signs in with an account that has this email address, then accepts the invitation on the workspace list.
-            Vellum sends no email: tell the person yourself. An invitation expires after 14 days.
+            Vellum makes a link for the person. Vellum sends no email: send the link yourself, by a channel you trust.
+            The person opens it, signs in with an account that has this email address and accepts. An invitation expires after 14 days.
             {registrationOpen === false && ' Registration is closed, so a person with no account cannot create one now. The instance administrator opens it in Instance.'}
           </p>
           <div className="mt-3 flex flex-wrap items-end gap-2">
@@ -216,9 +220,28 @@ export function Members({ workspaceId, registrationOpen }: { workspaceId: string
           </div>
           {invite.isError && <p id={`${id}-add-error`} role="alert" className="mt-2 text-xs text-destructive">No invitation was made. {describeError(invite.error)}</p>}
           {invited && !invite.isError && (
-            <p role="status" className="mt-2 text-xs text-muted-foreground">
-              {invited.email} is invited as {invited.role} until {dateOf(invited.expiresAt)}.
-            </p>
+            <div role="status" className="mt-4 rounded-lg border border-[var(--trace-retry)]/60 p-4">
+              <p className="text-sm font-medium text-foreground">
+                Send this link to {invited.email} yourself. Vellum does not show it again.
+              </p>
+              <div className="mt-2 flex items-center gap-2">
+                <code className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap rounded-md bg-muted px-2 py-1.5 font-mono text-xs text-foreground">{linkOf(invited)}</code>
+                <Button
+                  type="button" variant="secondary" size="sm"
+                  onClick={async () => {
+                    try { await navigator.clipboard.writeText(linkOf(invited)); setCopied('done') } catch { setCopied('failed') }
+                  }}
+                >
+                  Copy
+                </Button>
+                <Button type="button" variant="ghost" size="sm" onClick={() => setInvited(null)}>Done</Button>
+              </div>
+              <p className="mt-2 text-xs text-muted-foreground">
+                The person opens the link, signs in with the account of this address and accepts the invitation as {invited.role} until {dateOf(invited.expiresAt)}.
+                Only the link with this secret accepts it. Inviting the address again makes a new link, and this one stops working.
+                {copied === 'done' ? ' The link is on the clipboard.' : copied === 'failed' ? ' The browser did not allow the copy. Select the link and copy it.' : ''}
+              </p>
+            </div>
           )}
         </form>
       )}
