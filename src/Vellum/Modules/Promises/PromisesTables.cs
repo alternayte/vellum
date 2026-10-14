@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Vellum.Shared;
 
 namespace Vellum.Modules.Promises;
 
@@ -13,8 +14,8 @@ public class PromiseEntity
     public string RequirementId { get; set; } = null!;
     public int Number { get; set; }
     public string Title { get; set; } = null!;
-    public string Lifecycle { get; set; } = null!;
-    public string Origin { get; set; } = null!;
+    public StoredPromiseLifecycle Lifecycle { get; set; }
+    public StoredPromiseOrigin Origin { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
     /// <summary>A JSON <see cref="PromiseState"/>.</summary>
     public string Document { get; set; } = null!;
@@ -37,7 +38,7 @@ public class RunEntity
     public long Version { get; set; }
     public string ObligationId { get; set; } = null!;
     public int PromiseRevision { get; set; }
-    public string Result { get; set; } = null!;
+    public StoredRunResult Result { get; set; }
     public DateTimeOffset At { get; set; }
     /// <summary>A JSON <see cref="VerificationRun"/>.</summary>
     public string Document { get; set; } = null!;
@@ -62,16 +63,49 @@ public class NumberingEntity
 public class ImpactGateEntity
 {
     public Guid ProjectId { get; set; }
-    public string Policy { get; set; } = null!;
+    public ImpactGatePolicy Policy { get; set; }
     /// <summary>The user who set the policy.</summary>
     public string ChangedBy { get; set; } = null!;
     public DateTimeOffset ChangedAt { get; set; }
+}
+
+/// <summary>The lifecycle of a promise as its row stores it: <see cref="PromiseLifecycle"/>, the text of the state and the API.</summary>
+public enum StoredPromiseLifecycle
+{
+    Draft,
+    Approved,
+    Retired,
+}
+
+/// <summary>Who first wrote a promise, as its row stores it: <see cref="PromiseOrigin"/>, the text of the events and the API.</summary>
+public enum StoredPromiseOrigin
+{
+    Human,
+    AiSuggested,
+    AgentSuggested,
+}
+
+/// <summary>The result of a run as its row stores it: <see cref="RunResult"/>, the text of the events and the API.</summary>
+public enum StoredRunResult
+{
+    Passed,
+    Failed,
+    NotRun,
+    Unsupported,
 }
 
 /// <summary>The tables of the module, in the Postgres schema <c>promises</c>.</summary>
 public static class PromisesTables
 {
     public const string Schema = "promises";
+
+    public static readonly IReadOnlyList<PostgresEnum> Enums =
+    [
+        PostgresEnum.Of<StoredPromiseLifecycle>("promise_lifecycle", Schema),
+        PostgresEnum.Of<StoredPromiseOrigin>("promise_origin", Schema),
+        PostgresEnum.Of<StoredRunResult>("run_result", Schema),
+        PostgresEnum.Of<ImpactGatePolicy>("impact_gate_policy", Schema),
+    ];
 
     public static void Configure(ModelBuilder modelBuilder)
     {
@@ -103,7 +137,6 @@ public static class PromisesTables
         {
             b.ToTable("impact_gates", Schema);
             b.HasKey(g => g.ProjectId);
-            b.Property(g => g.Policy).HasMaxLength(32);
         });
     }
 }

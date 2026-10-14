@@ -2,6 +2,8 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
+using Vellum.Modules.Promises;
+using Vellum.Modules.Review;
 using Vellum.Modules.Workspaces;
 
 #nullable disable
@@ -63,6 +65,14 @@ namespace Vellum.Migrations
                 name: "schemas");
 
             migrationBuilder.AlterDatabase()
+                .Annotation("Npgsql:Enum:promises.impact_gate_policy", "fail_on_broken,off")
+                .Annotation("Npgsql:Enum:promises.promise_lifecycle", "approved,draft,retired")
+                .Annotation("Npgsql:Enum:promises.promise_origin", "agent_suggested,ai_suggested,human")
+                .Annotation("Npgsql:Enum:promises.run_result", "failed,not_run,passed,unsupported")
+                .Annotation("Npgsql:Enum:review.decision_status", "accepted,proposed,rejected")
+                .Annotation("Npgsql:Enum:review.disposition_status", "wont_fix")
+                .Annotation("Npgsql:Enum:review.question_origin", "agent_suggested,ai_suggested,human")
+                .Annotation("Npgsql:Enum:review.question_status", "answered,dropped,open")
                 .Annotation("Npgsql:Enum:workspaces.invitation_status", "accepted,declined,expired,pending,revoked")
                 .Annotation("Npgsql:Enum:workspaces.workspace_role", "editor,owner,viewer");
 
@@ -182,7 +192,7 @@ namespace Vellum.Migrations
                     project_id = table.Column<Guid>(type: "uuid", nullable: false),
                     number = table.Column<int>(type: "integer", nullable: false),
                     title = table.Column<string>(type: "text", nullable: false),
-                    status = table.Column<string>(type: "text", nullable: false),
+                    status = table.Column<StoredDecisionStatus>(type: "review.decision_status", nullable: false),
                     updated_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
                     document = table.Column<string>(type: "jsonb", nullable: false),
                     version = table.Column<long>(type: "bigint", nullable: false)
@@ -227,7 +237,7 @@ namespace Vellum.Migrations
                     subject_id = table.Column<Guid>(type: "uuid", nullable: false),
                     rule_version = table.Column<int>(type: "integer", nullable: false),
                     fingerprint = table.Column<string>(type: "text", nullable: false),
-                    status = table.Column<string>(type: "character varying(30)", maxLength: 30, nullable: false),
+                    status = table.Column<StoredDispositionStatus>(type: "review.disposition_status", nullable: false),
                     reason = table.Column<string>(type: "text", nullable: false),
                     decided_by = table.Column<string>(type: "text", nullable: false),
                     decided_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false)
@@ -353,7 +363,7 @@ namespace Vellum.Migrations
                 columns: table => new
                 {
                     project_id = table.Column<Guid>(type: "uuid", nullable: false),
-                    policy = table.Column<string>(type: "character varying(32)", maxLength: 32, nullable: false),
+                    policy = table.Column<ImpactGatePolicy>(type: "promises.impact_gate_policy", nullable: false),
                     changed_by = table.Column<string>(type: "text", nullable: false),
                     changed_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false)
                 },
@@ -571,8 +581,8 @@ namespace Vellum.Migrations
                     requirement_id = table.Column<string>(type: "text", nullable: false),
                     number = table.Column<int>(type: "integer", nullable: false),
                     title = table.Column<string>(type: "text", nullable: false),
-                    lifecycle = table.Column<string>(type: "text", nullable: false),
-                    origin = table.Column<string>(type: "text", nullable: false),
+                    lifecycle = table.Column<StoredPromiseLifecycle>(type: "promises.promise_lifecycle", nullable: false),
+                    origin = table.Column<StoredPromiseOrigin>(type: "promises.promise_origin", nullable: false),
                     updated_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
                     document = table.Column<string>(type: "jsonb", nullable: false),
                     latest_runs = table.Column<string>(type: "jsonb", nullable: false),
@@ -592,8 +602,8 @@ namespace Vellum.Migrations
                     project_id = table.Column<Guid>(type: "uuid", nullable: false),
                     text = table.Column<string>(type: "text", nullable: false),
                     about = table.Column<string>(type: "jsonb", nullable: false),
-                    origin = table.Column<string>(type: "character varying(30)", maxLength: 30, nullable: false),
-                    status = table.Column<string>(type: "character varying(20)", maxLength: 20, nullable: false),
+                    origin = table.Column<QuestionOrigin>(type: "review.question_origin", nullable: false),
+                    status = table.Column<QuestionStatus>(type: "review.question_status", nullable: false),
                     answer = table.Column<string>(type: "text", nullable: true),
                     answered_by = table.Column<string>(type: "text", nullable: true),
                     answered_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
@@ -706,7 +716,7 @@ namespace Vellum.Migrations
                     version = table.Column<long>(type: "bigint", nullable: false),
                     obligation_id = table.Column<string>(type: "text", nullable: false),
                     promise_revision = table.Column<int>(type: "integer", nullable: false),
-                    result = table.Column<string>(type: "text", nullable: false),
+                    result = table.Column<StoredRunResult>(type: "promises.run_result", nullable: false),
                     at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
                     document = table.Column<string>(type: "jsonb", nullable: false)
                 },

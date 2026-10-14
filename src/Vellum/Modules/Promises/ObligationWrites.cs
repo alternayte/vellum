@@ -82,7 +82,7 @@ public static class ObligationWrites
             return Results.Conflict(new ErrorResponse("import_not_completed", "Only a completed scan can be checked."));
 
         var rows = await db.Promises.AsNoTracking()
-            .Where(p => p.ProjectId == projectId && p.Lifecycle == PromiseLifecycle.Approved)
+            .Where(p => p.ProjectId == projectId && p.Lifecycle == StoredPromiseLifecycle.Approved)
             .OrderBy(p => p.Number)
             .Select(p => new { p.Id, p.RequirementId, p.Document })
             .ToListAsync(ct);

@@ -19,12 +19,10 @@ namespace Vellum.Modules.Promises;
 /// promise is <c>broken</c>, that is, when a deterministic check of it failed against the
 /// scan of the report. <c>at-risk</c>, <c>possible</c> and <c>unknown</c> never fail.
 /// </summary>
-public static class ImpactGatePolicy
+public enum ImpactGatePolicy
 {
-    public const string Off = "off";
-    public const string FailOnBroken = "fail-on-broken";
-
-    public static bool IsKnown(string? policy) => policy is Off or FailOnBroken;
+    Off,
+    FailOnBroken,
 }
 
 public static class ImpactGateVerdict
@@ -151,10 +149,10 @@ public static class ImpactReport
     }
 
     /// <summary>The verdict of <paramref name="policy"/> on a report. Only an approved promise that a failed check broke fails it.</summary>
-    public static ImpactGateDto Gate(string policy, ChangeImpactDto impact)
+    public static ImpactGateDto Gate(ImpactGatePolicy policy, ChangeImpactDto impact)
     {
         if (policy != ImpactGatePolicy.FailOnBroken)
-            return new ImpactGateDto(ImpactGatePolicy.Off, ImpactGateVerdict.Off, ["The gate policy of this project is off. The report never fails a build."]);
+            return new ImpactGateDto(EnumText.Of(ImpactGatePolicy.Off), ImpactGateVerdict.Off, ["The gate policy of this project is off. The report never fails a build."]);
 
         var broken = impact.Promises
             .Where(p => p.State == PromiseLifecycle.Approved && p.Standing == ImpactStanding.Broken)
@@ -162,7 +160,7 @@ public static class ImpactReport
             .ToList();
         if (broken.Count > 0)
         {
-            return new ImpactGateDto(policy, ImpactGateVerdict.Fail, [.. broken.Select(p =>
+            return new ImpactGateDto(EnumText.Of(policy), ImpactGateVerdict.Fail, [.. broken.Select(p =>
                 $"{p.RequirementId} '{p.Title}' (approved revision {p.Revision.ToString(CultureInfo.InvariantCulture)}) is broken: "
                 + $"{string.Join(", ", p.Checks.Where(c => c.Result == RunResult.Failed).Select(c => $"the check '{c.Key}'"))} failed against this scan.")]);
         }
@@ -181,7 +179,7 @@ public static class ImpactReport
         var undecided = approvedChecks.Count(c => c.Result == RunResult.Unsupported);
         if (undecided > 0)
             reasons.Add(Count(undecided, "source pattern check of an approved promise", "source pattern checks of approved promises") + " could not decide: the scan did not look everywhere the pattern would be. That never fails the gate.");
-        return new ImpactGateDto(policy, ImpactGateVerdict.Pass, reasons);
+        return new ImpactGateDto(EnumText.Of(policy), ImpactGateVerdict.Pass, reasons);
     }
 
     private static string Count(int n, string one, string many) =>
@@ -217,7 +215,7 @@ public static class ImpactReport
         return $"{evidence.Path}:{lines}@{commit}";
     }
 
-    internal static ImpactReportDto Of(ChangeImpactDto impact, string repository, DateTimeOffset? completedAt, string policy)
+    internal static ImpactReportDto Of(ChangeImpactDto impact, string repository, DateTimeOffset? completedAt, ImpactGatePolicy policy)
     {
         var changes = impact.Changes
             .Select((c, i) => (Change: c, Index: i))
@@ -403,8 +401,8 @@ public static class ImpactGate
 {
     public const string AuditAction = "project.impact-gate-changed";
 
-    public static async Task<string> PolicyAsync(AppDbContext db, Guid projectId, CancellationToken ct) =>
-        await db.ImpactGates.AsNoTracking().Where(g => g.ProjectId == projectId).Select(g => g.Policy).FirstOrDefaultAsync(ct)
+    public static async Task<ImpactGatePolicy> PolicyAsync(AppDbContext db, Guid projectId, CancellationToken ct) =>
+        await db.ImpactGates.AsNoTracking().Where(g => g.ProjectId == projectId).Select(g => (ImpactGatePolicy?)g.Policy).FirstOrDefaultAsync(ct)
         ?? ImpactGatePolicy.Off;
 
     public static async Task<IResult> Get(
@@ -415,7 +413,7 @@ public static class ImpactGate
         var row = await db.ImpactGates.AsNoTracking().FirstOrDefaultAsync(g => g.ProjectId == projectId, ct);
         var role = await auth.GetRoleAsync(await auth.GetProjectWorkspaceIdAsync(projectId, ct), userId, ct);
         return Results.Ok(new ImpactGateSettingDto(
-            row?.Policy ?? ImpactGatePolicy.Off, row?.ChangedBy, row?.ChangedAt,
+            EnumText.Of(row?.Policy ?? ImpactGatePolicy.Off), row?.ChangedBy, row?.ChangedAt,
             role == WorkspaceRole.Owner && AgentPrincipal.IsHuman(http)));
     }
 
@@ -427,8 +425,8 @@ public static class ImpactGate
         var (request, error) = await PromiseAccess.ReadAsync<SetImpactGateRequest>(http);
         if (request is null)
             return error!;
-        if (!ImpactGatePolicy.IsKnown(request.Policy))
-            return Invalid("policy", $"The policy is {ImpactGatePolicy.Off} or {ImpactGatePolicy.FailOnBroken}");
+        if (!EnumText.TryParse(request.Policy, out ImpactGatePolicy policy))
+            return Invalid("policy", $"The policy is {EnumText.Of(ImpactGatePolicy.Off)} or {EnumText.Of(ImpactGatePolicy.FailOnBroken)}");
 
         var workspaceId = await auth.GetProjectWorkspaceIdAsync(projectId, ct);
         var now = time.GetUtcNow();
@@ -437,10 +435,10 @@ public static class ImpactGate
         await db.Database.ExecuteSqlAsync($"SELECT pg_advisory_xact_lock(hashtextextended({"impact-gate:" + projectId}, 0))", ct);
         var previous = await PolicyAsync(db, projectId, ct);
         await db.Database.ExecuteSqlAsync($"""
-            INSERT INTO promises.impact_gates (project_id, policy, changed_by, changed_at) VALUES ({projectId}, {request.Policy}, {userId}, {now})
+            INSERT INTO promises.impact_gates (project_id, policy, changed_by, changed_at) VALUES ({projectId}, {policy}, {userId}, {now})
             ON CONFLICT (project_id) DO UPDATE SET policy = excluded.policy, changed_by = excluded.changed_by, changed_at = excluded.changed_at
             """, ct);
-        await AuditLog.AppendAsync(db, workspaceId, userId, AuditAction, $"project:{projectId} impact-gate:{previous}->{request.Policy}", ct);
+        await AuditLog.AppendAsync(db, workspaceId, userId, AuditAction, $"project:{projectId} impact-gate:{EnumText.Of(previous)}->{EnumText.Of(policy)}", ct);
         await transaction.CommitAsync(ct);
 
         return Results.Ok(new ImpactGateSettingDto(request.Policy!, userId, now, true));

@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Vellum.Shared;
 
 namespace Vellum.Modules.Review;
 
@@ -13,7 +14,7 @@ public class DecisionEntity
     public int Number { get; set; }
     public string Title { get; set; } = null!;
     /// <summary>The stored status. <c>superseded</c> is derived on read and is never here.</summary>
-    public string Status { get; set; } = null!;
+    public StoredDecisionStatus Status { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
     /// <summary>A JSON <see cref="DecisionState"/>.</summary>
     public string Document { get; set; } = null!;
@@ -43,8 +44,7 @@ public class DispositionEntity
     public Guid SubjectId { get; set; }
     public int RuleVersion { get; set; }
     public string Fingerprint { get; set; } = null!;
-    /// <summary><c>wont-fix</c>.</summary>
-    public string Status { get; set; } = null!;
+    public StoredDispositionStatus Status { get; set; }
     public string Reason { get; set; } = null!;
     public string DecidedBy { get; set; } = null!;
     public DateTimeOffset DecidedAt { get; set; }
@@ -76,9 +76,8 @@ public class QuestionEntity
     public string Text { get; set; } = null!;
     /// <summary>A JSON list of the IDs the question is about.</summary>
     public string About { get; set; } = "[]";
-    public string Origin { get; set; } = null!;
-    /// <summary><c>open</c>, <c>answered</c> or <c>dropped</c>.</summary>
-    public string Status { get; set; } = null!;
+    public QuestionOrigin Origin { get; set; }
+    public QuestionStatus Status { get; set; }
     public string? Answer { get; set; }
     public string? AnsweredBy { get; set; }
     public DateTimeOffset? AnsweredAt { get; set; }
@@ -105,10 +104,53 @@ public class CritiqueEntity
     public DateTimeOffset CreatedAt { get; set; }
 }
 
+/// <summary>
+/// The status of a decision as its row stores it: <see cref="DecisionStatus"/>, the text of the
+/// state and the API. <c>superseded</c> is derived on read and is never stored.
+/// </summary>
+public enum StoredDecisionStatus
+{
+    Proposed,
+    Accepted,
+    Rejected,
+}
+
+/// <summary>
+/// The answer a disposition row stores: <see cref="DispositionStatus"/>, the text of the API.
+/// <c>open</c> is no row, and <c>accepted-by-decision</c> is read from the decisions.
+/// </summary>
+public enum StoredDispositionStatus
+{
+    WontFix,
+}
+
+/// <summary>Who asked a question: <see cref="PromiseOrigin"/> in the API.</summary>
+public enum QuestionOrigin
+{
+    Human,
+    AiSuggested,
+    AgentSuggested,
+}
+
+public enum QuestionStatus
+{
+    Open,
+    Answered,
+    Dropped,
+}
+
 /// <summary>The tables of the module, in the Postgres schema <c>review</c>.</summary>
 public static class ReviewTables
 {
     public const string Schema = "review";
+
+    public static readonly IReadOnlyList<PostgresEnum> Enums =
+    [
+        PostgresEnum.Of<StoredDecisionStatus>("decision_status", Schema),
+        PostgresEnum.Of<StoredDispositionStatus>("disposition_status", Schema),
+        PostgresEnum.Of<QuestionOrigin>("question_origin", Schema),
+        PostgresEnum.Of<QuestionStatus>("question_status", Schema),
+    ];
 
     public static void Configure(ModelBuilder modelBuilder)
     {
@@ -132,7 +174,6 @@ public static class ReviewTables
             b.ToTable("dispositions", Schema);
             b.HasKey(d => new { d.ProjectId, d.RuleId, d.SubjectId });
             b.Property(d => d.RuleId).HasMaxLength(20);
-            b.Property(d => d.Status).HasMaxLength(30);
         });
 
         modelBuilder.Entity<SnapshotEntity>(b =>
@@ -151,8 +192,6 @@ public static class ReviewTables
             b.HasKey(q => q.Id);
             b.Property(q => q.Id).ValueGeneratedNever();
             b.Property(q => q.About).HasColumnType("jsonb");
-            b.Property(q => q.Origin).HasMaxLength(30);
-            b.Property(q => q.Status).HasMaxLength(20);
             b.HasIndex(q => new { q.ProjectId, q.CreatedAt, q.Id });
         });
 

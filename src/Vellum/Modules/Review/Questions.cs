@@ -8,13 +8,6 @@ using static Vellum.Shared.ResultExtensions;
 
 namespace Vellum.Modules.Review;
 
-public static class QuestionStatus
-{
-    public const string Open = "open";
-    public const string Answered = "answered";
-    public const string Dropped = "dropped";
-}
-
 /// <param name="About">The IDs of the things the question is about.</param>
 /// <param name="Origin">On create only: <c>human</c> (the default) or <c>ai-suggested</c>. An agent token always gives <c>agent-suggested</c>.</param>
 public sealed record QuestionRequest(string Text, IReadOnlyList<Guid>? About = null, string? Origin = null);
@@ -113,7 +106,7 @@ public static class Questions
         var row = new QuestionEntity
         {
             Id = Guid.NewGuid(), ProjectId = projectId, Text = text.Trim(), About = PromiseJson.Write(about.Distinct().ToList()),
-            Origin = origin, Status = QuestionStatus.Open, CreatedBy = userId, CreatedAt = now,
+            Origin = EnumText.Parse<QuestionOrigin>(origin), Status = QuestionStatus.Open, CreatedBy = userId, CreatedAt = now,
         };
         db.Questions.Add(row);
         await db.SaveChangesAsync(ct);
@@ -150,7 +143,7 @@ public static class Questions
     /// other gets a 409 and not the first answer overwritten.
     /// </summary>
     private static async Task<IResult> CloseAsync(
-        AppDbContext db, Guid projectId, Guid questionId, string status, string? answer, string userId, DateTimeOffset now, CancellationToken ct)
+        AppDbContext db, Guid projectId, Guid questionId, QuestionStatus status, string? answer, string userId, DateTimeOffset now, CancellationToken ct)
     {
         var closed = await db.Questions
             .Where(q => q.Id == questionId && q.ProjectId == projectId && q.Status == QuestionStatus.Open)
@@ -161,7 +154,7 @@ public static class Questions
             return NotFound("Question");
         return closed == 1
             ? Results.Ok(ToDto(row))
-            : Conflict($"The question is {row.Status}. Only an open question is answered or dropped. Read the questions again.");
+            : Conflict($"The question is {EnumText.Of(row.Status)}. Only an open question is answered or dropped. Read the questions again.");
     }
 
     public static async Task<IResult> Delete(
@@ -174,6 +167,6 @@ public static class Questions
     }
 
     internal static QuestionDto ToDto(QuestionEntity row) => new(
-        row.Id, row.ProjectId, row.Text, PromiseJson.Read<List<Guid>>(row.About), row.Origin, row.Status,
+        row.Id, row.ProjectId, row.Text, PromiseJson.Read<List<Guid>>(row.About), EnumText.Of(row.Origin), EnumText.Of(row.Status),
         row.Answer, row.AnsweredBy, row.AnsweredAt, row.CreatedBy, row.CreatedAt);
 }

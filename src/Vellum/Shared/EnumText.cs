@@ -22,6 +22,10 @@ public static class EnumText
         return text is not null && Names<T>.Values.TryGetValue(text, out value);
     }
 
+    /// <summary>The member whose text is <paramref name="text"/>; a text that names no member is a bug of the caller.</summary>
+    public static T Parse<T>(string text) where T : struct, Enum =>
+        TryParse<T>(text, out var value) ? value : throw new ArgumentException($"'{text}' is no {typeof(T).Name}", nameof(text));
+
     private static class Names<T> where T : struct, Enum
     {
         public static readonly Dictionary<T, string> Text = typeof(T)

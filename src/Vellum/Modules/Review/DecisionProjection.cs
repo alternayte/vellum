@@ -57,7 +57,7 @@ public sealed class DecisionProjection : Projection<AppDbContext>
         row.Version = version;
         row.Number = state.Number;
         row.Title = state.Content!.Title;
-        row.Status = state.Status;
+        row.Status = EnumText.Parse<StoredDecisionStatus>(state.Status);
         row.UpdatedAt = state.UpdatedAt!.Value;
         row.Document = PromiseJson.Write(state);
     }

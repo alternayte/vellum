@@ -346,7 +346,7 @@ public static class SourcePatternCheck
     {
         var last = await db.PromiseRuns.AsNoTracking()
             // A run against a comparison scan read another line of history: where it found the pattern says nothing here.
-            .Where(r => r.PromiseId == promiseId && r.ObligationId == obligationId && r.Result == RunResult.Passed
+            .Where(r => r.PromiseId == promiseId && r.ObligationId == obligationId && r.Result == StoredRunResult.Passed
                 && !EF.Functions.JsonContains(r.Document, ComparisonRun))
             .OrderByDescending(r => r.Version)
             .Select(r => r.Document)

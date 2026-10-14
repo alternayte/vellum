@@ -65,7 +65,7 @@ public sealed class PromiseProjection : Projection<AppDbContext>
             {
                 Id = run.Id, PromiseId = id, ProjectId = row.ProjectId, Version = ctx.Version,
                 ObligationId = run.ObligationId, PromiseRevision = run.PromiseRevision,
-                Result = run.Result, At = run.At, Document = PromiseJson.Write(run),
+                Result = EnumText.Parse<StoredRunResult>(run.Result), At = run.At, Document = PromiseJson.Write(run),
             });
 
             // A run against a comparison scan is in the runs table only: it leaves the promise as it was against the followed ref.
@@ -92,8 +92,8 @@ public sealed class PromiseProjection : Projection<AppDbContext>
         row.RequirementId = state.RequirementId!;
         row.Number = state.Number;
         row.Title = (state.InForce ?? state.Latest!).Content.Title;
-        row.Lifecycle = state.Lifecycle;
-        row.Origin = state.Origin!;
+        row.Lifecycle = EnumText.Parse<StoredPromiseLifecycle>(state.Lifecycle);
+        row.Origin = EnumText.Parse<StoredPromiseOrigin>(state.Origin!);
         row.UpdatedAt = state.UpdatedAt!.Value;
         row.Document = PromiseJson.Write(state);
     }

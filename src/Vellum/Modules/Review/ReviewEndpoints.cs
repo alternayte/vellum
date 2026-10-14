@@ -196,7 +196,7 @@ public static class ReviewEndpoints
                 var (ruleId, subjectId, reason) = (finding.RuleId, finding.Subject.Id, request.Reason.Trim());
                 await db.Database.ExecuteSqlAsync($"""
                     INSERT INTO review.dispositions (project_id, rule_id, subject_id, rule_version, fingerprint, status, reason, decided_by, decided_at)
-                    VALUES ({projectId}, {ruleId}, {subjectId}, {finding.RuleVersion}, {finding.Fingerprint}, {DispositionStatus.WontFix}, {reason}, {userId}, {at})
+                    VALUES ({projectId}, {ruleId}, {subjectId}, {finding.RuleVersion}, {finding.Fingerprint}, {StoredDispositionStatus.WontFix}, {reason}, {userId}, {at})
                     ON CONFLICT (project_id, rule_id, subject_id) DO UPDATE SET
                         rule_version = EXCLUDED.rule_version, fingerprint = EXCLUDED.fingerprint, status = EXCLUDED.status,
                         reason = EXCLUDED.reason, decided_by = EXCLUDED.decided_by, decided_at = EXCLUDED.decided_at

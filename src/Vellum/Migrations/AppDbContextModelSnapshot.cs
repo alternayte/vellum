@@ -5,6 +5,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
+using Vellum.Modules.Promises;
+using Vellum.Modules.Review;
 using Vellum.Modules.Workspaces;
 using Vellum.Shared;
 
@@ -22,6 +24,14 @@ namespace Vellum.Migrations
                 .HasAnnotation("ProductVersion", "10.0.9")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
+            NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "promises", "impact_gate_policy", new[] { "fail_on_broken", "off" });
+            NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "promises", "promise_lifecycle", new[] { "approved", "draft", "retired" });
+            NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "promises", "promise_origin", new[] { "agent_suggested", "ai_suggested", "human" });
+            NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "promises", "run_result", new[] { "failed", "not_run", "passed", "unsupported" });
+            NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "review", "decision_status", new[] { "accepted", "proposed", "rejected" });
+            NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "review", "disposition_status", new[] { "wont_fix" });
+            NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "review", "question_origin", new[] { "agent_suggested", "ai_suggested", "human" });
+            NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "review", "question_status", new[] { "answered", "dropped", "open" });
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "workspaces", "invitation_status", new[] { "accepted", "declined", "expired", "pending", "revoked" });
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "workspaces", "workspace_role", new[] { "editor", "owner", "viewer" });
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
@@ -2489,10 +2499,8 @@ namespace Vellum.Migrations
                         .HasColumnType("text")
                         .HasColumnName("changed_by");
 
-                    b.Property<string>("Policy")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)")
+                    b.Property<ImpactGatePolicy>("Policy")
+                        .HasColumnType("promises.impact_gate_policy")
                         .HasColumnName("policy");
 
                     b.HasKey("ProjectId")
@@ -2540,18 +2548,16 @@ namespace Vellum.Migrations
                         .HasColumnType("jsonb")
                         .HasColumnName("latest_runs");
 
-                    b.Property<string>("Lifecycle")
-                        .IsRequired()
-                        .HasColumnType("text")
+                    b.Property<StoredPromiseLifecycle>("Lifecycle")
+                        .HasColumnType("promises.promise_lifecycle")
                         .HasColumnName("lifecycle");
 
                     b.Property<int>("Number")
                         .HasColumnType("integer")
                         .HasColumnName("number");
 
-                    b.Property<string>("Origin")
-                        .IsRequired()
-                        .HasColumnType("text")
+                    b.Property<StoredPromiseOrigin>("Origin")
+                        .HasColumnType("promises.promise_origin")
                         .HasColumnName("origin");
 
                     b.Property<Guid>("ProjectId")
@@ -2619,9 +2625,8 @@ namespace Vellum.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("promise_revision");
 
-                    b.Property<string>("Result")
-                        .IsRequired()
-                        .HasColumnType("text")
+                    b.Property<StoredRunResult>("Result")
+                        .HasColumnType("promises.run_result")
                         .HasColumnName("result");
 
                     b.Property<long>("Version")
@@ -2702,9 +2707,8 @@ namespace Vellum.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("project_id");
 
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasColumnType("text")
+                    b.Property<StoredDecisionStatus>("Status")
+                        .HasColumnType("review.decision_status")
                         .HasColumnName("status");
 
                     b.Property<string>("Title")
@@ -2785,10 +2789,8 @@ namespace Vellum.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("rule_version");
 
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(30)
-                        .HasColumnType("character varying(30)")
+                    b.Property<StoredDispositionStatus>("Status")
+                        .HasColumnType("review.disposition_status")
                         .HasColumnName("status");
 
                     b.HasKey("ProjectId", "RuleId", "SubjectId")
@@ -2829,20 +2831,16 @@ namespace Vellum.Migrations
                         .HasColumnType("text")
                         .HasColumnName("created_by");
 
-                    b.Property<string>("Origin")
-                        .IsRequired()
-                        .HasMaxLength(30)
-                        .HasColumnType("character varying(30)")
+                    b.Property<QuestionOrigin>("Origin")
+                        .HasColumnType("review.question_origin")
                         .HasColumnName("origin");
 
                     b.Property<Guid>("ProjectId")
                         .HasColumnType("uuid")
                         .HasColumnName("project_id");
 
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)")
+                    b.Property<QuestionStatus>("Status")
+                        .HasColumnType("review.question_status")
                         .HasColumnName("status");
 
                     b.Property<string>("Text")

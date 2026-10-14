@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json.Nodes;
 using Vellum.Modules.Promises;
+using Vellum.Shared;
 using Vellum.Tests.Modules.Import;
 using Vellum.Tests.Shared.Outbound;
 
@@ -108,7 +109,7 @@ public class ImpactReportTests(ImportHost import) : IClassFixture<ImportHost>
     {
         var a = await WithPullRequestAsync();
         var s = a.S;
-        await SetPolicyAsync(s.Owner, s, ImpactGatePolicy.FailOnBroken);
+        await SetPolicyAsync(s.Owner, s, EnumText.Of(ImpactGatePolicy.FailOnBroken));
 
         // A scan that read only billing: the removed outbox is unknown.
         var narrow = (await s.ScanAsync(body: new { repository = "acme/orders", @ref = "remove-outbox", includePaths = new[] { "billing" } })).Id();
@@ -164,7 +165,7 @@ public class ImpactReportTests(ImportHost import) : IClassFixture<ImportHost>
         Assert.Equal(("broken", "failed"), (ord014.Text("standing"), ord014["checks"]![0]!["result"]!.GetValue<string>()));
         Assert.Equal("off", off["gate"]!["verdict"]!.GetValue<string>());
 
-        await SetPolicyAsync(s.Owner, s, ImpactGatePolicy.FailOnBroken);
+        await SetPolicyAsync(s.Owner, s, EnumText.Of(ImpactGatePolicy.FailOnBroken));
         var on = await ReportJsonAsync(ci.Client, ReportUrl(s, scan));
         Assert.Equal("fail", on["gate"]!["verdict"]!.GetValue<string>());
         Assert.StartsWith("ORD-014 ", Assert.Single(on["gate"]!["reasons"]!.AsArray())!.GetValue<string>());
@@ -226,7 +227,7 @@ public class ImpactReportTests(ImportHost import) : IClassFixture<ImportHost>
         Assert.Equal("broken", off["promises"]!.AsArray().Single(p => p!.AsObject().Id() == a.Ord014)!["standing"]!.GetValue<string>());
         Assert.Equal(("off", "off"), (off["gate"]!["policy"]!.GetValue<string>(), off["gate"]!["verdict"]!.GetValue<string>()));
 
-        await SetPolicyAsync(s.Owner, s, ImpactGatePolicy.FailOnBroken);
+        await SetPolicyAsync(s.Owner, s, EnumText.Of(ImpactGatePolicy.FailOnBroken));
         var on = await ReportJsonAsync(s.Owner, ReportUrl(s, scan));
         var gate = on["gate"]!.AsObject();
         Assert.Equal("fail", gate.Text("verdict"));
@@ -235,7 +236,7 @@ public class ImpactReportTests(ImportHost import) : IClassFixture<ImportHost>
         Assert.Contains($"the check '{a.SourceCheck}' failed against this scan", reason);
         Assert.Contains("**Gate: fail**", await MarkdownAsync(s.Owner, ReportUrl(s, scan)));
 
-        await SetPolicyAsync(s.Owner, s, ImpactGatePolicy.Off);
+        await SetPolicyAsync(s.Owner, s, EnumText.Of(ImpactGatePolicy.Off));
         Assert.Equal("off", (await ReportJsonAsync(s.Owner, ReportUrl(s, scan)))["gate"]!["verdict"]!.GetValue<string>());
     }
 
@@ -258,9 +259,9 @@ public class ImpactReportTests(ImportHost import) : IClassFixture<ImportHost>
         await SetPolicyAsync(s.Owner, s, "fail-at-risk", HttpStatusCode.BadRequest);
         Assert.Equal("off", (await Json(s.Owner.GetAsync(s.Model("impact-gate")))).Text("policy"));
 
-        var set = await SetPolicyAsync(s.Owner, s, ImpactGatePolicy.FailOnBroken);
+        var set = await SetPolicyAsync(s.Owner, s, EnumText.Of(ImpactGatePolicy.FailOnBroken));
         Assert.Equal("fail-on-broken", set.Text("policy"));
-        await SetPolicyAsync(s.Owner, s, ImpactGatePolicy.Off);
+        await SetPolicyAsync(s.Owner, s, EnumText.Of(ImpactGatePolicy.Off));
 
         var audit = JsonNode.Parse(await s.Owner.GetStringAsync($"/api/workspaces/{s.WorkspaceId}/audit"))!.AsArray()
             .Where(e => e!["action"]!.GetValue<string>() == ImpactGate.AuditAction)
