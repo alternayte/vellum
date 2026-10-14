@@ -175,10 +175,9 @@ public sealed class McpCall(IServiceProvider services, AgentEndpoints endpoints,
             // An answer that is not JSON has nothing to pass on but its status.
         }
 
-        // A problem document names its type by a URL; the envelope of the app by a word.
-        var type = error?["type"] is JsonValue value && value.TryGetValue<string>(out var word) && !word.Contains("://", StringComparison.Ordinal)
-            ? word
-            : McpOutput.TypeOf(reply.Status);
+        // Every error answer of the app is the envelope; an answer with no body, such as a
+        // 401 or a 415, has only its status.
+        var type = error?["type"]?.ToString() ?? McpOutput.TypeOf(reply.Status);
         return McpOutput.Error(type, error?["title"]?.ToString() ?? "The request was refused", error?["detail"]?.ToString(), reply.Status, error);
     }
 

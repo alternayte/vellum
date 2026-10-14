@@ -75,8 +75,8 @@ builder.Services.AddOpenApi(options => options.AddSchemaTransformer((schema, con
     return Task.CompletedTask;
 }));
 
-// Exception handling
-builder.Services.AddProblemDetails();
+// Exception handling. Every error answer is the shared envelope (Shared/ErrorEnvelope.cs);
+// an exception that no handler takes is a 500 with nothing of the exception in it.
 builder.Services.AddExceptionHandler<UnauthorizedExceptionHandler>();
 builder.Services.AddExceptionHandler<ConcurrencyExceptionHandler>();
 builder.Services.AddExceptionHandler<InvalidCursorExceptionHandler>();
@@ -156,7 +156,7 @@ if (app.Environment.IsDevelopment())
 // The address and the scheme of the client, from the proxies the operator names. First, so
 // everything below sees them.
 app.UseTrustedProxies();
-app.UseExceptionHandler();
+app.UseExceptionHandler(new ExceptionHandlerOptions { ExceptionHandler = UnhandledException.WriteAsync });
 app.UseSecurityHeaders();
 app.UseNoPageOutsideTheApp();
 app.UseSameOriginWrites();
