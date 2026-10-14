@@ -4,10 +4,25 @@ Vellum is an architecture workbench that you host yourself. You draw a system, d
 its APIs and events, play a flow through it, and state promises that the design must keep.
 Vellum then gives a coding agent a specification to build from.
 
+![The Vellum canvas with the model of an online shop. The actor Customer uses the system Storefront. Storefront places orders with the system Orders. Orders is expanded: a frame holds the apps Orders API and Order worker and the store Orders DB. Orders requests payment from Payments and sends paid orders to Fulfilment. Payments authorises cards with the external system Card network. Each card shows the kind, the technology and a description, and each line has a label.](site/src/assets/screenshots/canvas-online-shop.png)
+
 **Status: work in progress, not released.** No version is published. The data format can
 change. Do not put it on a public address yet.
 
+## What it looks like
+
+A scenario plays on the canvas, one event at a time. Here Billing fails to handle a
+message, and one of the two expectations fails.
+
 ![A scenario plays on the canvas. The trace dock at the bottom shows event 5 of 7: Billing fails to handle the message. The canvas rings Orders.Api and Billing in red inside the frame of the system orders.](site/src/assets/screenshots/trace-dock-playback.png)
+
+A promise has a stable ID and obligations. Each obligation shows its evidence: passed,
+failed or not run.
+
+![The promise ORD-014 with three obligations. ORD-014/O1 has the label Passed, with the faults played and the trace hash. ORD-014/O2 has the label Not run, because the plan names no evidence source. ORD-014/O3 has the label Failed against the scan of the branch remove-outbox.](site/src/assets/screenshots/promise-obligations-results.png)
+
+A scan of a pull request shows each flow step that the change can affect, with the source
+lines that give the label.
 
 ![The impact of pull request #1 on acme/orders. Each step of the flow Place an order has the label Definite or Possible and the source lines that give it.](site/src/assets/screenshots/impact-pull-request-steps.png)
 

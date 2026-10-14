@@ -32,6 +32,8 @@ On a local instance, Vellum can read GitHub with the token of the GitHub CLI. Yo
    This runs `GH_TOKEN=$(gh auth token) docker compose up -d --build`. It stops with a message when `gh` is missing or not logged in.
 2. In Vellum, open **Settings**, then **GitHub**. The page shows **GitHub: your gh login (your-login), from GH_TOKEN.**
 
+![The GitHub section of the workspace settings. API base URL is https://api.github.com, the instance default. Default ref is empty. The line below says GitHub: your gh login, from GH_TOKEN. The fine-grained access token (read-only) is Not set, with the button Set. Below it is the button Test connection.](../../../assets/screenshots/settings-github-gh-login.png)
+
 These rules apply:
 
 - Vellum uses `GH_TOKEN` only for a workspace that has no access token of its own. A workspace token always wins.

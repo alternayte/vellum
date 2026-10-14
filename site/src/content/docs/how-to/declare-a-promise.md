@@ -61,6 +61,8 @@ An obligation is one check that gives evidence for the promise. A promise with n
 2. Read the box above the buttons. When it says **Approval is blocked:**, it gives each cause: a change that is not saved, an empty field that an approved promise needs, or a link to a part that no longer exists.
 3. Select **Approve revision 1**.
 
+![The dialog of the draft SHOP-001 · A paid order is shipped once. It says that revision 1 is a draft and is not a requirement until an owner approves it. The fields are Title, Claim, Scope, Preconditions, Expected outcome, Forbidden outcome, Forbidden events and What counts as evidence. The box above the buttons says that nothing on this screen blocks approval. The buttons are Show on canvas, Close, Save draft and Approve revision 1.](../../../assets/screenshots/promise-draft-approve.png)
+
 Only a workspace owner approves, and only in the app. An agent token cannot approve, whatever scopes it has.
 
 The approval binds the text that you read. If the draft changed after you opened it, Vellum refuses the approval and shows the draft as it is now.

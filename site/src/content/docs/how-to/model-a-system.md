@@ -12,8 +12,7 @@ The model is the source of truth. The canvas shows the model. A change on the ca
 1. Open `http://localhost:8080` and sign in.
 2. Below **Workspaces**, find the workspace. If there is none, select **Create Workspace**, enter a **Workspace name** and select **Create**.
 3. Select the workspace, then select **+ New Project**.
-4. In **Create Project**, enter a **Project name** and select **Create**.
-5. Open the project.
+4. In **Create Project**, enter a **Project name** and select **Create**. Vellum opens the project.
 
 Vellum creates a diagram named `Default` the first time you open a project that has no diagram.
 
@@ -41,7 +40,7 @@ Use one of these methods.
 - Press the shortcut of the kind.
 - Double-click an empty part of the canvas. Select a kind.
 - Right-click an empty part of the canvas. Select **Add Actor** or **Add System** (at the top level), or the kinds that the level permits.
-- Press `N`. In **Add Element**, select the kind, enter an **Element name** and select **Add**.
+- Press `N`. In **Add Element**, select the kind, enter a **Name** and select **Add**.
 - Open the command palette with `Ctrl+K` or `Cmd+K`. Select **Add element**.
 - Drag from the handle of an element to an empty part of the canvas. Select a kind. Vellum adds the element and a relationship from the first element to it.
 
@@ -49,13 +48,17 @@ Except for the **Add Element** dialog, a new element has the name `New <kind>`. 
 
 ## Go into a system or an app
 
-1. Double-click an element that has children. As an alternative, right-click it and select **Drill into**.
-2. Add the elements of that level.
+1. Double-click a system or an app. As an alternative, right-click it and select **Drill into**.
+2. Add the elements of that level. A frame with the name of the system or the app holds them.
 3. Select **Context** or a name in the breadcrumb to go up.
 
-**Expand** in the same menu shows the children in place. **Collapse** hides them again.
+![The canvas at the level Context › Storefront. A frame with the name Storefront holds the app Web app (React), the app Storefront API (ASP.NET Core) and the store Catalogue DB (PostgreSQL). A line labelled calls goes from Web app to Storefront API, and a line labelled reads and writes goes from Storefront API to Catalogue DB.](../../../assets/screenshots/canvas-drill-in-storefront.png)
 
-To add the first child of an empty system or app, right-click it and select **Add app inside**, **Add store inside** or **Add component inside**. As an alternative, select it and use the buttons below **Inside this system** in the detail panel. **Drill into** and the double-click work only for an element that already has a child.
+**Expand** in the same menu shows the children in place, inside a frame on the current level. **Collapse** hides them again. An element with no child has no **Expand**.
+
+![The canvas at the level Context with the system Orders expanded. The frame Orders holds Orders API, Order worker and Orders DB. Around the frame are the actor Customer and the systems Storefront, Payments, Card network and Fulfilment. Each line has a label, for example places orders, requests payment and sends paid orders.](../../../assets/screenshots/canvas-online-shop.png)
+
+To add the first child of a system or an app, right-click it and select **Add app inside**, **Add store inside** or **Add component inside**. As an alternative, select it and use the buttons below **Inside this system** in the detail panel, or select **Add an app or a store inside** on its card.
 
 The import from GitHub and the assistant also add children when you accept their proposals. See [Import a repository](/how-to/import-a-repository/) and [Design with the assistant](/how-to/design-with-the-assistant/).
 
@@ -64,7 +67,11 @@ The import from GitHub and the assistant also add children when you accept their
 1. Select the element. As an alternative, right-click it and select **Edit details**.
 2. In the detail panel, on the tab **Details**, change **Name**, **Description**, **Technology**, **Status**, **Icon** or **Tags**.
 
+![The detail panel of the app Order worker on the tab Details. The description reads Drives payment and shipping. Technology is .NET worker, Status is Current and Icon is server. Below Inside this app is the button Add component. The canvas at the left shows Order worker inside the frame Orders.](../../../assets/screenshots/canvas-detail-panel-details.png)
+
 The tab **Connections** lists the relationships of the element, outgoing and incoming. Select a row to go to the other element. Select **Edit** on a row to open the relationship.
+
+![The detail panel of Order worker on the tab Connections. Outgoing 3 lists Orders DB (reads the outbox, SQL), Payments API (requests payment, gRPC) and Shipping worker (sends paid orders, RabbitMQ), each with the button Edit. Incoming 0 says None.](../../../assets/screenshots/canvas-detail-panel-connections.png)
 
 **Status** is **Current**, **Planned** or **Deprecated**.
 
@@ -78,7 +85,7 @@ To change more than one element, select two or more elements. The toolbar at the
 
 ## Add a relationship
 
-1. Drag from the handle of the source element to the target element.
+1. Drag from a handle on the left or the right side of the source element to a handle at the top or the bottom of the target element.
 2. Select the relationship.
 3. In the **Relationship** panel, enter a **Label** and a **Technology**.
 4. Set the **Line Style** to **Curved (Bezier)**, **Straight** or **Right-angle (Step)**.
@@ -134,7 +141,7 @@ The other lenses are `1` for status, `2` for metadata and `3` for messages.
 
 A message is data that one element produces and other elements consume. A message can name a JSON schema.
 
-The app shows messages and schemas. It does not create them. Create them with the API.
+To add them in the app, select **Contracts** in the left toolbar, then select **Add** next to **Schemas** or **Messages**. [Model your first system and trace a flow](/tutorials/first-model-and-trace/#add-the-message) shows the message form. To add them with the API, follow these steps.
 
 1. Create the schema. The `content` is the JSON Schema as a string.
 

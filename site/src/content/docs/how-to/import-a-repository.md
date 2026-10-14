@@ -62,6 +62,8 @@ The [extraction rules](/reference/extraction-rules/) list what Vellum reads and 
 1. Select the proposals. **Select all without conflicts** selects every add, change and remove that you can decide.
 2. Select the accept button, for example **Accept 3**, or select **Reject selected**.
 
+![The dialog Review acme/orders, read at commit 54f955480d. It says 21 pending of 21. The proposals are in groups: Binding 1, Channel 4, Element 5, Message 1 and Operation 4. Each row has a checkbox, the action Add, the name and the file and line, for example billing/Program.cs:16. All rows are selected. The buttons at the bottom are Close, Reject selected and Accept 21.](../../../assets/screenshots/import-review-select-all.png)
+
 The accept button shows the number of proposals that it applies. Accepting a proposal also accepts what it depends on. For example, an operation needs its service.
 
 If an accepted proposal breaks something, such as a scenario that uses a removed operation, the review names what breaks. Tick the acknowledgement before you accept.

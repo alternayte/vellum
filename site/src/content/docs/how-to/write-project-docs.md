@@ -36,6 +36,8 @@ The editor has two modes. **Edit** shows the Markdown source. **Read** shows the
 3. Select **Read** to see the result.
 4. Select **Edit** to go back to the source.
 
+![The document Online shop design in the mode Read. It has the headings Overview, Orders and Open questions. A card links to the diagram Default. In the text, Orders API, Orders DB and Order worker show as element links with a coloured dot. Open questions is a task list with one open item and one done item. The button Edit is at the top right.](../../../assets/screenshots/project-doc-read.png)
+
 Vellum saves the document 300 ms after your last change. There is no save button.
 
 ## Link to an element

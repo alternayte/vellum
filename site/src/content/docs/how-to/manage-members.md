@@ -67,6 +67,8 @@ Know these limits first.
 
 The link has the form `http://localhost:8080/invitations/<invitation-id>#secret=<secret>`. The secret is after `#`, so a browser does not send it to a server, and it is in no server log.
 
+![The Members section of the workspace settings. The table of members has Dev User (you) with the role Owner and the date 14/10/2026. Open invitations has reviewer@example.com with the role Viewer, the expiry date 28/10/2026 and the button Revoke. Below them is the form Invite a person and the list What a role can do.](../../../assets/screenshots/settings-members.png)
+
 The invitation shows below **Open invitations**, with the address, the role and the expiry date. The answer is the same for an address with an account and an address without one. The owner does not learn from the invitation whether a person has an account.
 
 When you invite an address that has an open invitation, Vellum renews that invitation: it takes the new role, a new expiry date and a new link. The old link stops working. Do this also when you lose the link.
