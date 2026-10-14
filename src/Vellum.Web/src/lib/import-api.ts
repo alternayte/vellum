@@ -55,6 +55,8 @@ export interface ScanSummary {
   pullRequest: ScanPullRequest | null
   /** True for a failed or cancelled scan that a resume can carry on. False when a resume would meet the same failure. */
   canResume: boolean
+  /** The Source the scan reads. */
+  sourceId: string
 }
 
 export interface ScanNote {
@@ -67,9 +69,28 @@ export interface ScanNote {
 export interface ScanDetail extends ScanSummary {
   notes: ScanNote[]
   ruleVersions: { rule: string; version: number }[]
+  /** The ID of the Snapshot the scan made. Null until it completes. */
+  snapshotId: string | null
 }
 
-export type ProposalAction = 'add' | 'change' | 'remove' | 'conflict' | 'relink'
+/** `bind` asks "same as this element?": the element of another Source has the name of a fact of this one. */
+export type ProposalAction = 'add' | 'change' | 'remove' | 'conflict' | 'relink' | 'bind'
+
+/** What another Source of the project accepted for the same entity. Facts stay per Source; none wins by itself. */
+export interface OtherSourceFact {
+  sourceId: string
+  /** The citation name, such as `github.com/acme/orders`. */
+  source: string
+  sourceName: string
+  /** The truth label of the fact in that Source. */
+  factStatus: string
+  values: Record<string, string | null>
+  observed: Record<string, string>
+  /** `<source>@<revision>:path:start-end`, or null. */
+  citation: string | null
+  acceptedBy: string
+  acceptedAt: string
+}
 
 export interface ProposalImpact {
   scenarios: { id: string; name: string; stepIds: string[] }[]
@@ -106,6 +127,9 @@ export interface Proposal {
   impact: ProposalImpact | null
   /** Large bodies are cut in the list. `importApi.proposal` returns the whole item. */
   truncated: boolean
+  /** What other Sources accepted for the same entity. A conflict shows them side by side. */
+  otherSources: OtherSourceFact[]
+  sourceId: string
 }
 
 /** A fact of a scan that is no proposal: the model has no home for it, or it needs something the source does not state. */
@@ -141,6 +165,68 @@ export interface DecisionResult {
   accepted: string[]
   rejected: string[]
   failed: { id: string; reason: string }[]
+  /** The "same as X?" questions answered. */
+  answered: string[]
+  /** True when answers were given and the scan's pending proposals were planned again. */
+  replanned: boolean
+}
+
+/** One answer to "same as X?". `same: false` makes the fact a new element. */
+export interface BindAnswer {
+  id: string
+  same: boolean
+}
+
+export type SourceKind = 'github' | 'gitlab' | 'bitbucket' | 'azure-devops' | 'directory' | 'archive' | 'agent-push' | 'model-file' | 'traces' | 'newrelic'
+
+/** One Snapshot: the manifest ID, and the commit SHA of a git Source. */
+export interface SourceSnapshot {
+  scanId: string
+  snapshotId: string
+  commitSha: string | null
+  /** What a citation names after `@`: the commit SHA of a git Source, else the Snapshot ID. */
+  revision: string
+  ref: string | null
+  files: number
+  facts: number
+  isComplete: boolean
+  createdAt: string
+}
+
+/** The pending proposals of a Source: those of its newest completed tracking scan. */
+export interface SourceReview {
+  scanId: string | null
+  pending: number
+  additions: number
+  changes: number
+  removals: number
+  conflicts: number
+  crossSourceConflicts: number
+  bindQuestions: number
+  relinks: number
+  /** What "accept all from this Source" would accept. */
+  acceptable: number
+}
+
+export interface SourceSummary {
+  id: string
+  kind: SourceKind
+  name: string
+  host: string
+  locator: string
+  citation: string
+  createdBy: string
+  createdAt: string
+  latestScan: ScanSummary | null
+  latestSnapshot: SourceSnapshot | null
+  review: SourceReview
+}
+
+export interface SourceBinding {
+  elementId: string
+  elementName: string
+  elementKind: string
+  externalKey: string
 }
 
 export interface SourceWindow {
@@ -278,7 +364,7 @@ export const importApi = {
   resume: (projectId: string, id: string) => api<void>('POST', `${base(projectId)}/${id}/resume`),
   proposals: (projectId: string, id: string) => allPages<Proposal>(`${base(projectId)}/${id}/proposals`),
   proposal: (projectId: string, id: string, proposalId: string) => api<Proposal>('GET', `${base(projectId)}/${id}/proposals/${proposalId}`),
-  decide: (projectId: string, id: string, decision: { accept: string[]; reject: string[]; acknowledgeImpact: boolean; relink: { id: string; factKey: string | null }[] }) =>
+  decide: (projectId: string, id: string, decision: { accept: string[]; reject: string[]; acknowledgeImpact: boolean; relink: { id: string; factKey: string | null }[]; bind?: BindAnswer[] }) =>
     api<DecisionResult>('POST', `${base(projectId)}/${id}/proposals/decide`, decision),
   /** One page of the facts of a scan that are no proposal, in the order the scan found them. */
   evidence: (projectId: string, id: string, cursor: string | null) =>
@@ -305,6 +391,53 @@ export const importApi = {
       'GET',
       `${base(projectId)}/${id}/source?path=${encodeURIComponent(evidence.path)}&startLine=${evidence.startLine}&endLine=${evidence.endLine}`,
     ),
+}
+
+const sourcesBase = (projectId: string) => `/api/projects/${projectId}/sources`
+
+export const sourcesApi = {
+  list: (projectId: string) => api<SourceSummary[]>('GET', sourcesBase(projectId)),
+  create: (projectId: string, body: { kind: SourceKind; repository: string; name?: string }) =>
+    api<SourceSummary>('POST', sourcesBase(projectId), body),
+  rename: (projectId: string, id: string, name: string) => api<SourceSummary>('PATCH', `${sourcesBase(projectId)}/${id}`, { name }),
+  scan: (projectId: string, id: string, body: { ref?: string; pullRequest?: number; includePaths?: string[] }) =>
+    api<{ id: string }>('POST', `${sourcesBase(projectId)}/${id}/scans`, body),
+  snapshots: (projectId: string, id: string) => api<SourceSnapshot[]>('GET', `${sourcesBase(projectId)}/${id}/snapshots`),
+  bindings: (projectId: string, id: string) => api<SourceBinding[]>('GET', `${sourcesBase(projectId)}/${id}/bindings`),
+  /** Accepts every pending addition, change and removal of the Source. Conflicts and questions stay for a person. */
+  acceptAll: (projectId: string, id: string, acknowledgeImpact: boolean) =>
+    api<DecisionResult>('POST', `${sourcesBase(projectId)}/${id}/accept`, { acknowledgeImpact }),
+}
+
+/** One line that says what a Source waits for. */
+export function describeReview(source: SourceSummary): string {
+  const r = source.review
+  if (!source.latestSnapshot) return source.latestScan ? 'No Snapshot yet' : 'Not scanned yet'
+  if (r.pending === 0) return 'Nothing waits for a decision'
+  return [
+    `${r.pending} pending`,
+    r.bindQuestions > 0 && `${r.bindQuestions} “same as?”`,
+    r.crossSourceConflicts > 0 && `${r.crossSourceConflicts} ${r.crossSourceConflicts === 1 ? 'conflict' : 'conflicts'} with other Sources`,
+  ].filter(Boolean).join(' · ')
+}
+
+/** The fields where this Source and the others say different things, for a side-by-side view. */
+export function sourceSides(proposal: Pick<Proposal, 'proposed' | 'current' | 'otherSources' | 'changes'>): {
+  fields: string[]
+  model: Record<string, unknown>
+  here: Record<string, unknown>
+} {
+  const here = (proposal.proposed ?? {}) as Record<string, unknown>
+  const model = (proposal.current ?? {}) as Record<string, unknown>
+  const compared = new Set<string>()
+  for (const change of proposal.changes) if (!change.field.startsWith('observed.') && change.field !== 'factStatus') compared.add(change.field)
+  for (const other of proposal.otherSources) {
+    for (const [field, value] of Object.entries(other.values)) {
+      if (field in here && JSON.stringify(here[field] ?? null) !== JSON.stringify(value ?? null)) compared.add(field)
+    }
+  }
+  if (compared.size === 0) for (const field of ['name', 'technology']) if (field in here) compared.add(field)
+  return { fields: [...compared].sort(), model, here }
 }
 
 /** What a scan read, in words: the pull request, the ref, or the commit. */

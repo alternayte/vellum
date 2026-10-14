@@ -5,9 +5,11 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import { shownInline } from '@/lib/mutation-errors'
-import { describeScan, importApi, isActive, pullRequestState, scanSubject, type ScanSummary } from '@/lib/import-api'
+import { describeScan, importApi, isActive, pullRequestState, scanSubject, type ScanSummary, type SourceSummary } from '@/lib/import-api'
 import { ProposalReview } from './proposal-review'
 import { ImpactDialog } from './impact-dialog'
+import { SourcesList, SourcesReview } from './sources-review'
+import { sourcesKey } from '@/hooks/use-sources'
 
 const STATUS_COLOR: Record<ScanSummary['status'], string> = {
   queued: 'var(--muted-foreground)',
@@ -28,8 +30,9 @@ const TARGETS: { value: Target; label: string; field: string; placeholder: strin
 ]
 
 /**
- * Imports read a GitHub repository at one commit and propose what they found. Nothing
- * reaches the model until a person accepts it in the review.
+ * Imports read a Source, such as a GitHub repository at one commit, and propose what they
+ * found. Each completed scan is a Snapshot of its Source. Nothing reaches the model until a
+ * person accepts it in the review.
  */
 export function ImportFlyout({ projectId, owners }: {
   projectId: string
@@ -41,7 +44,9 @@ export function ImportFlyout({ projectId, owners }: {
   const [target, setTarget] = useState<Target>('ref')
   const [ref, setRef] = useState('')
   const [folders, setFolders] = useState('')
-  const [reviewing, setReviewing] = useState<ScanSummary | null>(null)
+  const [reviewing, setReviewing] = useState<{ scan: ScanSummary; sourceName?: string } | null>(null)
+  const [bySource, setBySource] = useState(false)
+  const [opening, setOpening] = useState<string | null>(null)
   const [impactOf, setImpactOf] = useState<ScanSummary | null>(null)
 
   const scans = useQuery({
@@ -54,7 +59,19 @@ export function ImportFlyout({ projectId, owners }: {
     refetchInterval: (query) => (query.state.data?.some((s) => isActive(s.status)) ? 2000 : 15000),
     refetchIntervalInBackground: true,
   })
-  const refresh = () => queryClient.invalidateQueries({ queryKey: ['projects', projectId, 'imports'] })
+  const refresh = () => Promise.all([
+    queryClient.invalidateQueries({ queryKey: ['projects', projectId, 'imports'] }),
+    queryClient.invalidateQueries({ queryKey: sourcesKey(projectId) }),
+  ])
+  /** Opens the full review of the scan whose proposals a Source waits on. */
+  const openScan = async (scanId: string, source: SourceSummary) => {
+    setOpening(scanId)
+    try {
+      setReviewing({ scan: await importApi.get(projectId, scanId), sourceName: source.name })
+    } finally {
+      setOpening(null)
+    }
+  }
   const start = useMutation({
     mutationFn: () => {
       const includePaths = folders.split(/[,\n]/).map((f) => f.trim()).filter(Boolean)
@@ -134,12 +151,22 @@ export function ImportFlyout({ projectId, owners }: {
           {start.isPending ? 'Starting…' : 'Scan repository'}
         </Button>
         <p className="text-[11px] leading-relaxed text-muted-foreground">
-          Vellum reads the files at one commit. It does not run the code, and it does not change the model until you accept a proposal.
+          Vellum reads the files at one commit. The repository becomes a Source of this project, and each scan a Snapshot of it. Vellum does not run the code, and it does not change the model until you accept a proposal.
         </p>
       </form>
       {failure && <p role="alert" className="border-b border-border px-3 py-2 text-xs text-[var(--trace-failure)]">{failure.message}</p>}
 
-      <div className="flex-1 overflow-y-auto p-2">
+      <div className="flex-1 overflow-y-auto">
+        <section aria-labelledby="import-sources" className="border-b border-border pt-2">
+          <div className="flex items-center gap-2 px-3 pb-1.5">
+            <h3 id="import-sources" className="flex-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Sources</h3>
+            <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" onClick={() => setBySource(true)}>Proposals by Source</Button>
+          </div>
+          <SourcesList projectId={projectId} onReview={(source) => openScan(source.review.scanId!, source)} />
+          {opening && <p role="status" className="px-3 pb-2 text-xs text-muted-foreground">Opening the review…</p>}
+        </section>
+        <h3 className="px-3 pb-1 pt-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Scans</h3>
+        <div className="px-2 pb-2">
         {scans.data?.length === 0 && <p className="px-1.5 py-1 text-xs text-muted-foreground">No scan yet.</p>}
         <ul className="space-y-1">
           {scans.data?.map((scan) => (
@@ -172,7 +199,7 @@ export function ImportFlyout({ projectId, owners }: {
               </p>
               <div className="mt-2 flex flex-wrap items-center gap-1.5">
                 {scan.status === 'completed' && (
-                  <Button size="sm" variant="secondary" className="h-6 px-2 text-xs" onClick={() => setReviewing(scan)}>
+                  <Button size="sm" variant="secondary" className="h-6 px-2 text-xs" onClick={() => setReviewing({ scan })}>
                     {scan.proposalCounts.pending > 0 ? `Review ${scan.proposalCounts.pending} ${scan.proposalCounts.pending === 1 ? 'proposal' : 'proposals'}` : 'Open review'}
                   </Button>
                 )}
@@ -208,10 +235,16 @@ export function ImportFlyout({ projectId, owners }: {
             </li>
           ))}
         </ul>
+        </div>
       </div>
 
       {impactOf && <ImpactDialog projectId={projectId} scan={impactOf} owners={owners} onClose={() => setImpactOf(null)} />}
-      {reviewing && <ProposalReview projectId={projectId} scan={reviewing} onClose={() => { setReviewing(null); refresh() }} />}
+      {bySource && !reviewing && (
+        <SourcesReview projectId={projectId} onOpenScan={(scanId, source) => openScan(scanId, source)} onClose={() => { setBySource(false); refresh() }} />
+      )}
+      {reviewing && (
+        <ProposalReview projectId={projectId} scan={reviewing.scan} sourceName={reviewing.sourceName} onClose={() => { setReviewing(null); refresh() }} />
+      )}
     </div>
   )
 }
