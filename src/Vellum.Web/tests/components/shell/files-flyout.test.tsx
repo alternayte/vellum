@@ -10,7 +10,7 @@ const views = [
 
 const docs = [
   { id: 'd1', title: 'SDD: API Server', type: 'sdd' },
-  { id: 'd2', title: 'ADR: Auth Strategy', type: 'adr' },
+  { id: 'd2', title: 'PRD: Checkout', type: 'prd' },
   { id: 'd3', title: 'Notes', type: null },
 ]
 
@@ -24,7 +24,7 @@ describe('FilesFlyout', () => {
     expect(screen.getByText('Context Diagram')).toBeDefined()
     expect(screen.getByText('Container Diagram')).toBeDefined()
     expect(screen.getByText('SDD: API Server')).toBeDefined()
-    expect(screen.getByText('ADR: Auth Strategy')).toBeDefined()
+    expect(screen.getByText('PRD: Checkout')).toBeDefined()
     expect(screen.getByText('Notes')).toBeDefined()
   })
 
@@ -57,7 +57,7 @@ describe('FilesFlyout', () => {
   it('shows doc type badges', () => {
     render(<FilesFlyout views={views} docs={docs} />)
     expect(screen.getByText('sdd')).toBeDefined()
-    expect(screen.getByText('adr')).toBeDefined()
+    expect(screen.getByText('prd')).toBeDefined()
   })
 
   it('filters items by search query', () => {

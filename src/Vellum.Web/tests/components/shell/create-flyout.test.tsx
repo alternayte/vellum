@@ -29,8 +29,15 @@ describe('CreateFlyout', () => {
     fireEvent.click(screen.getByText('New Doc'))
     expect(screen.getByText('Blank')).toBeDefined()
     expect(screen.getByText('SDD')).toBeDefined()
-    expect(screen.getByText('ADR')).toBeDefined()
     expect(screen.getByText('PRD')).toBeDefined()
+    expect(screen.queryByText('ADR')).toBeNull()
+  })
+
+  it('opens Review on a new decision for an ADR', () => {
+    render(<CreateFlyout onCreateDiagram={vi.fn()} onCreateDoc={vi.fn()} />)
+    fireEvent.click(screen.getByText('New Decision (ADR)'))
+    expect(useShellStore.getState().activeFlyout).toBe('review')
+    expect(useShellStore.getState().newDecisionRequested).toBe(true)
   })
 
   it('creates a doc from a template', () => {

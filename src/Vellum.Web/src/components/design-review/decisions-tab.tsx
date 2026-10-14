@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { reviewApi } from '@/lib/review-api'
+import { useShellStore } from '@/stores/shell-store'
 import type { ScenarioReference } from '@/components/trace/scenario-editor'
 import { DecisionDialog } from './decision-dialog'
 
@@ -16,7 +17,13 @@ interface Props {
 export function DecisionsTab({ projectId, branchId, references }: Props) {
   const decisions = useQuery({ queryKey: ['projects', projectId, 'decisions'], queryFn: () => reviewApi.decisions(projectId) })
   // A decision ID, or a new decision with the decision it supersedes.
-  const [open, setOpen] = useState<{ id: string } | { supersedes: string | null } | null>(null)
+  // "New decision (ADR)" in the Create flyout asks for the form of a new decision once.
+  const [open, setOpen] = useState<{ id: string } | { supersedes: string | null } | null>(() =>
+    useShellStore.getState().newDecisionRequested ? { supersedes: null } : null,
+  )
+  useEffect(() => {
+    useShellStore.getState().clearDecisionRequest()
+  }, [])
   const list = decisions.data ?? []
 
   return (

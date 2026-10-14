@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useShellStore } from '@/stores/shell-store'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Box, LayoutDashboard, FileText } from 'lucide-react'
+import { Box, LayoutDashboard, FileText, Scale } from 'lucide-react'
 import { loadTemplates, type DocTemplate } from '@/lib/doc-templates'
 
 interface CreateFlyoutProps {
@@ -16,12 +16,12 @@ type Mode = 'menu' | 'diagram' | 'doc-templates' | 'doc-title'
 
 const FALLBACK_TEMPLATES = [
   { id: 'sdd', name: 'SDD', type: 'sdd', content: '' },
-  { id: 'adr', name: 'ADR', type: 'adr', content: '' },
   { id: 'prd', name: 'PRD', type: 'prd', content: '' },
 ]
 
 export function CreateFlyout({ onCreateDiagram, onCreateDoc, onAddElement }: CreateFlyoutProps) {
   const closeFlyout = useShellStore((s) => s.closeFlyout)
+  const startDecision = useShellStore((s) => s.startDecision)
   const [mode, setMode] = useState<Mode>('menu')
   const [name, setName] = useState('')
   const [templates, setTemplates] = useState<DocTemplate[]>([])
@@ -82,6 +82,14 @@ export function CreateFlyout({ onCreateDiagram, onCreateDoc, onAddElement }: Cre
             >
               <FileText className="h-4 w-4 text-muted-foreground" />
               New Doc
+            </button>
+            {/* An ADR is a Review decision: an owner accepts it, and the acceptance binds its text. */}
+            <button
+              className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm hover:bg-muted"
+              onClick={startDecision}
+            >
+              <Scale className="h-4 w-4 text-muted-foreground" />
+              New Decision (ADR)
             </button>
           </div>
         )}

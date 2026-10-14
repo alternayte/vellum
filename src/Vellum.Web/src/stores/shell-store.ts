@@ -37,6 +37,8 @@ interface ShellState {
   focusElementId: string | null
   /** Elements to show on the canvas for a promise or an affected flow. The canvas rings them and dims the rest. */
   canvasHighlight: CanvasHighlight | null
+  /** True from "New decision (ADR)" until the Review flyout opens the form of a new decision. */
+  newDecisionRequested: boolean
 
   openFlyout: (flyout: Flyout) => void
   closeFlyout: () => void
@@ -53,6 +55,9 @@ interface ShellState {
   clearFocusElement: () => void
   showOnCanvas: (highlight: CanvasHighlight) => void
   clearCanvasHighlight: () => void
+  /** Opens Review on its Decisions tab with the form of a new decision. */
+  startDecision: () => void
+  clearDecisionRequest: () => void
   reset: () => void
 }
 
@@ -67,6 +72,7 @@ export const useShellStore = create<ShellState>((set) => ({
   commandPaletteOpen: false,
   focusElementId: null,
   canvasHighlight: null,
+  newDecisionRequested: false,
 
   openFlyout: (flyout) => set({ activeFlyout: flyout }),
   closeFlyout: () => set({ activeFlyout: null }),
@@ -114,6 +120,8 @@ export const useShellStore = create<ShellState>((set) => ({
   // The canvas shows the highlight: not a doc, and with no flyout over it.
   showOnCanvas: (highlight) => set({ canvasHighlight: highlight, activeDocId: null, activeFlyout: null }),
   clearCanvasHighlight: () => set({ canvasHighlight: null }),
+  startDecision: () => set({ activeFlyout: 'review', newDecisionRequested: true }),
+  clearDecisionRequest: () => set({ newDecisionRequested: false }),
 
   reset: () =>
     set({
@@ -127,5 +135,6 @@ export const useShellStore = create<ShellState>((set) => ({
       commandPaletteOpen: false,
       focusElementId: null,
       canvasHighlight: null,
+      newDecisionRequested: false,
     }),
 }))

@@ -31,7 +31,8 @@ public static class UpdateDoc
                 request.Title is null ? null : ResultExtensions.Required("title", request.Title),
                 TextRule.Line("title", request.Title),
                 TextRule.Lines("content", request.Content, UpdateDoc.MaxContentChars),
-                TextRule.Line("type", request.Type, TextRule.MaxIdentifier)) is { } refusal)
+                TextRule.Line("type", request.Type, TextRule.MaxIdentifier),
+                DocType.Check(request.Type)) is { } refusal)
             return refusal;
 
         var doc = await db.Documents.FindAsync([docId], ct);

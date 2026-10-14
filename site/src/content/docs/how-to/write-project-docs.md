@@ -11,13 +11,13 @@ A document is text that people read. It is not the model. Vellum does not read a
 
 1. Select **Create new** in the left toolbar.
 2. Select **New Doc**.
-3. Select **Blank**, or a template: **ADR**, **PRD** or **SDD**.
+3. Select **Blank**, or a template: **PRD** or **SDD**.
 4. Enter a **Document title**.
 5. Select **Create**.
 
 Vellum opens the document in the editor. A template gives the document its first text.
 
-A document from the **ADR** template is text only. It is not a decision record of the project. To record a decision that the review and the bundle use, see [Record a decision](/how-to/record-a-decision/).
+A document cannot be an ADR. An ADR is a decision of the review: select **New Decision (ADR)** in **Create new**, or see [Record a decision](/how-to/record-a-decision/). The API refuses a document of type `adr` with `400`. When Vellum upgrades its database, a document of type `adr` gets the type `note`. Its title and text stay.
 
 ## Open a document
 

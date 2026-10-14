@@ -24,13 +24,12 @@ describe('parseFrontmatter', () => {
 describe('loadTemplates', () => {
   it('returns an array of DocTemplate objects', async () => {
     const templates = await loadTemplates()
-    expect(templates.length).toBeGreaterThanOrEqual(3)
+    expect(templates.map((t) => t.id)).toEqual(['prd', 'sdd'])
 
-    const adr = templates.find((t) => t.id === 'adr')
-    expect(adr).toBeDefined()
-    expect(adr!.name).toBe('ADR')
-    expect(adr!.description).toBe('Architecture Decision Record')
-    expect(adr!.icon).toBe('scale')
-    expect(adr!.content).toContain('## Status')
+    const sdd = templates.find((t) => t.id === 'sdd')
+    expect(sdd!.name).toBe('SDD')
+    expect(sdd!.description).toBe('System Design Document')
+    expect(sdd!.icon).toBe('boxes')
+    expect(sdd!.content).toContain('# SDD: [Title]')
   })
 })

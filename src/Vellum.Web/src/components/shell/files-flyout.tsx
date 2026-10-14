@@ -27,7 +27,6 @@ interface FilesFlyoutProps {
 }
 
 const TYPE_COLORS: Record<string, string> = {
-  adr: 'border-[var(--trace-data)]/50 text-[var(--trace-data)]',
   prd: 'border-[var(--trace-event)]/50 text-[var(--trace-event)]',
   sdd: 'border-[var(--trace-request)]/50 text-[var(--trace-request)]',
 }

@@ -41,37 +41,65 @@ public class AdrEndpointTests : IClassFixture<IntegrationFixture>
         var docId = Guid.NewGuid();
         var draftId = Guid.NewGuid();
 
-        // Create an ADR doc with type = "adr" and a draftId
+        // Create a PRD doc with type = "prd" and a draftId
         var createResponse = await client.PostAsJsonAsync($"/api/projects/{projectId}/docs",
-            new { id = docId, title = "ADR-001", type = "adr", draftId });
+            new { id = docId, title = "PRD-001", type = "prd", draftId });
         Assert.Equal(HttpStatusCode.Created, createResponse.StatusCode);
 
         var created = await createResponse.Content.ReadFromJsonAsync<DocDto>();
-        Assert.Equal("adr", created!.Type);
+        Assert.Equal("prd", created!.Type);
         Assert.Equal(draftId, created.DraftId);
 
-        // List with ?type=adr → returns it
-        var filtered = await (await client.GetAsync($"/api/projects/{projectId}/docs?type=adr"))
+        // List with ?type=prd → returns it
+        var filtered = await (await client.GetAsync($"/api/projects/{projectId}/docs?type=prd"))
             .Content.ReadFromJsonAsync<AdrDocListDto>();
         Assert.Single(filtered!.Items);
-        Assert.Equal("ADR-001", filtered.Items[0].Title);
+        Assert.Equal("PRD-001", filtered.Items[0].Title);
 
         // List without filter → also returns it
         var all = await (await client.GetAsync($"/api/projects/{projectId}/docs"))
             .Content.ReadFromJsonAsync<AdrDocListDto>();
         Assert.Contains(all!.Items, d => d.Id == docId);
 
-        // Update type to "prd"
+        // Update type to "sdd"
         var updateResponse = await client.PatchAsJsonAsync($"/api/projects/{projectId}/docs/{docId}",
-            new { type = "prd", setType = true });
+            new { type = "sdd", setType = true });
         Assert.Equal(HttpStatusCode.OK, updateResponse.StatusCode);
         var updated = await updateResponse.Content.ReadFromJsonAsync<DocDto>();
-        Assert.Equal("prd", updated!.Type);
+        Assert.Equal("sdd", updated!.Type);
 
-        // List with ?type=adr → empty (no longer matches)
-        var adrAfterUpdate = await (await client.GetAsync($"/api/projects/{projectId}/docs?type=adr"))
+        // List with ?type=prd → empty (no longer matches)
+        var prdAfterUpdate = await (await client.GetAsync($"/api/projects/{projectId}/docs?type=prd"))
             .Content.ReadFromJsonAsync<AdrDocListDto>();
-        Assert.Empty(adrAfterUpdate!.Items);
+        Assert.Empty(prdAfterUpdate!.Items);
+    }
+
+    [Fact]
+    public async Task A_doc_cannot_be_an_adr_because_an_adr_is_a_review_decision()
+    {
+        var factory = _fixture.Factory;
+        using var client = await CreateAuthenticatedClientAsync(factory);
+        var projectId = await SetupProjectAsync(client);
+
+        foreach (var type in new[] { "adr", "ADR", " Adr " })
+        {
+            var created = await client.PostAsJsonAsync($"/api/projects/{projectId}/docs",
+                new { id = Guid.NewGuid(), title = "ADR-001", type });
+            Assert.Equal(HttpStatusCode.BadRequest, created.StatusCode);
+            var body = await created.Content.ReadAsStringAsync();
+            Assert.Contains("decision", body);
+            Assert.Contains("\"type\"", body);
+        }
+
+        var docId = Guid.NewGuid();
+        await TestHost.Created(client.PostAsJsonAsync($"/api/projects/{projectId}/docs", new { id = docId, title = "Notes", type = "note" }));
+        var changed = await client.PatchAsJsonAsync($"/api/projects/{projectId}/docs/{docId}", new { type = "adr", setType = true });
+        Assert.Equal(HttpStatusCode.BadRequest, changed.StatusCode);
+        Assert.Contains("decision", await changed.Content.ReadAsStringAsync());
+
+        var list = await (await client.GetAsync($"/api/projects/{projectId}/docs"))
+            .Content.ReadFromJsonAsync<AdrDocListDto>();
+        Assert.Equal("note", Assert.Single(list!.Items).Type);
     }
 
     [Fact]
@@ -85,7 +113,7 @@ public class AdrEndpointTests : IClassFixture<IntegrationFixture>
 
         // Create one doc linked to a draft
         await client.PostAsJsonAsync($"/api/projects/{projectId}/docs",
-            new { id = adrDocId, title = "ADR-linked", draftId });
+            new { id = adrDocId, title = "Draft-linked", draftId });
         // Create another doc without draft
         await client.PostAsJsonAsync($"/api/projects/{projectId}/docs",
             new { id = Guid.NewGuid(), title = "Plain doc" });
@@ -94,7 +122,7 @@ public class AdrEndpointTests : IClassFixture<IntegrationFixture>
         var filtered = await (await client.GetAsync($"/api/projects/{projectId}/docs?draftId={draftId}"))
             .Content.ReadFromJsonAsync<AdrDocListDto>();
         Assert.Single(filtered!.Items);
-        Assert.Equal("ADR-linked", filtered.Items[0].Title);
+        Assert.Equal("Draft-linked", filtered.Items[0].Title);
         Assert.Equal(draftId, filtered.Items[0].DraftId);
     }
 
@@ -107,7 +135,7 @@ public class AdrEndpointTests : IClassFixture<IntegrationFixture>
         var docId = Guid.NewGuid();
 
         await client.PostAsJsonAsync($"/api/projects/{projectId}/docs",
-            new { id = docId, title = "ADR-002", type = "adr" });
+            new { id = docId, title = "PRD-002", type = "prd" });
 
         // Clear type by sending setType = true with no type value
         await client.PatchAsJsonAsync($"/api/projects/{projectId}/docs/{docId}",
@@ -128,7 +156,7 @@ public class AdrEndpointTests : IClassFixture<IntegrationFixture>
         var draftId = Guid.NewGuid();
 
         await client.PostAsJsonAsync($"/api/projects/{projectId}/docs",
-            new { id = docId, title = "ADR-003", draftId });
+            new { id = docId, title = "PRD-003", draftId });
 
         // Clear draftId by sending setDraftId = true with no draftId value
         await client.PatchAsJsonAsync($"/api/projects/{projectId}/docs/{docId}",

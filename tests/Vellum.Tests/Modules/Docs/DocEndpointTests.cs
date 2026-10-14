@@ -186,12 +186,12 @@ public class DocEndpointTests : IClassFixture<IntegrationFixture>
 
         var createResponse = await client.PostAsJsonAsync(
             $"/api/projects/{projectId}/docs",
-            new { id = docId, title = "My ADR", type = "adr" });
+            new { id = docId, title = "My PRD", type = "prd" });
         Assert.Equal(HttpStatusCode.Created, createResponse.StatusCode);
 
         var getResponse = await client.GetAsync($"/api/projects/{projectId}/docs/{docId}");
         var doc = await getResponse.Content.ReadFromJsonAsync<JsonElement>();
-        Assert.Equal("adr", doc.GetProperty("type").GetString());
+        Assert.Equal("prd", doc.GetProperty("type").GetString());
     }
 }
 

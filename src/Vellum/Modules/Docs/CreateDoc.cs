@@ -24,7 +24,8 @@ public static class CreateDoc
         if (ResultExtensions.Refusal(
                 ResultExtensions.Required("title", request.Title),
                 TextRule.Line("title", request.Title),
-                TextRule.Line("type", request.Type, TextRule.MaxIdentifier)) is { } refusal)
+                TextRule.Line("type", request.Type, TextRule.MaxIdentifier),
+                DocType.Check(request.Type)) is { } refusal)
             return refusal;
 
         // A retry in the same project gets the document back. A document of another project is
@@ -52,4 +53,17 @@ public static class CreateDoc
 
     private static DocDto ToDto(DocumentEntity d) =>
         new(d.Id, d.ProjectId, d.SpaceId, d.ElementId, d.Title, d.Content, d.CreatedBy, d.CreatedAt, d.UpdatedAt, d.DraftId, d.Type);
+}
+
+/// <summary>What a document may be typed as.</summary>
+internal static class DocType
+{
+    /// <summary>
+    /// An ADR is a Review decision: it is event-sourced, an owner accepts it, and the acceptance
+    /// binds its content hash. A document of type <c>adr</c> would be free text that looks like one.
+    /// </summary>
+    public static ValidationError? Check(string? type) =>
+        string.Equals(type?.Trim(), "adr", StringComparison.OrdinalIgnoreCase)
+            ? new ValidationError("type", "A document cannot be an ADR. Record a decision in Review instead (POST /api/projects/{projectId}/decisions).")
+            : null;
 }

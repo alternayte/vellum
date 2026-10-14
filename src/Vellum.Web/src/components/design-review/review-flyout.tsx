@@ -30,7 +30,8 @@ const TABS = [
  * need no AI.
  */
 export function ReviewFlyout({ projectId, branchId, references, elementIds, owners }: ReviewFlyoutProps) {
-  const [tab, setTab] = useState<(typeof TABS)[number]['id']>('findings')
+  // "New decision (ADR)" in the Create flyout opens Review on the form of a new decision.
+  const [tab, setTab] = useState<(typeof TABS)[number]['id']>(() => (useShellStore.getState().newDecisionRequested ? 'decisions' : 'findings'))
   const focusElement = useShellStore((s) => s.focusElement)
   const focusTarget = useCallback(
     (cited: Cited) => (cited.kind === 'element' && elementIds.includes(cited.id) ? cited.id : (owners[cited.id] ?? null)),
