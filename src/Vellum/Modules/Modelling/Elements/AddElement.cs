@@ -9,32 +9,27 @@ public sealed record AddElementRequest(
     string? Technology, Guid? OwnerId, string? Status,
     Guid? ParentId, string[]? Tags);
 
-public sealed record AddElementCommandEnvelope(Guid ProjectId, Guid StreamId, AddElementRequest Request);
-
-public sealed class AddElementHandler : ICommandHandler<AddElementCommandEnvelope, CommandResult<ElementDto>>
+public static class AddElement
 {
-    private readonly IEventStore _store;
-
-    public AddElementHandler(IEventStore store) => _store = store;
-
-    public async Task<CommandResult<ElementDto>> HandleAsync(AddElementCommandEnvelope cmd, CancellationToken ct = default)
+    public static async Task<CommandResult<ElementDto>> HandleAsync(
+        IEventStore store, Guid projectId, Guid streamId, AddElementRequest request, CancellationToken ct)
     {
-        if (!ModelEnum.TryParseDefined(cmd.Request.Kind, out ElementKind kind))
+        if (!ModelEnum.TryParseDefined(request.Kind, out ElementKind kind))
             return new CommandResult<ElementDto>.Invalid([new ValidationError("kind", "Invalid element kind")]);
 
         var status = ElementStatus.Current;
-        if (cmd.Request.Status is not null && !ModelEnum.TryParseDefined(cmd.Request.Status, out status))
+        if (request.Status is not null && !ModelEnum.TryParseDefined(request.Status, out status))
             return new CommandResult<ElementDto>.Invalid([new ValidationError("status", "Invalid status")]);
 
         var addCmd = new AddElementCommand(
-            cmd.Request.Id, kind, cmd.Request.Name, cmd.Request.Description,
-            cmd.Request.Technology, cmd.Request.OwnerId, status,
-            cmd.Request.ParentId, cmd.Request.Tags ?? []);
+            request.Id, kind, request.Name, request.Description,
+            request.Technology, request.OwnerId, status,
+            request.ParentId, request.Tags ?? []);
 
-        return await _store.ForProject(cmd.ProjectId).Decide<ModelState, ElementDto>(
-            cmd.StreamId,
+        return await store.ForProject(projectId).Decide<ModelState, ElementDto>(
+            streamId,
             state => ModelDecider.AddElement(state, addCmd),
-            state => ToDto(state.Elements[cmd.Request.Id]),
+            state => ToDto(state.Elements[request.Id]),
             ct);
     }
 

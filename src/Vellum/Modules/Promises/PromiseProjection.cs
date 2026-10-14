@@ -1,5 +1,6 @@
 using Deedbox;
 using Microsoft.EntityFrameworkCore;
+using Vellum.Shared;
 
 namespace Vellum.Modules.Promises;
 
@@ -8,7 +9,7 @@ namespace Vellum.Modules.Promises;
 /// event. The promise ID is the stream ID. Each event is folded into the stored state with
 /// <see cref="PromiseState.Evolve"/>, so a row and a loaded stream never disagree.
 /// </summary>
-public sealed class PromiseProjection : Projection<PromisesDbContext>
+public sealed class PromiseProjection : Projection<AppDbContext>
 {
     public PromiseProjection()
     {
@@ -36,8 +37,8 @@ public sealed class PromiseProjection : Projection<PromisesDbContext>
             var id = Guid.Parse(ctx.StreamId);
             if (await ctx.Db.Promises.FindAsync([id], ctx.CancellationToken) is { } row)
                 ctx.Db.Promises.Remove(row);
-            foreach (var run in await ctx.Db.Runs.Where(r => r.PromiseId == id).ToListAsync(ctx.CancellationToken))
-                ctx.Db.Runs.Remove(run);
+            foreach (var run in await ctx.Db.PromiseRuns.Where(r => r.PromiseId == id).ToListAsync(ctx.CancellationToken))
+                ctx.Db.PromiseRuns.Remove(run);
         });
 
         // The promise streams of a deleted project are deleted with it. Their rows go too, and
@@ -47,8 +48,8 @@ public sealed class PromiseProjection : Projection<PromisesDbContext>
         {
             if (!Guid.TryParse(ctx.StreamId, out var id))
                 return;
-            foreach (var run in await ctx.Db.Runs.Where(r => r.PromiseId == id).ToListAsync(ctx.CancellationToken))
-                ctx.Db.Runs.Remove(run);
+            foreach (var run in await ctx.Db.PromiseRuns.Where(r => r.PromiseId == id).ToListAsync(ctx.CancellationToken))
+                ctx.Db.PromiseRuns.Remove(run);
             if (await ctx.Db.Promises.FindAsync([id], ctx.CancellationToken) is { } row)
                 ctx.Db.Promises.Remove(row);
         });
@@ -60,7 +61,7 @@ public sealed class PromiseProjection : Projection<PromisesDbContext>
                 return;
 
             var run = recorded.Run;
-            ctx.Db.Runs.Add(new RunEntity
+            ctx.Db.PromiseRuns.Add(new RunEntity
             {
                 Id = run.Id, PromiseId = id, ProjectId = row.ProjectId, Version = ctx.Version,
                 ObligationId = run.ObligationId, PromiseRevision = run.PromiseRevision,
@@ -97,9 +98,9 @@ public sealed class PromiseProjection : Projection<PromisesDbContext>
         row.Document = PromiseJson.Write(state);
     }
 
-    protected override async Task ResetAsync(WriteContext<PromisesDbContext> context)
+    protected override async Task ResetAsync(WriteContext<AppDbContext> context)
     {
-        await context.Db.Runs.ExecuteDeleteAsync(context.CancellationToken);
+        await context.Db.PromiseRuns.ExecuteDeleteAsync(context.CancellationToken);
         await context.Db.Promises.ExecuteDeleteAsync(context.CancellationToken);
     }
 }

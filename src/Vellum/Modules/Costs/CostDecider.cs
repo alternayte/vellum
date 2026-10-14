@@ -138,19 +138,19 @@ public static class CostDecider
         if (state.Resources.Any(r => r.Id == resource.Id))
             return new Decision.Conflict("This ID is already in use. Choose another ID.");
         return CheckResource(state, resource, world)
-            ?? Opened(state, projectId, branchId, userId, now, new CostEvent.ResourceAdded(resource, userId, now));
+            ?? Opened(state, projectId, branchId, userId, now, new CostChange.ResourceAdded(resource, userId, now));
     }
 
     public static Decision ChangeResource(CostSheetState state, CostResource resource, CostWorld world, string userId, DateTimeOffset now)
     {
         if (state.Resources.All(r => r.Id != resource.Id))
             return new Decision.NotFound(ResourceNotFound);
-        return CheckResource(state, resource, world) ?? new Decision.Success([new CostEvent.ResourceChanged(resource, userId, now)]);
+        return CheckResource(state, resource, world) ?? new Decision.Success([new CostChange.ResourceChanged(resource, userId, now)]);
     }
 
     public static Decision RemoveResource(CostSheetState state, Guid resourceId, string userId, DateTimeOffset now) =>
         state.Resources.Any(r => r.Id == resourceId)
-            ? new Decision.Success([new CostEvent.ResourceRemoved(resourceId, userId, now)])
+            ? new Decision.Success([new CostChange.ResourceRemoved(resourceId, userId, now)])
             : new Decision.NotFound(ResourceNotFound);
 
     public static Decision AddAssumption(
@@ -161,20 +161,20 @@ public static class CostDecider
         if (state.Assumptions.Any(a => a.Id == assumption.Id))
             return new Decision.Conflict("This ID is already in use. Choose another ID.");
         return CheckAssumption(state, assumption, world)
-            ?? Opened(state, projectId, branchId, userId, now, new CostEvent.AssumptionAdded(assumption, userId, now));
+            ?? Opened(state, projectId, branchId, userId, now, new CostChange.AssumptionAdded(assumption, userId, now));
     }
 
     public static Decision ChangeAssumption(CostSheetState state, CostAssumption assumption, CostWorld world, string userId, DateTimeOffset now)
     {
         if (state.Assumptions.All(a => a.Id != assumption.Id))
             return new Decision.NotFound(AssumptionNotFound);
-        return CheckAssumption(state, assumption, world) ?? new Decision.Success([new CostEvent.AssumptionChanged(assumption, userId, now)]);
+        return CheckAssumption(state, assumption, world) ?? new Decision.Success([new CostChange.AssumptionChanged(assumption, userId, now)]);
     }
 
     /// <summary>A usage line that names the removed assumption stays, and the estimate lists it as unknown.</summary>
     public static Decision RemoveAssumption(CostSheetState state, Guid assumptionId, string userId, DateTimeOffset now) =>
         state.Assumptions.Any(a => a.Id == assumptionId)
-            ? new Decision.Success([new CostEvent.AssumptionRemoved(assumptionId, userId, now)])
+            ? new Decision.Success([new CostChange.AssumptionRemoved(assumptionId, userId, now)])
             : new Decision.NotFound(AssumptionNotFound);
 
     /// <summary>
@@ -191,7 +191,7 @@ public static class CostDecider
             .Select(a => a.SubjectId is { } subject && !world.Subjects.Contains(subject) ? a with { SubjectId = null } : a)
             .ToImmutableList();
         return Opened(state, projectId, branchId, userId, now,
-            new CostEvent.SheetCopied(fromBranchId, fromVersion, resources, assumptions, userId, now));
+            new CostChange.SheetCopied(fromBranchId, fromVersion, resources, assumptions, userId, now));
     }
 
     private static Decision? CheckResource(CostSheetState state, CostResource resource, CostWorld world)
@@ -216,6 +216,6 @@ public static class CostDecider
 
     private static Decision Opened(CostSheetState state, Guid projectId, Guid branchId, string userId, DateTimeOffset now, object change) =>
         state.ProjectId is null
-            ? new Decision.Success([new CostEvent.SheetOpened(projectId, branchId, userId, now), change])
+            ? new Decision.Success([new CostChange.SheetOpened(projectId, branchId, userId, now), change])
             : new Decision.Success([change]);
 }

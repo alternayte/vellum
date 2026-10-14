@@ -9,6 +9,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Vellum.Modules.Review;
 using Vellum.Tests.Modules.Promises;
+using Vellum.Shared;
 
 namespace Vellum.Tests.Modules.Review;
 
@@ -534,12 +535,12 @@ public class ReviewEndpointTests(IntegrationFixture fixture) : IClassFixture<Int
         async Task<int[]> RowsAsync()
         {
             using var scope = factory.Services.CreateScope();
-            var db = scope.ServiceProvider.GetRequiredService<ReviewDbContext>();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             var projectId = s.Orders.ProjectId;
             return
             [
                 await db.Decisions.CountAsync(d => d.ProjectId == projectId), await db.DecisionNumbering.CountAsync(n => n.ProjectId == projectId),
-                await db.Dispositions.CountAsync(d => d.ProjectId == projectId), await db.Snapshots.CountAsync(x => x.ProjectId == projectId),
+                await db.Dispositions.CountAsync(d => d.ProjectId == projectId), await db.ReviewSnapshots.CountAsync(x => x.ProjectId == projectId),
                 await db.Questions.CountAsync(q => q.ProjectId == projectId), await db.Critiques.CountAsync(c => c.ProjectId == projectId),
             ];
         }

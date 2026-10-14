@@ -8,7 +8,7 @@ public static class ListMessages
     public static async Task<IResult> Handle(
         Guid projectId, Guid streamId,
         Guid? producerId, string? cursor, int? limit,
-        ModellingDbContext db, CancellationToken ct)
+        AppDbContext db, CancellationToken ct)
     {
         var pageSize = Math.Clamp(limit ?? 50, 1, 200);
 

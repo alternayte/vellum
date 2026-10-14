@@ -92,7 +92,7 @@ public class ReviewFixTests(SharedOutboundHost shared) : IClassFixture<SharedOut
     }
 
     private Task<string> StoredDocumentAsync(JsonObject proposal) => ScopedAsync(services =>
-        services.GetRequiredService<AiDesignDbContext>().Proposals.AsNoTracking()
+        services.GetRequiredService<AppDbContext>().DesignProposals.AsNoTracking()
             .Where(p => p.Id == (Guid)proposal["id"]!).Select(p => p.Document).SingleAsync());
 
     // ---- 1 and 11: payloads -------------------------------------------------------------
@@ -491,7 +491,7 @@ public class ReviewFixTests(SharedOutboundHost shared) : IClassFixture<SharedOut
     {
         await ScopedAsync(async services =>
         {
-            var streamId = await services.GetRequiredService<WorkspacesDbContext>().Projects.AsNoTracking()
+            var streamId = await services.GetRequiredService<AppDbContext>().Projects.AsNoTracking()
                 .Where(p => p.Id == projectId).Select(p => p.StreamId).FirstAsync();
             var source = $"github.com/{repository}@4f9a1c7:src/Service.cs:1-9";
             var recorded = await services.GetRequiredService<IEventStore>().ForProject(projectId).Decide<ModelState>(
@@ -500,7 +500,7 @@ public class ReviewFixTests(SharedOutboundHost shared) : IClassFixture<SharedOut
                 CancellationToken.None);
             Assert.IsType<CommandResult.Success>(recorded);
 
-            var import = services.GetRequiredService<ImportDbContext>();
+            var import = services.GetRequiredService<AppDbContext>();
             var scan = new ScanEntity
             {
                 Id = Guid.NewGuid(), ProjectId = projectId, WorkspaceId = ai.WorkspaceId, Host = "github.com", Repository = repository,
@@ -539,7 +539,7 @@ public class ReviewFixTests(SharedOutboundHost shared) : IClassFixture<SharedOut
         // A link to a declared element does not make what a person typed private.
         await ScopedAsync(async services =>
         {
-            var import = services.GetRequiredService<ImportDbContext>();
+            var import = services.GetRequiredService<AppDbContext>();
             var scan = await import.Scans.FirstAsync(s => s.ProjectId == projectId && s.RepositoryIsPrivate == true);
             import.FactLinks.Add(new FactLinkEntity
             {
@@ -725,11 +725,11 @@ public class ReviewFixTests(SharedOutboundHost shared) : IClassFixture<SharedOut
         // The project is filled with drafts of both kinds.
         await ScopedAsync(async services =>
         {
-            var db = services.GetRequiredService<AiDesignDbContext>();
-            var row = await db.Proposals.AsNoTracking().SingleAsync(p => p.Id == (Guid)first["id"]!);
+            var db = services.GetRequiredService<AppDbContext>();
+            var row = await db.DesignProposals.AsNoTracking().SingleAsync(p => p.Id == (Guid)first["id"]!);
             for (var i = 1; i < ProposalStore.MaxDraftsPerProject; i++)
             {
-                db.Proposals.Add(new Vellum.Modules.Ai.Design.ProposalEntity
+                db.DesignProposals.Add(new Vellum.Modules.Ai.Design.ProposalEntity
                 {
                     Id = Guid.NewGuid(), Kind = i % 2 == 0 ? FlowProposals.Kind : ArchitectureProposals.Kind, WorkspaceId = row.WorkspaceId,
                     ProjectId = projectId, Status = "draft", Name = $"Draft {i}", Request = row.Request, Document = row.Document,

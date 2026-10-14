@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Vellum.Modules.Identity.AgentTokens;
 using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Shared;
+using static Vellum.Shared.ResultExtensions;
 
 namespace Vellum.Modules.Promises;
 
@@ -42,16 +43,16 @@ public static class PromiseWrites
     /// change, so there is no second set.
     /// </summary>
     public static async Task<IResult> SetPrefix(
-        Guid projectId, HttpContext http, WorkspaceAuthorizationService auth, PromisesDbContext db, CancellationToken ct)
+        Guid projectId, HttpContext http, WorkspaceAuthorizationService auth, AppDbContext db, CancellationToken ct)
     {
-        await auth.RequireProjectRoleAsync(projectId, PromiseAccess.UserId(http.User), WorkspaceRole.Owner, ct);
+        await auth.RequireProjectRoleAsync(projectId, http.User.UserId(), WorkspaceRole.Owner, ct);
         var (request, error) = await PromiseAccess.ReadAsync<SetPrefixRequest>(http);
         if (request is null)
             return error!;
         if (!PromiseRules.IsPrefix(request.Prefix))
-            return PromiseAccess.Invalid("prefix", "A prefix is 2 to 6 upper-case letters, for example ORD");
+            return Invalid("prefix", "A prefix is 2 to 6 upper-case letters, for example ORD");
         if (request.StartAt is < 1 or > 100_000)
-            return PromiseAccess.Invalid("startAt", "The first number is between 1 and 100000");
+            return Invalid("startAt", "The first number is between 1 and 100000");
 
         var startAt = request.StartAt ?? 1;
         var inserted = await db.Database.ExecuteSqlAsync(
@@ -65,7 +66,7 @@ public static class PromiseWrites
     public static async Task<IResult> Create(
         Guid projectId, HttpContext http, WorkspaceAuthorizationService auth, PromiseReader reader, TimeProvider time, CancellationToken ct)
     {
-        var userId = PromiseAccess.UserId(http.User);
+        var userId = http.User.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
         var (request, error) = await PromiseAccess.ReadAsync<PromiseRequest>(http);
         if (request is null)
@@ -73,7 +74,7 @@ public static class PromiseWrites
 
         // The origin comes from who calls, not from what the body says.
         if (PromiseAccess.Origin(http.User, request.Origin) is not { } origin)
-            return PromiseAccess.Invalid("origin", "The origin of a promise a person creates is human or ai-suggested");
+            return Invalid("origin", "The origin of a promise a person creates is human or ai-suggested");
 
         var content = request.ToContent();
         var promiseId = Guid.NewGuid();
@@ -86,7 +87,7 @@ public static class PromiseWrites
         var tooLarge = false;
         var result = await SharedTransaction.RunAsync(http.RequestServices, async services =>
         {
-            var db = services.GetRequiredService<PromisesDbContext>();
+            var db = services.GetRequiredService<AppDbContext>();
             await using var transaction = await db.Database.BeginTransactionAsync(ct);
 
             var allocated = await db.Database
@@ -129,7 +130,7 @@ public static class PromiseWrites
         Guid projectId, Guid promiseId, HttpContext http,
         WorkspaceAuthorizationService auth, IEventStore store, PromiseReader reader, TimeProvider time, CancellationToken ct)
     {
-        var userId = PromiseAccess.UserId(http.User);
+        var userId = http.User.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
         var (request, error) = await PromiseAccess.ReadAsync<PromiseRequest>(http);
         if (request is null)
@@ -146,7 +147,7 @@ public static class PromiseWrites
         Guid projectId, Guid promiseId, HttpContext http,
         WorkspaceAuthorizationService auth, IEventStore store, PromiseReader reader, TimeProvider time, CancellationToken ct)
     {
-        var userId = PromiseAccess.UserId(http.User);
+        var userId = http.User.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
         var (request, error) = await PromiseAccess.ReadAsync<ReviseRequest>(http, allowEmpty: true);
         if (error is not null)
@@ -169,19 +170,19 @@ public static class PromiseWrites
     /// </summary>
     public static async Task<IResult> Approve(
         Guid projectId, Guid promiseId, HttpContext http,
-        WorkspaceAuthorizationService auth, IEventStore store, PromisesDbContext db, PromiseReader reader, TimeProvider time, CancellationToken ct)
+        WorkspaceAuthorizationService auth, IEventStore store, AppDbContext db, PromiseReader reader, TimeProvider time, CancellationToken ct)
     {
-        var userId = PromiseAccess.UserId(http.User);
+        var userId = http.User.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Owner, ct);
         var (request, error) = await PromiseAccess.ReadAsync<ApproveRequest>(http);
         if (request is null)
             return error!;
         if (string.IsNullOrEmpty(request.ContentHash))
-            return PromiseAccess.Invalid("contentHash", "The content hash of the revision is required. Read the promise and send the contentHash of the draft you approve.");
+            return Invalid("contentHash", "The content hash of the revision is required. Read the promise and send the contentHash of the draft you approve.");
 
         var row = await db.Promises.AsNoTracking().FirstOrDefaultAsync(p => p.Id == promiseId && p.ProjectId == projectId, ct);
         if (row is null)
-            return PromiseAccess.NotFound();
+            return NotFound("Promise");
         var links = PromiseJson.Read<PromiseState>(row.Document).Latest!.Content.Links;
 
         // The hashes record what the approver saw. A link that changes later shows as a gap.
@@ -217,7 +218,7 @@ public static class PromiseWrites
         Guid projectId, Guid promiseId, HttpContext http,
         WorkspaceAuthorizationService auth, IEventStore store, TimeProvider time, CancellationToken ct)
     {
-        var userId = PromiseAccess.UserId(http.User);
+        var userId = http.User.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
 
         var now = time.GetUtcNow();

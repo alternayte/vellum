@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Vellum.Modules.Import;
 using Vellum.Modules.Modelling.Model;
 using Vellum.Modules.Settings.Document;
+using Vellum.Shared;
 
 namespace Vellum.Modules.Ai.Design;
 
@@ -37,7 +38,7 @@ public sealed record OmittedPrivate(int Count, string Reason)
 /// private-sourced, whatever links to it. A schema has no truth label; a link alone decides.
 /// This class is the only place of the feature that reads the import module's tables.
 /// </summary>
-public sealed class PrivateSources(ImportDbContext import, SettingsResolver settings)
+public sealed class PrivateSources(AppDbContext import, SettingsResolver settings)
 {
     internal async Task<PrivateGate> LoadAsync(Guid workspaceId, Guid projectId, ModelState model, CancellationToken ct)
     {

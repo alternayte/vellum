@@ -7,6 +7,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Vellum.Modules.Modelling.Model;
 using Vellum.Modules.Workspaces;
+using Vellum.Shared;
 
 namespace Vellum.Tests.Modules.Modelling;
 
@@ -64,7 +65,7 @@ internal sealed class StaleMarkScenario(WebApplicationFactory<Program> factory, 
     public async Task<Guid> MainStreamAsync()
     {
         using var scope = factory.Services.CreateScope();
-        return await scope.ServiceProvider.GetRequiredService<WorkspacesDbContext>().Projects
+        return await scope.ServiceProvider.GetRequiredService<AppDbContext>().Projects
             .Where(p => p.Id == projectId).Select(p => p.StreamId).FirstAsync();
     }
 

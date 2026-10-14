@@ -8,6 +8,7 @@ using Vellum.Modules.Settings.Document;
 using Vellum.Modules.Stress;
 using Vellum.Modules.Stress.Engine;
 using Vellum.Tests.Modules.Promises;
+using Vellum.Shared;
 
 namespace Vellum.Tests.Modules.Stress;
 
@@ -408,8 +409,8 @@ public class StressEndpointTests(IntegrationFixture fixture) : IClassFixture<Int
         var old = Guid.NewGuid();
         using (var scope = factory.Services.CreateScope())
         {
-            var db = scope.ServiceProvider.GetRequiredService<StressDbContext>();
-            var row = await db.Runs.AsNoTracking().SingleAsync(r => r.Id == current);
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            var row = await db.StressRuns.AsNoTracking().SingleAsync(r => r.Id == current);
             var result = JsonNode.Parse(row.Result)!.AsObject();
             result["engineVersion"] = "1";
             result.Remove("limits");
@@ -431,7 +432,7 @@ public class StressEndpointTests(IntegrationFixture fixture) : IClassFixture<Int
             row.Hash = new string('1', 64);
             row.At = row.At.AddMinutes(-5);
             row.Result = result.ToJsonString();
-            db.Runs.Add(row);
+            db.StressRuns.Add(row);
             await db.SaveChangesAsync();
         }
 
@@ -470,8 +471,8 @@ public class StressEndpointTests(IntegrationFixture fixture) : IClassFixture<Int
         async Task<(int Profiles, int Runs)> CountAsync()
         {
             using var scope = factory.Services.CreateScope();
-            var db = scope.ServiceProvider.GetRequiredService<StressDbContext>();
-            return (await db.Profiles.CountAsync(p => p.ProjectId == project), await db.Runs.CountAsync(r => r.ProjectId == project));
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            return (await db.Profiles.CountAsync(p => p.ProjectId == project), await db.StressRuns.CountAsync(r => r.ProjectId == project));
         }
 
         Assert.Equal((1, 1), await CountAsync());

@@ -5,6 +5,7 @@ using Vellum.Modules.Settings.Audit;
 using Vellum.Modules.Workspaces;
 using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Shared;
+using static Vellum.Shared.ResultExtensions;
 
 namespace Vellum.Modules.Identity.AgentTokens;
 
@@ -49,10 +50,10 @@ public static class AgentTokenEndpoints
 
     private static async Task<IResult> Create(
         Guid workspaceId, CreateAgentTokenRequest request, ClaimsPrincipal user,
-        AppIdentityDbContext db, WorkspacesDbContext workspaces, WorkspaceAuthorizationService auth,
+        AppDbContext db, WorkspaceAuthorizationService auth,
         Bootstrap bootstrap, TimeProvider time, CancellationToken ct)
     {
-        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var userId = user.UserId();
         await auth.RequireRoleAsync(workspaceId, userId, WorkspaceRole.Owner, ct);
 
         var name = request.Name?.Trim();
@@ -79,7 +80,7 @@ public static class AgentTokenEndpoints
             return Invalid("expiresAt", $"A token lives at most {AgentTokenRules.MaxLifetime.Days} days");
 
         if (request.ProjectId is { } projectId
-            && !await workspaces.Projects.AnyAsync(p => p.Id == projectId && p.WorkspaceId == workspaceId, ct))
+            && !await db.Projects.AnyAsync(p => p.Id == projectId && p.WorkspaceId == workspaceId, ct))
             return Invalid("projectId", "Must be the ID of a project of this workspace");
 
         var id = Guid.NewGuid();
@@ -126,7 +127,7 @@ public static class AgentTokenEndpoints
             ct);
         await transaction.CommitAsync(ct);
 
-        return Results.Created($"/api/workspaces/{workspaceId}/agent-tokens/{id}",
+        return Results.Created($"/api/db/{workspaceId}/agent-tokens/{id}",
             new AgentTokenCreated(id, row.Name, token, row.Scopes, row.ProjectId, row.ExpiresAt));
     }
 
@@ -138,9 +139,9 @@ public static class AgentTokenEndpoints
     /// only a create adds a row. No field holds the token or its digest.
     /// </summary>
     private static async Task<IResult> List(
-        Guid workspaceId, ClaimsPrincipal user, AppIdentityDbContext db, WorkspaceAuthorizationService auth, CancellationToken ct)
+        Guid workspaceId, ClaimsPrincipal user, AppDbContext db, WorkspaceAuthorizationService auth, CancellationToken ct)
     {
-        await auth.RequireRoleAsync(workspaceId, user.FindFirstValue(ClaimTypes.NameIdentifier)!, WorkspaceRole.Owner, ct);
+        await auth.RequireRoleAsync(workspaceId, user.UserId(), WorkspaceRole.Owner, ct);
 
         var rows = await db.AgentTokens.AsNoTracking()
             .Where(t => t.WorkspaceId == workspaceId)
@@ -159,9 +160,9 @@ public static class AgentTokenEndpoints
     /// </summary>
     private static async Task<IResult> Revoke(
         Guid workspaceId, Guid tokenId, ClaimsPrincipal user,
-        AppIdentityDbContext db, WorkspaceAuthorizationService auth, TimeProvider time, CancellationToken ct)
+        AppDbContext db, WorkspaceAuthorizationService auth, TimeProvider time, CancellationToken ct)
     {
-        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var userId = user.UserId();
         await auth.RequireRoleAsync(workspaceId, userId, WorkspaceRole.Owner, ct);
 
         if (!await db.AgentTokens.AnyAsync(t => t.Id == tokenId && t.WorkspaceId == workspaceId, ct))
@@ -179,6 +180,4 @@ public static class AgentTokenEndpoints
         return Results.NoContent();
     }
 
-    private static IResult Invalid(string field, string message) =>
-        Results.BadRequest(new ErrorResponse("validation_error", "Validation failed", Errors: [new FieldError(field, message)]));
 }

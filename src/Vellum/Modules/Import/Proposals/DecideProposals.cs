@@ -9,6 +9,7 @@ using Vellum.Modules.Schemas;
 using Vellum.Modules.Workspaces;
 using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Shared;
+using static Vellum.Shared.ResultExtensions;
 
 namespace Vellum.Modules.Import.Proposals;
 
@@ -58,10 +59,10 @@ public static class DecideProposals
     public static async Task<IResult> Handle(
         Guid projectId, Guid importId, DecideProposalsRequest request,
         ClaimsPrincipal user, HttpContext http,
-        WorkspaceAuthorizationService auth, ImportDbContext db, WorkspacesDbContext workspacesDb,
+        WorkspaceAuthorizationService auth, AppDbContext db,
         TimeProvider time, CancellationToken ct)
     {
-        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var userId = user.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
 
         var accept = (request.Accept ?? []).Distinct().ToArray();
@@ -86,14 +87,14 @@ public static class DecideProposals
 
         // The schema streams must be locked before the first append, so they are read first.
         // A proposal keeps its entity for life, so this list cannot change under the decision.
-        var schemaIds = await db.Proposals.AsNoTracking()
+        var schemaIds = await db.ImportProposals.AsNoTracking()
             .Where(p => p.ScanId == importId && accept.Contains(p.Id) && p.EntityKind == EntityKinds.Schema)
             .Select(p => p.EntityId)
             .Distinct().ToListAsync(ct);
         if (schemaIds.Count > ImportModel.MaxSchemas)
             return Invalid("accept", $"One decision accepts at most {ImportModel.MaxSchemas} schema proposals.");
 
-        var project = await workspacesDb.Projects.AsNoTracking().FirstAsync(p => p.Id == projectId, ct);
+        var project = await db.Projects.AsNoTracking().FirstAsync(p => p.Id == projectId, ct);
         if (schemaIds.Contains(project.StreamId))
             return Invalid("accept", "A schema proposal names the ID of the project's model stream.");
 
@@ -105,7 +106,7 @@ public static class DecideProposals
         IServiceProvider services, ScanEntity scan, Guid modelStreamId, List<Guid> schemaIds,
         Guid[] accept, Guid[] reject, RelinkChoice[] relink, bool acknowledgeImpact, string userId, DateTimeOffset now, CancellationToken ct)
     {
-        var db = services.GetRequiredService<ImportDbContext>();
+        var db = services.GetRequiredService<AppDbContext>();
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         var store = services.GetRequiredService<IEventStore>().ForProject(scan.ProjectId).UseDbContext(db);
 
@@ -137,7 +138,7 @@ public static class DecideProposals
             return Results.Conflict(new ErrorResponse("comparison_scan", ScanKindInfo.Describe(kind, tracked)!));
 
         var named = accept.Concat(reject).Concat(relink.Select(r => r.Id)).ToArray();
-        var proposals = await db.Proposals.Where(p => p.ScanId == scan.Id && named.Contains(p.Id)).ToDictionaryAsync(p => p.Id, ct);
+        var proposals = await db.ImportProposals.Where(p => p.ScanId == scan.Id && named.Contains(p.Id)).ToDictionaryAsync(p => p.Id, ct);
         var failures = new List<DecisionFailure>();
         foreach (var id in named)
         {
@@ -156,7 +157,7 @@ public static class DecideProposals
         // A proposal is accepted with, or after, everything it depends on.
         var accepted = accept.Select(id => proposals[id]).OrderBy(p => p.Seq).ToList();
         var outside = accepted.SelectMany(p => p.DependsOn).Distinct().Where(id => !proposals.ContainsKey(id)).ToArray();
-        var dependencies = await db.Proposals.AsNoTracking()
+        var dependencies = await db.ImportProposals.AsNoTracking()
             .Where(p => outside.Contains(p.Id))
             .Select(p => new { p.Id, p.Name, p.Status, p.EntityKind })
             .ToDictionaryAsync(p => p.Id, ct);
@@ -250,7 +251,7 @@ public static class DecideProposals
                 failures.Add(new DecisionFailure(proposalId, "The schema list is being rebuilt. Nothing was applied; try again."));
                 continue;
             }
-            if (await DeleteSchemaHandler.ReferrersAsync(services, store, new DeleteSchemaCommandEnvelope(scan.ProjectId, schemaId), ct) is { } refusal)
+            if (await DeleteSchema.ReferrersAsync(services, store, scan.ProjectId, schemaId, ct) is { } refusal)
             {
                 failures.Add(new DecisionFailure(proposalId, refusal));
                 continue;
@@ -269,7 +270,7 @@ public static class DecideProposals
         }
 
         // The rules that made the keys of this scan's facts. A link remembers them.
-        var ruleFingerprint = await db.Snapshots.AsNoTracking().Where(s => s.ScanId == scan.Id).Select(s => s.RuleFingerprint).FirstOrDefaultAsync(ct);
+        var ruleFingerprint = await db.ImportSnapshots.AsNoTracking().Where(s => s.ScanId == scan.Id).Select(s => s.RuleFingerprint).FirstOrDefaultAsync(ct);
 
         foreach (var proposal in accepted)
         {
@@ -385,7 +386,7 @@ public static class DecideProposals
         return Results.Ok(new DecideProposalsResponse(accept, reject, [], [.. relink.Select(r => r.Id)]));
     }
 
-    private static Task<FactLinkEntity?> FindLinkAsync(ImportDbContext db, ScanEntity scan, string subject, string factKey, CancellationToken ct)
+    private static Task<FactLinkEntity?> FindLinkAsync(AppDbContext db, ScanEntity scan, string subject, string factKey, CancellationToken ct)
     {
         var hash = KeyHash.Of(factKey);
         return db.FactLinks.FirstOrDefaultAsync(l =>
@@ -425,6 +426,4 @@ public static class DecideProposals
     private static IResult Failed(List<DecisionFailure> failures) =>
         Results.Ok(new DecideProposalsResponse([], [], [.. failures.DistinctBy(f => f.Id)], []));
 
-    private static IResult Invalid(string field, string message) =>
-        Results.BadRequest(new ErrorResponse("validation_error", "Validation failed", Errors: [new FieldError(field, message)]));
 }

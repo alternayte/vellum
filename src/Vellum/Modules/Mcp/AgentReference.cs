@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using ModelContextProtocol.Server;
 using Vellum.Modules.Identity;
 using Vellum.Modules.Identity.AgentTokens;
+using Vellum.Shared;
 
 namespace Vellum.Modules.Mcp;
 
@@ -250,7 +251,7 @@ public sealed record AgentCapabilities(
     IReadOnlyList<CapableTool> Tools, IReadOnlyList<CapableEndpoint> Endpoints)
 {
     internal static async Task<IResult> Handle(
-        ClaimsPrincipal user, AgentEndpoints endpoints, IEnumerable<McpServerTool> registered, AppIdentityDbContext identity, CancellationToken ct)
+        ClaimsPrincipal user, AgentEndpoints endpoints, IEnumerable<McpServerTool> registered, AppDbContext identity, CancellationToken ct)
     {
         var tools = AgentReference.Tools(registered);
         var open = endpoints.Open();

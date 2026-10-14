@@ -75,8 +75,8 @@ builder.Services.AddOpenApi(options => options.AddSchemaTransformer((schema, con
     return Task.CompletedTask;
 }));
 
-// Exception handling
-builder.Services.AddProblemDetails();
+// Exception handling. Every error answer is the shared envelope (Shared/ErrorEnvelope.cs);
+// an exception that no handler takes is a 500 with nothing of the exception in it.
 builder.Services.AddExceptionHandler<UnauthorizedExceptionHandler>();
 builder.Services.AddExceptionHandler<ConcurrencyExceptionHandler>();
 builder.Services.AddExceptionHandler<InvalidCursorExceptionHandler>();
@@ -97,9 +97,7 @@ builder.Services.AddDeedbox(deedbox => deedbox
     .AddSchemaStreams()
     .AddScenarioStreams()
     .AddPromiseStreams()
-    .AddCostStreams()
-    .AddDecisionStreams()
-    .AddLoadTestStreams());
+    .AddDecisionStreams());
 
 // Build-time OpenAPI generation starts the host with no database. Deedbox checks its
 // schema when the host starts, so its hosted services do not run in that process.
@@ -113,14 +111,21 @@ if (generatingOpenApi)
     }
 }
 
+// The one DbContext. Each module configures its own tables in its own Postgres schema. The
+// connection string is read when the context is made, so configuration that a test host
+// overrides applies.
+builder.Services.AddDbContext<AppDbContext>((services, options) => options
+    .UseNpgsql(services.GetRequiredService<IConfiguration>().GetConnectionString("DefaultConnection"))
+    .UseSnakeCaseNamingConvention());
+
 // Modules
 builder.Services.AddIdentityModule(builder.Configuration);
-builder.Services.AddWorkspacesModule(builder.Configuration);
-builder.Services.AddModellingModule(builder.Configuration);
-builder.Services.AddViewsModule(builder.Configuration);
-builder.Services.AddDocsModule(builder.Configuration);
-builder.Services.AddDraftsModule(builder.Configuration);
-builder.Services.AddSchemasModule(builder.Configuration);
+builder.Services.AddWorkspacesModule();
+builder.Services.AddModellingModule();
+builder.Services.AddViewsModule();
+builder.Services.AddDocsModule();
+builder.Services.AddDraftsModule();
+builder.Services.AddSchemasModule();
 builder.Services.AddScenariosModule();
 builder.Services.AddMcpModule();
 builder.Services.AddSettingsModule(generatingOpenApi);
@@ -134,12 +139,6 @@ builder.Services.AddStressModule();
 builder.Services.AddLoadTestsModule();
 builder.Services.AddCostsModule();
 builder.Services.AddReviewModule();
-
-// Command handlers (Scrutor scan)
-builder.Services.Scan(s => s.FromAssemblyOf<Program>()
-    .AddClasses(c => c.AssignableTo(typeof(ICommandHandler<,>)))
-    .AsImplementedInterfaces()
-    .WithScopedLifetime());
 
 var app = builder.Build();
 
@@ -157,7 +156,7 @@ if (app.Environment.IsDevelopment())
 // The address and the scheme of the client, from the proxies the operator names. First, so
 // everything below sees them.
 app.UseTrustedProxies();
-app.UseExceptionHandler();
+app.UseExceptionHandler(new ExceptionHandlerOptions { ExceptionHandler = UnhandledException.WriteAsync });
 app.UseSecurityHeaders();
 app.UseNoPageOutsideTheApp();
 app.UseSameOriginWrites();
@@ -241,8 +240,7 @@ if (app.Environment.IsDevelopment())
     if (args.Contains("seed"))
     {
         var userManager = services.GetRequiredService<UserManager<ApplicationUser>>();
-        var workspacesDb = services.GetRequiredService<WorkspacesDbContext>();
-        var settingsDb = services.GetRequiredService<SettingsDbContext>();
+        var db = services.GetRequiredService<AppDbContext>();
         var store = services.GetRequiredService<IEventStore>();
 
         // Create dev user
@@ -262,22 +260,22 @@ if (app.Environment.IsDevelopment())
         }
 
         // The seeded user stands in for first-run setup, so it is the instance admin.
-        if (await settingsDb.InstanceAdmins.FindAsync(devUser.Id) is null)
+        if (await db.InstanceAdmins.FindAsync(devUser.Id) is null)
         {
-            settingsDb.InstanceAdmins.Add(new InstanceAdminEntity { UserId = devUser.Id });
-            await settingsDb.SaveChangesAsync();
+            db.InstanceAdmins.Add(new InstanceAdminEntity { UserId = devUser.Id });
+            await db.SaveChangesAsync();
         }
 
         // Create workspace + project
         var workspaceId = Guid.Parse("00000000-0000-0000-0000-000000000001");
-        if (await workspacesDb.Workspaces.FindAsync(workspaceId) is null)
+        if (await db.Workspaces.FindAsync(workspaceId) is null)
         {
             var streamId = Guid.Parse("00000000-0000-0000-0000-000000000010");
             var projectId = Guid.Parse("00000000-0000-0000-0000-000000000002");
 
-            workspacesDb.Workspaces.Add(new WorkspaceEntity { Id = workspaceId, Name = "Dev Workspace", CreatedBy = devUser.Id });
-            workspacesDb.Memberships.Add(new MembershipEntity { Id = Guid.NewGuid(), WorkspaceId = workspaceId, UserId = devUser.Id, Role = "Owner" });
-            workspacesDb.Projects.Add(new ProjectEntity { Id = projectId, WorkspaceId = workspaceId, Name = "Sample Architecture", StreamId = streamId });
+            db.Workspaces.Add(new WorkspaceEntity { Id = workspaceId, Name = "Dev Workspace", CreatedBy = devUser.Id });
+            db.Memberships.Add(new MembershipEntity { Id = Guid.NewGuid(), WorkspaceId = workspaceId, UserId = devUser.Id, Role = "Owner", CreatedAt = services.GetRequiredService<TimeProvider>().GetUtcNow() });
+            db.Projects.Add(new ProjectEntity { Id = projectId, WorkspaceId = workspaceId, Name = "Sample Architecture", StreamId = streamId });
 
             var userId = Guid.NewGuid();
             var webAppId = Guid.NewGuid();
@@ -310,7 +308,7 @@ if (app.Environment.IsDevelopment())
             await store
                 .ForProject(projectId)
                 .WithMetadata(metadata => metadata with { Actor = $"user:{devUser.Id}" })
-                .UseDbContext(workspacesDb)
+                .UseDbContext(db)
                 .Append(StreamId.From(streamId), ExpectedVersion.NoStream, seedEvents);
         }
 

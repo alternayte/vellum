@@ -51,11 +51,12 @@ internal static class InferredWrites
     /// <returns>Null when every addition was written.</returns>
     public static async Task<AdditionRefused?> ApplyAsync(
         IEventStore pinned, Guid streamId,
-        IReadOnlyList<(Addition Addition, double Confidence)> additions, string source, string userId, CancellationToken ct)
+        IReadOnlyList<(Addition Addition, double Confidence)> additions, string source, string userId, DateTimeOffset acceptedAt,
+        CancellationToken ct)
     {
-        // The acceptance stamp is taken once, so the decision stays a pure function of the state.
+        // The acceptance stamp is taken once, by the caller, so the decision stays a pure
+        // function of the state.
         var acceptedBy = Guid.Parse(userId);
-        var acceptedAt = DateTimeOffset.UtcNow;
         AdditionRefused? refused = null;
 
         var result = await pinned.DecideInTransaction<ModelState, bool>(streamId, state =>

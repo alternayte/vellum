@@ -1,16 +1,12 @@
 using Microsoft.EntityFrameworkCore;
+using Vellum.Shared;
 
 namespace Vellum.Modules.Views;
 
 public static class ViewsModule
 {
-    public static IServiceCollection AddViewsModule(this IServiceCollection services, IConfiguration config)
+    public static IServiceCollection AddViewsModule(this IServiceCollection services)
     {
-        var connectionString = config.GetConnectionString("DefaultConnection")!;
-
-        services.AddDbContext<ViewsDbContext>(options =>
-            options.UseNpgsql(connectionString)
-                   .UseSnakeCaseNamingConvention());
         services.AddScoped<Shared.IProjectRetention, ViewsRetention>();
 
         return services;

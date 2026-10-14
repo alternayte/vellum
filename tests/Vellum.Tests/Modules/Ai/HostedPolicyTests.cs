@@ -115,7 +115,7 @@ public class HostedPolicyTests
         public async Task<List<UsageRecordEntity>> RowsAsync()
         {
             using var scope = Factory.Services.CreateScope();
-            return await scope.ServiceProvider.GetRequiredService<AiUsageDbContext>().UsageRecords.AsNoTracking()
+            return await scope.ServiceProvider.GetRequiredService<AppDbContext>().UsageRecords.AsNoTracking()
                 .Where(r => r.WorkspaceId == WorkspaceId).OrderBy(r => r.StartedAt).ToListAsync();
         }
 

@@ -145,7 +145,7 @@ public static class ChangeImpact
         Guid projectId, Guid importId, ClaimsPrincipal user, HttpContext http,
         WorkspaceAuthorizationService auth, CancellationToken ct)
     {
-        await auth.RequireProjectRoleAsync(projectId, PromiseAccess.UserId(user), WorkspaceRole.Viewer, ct);
+        await auth.RequireProjectRoleAsync(projectId, user.UserId(), WorkspaceRole.Viewer, ct);
         var (impact, refusal) = await ComputeAsync(http.RequestServices, projectId, importId, ct);
         return impact is null ? refusal! : Results.Ok(impact);
     }
@@ -163,11 +163,11 @@ public static class ChangeImpact
     internal static async Task<(ChangeImpactDto? Impact, IResult? Refusal)> ComputeAsync(
         IServiceProvider services, Guid projectId, Guid scanId, ImpactInputs? pinned, CancellationToken ct)
     {
-        var db = services.GetRequiredService<ImportDbContext>();
+        var db = services.GetRequiredService<AppDbContext>();
         var scan = await db.Scans.AsNoTracking().FirstOrDefaultAsync(s => s.Id == scanId && s.ProjectId == projectId, ct);
         if (scan is null)
             return (null, Results.NotFound(new ErrorResponse("not_found", "Import not found")));
-        var head = await db.Snapshots.AsNoTracking().FirstOrDefaultAsync(s => s.ScanId == scan.Id, ct);
+        var head = await db.ImportSnapshots.AsNoTracking().FirstOrDefaultAsync(s => s.ScanId == scan.Id, ct);
         if (scan.Status != ScanStatus.Completed || head is null)
             return (null, Results.Conflict(new ErrorResponse("import_not_completed", "Only a completed scan has an impact report.")));
 
@@ -177,7 +177,7 @@ public static class ChangeImpact
         TrackedRefEntity? tracked;
         if (pinned is null)
         {
-            var streamId = await services.GetRequiredService<WorkspacesDbContext>().Projects.AsNoTracking()
+            var streamId = await services.GetRequiredService<AppDbContext>().Projects.AsNoTracking()
                 .Where(p => p.Id == projectId).Select(p => (Guid?)p.StreamId).FirstOrDefaultAsync(ct);
             if (streamId is null)
                 return (null, Results.NotFound(new ErrorResponse("not_found", "Import not found")));
@@ -232,7 +232,7 @@ public static class ChangeImpact
         // 1a. Contract changes: the proposals of the scan. A later scan of the followed ref
         // supersedes pending ones; against a pinned state they stay, because the proposals of
         // a scan are its inputs and the same pinned state and scan give the same report.
-        var proposals = await db.Proposals.AsNoTracking()
+        var proposals = await db.ImportProposals.AsNoTracking()
             .Where(p => p.ScanId == scan.Id && (pinned != null || p.Status != ProposalStatus.Superseded))
             .OrderBy(p => p.Seq)
             .ToListAsync(ct);
@@ -242,7 +242,7 @@ public static class ChangeImpact
         var schemaIds = proposals.Where(p => p.EntityKind == EntityKinds.Schema).Select(p => p.EntityId).ToHashSet();
         Dictionary<Guid, SchemaRow> schemas = pinned is not null
             ? pinned.Schemas.Where(s => schemaIds.Contains(s.Id)).ToDictionary(s => s.Id)
-            : schemaIds.Count == 0 ? [] : await services.GetRequiredService<SchemasDbContext>().Schemas.AsNoTracking()
+            : schemaIds.Count == 0 ? [] : await services.GetRequiredService<AppDbContext>().Schemas.AsNoTracking()
                 .Where(s => s.ProjectId == projectId && schemaIds.Contains(s.Id))
                 .Select(s => new SchemaRow(s.Id, s.Name, s.Content))
                 .ToDictionaryAsync(s => s.Id, ct);
@@ -441,7 +441,7 @@ public static class ChangeImpact
         // 4. Promises.
         var all = current.Where(p => p.State != PromiseLifecycle.Retired).ToList();
         // The runs that read this scan. A run against another scan, however new, says nothing about this one.
-        List<RunRow> scanRuns = all.Count == 0 ? [] : await services.GetRequiredService<PromisesDbContext>().Runs.AsNoTracking()
+        List<RunRow> scanRuns = all.Count == 0 ? [] : await services.GetRequiredService<AppDbContext>().PromiseRuns.AsNoTracking()
             .Where(r => r.ProjectId == projectId && EF.Functions.JsonContains(r.Document, $$"""{"scanId":"{{scan.Id}}"}"""))
             .Select(r => new RunRow(r.PromiseId, r.PromiseRevision, r.ObligationId, r.Version, r.Document))
             .ToListAsync(ct);
@@ -583,7 +583,7 @@ public static class ChangeImpact
     internal sealed record PatternRow(string FactKey, string Name, string Attributes, string Evidence);
 
     /// <summary>The facts of one snapshot that have a <c>pattern</c> attribute. The database filters them: a snapshot can hold many thousand facts.</summary>
-    internal static IQueryable<PatternRow> PatternRows(ImportDbContext db, Guid scanId) =>
+    internal static IQueryable<PatternRow> PatternRows(AppDbContext db, Guid scanId) =>
         db.SnapshotFacts.AsNoTracking().Where(f => f.ScanId == scanId && EF.Functions.JsonExists(f.Attributes, PatternAttribute)).OrderBy(f => f.Seq)
             .Select(f => new PatternRow(f.FactKey, f.Name, f.Attributes, f.Evidence));
 
@@ -593,7 +593,7 @@ public static class ChangeImpact
     /// The pattern facts of one snapshot by fact key. A fact is one by its <c>pattern</c>
     /// attribute alone, as <see cref="Checks.SourcePatternCheck"/> reads it.
     /// </summary>
-    private static async Task<Dictionary<string, PatternFact>> PatternsAsync(ImportDbContext db, Guid scanId, CancellationToken ct)
+    private static async Task<Dictionary<string, PatternFact>> PatternsAsync(AppDbContext db, Guid scanId, CancellationToken ct)
     {
         var rows = await PatternRows(db, scanId).ToListAsync(ct);
         var found = new Dictionary<string, PatternFact>(StringComparer.Ordinal);
@@ -615,22 +615,22 @@ public static class ChangeImpact
     /// When this scan is that scan, the newest older scan of the repository that read another
     /// commit whole: a scan of some paths, or a partial one, is no base to miss a pattern in.
     /// </summary>
-    private static async Task<ScanEntity?> BaseScanAsync(ImportDbContext db, ScanEntity scan, TrackedRefEntity? tracked, CancellationToken ct)
+    private static async Task<ScanEntity?> BaseScanAsync(AppDbContext db, ScanEntity scan, TrackedRefEntity? tracked, CancellationToken ct)
     {
         if (tracked?.ScanId is { } followed && followed != scan.Id
-            && await db.Snapshots.AsNoTracking().AnyAsync(s => s.ScanId == followed, ct))
+            && await db.ImportSnapshots.AsNoTracking().AnyAsync(s => s.ScanId == followed, ct))
             return await db.Scans.AsNoTracking().FirstOrDefaultAsync(s => s.Id == followed, ct);
 
         return await db.Scans.AsNoTracking()
             .Where(s => s.ProjectId == scan.ProjectId && s.Host == scan.Host && s.Repository == scan.Repository && s.Id != scan.Id
                 && s.Status == ScanStatus.Completed && s.CommitSha != null && s.CommitSha != scan.CommitSha && s.CompletedAt < scan.CompletedAt
                 && s.IsComplete && s.IncludePaths.Length == 0 && s.ExcludePaths.Length == 0
-                && db.Snapshots.Any(snapshot => snapshot.ScanId == s.Id))
+                && db.ImportSnapshots.Any(snapshot => snapshot.ScanId == s.Id))
             .OrderByDescending(s => s.CompletedAt).ThenBy(s => s.Id)
             .FirstOrDefaultAsync(ct);
     }
 
-    private static async Task<ScanCoverage> CoverageAsync(ImportDbContext db, ScanEntity scan, CancellationToken ct)
+    private static async Task<ScanCoverage> CoverageAsync(AppDbContext db, ScanEntity scan, CancellationToken ct)
     {
         var rows = await db.ScanFiles.AsNoTracking().Where(f => f.ScanId == scan.Id)
             .Select(f => new { f.Path, f.State, f.Reason }).ToListAsync(ct);

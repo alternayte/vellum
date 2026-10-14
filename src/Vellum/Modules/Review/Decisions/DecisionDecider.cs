@@ -170,7 +170,7 @@ public static class DecisionDecider
 /// The decision read model. It runs inline, so a row commits in the same transaction as its
 /// event. The decision ID is the stream ID, and each event is folded into the stored state.
 /// </summary>
-public sealed class DecisionProjection : Projection<ReviewDbContext>
+public sealed class DecisionProjection : Projection<AppDbContext>
 {
     public DecisionProjection()
     {
@@ -205,7 +205,7 @@ public sealed class DecisionProjection : Projection<ReviewDbContext>
                 Write(row, DecisionState.Evolve(PromiseJson.Read<DecisionState>(row.Document), @event), ctx.Version);
         });
 
-    private static async Task RemoveAsync(ProjectionContext<ReviewDbContext> ctx)
+    private static async Task RemoveAsync(ProjectionContext<AppDbContext> ctx)
     {
         if (Guid.TryParse(ctx.StreamId, out var id) && await ctx.Db.Decisions.FindAsync([id], ctx.CancellationToken) is { } row)
             ctx.Db.Decisions.Remove(row);
@@ -221,6 +221,6 @@ public sealed class DecisionProjection : Projection<ReviewDbContext>
         row.Document = PromiseJson.Write(state);
     }
 
-    protected override async Task ResetAsync(WriteContext<ReviewDbContext> context) =>
+    protected override async Task ResetAsync(WriteContext<AppDbContext> context) =>
         await context.Db.Decisions.ExecuteDeleteAsync(context.CancellationToken);
 }

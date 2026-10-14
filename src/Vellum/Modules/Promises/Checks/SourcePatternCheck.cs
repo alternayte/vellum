@@ -5,6 +5,7 @@ using Vellum.Modules.Import;
 using Vellum.Modules.Import.Extraction;
 using Vellum.Modules.Import.Proposals;
 using Vellum.Modules.Import.Scans;
+using Vellum.Shared;
 
 namespace Vellum.Modules.Promises.Checks;
 
@@ -44,9 +45,9 @@ public static class SourcePatternCheck
 
     /// <summary>The scan to look at, or why the request cannot name it.</summary>
     public static async Task<(ScanEntity? Scan, string? Refusal)> FindScanAsync(
-        ImportDbContext importDb, Guid projectId, SourcePatternRecipe recipe, Guid scanId, CancellationToken ct)
+        AppDbContext db, Guid projectId, SourcePatternRecipe recipe, Guid scanId, CancellationToken ct)
     {
-        var scan = await importDb.Scans.AsNoTracking().FirstOrDefaultAsync(s => s.Id == scanId && s.ProjectId == projectId, ct);
+        var scan = await db.Scans.AsNoTracking().FirstOrDefaultAsync(s => s.Id == scanId && s.ProjectId == projectId, ct);
         if (scan is null)
             return (null, "No scan with this ID exists in the project");
         return scan.Repository == recipe.Repository
@@ -77,14 +78,14 @@ public static class SourcePatternCheck
         /// <summary>True for a completed scan that is a comparison now: a run against it is for that scan only.</summary>
         internal bool IsComparison => Snapshot is not null && !ScanKindInfo.Of(Scan, Tracked).Tracking;
 
-        public static async Task<ScanInputs> LoadAsync(ImportDbContext importDb, Guid projectId, ScanEntity scan, CancellationToken ct)
+        public static async Task<ScanInputs> LoadAsync(AppDbContext db, Guid projectId, ScanEntity scan, CancellationToken ct)
         {
-            var snapshot = await importDb.Snapshots.AsNoTracking().FirstOrDefaultAsync(s => s.ScanId == scan.Id, ct);
+            var snapshot = await db.ImportSnapshots.AsNoTracking().FirstOrDefaultAsync(s => s.ScanId == scan.Id, ct);
             if (snapshot is null)
                 return new ScanInputs { Scan = scan };
-            var tracked = await importDb.TrackedRefs.AsNoTracking()
+            var tracked = await db.TrackedRefs.AsNoTracking()
                 .FirstOrDefaultAsync(t => t.ProjectId == projectId && t.Host == snapshot.Host && t.Repository == snapshot.Repository, ct);
-            var rows = await importDb.SnapshotFacts.AsNoTracking()
+            var rows = await db.SnapshotFacts.AsNoTracking()
                 .Where(f => f.ScanId == snapshot.ScanId)
                 .OrderBy(f => f.Seq)
                 .Select(f => new { f.FactKey, f.Attributes, f.Evidence })
@@ -98,13 +99,13 @@ public static class SourcePatternCheck
     }
 
     public static async Task<CheckOutcome> RunAsync(
-        ImportDbContext importDb, PromisesDbContext promisesDb, Guid projectId, Guid promiseId, string obligationId, string obligationHash,
+        AppDbContext db, Guid projectId, Guid promiseId, string obligationId, string obligationHash,
         SourcePatternRecipe recipe, ScanEntity scan, CancellationToken ct) =>
-        await RunAsync(importDb, promisesDb, projectId, promiseId, obligationId, obligationHash, recipe,
-            await ScanInputs.LoadAsync(importDb, projectId, scan, ct), ct);
+        await RunAsync(db, projectId, promiseId, obligationId, obligationHash, recipe,
+            await ScanInputs.LoadAsync(db, projectId, scan, ct), ct);
 
     internal static async Task<CheckOutcome> RunAsync(
-        ImportDbContext importDb, PromisesDbContext promisesDb, Guid projectId, Guid promiseId, string obligationId, string obligationHash,
+        AppDbContext db, Guid projectId, Guid promiseId, string obligationId, string obligationHash,
         SourcePatternRecipe recipe, ScanInputs inputs, CancellationToken ct)
     {
         var scan = inputs.Scan;
@@ -135,7 +136,7 @@ public static class SourcePatternCheck
             serviceText = $" for service element {service}";
             if (!inputs.ServiceLinks.TryGetValue(service, out serviceLinks))
             {
-                inputs.ServiceLinks[service] = serviceLinks = await importDb.FactLinks.AsNoTracking()
+                inputs.ServiceLinks[service] = serviceLinks = await db.FactLinks.AsNoTracking()
                     .Where(l => l.ProjectId == projectId && l.Host == snapshot.Host && l.Repository == snapshot.Repository && l.EntityId == service)
                     .OrderBy(l => l.Id)
                     .ToListAsync(ct);
@@ -196,7 +197,7 @@ public static class SourcePatternCheck
         }
 
         // From here the result needs absence: of the pattern, or of an unconditional declaration of it.
-        var (previousText, previousPaths) = await PreviouslyFoundAsync(promisesDb, promiseId, obligationId, ct);
+        var (previousText, previousPaths) = await PreviouslyFoundAsync(db, promiseId, obligationId, ct);
         var missing = found == 0
             ? "The snapshot has no such fact"
             : $"The snapshot declares the pattern only under #if {string.Join(" / #if ", conditions.Distinct(StringComparer.Ordinal))}, and the obligation requires an unconditional declaration";
@@ -207,7 +208,7 @@ public static class SourcePatternCheck
             // Where the snapshot that the model follows declares the pattern: a scan that did
             // not read those files cannot say the pattern is gone from them.
             if (tracked?.ScanId is { } followed && followed != scan.Id)
-                previousPaths = [.. previousPaths.Concat(await FollowedPathsAsync(importDb, inputs, followed, recipe.Pattern, serviceKeys, ct)).Distinct(StringComparer.Ordinal)];
+                previousPaths = [.. previousPaths.Concat(await FollowedPathsAsync(db, inputs, followed, recipe.Pattern, serviceKeys, ct)).Distinct(StringComparer.Ordinal)];
             if (!scan.IsComplete)
             {
                 coverageText = CoverageGap.Limit;
@@ -217,7 +218,7 @@ public static class SourcePatternCheck
             }
         }
 
-        var gap = await CoverageGapAsync(importDb, inputs, serviceLinks, projects, previousPaths, ct);
+        var gap = await CoverageGapAsync(db, inputs, serviceLinks, projects, previousPaths, ct);
         if (gap is not null)
         {
             coverageText = gap.Value.Class;
@@ -249,9 +250,9 @@ public static class SourcePatternCheck
 
     /// <summary>The files where the snapshot of <paramref name="scanId"/> declares <paramref name="pattern"/>, in the service when keys are given.</summary>
     private static async Task<IReadOnlyList<string>> FollowedPathsAsync(
-        ImportDbContext importDb, ScanInputs inputs, Guid scanId, string pattern, HashSet<string>? serviceKeys, CancellationToken ct)
+        AppDbContext db, ScanInputs inputs, Guid scanId, string pattern, HashSet<string>? serviceKeys, CancellationToken ct)
     {
-        inputs.FollowedPatterns ??= [.. (await ChangeImpact.PatternRows(importDb, scanId).ToListAsync(ct)).Select(r => (Attributes(r.Attributes), r.Evidence))];
+        inputs.FollowedPatterns ??= [.. (await ChangeImpact.PatternRows(db, scanId).ToListAsync(ct)).Select(r => (Attributes(r.Attributes), r.Evidence))];
         var paths = new SortedSet<string>(StringComparer.Ordinal);
         foreach (var (attributes, evidence) in inputs.FollowedPatterns)
         {
@@ -270,7 +271,7 @@ public static class SourcePatternCheck
     /// Else the class of the first reason it did not, with a sentence that names the place.
     /// </summary>
     private static async Task<(string Class, string Sentence)?> CoverageGapAsync(
-        ImportDbContext importDb, ScanInputs inputs, List<FactLinkEntity>? serviceLinks,
+        AppDbContext db, ScanInputs inputs, List<FactLinkEntity>? serviceLinks,
         IReadOnlyCollection<string> projects, IReadOnlyList<string> previousPaths, CancellationToken ct)
     {
         var scan = inputs.Scan;
@@ -281,7 +282,7 @@ public static class SourcePatternCheck
 
         if (inputs.Files is null)
         {
-            var rows = await importDb.ScanFiles.AsNoTracking().Where(f => f.ScanId == scan.Id)
+            var rows = await db.ScanFiles.AsNoTracking().Where(f => f.ScanId == scan.Id)
                 .Select(f => new { f.Path, f.State, f.Reason }).ToListAsync(ct);
             inputs.Files = rows.ToDictionary(
                 f => f.Path, f => f.State == ScanFileEntity.Read ? null : f.Reason ?? CoverageGap.ParseFailure, StringComparer.Ordinal);
@@ -341,9 +342,9 @@ public static class SourcePatternCheck
 
     /// <summary>Where the newest passed run of this obligation found the pattern. An obligation ID is unique inside its promise only.</summary>
     private static async Task<(string Text, IReadOnlyList<string> Paths)> PreviouslyFoundAsync(
-        PromisesDbContext promisesDb, Guid promiseId, string obligationId, CancellationToken ct)
+        AppDbContext db, Guid promiseId, string obligationId, CancellationToken ct)
     {
-        var last = await promisesDb.Runs.AsNoTracking()
+        var last = await db.PromiseRuns.AsNoTracking()
             // A run against a comparison scan read another line of history: where it found the pattern says nothing here.
             .Where(r => r.PromiseId == promiseId && r.ObligationId == obligationId && r.Result == RunResult.Passed
                 && !EF.Functions.JsonContains(r.Document, ComparisonRun))

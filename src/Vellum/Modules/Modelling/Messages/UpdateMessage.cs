@@ -11,41 +11,38 @@ public sealed record UpdateMessageRequest(
     bool SetConsumerIds = false, string[]? Tags = null,
     string? FactStatus = null, ProvenanceInput? Provenance = null, bool SetProvenance = false);
 
-public sealed record UpdateMessageCommandEnvelope(
-    Guid ProjectId, Guid StreamId, Guid MessageId, string UserId, UpdateMessageRequest Request);
-
-public sealed class UpdateMessageHandler(IServiceProvider services)
-    : ICommandHandler<UpdateMessageCommandEnvelope, CommandResult<MessageDto>>
+public static class UpdateMessage
 {
-    public async Task<CommandResult<MessageDto>> HandleAsync(UpdateMessageCommandEnvelope cmd, CancellationToken ct = default)
+    public static async Task<CommandResult<MessageDto>> HandleAsync(
+        IServiceProvider services, Guid projectId, Guid streamId, Guid messageId, string userId, UpdateMessageRequest request, TimeProvider time, CancellationToken ct)
     {
         FactStatus? requestedStatus = null;
-        if (cmd.Request.FactStatus is not null)
+        if (request.FactStatus is not null)
         {
-            if (!FactStatusFormat.TryParseApiString(cmd.Request.FactStatus, out var parsedStatus))
+            if (!FactStatusFormat.TryParseApiString(request.FactStatus, out var parsedStatus))
                 return new CommandResult<MessageDto>.Invalid([new ValidationError("factStatus", "Invalid fact status")]);
             requestedStatus = parsedStatus;
         }
 
         var updateCmd = new UpdateMessageCommand(
-            cmd.MessageId,
-            Name: cmd.Request.Name, SetName: cmd.Request.Name is not null,
-            Description: cmd.Request.Description, SetDescription: cmd.Request.SetDescription,
-            ProducerId: cmd.Request.ProducerId, SetProducerId: cmd.Request.SetProducerId,
-            ConsumerIds: cmd.Request.ConsumerIds?.ToElementIds(), SetConsumerIds: cmd.Request.SetConsumerIds,
-            SchemaId: cmd.Request.SchemaId, SetSchemaId: cmd.Request.SetSchemaId,
-            Tags: cmd.Request.Tags);
+            messageId,
+            Name: request.Name, SetName: request.Name is not null,
+            Description: request.Description, SetDescription: request.SetDescription,
+            ProducerId: request.ProducerId, SetProducerId: request.SetProducerId,
+            ConsumerIds: request.ConsumerIds?.ToElementIds(), SetConsumerIds: request.SetConsumerIds,
+            SchemaId: request.SchemaId, SetSchemaId: request.SetSchemaId,
+            Tags: request.Tags);
 
         // The acceptance stamp is taken once, so the decision stays a pure function of the state.
-        var suppliedProvenance = cmd.Request.SetProvenance
-            ? ProvenanceMapper.ToDomain(cmd.Request.Provenance, Guid.Parse(cmd.UserId))
+        var suppliedProvenance = request.SetProvenance
+            ? ProvenanceMapper.ToDomain(request.Provenance, Guid.Parse(userId), time.GetUtcNow())
             : null;
 
         return await SchemaBoundWrite.DecideAsync(
-            services, cmd.ProjectId, cmd.StreamId,
-            [("schemaId", cmd.Request.SetSchemaId ? cmd.Request.SchemaId : null)],
+            services, projectId, streamId,
+            [("schemaId", request.SetSchemaId ? request.SchemaId : null)],
             Decide,
-            state => AddMessageHandler.ToDto(state.Messages[cmd.MessageId]),
+            state => AddMessage.ToDto(state.Messages[messageId]),
             ct);
 
         CommandResult<IReadOnlyList<object>> Decide(ModelState state)
@@ -53,17 +50,17 @@ public sealed class UpdateMessageHandler(IServiceProvider services)
             var result = ModelDecider.UpdateMessage(state, updateCmd);
             if (result is not CommandResult<IReadOnlyList<object>>.Success success)
                 return result;
-            if (requestedStatus is null && !cmd.Request.SetProvenance)
+            if (requestedStatus is null && !request.SetProvenance)
                 return result;
 
             var events = new List<object>(success.Value);
             var stateAfter = events.Aggregate(state, ModelState.Evolve);
-            var current = stateAfter.Messages[cmd.MessageId];
+            var current = stateAfter.Messages[messageId];
 
             var provenanceResult = ModelDecider.RecordMessageProvenance(
-                stateAfter, cmd.MessageId,
+                stateAfter, messageId,
                 requestedStatus ?? current.FactStatus,
-                cmd.Request.SetProvenance ? suppliedProvenance : current.Provenance);
+                request.SetProvenance ? suppliedProvenance : current.Provenance);
             if (provenanceResult is not CommandResult<IReadOnlyList<object>>.Success provenanceSuccess)
                 return provenanceResult;
 

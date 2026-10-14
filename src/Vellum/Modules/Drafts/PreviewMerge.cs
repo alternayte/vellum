@@ -28,15 +28,16 @@ public static class PreviewMerge
     public static async Task<IResult> Handle(
         Guid projectId, Guid draftId,
         ClaimsPrincipal user,
-        DraftsDbContext draftsDb,
+        AppDbContext db,
         IEventStore store,
         WorkspaceAuthorizationService auth,
+        TimeProvider time,
         CancellationToken ct)
     {
-        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var userId = user.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Viewer, ct);
 
-        var draft = await draftsDb.Drafts.AsNoTracking()
+        var draft = await db.Drafts.AsNoTracking()
             .FirstOrDefaultAsync(d => d.Id == draftId && d.ProjectId == projectId, ct);
         if (draft is null)
             return Results.NotFound(new ErrorResponse("not_found", "Draft not found"));
@@ -49,9 +50,9 @@ public static class PreviewMerge
 
         var result = ThreeWayMerge.Compute(baseState, oursState, theirsState);
 
-        var (oursSheet, _) = await CostAccess.LoadSheetAsync(store, draft.BaseStreamId, ct);
-        var (theirsSheet, _) = await CostAccess.LoadSheetAsync(store, draft.StreamId, ct);
-        var sheet = SheetMerge.Preview(SheetMerge.Plan(oursSheet, theirsSheet, projectId, draft.BaseStreamId, userId, DateTimeOffset.UtcNow));
+        var (oursSheet, _) = await CostAccess.LoadSheetAsync(db, draft.BaseStreamId, ct);
+        var (theirsSheet, _) = await CostAccess.LoadSheetAsync(db, draft.StreamId, ct);
+        var sheet = SheetMerge.Preview(SheetMerge.Plan(oursSheet, theirsSheet, projectId, draft.BaseStreamId, userId, time.GetUtcNow()));
 
         return Results.Ok(new MergePreviewResponse(result.AutoResolved, result.Conflicts, checked((int)mainVersion), sheet));
     }

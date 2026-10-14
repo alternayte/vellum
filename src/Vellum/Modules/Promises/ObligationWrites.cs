@@ -9,6 +9,7 @@ using Vellum.Modules.Schemas;
 using Vellum.Modules.Settings.Document;
 using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Shared;
+using static Vellum.Shared.ResultExtensions;
 
 namespace Vellum.Modules.Promises;
 
@@ -61,12 +62,12 @@ public static class ObligationWrites
     /// </summary>
     public static async Task<IResult> RunForScan(
         Guid projectId, Guid importId, HttpContext http,
-        WorkspaceAuthorizationService auth, IEventStore store, PromisesDbContext db, ImportDbContext importDb,
+        WorkspaceAuthorizationService auth, IEventStore store, AppDbContext db,
         PromiseLimits limits, PromiseRunRate rate, TimeProvider time, CancellationToken ct)
     {
-        var userId = PromiseAccess.UserId(http.User);
+        var userId = http.User.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
-        var scan = await importDb.Scans.AsNoTracking().FirstOrDefaultAsync(s => s.Id == importId && s.ProjectId == projectId, ct);
+        var scan = await db.Scans.AsNoTracking().FirstOrDefaultAsync(s => s.Id == importId && s.ProjectId == projectId, ct);
         if (scan is null)
             return Results.NotFound(new ErrorResponse("not_found", "Import not found"));
         if (AgentPrincipal.IsAgent(http.User) && !AgentPrincipal.HasScope(http.User, AgentScope.Propose)
@@ -93,7 +94,7 @@ public static class ObligationWrites
             .ToList();
 
         // The snapshot, its facts and its files are read once for all checks.
-        var inputs = await SourcePatternCheck.ScanInputs.LoadAsync(importDb, projectId, scan, ct);
+        var inputs = await SourcePatternCheck.ScanInputs.LoadAsync(db, projectId, scan, ct);
         var runs = new List<ScanCheckRunDto>();
         var batch = checks.Take(MaxScanChecks).ToList();
         foreach (var (promiseId, requirementId, revision, obligation) in batch)
@@ -109,7 +110,7 @@ public static class ObligationWrites
                 return CallerRate.Refusal(http, seconds, string.Create(CultureInfo.InvariantCulture,
                     $"{runs.Count} of {batch.Count} checks ran before the run rate of this caller was used up. Call again in {seconds} seconds: the checks that ran against this scan are not run again."));
             }
-            var outcome = await SourcePatternCheck.RunAsync(importDb, db, projectId, promiseId, obligation.Id, hash, obligation.Recipe.SourcePattern!, inputs, ct);
+            var outcome = await SourcePatternCheck.RunAsync(db, projectId, promiseId, obligation.Id, hash, obligation.Recipe.SourcePattern!, inputs, ct);
             var (run, refusal) = await RecordRunAsync(store, projectId, promiseId, revision, obligation, hash, outcome, userId, limits, time, ct);
             runs.Add(new ScanCheckRunDto(promiseId, requirementId, revision, obligation.Id, obligation.Key, run?.Result ?? "not-recorded", run?.Id,
                 run?.Detail ?? refusal));
@@ -123,10 +124,10 @@ public static class ObligationWrites
     /// recorded twice: the snapshot of a scan does not change.
     /// </summary>
     private static async Task<VerificationRun?> ExistingComparisonRunAsync(
-        PromisesDbContext db, Guid promiseId, int revision, bool draft, string obligationId, Guid scanId, string obligationHash, CancellationToken ct)
+        AppDbContext db, Guid promiseId, int revision, bool draft, string obligationId, Guid scanId, string obligationHash, CancellationToken ct)
     {
         var probe = System.Text.Json.JsonSerializer.Serialize(new { scanId, obligationHash, inputs = new { scanKind = Import.Scans.ScanKind.Comparison } });
-        var documents = await db.Runs.AsNoTracking()
+        var documents = await db.PromiseRuns.AsNoTracking()
             .Where(r => r.PromiseId == promiseId && r.PromiseRevision == revision && r.ObligationId == obligationId && EF.Functions.JsonContains(r.Document, probe))
             .OrderByDescending(r => r.Version)
             .Select(r => r.Document)
@@ -138,7 +139,7 @@ public static class ObligationWrites
         Guid projectId, Guid promiseId, HttpContext http,
         WorkspaceAuthorizationService auth, IEventStore store, PromiseReader reader, TimeProvider time, CancellationToken ct)
     {
-        var userId = PromiseAccess.UserId(http.User);
+        var userId = http.User.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
         var (request, error) = await PromiseAccess.ReadAsync<ObligationRequest>(http);
         if (request is null)
@@ -168,7 +169,7 @@ public static class ObligationWrites
         Guid projectId, Guid promiseId, string obligationKey, HttpContext http,
         WorkspaceAuthorizationService auth, IEventStore store, PromiseReader reader, TimeProvider time, CancellationToken ct)
     {
-        var userId = PromiseAccess.UserId(http.User);
+        var userId = http.User.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
         var (request, error) = await PromiseAccess.ReadAsync<ObligationRequest>(http);
         if (request is null)
@@ -206,7 +207,7 @@ public static class ObligationWrites
         Guid projectId, Guid promiseId, string obligationKey, HttpContext http,
         WorkspaceAuthorizationService auth, IEventStore store, PromiseReader reader, TimeProvider time, CancellationToken ct)
     {
-        var userId = PromiseAccess.UserId(http.User);
+        var userId = http.User.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
 
         var now = time.GetUtcNow();
@@ -227,14 +228,14 @@ public static class ObligationWrites
     /// <summary>Adds the default obligations of the draft (see <see cref="ObligationGenerator"/>). No AI is called.</summary>
     public static async Task<IResult> Generate(
         Guid projectId, Guid promiseId, HttpContext http,
-        WorkspaceAuthorizationService auth, IEventStore store, PromisesDbContext db, PromiseReader reader, TimeProvider time, CancellationToken ct)
+        WorkspaceAuthorizationService auth, IEventStore store, AppDbContext db, PromiseReader reader, TimeProvider time, CancellationToken ct)
     {
-        var userId = PromiseAccess.UserId(http.User);
+        var userId = http.User.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
 
         var row = await db.Promises.AsNoTracking().FirstOrDefaultAsync(p => p.Id == promiseId && p.ProjectId == projectId, ct);
         if (row is null)
-            return PromiseAccess.NotFound();
+            return NotFound("Promise");
         var before = PromiseJson.Read<PromiseState>(row.Document);
         var world = await PromiseWorld.LoadAsync(http.RequestServices, projectId, before.Latest!.Content.Links.ScenarioIds, ct);
 
@@ -264,10 +265,10 @@ public static class ObligationWrites
     /// </summary>
     public static async Task<IResult> Run(
         Guid projectId, Guid promiseId, string obligationKey, HttpContext http,
-        WorkspaceAuthorizationService auth, IEventStore store, PromisesDbContext db, SchemasDbContext schemasDb, ImportDbContext importDb,
+        WorkspaceAuthorizationService auth, IEventStore store, AppDbContext db,
         PromiseLimits limits, TimeProvider time, CancellationToken ct)
     {
-        var userId = PromiseAccess.UserId(http.User);
+        var userId = http.User.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
         var (body, error) = await PromiseAccess.ReadAsync<RunObligationRequest>(http, allowEmpty: true);
         if (error is not null)
@@ -287,7 +288,7 @@ public static class ObligationWrites
                 var (pinned, pinRefusal) = await PinnedModel.ResolveAsync(http.RequestServices, projectId, request.ModelRevisionId, request.BranchId, ct);
                 if (pinned is null)
                     return pinRefusal!;
-                outcome = await ScenarioCheck.RunAsync(store, schemasDb, projectId, obligation.Recipe.ScenarioCheck!, pinned, obligationHash, ct);
+                outcome = await ScenarioCheck.RunAsync(store, db, projectId, obligation.Recipe.ScenarioCheck!, pinned, obligationHash, ct);
                 break;
 
             case ObligationKind.SourcePatternCheck:
@@ -297,14 +298,14 @@ public static class ObligationWrites
                     outcome = SourcePatternCheck.NoSnapshotGiven(recipe, obligationHash);
                     break;
                 }
-                var (scan, scanRefusal) = await SourcePatternCheck.FindScanAsync(importDb, projectId, recipe, scanId, ct);
+                var (scan, scanRefusal) = await SourcePatternCheck.FindScanAsync(db, projectId, recipe, scanId, ct);
                 if (scan is null)
-                    return PromiseAccess.Invalid("scanId", scanRefusal!);
-                var inputs = await SourcePatternCheck.ScanInputs.LoadAsync(importDb, projectId, scan, ct);
+                    return Invalid("scanId", scanRefusal!);
+                var inputs = await SourcePatternCheck.ScanInputs.LoadAsync(db, projectId, scan, ct);
                 if (inputs.IsComparison
                     && await ExistingComparisonRunAsync(db, promiseId, revision, isDraft, obligation.Id, scan.Id, obligationHash, ct) is { } existing)
                     return Results.Ok(existing);
-                outcome = await SourcePatternCheck.RunAsync(importDb, db, projectId, promiseId, obligation.Id, obligationHash, recipe, inputs, ct);
+                outcome = await SourcePatternCheck.RunAsync(db, projectId, promiseId, obligation.Id, obligationHash, recipe, inputs, ct);
                 break;
 
             default:
@@ -324,10 +325,10 @@ public static class ObligationWrites
     /// </summary>
     public static async Task<IResult> Evidence(
         Guid projectId, Guid promiseId, string obligationKey, HttpContext http,
-        WorkspaceAuthorizationService auth, IEventStore store, PromisesDbContext db, ImportDbContext importDb,
+        WorkspaceAuthorizationService auth, IEventStore store, AppDbContext db,
         GitHubReader gitHub, SettingsResolver settings, PromiseLimits limits, TimeProvider time, CancellationToken ct)
     {
-        var userId = PromiseAccess.UserId(http.User);
+        var userId = http.User.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
         var (request, error) = await PromiseAccess.ReadAsync<RecordEvidenceRequest>(http);
         if (request is null)
@@ -353,16 +354,16 @@ public static class ObligationWrites
         var workspaceId = await auth.GetProjectWorkspaceIdAsync(projectId, ct);
         var obligationHash = PromiseViews.ObligationHash(obligation);
         var outcome = await ExternalEvidence.AssessAsync(
-            request, obligation.Recipe.Plan?.EvidenceSource, workspaceId, projectId, obligationHash, gitHub, settings, importDb, ct);
+            request, obligation.Recipe.Plan?.EvidenceSource, workspaceId, projectId, obligationHash, gitHub, settings, db, ct);
         return await RecordAsync(store, projectId, promiseId, revision, obligation, obligationHash, outcome, userId, limits, time, ct);
     }
 
     private static async Task<((int Revision, Obligation Obligation, bool IsDraft)? Found, IResult? Refusal)> FindAsync(
-        PromisesDbContext db, Guid projectId, Guid promiseId, string obligationKey, int? revisionNumber, CancellationToken ct)
+        AppDbContext db, Guid projectId, Guid promiseId, string obligationKey, int? revisionNumber, CancellationToken ct)
     {
         var row = await db.Promises.AsNoTracking().FirstOrDefaultAsync(p => p.Id == promiseId && p.ProjectId == projectId, ct);
         if (row is null)
-            return (null, PromiseAccess.NotFound());
+            return (null, NotFound("Promise"));
 
         // With no revision named, the run is of the approved revision in force. A draft is
         // checked only when the caller names it.

@@ -32,14 +32,15 @@ public static class GetAiUsage
         DateTimeOffset? to,
         ClaimsPrincipal user,
         WorkspaceAuthorizationService auth,
-        AiUsageDbContext db,
+        AppDbContext db,
+        TimeProvider time,
         CancellationToken ct)
     {
-        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var userId = user.UserId();
         await auth.RequireRoleAsync(workspaceId, userId, WorkspaceRole.Viewer, ct);
 
         // Without a range: the current calendar month in UTC, which is the budget period.
-        var now = DateTimeOffset.UtcNow;
+        var now = time.GetUtcNow();
         var start = (from ?? new DateTimeOffset(now.Year, now.Month, 1, 0, 0, 0, TimeSpan.Zero)).ToUniversalTime();
         var end = (to ?? now).ToUniversalTime();
         if (start >= end)
@@ -113,7 +114,7 @@ public static class ModelPrices
             ? stored
             : null;
 
-    public static async Task<IResult> List(ClaimsPrincipal user, InstanceAuthorization admins, AiUsageDbContext db, CancellationToken ct)
+    public static async Task<IResult> List(ClaimsPrincipal user, InstanceAuthorization admins, AppDbContext db, CancellationToken ct)
     {
         await admins.RequireAdminAsync(user, ct);
         var prices = await db.ModelPrices.AsNoTracking()
@@ -124,7 +125,7 @@ public static class ModelPrices
     }
 
     public static async Task<IResult> Set(
-        SetModelPriceRequest request, ClaimsPrincipal user, InstanceAuthorization admins, AiUsageDbContext db, CancellationToken ct)
+        SetModelPriceRequest request, ClaimsPrincipal user, InstanceAuthorization admins, AppDbContext db, TimeProvider time, CancellationToken ct)
     {
         var adminId = await admins.RequireAdminAsync(user, ct);
 
@@ -143,7 +144,7 @@ public static class ModelPrices
         // The answer holds the prices as they are stored.
         var price = new ModelPriceDto(
             request.ProviderKind!, request.Model!, Stored(request.InputUsdPerMillionTokens)!.Value, Stored(request.OutputUsdPerMillionTokens)!.Value,
-            (request.EffectiveFrom ?? DateTimeOffset.UtcNow).ToUniversalTime());
+            (request.EffectiveFrom ?? time.GetUtcNow()).ToUniversalTime());
         var id = Guid.NewGuid();
 
         await using var transaction = await db.Database.BeginTransactionAsync(ct);

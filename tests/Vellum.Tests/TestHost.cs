@@ -40,15 +40,6 @@ internal static class TestHost
                 builder.UseSetting(key, value);
             builder.ConfigureServices(services =>
             {
-                var cs = connectionString;
-                Replace<AppIdentityDbContext>(services, cs);
-                Replace<WorkspacesDbContext>(services, cs);
-                Replace<ModellingDbContext>(services, cs);
-                Replace<ViewsDbContext>(services, cs);
-                Replace<DocsDbContext>(services, cs);
-                Replace<DraftsDbContext>(services, cs);
-                Replace<SchemasDbContext>(services, cs);
-                Replace<ReviewDbContext>(services, cs);
                 // Every test client has one address, and the tests of a class share one app:
                 // they register accounts and sign in freely.
                 services.AddSingleton(new AnonymousRateLimits(
@@ -135,13 +126,6 @@ internal static class TestHost
     public static void UseResolver(IServiceCollection services, IReadOnlyDictionary<string, string> hosts) =>
         services.AddSingleton<HostResolver>(_ => (host, _) => Task.FromResult(
             hosts.TryGetValue(host, out var address) ? new[] { IPAddress.Parse(address) } : [IPAddress.Parse("93.184.216.34")]));
-
-    private static void Replace<TContext>(IServiceCollection services, string connectionString) where TContext : DbContext
-    {
-        foreach (var descriptor in services.Where(d => d.ServiceType == typeof(DbContextOptions<TContext>)).ToList())
-            services.Remove(descriptor);
-        services.AddDbContext<TContext>(o => o.UseNpgsql(connectionString).UseSnakeCaseNamingConvention());
-    }
 
     /// <summary>A client signed in as a new user.</summary>
     public static async Task<HttpClient> SignInAsync(WebApplicationFactory<Program> factory)

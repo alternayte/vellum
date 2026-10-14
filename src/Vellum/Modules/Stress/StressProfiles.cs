@@ -9,6 +9,7 @@ using Vellum.Modules.Settings.Document;
 using Vellum.Modules.Stress.Engine;
 using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Shared;
+using static Vellum.Shared.ResultExtensions;
 
 namespace Vellum.Modules.Stress;
 
@@ -35,38 +36,38 @@ public static class StressProfiles
     private const int ProjectLockSpace = 0x53545253;
 
     public static async Task<IResult> List(
-        Guid projectId, ClaimsPrincipal user, WorkspaceAuthorizationService auth, StressDbContext db, CancellationToken ct)
+        Guid projectId, ClaimsPrincipal user, WorkspaceAuthorizationService auth, AppDbContext db, CancellationToken ct)
     {
-        await auth.RequireProjectRoleAsync(projectId, StressAccess.UserId(user), WorkspaceRole.Viewer, ct);
+        await auth.RequireProjectRoleAsync(projectId, user.UserId(), WorkspaceRole.Viewer, ct);
 
         var items = await db.Profiles.AsNoTracking()
             .Where(p => p.ProjectId == projectId)
             .OrderBy(p => p.Name).ThenBy(p => p.Id)
             .Select(p => new StressProfileSummaryDto(
-                p.Id, p.Name, p.ScenarioId, p.Version, p.UpdatedAt, db.Runs.Count(r => r.ProfileId == p.Id)))
+                p.Id, p.Name, p.ScenarioId, p.Version, p.UpdatedAt, db.StressRuns.Count(r => r.ProfileId == p.Id)))
             .ToListAsync(ct);
         return Results.Ok(items);
     }
 
     public static async Task<IResult> Get(
         Guid projectId, Guid profileId, ClaimsPrincipal user, WorkspaceAuthorizationService auth,
-        StressDbContext db, LoadTestsDbContext loadTestsDb, IEventStore store, CancellationToken ct)
+        AppDbContext db, IEventStore store, CancellationToken ct)
     {
-        await auth.RequireProjectRoleAsync(projectId, StressAccess.UserId(user), WorkspaceRole.Viewer, ct);
+        await auth.RequireProjectRoleAsync(projectId, user.UserId(), WorkspaceRole.Viewer, ct);
 
         var row = await db.Profiles.AsNoTracking().FirstOrDefaultAsync(p => p.Id == profileId && p.ProjectId == projectId, ct);
-        return row is null ? StressAccess.NotFound("Stress profile") : Results.Ok(await DtoAsync(row, loadTestsDb, store, ct));
+        return row is null ? NotFound("Stress profile") : Results.Ok(await DtoAsync(row, db, store, ct));
     }
 
     /// <summary>What a profile for the scenario must state, read from the model of the branch.</summary>
     public static Task<IResult> Requirements(
         Guid projectId, Guid scenarioId, Guid? branchId,
-        HttpContext http, IEventStore store, SchemasDbContext schemasDb, CancellationToken ct) =>
+        HttpContext http, IEventStore store, AppDbContext db, CancellationToken ct) =>
         ModelBranches.RunAsync(http, projectId, branchId, WorkspaceRole.Viewer, async (streamId, _) =>
         {
-            var world = await StressAccess.LoadAsync(store, schemasDb, projectId, streamId, scenarioId, ct);
+            var world = await StressAccess.LoadAsync(store, db, projectId, streamId, scenarioId, ct);
             return world.Scenario is null
-                ? StressAccess.NotFound("Scenario")
+                ? NotFound("Scenario")
                 : Results.Ok(StressEngine.Requirements(world.Model, world.Scenario));
         }, ct);
 
@@ -77,7 +78,7 @@ public static class StressProfiles
     public static async Task<IResult> Defaults(
         Guid projectId, ClaimsPrincipal user, WorkspaceAuthorizationService auth, SettingsResolver settings, StressLimits limits, CancellationToken ct)
     {
-        await auth.RequireProjectRoleAsync(projectId, StressAccess.UserId(user), WorkspaceRole.Viewer, ct);
+        await auth.RequireProjectRoleAsync(projectId, user.UserId(), WorkspaceRole.Viewer, ct);
 
         var simulation = (await settings.GetWorkspaceAsync(await auth.GetProjectWorkspaceIdAsync(projectId, ct), ct)).Effective.Simulation;
         var duration = Math.Min(simulation.DurationSeconds, limits.MaxDurationSeconds);
@@ -90,9 +91,9 @@ public static class StressProfiles
 
     public static async Task<IResult> Create(
         Guid projectId, HttpContext http, ClaimsPrincipal user, WorkspaceAuthorizationService auth,
-        StressDbContext db, LoadTestsDbContext loadTestsDb, IEventStore store, StressLimits limits, StressRunPolicy policy, TimeProvider time, CancellationToken ct)
+        AppDbContext db, IEventStore store, StressLimits limits, StressRunPolicy policy, TimeProvider time, CancellationToken ct)
     {
-        var userId = StressAccess.UserId(user);
+        var userId = user.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
 
         var (sent, error) = await StressAccess.ReadAsync<StressProfile>(http);
@@ -104,7 +105,7 @@ public static class StressProfiles
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         await db.Database.ExecuteSqlAsync(
             $"SELECT pg_advisory_xact_lock({ProjectLockSpace}, hashtext({projectId.ToString()}))", ct);
-        var (profile, refusal) = await ResolveAsync(sent, projectId, db, store, loadTestsDb, limits, ct);
+        var (profile, refusal) = await ResolveAsync(sent, projectId, db, store, limits, ct);
         if (refusal is not null)
             return refusal;
         if (await db.Profiles.CountAsync(p => p.ProjectId == projectId, ct) >= policy.MaxProfilesPerProject)
@@ -121,14 +122,14 @@ public static class StressProfiles
         db.Profiles.Add(row);
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
-        return Results.Created($"/api/projects/{projectId}/stress/profiles/{row.Id}", await DtoAsync(row, loadTestsDb, store, ct));
+        return Results.Created($"/api/projects/{projectId}/stress/profiles/{row.Id}", await DtoAsync(row, db, store, ct));
     }
 
     public static async Task<IResult> Update(
         Guid projectId, Guid profileId, HttpContext http, ClaimsPrincipal user, WorkspaceAuthorizationService auth,
-        StressDbContext db, LoadTestsDbContext loadTestsDb, IEventStore store, StressLimits limits, TimeProvider time, CancellationToken ct)
+        AppDbContext db, IEventStore store, StressLimits limits, TimeProvider time, CancellationToken ct)
     {
-        var userId = StressAccess.UserId(user);
+        var userId = user.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
 
         var (sent, error) = await StressAccess.ReadAsync<StressProfile>(http);
@@ -138,8 +139,8 @@ public static class StressProfiles
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         var row = await db.Profiles.FirstOrDefaultAsync(p => p.Id == profileId && p.ProjectId == projectId, ct);
         if (row is null)
-            return StressAccess.NotFound("Stress profile");
-        var (profile, refusal) = await ResolveAsync(sent, projectId, db, store, loadTestsDb, limits, ct);
+            return NotFound("Stress profile");
+        var (profile, refusal) = await ResolveAsync(sent, projectId, db, store, limits, ct);
         if (refusal is not null)
             return refusal;
 
@@ -159,25 +160,25 @@ public static class StressProfiles
         {
             return Results.Conflict(new ErrorResponse("conflict", "The profile changed while you saved it. Read it again."));
         }
-        return Results.Ok(await DtoAsync(row, loadTestsDb, store, ct));
+        return Results.Ok(await DtoAsync(row, db, store, ct));
     }
 
     /// <summary>Deletes the profile and its stored runs.</summary>
     public static async Task<IResult> Delete(
-        Guid projectId, Guid profileId, ClaimsPrincipal user, WorkspaceAuthorizationService auth, StressDbContext db, CancellationToken ct)
+        Guid projectId, Guid profileId, ClaimsPrincipal user, WorkspaceAuthorizationService auth, AppDbContext db, CancellationToken ct)
     {
-        await auth.RequireProjectRoleAsync(projectId, StressAccess.UserId(user), WorkspaceRole.Editor, ct);
+        await auth.RequireProjectRoleAsync(projectId, user.UserId(), WorkspaceRole.Editor, ct);
 
         var deleted = await db.Profiles.Where(p => p.Id == profileId && p.ProjectId == projectId).ExecuteDeleteAsync(ct);
-        return deleted == 0 ? StressAccess.NotFound("Stress profile") : Results.NoContent();
+        return deleted == 0 ? NotFound("Stress profile") : Results.NoContent();
     }
 
     internal static StressProfile Read(string document) => JsonSerializer.Deserialize<StressProfile>(document, StressJson.Options)!;
 
-    private static async Task<StressProfileDto> DtoAsync(StressProfileEntity row, LoadTestsDbContext loadTestsDb, IEventStore store, CancellationToken ct)
+    private static async Task<StressProfileDto> DtoAsync(StressProfileEntity row, AppDbContext db, IEventStore store, CancellationToken ct)
     {
         var profile = Read(row.Document);
-        return new(row.Id, row.Version, row.UpdatedAt, profile, await MeasuredServiceTimes.StateAsync(loadTestsDb, store, row.ProjectId, profile, ct));
+        return new(row.Id, row.Version, row.UpdatedAt, profile, await MeasuredServiceTimes.StateAsync(db, store, row.ProjectId, profile, ct));
     }
 
     /// <summary>
@@ -193,12 +194,12 @@ public static class StressProfiles
     /// </para>
     /// </summary>
     private static async Task<(StressProfile Profile, IResult? Refusal)> ResolveAsync(
-        StressProfile sent, Guid projectId, StressDbContext db, IEventStore store, LoadTestsDbContext loadTestsDb, StressLimits limits, CancellationToken ct)
+        StressProfile sent, Guid projectId, AppDbContext db, IEventStore store, StressLimits limits, CancellationToken ct)
     {
         if (sent.ServiceTimes?.Any(t => t is { Label: AssumptionLabel.Measured }) == true)
             await Targets.LockProjectAsync(db.Database, projectId, ct);
 
-        var (profile, measured) = await MeasuredServiceTimes.ApplyAsync(loadTestsDb, projectId, sent, ct);
+        var (profile, measured) = await MeasuredServiceTimes.ApplyAsync(db, projectId, sent, ct);
         var errors = measured.Count > 0
             ? measured.ToList()
             : StressProfileRules.Check(profile, limits).Select(i => new FieldError(i.Target, i.Message)).ToList();

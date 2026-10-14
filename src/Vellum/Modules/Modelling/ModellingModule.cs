@@ -1,18 +1,14 @@
 using Deedbox;
 using Microsoft.EntityFrameworkCore;
 using Vellum.Modules.Modelling.Model;
+using Vellum.Shared;
 
 namespace Vellum.Modules.Modelling;
 
 public static class ModellingModule
 {
-    public static IServiceCollection AddModellingModule(this IServiceCollection services, IConfiguration config)
+    public static IServiceCollection AddModellingModule(this IServiceCollection services)
     {
-        var connectionString = config.GetConnectionString("DefaultConnection")!;
-
-        services.AddDbContext<ModellingDbContext>(options =>
-            options.UseNpgsql(connectionString)
-                   .UseSnakeCaseNamingConvention());
         services.AddScoped<Shared.IProjectRetention, ModellingRetention>();
 
         return services;

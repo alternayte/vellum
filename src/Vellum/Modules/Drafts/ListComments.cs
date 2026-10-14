@@ -12,11 +12,11 @@ public static class ListComments
         Guid projectId, Guid draftId,
         Guid? entityId, string? cursor, int? limit,
         ClaimsPrincipal user,
-        DraftsDbContext db,
+        AppDbContext db,
         WorkspaceAuthorizationService auth,
         CancellationToken ct)
     {
-        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var userId = user.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Viewer, ct);
 
         var draft = await db.Drafts.AsNoTracking()

@@ -8,6 +8,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Vellum.Modules.Modelling.Model;
 using Vellum.Modules.Workspaces;
 using Vellum.Tests.Shared.Outbound;
+using Vellum.Shared;
 
 namespace Vellum.Tests.Modules.Ai.Design;
 
@@ -97,7 +98,7 @@ internal static class DesignKit
     public static async Task<long> ModelVersionAsync(OutboundHost host, Guid projectId)
     {
         using var scope = host.Factory.Services.CreateScope();
-        var streamId = await scope.ServiceProvider.GetRequiredService<WorkspacesDbContext>().Projects.AsNoTracking()
+        var streamId = await scope.ServiceProvider.GetRequiredService<AppDbContext>().Projects.AsNoTracking()
             .Where(p => p.Id == projectId).Select(p => p.StreamId).FirstAsync();
         return (await scope.ServiceProvider.GetRequiredService<IEventStore>().Load<ModelState>(StreamId.From(streamId))).Version;
     }

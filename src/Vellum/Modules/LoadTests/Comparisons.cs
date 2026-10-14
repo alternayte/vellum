@@ -4,6 +4,7 @@ using Vellum.Modules.Stress;
 using Vellum.Modules.Stress.Engine;
 using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Shared;
+using static Vellum.Shared.ResultExtensions;
 
 namespace Vellum.Modules.LoadTests;
 
@@ -87,14 +88,14 @@ public static class Comparisons
     /// <summary><c>GET compare/estimate?resultId=&amp;runId=</c>.</summary>
     public static async Task<IResult> Estimate(
         Guid projectId, Guid resultId, Guid runId, ClaimsPrincipal user, WorkspaceAuthorizationService auth,
-        LoadTestsDbContext db, StressDbContext stressDb, IEventStore store, CancellationToken ct)
+        AppDbContext db, IEventStore store, CancellationToken ct)
     {
-        await auth.RequireProjectRoleAsync(projectId, Targets.UserId(user), WorkspaceRole.Viewer, ct);
+        await auth.RequireProjectRoleAsync(projectId, user.UserId(), WorkspaceRole.Viewer, ct);
 
         if (await MeasuredResults.ReadWithPlanAsync(db, store, projectId, resultId, ct) is not var (measured, plan))
-            return Targets.NotFound("Measured result");
-        if (await StressRuns.ReadAsync(stressDb, store, projectId, runId, ct) is not { } run)
-            return Targets.NotFound("Stress run");
+            return NotFound("Measured result");
+        if (await StressRuns.ReadAsync(db, store, projectId, runId, ct) is not { } run)
+            return NotFound("Stress run");
         if (run.Run.ScenarioId != measured.Result.ScenarioId)
             return Invalid("runId", "The stress run and the measured result are of different scenarios.");
 
@@ -202,13 +203,13 @@ public static class Comparisons
     /// <summary><c>GET compare/results?baseline=&amp;candidate=</c>.</summary>
     public static async Task<IResult> Regression(
         Guid projectId, Guid baseline, Guid candidate, ClaimsPrincipal user, WorkspaceAuthorizationService auth,
-        LoadTestsDbContext db, IEventStore store, CancellationToken ct)
+        AppDbContext db, IEventStore store, CancellationToken ct)
     {
-        await auth.RequireProjectRoleAsync(projectId, Targets.UserId(user), WorkspaceRole.Viewer, ct);
+        await auth.RequireProjectRoleAsync(projectId, user.UserId(), WorkspaceRole.Viewer, ct);
 
         if (await MeasuredResults.ReadAsync(db, store, projectId, baseline, ct) is not { } before
             || await MeasuredResults.ReadAsync(db, store, projectId, candidate, ct) is not { } after)
-            return Targets.NotFound("Measured result");
+            return NotFound("Measured result");
         if (before.Result.ScenarioId != after.Result.ScenarioId)
             return Invalid("candidate", "The two results are of different scenarios. A regression is between two runs of the same scenario.");
         if (before.Result.Provenance.TargetId != after.Result.Provenance.TargetId)
@@ -287,6 +288,4 @@ public static class Comparisons
         return grows && c > LatencyFloorMs ? "regressed" : falls && c < -LatencyFloorMs ? "improved" : "unchanged";
     }
 
-    private static IResult Invalid(string field, string message) =>
-        Results.BadRequest(new ErrorResponse("validation_error", "Validation failed", Errors: [new FieldError(field, message)]));
 }

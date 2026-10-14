@@ -10,6 +10,7 @@ using Vellum.Modules.Schemas;
 using Vellum.Modules.Trace.Engine;
 using Vellum.Modules.Trace.Scenarios;
 using Vellum.Modules.Workspaces;
+using Vellum.Shared;
 
 namespace Vellum.Modules.Build;
 
@@ -130,12 +131,12 @@ public sealed record BuildInput(
         var store = services.GetRequiredService<IEventStore>();
         var unavailable = new List<string>();
 
-        var projectName = pins?.ProjectName ?? await services.GetRequiredService<WorkspacesDbContext>().Projects.AsNoTracking()
+        var projectName = pins?.ProjectName ?? await services.GetRequiredService<AppDbContext>().Projects.AsNoTracking()
             .Where(p => p.Id == projectId).Select(p => p.Name).FirstAsync(ct);
 
         // Schemas: a stream each. The version of the stream is pinned, because a name and a
         // description are in the export and change without a new content version.
-        var schemaPins = pins?.Schemas ?? [.. (await services.GetRequiredService<SchemasDbContext>().Schemas.AsNoTracking()
+        var schemaPins = pins?.Schemas ?? [.. (await services.GetRequiredService<AppDbContext>().Schemas.AsNoTracking()
             .Where(s => s.ProjectId == projectId).Select(s => s.Id).ToListAsync(ct)).Select(id => new PinnedStream(id, 0))];
         var schemas = new List<BuildSchema>(schemaPins.Count);
         foreach (var pin in schemaPins.OrderBy(p => p.Id))
@@ -147,7 +148,7 @@ public sealed record BuildInput(
                 unavailable.Add($"schema {pin.Id} at version {pin.Version}");
         }
 
-        var scenarioPins = pins?.Scenarios ?? [.. (await services.GetRequiredService<ScenariosDbContext>().Scenarios.AsNoTracking()
+        var scenarioPins = pins?.Scenarios ?? [.. (await services.GetRequiredService<AppDbContext>().Scenarios.AsNoTracking()
             .Where(s => s.ProjectId == projectId).Select(s => s.Id).ToListAsync(ct)).Select(id => new PinnedStream(id, 0))];
         var scenarios = new Dictionary<Guid, ScenarioSnapshot>();
         long scenarioBytes = 0;
@@ -172,13 +173,13 @@ public sealed record BuildInput(
             }
         }
 
-        var sources = pins?.Sources ?? await SourcesAsync(services.GetRequiredService<ImportDbContext>(), projectId, ct);
+        var sources = pins?.Sources ?? await SourcesAsync(services.GetRequiredService<AppDbContext>(), projectId, ct);
 
         // Promises: the state and the runs of each, as its stream holds them at the pinned version.
         var promiseStates = new List<(Guid Id, PromiseState State, Dictionary<string, VerificationRun> Runs, long Version)>();
         if (pins is null)
         {
-            var rows = await services.GetRequiredService<PromisesDbContext>().Promises.AsNoTracking()
+            var rows = await services.GetRequiredService<AppDbContext>().Promises.AsNoTracking()
                 .Where(p => p.ProjectId == projectId)
                 .OrderBy(p => p.Number).ThenBy(p => p.Id)
                 .Select(p => new { p.Id, p.Document, p.LatestRuns, p.Version })
@@ -209,7 +210,7 @@ public sealed record BuildInput(
 
         // Decisions: a stream each. A pinned state of the format before decisions names none and reads none.
         IReadOnlyList<PinnedDecision> decisions = pins is null
-            ? await DecisionReads.CurrentAsync(services.GetRequiredService<ReviewDbContext>(), projectId, ct)
+            ? await DecisionReads.CurrentAsync(services.GetRequiredService<AppDbContext>(), projectId, ct)
             : await DecisionReads.AtAsync(store, projectId, (pins.Decisions ?? []).Select(p => (p.Id, p.Version)), unavailable, ct);
 
         if (unavailable.Count > 0)
@@ -262,14 +263,14 @@ public sealed record BuildInput(
     }
 
     /// <summary>The tracked ref and the newest snapshot of each repository of the project, as they are now.</summary>
-    private static async Task<IReadOnlyList<PinnedSource>> SourcesAsync(ImportDbContext importDb, Guid projectId, CancellationToken ct)
+    private static async Task<IReadOnlyList<PinnedSource>> SourcesAsync(AppDbContext db, Guid projectId, CancellationToken ct)
     {
-        var tracked = await importDb.TrackedRefs.AsNoTracking()
+        var tracked = await db.TrackedRefs.AsNoTracking()
             .Where(t => t.ProjectId == projectId)
             .Select(t => new { t.Host, t.Repository, t.RefName, t.CommitSha, t.ScanId })
             .ToListAsync(ct);
         // A pull request or a bare commit is never the newest state of a repository.
-        var snapshots = await ScanSnapshots.OfRefs(importDb, projectId).AsNoTracking()
+        var snapshots = await ScanSnapshots.OfRefs(db, projectId).AsNoTracking()
             .OrderBy(s => s.CreatedAt).ThenBy(s => s.ScanId)
             .Select(s => new { s.Host, s.Repository, s.CommitSha, s.ScanId })
             .ToListAsync(ct);

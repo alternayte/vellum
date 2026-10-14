@@ -9,7 +9,7 @@ namespace Vellum.Modules.Modelling;
 /// What the modelling tables and the model streams keep of a deleted project: nothing. The
 /// main model, every draft and variant branch, the named revisions and the variants go.
 /// </summary>
-public sealed class ModellingRetention(ModellingDbContext db, IEventStore store) : IProjectRetention
+public sealed class ModellingRetention(AppDbContext db, IEventStore store) : IProjectRetention
 {
     public async Task DeleteProjectAsync(DeletedProject project, CancellationToken ct)
     {

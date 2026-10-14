@@ -60,10 +60,10 @@ public static class ImportModel
         HttpRequest request,
         bool dryRun,
         long? expectedVersion,
-        WorkspacesDbContext workspacesDb,
+        AppDbContext db,
         CancellationToken ct)
     {
-        var project = await workspacesDb.Projects.AsNoTracking()
+        var project = await db.Projects.AsNoTracking()
             .FirstOrDefaultAsync(p => p.Id == projectId, ct);
         if (project is null) return Results.NotFound();
 
@@ -201,12 +201,12 @@ public static class ImportModel
         IServiceProvider services, Guid projectId, string userId, Guid modelStreamId, ModelExportDocument doc,
         bool dryRun, long? expectedVersion, CancellationToken ct)
     {
-        var modellingDb = services.GetRequiredService<ModellingDbContext>();
+        var db = services.GetRequiredService<AppDbContext>();
 
         // Every lock, append and read-model write below runs in this transaction. A return
         // before the commit rolls all of it back, so a reader sees the whole import or none of it.
-        await using var transaction = await modellingDb.Database.BeginTransactionAsync(ct);
-        var store = services.GetRequiredService<IEventStore>().UseDbContext(modellingDb);
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        var store = services.GetRequiredService<IEventStore>().UseDbContext(db);
 
         // Step 1: lock every stream the import can write, in stream-ID order, before the first
         // append. An append takes its stream lock and then the store-wide position counter,
@@ -293,10 +293,11 @@ public static class ImportModel
             .OfType<Guid>()
             .Where(id => !schemaTargets.ContainsKey(id))
             .ToHashSet();
-        var missing = await SchemaReferences.HoldAsync(modellingDb, projectId, named, ct);
+        var missing = await SchemaReferences.HoldAsync(db, projectId, named, ct);
         knownSchemaIds.UnionWith(named.Except(missing));
 
         var events = new List<object>();
+        var locked = state;
 
         // One entry: all of its decisions count, or none of them does. `decide` returns the
         // reason of a refusal, or null.
@@ -523,6 +524,13 @@ public static class ImportModel
             });
         }
 
+        // The deciders held each entry to the rules of its own fact. The events of the accepted
+        // entries are held to the rules of the model as a whole too, as a merge's are, so a
+        // rule written in ModelInvariants binds an import even when no decider asks for it.
+        var (imported, misfit) = ModelInvariants.Apply(locked, events);
+        foreach (var broken in misfit is null ? ModelInvariants.NewViolations(locked, imported) : [misfit])
+            Refuse("model", modelStreamId, null, broken);
+
         // Schemas: each is its own stream.
         var schemaAppends = new List<(Guid Id, long Version, IReadOnlyList<object> Events)>();
         var written = new HashSet<Guid>();
@@ -621,11 +629,11 @@ public static class ImportModel
             return schema.ProjectId;
 
         var branchOwner =
-            await services.GetRequiredService<WorkspacesDbContext>().Projects.AsNoTracking()
+            await services.GetRequiredService<AppDbContext>().Projects.AsNoTracking()
                 .Where(p => p.StreamId == streamId).Select(p => (Guid?)p.Id).FirstOrDefaultAsync(ct)
-            ?? await services.GetRequiredService<DraftsDbContext>().Drafts.AsNoTracking()
+            ?? await services.GetRequiredService<AppDbContext>().Drafts.AsNoTracking()
                 .Where(d => d.StreamId == streamId).Select(d => (Guid?)d.ProjectId).FirstOrDefaultAsync(ct)
-            ?? await services.GetRequiredService<ModellingDbContext>().Variants.AsNoTracking()
+            ?? await services.GetRequiredService<AppDbContext>().Variants.AsNoTracking()
                 .Where(v => v.StreamId == streamId).Select(v => (Guid?)v.ProjectId).FirstOrDefaultAsync(ct);
         if (branchOwner is not null)
             return branchOwner;
@@ -643,7 +651,7 @@ public static class ImportModel
         if (projectIds.Count == 0)
             return [];
 
-        var db = services.GetRequiredService<WorkspacesDbContext>();
+        var db = services.GetRequiredService<AppDbContext>();
         return [.. await db.Projects.AsNoTracking()
             .Where(p => projectIds.Contains(p.Id) && db.Memberships.Any(m => m.WorkspaceId == p.WorkspaceId && m.UserId == userId))
             .Select(p => p.Id)

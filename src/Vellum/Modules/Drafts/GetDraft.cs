@@ -11,11 +11,11 @@ public static class GetDraft
     public static async Task<IResult> Handle(
         Guid projectId, Guid draftId,
         ClaimsPrincipal user,
-        DraftsDbContext db,
+        AppDbContext db,
         WorkspaceAuthorizationService auth,
         CancellationToken ct)
     {
-        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var userId = user.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Viewer, ct);
 
         var draft = await db.Drafts.AsNoTracking()

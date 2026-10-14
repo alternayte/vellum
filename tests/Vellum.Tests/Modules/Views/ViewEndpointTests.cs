@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Vellum.Modules.Views;
+using Vellum.Shared;
 
 namespace Vellum.Tests.Modules.Views;
 
@@ -172,7 +173,7 @@ public class ViewEndpointTests : IClassFixture<IntegrationFixture>
         Assert.Equal(HttpStatusCode.NoContent, deleteResponse.StatusCode);
 
         using var scope = factory.Services.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<ViewsDbContext>();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var orphanedPositions = await db.LayoutPositions.Where(p => p.ViewId == viewId).CountAsync();
         var orphanedEdges = await db.LayoutEdges.Where(e => e.ViewId == viewId).CountAsync();
         Assert.Equal(0, orphanedPositions);

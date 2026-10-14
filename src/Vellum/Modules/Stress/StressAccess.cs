@@ -135,10 +135,6 @@ internal sealed record StressWorld(TraceModel Model, long ModelVersion, Scenario
 /// <summary>What the stress handlers share: who calls, how a body is read and how the model is pinned.</summary>
 internal static class StressAccess
 {
-    public static string UserId(ClaimsPrincipal user) => user.FindFirstValue(ClaimTypes.NameIdentifier)!;
-
-    public static IResult NotFound(string what) => Results.NotFound(new ErrorResponse("not_found", $"{what} not found"));
-
     /// <summary>
     /// Reads a JSON body with the app's options. A body that is not the expected document gets
     /// 400 with the error envelope and the reader's message, not a bare status.
@@ -168,17 +164,17 @@ internal static class StressAccess
     /// the same instant, as a trace run reads them. The transaction only reads and is rolled back.
     /// </summary>
     public static async Task<StressWorld> LoadAsync(
-        IEventStore store, SchemasDbContext schemasDb, Guid projectId, Guid streamId, Guid scenarioId, CancellationToken ct)
+        IEventStore store, AppDbContext db, Guid projectId, Guid streamId, Guid scenarioId, CancellationToken ct)
     {
-        await using var snapshot = await schemasDb.Database.BeginTransactionAsync(IsolationLevel.RepeatableRead, ct);
-        var pinned = store.UseDbContext(schemasDb);
+        await using var snapshot = await db.Database.BeginTransactionAsync(IsolationLevel.RepeatableRead, ct);
+        var pinned = store.UseDbContext(db);
 
         var (scenario, scenarioVersion) = await ScenarioAsync(pinned, projectId, scenarioId, ct);
         var (model, modelVersion) = await pinned.Load<ModelState>(StreamId.From(streamId), ct);
 
         // Only the project's own schemas count, as in a trace run.
         var referenced = ContractDecider.ReferencedSchemaIds(model);
-        var schemas = await schemasDb.Schemas.AsNoTracking()
+        var schemas = await db.Schemas.AsNoTracking()
             .Where(s => s.ProjectId == projectId && referenced.Contains(s.Id))
             .Select(s => new { s.Id, s.Content })
             .ToListAsync(ct);

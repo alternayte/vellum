@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Microsoft.EntityFrameworkCore;
 using Vellum.Modules.Workspaces.Authorization;
+using Vellum.Shared;
 
 namespace Vellum.Modules.Workspaces;
 
@@ -9,11 +10,11 @@ public static class ListProjects
     public static async Task<IResult> Handle(
         Guid workspaceId,
         ClaimsPrincipal user,
-        WorkspacesDbContext db,
+        AppDbContext db,
         WorkspaceAuthorizationService auth,
         CancellationToken ct)
     {
-        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var userId = user.UserId();
         await auth.RequireRoleAsync(workspaceId, userId, WorkspaceRole.Viewer, ct);
 
         var projects = await db.Projects

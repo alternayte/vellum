@@ -5,6 +5,7 @@ using Vellum.Modules.Review.Decisions;
 using Vellum.Modules.Review.Rules;
 using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Shared;
+using static Vellum.Shared.ResultExtensions;
 
 namespace Vellum.Modules.Review;
 
@@ -71,23 +72,23 @@ public static class ReviewEndpoints
     public static async Task<IResult> Findings(
         Guid projectId, Guid? revisionId, Guid? branchId, HttpContext http, WorkspaceAuthorizationService auth, CancellationToken ct)
     {
-        await auth.RequireProjectRoleAsync(projectId, ReviewAccess.UserId(http.User), WorkspaceRole.Viewer, ct);
+        await auth.RequireProjectRoleAsync(projectId, http.User.UserId(), WorkspaceRole.Viewer, ct);
         var (state, refusal) = await ReviewEngine.LoadAsync(http.RequestServices, projectId, revisionId, branchId, ct);
         return state is null ? refusal! : Results.Ok(FindingsResponse.Of(state));
     }
 
     public static async Task<IResult> SaveSnapshot(
-        Guid projectId, HttpContext http, WorkspaceAuthorizationService auth, ReviewDbContext db, TimeProvider time, CancellationToken ct)
+        Guid projectId, HttpContext http, WorkspaceAuthorizationService auth, AppDbContext db, TimeProvider time, CancellationToken ct)
     {
-        var userId = ReviewAccess.UserId(http.User);
+        var userId = http.User.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
         var (request, error) = await PromiseAccess.ReadAsync<SaveSnapshotRequest>(http, allowEmpty: true);
         if (error is not null)
             return error;
         if (TextRule.Lines("note", request?.Note) is { } invalid)
-            return ReviewAccess.Invalid(invalid.Field, invalid.Message);
-        if (await db.Snapshots.CountAsync(s => s.ProjectId == projectId, ct) >= MaxSnapshotsPerProject)
-            return ReviewAccess.Conflict($"A project holds at most {MaxSnapshotsPerProject} review snapshots. Delete one first.");
+            return Invalid(invalid.Field, invalid.Message);
+        if (await db.ReviewSnapshots.CountAsync(s => s.ProjectId == projectId, ct) >= MaxSnapshotsPerProject)
+            return Conflict($"A project holds at most {MaxSnapshotsPerProject} review snapshots. Delete one first.");
 
         var (state, refusal) = await ReviewEngine.LoadAsync(http.RequestServices, projectId, request?.RevisionId, request?.BranchId, ct);
         if (state is null)
@@ -101,16 +102,16 @@ public static class ReviewEndpoints
             Note = string.IsNullOrWhiteSpace(request?.Note) ? null : request.Note.Trim(),
             Findings = PromiseJson.Write(state.Findings), CreatedBy = userId, CreatedAt = time.GetUtcNow(),
         };
-        db.Snapshots.Add(row);
+        db.ReviewSnapshots.Add(row);
         await db.SaveChangesAsync(ct);
         return Results.Created($"/api/projects/{projectId}/review/snapshots/{row.Id}", ToDto(row));
     }
 
     public static async Task<IResult> ListSnapshots(
-        Guid projectId, HttpContext http, WorkspaceAuthorizationService auth, ReviewDbContext db, CancellationToken ct)
+        Guid projectId, HttpContext http, WorkspaceAuthorizationService auth, AppDbContext db, CancellationToken ct)
     {
-        await auth.RequireProjectRoleAsync(projectId, ReviewAccess.UserId(http.User), WorkspaceRole.Viewer, ct);
-        var rows = await db.Snapshots.AsNoTracking().Where(s => s.ProjectId == projectId)
+        await auth.RequireProjectRoleAsync(projectId, http.User.UserId(), WorkspaceRole.Viewer, ct);
+        var rows = await db.ReviewSnapshots.AsNoTracking().Where(s => s.ProjectId == projectId)
             .OrderByDescending(s => s.CreatedAt).ThenBy(s => s.Id)
             .Select(s => new SnapshotSummary(s.Id, s.Branch, s.ModelVersion, s.RevisionId, s.InputsFingerprint, s.RuleSetVersion, s.Hash, s.Note, s.CreatedBy, s.CreatedAt))
             .ToListAsync(ct);
@@ -118,21 +119,21 @@ public static class ReviewEndpoints
     }
 
     public static async Task<IResult> GetSnapshot(
-        Guid projectId, Guid snapshotId, HttpContext http, WorkspaceAuthorizationService auth, ReviewDbContext db, CancellationToken ct)
+        Guid projectId, Guid snapshotId, HttpContext http, WorkspaceAuthorizationService auth, AppDbContext db, CancellationToken ct)
     {
-        await auth.RequireProjectRoleAsync(projectId, ReviewAccess.UserId(http.User), WorkspaceRole.Viewer, ct);
-        return await db.Snapshots.AsNoTracking().FirstOrDefaultAsync(s => s.Id == snapshotId && s.ProjectId == projectId, ct) is { } row
+        await auth.RequireProjectRoleAsync(projectId, http.User.UserId(), WorkspaceRole.Viewer, ct);
+        return await db.ReviewSnapshots.AsNoTracking().FirstOrDefaultAsync(s => s.Id == snapshotId && s.ProjectId == projectId, ct) is { } row
             ? Results.Ok(ToDto(row))
-            : ReviewAccess.NotFound("Snapshot");
+            : NotFound("Snapshot");
     }
 
     public static async Task<IResult> DeleteSnapshot(
-        Guid projectId, Guid snapshotId, HttpContext http, WorkspaceAuthorizationService auth, ReviewDbContext db, CancellationToken ct)
+        Guid projectId, Guid snapshotId, HttpContext http, WorkspaceAuthorizationService auth, AppDbContext db, CancellationToken ct)
     {
-        await auth.RequireProjectRoleAsync(projectId, ReviewAccess.UserId(http.User), WorkspaceRole.Editor, ct);
-        return await db.Snapshots.Where(s => s.Id == snapshotId && s.ProjectId == projectId).ExecuteDeleteAsync(ct) == 1
+        await auth.RequireProjectRoleAsync(projectId, http.User.UserId(), WorkspaceRole.Editor, ct);
+        return await db.ReviewSnapshots.Where(s => s.Id == snapshotId && s.ProjectId == projectId).ExecuteDeleteAsync(ct) == 1
             ? Results.NoContent()
-            : ReviewAccess.NotFound("Snapshot");
+            : NotFound("Snapshot");
     }
 
     private static SnapshotDto ToDto(SnapshotEntity row) => new(
@@ -153,23 +154,23 @@ public static class ReviewEndpoints
     /// the rule or the facts of the subject change, it shows as <c>needsReReview</c> and settles nothing.
     /// </summary>
     public static async Task<IResult> SetDisposition(
-        Guid projectId, HttpContext http, WorkspaceAuthorizationService auth, IEventStore store, ReviewDbContext db, TimeProvider time, CancellationToken ct)
+        Guid projectId, HttpContext http, WorkspaceAuthorizationService auth, IEventStore store, AppDbContext db, TimeProvider time, CancellationToken ct)
     {
-        var userId = ReviewAccess.UserId(http.User);
+        var userId = http.User.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
         var (request, error) = await PromiseAccess.ReadAsync<SetDispositionRequest>(http);
         if (request is null)
             return error!;
         if (request.Status is not (DispositionStatus.Open or DispositionStatus.AcceptedByDecision or DispositionStatus.WontFix))
-            return ReviewAccess.Invalid("status", "The status is open, accepted-by-decision or wont-fix");
+            return Invalid("status", "The status is open, accepted-by-decision or wont-fix");
         if (!RuleSet.IsRule(request.RuleId))
-            return ReviewAccess.Invalid("ruleId", "This is not the ID of a review rule");
+            return Invalid("ruleId", "This is not the ID of a review rule");
 
         var (state, refusal) = await ReviewEngine.LoadAsync(http.RequestServices, projectId, request.RevisionId, request.BranchId, ct);
         if (state is null)
             return refusal!;
         if (state.Findings.FirstOrDefault(f => f.Finding.RuleId == request.RuleId && f.Finding.Subject.Id == request.SubjectId) is not { } view)
-            return ReviewAccess.NotFound("Finding");
+            return NotFound("Finding");
 
         var finding = view.Finding;
         var at = time.GetUtcNow();
@@ -183,15 +184,15 @@ public static class ReviewEndpoints
         {
             case DispositionStatus.WontFix:
                 if (string.IsNullOrWhiteSpace(request.Reason))
-                    return ReviewAccess.Invalid("reason", "A reason is required: say why the finding stands");
+                    return Invalid("reason", "A reason is required: say why the finding stands");
                 if (TextRule.Lines("reason", request.Reason) is { } invalid)
-                    return ReviewAccess.Invalid(invalid.Field, invalid.Message);
+                    return Invalid(invalid.Field, invalid.Message);
                 if (!finding.Fired)
-                    return ReviewAccess.Conflict($"The finding is {finding.Result}. It has nothing to answer.");
+                    return Conflict($"The finding is {finding.Result}. It has nothing to answer.");
                 if (finding.Severity == Severity.Blocking)
-                    return ReviewAccess.Conflict("A blocking finding is settled by an accepted decision only. Write a decision that names the rule and the subject, and accept it.");
+                    return Conflict("A blocking finding is settled by an accepted decision only. Write a decision that names the rule and the subject, and accept it.");
                 if (settledBy.Count > 0)
-                    return ReviewAccess.Conflict($"{DecisionState.Label(settledBy[0].State.Number)} names this finding. Set the finding to open first.");
+                    return Conflict($"{DecisionState.Label(settledBy[0].State.Number)} names this finding. Set the finding to open first.");
 
                 var (ruleId, subjectId, reason) = (finding.RuleId, finding.Subject.Id, request.Reason.Trim());
                 await db.Database.ExecuteSqlAsync($"""
@@ -206,13 +207,13 @@ public static class ReviewEndpoints
             case DispositionStatus.AcceptedByDecision:
                 await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Owner, ct);
                 if (request.DecisionId is not { } decisionId || state.Book.All.FirstOrDefault(d => d.Id == decisionId) is not { } decision)
-                    return ReviewAccess.Invalid("decisionId", "Name a decision of the project");
+                    return Invalid("decisionId", "Name a decision of the project");
                 if (state.Book.StatusOf(decision) != DecisionStatus.Accepted)
-                    return ReviewAccess.Conflict($"{DecisionState.Label(decision.State.Number)} is {state.Book.StatusOf(decision)}. Only an accepted decision in force settles a finding.");
+                    return Conflict($"{DecisionState.Label(decision.State.Number)} is {state.Book.StatusOf(decision)}. Only an accepted decision in force settles a finding.");
                 if (!finding.Fired)
-                    return ReviewAccess.Conflict($"The finding is {finding.Result}. It has nothing to settle.");
+                    return Conflict($"The finding is {finding.Result}. It has nothing to settle.");
                 if (settledBy.FirstOrDefault(d => d.Id != decisionId) is { } other)
-                    return ReviewAccess.Conflict($"{DecisionState.Label(other.State.Number)} names this finding already. Set the finding to open first.");
+                    return Conflict($"{DecisionState.Label(other.State.Number)} names this finding already. Set the finding to open first.");
 
                 var recorded = await DecisionEndpoints.DecideAsync(store, decisionId, s => DecisionDecider.RecordSettlement(
                     s, projectId, new SettlementStamp(finding.RuleId, finding.Subject.Id, finding.RuleVersion, finding.Fingerprint), userId, at), ct);
@@ -239,6 +240,6 @@ public static class ReviewEndpoints
         (state, refusal) = await ReviewEngine.LoadAsync(http.RequestServices, projectId, request.RevisionId, request.BranchId, ct);
         return state is null ? refusal!
             : state.Findings.FirstOrDefault(f => f.Finding.RuleId == finding.RuleId && f.Finding.Subject.Id == finding.Subject.Id) is { } now ? Results.Ok(now)
-            : ReviewAccess.NotFound("Finding");
+            : NotFound("Finding");
     }
 }

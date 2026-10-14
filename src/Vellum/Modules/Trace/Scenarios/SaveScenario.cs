@@ -32,7 +32,7 @@ public static class SaveScenario
         IOptions<JsonOptions> json,
         CancellationToken ct)
     {
-        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var userId = user.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
 
         var (document, error) = await ReadAsync(http.Request, json.Value.SerializerOptions, ct);
@@ -57,7 +57,7 @@ public static class SaveScenario
         IServiceProvider requestServices, Guid projectId, Scenario document, CancellationToken ct) =>
         SharedTransaction.RunAsync(requestServices, async services =>
         {
-            var db = services.GetRequiredService<ScenariosDbContext>();
+            var db = services.GetRequiredService<AppDbContext>();
             await using var transaction = await db.Database.BeginTransactionAsync(ct);
             var created = await CreateInTransactionAsync(
                 db, services.GetRequiredService<IEventStore>().UseDbContext(db), projectId, document, null, ct);
@@ -113,7 +113,7 @@ public static class SaveScenario
         IOptions<JsonOptions> json,
         CancellationToken ct)
     {
-        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var userId = user.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
 
         var (document, error) = await ReadAsync(http.Request, json.Value.SerializerOptions, ct);

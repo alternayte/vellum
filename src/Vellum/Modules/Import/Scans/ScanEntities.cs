@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Vellum.Shared;
 
 namespace Vellum.Modules.Import.Scans;
 
@@ -139,8 +140,8 @@ public static class ScanSnapshots
     /// Only such a snapshot can stand for the newest state of a repository; a pull request or
     /// a commit follows no line of history. The database filters them.
     /// </summary>
-    public static IQueryable<Proposals.SnapshotEntity> OfRefs(ImportDbContext db, Guid projectId) =>
-        db.Snapshots.Where(s => s.ProjectId == projectId && db.Scans.Any(c => c.Id == s.ScanId && c.PullRequestNumber == null
+    public static IQueryable<Proposals.SnapshotEntity> OfRefs(AppDbContext db, Guid projectId) =>
+        db.ImportSnapshots.Where(s => s.ProjectId == projectId && db.Scans.Any(c => c.Id == s.ScanId && c.PullRequestNumber == null
             && !(c.RequestedRef != null && System.Text.RegularExpressions.Regex.IsMatch(c.RequestedRef, "^[0-9A-Fa-f]{40}$"))));
 }
 

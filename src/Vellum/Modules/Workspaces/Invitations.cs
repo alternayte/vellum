@@ -10,6 +10,7 @@ using Vellum.Modules.Settings.Audit;
 using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Modules.Workspaces.Entities;
 using Vellum.Shared;
+using static Vellum.Shared.ResultExtensions;
 
 namespace Vellum.Modules.Workspaces;
 
@@ -78,7 +79,7 @@ public static class InvitationRules
         new(i.Id, i.WorkspaceId, i.Email, MemberRoles.Canonical(i.Role), StatusAt(i, now), i.CreatedAt, i.ExpiresAt);
 
     /// <summary>The invitation row, locked for the open transaction.</summary>
-    internal static async Task<InvitationEntity?> LockAsync(WorkspacesDbContext db, Guid invitationId, CancellationToken ct) =>
+    internal static async Task<InvitationEntity?> LockAsync(AppDbContext db, Guid invitationId, CancellationToken ct) =>
         (await db.Invitations
             .FromSql($"SELECT * FROM workspaces.invitations WHERE id = {invitationId} FOR UPDATE")
             .ToListAsync(ct))
@@ -117,7 +118,7 @@ public static class InvitationRules
     /// with the membership change.
     /// </summary>
     internal static async Task RevokeIssuedByAsync(
-        WorkspacesDbContext db, Guid workspaceId, string issuerId, string actorId, string reason, DateTimeOffset now, CancellationToken ct)
+        AppDbContext db, Guid workspaceId, string issuerId, string actorId, string reason, DateTimeOffset now, CancellationToken ct)
     {
         var pending = InvitationStatus.Pending;
         var invitations = await db.Invitations
@@ -134,8 +135,6 @@ public static class InvitationRules
             await AuditLog.AppendAsync(db, workspaceId, actorId, AuditLog.InvitationRevoked,
                 $"invitation:{invitation.Id} role:{invitation.Role.ToLowerInvariant()} issuer:{issuerId} reason:{reason}", ct);
     }
-
-    internal static IResult NotFound() => Results.NotFound(new ErrorResponse("not_found", "Invitation not found"));
 
     internal static IResult Closed(string status) => Results.Conflict(new ErrorResponse(
         "invitation_closed",
@@ -157,14 +156,13 @@ public static class CreateInvitation
         Guid workspaceId,
         CreateInvitationRequest request,
         ClaimsPrincipal user,
-        WorkspacesDbContext db,
+        AppDbContext db,
         WorkspaceAuthorizationService auth,
-        AppIdentityDbContext identity,
         ILookupNormalizer normalizer,
         TimeProvider time,
         CancellationToken ct)
     {
-        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var userId = user.UserId();
         await auth.RequireRoleAsync(workspaceId, userId, WorkspaceRole.Owner, ct);
 
         if (MemberRoles.Parse(request.Role) is not { } role)
@@ -182,7 +180,7 @@ public static class CreateInvitation
         // The owner reads the email address of each member in the member list, so this
         // answer tells the owner nothing new.
         var memberIds = await db.Memberships.Where(m => m.WorkspaceId == workspaceId).Select(m => m.UserId).ToListAsync(ct);
-        if (await identity.Users.AnyAsync(u => memberIds.Contains(u.Id) && u.NormalizedEmail == normalized, ct))
+        if (await db.Users.AnyAsync(u => memberIds.Contains(u.Id) && u.NormalizedEmail == normalized, ct))
             return Results.Conflict(new ErrorResponse("already_member", "This person is already a member",
                 "Change the role in the member list."));
 
@@ -241,12 +239,12 @@ public static class ListInvitations
     public static async Task<IResult> Handle(
         Guid workspaceId,
         ClaimsPrincipal user,
-        WorkspacesDbContext db,
+        AppDbContext db,
         WorkspaceAuthorizationService auth,
         TimeProvider time,
         CancellationToken ct)
     {
-        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var userId = user.UserId();
         await auth.RequireRoleAsync(workspaceId, userId, WorkspaceRole.Owner, ct);
 
         var now = InvitationRules.Now(time);
@@ -264,19 +262,19 @@ public static class RevokeInvitation
         Guid workspaceId,
         Guid invitationId,
         ClaimsPrincipal user,
-        WorkspacesDbContext db,
+        AppDbContext db,
         WorkspaceAuthorizationService auth,
         TimeProvider time,
         CancellationToken ct)
     {
-        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var userId = user.UserId();
         await auth.RequireRoleAsync(workspaceId, userId, WorkspaceRole.Owner, ct);
 
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         var invitation = await InvitationRules.LockAsync(db, invitationId, ct);
         // An invitation of another workspace is no invitation of this one.
         if (invitation is null || invitation.WorkspaceId != workspaceId)
-            return InvitationRules.NotFound();
+            return NotFound("Invitation");
 
         var now = InvitationRules.Now(time);
         switch (invitation.Status)
@@ -309,12 +307,11 @@ public static class MyInvitations
 {
     public static async Task<IResult> List(
         ClaimsPrincipal user,
-        WorkspacesDbContext db,
-        AppIdentityDbContext identity,
+        AppDbContext db,
         TimeProvider time,
         CancellationToken ct)
     {
-        var email = await EmailOfAsync(user, identity, ct);
+        var email = await EmailOfAsync(user, db, ct);
         if (email is null)
             return Results.Ok(Array.Empty<MyInvitationDto>());
 
@@ -324,7 +321,7 @@ public static class MyInvitations
             .Join(db.Workspaces, i => i.WorkspaceId, w => w.Id, (i, w) => new { Invitation = i, WorkspaceName = w.Name })
             .OrderBy(r => r.Invitation.CreatedAt)
             .ToListAsync(ct);
-        return Results.Ok(await ToDtosAsync(rows.Select(r => (r.Invitation, r.WorkspaceName)).ToList(), identity, now, ct));
+        return Results.Ok(await ToDtosAsync(rows.Select(r => (r.Invitation, r.WorkspaceName)).ToList(), db, now, ct));
     }
 
     /// <summary>The invitation of a link, for the screen that offers Accept and Decline. It changes nothing.</summary>
@@ -332,18 +329,17 @@ public static class MyInvitations
         Guid invitationId,
         InvitationSecretRequest? request,
         ClaimsPrincipal user,
-        WorkspacesDbContext db,
-        AppIdentityDbContext identity,
+        AppDbContext db,
         TimeProvider time,
         CancellationToken ct)
     {
-        var email = await EmailOfAsync(user, identity, ct);
+        var email = await EmailOfAsync(user, db, ct);
         var invitation = await db.Invitations.AsNoTracking().FirstOrDefaultAsync(i => i.Id == invitationId, ct);
         if (invitation is null || !IsFor(invitation, email, request?.Secret))
-            return InvitationRules.NotFound();
+            return NotFound("Invitation");
 
         var workspaceName = await db.Workspaces.Where(w => w.Id == invitation.WorkspaceId).Select(w => w.Name).FirstAsync(ct);
-        var dtos = await ToDtosAsync([(invitation, workspaceName)], identity, time.GetUtcNow(), ct);
+        var dtos = await ToDtosAsync([(invitation, workspaceName)], db, time.GetUtcNow(), ct);
         return Results.Ok(dtos[0]);
     }
 
@@ -356,18 +352,17 @@ public static class MyInvitations
         Guid invitationId,
         InvitationSecretRequest? request,
         ClaimsPrincipal user,
-        WorkspacesDbContext db,
-        AppIdentityDbContext identity,
+        AppDbContext db,
         TimeProvider time,
         CancellationToken ct)
     {
-        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
-        var email = await EmailOfAsync(user, identity, ct);
+        var userId = user.UserId();
+        var email = await EmailOfAsync(user, db, ct);
 
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         var invitation = await InvitationRules.LockAsync(db, invitationId, ct);
         if (invitation is null || !IsFor(invitation, email, request?.Secret))
-            return InvitationRules.NotFound();
+            return NotFound("Invitation");
 
         var membership = await db.Memberships
             .FirstOrDefaultAsync(m => m.WorkspaceId == invitation.WorkspaceId && m.UserId == userId, ct);
@@ -418,18 +413,17 @@ public static class MyInvitations
         Guid invitationId,
         InvitationSecretRequest? request,
         ClaimsPrincipal user,
-        WorkspacesDbContext db,
-        AppIdentityDbContext identity,
+        AppDbContext db,
         TimeProvider time,
         CancellationToken ct)
     {
-        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
-        var email = await EmailOfAsync(user, identity, ct);
+        var userId = user.UserId();
+        var email = await EmailOfAsync(user, db, ct);
 
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         var invitation = await InvitationRules.LockAsync(db, invitationId, ct);
         if (invitation is null || !IsFor(invitation, email, request?.Secret))
-            return InvitationRules.NotFound();
+            return NotFound("Invitation");
 
         var now = InvitationRules.Now(time);
         var status = InvitationRules.StatusAt(invitation, now);
@@ -453,7 +447,7 @@ public static class MyInvitations
         InvitationRules.SecretMatches(invitation, secret) & (email is not null && invitation.NormalizedEmail == email);
 
     private static async Task<List<MyInvitationDto>> ToDtosAsync(
-        List<(InvitationEntity Invitation, string WorkspaceName)> rows, AppIdentityDbContext identity, DateTimeOffset now, CancellationToken ct)
+        List<(InvitationEntity Invitation, string WorkspaceName)> rows, AppDbContext identity, DateTimeOffset now, CancellationToken ct)
     {
         var inviterIds = rows.Select(r => r.Invitation.InvitedBy).Distinct().ToList();
         var inviters = await identity.Users.AsNoTracking()
@@ -467,9 +461,9 @@ public static class MyInvitations
     }
 
     /// <summary>The normalized email address of the signed-in account, read from the account and not from a claim.</summary>
-    private static async Task<string?> EmailOfAsync(ClaimsPrincipal user, AppIdentityDbContext identity, CancellationToken ct)
+    private static async Task<string?> EmailOfAsync(ClaimsPrincipal user, AppDbContext identity, CancellationToken ct)
     {
-        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var userId = user.UserId();
         return await identity.Users.AsNoTracking().Where(u => u.Id == userId).Select(u => u.NormalizedEmail).FirstOrDefaultAsync(ct);
     }
 

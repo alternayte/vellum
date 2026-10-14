@@ -7,6 +7,7 @@ using Microsoft.Extensions.Options;
 using Microsoft.Net.Http.Headers;
 using Vellum.Modules.Settings;
 using Vellum.Modules.Settings.Audit;
+using Vellum.Shared;
 
 namespace Vellum.Modules.Identity.AgentTokens;
 
@@ -18,7 +19,7 @@ internal sealed class AgentTokenAuthenticationHandler(
     IOptionsMonitor<AuthenticationSchemeOptions> options,
     ILoggerFactory logger,
     UrlEncoder encoder,
-    AppIdentityDbContext db,
+    AppDbContext db,
     Bootstrap bootstrap,
     TimeProvider clock)
     : AuthenticationHandler<AuthenticationSchemeOptions>(options, logger, encoder)

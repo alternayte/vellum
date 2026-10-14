@@ -52,7 +52,7 @@ internal static class ModelTools
         McpCall call,
         [Description("The ID of the project.")] Guid projectId)
     {
-        var (db, branch, ct) = (call.Service<ModellingDbContext>(), call.Project.StreamId, call.Aborted);
+        var (db, branch, ct) = (call.Service<AppDbContext>(), call.Project.StreamId, call.Aborted);
         var elements = db.Elements.AsNoTracking().Where(e => e.ProjectId == projectId && e.Branch == branch);
 
         var byKind = await elements.GroupBy(e => e.Kind).Select(g => new { Kind = g.Key, Count = g.Count() }).OrderBy(g => g.Kind).ToListAsync(ct);
@@ -67,7 +67,7 @@ internal static class ModelTools
             ["staleElements"] = await elements.CountAsync(e => e.StaleSinceRevision != null, ct),
             ["relationshipCount"] = await db.Relationships.AsNoTracking().CountAsync(r => r.ProjectId == projectId && r.Branch == branch, ct),
             ["messageCount"] = await db.Messages.AsNoTracking().CountAsync(m => m.ProjectId == projectId && m.Branch == branch, ct),
-            ["schemaCount"] = await call.Service<SchemasDbContext>().Schemas.AsNoTracking().CountAsync(s => s.ProjectId == projectId, ct),
+            ["schemaCount"] = await call.Service<AppDbContext>().Schemas.AsNoTracking().CountAsync(s => s.ProjectId == projectId, ct),
         });
     }
 
@@ -84,7 +84,7 @@ internal static class ModelTools
         if (FilterError(("name", name), ("kind", kind), ("tag", tag), ("status", status)) is { } invalid)
             return invalid;
 
-        var query = call.Service<ModellingDbContext>().Elements.AsNoTracking()
+        var query = call.Service<AppDbContext>().Elements.AsNoTracking()
             .Where(e => e.ProjectId == projectId && e.Branch == call.Project.StreamId);
         if (!string.IsNullOrWhiteSpace(name))
             query = query.Where(e => e.Name.ToLower().Contains(name.ToLower()));
@@ -122,7 +122,7 @@ internal static class ModelTools
         [Description("The ID of the project.")] Guid projectId,
         [Description("The ID of the element.")] Guid elementId)
     {
-        var (db, branch, ct) = (call.Service<ModellingDbContext>(), call.Project.StreamId, call.Aborted);
+        var (db, branch, ct) = (call.Service<AppDbContext>(), call.Project.StreamId, call.Aborted);
         var element = await db.Elements.AsNoTracking().FirstOrDefaultAsync(e => e.ProjectId == projectId && e.Branch == branch && e.Id == elementId, ct);
         if (element is null)
             return McpOutput.Error("not_found", "Element not found");
@@ -167,7 +167,7 @@ internal static class ModelTools
         [Description(Cursor)] string? cursor = null,
         [Description(Limit)] int? limit = null)
     {
-        var (db, branch, ct) = (call.Service<ModellingDbContext>(), call.Project.StreamId, call.Aborted);
+        var (db, branch, ct) = (call.Service<AppDbContext>(), call.Project.StreamId, call.Aborted);
         var query = db.Messages.AsNoTracking().Where(m => m.ProjectId == projectId && m.Branch == branch);
         if (!Decode(cursor, out var after, out var badCursor))
             return badCursor;
@@ -251,7 +251,7 @@ internal static class ModelTools
         }
 
         var schemas = (kind is null or "schemas")
-            ? await call.Service<SchemasDbContext>().Schemas.AsNoTracking()
+            ? await call.Service<AppDbContext>().Schemas.AsNoTracking()
                 .Where(s => s.ProjectId == projectId && (schemaIds == null || schemaIds.Contains(s.Id)))
                 .Select(s => new SchemaRow(s.Id, s.Name, s.Description, s.Version))
                 .ToListAsync(call.Aborted)
@@ -322,7 +322,7 @@ internal static class ModelTools
     /// <summary>The relationships of the main model that match, by ID, one more than a result lists so that a longer list shows.</summary>
     private static async Task<JsonArray> RelationshipsAsync(McpCall call, System.Linq.Expressions.Expression<Func<RelationshipEntity, bool>> where)
     {
-        var rows = await call.Service<ModellingDbContext>().Relationships.AsNoTracking()
+        var rows = await call.Service<AppDbContext>().Relationships.AsNoTracking()
             .Where(r => r.ProjectId == call.Project.Id && r.Branch == call.Project.StreamId)
             .Where(where)
             .OrderBy(r => r.Id).Take(McpOutput.MaxListed + 1)
@@ -335,7 +335,7 @@ internal static class ModelTools
 
     private static async Task<JsonArray> MessagesAsync(McpCall call, System.Linq.Expressions.Expression<Func<MessageEntity, bool>> where)
     {
-        var rows = await call.Service<ModellingDbContext>().Messages.AsNoTracking()
+        var rows = await call.Service<AppDbContext>().Messages.AsNoTracking()
             .Where(m => m.ProjectId == call.Project.Id && m.Branch == call.Project.StreamId)
             .Where(where)
             .OrderBy(m => m.Name).ThenBy(m => m.Id).Take(McpOutput.MaxListed + 1)

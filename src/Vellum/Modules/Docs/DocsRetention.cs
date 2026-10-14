@@ -4,7 +4,7 @@ using Vellum.Shared;
 namespace Vellum.Modules.Docs;
 
 /// <summary>What the doc tables keep of a deleted project: nothing.</summary>
-public sealed class DocsRetention(DocsDbContext db) : IProjectRetention
+public sealed class DocsRetention(AppDbContext db) : IProjectRetention
 {
     public async Task DeleteProjectAsync(DeletedProject project, CancellationToken ct)
     {

@@ -70,7 +70,7 @@ public sealed class OutboundTelemetryHandler(ILogger<OutboundTelemetryHandler> l
 /// The attempts and the total wait are capped; past either cap the last response goes back
 /// to the caller.
 /// </summary>
-public sealed class OutboundRetryHandler(OutboundLimits limits) : DelegatingHandler
+public sealed class OutboundRetryHandler(OutboundLimits limits, TimeProvider time) : DelegatingHandler
 {
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
     {
@@ -100,7 +100,7 @@ public sealed class OutboundRetryHandler(OutboundLimits limits) : DelegatingHand
 
             // The server's own wait is kept as it is. The pipeline's backoff is shortened by
             // up to half, at random, so clients that failed together do not return together.
-            var wait = (response is null ? null : RetryAfter(response))
+            var wait = (response is null ? null : RetryAfter(response, time.GetUtcNow()))
                        ?? limits.BaseBackoff * (1 << (attempt - 1)) * (1 - Math.Clamp(limits.Jitter(), 0, 1) / 2);
             if (waited + wait > limits.MaxTotalWait)
                 return response ?? throw failure!;
@@ -111,10 +111,10 @@ public sealed class OutboundRetryHandler(OutboundLimits limits) : DelegatingHand
         }
     }
 
-    private static TimeSpan? RetryAfter(HttpResponseMessage response)
+    private static TimeSpan? RetryAfter(HttpResponseMessage response, DateTimeOffset now)
     {
         var header = response.Headers.RetryAfter;
-        var wait = header?.Delta ?? (header?.Date is { } date ? date - DateTimeOffset.UtcNow : null);
+        var wait = header?.Delta ?? (header?.Date is { } date ? date - now : null);
         return wait is null ? null : wait < TimeSpan.Zero ? TimeSpan.Zero : wait;
     }
 }

@@ -6,6 +6,7 @@ using Vellum.Modules.Trace.Scenarios;
 using Vellum.Modules.Workspaces;
 using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Shared;
+using static Vellum.Shared.ResultExtensions;
 
 namespace Vellum.Modules.Review.Decisions;
 
@@ -67,31 +68,31 @@ public sealed record DecisionDto(
 public static class DecisionEndpoints
 {
     public static async Task<IResult> List(
-        Guid projectId, HttpContext http, WorkspaceAuthorizationService auth, ReviewDbContext db, CancellationToken ct)
+        Guid projectId, HttpContext http, WorkspaceAuthorizationService auth, AppDbContext db, CancellationToken ct)
     {
-        await auth.RequireProjectRoleAsync(projectId, ReviewAccess.UserId(http.User), WorkspaceRole.Viewer, ct);
+        await auth.RequireProjectRoleAsync(projectId, http.User.UserId(), WorkspaceRole.Viewer, ct);
         var book = new DecisionBook(await DecisionReads.CurrentAsync(db, projectId, ct));
         return Results.Ok(new Page<DecisionDto>([.. book.All.Select(d => DecisionDto.From(book, d))], null));
     }
 
     public static async Task<IResult> Get(
-        Guid projectId, Guid decisionId, HttpContext http, WorkspaceAuthorizationService auth, ReviewDbContext db, CancellationToken ct)
+        Guid projectId, Guid decisionId, HttpContext http, WorkspaceAuthorizationService auth, AppDbContext db, CancellationToken ct)
     {
-        await auth.RequireProjectRoleAsync(projectId, ReviewAccess.UserId(http.User), WorkspaceRole.Viewer, ct);
-        return await ReadAsync(db, projectId, decisionId, ct) is { } decision ? Results.Ok(decision) : ReviewAccess.NotFound("Decision");
+        await auth.RequireProjectRoleAsync(projectId, http.User.UserId(), WorkspaceRole.Viewer, ct);
+        return await ReadAsync(db, projectId, decisionId, ct) is { } decision ? Results.Ok(decision) : NotFound("Decision");
     }
 
     public static async Task<IResult> Create(
         Guid projectId, HttpContext http, WorkspaceAuthorizationService auth, TimeProvider time, CancellationToken ct)
     {
-        var userId = ReviewAccess.UserId(http.User);
+        var userId = http.User.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
         var (request, error) = await PromiseAccess.ReadAsync<DecisionRequest>(http);
         if (request is null)
             return error!;
         // The origin comes from who calls, not from what the body says.
         if (PromiseAccess.Origin(http.User, request.Origin) is not { } origin)
-            return ReviewAccess.Invalid("origin", "The origin of a decision a person creates is human or ai-suggested");
+            return Invalid("origin", "The origin of a decision a person creates is human or ai-suggested");
 
         var created = await CreateAsync(http.RequestServices, projectId, request.ToContent(), origin, userId, time.GetUtcNow(), ct);
         return created.Dto is { } dto ? Results.Created($"/api/projects/{projectId}/decisions/{dto.Id}", dto) : created.Refusal!;
@@ -105,14 +106,14 @@ public static class DecisionEndpoints
     internal static async Task<(DecisionDto? Dto, IResult? Refusal)> CreateAsync(
         IServiceProvider requestServices, Guid projectId, DecisionContent content, string origin, string userId, DateTimeOffset now, CancellationToken ct)
     {
-        var reviewDb = requestServices.GetRequiredService<ReviewDbContext>();
-        if (content.Supersedes is { } supersedes && !await reviewDb.Decisions.AsNoTracking().AnyAsync(d => d.Id == supersedes && d.ProjectId == projectId, ct))
-            return (null, ReviewAccess.Invalid("supersedes", "No decision with this ID exists in the project"));
+        var db = requestServices.GetRequiredService<AppDbContext>();
+        if (content.Supersedes is { } supersedes && !await db.Decisions.AsNoTracking().AnyAsync(d => d.Id == supersedes && d.ProjectId == projectId, ct))
+            return (null, Invalid("supersedes", "No decision with this ID exists in the project"));
 
         var decisionId = Guid.NewGuid();
         var result = await SharedTransaction.RunAsync(requestServices, async services =>
         {
-            var db = services.GetRequiredService<ReviewDbContext>();
+            var db = services.GetRequiredService<AppDbContext>();
             await using var transaction = await db.Database.BeginTransactionAsync(ct);
             var number = (await db.Database.SqlQuery<int>($"""
                 INSERT INTO review.decision_numbering (project_id, next_number) VALUES ({projectId}, 2)
@@ -131,21 +132,21 @@ public static class DecisionEndpoints
         }, ct);
 
         return result is CommandResult<DecisionState>.Success
-            ? (await ReadAsync(reviewDb, projectId, decisionId, ct), null)
+            ? (await ReadAsync(db, projectId, decisionId, ct), null)
             : (null, result.ToHttpResult());
     }
 
     public static async Task<IResult> Update(
-        Guid projectId, Guid decisionId, HttpContext http, WorkspaceAuthorizationService auth, IEventStore store, ReviewDbContext db, TimeProvider time, CancellationToken ct)
+        Guid projectId, Guid decisionId, HttpContext http, WorkspaceAuthorizationService auth, IEventStore store, AppDbContext db, TimeProvider time, CancellationToken ct)
     {
-        var userId = ReviewAccess.UserId(http.User);
+        var userId = http.User.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
         var (request, error) = await PromiseAccess.ReadAsync<DecisionRequest>(http);
         if (request is null)
             return error!;
         if (request.Supersedes is { } supersedes
             && (supersedes == decisionId || !await db.Decisions.AsNoTracking().AnyAsync(d => d.Id == supersedes && d.ProjectId == projectId, ct)))
-            return ReviewAccess.Invalid("supersedes", "No other decision with this ID exists in the project");
+            return Invalid("supersedes", "No other decision with this ID exists in the project");
 
         var now = time.GetUtcNow();
         return await RespondAsync(
@@ -166,9 +167,9 @@ public static class DecisionEndpoints
     /// </para>
     /// </summary>
     public static async Task<IResult> Accept(
-        Guid projectId, Guid decisionId, HttpContext http, WorkspaceAuthorizationService auth, IEventStore store, ReviewDbContext db, TimeProvider time, CancellationToken ct)
+        Guid projectId, Guid decisionId, HttpContext http, WorkspaceAuthorizationService auth, IEventStore store, AppDbContext db, TimeProvider time, CancellationToken ct)
     {
-        var userId = ReviewAccess.UserId(http.User);
+        var userId = http.User.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Owner, ct);
         var (request, error) = await PromiseAccess.ReadAsync<AcceptDecisionRequest>(http);
         if (request is null)
@@ -176,7 +177,7 @@ public static class DecisionEndpoints
         if (string.IsNullOrEmpty(request.ContentHash))
             return RequireHash("accept");
         if (!await db.Decisions.AsNoTracking().AnyAsync(d => d.Id == decisionId && d.ProjectId == projectId, ct))
-            return ReviewAccess.NotFound("Decision");
+            return NotFound("Decision");
 
         var (review, refusal) = await ReviewEngine.LoadAsync(http.RequestServices, projectId, request.RevisionId, request.BranchId, ct);
         if (review is null)
@@ -192,7 +193,7 @@ public static class DecisionEndpoints
         return await RespondAsync(result, changed, db, projectId, decisionId, ct);
     }
 
-    private static IResult RequireHash(string act) => ReviewAccess.Invalid(
+    private static IResult RequireHash(string act) => Invalid(
         "contentHash", $"The content hash of the decision is required. Read the decision and send the contentHash of the decision you {act}.");
 
     internal static SettlementStamp Stamp(IReadOnlyDictionary<(string, Guid), Rules.Finding> findings, string ruleId, Guid subjectId) =>
@@ -207,9 +208,9 @@ public static class DecisionEndpoints
     /// is refused with 409 <c>decision_changed</c>.
     /// </summary>
     public static async Task<IResult> Reject(
-        Guid projectId, Guid decisionId, HttpContext http, WorkspaceAuthorizationService auth, IEventStore store, ReviewDbContext db, TimeProvider time, CancellationToken ct)
+        Guid projectId, Guid decisionId, HttpContext http, WorkspaceAuthorizationService auth, IEventStore store, AppDbContext db, TimeProvider time, CancellationToken ct)
     {
-        var userId = ReviewAccess.UserId(http.User);
+        var userId = http.User.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Owner, ct);
         var (request, error) = await PromiseAccess.ReadAsync<RejectDecisionRequest>(http);
         if (request is null)
@@ -230,7 +231,7 @@ public static class DecisionEndpoints
     public static async Task<IResult> Delete(
         Guid projectId, Guid decisionId, HttpContext http, WorkspaceAuthorizationService auth, IEventStore store, TimeProvider time, CancellationToken ct)
     {
-        var userId = ReviewAccess.UserId(http.User);
+        var userId = http.User.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
         var now = time.GetUtcNow();
         var result = await DecideAsync(store, decisionId, state => DecisionDecider.Delete(state, projectId, userId, now), ct);
@@ -239,23 +240,23 @@ public static class DecisionEndpoints
 
     /// <summary>One decision as Markdown.</summary>
     public static async Task<IResult> Export(
-        Guid projectId, Guid decisionId, HttpContext http, WorkspaceAuthorizationService auth, ReviewDbContext db, CancellationToken ct)
+        Guid projectId, Guid decisionId, HttpContext http, WorkspaceAuthorizationService auth, AppDbContext db, CancellationToken ct)
     {
-        await auth.RequireProjectRoleAsync(projectId, ReviewAccess.UserId(http.User), WorkspaceRole.Viewer, ct);
+        await auth.RequireProjectRoleAsync(projectId, http.User.UserId(), WorkspaceRole.Viewer, ct);
         var book = new DecisionBook(await DecisionReads.CurrentAsync(db, projectId, ct));
         if (book.All.FirstOrDefault(d => d.Id == decisionId) is not { } decision)
-            return ReviewAccess.NotFound("Decision");
+            return NotFound("Decision");
         var text = DecisionDocuments.Markdown(book, decision, await NamesAsync(http.RequestServices, projectId, ct));
         return Results.Bytes(Encoding.UTF8.GetBytes(text), "text/markdown; charset=utf-8", $"{DecisionState.Label(decision.State.Number)}.md");
     }
 
     /// <summary>Every decision of the project in one Markdown document.</summary>
     public static async Task<IResult> ExportAll(
-        Guid projectId, HttpContext http, WorkspaceAuthorizationService auth, ReviewDbContext db, WorkspacesDbContext workspaces, CancellationToken ct)
+        Guid projectId, HttpContext http, WorkspaceAuthorizationService auth, AppDbContext db, CancellationToken ct)
     {
-        await auth.RequireProjectRoleAsync(projectId, ReviewAccess.UserId(http.User), WorkspaceRole.Viewer, ct);
+        await auth.RequireProjectRoleAsync(projectId, http.User.UserId(), WorkspaceRole.Viewer, ct);
         var book = new DecisionBook(await DecisionReads.CurrentAsync(db, projectId, ct));
-        var projectName = await workspaces.Projects.AsNoTracking().Where(p => p.Id == projectId).Select(p => p.Name).FirstAsync(ct);
+        var projectName = await db.Projects.AsNoTracking().Where(p => p.Id == projectId).Select(p => p.Name).FirstAsync(ct);
         var text = DecisionDocuments.MarkdownAll(book, projectName, await NamesAsync(http.RequestServices, projectId, ct));
         return Results.Bytes(Encoding.UTF8.GetBytes(text), "text/markdown; charset=utf-8", "decisions.md");
     }
@@ -268,7 +269,7 @@ public static class DecisionEndpoints
         return id => labels.GetValueOrDefault(id, id.ToString());
     }
 
-    internal static async Task<DecisionDto?> ReadAsync(ReviewDbContext db, Guid projectId, Guid decisionId, CancellationToken ct)
+    internal static async Task<DecisionDto?> ReadAsync(AppDbContext db, Guid projectId, Guid decisionId, CancellationToken ct)
     {
         var book = new DecisionBook(await DecisionReads.CurrentAsync(db, projectId, ct));
         return book.All.FirstOrDefault(d => d.Id == decisionId) is { } decision ? DecisionDto.From(book, decision) : null;
@@ -294,13 +295,13 @@ public static class DecisionEndpoints
 
     /// <param name="changed">The content hash of the decision as it is now, when the request named another.</param>
     private static async Task<IResult> RespondAsync(
-        CommandResult<DecisionState> result, string? changed, ReviewDbContext db, Guid projectId, Guid decisionId, CancellationToken ct) =>
+        CommandResult<DecisionState> result, string? changed, AppDbContext db, Guid projectId, Guid decisionId, CancellationToken ct) =>
         result is not CommandResult<DecisionState>.Success && changed is not null
             ? Results.Conflict(new DecisionChangedResponse("decision_changed", "The decision is not the one that was read", DecisionDecider.ChangedMessage, changed))
             : await RespondAsync(result, db, projectId, decisionId, ct);
 
     private static async Task<IResult> RespondAsync(
-        CommandResult<DecisionState> result, ReviewDbContext db, Guid projectId, Guid decisionId, CancellationToken ct) =>
+        CommandResult<DecisionState> result, AppDbContext db, Guid projectId, Guid decisionId, CancellationToken ct) =>
         result is CommandResult<DecisionState>.Success
             ? Results.Ok(await ReadAsync(db, projectId, decisionId, ct))
             : result.ToHttpResult();

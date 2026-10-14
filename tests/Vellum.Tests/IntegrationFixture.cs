@@ -167,11 +167,7 @@ internal static class TestDatabase
 
         await ExecuteAsync($"CREATE DATABASE {SchemaName}");
         var schema = On(SchemaName);
-        foreach (var (_, context) in DatabaseMigrations.Modules)
-        {
-            var migrate = typeof(TestDatabase).GetMethod(nameof(MigrateAsync), System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!;
-            await (Task)migrate.MakeGenericMethod(context).Invoke(null, [schema])!;
-        }
+        await MigrateAsync(schema);
         await SealAsync(SchemaName);
 
         // Tests register accounts freely. An instance allows that only after first-run
@@ -197,13 +193,13 @@ internal static class TestDatabase
         await ExecuteAsync($"SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '{database}'");
     }
 
-    private static async Task MigrateAsync<TContext>(string connectionString) where TContext : DbContext
+    private static async Task MigrateAsync(string connectionString)
     {
-        var options = new DbContextOptionsBuilder<TContext>()
+        var options = new DbContextOptionsBuilder<AppDbContext>()
             .UseNpgsql(connectionString)
             .UseSnakeCaseNamingConvention()
             .Options;
-        await using var db = (TContext)Activator.CreateInstance(typeof(TContext), options)!;
+        await using var db = new AppDbContext(options);
         await db.Database.MigrateAsync();
     }
 }

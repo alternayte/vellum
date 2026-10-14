@@ -6,6 +6,7 @@ using Vellum.Modules.Import.Extraction;
 using Vellum.Modules.Import.Proposals;
 using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Shared;
+using static Vellum.Shared.ResultExtensions;
 
 namespace Vellum.Modules.Import.Scans;
 
@@ -43,13 +44,13 @@ public static class SourceWindow
 
     public static async Task<IResult> Handle(
         Guid projectId, Guid importId, string? path, int? startLine, int? endLine, ClaimsPrincipal user,
-        WorkspaceAuthorizationService auth, ImportDbContext db, CancellationToken ct)
+        WorkspaceAuthorizationService auth, AppDbContext db, CancellationToken ct)
     {
-        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var userId = user.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Viewer, ct);
         var scan = await db.Scans.AsNoTracking().FirstOrDefaultAsync(s => s.Id == importId && s.ProjectId == projectId, ct);
         if (scan is null)
-            return ScanRequests.NotFound();
+            return NotFound("Import");
         if (scan.RepositoryIsPrivate != false)
             await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
 
@@ -102,7 +103,7 @@ public static class SourceWindow
 
     /// <summary>True when one evidence item of a fact or a proposal of the scan, at the scan's commit, holds all the lines.</summary>
     private static async Task<bool> IsEvidenceAsync(
-        ImportDbContext db, ScanEntity scan, string path, int start, int end, CancellationToken ct)
+        AppDbContext db, ScanEntity scan, string path, int start, int end, CancellationToken ct)
     {
         var filter = ProposalJson.Write(new[] { new { path } });
         var rows = await db.Database.SqlQuery<string>($"""
@@ -117,8 +118,6 @@ public static class SourceWindow
             && e.StartLine <= start && end <= e.EndLine);
     }
 
-    private static IResult Invalid(string field, string message) =>
-        Results.BadRequest(new ErrorResponse("validation_error", "Validation failed", Errors: [new FieldError(field, message)]));
 }
 
 /// <summary>

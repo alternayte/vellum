@@ -13,21 +13,18 @@ public sealed record AddSubscriptionRequest(
     Guid Id, Guid ChannelId, Guid ConsumerId,
     RetryDto? Retry, Guid? DeadLetterChannelId);
 
-public sealed record AddSubscriptionCommandEnvelope(Guid ProjectId, Guid StreamId, AddSubscriptionRequest Request);
-
-public sealed class AddSubscriptionHandler(IEventStore store)
-    : ICommandHandler<AddSubscriptionCommandEnvelope, CommandResult<SubscriptionDto>>
+public static class AddSubscription
 {
-    public Task<CommandResult<SubscriptionDto>> HandleAsync(AddSubscriptionCommandEnvelope cmd, CancellationToken ct = default)
+    public static Task<CommandResult<SubscriptionDto>> HandleAsync(
+        IEventStore store, Guid projectId, Guid streamId, AddSubscriptionRequest request, CancellationToken ct)
     {
-        var request = cmd.Request;
         var add = new AddSubscriptionCommand(
             request.Id, request.ChannelId, request.ConsumerId,
             request.Retry?.ToDomain() ?? RetryPolicy.None,
             request.DeadLetterChannelId is { } deadLetter ? new ChannelId(deadLetter) : null);
 
-        return store.ForProject(cmd.ProjectId).Decide<ModelState, SubscriptionDto>(
-            cmd.StreamId,
+        return store.ForProject(projectId).Decide<ModelState, SubscriptionDto>(
+            streamId,
             state => ContractDecider.AddSubscription(state, add),
             state => SubscriptionDto.From(state.Subscriptions[request.Id]),
             ct);

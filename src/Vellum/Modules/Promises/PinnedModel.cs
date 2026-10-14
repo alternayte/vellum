@@ -6,6 +6,7 @@ using Vellum.Modules.Modelling.Model;
 using Vellum.Modules.Modelling.Revisions;
 using Vellum.Modules.Workspaces;
 using Vellum.Shared;
+using static Vellum.Shared.ResultExtensions;
 
 namespace Vellum.Modules.Promises;
 
@@ -70,13 +71,13 @@ public sealed record PinnedModel(ModelPin Pin, ModelState State)
     public static async Task<(PinnedModel? Model, IResult? Refusal)> ResolveAsync(
         IServiceProvider services, Guid projectId, Guid? revisionId, Guid? branchId, CancellationToken ct)
     {
-        var modellingDb = services.GetRequiredService<ModellingDbContext>();
+        var db = services.GetRequiredService<AppDbContext>();
         if (revisionId is not null && branchId is not null)
             return (null, Invalid("revisionId", "Give a revision or a branch, not both"));
 
         if (revisionId is { } id)
         {
-            var revision = await modellingDb.Revisions.AsNoTracking()
+            var revision = await db.Revisions.AsNoTracking()
                 .FirstOrDefaultAsync(r => r.Id == id && r.ProjectId == projectId, ct);
             return revision is null
                 ? (null, Invalid("revisionId", "No revision with this ID exists in the project"))
@@ -85,10 +86,10 @@ public sealed record PinnedModel(ModelPin Pin, ModelState State)
                     CreateRevision.ReadState(revision.State)), null);
         }
 
-        var mainStreamId = await services.GetRequiredService<WorkspacesDbContext>().Projects.AsNoTracking()
+        var mainStreamId = await services.GetRequiredService<AppDbContext>().Projects.AsNoTracking()
             .Where(p => p.Id == projectId).Select(p => p.StreamId).FirstAsync(ct);
         var (streamId, refusal) = await ModelBranches.ResolveAsync(
-            branchId, projectId, mainStreamId, services.GetRequiredService<DraftsDbContext>(), modellingDb, forWrite: false, ct);
+            branchId, projectId, mainStreamId, db, forWrite: false, ct);
         if (refusal is not null)
             return (null, refusal);
 
@@ -103,6 +104,4 @@ public sealed record PinnedModel(ModelPin Pin, ModelState State)
     public static async Task<ModelState?> AtVersionAsync(IEventStore store, Guid streamId, long version, CancellationToken ct) =>
         (await StreamAt.FoldAsync<ModelState>(store, streamId, version, ct))?.State;
 
-    private static IResult Invalid(string field, string message) =>
-        Results.BadRequest(new ErrorResponse("validation_error", "Validation failed", Errors: [new FieldError(field, message)]));
 }

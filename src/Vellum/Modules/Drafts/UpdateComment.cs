@@ -3,6 +3,7 @@ using System.Security.Claims;
 using Microsoft.EntityFrameworkCore;
 using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Shared;
+using static Vellum.Shared.ResultExtensions;
 
 namespace Vellum.Modules.Drafts;
 
@@ -14,15 +15,16 @@ public static class UpdateComment
         Guid projectId, Guid draftId, Guid commentId,
         UpdateCommentRequest request,
         ClaimsPrincipal user,
-        DraftsDbContext db,
+        AppDbContext db,
         WorkspaceAuthorizationService auth,
+        TimeProvider time,
         CancellationToken ct)
     {
-        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var userId = user.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
 
         if (CommentRules.Check(request.Body, entityType: null) is { } invalid)
-            return CommentRules.Invalid(invalid);
+            return Invalid(invalid);
 
         // The draft must be one of this project. Without that, a caller could name a draft of
         // another project and learn from the 403 below that the comment exists.
@@ -37,7 +39,7 @@ public static class UpdateComment
                 statusCode: 403);
 
         comment.Body = request.Body;
-        comment.UpdatedAt = DateTimeOffset.UtcNow;
+        comment.UpdatedAt = time.GetUtcNow();
 
         await db.SaveChangesAsync(ct);
         return Results.Ok(CreateComment.ToDto(comment));

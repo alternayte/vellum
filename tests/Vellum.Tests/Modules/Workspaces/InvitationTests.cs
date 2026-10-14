@@ -384,7 +384,7 @@ public class InvitationTests(IntegrationFixture fixture) : IClassFixture<Integra
         await using (var connection = new NpgsqlConnection(fixture.ConnectionString))
         {
             await connection.OpenAsync();
-            await using var clear = new NpgsqlCommand("""UPDATE identity."AspNetUsers" SET display_name = NULL WHERE id = @id""", connection);
+            await using var clear = new NpgsqlCommand("""UPDATE identity.users SET display_name = NULL WHERE id = @id""", connection);
             clear.Parameters.AddWithValue("id", me.Id);
             Assert.Equal(1, await clear.ExecuteNonQueryAsync());
         }

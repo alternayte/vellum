@@ -13,6 +13,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Vellum.Modules.LoadTests;
 using Vellum.Tests.Modules.Promises;
+using Vellum.Shared;
 
 namespace Vellum.Tests.Modules.LoadTests;
 
@@ -563,7 +564,7 @@ public class LoadTestEndpointTests(IntegrationFixture fixture) : IClassFixture<I
         // Rows up to two below the limit, written to the table. Then six imports at once: two places are left.
         using (var scope = seeded.Factory.Services.CreateScope())
         {
-            var db = scope.ServiceProvider.GetRequiredService<LoadTestsDbContext>();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             var row = await db.Results.AsNoTracking().SingleAsync(r => r.Id == stored);
             for (var i = 1; i < MeasuredResults.MaxResultsPerProject - 2; i++)
             {
@@ -750,7 +751,7 @@ public class LoadTestEndpointTests(IntegrationFixture fixture) : IClassFixture<I
         async Task<(int Targets, int Scripts, int Results)> CountAsync()
         {
             using var scope = seeded.Factory.Services.CreateScope();
-            var db = scope.ServiceProvider.GetRequiredService<LoadTestsDbContext>();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             return (await db.Targets.CountAsync(t => t.ProjectId == theirs), await db.Scripts.CountAsync(s => s.ProjectId == theirs), await db.Results.CountAsync(r => r.ProjectId == theirs));
         }
         Assert.Equal((1, 1, 1), await CountAsync());

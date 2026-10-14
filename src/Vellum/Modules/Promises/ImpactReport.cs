@@ -9,6 +9,7 @@ using Vellum.Modules.Import.Scans;
 using Vellum.Modules.Settings.Audit;
 using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Shared;
+using static Vellum.Shared.ResultExtensions;
 
 namespace Vellum.Modules.Promises;
 
@@ -115,7 +116,7 @@ public static class ImpactReport
         Guid projectId, Guid importId, ClaimsPrincipal user, HttpContext http,
         WorkspaceAuthorizationService auth, CancellationToken ct)
     {
-        await auth.RequireProjectRoleAsync(projectId, PromiseAccess.UserId(user), WorkspaceRole.Viewer, ct);
+        await auth.RequireProjectRoleAsync(projectId, user.UserId(), WorkspaceRole.Viewer, ct);
         var (report, refusal) = await ComputeAsync(http.RequestServices, projectId, importId, ct);
         if (report is null)
             return refusal!;
@@ -141,11 +142,11 @@ public static class ImpactReport
         var (impact, refusal) = await ChangeImpact.ComputeAsync(services, projectId, scanId, ct);
         if (impact is null)
             return (null, refusal);
-        var scan = await services.GetRequiredService<ImportDbContext>().Scans.AsNoTracking()
+        var scan = await services.GetRequiredService<AppDbContext>().Scans.AsNoTracking()
             .Where(s => s.Id == scanId && s.ProjectId == projectId)
             .Select(s => new { s.Host, s.CompletedAt })
             .FirstAsync(ct);
-        var policy = await ImpactGate.PolicyAsync(services.GetRequiredService<PromisesDbContext>(), projectId, ct);
+        var policy = await ImpactGate.PolicyAsync(services.GetRequiredService<AppDbContext>(), projectId, ct);
         return (Of(impact, $"{scan.Host}/{impact.Repository}", scan.CompletedAt, policy), null);
     }
 
@@ -402,14 +403,14 @@ public static class ImpactGate
 {
     public const string AuditAction = "project.impact-gate-changed";
 
-    public static async Task<string> PolicyAsync(PromisesDbContext db, Guid projectId, CancellationToken ct) =>
+    public static async Task<string> PolicyAsync(AppDbContext db, Guid projectId, CancellationToken ct) =>
         await db.ImpactGates.AsNoTracking().Where(g => g.ProjectId == projectId).Select(g => g.Policy).FirstOrDefaultAsync(ct)
         ?? ImpactGatePolicy.Off;
 
     public static async Task<IResult> Get(
-        Guid projectId, HttpContext http, WorkspaceAuthorizationService auth, PromisesDbContext db, CancellationToken ct)
+        Guid projectId, HttpContext http, WorkspaceAuthorizationService auth, AppDbContext db, CancellationToken ct)
     {
-        var userId = PromiseAccess.UserId(http.User);
+        var userId = http.User.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Viewer, ct);
         var row = await db.ImpactGates.AsNoTracking().FirstOrDefaultAsync(g => g.ProjectId == projectId, ct);
         var role = await auth.GetRoleAsync(await auth.GetProjectWorkspaceIdAsync(projectId, ct), userId, ct);
@@ -419,15 +420,15 @@ public static class ImpactGate
     }
 
     public static async Task<IResult> Set(
-        Guid projectId, HttpContext http, WorkspaceAuthorizationService auth, PromisesDbContext db, TimeProvider time, CancellationToken ct)
+        Guid projectId, HttpContext http, WorkspaceAuthorizationService auth, AppDbContext db, TimeProvider time, CancellationToken ct)
     {
-        var userId = PromiseAccess.UserId(http.User);
+        var userId = http.User.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Owner, ct);
         var (request, error) = await PromiseAccess.ReadAsync<SetImpactGateRequest>(http);
         if (request is null)
             return error!;
         if (!ImpactGatePolicy.IsKnown(request.Policy))
-            return PromiseAccess.Invalid("policy", $"The policy is {ImpactGatePolicy.Off} or {ImpactGatePolicy.FailOnBroken}");
+            return Invalid("policy", $"The policy is {ImpactGatePolicy.Off} or {ImpactGatePolicy.FailOnBroken}");
 
         var workspaceId = await auth.GetProjectWorkspaceIdAsync(projectId, ct);
         var now = time.GetUtcNow();

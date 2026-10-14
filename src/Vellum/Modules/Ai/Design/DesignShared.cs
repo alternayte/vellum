@@ -141,7 +141,7 @@ internal static class DesignAccess
     public static async Task<(Guid WorkspaceId, string UserId)> RequireAsync(
         HttpContext http, Guid projectId, WorkspaceRole role, CancellationToken ct)
     {
-        var userId = http.User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var userId = http.User.UserId();
         var auth = http.RequestServices.GetRequiredService<WorkspaceAuthorizationService>();
         await auth.RequireProjectRoleAsync(projectId, userId, role, ct);
         return (await auth.GetProjectWorkspaceIdAsync(projectId, ct), userId);
@@ -153,11 +153,11 @@ internal static class DesignAccess
     {
         var (workspaceId, userId) = await RequireAsync(http, projectId, role, ct);
         var services = http.RequestServices;
-        var mainStreamId = await services.GetRequiredService<WorkspacesDbContext>().Projects.AsNoTracking()
+        var mainStreamId = await services.GetRequiredService<AppDbContext>().Projects.AsNoTracking()
             .Where(p => p.Id == projectId).Select(p => p.StreamId).FirstAsync(ct);
         var (streamId, refusal) = await ModelBranches.ResolveAsync(
             branchId, projectId, mainStreamId,
-            services.GetRequiredService<DraftsDbContext>(), services.GetRequiredService<ModellingDbContext>(), forWrite, ct);
+            services.GetRequiredService<AppDbContext>(), forWrite, ct);
         return refusal is null ? (new DesignCaller(workspaceId, userId, streamId), null) : (null, refusal);
     }
 
@@ -168,15 +168,9 @@ internal static class DesignAccess
     /// ID from a proposal of the project, which checked it when the proposal was made.
     /// </summary>
     public static async Task<Guid> StreamOfAsync(HttpContext http, Guid projectId, Guid? branchId, CancellationToken ct) =>
-        branchId ?? await http.RequestServices.GetRequiredService<WorkspacesDbContext>().Projects.AsNoTracking()
+        branchId ?? await http.RequestServices.GetRequiredService<AppDbContext>().Projects.AsNoTracking()
             .Where(p => p.Id == projectId).Select(p => p.StreamId).FirstAsync(ct);
 
-    public static IResult Invalid(string field, string message) =>
-        Results.BadRequest(new ErrorResponse("validation_error", "Validation failed", Errors: [new FieldError(field, message)]));
-
-    public static IResult Conflict(string message) => Results.Conflict(new ErrorResponse("conflict", message));
-
-    public static IResult NotFound(string what) => Results.NotFound(new ErrorResponse("not_found", $"{what} not found"));
 }
 
 /// <summary>How this feature writes and reads its stored documents.</summary>

@@ -10,6 +10,7 @@ using Vellum.Modules.Promises;
 using Vellum.Modules.Workspaces;
 using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Shared;
+using static Vellum.Shared.ResultExtensions;
 
 namespace Vellum.Modules.Modelling.Revisions;
 
@@ -51,12 +52,12 @@ public static class PinnedModelRead
 
     public static async Task<IResult> RevisionModel(
         Guid projectId, Guid revisionId, ClaimsPrincipal user, HttpContext http,
-        ModellingDbContext modellingDb, WorkspaceAuthorizationService auth, CancellationToken ct)
+        AppDbContext db, WorkspaceAuthorizationService auth, CancellationToken ct)
     {
-        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var userId = user.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Viewer, ct);
 
-        var revision = await modellingDb.Revisions.FindAsync([revisionId], ct);
+        var revision = await db.Revisions.FindAsync([revisionId], ct);
         if (revision is null || revision.ProjectId != projectId)
             return Results.NotFound(new ErrorResponse("not_found", "Revision not found"));
 
@@ -80,7 +81,7 @@ public static class PinnedModelRead
         Guid projectId, string? left, string? right, ClaimsPrincipal user, HttpContext http,
         WorkspaceAuthorizationService auth, CancellationToken ct)
     {
-        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var userId = user.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Viewer, ct);
 
         var (a, refusalLeft) = await SideAsync(http.RequestServices, projectId, left, "left", ct);
@@ -149,31 +150,29 @@ public static class PinnedModelRead
         if (side is not null && side.StartsWith(RevisionPrefix, StringComparison.Ordinal))
         {
             if (!Guid.TryParse(side[RevisionPrefix.Length..], out var id))
-                return (null, Invalid(field));
+                return (null, Invalid(field, NotABranch));
             revisionId = id;
         }
         else if (side != "main")
         {
             if (!Guid.TryParse(side, out var id))
-                return (null, Invalid(field));
+                return (null, Invalid(field, NotABranch));
             branchId = id;
         }
 
         // The refusals of the resolver name its own parameters, so a side is checked here and
         // a refusal names the side.
-        if (revisionId is { } revision && !await services.GetRequiredService<ModellingDbContext>().Revisions
+        if (revisionId is { } revision && !await services.GetRequiredService<AppDbContext>().Revisions
                 .AnyAsync(r => r.Id == revision && r.ProjectId == projectId, ct))
             return (null, Invalid(field, "No revision with this ID exists in the project"));
         if (branchId is { } branch && !(await ModelBranches.OpenAsync(projectId,
-                services.GetRequiredService<WorkspacesDbContext>(), services.GetRequiredService<DraftsDbContext>(),
-                services.GetRequiredService<ModellingDbContext>(), ct)).Any(b => b.StreamId == branch))
+                services.GetRequiredService<AppDbContext>(), ct)).Any(b => b.StreamId == branch))
             return (null, Invalid(field, "No open draft or variant with this stream ID exists in the project"));
 
         return await PinnedModel.ResolveAsync(services, projectId, revisionId, branchId, ct);
     }
 
-    private static IResult Invalid(string field, string message = "Must be main, the stream ID of an open draft or variant, or revision: and the ID of a revision") =>
-        Results.BadRequest(new ErrorResponse("validation_error", "Validation failed", Errors: [new FieldError(field, message)]));
+    private const string NotABranch = "Must be main, the stream ID of an open draft or variant, or revision: and the ID of a revision";
 
     private static ElementDto ToDto(ElementState e) => new(
         e.Id, e.Kind.ToString().ToLowerInvariant(), e.Name, e.Description, e.Technology, e.OwnerId,

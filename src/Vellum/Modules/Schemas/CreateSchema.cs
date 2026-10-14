@@ -6,22 +6,17 @@ namespace Vellum.Modules.Schemas;
 public sealed record CreateSchemaRequest(
     Guid Id, string Name, string? Description, string Content);
 
-public sealed record CreateSchemaCommandEnvelope(Guid ProjectId, CreateSchemaRequest Request);
-
-public sealed class CreateSchemaHandler : ICommandHandler<CreateSchemaCommandEnvelope, CommandResult<SchemaDto>>
+public static class CreateSchema
 {
-    private readonly IEventStore _store;
-
-    public CreateSchemaHandler(IEventStore store) => _store = store;
-
-    public Task<CommandResult<SchemaDto>> HandleAsync(CreateSchemaCommandEnvelope cmd, CancellationToken ct = default)
+    public static Task<CommandResult<SchemaDto>> HandleAsync(
+        IEventStore store, Guid projectId, CreateSchemaRequest request, CancellationToken ct)
     {
         var createCmd = new CreateSchemaCommand(
-            cmd.Request.Id, cmd.Request.Name, cmd.Request.Description,
-            cmd.Request.Content, cmd.ProjectId);
+            request.Id, request.Name, request.Description,
+            request.Content, projectId);
 
-        return _store.Decide<SchemaState, SchemaDto>(
-            cmd.Request.Id,
+        return store.Decide<SchemaState, SchemaDto>(
+            request.Id,
             state => SchemaDecider.Create(state, createCmd),
             state => ToDto(state.Schema!),
             ct);

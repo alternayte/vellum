@@ -2,7 +2,6 @@ using System.Security.Cryptography;
 using System.Text;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
-using Npgsql;
 using Vellum.Modules.Identity;
 using Vellum.Modules.Settings.Audit;
 using Vellum.Modules.Settings.Document;
@@ -27,8 +26,8 @@ public sealed record SetupResponse(string UserId, Guid WorkspaceId);
 /// <summary>An instance needs setup while it has no user.</summary>
 public static class SetupState
 {
-    public static async Task<bool> NeedsSetupAsync(AppIdentityDbContext identity, CancellationToken ct) =>
-        !await identity.Users.AnyAsync(ct);
+    public static async Task<bool> NeedsSetupAsync(AppDbContext db, CancellationToken ct) =>
+        !await db.Users.AnyAsync(ct);
 
     /// <summary>
     /// Runs before the host accepts requests: refuses a hosted instance that has no user and
@@ -37,16 +36,16 @@ public static class SetupState
     public static async Task PrepareAsync(IServiceProvider services, CancellationToken ct = default)
     {
         using var scope = services.CreateScope();
-        var needsSetup = await NeedsSetupAsync(scope.ServiceProvider.GetRequiredService<AppIdentityDbContext>(), ct);
+        var needsSetup = await NeedsSetupAsync(scope.ServiceProvider.GetRequiredService<AppDbContext>(), ct);
         scope.ServiceProvider.GetRequiredService<SetupAccess>().Prepare(needsSetup);
     }
 }
 
 public static class GetSetupStatus
 {
-    public static async Task<IResult> Handle(Bootstrap bootstrap, SetupAccess access, AppIdentityDbContext identity, CancellationToken ct)
+    public static async Task<IResult> Handle(Bootstrap bootstrap, SetupAccess access, AppDbContext db, CancellationToken ct)
     {
-        var needsSetup = await SetupState.NeedsSetupAsync(identity, ct);
+        var needsSetup = await SetupState.NeedsSetupAsync(db, ct);
         return Results.Ok(new SetupStatusResponse(needsSetup, bootstrap.ProfileName, true, needsSetup ? access.Hint : null));
     }
 }
@@ -62,15 +61,13 @@ public static class RunSetup
     public static async Task<IResult> Handle(
         SetupRequest request,
         SetupAccess access,
-        IConfiguration configuration,
-        AppIdentityDbContext identity,
-        WorkspacesDbContext workspaces,
-        SettingsDbContext settings,
+        AppDbContext db,
         UserManager<ApplicationUser> users,
         SignInManager<ApplicationUser> signIn,
+        TimeProvider time,
         CancellationToken ct)
     {
-        if (!await SetupState.NeedsSetupAsync(identity, ct))
+        if (!await SetupState.NeedsSetupAsync(db, ct))
             return AlreadySetUp();
 
         if (!access.Matches(request.SetupToken))
@@ -95,23 +92,10 @@ public static class RunSetup
 
         // The user, the workspace and the admin grant commit together or not at all. The
         // advisory lock makes two callers take turns; the second one then finds a user.
-        await using var connection = new NpgsqlConnection(configuration.GetConnectionString("DefaultConnection"));
-        await connection.OpenAsync(ct);
-        await using var transaction = await connection.BeginTransactionAsync(ct);
-        await using (var take = new NpgsqlCommand("SELECT pg_advisory_xact_lock(@key)", connection, transaction))
-        {
-            take.Parameters.AddWithValue("key", LockKey);
-            await take.ExecuteNonQueryAsync(ct);
-        }
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        await db.Database.ExecuteSqlAsync($"SELECT pg_advisory_xact_lock({LockKey})", ct);
 
-        DbContext[] contexts = [identity, workspaces, settings];
-        foreach (var context in contexts)
-        {
-            context.Database.SetDbConnection(connection);
-            await context.Database.UseTransactionAsync(transaction, ct);
-        }
-
-        if (!await SetupState.NeedsSetupAsync(identity, ct))
+        if (!await SetupState.NeedsSetupAsync(db, ct))
             return AlreadySetUp();
 
         var user = new ApplicationUser
@@ -126,24 +110,21 @@ public static class RunSetup
                 Errors: created.Errors.Select(e => new FieldError(e.Code, e.Description)).ToList()));
 
         var workspaceId = Guid.NewGuid();
-        workspaces.Workspaces.Add(new WorkspaceEntity { Id = workspaceId, Name = request.WorkspaceName!.Trim(), CreatedBy = user.Id });
-        workspaces.Memberships.Add(new MembershipEntity
+        db.Workspaces.Add(new WorkspaceEntity { Id = workspaceId, Name = request.WorkspaceName!.Trim(), CreatedBy = user.Id });
+        db.Memberships.Add(new MembershipEntity
         {
             Id = Guid.NewGuid(),
             WorkspaceId = workspaceId,
             UserId = user.Id,
             Role = nameof(WorkspaceRole.Owner),
+            CreatedAt = time.GetUtcNow(),
         });
-        await workspaces.SaveChangesAsync(ct);
-
-        settings.InstanceAdmins.Add(new InstanceAdminEntity { UserId = user.Id });
-        await settings.SaveChangesAsync(ct);
-        await AuditLog.AppendAsync(settings, null, user.Id, AuditLog.InstanceSetup, $"user:{user.Id}", ct);
-        await AuditLog.AppendAsync(settings, workspaceId, user.Id, AuditLog.MemberAdded, $"user:{user.Id} role:owner", ct);
+        db.InstanceAdmins.Add(new InstanceAdminEntity { UserId = user.Id });
+        await db.SaveChangesAsync(ct);
+        await AuditLog.AppendAsync(db, null, user.Id, AuditLog.InstanceSetup, $"user:{user.Id}", ct);
+        await AuditLog.AppendAsync(db, workspaceId, user.Id, AuditLog.MemberAdded, $"user:{user.Id} role:owner", ct);
 
         await transaction.CommitAsync(ct);
-        foreach (var context in contexts)
-            await context.Database.UseTransactionAsync(null, ct);
 
         access.Complete();
         await signIn.SignInAsync(user, isPersistent: true);
@@ -156,13 +137,13 @@ public static class RunSetup
 }
 
 /// <summary>Decides whether a new account may be created outside first-run setup.</summary>
-public sealed class RegistrationPolicy(AppIdentityDbContext identity, SettingsResolver settings)
+public sealed class RegistrationPolicy(AppDbContext db, SettingsResolver settings)
 {
     /// <summary>Null when registration is open; otherwise the 403 body.</summary>
     public async Task<ErrorResponse?> RefusalAsync(CancellationToken ct)
     {
         // The first account is the instance admin, and only setup creates it.
-        if (await SetupState.NeedsSetupAsync(identity, ct))
+        if (await SetupState.NeedsSetupAsync(db, ct))
             return new ErrorResponse("setup_required", "This instance is not set up",
                 "Complete first-run setup before you create accounts.");
 

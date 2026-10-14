@@ -9,16 +9,12 @@ public sealed record UpdateChannelRequest(
     string? Name, string? Kind,
     string? FactStatus = null, ProvenanceInput? Provenance = null, bool SetProvenance = false);
 
-public sealed record UpdateChannelCommandEnvelope(
-    Guid ProjectId, Guid StreamId, Guid ChannelId, string UserId, UpdateChannelRequest Request);
-
-public sealed class UpdateChannelHandler(IEventStore store)
-    : ICommandHandler<UpdateChannelCommandEnvelope, CommandResult<ChannelDto>>
+public static class UpdateChannel
 {
-    public async Task<CommandResult<ChannelDto>> HandleAsync(UpdateChannelCommandEnvelope cmd, CancellationToken ct = default)
+    public static async Task<CommandResult<ChannelDto>> HandleAsync(
+        IEventStore store, Guid projectId, Guid streamId, Guid channelId, string userId, UpdateChannelRequest request, TimeProvider time, CancellationToken ct)
     {
-        var request = cmd.Request;
-        ChannelId id = cmd.ChannelId;
+        ChannelId id = channelId;
 
         ChannelKind? kind = null;
         if (request.Kind is not null)
@@ -35,11 +31,11 @@ public sealed class UpdateChannelHandler(IEventStore store)
 
         // The acceptance stamp is taken once, so the decision stays a pure function of the state.
         var supplied = request.SetProvenance
-            ? ProvenanceMapper.ToDomain(request.Provenance, Guid.Parse(cmd.UserId))
+            ? ProvenanceMapper.ToDomain(request.Provenance, Guid.Parse(userId), time.GetUtcNow())
             : null;
 
-        return await store.ForProject(cmd.ProjectId).Decide<ModelState, ChannelDto>(
-            cmd.StreamId,
+        return await store.ForProject(projectId).Decide<ModelState, ChannelDto>(
+            streamId,
             state => ContractDecider.UpdateChannel(state, update).Then(state, after =>
                 requestedStatus is null && !request.SetProvenance
                     ? new CommandResult<IReadOnlyList<object>>.Success([])

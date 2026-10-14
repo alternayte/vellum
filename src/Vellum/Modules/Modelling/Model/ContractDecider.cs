@@ -58,13 +58,13 @@ public static class ContractDecider
     {
         if (state.RefuseNewId(cmd.Id) is { } idRefusal)
             return idRefusal;
-        if (state.Operations.Count >= MaxPerKind)
-            return new Decision.Conflict($"A model holds at most {MaxPerKind} operations. Remove one before you add another.");
+        if (ModelInvariants.Limit("operations", state.Operations.Count + 1) is { } limit)
+            return new Decision.Conflict($"{limit}. Remove one before you add another.");
 
         var operation = new OperationState(
             cmd.Id, cmd.OwnerId, cmd.Name, cmd.Transport,
             cmd.RequestSchemaId, cmd.ResponseSchemaId, cmd.TimeoutMs, cmd.Retry);
-        if (Validate(state, operation) is { } error)
+        if (ModelInvariants.Operation(state, operation) is { } error)
             return new Decision.Invalid([error]);
 
         return new Decision.Success([new ModelEvent.OperationAdded(
@@ -87,7 +87,7 @@ public static class ContractDecider
             TimeoutMs = cmd.TimeoutMs ?? current.TimeoutMs,
             Retry = cmd.Retry ?? current.Retry,
         };
-        if (Validate(state, updated) is { } error)
+        if (ModelInvariants.Operation(state, updated) is { } error)
             return new Decision.Invalid([error]);
         if (updated == current)
             return new Decision.Success([]);
@@ -119,10 +119,10 @@ public static class ContractDecider
     {
         if (state.RefuseNewId(cmd.Id) is { } idRefusal)
             return idRefusal;
-        if (state.Channels.Count >= MaxPerKind)
-            return new Decision.Conflict($"A model holds at most {MaxPerKind} channels. Remove one before you add another.");
+        if (ModelInvariants.Limit("channels", state.Channels.Count + 1) is { } limit)
+            return new Decision.Conflict($"{limit}. Remove one before you add another.");
 
-        if (Validate(new ChannelState(cmd.Id, cmd.Name, cmd.Kind)) is { } error)
+        if (ModelInvariants.Channel(new ChannelState(cmd.Id, cmd.Name, cmd.Kind)) is { } error)
             return new Decision.Invalid([error]);
 
         return new Decision.Success([new ModelEvent.ChannelAdded(cmd.Id, cmd.Name, cmd.Kind)]);
@@ -134,20 +134,20 @@ public static class ContractDecider
             return new Decision.NotFound("Channel not found");
 
         var updated = current with { Name = cmd.Name ?? current.Name, Kind = cmd.Kind ?? current.Kind };
-        if (Validate(updated) is { } error)
+        if (ModelInvariants.Channel(updated) is { } error)
             return new Decision.Invalid([error]);
 
         // A binding states which kinds it joins, so a new kind must suit every binding of the channel.
         var unsuited = state.Bindings.Values
-            .Where(b => (b.SourceChannelId == updated.Id && !CanRouteFrom(updated.Kind))
-                || (b.TargetChannelId == updated.Id && !CanRouteTo(updated.Kind)))
+            .Where(b => (b.SourceChannelId == updated.Id && !ModelInvariants.CanRouteFrom(updated.Kind))
+                || (b.TargetChannelId == updated.Id && !ModelInvariants.CanRouteTo(updated.Kind)))
             .OrderBy(b => b.Id.Value)
             .Select(b => Describe(state, b))
             .ToList();
         if (unsuited.Count > 0)
         {
             return new Decision.Conflict(
-                $"Channel '{current.Name}' cannot become {KindWord(updated.Kind)}. " +
+                $"Channel '{current.Name}' cannot become {ModelInvariants.KindWord(updated.Kind)}. " +
                 $"It is bound by {string.Join(", ", unsuited)}. Remove them first.");
         }
 
@@ -199,12 +199,12 @@ public static class ContractDecider
     {
         if (state.RefuseNewId(cmd.Id) is { } idRefusal)
             return idRefusal;
-        if (state.Subscriptions.Count >= MaxPerKind)
-            return new Decision.Conflict($"A model holds at most {MaxPerKind} subscriptions. Remove one before you add another.");
+        if (ModelInvariants.Limit("subscriptions", state.Subscriptions.Count + 1) is { } limit)
+            return new Decision.Conflict($"{limit}. Remove one before you add another.");
 
         var subscription = new SubscriptionState(
             cmd.Id, cmd.ChannelId, cmd.ConsumerId, cmd.Retry, cmd.DeadLetterChannelId);
-        if (Validate(state, subscription) is { } error)
+        if (ModelInvariants.Subscription(state, subscription) is { } error)
             return new Decision.Invalid([error]);
 
         return new Decision.Success([new ModelEvent.SubscriptionAdded(
@@ -223,7 +223,7 @@ public static class ContractDecider
             Retry = cmd.Retry ?? current.Retry,
             DeadLetterChannelId = cmd.SetDeadLetterChannelId ? cmd.DeadLetterChannelId : current.DeadLetterChannelId,
         };
-        if (Validate(state, updated) is { } error)
+        if (ModelInvariants.Subscription(state, updated) is { } error)
             return new Decision.Invalid([error]);
         if (updated == current)
             return new Decision.Success([]);
@@ -254,11 +254,11 @@ public static class ContractDecider
     {
         if (state.RefuseNewId(cmd.Id) is { } idRefusal)
             return idRefusal;
-        if (state.Bindings.Count >= MaxPerKind)
-            return new Decision.Conflict($"A model holds at most {MaxPerKind} bindings. Remove one before you add another.");
+        if (ModelInvariants.Limit("bindings", state.Bindings.Count + 1) is { } limit)
+            return new Decision.Conflict($"{limit}. Remove one before you add another.");
 
         var binding = new BindingState(cmd.Id, cmd.SourceChannelId, cmd.TargetChannelId, RoutingKeyOf(cmd.RoutingKey));
-        if (Validate(state, binding) is { } error)
+        if (ModelInvariants.Binding(state, binding) is { } error)
             return new Decision.Invalid([error]);
         if (Duplicate(state, binding) is { } duplicate)
             return duplicate;
@@ -278,7 +278,7 @@ public static class ContractDecider
             TargetChannelId = cmd.TargetChannelId ?? current.TargetChannelId,
             RoutingKey = cmd.SetRoutingKey ? RoutingKeyOf(cmd.RoutingKey) : current.RoutingKey,
         };
-        if (Validate(state, updated) is { } error)
+        if (ModelInvariants.Binding(state, updated) is { } error)
             return new Decision.Invalid([error]);
         if (updated == current)
             return new Decision.Success([]);
@@ -352,73 +352,6 @@ public static class ContractDecider
         return ids;
     }
 
-    /// <summary>
-    /// Every contract reference in <paramref name="state"/> that points at nothing. A merge
-    /// builds its result from two branches, so it checks the whole result with this.
-    /// </summary>
-    public static IReadOnlyList<string> DanglingReferences(ModelState state)
-    {
-        var problems = new List<string>();
-
-        foreach (var operation in state.Operations.Values.OrderBy(o => o.Id.Value))
-        {
-            if (!state.Elements.ContainsKey(operation.OwnerId))
-                problems.Add($"{Describe(operation)} belongs to element {operation.OwnerId}, which does not exist");
-        }
-
-        foreach (var subscription in state.Subscriptions.Values.OrderBy(s => s.Id.Value))
-        {
-            var name = Describe(state, subscription);
-            if (!state.Channels.ContainsKey(subscription.ChannelId))
-                problems.Add($"{name} listens to channel {subscription.ChannelId}, which does not exist");
-            if (!state.Elements.ContainsKey(subscription.ConsumerId))
-                problems.Add($"{name} has consumer {subscription.ConsumerId}, which does not exist");
-            if (subscription.DeadLetterChannelId is { } deadLetter && !state.Channels.ContainsKey(deadLetter))
-                problems.Add($"{name} dead-letters to channel {deadLetter}, which does not exist");
-        }
-
-        foreach (var binding in state.Bindings.Values.OrderBy(b => b.Id.Value))
-        {
-            var name = Describe(state, binding);
-            if (!state.Channels.ContainsKey(binding.SourceChannelId))
-                problems.Add($"{name} routes from channel {binding.SourceChannelId}, which does not exist");
-            if (!state.Channels.ContainsKey(binding.TargetChannelId))
-                problems.Add($"{name} routes to channel {binding.TargetChannelId}, which does not exist");
-        }
-
-        return problems;
-    }
-
-    /// <summary>
-    /// Every binding in <paramref name="state"/> that breaks a rule a decision would refuse: a
-    /// source or a target of the wrong kind, or a second binding with the same source, target
-    /// and routing key. A merge checks its result with this, like
-    /// <see cref="DanglingReferences"/>; a binding whose channel is missing is reported there.
-    /// </summary>
-    public static IReadOnlyList<string> BindingProblems(ModelState state)
-    {
-        var problems = new List<string>();
-        var seen = new HashSet<(ChannelId, ChannelId, string?)>();
-
-        foreach (var binding in state.Bindings.Values.OrderBy(b => b.Id.Value))
-        {
-            var name = Describe(state, binding);
-            if (state.Channels.TryGetValue(binding.SourceChannelId, out var source) && !CanRouteFrom(source.Kind))
-                problems.Add($"{name} routes from '{source.Name}', which is {KindWord(source.Kind)}");
-            if (state.Channels.TryGetValue(binding.TargetChannelId, out var target) && !CanRouteTo(target.Kind))
-                problems.Add($"{name} routes to '{target.Name}', which is {KindWord(target.Kind)}");
-            if (!seen.Add((binding.SourceChannelId, binding.TargetChannelId, binding.RoutingKey)))
-                problems.Add($"{name} repeats another binding with the same source, target and routing key");
-        }
-
-        return problems;
-    }
-
-    /// <summary>An exchange or a topic routes; a queue holds messages for its consumers.</summary>
-    public static bool CanRouteFrom(ChannelKind kind) => kind is ChannelKind.Exchange or ChannelKind.Topic;
-
-    public static bool CanRouteTo(ChannelKind kind) => kind is ChannelKind.Queue or ChannelKind.Exchange;
-
     public static string Describe(OperationState operation) => $"operation '{operation.Name}' ({operation.Id})";
 
     public static string Describe(ModelState state, SubscriptionState subscription) =>
@@ -454,94 +387,10 @@ public static class ContractDecider
     /// <summary>An empty key states no key, which is what null means.</summary>
     private static string? RoutingKeyOf(string? routingKey) => string.IsNullOrEmpty(routingKey) ? null : routingKey;
 
-    private static string KindWord(ChannelKind kind) => kind switch
-    {
-        ChannelKind.Exchange => "an exchange",
-        ChannelKind.Queue => "a queue",
-        _ => "a topic",
-    };
-
-    private static ValidationError? Validate(ModelState state, BindingState binding)
-    {
-        if (!state.Channels.TryGetValue(binding.SourceChannelId, out var source))
-            return new ValidationError("sourceChannelId", "Source channel not found");
-        if (!state.Channels.TryGetValue(binding.TargetChannelId, out var target))
-            return new ValidationError("targetChannelId", "Target channel not found");
-        if (binding.SourceChannelId == binding.TargetChannelId)
-            return new ValidationError("targetChannelId", "The target channel must differ from the source channel");
-        if (!CanRouteFrom(source.Kind))
-            return new ValidationError("sourceChannelId", "The source of a binding must be an exchange or a topic");
-        if (!CanRouteTo(target.Kind))
-            return new ValidationError("targetChannelId", "The target of a binding must be a queue or an exchange");
-        if (binding.RoutingKey is { } key && string.IsNullOrWhiteSpace(key))
-            return new ValidationError("routingKey", "A routing key must not be blank");
-        return TextRule.Line("routingKey", binding.RoutingKey);
-    }
-
-    private static Decision? Duplicate(ModelState state, BindingState binding)
-    {
-        var same = state.Bindings.Values.FirstOrDefault(b =>
-            b.Id != binding.Id
-            && b.SourceChannelId == binding.SourceChannelId
-            && b.TargetChannelId == binding.TargetChannelId
-            && b.RoutingKey == binding.RoutingKey);
-        return same is null
-            ? null
-            : new Decision.Conflict($"The {Describe(state, same)} already routes this. A source, a target and a routing key name one binding.");
-    }
-
-    private static ValidationError? Validate(ModelState state, OperationState operation)
-    {
-        if (string.IsNullOrWhiteSpace(operation.Name))
-            return new ValidationError("name", "Name is required");
-        if (TextRule.Line("name", operation.Name) is { } nameError)
-            return nameError;
-        if (!Enum.IsDefined(operation.Transport))
-            return new ValidationError("transport", "Transport must be http, grpc or command");
-        if (!state.Elements.ContainsKey(operation.OwnerId))
-            return new ValidationError("ownerId", "Owner element not found");
-        if (operation.TimeoutMs is < 0 or > TraceLimits.MaxDurationMs)
-            return new ValidationError("timeoutMs", $"Timeout must be between 0 and {TraceLimits.MaxDurationMs} ms");
-        return Validate(operation.Retry);
-    }
-
-    private static ValidationError? Validate(ChannelState channel)
-    {
-        if (string.IsNullOrWhiteSpace(channel.Name))
-            return new ValidationError("name", "Name is required");
-        if (TextRule.Line("name", channel.Name) is { } nameError)
-            return nameError;
-        if (!Enum.IsDefined(channel.Kind))
-            return new ValidationError("kind", "Kind must be topic, queue or exchange");
-        return null;
-    }
-
-    private static ValidationError? Validate(ModelState state, SubscriptionState subscription)
-    {
-        if (!state.Channels.ContainsKey(subscription.ChannelId))
-            return new ValidationError("channelId", "Channel not found");
-        if (!state.Elements.ContainsKey(subscription.ConsumerId))
-            return new ValidationError("consumerId", "Consumer element not found");
-        if (subscription.DeadLetterChannelId is { } deadLetter)
-        {
-            if (!state.Channels.ContainsKey(deadLetter))
-                return new ValidationError("deadLetterChannelId", "Dead-letter channel not found");
-            if (deadLetter == subscription.ChannelId)
-                return new ValidationError("deadLetterChannelId", "The dead-letter channel must differ from the channel");
-        }
-        return Validate(subscription.Retry);
-    }
-
-    private static ValidationError? Validate(RetryPolicy? retry)
-    {
-        if (retry is null)
-            return new ValidationError("retry", "Retry policy is required");
-        if (retry.MaxAttempts is < 1 or > TraceLimits.MaxAttempts)
-            return new ValidationError("retry.maxAttempts", $"Attempts must be between 1 and {TraceLimits.MaxAttempts}");
-        if (retry.BackoffMs is < 0 or > TraceLimits.MaxDurationMs)
-            return new ValidationError("retry.backoffMs", $"Backoff must be between 0 and {TraceLimits.MaxDurationMs} ms");
-        return null;
-    }
+    private static Decision? Duplicate(ModelState state, BindingState binding) =>
+        ModelInvariants.SameRoute(state, binding) is { } same
+            ? new Decision.Conflict($"The {Describe(state, same)} already routes this. A source, a target and a routing key name one binding.")
+            : null;
 
     /// <summary>Acceptance stamps change on every call and must not by themselves produce an event.</summary>
     private static bool SameClaim(Provenance? a, Provenance? b) =>

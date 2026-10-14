@@ -6,6 +6,7 @@ using Microsoft.Extensions.Options;
 using Vellum.Modules.Identity;
 using Vellum.Modules.Identity.AgentTokens;
 using Vellum.Shared;
+using static Vellum.Shared.ResultExtensions;
 
 namespace Vellum.Modules.Promises;
 
@@ -42,8 +43,6 @@ internal readonly record struct PromiseWrite(CommandResult<PromiseState> Result,
 /// <summary>What the promise handlers share: who calls, how a body is read and how a promise stream is reached.</summary>
 internal static class PromiseAccess
 {
-    public static string UserId(ClaimsPrincipal user) => user.FindFirstValue(ClaimTypes.NameIdentifier)!;
-
     /// <summary>
     /// Who makes the call, for the events: <c>agent-token:&lt;id&gt;</c> for an agent token,
     /// else <c>user:&lt;id&gt;</c>. It comes from the authentication scheme, never from the body.
@@ -60,7 +59,7 @@ internal static class PromiseAccess
         if (AgentPrincipal.TokenId(http.User) is { } tokenId && AgentPrincipal.WorkspaceId(http.User) is { } workspaceId)
         {
             await AgentTokenAudit.RefusedAsync(
-                http.RequestServices.GetRequiredService<AppIdentityDbContext>(), tokenId, workspaceId, "human-authored",
+                http.RequestServices.GetRequiredService<AppDbContext>(), tokenId, workspaceId, "human-authored",
                 AgentTokenAudit.Describe(http), http.RequestServices.GetRequiredService<TimeProvider>().GetUtcNow(), http.RequestAborted);
         }
 
@@ -125,11 +124,6 @@ internal static class PromiseAccess
         var changed = events.Aggregate(state, PromiseState.Evolve).Latest!;
         return PromiseJson.Write(new { changed.Content, changed.Obligations }).Length > PromiseRules.MaxRevisionChars;
     }
-
-    public static IResult Invalid(string field, string message) =>
-        Results.BadRequest(new ErrorResponse("validation_error", "Validation failed", Errors: [new FieldError(field, message)]));
-
-    public static IResult NotFound() => Results.NotFound(new ErrorResponse("not_found", "Promise not found"));
 
     /// <summary>
     /// Runs a decision on a promise stream. Every stream type shares one space of IDs, so an

@@ -6,6 +6,7 @@ using Vellum.Modules.Settings.Document;
 using Vellum.Modules.Settings.Secrets;
 using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Shared.Outbound;
+using Vellum.Shared;
 
 namespace Vellum.Modules.GitHub;
 
@@ -122,7 +123,7 @@ public sealed class GitHubReader(
         // The policy and the https rule come from the same settings read as the URL. The
         // pipeline applies both to every attempt and to every followed redirect.
         return new GitHubConnection(
-            services.GetRequiredService<IGitHubApi>(), destination.Url, workspace.Policy.AllowPrivateNetworkUrls, workspace.RequireHttps,
+            services.GetRequiredService<IGitHubApi>(), services.GetRequiredService<TimeProvider>(), destination.Url, workspace.Policy.AllowPrivateNetworkUrls, workspace.RequireHttps,
             token is null ? null : new OutboundCredential("Authorization", "Bearer", token));
     }
 
@@ -166,7 +167,7 @@ public sealed class GitHubReader(
 
     private async Task<bool> InstanceAdminOwnsAsync(Guid workspaceId, CancellationToken ct)
     {
-        var admins = await services.GetRequiredService<SettingsDbContext>().InstanceAdmins
+        var admins = await services.GetRequiredService<AppDbContext>().InstanceAdmins
             .AsNoTracking().Select(a => a.UserId).ToListAsync(ct);
         var auth = services.GetRequiredService<WorkspaceAuthorizationService>();
         foreach (var admin in admins)
@@ -201,14 +202,16 @@ public sealed partial class GitHubConnection
     private static readonly TimeSpan SecondaryLimitWait = TimeSpan.FromMinutes(1);
 
     private readonly IGitHubApi _api;
+    private readonly TimeProvider _time;
     private readonly Uri _baseUrl;
     private readonly bool _allowPrivateNetwork;
     private readonly bool _requireHttps;
     private readonly OutboundCredential? _credential;
 
-    internal GitHubConnection(IGitHubApi api, Uri baseUrl, bool allowPrivateNetwork, bool requireHttps, OutboundCredential? credential)
+    internal GitHubConnection(IGitHubApi api, TimeProvider time, Uri baseUrl, bool allowPrivateNetwork, bool requireHttps, OutboundCredential? credential)
     {
         _api = api;
+        _time = time;
         _baseUrl = baseUrl;
         _allowPrivateNetwork = allowPrivateNetwork;
         _requireHttps = requireHttps;
@@ -449,7 +452,7 @@ public sealed partial class GitHubConnection
             }
 
             using (response)
-                return response.IsSuccessStatusCode ? await read(response) : await FailureAsync(response, ct);
+                return response.IsSuccessStatusCode ? await read(response) : await FailureAsync(response, _time.GetUtcNow(), ct);
         }
         catch (OutboundException ex)
         {
@@ -464,7 +467,7 @@ public sealed partial class GitHubConnection
         }
     }
 
-    private static async Task<GitHubFailure> FailureAsync(HttpResponseMessage response, CancellationToken ct)
+    private static async Task<GitHubFailure> FailureAsync(HttpResponseMessage response, DateTimeOffset now, CancellationToken ct)
     {
         var status = (int)response.StatusCode;
         if (status == 401)
@@ -478,9 +481,9 @@ public sealed partial class GitHubConnection
         if (status == 429 || (status == 403 && (retryAfter is not null || exhausted || await SaysSecondaryLimitAsync(response, ct))))
         {
             return new GitHubFailure.RateLimited(
-                retryAfter is { } wait ? DateTimeOffset.UtcNow + wait
+                retryAfter is { } wait ? now + wait
                 : exhausted ? HeaderLong(response, "x-ratelimit-reset") is { } epoch ? FromEpoch(epoch) : null
-                : DateTimeOffset.UtcNow + SecondaryLimitWait);
+                : now + SecondaryLimitWait);
         }
 
         return status switch

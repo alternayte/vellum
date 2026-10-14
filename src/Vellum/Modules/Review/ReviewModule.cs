@@ -20,9 +20,6 @@ public static class ReviewModule
     {
         // The connection string is read when the context is first used, so configuration that
         // a test host overrides applies.
-        services.AddDbContext<ReviewDbContext>((provider, options) =>
-            options.UseNpgsql(provider.GetRequiredService<IConfiguration>().GetConnectionString("DefaultConnection"))
-                   .UseSnakeCaseNamingConvention());
         services.AddScoped<IProjectRetention, ReviewRetention>();
         return services;
     }
@@ -147,7 +144,7 @@ public static class ReviewModule
 /// Every statement is safe to run again, and <see cref="DeleteOrphansAsync"/> repeats the
 /// work for a project whose delete was cut short.
 /// </summary>
-public sealed class ReviewRetention(ReviewDbContext db, IEventStore store) : IProjectRetention
+public sealed class ReviewRetention(AppDbContext db, IEventStore store) : IProjectRetention
 {
     public async Task DeleteProjectAsync(DeletedProject project, CancellationToken ct)
     {
@@ -165,7 +162,7 @@ public sealed class ReviewRetention(ReviewDbContext db, IEventStore store) : IPr
         await db.Decisions.Where(d => d.ProjectId == projectId).ExecuteDeleteAsync(ct);
         await db.DecisionNumbering.Where(n => n.ProjectId == projectId).ExecuteDeleteAsync(ct);
         await db.Dispositions.Where(d => d.ProjectId == projectId).ExecuteDeleteAsync(ct);
-        await db.Snapshots.Where(s => s.ProjectId == projectId).ExecuteDeleteAsync(ct);
+        await db.ReviewSnapshots.Where(s => s.ProjectId == projectId).ExecuteDeleteAsync(ct);
         await db.Questions.Where(q => q.ProjectId == projectId).ExecuteDeleteAsync(ct);
         await db.Critiques.Where(c => c.ProjectId == projectId).ExecuteDeleteAsync(ct);
     }

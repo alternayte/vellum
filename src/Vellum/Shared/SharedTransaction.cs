@@ -4,8 +4,8 @@ using Npgsql;
 namespace Vellum.Shared;
 
 /// <summary>
-/// Runs a unit of work that appends events in a transaction shared with the app's own
-/// DbContexts (<c>UseDbContext</c>). Deedbox cannot replay such a transaction, so the app
+/// Runs a unit of work that appends events in a transaction shared with the app's
+/// DbContext (<c>UseDbContext</c>). Deedbox cannot replay such a transaction, so the app
 /// runs the whole unit again in two cases:
 /// <list type="bullet">
 /// <item>DBX038: Deedbox did not count this instance as live and wrote nothing.</item>
@@ -22,13 +22,20 @@ namespace Vellum.Shared;
 /// unit with more.
 /// </para>
 /// <para>
+/// A cost sheet is a row, not a stream. Its lock is an advisory lock on its branch
+/// (<c>CostBranches.LockSheetsAsync</c>). A unit that writes model streams takes the sheet
+/// locks after its stream locks and before its first append, in ascending branch-ID order.
+/// A write of one sheet takes no other lock while it holds that one, so it never waits for
+/// a writer that waits for it.
+/// </para>
+/// <para>
 /// A deadlock stays possible in three rare cases, which is why the rerun stays: a second
 /// append takes the gate of another projection while a Deedbox cut-over or join holds that
 /// gate and waits for the counter; two writers record a new event type for the first time;
 /// two stream IDs share one 32-bit lock key.
 /// </para>
 /// Each attempt gets a new service scope. A DbContext counts its changes as saved after a
-/// failed attempt, so an attempt must not reuse the DbContexts of the one before it.
+/// failed attempt, so an attempt must not reuse the DbContext of the one before it.
 /// </summary>
 public static class SharedTransaction
 {

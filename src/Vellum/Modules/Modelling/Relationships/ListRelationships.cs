@@ -9,7 +9,7 @@ public static class ListRelationships
         Guid projectId, Guid streamId,
         Guid? fromId, Guid? toId,
         string? cursor, int? limit,
-        ModellingDbContext db, CancellationToken ct)
+        AppDbContext db, CancellationToken ct)
     {
         var pageSize = Math.Clamp(limit ?? 50, 1, 200);
 

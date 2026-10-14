@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Vellum.Modules.Modelling.Model;
 using Vellum.Modules.Workspaces;
 using Vellum.Tests.Shared.Outbound;
+using Vellum.Shared;
 
 namespace Vellum.Tests.Modules.Import;
 
@@ -46,7 +47,7 @@ public class ImportStalenessTests(ImportHost import) : IClassFixture<ImportHost>
     private async Task<(Guid StreamId, long Version)> StreamAsync(ImportScenario s)
     {
         using var scope = import.Host.Factory.Services.CreateScope();
-        var streamId = await scope.ServiceProvider.GetRequiredService<WorkspacesDbContext>().Projects
+        var streamId = await scope.ServiceProvider.GetRequiredService<AppDbContext>().Projects
             .Where(p => p.Id == s.ProjectId).Select(p => p.StreamId).FirstAsync();
         var (_, version) = await scope.ServiceProvider.GetRequiredService<IEventStore>().Load<ModelState>(StreamId.From(streamId));
         return (streamId, version);

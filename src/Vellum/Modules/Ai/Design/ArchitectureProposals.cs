@@ -7,6 +7,7 @@ using Vellum.Modules.Schemas;
 using Vellum.Modules.Trace.Engine;
 using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Shared;
+using static Vellum.Shared.ResultExtensions;
 
 namespace Vellum.Modules.Ai.Design;
 
@@ -117,8 +118,8 @@ public static partial class ArchitectureProposals
 
     public static async Task<IResult> Create(
         Guid projectId, CreateArchitectureProposalRequest body, HttpContext http,
-        AiClient ai, IEventStore store, SchemasDbContext schemasDb, AiDesignDbContext db, PrivateSources privateSources,
-        CancellationToken ct)
+        AiClient ai, IEventStore store, AppDbContext db, PrivateSources privateSources,
+        TimeProvider time, CancellationToken ct)
     {
         var (caller, refusal) = await DesignAccess.ResolveAsync(http, projectId, body.BranchId, WorkspaceRole.Editor, forWrite: true, ct);
         if (caller is null)
@@ -126,12 +127,12 @@ public static partial class ArchitectureProposals
         if (FlowProposals.RequestText(body.Request) is { } invalid)
             return invalid;
         if (body.Selection is { Count: > FlowProposals.MaxSelection })
-            return DesignAccess.Invalid("selection", $"A selection holds at most {FlowProposals.MaxSelection} IDs");
+            return Invalid("selection", $"A selection holds at most {FlowProposals.MaxSelection} IDs");
         // Asked before the provider is called, so a full project spends nothing.
         if (await ProposalStore.DraftsFullAsync(db, projectId, ct))
             return ProposalStore.TooManyDrafts();
 
-        var snapshot = await BranchSnapshot.LoadAsync(store, schemasDb, projectId, caller.StreamId, ct);
+        var snapshot = await BranchSnapshot.LoadAsync(store, db, projectId, caller.StreamId, ct);
         var gate = await privateSources.LoadAsync(caller.WorkspaceId, projectId, snapshot.Model, ct);
         var aliases = ModelAliases.Build(snapshot.Model, snapshot.Schemas, AliasNeeds.For(body.Request!, selected: body.Selection), gate);
         var prompt = DesignPrompts.InferArchitecture;
@@ -170,7 +171,7 @@ public static partial class ArchitectureProposals
             Request = body.Request!,
             Document = JsonSerializer.Serialize(document, DesignJson.Options),
             CreatedBy = caller.UserId,
-            CreatedAt = DateTimeOffset.UtcNow,
+            CreatedAt = time.GetUtcNow(),
         };
         if (!await ProposalStore.InsertDraftAsync(db, row, ct))
             return ProposalStore.TooManyDrafts();
@@ -188,7 +189,7 @@ public static partial class ArchitectureProposals
     /// </summary>
     public static async Task<IResult> Submit(
         Guid projectId, SubmitArchitectureProposalRequest body, HttpContext http,
-        IEventStore store, SchemasDbContext schemasDb, AiDesignDbContext db, CancellationToken ct)
+        IEventStore store, AppDbContext db, TimeProvider time, CancellationToken ct)
     {
         var (caller, refusal) = await DesignAccess.ResolveAsync(http, projectId, null, WorkspaceRole.Editor, forWrite: true, ct);
         if (caller is null)
@@ -196,11 +197,11 @@ public static partial class ArchitectureProposals
         if (FlowProposals.RequestText(body.Request) is { } invalid)
             return invalid;
         if (body.Proposal is not { } proposal)
-            return DesignAccess.Invalid("proposal", "A proposal is required: an object with summary, items, openQuestions and reasoningSummary");
+            return Invalid("proposal", "A proposal is required: an object with summary, items, openQuestions and reasoningSummary");
         if (await ProposalStore.DraftsFullAsync(db, projectId, ct))
             return ProposalStore.TooManyDrafts();
 
-        var snapshot = await BranchSnapshot.LoadAsync(store, schemasDb, projectId, caller.StreamId, ct);
+        var snapshot = await BranchSnapshot.LoadAsync(store, db, projectId, caller.StreamId, ct);
         // A caller that leaves the action out proposes an addition. Any other action is dropped by the checks.
         var given = (proposal.Items ?? []).Where(i => i is not null).Take(MaxItems + 1)
             .Select(i => i.Action is null ? i with { Action = "add" } : i).ToList();
@@ -233,7 +234,7 @@ public static partial class ArchitectureProposals
             Document = JsonSerializer.Serialize(document, DesignJson.Options),
             CreatedBy = caller.UserId,
             Origin = origin,
-            CreatedAt = DateTimeOffset.UtcNow,
+            CreatedAt = time.GetUtcNow(),
         };
         if (!await ProposalStore.InsertDraftAsync(db, row, ct))
             return ProposalStore.TooManyDrafts();
@@ -243,7 +244,7 @@ public static partial class ArchitectureProposals
     }
 
     public static async Task<IResult> List(
-        Guid projectId, string? cursor, int? limit, string? status, bool? submitted, HttpContext http, AiDesignDbContext db, CancellationToken ct)
+        Guid projectId, string? cursor, int? limit, string? status, bool? submitted, HttpContext http, AppDbContext db, CancellationToken ct)
     {
         await DesignAccess.RequireAsync(http, projectId, WorkspaceRole.Viewer, ct);
         return ProposalStore.StatusFilter(status) ?? Results.Ok(await ProposalStore.ListAsync(db, projectId, Kind, cursor, limit, status, submitted, ct));
@@ -255,33 +256,33 @@ public static partial class ArchitectureProposals
     /// </summary>
     public static async Task<IResult> Get(
         Guid projectId, Guid proposalId, HttpContext http,
-        IEventStore store, SchemasDbContext schemasDb, AiDesignDbContext db, CancellationToken ct)
+        IEventStore store, AppDbContext db, CancellationToken ct)
     {
         await DesignAccess.RequireAsync(http, projectId, WorkspaceRole.Viewer, ct);
-        var row = await db.Proposals.AsNoTracking().FirstOrDefaultAsync(p => p.Id == proposalId && p.ProjectId == projectId && p.Kind == Kind, ct);
+        var row = await db.DesignProposals.AsNoTracking().FirstOrDefaultAsync(p => p.Id == proposalId && p.ProjectId == projectId && p.Kind == Kind, ct);
         if (row is null)
-            return DesignAccess.NotFound("Proposal");
+            return NotFound("Proposal");
         if (row.Status != "draft")
             return Results.Ok(ToDto(row, Read(row), null));
 
         var streamId = await DesignAccess.StreamOfAsync(http, projectId, row.BranchId, ct);
-        return Results.Ok(ToDto(row, Read(row), await BranchSnapshot.LoadAsync(store, schemasDb, projectId, streamId, ct)));
+        return Results.Ok(ToDto(row, Read(row), await BranchSnapshot.LoadAsync(store, db, projectId, streamId, ct)));
     }
 
     /// <summary>Removes a draft that has no decided item. A decided item is a record of a decision and stays.</summary>
-    public static async Task<IResult> Delete(Guid projectId, Guid proposalId, HttpContext http, AiDesignDbContext db, CancellationToken ct)
+    public static async Task<IResult> Delete(Guid projectId, Guid proposalId, HttpContext http, AppDbContext db, CancellationToken ct)
     {
         await DesignAccess.RequireAsync(http, projectId, WorkspaceRole.Editor, ct);
 
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         if (await ProposalStore.LockAsync(db, projectId, proposalId, Kind, ct) is not { } row)
-            return DesignAccess.NotFound("Proposal");
+            return NotFound("Proposal");
         if (row.Status != "draft")
-            return DesignAccess.Conflict($"The proposal is {row.Status}. Only a draft can be deleted.");
+            return Conflict($"The proposal is {row.Status}. Only a draft can be deleted.");
         if (Read(row).Items.Any(i => i.Status != "pending"))
-            return DesignAccess.Conflict("The proposal holds a decided item. Reject the pending items to close it; a decision is not deleted.");
+            return Conflict("The proposal holds a decided item. Reject the pending items to close it; a decision is not deleted.");
 
-        db.Proposals.Remove(row);
+        db.DesignProposals.Remove(row);
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
         return Results.NoContent();
@@ -300,21 +301,21 @@ public static partial class ArchitectureProposals
     /// </para>
     /// </summary>
     public static async Task<IResult> Decide(
-        Guid projectId, Guid proposalId, DecideArchitectureProposalRequest body, HttpContext http, CancellationToken ct)
+        Guid projectId, Guid proposalId, DecideArchitectureProposalRequest body, HttpContext http, TimeProvider time, CancellationToken ct)
     {
         var (_, userId) = await DesignAccess.RequireAsync(http, projectId, WorkspaceRole.Editor, ct);
         var accept = (body.Accept ?? []).Distinct().ToList();
         var reject = (body.Reject ?? []).Distinct().ToList();
         if (accept.Count + reject.Count == 0)
-            return DesignAccess.Invalid("accept", "Name at least one item to accept or to reject");
+            return Invalid("accept", "Name at least one item to accept or to reject");
         if (accept.Count + reject.Count > MaxItems)
-            return DesignAccess.Invalid("accept", $"A proposal holds at most {MaxItems} items");
+            return Invalid("accept", $"A proposal holds at most {MaxItems} items");
         if (accept.Intersect(reject).Any())
-            return DesignAccess.Invalid("reject", "An item cannot be accepted and rejected in one request");
+            return Invalid("reject", "An item cannot be accepted and rejected in one request");
 
         var branch = await ProposalStore.BranchOfAsync(http, projectId, proposalId, Kind, ct);
         if (branch is null)
-            return DesignAccess.NotFound("Proposal");
+            return NotFound("Proposal");
 
         // Only an accept writes to the branch, so only an accept needs a branch that is open.
         Guid streamId;
@@ -332,19 +333,19 @@ public static partial class ArchitectureProposals
 
         return await SharedTransaction.RunAsync(http.RequestServices, async services =>
         {
-            var db = services.GetRequiredService<AiDesignDbContext>();
+            var db = services.GetRequiredService<AppDbContext>();
             await using var transaction = await db.Database.BeginTransactionAsync(ct);
             var store = services.GetRequiredService<IEventStore>().ForProject(projectId).UseDbContext(db);
 
             // The stream lock comes before the row lock in every write of this feature.
-            var snapshot = await BranchSnapshot.LockAsync(store, services.GetRequiredService<SchemasDbContext>(), projectId, streamId, ct);
+            var snapshot = await BranchSnapshot.LockAsync(store, services.GetRequiredService<AppDbContext>(), projectId, streamId, ct);
             if (await ProposalStore.LockAsync(db, projectId, proposalId, Kind, ct) is not { } row)
-                return DesignAccess.NotFound("Proposal");
+                return NotFound("Proposal");
 
             var document = Read(row);
             var items = document.Items.ToDictionary(i => i.Id);
             if (accept.Concat(reject).Where(id => !items.ContainsKey(id)).Take(1).ToList() is [var unknown])
-                return DesignAccess.Invalid(accept.Contains(unknown) ? "accept" : "reject", $"The proposal has no item {unknown}");
+                return Invalid(accept.Contains(unknown) ? "accept" : "reject", $"The proposal has no item {unknown}");
 
             var failures = new List<ProposalItemFailure>();
             foreach (var id in accept.Concat(reject))
@@ -379,7 +380,7 @@ public static partial class ArchitectureProposals
                 }
 
                 var refused = await InferredWrites.ApplyAsync(
-                    store, streamId, additions, InferredWrites.Source(document.Provider, document.Origin, Kind, row.Id), userId, ct);
+                    store, streamId, additions, InferredWrites.Source(document.Provider, document.Origin, Kind, row.Id), userId, time.GetUtcNow(), ct);
                 if (refused is not null)
                     return Refused([new(refused.Id, refused.Reason)]);
             }
@@ -394,7 +395,7 @@ public static partial class ArchitectureProposals
             {
                 row.Status = "decided";
                 row.DecidedBy = userId;
-                row.DecidedAt = DateTimeOffset.UtcNow;
+                row.DecidedAt = time.GetUtcNow();
             }
             await db.SaveChangesAsync(ct);
             await transaction.CommitAsync(ct);
@@ -676,8 +677,8 @@ public static partial class ArchitectureProposals
         {
             var item = candidate.Output;
             var problem = item.From == item.To ? "The source and the target of a binding are two channels."
-                : KindOfChannel(item.From) is { } from && !ContractDecider.CanRouteFrom(from) ? "The source of a binding is an exchange or a topic."
-                : KindOfChannel(item.To) is { } to && !ContractDecider.CanRouteTo(to) ? "The target of a binding is a queue or an exchange."
+                : KindOfChannel(item.From) is { } from && !ModelInvariants.CanRouteFrom(from) ? "The source of a binding is an exchange or a topic."
+                : KindOfChannel(item.To) is { } to && !ModelInvariants.CanRouteTo(to) ? "The target of a binding is a queue or an exchange."
                 : null;
             if (problem is null)
                 continue;

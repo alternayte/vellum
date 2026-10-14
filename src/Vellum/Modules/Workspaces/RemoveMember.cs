@@ -12,12 +12,12 @@ public static class RemoveMember
         Guid workspaceId,
         string memberUserId,
         ClaimsPrincipal user,
-        WorkspacesDbContext db,
+        AppDbContext db,
         WorkspaceAuthorizationService auth,
         TimeProvider time,
         CancellationToken ct)
     {
-        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var userId = user.UserId();
         await auth.RequireRoleAsync(workspaceId, userId, WorkspaceRole.Owner, ct);
 
         // The owner rows stay locked until the commit, so a removal and a role change that

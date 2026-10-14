@@ -13,11 +13,12 @@ public static class UpdateProject
         Guid projectId,
         UpdateProjectRequest request,
         ClaimsPrincipal user,
-        WorkspacesDbContext db,
+        AppDbContext db,
         WorkspaceAuthorizationService auth,
+        TimeProvider time,
         CancellationToken ct)
     {
-        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var userId = user.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
 
         if (WorkspaceText.Refusal(request.Name, nameRequired: false, request.Description) is { } refusal)
@@ -29,7 +30,7 @@ public static class UpdateProject
 
         if (request.Name is not null) project.Name = request.Name;
         if (request.Description is not null) project.Description = request.Description;
-        project.UpdatedAt = DateTimeOffset.UtcNow;
+        project.UpdatedAt = time.GetUtcNow();
 
         await db.SaveChangesAsync(ct);
         return Results.Ok(new ProjectDto(project.Id, project.WorkspaceId, project.Name, project.Description, project.StreamId, project.CreatedAt));

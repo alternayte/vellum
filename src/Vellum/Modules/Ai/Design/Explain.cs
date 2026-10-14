@@ -8,6 +8,7 @@ using Vellum.Modules.Trace.Engine;
 using Vellum.Modules.Trace.Scenarios;
 using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Shared;
+using static Vellum.Shared.ResultExtensions;
 
 namespace Vellum.Modules.Ai.Design;
 
@@ -58,7 +59,7 @@ public static class Explain
 
     public static async Task<IResult> Handle(
         Guid projectId, ExplainRequest body, HttpContext http,
-        AiClient ai, IEventStore store, SchemasDbContext schemasDb, PrivateSources privateSources, ExplainStreams streams,
+        AiClient ai, IEventStore store, AppDbContext db, PrivateSources privateSources, ExplainStreams streams,
         CancellationToken ct)
     {
         // An explanation is made for one reader at one moment. No cache keeps it, whatever the answer is.
@@ -69,17 +70,17 @@ public static class Explain
             return refusal!;
 
         if (body.Target is not { Kind: { } kind } target || !Kinds.Contains(kind))
-            return DesignAccess.Invalid("target.kind", $"Must be one of: {string.Join(", ", Kinds)}");
+            return Invalid("target.kind", $"Must be one of: {string.Join(", ", Kinds)}");
         if (kind == "trace-event" ? target is not { ScenarioId: not null, Sequence: >= 0 } : target.Id is null)
         {
             return kind == "trace-event"
-                ? DesignAccess.Invalid("target.sequence", "A trace event needs 'scenarioId' and a 'sequence' of 0 or more")
-                : DesignAccess.Invalid("target.id", "An ID is required");
+                ? Invalid("target.sequence", "A trace event needs 'scenarioId' and a 'sequence' of 0 or more")
+                : Invalid("target.id", "An ID is required");
         }
         if (body.Question is not null && TextRule.Lines("question", body.Question, MaxQuestionChars) is { } questionError)
-            return DesignAccess.Invalid(questionError.Field, questionError.Message);
+            return Invalid(questionError.Field, questionError.Message);
 
-        var snapshot = await BranchSnapshot.LoadAsync(store, schemasDb, projectId, caller.StreamId, ct);
+        var snapshot = await BranchSnapshot.LoadAsync(store, db, projectId, caller.StreamId, ct);
         var gate = await privateSources.LoadAsync(caller.WorkspaceId, projectId, snapshot.Model, ct);
         if (kind is not ("scenario" or "trace-event") && gate.Hides(target.Id!.Value))
             return Results.Ok(AiUnavailable.From(new AiFailure.Disabled(PrivateGate.Setting)));
@@ -319,7 +320,7 @@ public static class Explain
             case "trace-event":
                 var scenarioId = kind == "scenario" ? target.Id!.Value : target.ScenarioId!.Value;
                 if ((await ScenarioStreams.LoadAsync(store, scenarioId, ct)).DocumentIn(projectId) is not { } scenario)
-                    return (null, DesignAccess.NotFound("Scenario"));
+                    return (null, NotFound("Scenario"));
 
                 // A subscription's label holds the names of its channel and consumer.
                 string Named(Guid id) =>
@@ -341,9 +342,9 @@ public static class Explain
 
                 var trace = TraceEngine.Run(TraceModelBuilder.Build(model, snapshot.Schemas), scenario);
                 if (!trace.IsValid)
-                    return (null, DesignAccess.Conflict("The scenario has validation issues on this branch, so it has no trace to explain."));
+                    return (null, Conflict("The scenario has validation issues on this branch, so it has no trace to explain."));
                 if (trace.Events.FirstOrDefault(e => e.Sequence == target.Sequence) is not { } traced)
-                    return (null, DesignAccess.NotFound("Trace event"));
+                    return (null, NotFound("Trace event"));
 
                 // A payload of a valid trace passed the validator, so it has a canonical form and parses again.
                 JsonObject Event(TraceEvent e, bool withPayload) => new()
@@ -369,7 +370,7 @@ public static class Explain
                 }, null);
 
             default:
-                return (null, DesignAccess.NotFound(char.ToUpperInvariant(kind[0]) + kind[1..]));
+                return (null, NotFound(char.ToUpperInvariant(kind[0]) + kind[1..]));
         }
     }
 }

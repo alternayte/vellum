@@ -17,6 +17,7 @@ using Vellum.Modules.Settings;
 using Vellum.Modules.Workspaces;
 using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Shared;
+using static Vellum.Shared.ResultExtensions;
 
 namespace Vellum.Modules.Build;
 
@@ -137,7 +138,7 @@ public static partial class BuildModule
         Guid projectId, ExportRequest request, HttpContext http,
         WorkspaceAuthorizationService auth, BuildLimits limits, Bootstrap bootstrap, CancellationToken ct)
     {
-        await auth.RequireProjectRoleAsync(projectId, UserId(http.User), WorkspaceRole.Viewer, ct);
+        await auth.RequireProjectRoleAsync(projectId, http.User.UserId(), WorkspaceRole.Viewer, ct);
         if (request.Format is not ("bundle" or "sdd"))
             return Invalid("format", "The format is bundle or sdd");
 
@@ -209,7 +210,7 @@ public static partial class BuildModule
         Guid projectId, Guid? revisionId, Guid? branchId, ClaimsPrincipal user, HttpContext http,
         WorkspaceAuthorizationService auth, BuildLimits limits, CancellationToken ct)
     {
-        await auth.RequireProjectRoleAsync(projectId, UserId(user), WorkspaceRole.Viewer, ct);
+        await auth.RequireProjectRoleAsync(projectId, user.UserId(), WorkspaceRole.Viewer, ct);
         var (bundle, refusal) = await BuildAsync(http.RequestServices, projectId, revisionId, branchId, limits, ct);
         return bundle is null ? refusal! : Results.Ok(bundle.Manifest);
     }
@@ -218,7 +219,7 @@ public static partial class BuildModule
         Guid projectId, BriefRequest request, HttpContext http,
         WorkspaceAuthorizationService auth, BuildLimits limits, CancellationToken ct)
     {
-        await auth.RequireProjectRoleAsync(projectId, UserId(http.User), WorkspaceRole.Viewer, ct);
+        await auth.RequireProjectRoleAsync(projectId, http.User.UserId(), WorkspaceRole.Viewer, ct);
         var selection = new BriefSelection(
             [.. (request.PromiseIds ?? []).Distinct()], [.. (request.ScenarioIds ?? []).Distinct()], [.. (request.ElementIds ?? []).Distinct()]);
         if (request.ChangeScanId is null && selection.PromiseIds.Count + selection.ScenarioIds.Count + selection.ElementIds.Count == 0)
@@ -311,7 +312,7 @@ public static partial class BuildModule
     private static async Task<IResult> Verify(
         Guid projectId, HttpContext http, WorkspaceAuthorizationService auth, BuildLimits limits, Bootstrap bootstrap, CancellationToken ct)
     {
-        await auth.RequireProjectRoleAsync(projectId, UserId(http.User), WorkspaceRole.Viewer, ct);
+        await auth.RequireProjectRoleAsync(projectId, http.User.UserId(), WorkspaceRole.Viewer, ct);
 
         var isZip = http.Request.ContentType?.StartsWith("application/zip", StringComparison.OrdinalIgnoreCase) == true;
         using var body = new MemoryStream();
@@ -571,9 +572,9 @@ public static partial class BuildModule
     }
 
     private static async Task<bool> IsBranchAsync(IServiceProvider services, Guid projectId, Guid streamId, CancellationToken ct) =>
-        await services.GetRequiredService<WorkspacesDbContext>().Projects.AsNoTracking().AnyAsync(p => p.Id == projectId && p.StreamId == streamId, ct)
-        || await services.GetRequiredService<DraftsDbContext>().Drafts.AsNoTracking().AnyAsync(d => d.ProjectId == projectId && d.StreamId == streamId, ct)
-        || await services.GetRequiredService<ModellingDbContext>().Variants.AsNoTracking().AnyAsync(v => v.ProjectId == projectId && v.StreamId == streamId, ct);
+        await services.GetRequiredService<AppDbContext>().Projects.AsNoTracking().AnyAsync(p => p.Id == projectId && p.StreamId == streamId, ct)
+        || await services.GetRequiredService<AppDbContext>().Drafts.AsNoTracking().AnyAsync(d => d.ProjectId == projectId && d.StreamId == streamId, ct)
+        || await services.GetRequiredService<AppDbContext>().Variants.AsNoTracking().AnyAsync(v => v.ProjectId == projectId && v.StreamId == streamId, ct);
 
     /// <summary>The bundle of a pinned state, made from exactly the versions it names.</summary>
     private static async Task<(Bundle? Bundle, IResult? Refusal)> BuildPinnedAsync(
@@ -675,11 +676,7 @@ public static partial class BuildModule
         }
     }
 
-    private static string UserId(ClaimsPrincipal user) => user.FindFirstValue(ClaimTypes.NameIdentifier)!;
-
     private static IResult TooLarge(BundleTooLargeException tooLarge) => Results.Json(
         new ErrorResponse("bundle_too_large", tooLarge.Message), statusCode: StatusCodes.Status413PayloadTooLarge);
 
-    private static IResult Invalid(string field, string message) =>
-        Results.BadRequest(new ErrorResponse("validation_error", "Validation failed", Errors: [new FieldError(field, message)]));
 }

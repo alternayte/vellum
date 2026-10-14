@@ -4,6 +4,7 @@ using Vellum.Modules.Ai.Design;
 using Vellum.Modules.Promises;
 using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Shared;
+using static Vellum.Shared.ResultExtensions;
 
 namespace Vellum.Modules.Review;
 
@@ -40,25 +41,25 @@ public static class Questions
     public const int MaxAbout = 50;
 
     public static async Task<IResult> List(
-        Guid projectId, HttpContext http, WorkspaceAuthorizationService auth, ReviewDbContext db, CancellationToken ct)
+        Guid projectId, HttpContext http, WorkspaceAuthorizationService auth, AppDbContext db, CancellationToken ct)
     {
-        await auth.RequireProjectRoleAsync(projectId, ReviewAccess.UserId(http.User), WorkspaceRole.Viewer, ct);
+        await auth.RequireProjectRoleAsync(projectId, http.User.UserId(), WorkspaceRole.Viewer, ct);
         var rows = await db.Questions.AsNoTracking().Where(q => q.ProjectId == projectId)
             .OrderBy(q => q.CreatedAt).ThenBy(q => q.Id).ToListAsync(ct);
         return Results.Ok(new Page<QuestionDto>([.. rows.Select(ToDto)], null));
     }
 
     public static async Task<IResult> Create(
-        Guid projectId, HttpContext http, WorkspaceAuthorizationService auth, ReviewDbContext db, TimeProvider time, CancellationToken ct)
+        Guid projectId, HttpContext http, WorkspaceAuthorizationService auth, AppDbContext db, TimeProvider time, CancellationToken ct)
     {
-        var userId = ReviewAccess.UserId(http.User);
+        var userId = http.User.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
         var (request, error) = await PromiseAccess.ReadAsync<QuestionRequest>(http);
         if (request is null)
             return error!;
         // The origin comes from who calls, not from what the body says.
         if (PromiseAccess.Origin(http.User, request.Origin) is not { } origin)
-            return ReviewAccess.Invalid("origin", "The origin of a question a person creates is human or ai-suggested");
+            return Invalid("origin", "The origin of a question a person creates is human or ai-suggested");
 
         var (row, refusal) = await AddAsync(db, projectId, request.Text, request.About ?? [], origin, userId, time.GetUtcNow(), ct);
         return row is null ? refusal! : Results.Created($"/api/projects/{projectId}/questions/{row.Id}", ToDto(row));
@@ -70,25 +71,25 @@ public static class Questions
     /// stored proposal, not from the request.
     /// </summary>
     public static async Task<IResult> Keep(
-        Guid projectId, HttpContext http, WorkspaceAuthorizationService auth, ReviewDbContext db, AiDesignDbContext proposals, TimeProvider time, CancellationToken ct)
+        Guid projectId, HttpContext http, WorkspaceAuthorizationService auth, AppDbContext db, TimeProvider time, CancellationToken ct)
     {
-        var userId = ReviewAccess.UserId(http.User);
+        var userId = http.User.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
         var (request, error) = await PromiseAccess.ReadAsync<KeepQuestionRequest>(http);
         if (request is null)
             return error!;
 
-        var document = await proposals.Proposals.AsNoTracking()
+        var document = await db.DesignProposals.AsNoTracking()
             .Where(p => p.Id == request.ProposalId && p.ProjectId == projectId).Select(p => p.Document).FirstOrDefaultAsync(ct);
         if (document is null)
-            return ReviewAccess.NotFound("Proposal");
+            return NotFound("Proposal");
         // An architecture proposal holds its questions at the top of its document, a flow proposal in its output.
         using var parsed = JsonDocument.Parse(document, new JsonDocumentOptions { MaxDepth = 256 });
         var holder = parsed.RootElement.TryGetProperty("output", out var output) && output.ValueKind == JsonValueKind.Object ? output : parsed.RootElement;
         if (!holder.TryGetProperty("openQuestions", out var questions) || questions.ValueKind != JsonValueKind.Array
             || request.Index < 0 || request.Index >= questions.GetArrayLength()
             || questions[request.Index] is not { ValueKind: JsonValueKind.String } kept || kept.GetString() is not { Length: > 0 } text)
-            return ReviewAccess.NotFound("Open question of the proposal");
+            return NotFound("Open question of the proposal");
 
         // Keeping the same question twice gives the question that is there.
         if (await db.Questions.AsNoTracking().FirstOrDefaultAsync(q => q.ProjectId == projectId && q.Text == text && q.Status == QuestionStatus.Open, ct) is { } existing)
@@ -98,16 +99,16 @@ public static class Questions
     }
 
     internal static async Task<(QuestionEntity? Row, IResult? Refusal)> AddAsync(
-        ReviewDbContext db, Guid projectId, string? text, IReadOnlyList<Guid> about, string origin, string userId, DateTimeOffset now, CancellationToken ct)
+        AppDbContext db, Guid projectId, string? text, IReadOnlyList<Guid> about, string origin, string userId, DateTimeOffset now, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(text))
-            return (null, ReviewAccess.Invalid("text", "A question needs text"));
+            return (null, Invalid("text", "A question needs text"));
         if (TextRule.Lines("text", text) is { } invalid)
-            return (null, ReviewAccess.Invalid(invalid.Field, invalid.Message));
+            return (null, Invalid(invalid.Field, invalid.Message));
         if (about.Count > MaxAbout)
-            return (null, ReviewAccess.Invalid("about", $"A question names at most {MaxAbout} things"));
+            return (null, Invalid("about", $"A question names at most {MaxAbout} things"));
         if (await db.Questions.CountAsync(q => q.ProjectId == projectId, ct) >= MaxPerProject)
-            return (null, ReviewAccess.Conflict($"A project holds at most {MaxPerProject} questions. Delete one first."));
+            return (null, Conflict($"A project holds at most {MaxPerProject} questions. Delete one first."));
 
         var row = new QuestionEntity
         {
@@ -120,25 +121,25 @@ public static class Questions
     }
 
     public static async Task<IResult> Answer(
-        Guid projectId, Guid questionId, HttpContext http, WorkspaceAuthorizationService auth, ReviewDbContext db, TimeProvider time, CancellationToken ct)
+        Guid projectId, Guid questionId, HttpContext http, WorkspaceAuthorizationService auth, AppDbContext db, TimeProvider time, CancellationToken ct)
     {
-        var userId = ReviewAccess.UserId(http.User);
+        var userId = http.User.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
         var (request, error) = await PromiseAccess.ReadAsync<AnswerQuestionRequest>(http);
         if (request is null)
             return error!;
         if (string.IsNullOrWhiteSpace(request.Answer))
-            return ReviewAccess.Invalid("answer", "An answer needs text");
+            return Invalid("answer", "An answer needs text");
         if (TextRule.Lines("answer", request.Answer) is { } invalid)
-            return ReviewAccess.Invalid(invalid.Field, invalid.Message);
+            return Invalid(invalid.Field, invalid.Message);
 
         return await CloseAsync(db, projectId, questionId, QuestionStatus.Answered, request.Answer.Trim(), userId, time.GetUtcNow(), ct);
     }
 
     public static async Task<IResult> Drop(
-        Guid projectId, Guid questionId, HttpContext http, WorkspaceAuthorizationService auth, ReviewDbContext db, TimeProvider time, CancellationToken ct)
+        Guid projectId, Guid questionId, HttpContext http, WorkspaceAuthorizationService auth, AppDbContext db, TimeProvider time, CancellationToken ct)
     {
-        var userId = ReviewAccess.UserId(http.User);
+        var userId = http.User.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
         return await CloseAsync(db, projectId, questionId, QuestionStatus.Dropped, null, userId, time.GetUtcNow(), ct);
     }
@@ -149,7 +150,7 @@ public static class Questions
     /// other gets a 409 and not the first answer overwritten.
     /// </summary>
     private static async Task<IResult> CloseAsync(
-        ReviewDbContext db, Guid projectId, Guid questionId, string status, string? answer, string userId, DateTimeOffset now, CancellationToken ct)
+        AppDbContext db, Guid projectId, Guid questionId, string status, string? answer, string userId, DateTimeOffset now, CancellationToken ct)
     {
         var closed = await db.Questions
             .Where(q => q.Id == questionId && q.ProjectId == projectId && q.Status == QuestionStatus.Open)
@@ -157,19 +158,19 @@ public static class Questions
                 .SetProperty(q => q.Status, status).SetProperty(q => q.Answer, answer)
                 .SetProperty(q => q.AnsweredBy, userId).SetProperty(q => q.AnsweredAt, now), ct);
         if (await db.Questions.AsNoTracking().FirstOrDefaultAsync(q => q.Id == questionId && q.ProjectId == projectId, ct) is not { } row)
-            return ReviewAccess.NotFound("Question");
+            return NotFound("Question");
         return closed == 1
             ? Results.Ok(ToDto(row))
-            : ReviewAccess.Conflict($"The question is {row.Status}. Only an open question is answered or dropped. Read the questions again.");
+            : Conflict($"The question is {row.Status}. Only an open question is answered or dropped. Read the questions again.");
     }
 
     public static async Task<IResult> Delete(
-        Guid projectId, Guid questionId, HttpContext http, WorkspaceAuthorizationService auth, ReviewDbContext db, CancellationToken ct)
+        Guid projectId, Guid questionId, HttpContext http, WorkspaceAuthorizationService auth, AppDbContext db, CancellationToken ct)
     {
-        await auth.RequireProjectRoleAsync(projectId, ReviewAccess.UserId(http.User), WorkspaceRole.Editor, ct);
+        await auth.RequireProjectRoleAsync(projectId, http.User.UserId(), WorkspaceRole.Editor, ct);
         return await db.Questions.Where(q => q.Id == questionId && q.ProjectId == projectId).ExecuteDeleteAsync(ct) == 1
             ? Results.NoContent()
-            : ReviewAccess.NotFound("Question");
+            : NotFound("Question");
     }
 
     internal static QuestionDto ToDto(QuestionEntity row) => new(

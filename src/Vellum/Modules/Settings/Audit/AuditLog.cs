@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Microsoft.EntityFrameworkCore;
 using Vellum.Modules.Settings.Instance;
 using Vellum.Modules.Workspaces.Authorization;
+using Vellum.Shared;
 
 namespace Vellum.Modules.Settings.Audit;
 
@@ -67,11 +68,11 @@ public static class ListAudit
         Guid workspaceId,
         int? limit,
         ClaimsPrincipal user,
-        SettingsDbContext db,
+        AppDbContext db,
         WorkspaceAuthorizationService auth,
         CancellationToken ct)
     {
-        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var userId = user.UserId();
         await auth.RequireRoleAsync(workspaceId, userId, WorkspaceRole.Owner, ct);
 
         // A key rotation touches every workspace's secrets, so each workspace sees that it
@@ -96,7 +97,7 @@ public static class ListInstanceAudit
     public static async Task<IResult> Handle(
         int? limit,
         ClaimsPrincipal user,
-        SettingsDbContext db,
+        AppDbContext db,
         InstanceAuthorization auth,
         CancellationToken ct)
     {

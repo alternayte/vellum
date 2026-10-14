@@ -12,11 +12,11 @@ public static class ListDrafts
         Guid projectId,
         string? status, string? cursor, int? limit,
         ClaimsPrincipal user,
-        DraftsDbContext db,
+        AppDbContext db,
         WorkspaceAuthorizationService auth,
         CancellationToken ct)
     {
-        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var userId = user.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Viewer, ct);
 
         var pageSize = Math.Clamp(limit ?? 50, 1, 200);

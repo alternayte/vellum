@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Vellum.Modules.Drafts.Entities;
 using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Shared;
+using static Vellum.Shared.ResultExtensions;
 
 namespace Vellum.Modules.Drafts;
 
@@ -15,17 +16,17 @@ public static class CreateComment
         Guid projectId, Guid draftId,
         CreateCommentRequest request,
         ClaimsPrincipal user,
-        DraftsDbContext db,
+        AppDbContext db,
         WorkspaceAuthorizationService auth,
         CancellationToken ct)
     {
-        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var userId = user.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
 
         if (request.Id == Guid.Empty)
-            return CommentRules.Invalid(new ValidationError("id", "An ID is required"));
+            return Invalid(new ValidationError("id", "An ID is required"));
         if (CommentRules.Check(request.Body, request.EntityType) is { } invalid)
-            return CommentRules.Invalid(invalid);
+            return Invalid(invalid);
 
         var draft = await db.Drafts.AsNoTracking()
             .FirstOrDefaultAsync(d => d.Id == draftId && d.ProjectId == projectId, ct);
@@ -71,7 +72,4 @@ internal static class CommentRules
             ? new ValidationError("body", "A comment needs text")
             : TextRule.Lines("body", body) ?? TextRule.Line("entityType", entityType, TextRule.MaxIdentifier);
 
-    public static IResult Invalid(ValidationError error) =>
-        Results.BadRequest(new ErrorResponse("validation_error", "Validation failed",
-            Errors: [new FieldError(error.Field, error.Message)]));
 }

@@ -7,7 +7,7 @@ public static class GetElement
 {
     public static async Task<IResult> Handle(
         Guid projectId, Guid streamId, Guid elementId,
-        ModellingDbContext db, CancellationToken ct)
+        AppDbContext db, CancellationToken ct)
     {
         var entity = await db.Elements.AsNoTracking()
             .FirstOrDefaultAsync(e => e.Id == elementId && e.ProjectId == projectId && e.Branch == streamId, ct);

@@ -45,7 +45,7 @@ public static class MeasuredServiceTimes
 
     /// <summary>The result that each reference names in the project. One spelling for each result: the ID in lower case with dashes.</summary>
     private static async Task<Dictionary<string, Source>> SourcesAsync(
-        LoadTestsDbContext db, Guid projectId, IEnumerable<string?> references, CancellationToken ct)
+        AppDbContext db, Guid projectId, IEnumerable<string?> references, CancellationToken ct)
     {
         var ids = references.OfType<string>().Distinct(StringComparer.Ordinal)
             .Where(r => r.StartsWith(MeasurementRefs.Prefix, StringComparison.Ordinal)
@@ -81,7 +81,7 @@ public static class MeasuredServiceTimes
     /// for a measured service time are not read.
     /// </summary>
     public static async Task<(StressProfile Profile, IReadOnlyList<FieldError> Errors)> ApplyAsync(
-        LoadTestsDbContext db, Guid projectId, StressProfile profile, CancellationToken ct)
+        AppDbContext db, Guid projectId, StressProfile profile, CancellationToken ct)
     {
         // A profile that lacks a list is refused by the shape rules; there is nothing to resolve in it.
         if (profile.Arrivals is null || profile.Resources is null || profile.ServiceTimes is null || profile.Subscriptions is null
@@ -125,7 +125,7 @@ public static class MeasuredServiceTimes
     /// the server wrote the numbers can hold a typed number with the label: it does not count.
     /// </summary>
     public static async Task<IReadOnlyDictionary<Guid, MeasurementDoubt>> DoubtsAsync(
-        LoadTestsDbContext db, Guid projectId, StressProfile profile, Guid modelStreamId, long modelVersion, long scenarioVersion, CancellationToken ct)
+        AppDbContext db, Guid projectId, StressProfile profile, Guid modelStreamId, long modelVersion, long scenarioVersion, CancellationToken ct)
     {
         var measured = profile.ServiceTimes.Where(t => t.Label == AssumptionLabel.Measured).ToList();
         var doubts = new Dictionary<Guid, MeasurementDoubt>();
@@ -150,7 +150,7 @@ public static class MeasuredServiceTimes
 
     /// <summary>The measured service times of a profile with the staleness of their results as the project is now.</summary>
     public static async Task<IReadOnlyList<ProfileMeasurement>> StateAsync(
-        LoadTestsDbContext db, IEventStore store, Guid projectId, StressProfile profile, CancellationToken ct)
+        AppDbContext db, IEventStore store, Guid projectId, StressProfile profile, CancellationToken ct)
     {
         var measured = profile.ServiceTimes.Where(t => t is { Label: AssumptionLabel.Measured, MeasurementRef: not null }).ToList();
         if (measured.Count == 0)

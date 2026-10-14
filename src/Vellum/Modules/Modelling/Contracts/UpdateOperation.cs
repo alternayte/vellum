@@ -15,16 +15,12 @@ public sealed record UpdateOperationRequest(
     bool SetRequestSchemaId = false, bool SetResponseSchemaId = false,
     string? FactStatus = null, ProvenanceInput? Provenance = null, bool SetProvenance = false);
 
-public sealed record UpdateOperationCommandEnvelope(
-    Guid ProjectId, Guid StreamId, Guid OperationId, string UserId, UpdateOperationRequest Request);
-
-public sealed class UpdateOperationHandler(IServiceProvider services)
-    : ICommandHandler<UpdateOperationCommandEnvelope, CommandResult<OperationDto>>
+public static class UpdateOperation
 {
-    public async Task<CommandResult<OperationDto>> HandleAsync(UpdateOperationCommandEnvelope cmd, CancellationToken ct = default)
+    public static async Task<CommandResult<OperationDto>> HandleAsync(
+        IServiceProvider services, Guid projectId, Guid streamId, Guid operationId, string userId, UpdateOperationRequest request, TimeProvider time, CancellationToken ct)
     {
-        var request = cmd.Request;
-        OperationId id = cmd.OperationId;
+        OperationId id = operationId;
 
         Transport? transport = null;
         if (request.Transport is not null)
@@ -45,11 +41,11 @@ public sealed class UpdateOperationHandler(IServiceProvider services)
 
         // The acceptance stamp is taken once, so the decision stays a pure function of the state.
         var supplied = request.SetProvenance
-            ? ProvenanceMapper.ToDomain(request.Provenance, Guid.Parse(cmd.UserId))
+            ? ProvenanceMapper.ToDomain(request.Provenance, Guid.Parse(userId), time.GetUtcNow())
             : null;
 
         return await SchemaBoundWrite.DecideAsync(
-            services, cmd.ProjectId, cmd.StreamId,
+            services, projectId, streamId,
             [("requestSchemaId", request.RequestSchemaId), ("responseSchemaId", request.ResponseSchemaId)],
             state => ContractDecider.UpdateOperation(state, update).Then(state, after =>
                 requestedStatus is null && !request.SetProvenance

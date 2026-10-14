@@ -30,7 +30,7 @@ public static class SchemaBoundWrite
 
         return SharedTransaction.RunAsync(requestServices, async services =>
         {
-            var db = services.GetRequiredService<ModellingDbContext>();
+            var db = services.GetRequiredService<AppDbContext>();
             await using var transaction = await db.Database.BeginTransactionAsync(ct);
             var store = services.GetRequiredService<IEventStore>().ForProject(projectId).UseDbContext(db);
 

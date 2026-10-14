@@ -46,12 +46,12 @@ public static class ScenarioCheck
     ];
 
     public static async Task<CheckOutcome> RunAsync(
-        IEventStore store, SchemasDbContext schemasDb, Guid projectId, ScenarioCheckRecipe recipe, PinnedModel pinned, string obligationHash, CancellationToken ct)
+        IEventStore store, AppDbContext db, Guid projectId, ScenarioCheckRecipe recipe, PinnedModel pinned, string obligationHash, CancellationToken ct)
     {
         var (state, scenarioVersion) = await PromiseWorld.LoadScenarioAsync(store, recipe.ScenarioId, ct);
         var model = pinned.State;
         var referenced = ContractDecider.ReferencedSchemaIds(model);
-        var schemas = await schemasDb.Schemas.AsNoTracking()
+        var schemas = await db.Schemas.AsNoTracking()
             .Where(s => s.ProjectId == projectId && referenced.Contains(s.Id))
             .OrderBy(s => s.Id)
             .Select(s => new { s.Id, s.Content, s.Version })

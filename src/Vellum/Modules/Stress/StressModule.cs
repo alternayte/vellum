@@ -18,10 +18,6 @@ public static class StressModule
     {
         // The connection string is read when the context is first used, so configuration that
         // a test host overrides applies.
-        services.AddDbContext<StressDbContext>((provider, options) =>
-            options.UseNpgsql(provider.GetRequiredService<IConfiguration>().GetConnectionString("DefaultConnection"))
-                   .UseSnakeCaseNamingConvention());
-
         services.TryAddSingleton(StressLimits.Default);
         services.TryAddSingleton(new StressRunPolicy());
         services.AddSingleton<StressRunGate>();

@@ -4,7 +4,7 @@ using Vellum.Shared;
 namespace Vellum.Modules.Stress;
 
 /// <summary>What the stress tables keep of a deleted project: nothing.</summary>
-public sealed class StressRetention(StressDbContext db) : IProjectRetention
+public sealed class StressRetention(AppDbContext db) : IProjectRetention
 {
     // The runs of a profile go with its row (ON DELETE CASCADE).
     public Task DeleteProjectAsync(DeletedProject project, CancellationToken ct) =>

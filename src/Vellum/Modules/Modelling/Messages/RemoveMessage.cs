@@ -4,17 +4,12 @@ using Vellum.Shared;
 
 namespace Vellum.Modules.Modelling.Messages;
 
-public sealed record RemoveMessageCommandEnvelope(Guid ProjectId, Guid StreamId, Guid MessageId);
-
-public sealed class RemoveMessageHandler : ICommandHandler<RemoveMessageCommandEnvelope, CommandResult>
+public static class RemoveMessage
 {
-    private readonly IEventStore _store;
-
-    public RemoveMessageHandler(IEventStore store) => _store = store;
-
-    public Task<CommandResult> HandleAsync(RemoveMessageCommandEnvelope cmd, CancellationToken ct = default) =>
-        _store.ForProject(cmd.ProjectId).Decide<ModelState>(
-            cmd.StreamId,
-            state => ModelDecider.RemoveMessage(state, cmd.MessageId),
+    public static Task<CommandResult> HandleAsync(
+        IEventStore store, Guid projectId, Guid streamId, Guid messageId, CancellationToken ct) =>
+        store.ForProject(projectId).Decide<ModelState>(
+            streamId,
+            state => ModelDecider.RemoveMessage(state, messageId),
             ct);
 }

@@ -11,11 +11,11 @@ public static class DeleteComment
     public static async Task<IResult> Handle(
         Guid projectId, Guid draftId, Guid commentId,
         ClaimsPrincipal user,
-        DraftsDbContext db,
+        AppDbContext db,
         WorkspaceAuthorizationService auth,
         CancellationToken ct)
     {
-        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var userId = user.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
 
         // The draft must be one of this project. Without that, a caller could name a draft of

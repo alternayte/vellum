@@ -12,53 +12,47 @@ public sealed record UpdateElementRequest(
     bool SetOwnerId = false, bool SetParentId = false, bool SetIcon = false,
     string? FactStatus = null, ProvenanceInput? Provenance = null, bool SetProvenance = false);
 
-public sealed record UpdateElementCommandEnvelope(
-    Guid ProjectId, Guid StreamId, Guid ElementId, string UserId, UpdateElementRequest Request);
-
-public sealed class UpdateElementHandler : ICommandHandler<UpdateElementCommandEnvelope, CommandResult<ElementDto>>
+public static class UpdateElement
 {
-    private readonly IEventStore _store;
-
-    public UpdateElementHandler(IEventStore store) => _store = store;
-
-    public async Task<CommandResult<ElementDto>> HandleAsync(UpdateElementCommandEnvelope cmd, CancellationToken ct = default)
+    public static async Task<CommandResult<ElementDto>> HandleAsync(
+        IEventStore store, Guid projectId, Guid streamId, Guid elementId, string userId, UpdateElementRequest request, TimeProvider time, CancellationToken ct)
     {
         ElementStatus? status = null;
-        if (cmd.Request.Status is not null)
+        if (request.Status is not null)
         {
-            if (!ModelEnum.TryParseDefined(cmd.Request.Status, out ElementStatus parsed))
+            if (!ModelEnum.TryParseDefined(request.Status, out ElementStatus parsed))
                 return new CommandResult<ElementDto>.Invalid([new ValidationError("status", "Invalid status")]);
             status = parsed;
         }
 
         FactStatus? requestedStatus = null;
-        if (cmd.Request.FactStatus is not null)
+        if (request.FactStatus is not null)
         {
-            if (!FactStatusFormat.TryParseApiString(cmd.Request.FactStatus, out var parsedStatus))
+            if (!FactStatusFormat.TryParseApiString(request.FactStatus, out var parsedStatus))
                 return new CommandResult<ElementDto>.Invalid([new ValidationError("factStatus", "Invalid fact status")]);
             requestedStatus = parsedStatus;
         }
 
         var updateCmd = new UpdateElementCommand(
-            cmd.ElementId,
-            Name: cmd.Request.Name, SetName: cmd.Request.Name is not null,
-            Description: cmd.Request.Description, SetDescription: cmd.Request.SetDescription || cmd.Request.Description is not null,
-            Technology: cmd.Request.Technology, SetTechnology: cmd.Request.SetTechnology || cmd.Request.Technology is not null,
-            OwnerId: cmd.Request.OwnerId, SetOwnerId: cmd.Request.SetOwnerId,
-            ParentId: cmd.Request.ParentId, SetParentId: cmd.Request.SetParentId,
+            elementId,
+            Name: request.Name, SetName: request.Name is not null,
+            Description: request.Description, SetDescription: request.SetDescription || request.Description is not null,
+            Technology: request.Technology, SetTechnology: request.SetTechnology || request.Technology is not null,
+            OwnerId: request.OwnerId, SetOwnerId: request.SetOwnerId,
+            ParentId: request.ParentId, SetParentId: request.SetParentId,
             Status: status,
-            Tags: cmd.Request.Tags,
-            Icon: cmd.Request.Icon, SetIcon: cmd.Request.SetIcon || cmd.Request.Icon is not null);
+            Tags: request.Tags,
+            Icon: request.Icon, SetIcon: request.SetIcon || request.Icon is not null);
 
         // The acceptance stamp is taken once, so the decision stays a pure function of the state.
-        var suppliedProvenance = cmd.Request.SetProvenance
-            ? ProvenanceMapper.ToDomain(cmd.Request.Provenance, Guid.Parse(cmd.UserId))
+        var suppliedProvenance = request.SetProvenance
+            ? ProvenanceMapper.ToDomain(request.Provenance, Guid.Parse(userId), time.GetUtcNow())
             : null;
 
-        return await _store.ForProject(cmd.ProjectId).Decide<ModelState, ElementDto>(
-            cmd.StreamId,
+        return await store.ForProject(projectId).Decide<ModelState, ElementDto>(
+            streamId,
             Decide,
-            state => AddElementHandler.ToDto(state.Elements[cmd.ElementId]),
+            state => AddElement.ToDto(state.Elements[elementId]),
             ct);
 
         CommandResult<IReadOnlyList<object>> Decide(ModelState state)
@@ -66,17 +60,17 @@ public sealed class UpdateElementHandler : ICommandHandler<UpdateElementCommandE
             var result = ModelDecider.UpdateElement(state, updateCmd);
             if (result is not CommandResult<IReadOnlyList<object>>.Success success)
                 return result;
-            if (requestedStatus is null && !cmd.Request.SetProvenance)
+            if (requestedStatus is null && !request.SetProvenance)
                 return result;
 
             var events = new List<object>(success.Value);
             var stateAfter = events.Aggregate(state, ModelState.Evolve);
-            var current = stateAfter.Elements[cmd.ElementId];
+            var current = stateAfter.Elements[elementId];
 
             var provenanceResult = ModelDecider.RecordElementProvenance(
-                stateAfter, cmd.ElementId,
+                stateAfter, elementId,
                 requestedStatus ?? current.FactStatus,
-                cmd.Request.SetProvenance ? suppliedProvenance : current.Provenance);
+                request.SetProvenance ? suppliedProvenance : current.Provenance);
             if (provenanceResult is not CommandResult<IReadOnlyList<object>>.Success provenanceSuccess)
                 return provenanceResult;
 

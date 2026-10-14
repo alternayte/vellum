@@ -1,17 +1,13 @@
 // src/Vellum/Modules/Docs/DocsModule.cs
 using Microsoft.EntityFrameworkCore;
+using Vellum.Shared;
 
 namespace Vellum.Modules.Docs;
 
 public static class DocsModule
 {
-    public static IServiceCollection AddDocsModule(this IServiceCollection services, IConfiguration config)
+    public static IServiceCollection AddDocsModule(this IServiceCollection services)
     {
-        var connectionString = config.GetConnectionString("DefaultConnection")!;
-
-        services.AddDbContext<DocsDbContext>(options =>
-            options.UseNpgsql(connectionString)
-                   .UseSnakeCaseNamingConvention());
         services.AddScoped<Shared.IProjectRetention, DocsRetention>();
 
         return services;

@@ -99,7 +99,7 @@ internal static class ReviewEngine
 
         var report = RuleSet.Run(input);
         var book = new DecisionBook(input.Decisions);
-        var wontFix = await services.GetRequiredService<ReviewDbContext>().Dispositions.AsNoTracking()
+        var wontFix = await services.GetRequiredService<AppDbContext>().Dispositions.AsNoTracking()
             .Where(d => d.ProjectId == projectId).ToDictionaryAsync(d => (d.RuleId, d.SubjectId), ct);
         return (new ReviewState(input, report, book, Evaluate(report, book, wontFix)), null);
     }
@@ -108,21 +108,13 @@ internal static class ReviewEngine
 /// <summary>What the review handlers share.</summary>
 internal static class ReviewAccess
 {
-    public static string UserId(ClaimsPrincipal user) => user.FindFirstValue(ClaimTypes.NameIdentifier)!;
-
-    public static IResult Invalid(string field, string message) =>
-        Results.BadRequest(new ErrorResponse("validation_error", "Validation failed", Errors: [new FieldError(field, message)]));
-
-    public static IResult Conflict(string message) => Results.Conflict(new ErrorResponse("conflict", message));
-
-    public static IResult NotFound(string what) => Results.NotFound(new ErrorResponse("not_found", $"{what} not found"));
 }
 
 /// <summary>Reads the decisions of a project, as they are now or at pinned versions of their streams.</summary>
 public static class DecisionReads
 {
     /// <summary>Every decision of the project as its row holds it. A row commits with each event of its stream.</summary>
-    public static async Task<IReadOnlyList<PinnedDecision>> CurrentAsync(ReviewDbContext db, Guid projectId, CancellationToken ct) =>
+    public static async Task<IReadOnlyList<PinnedDecision>> CurrentAsync(AppDbContext db, Guid projectId, CancellationToken ct) =>
         [.. (await db.Decisions.AsNoTracking().Where(d => d.ProjectId == projectId)
                 .OrderBy(d => d.Number).ThenBy(d => d.Id)
                 .Select(d => new { d.Id, d.Document, d.Version }).ToListAsync(ct))

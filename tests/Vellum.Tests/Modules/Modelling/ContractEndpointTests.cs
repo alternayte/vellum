@@ -384,7 +384,7 @@ public class ContractEndpointTests(IntegrationFixture fixture) : IClassFixture<I
         var forced = await client.PostAsJsonAsync(Url(projectId, $"drafts/{draftId}/merge/execute"),
             new { resolutions, expectedMainVersion = (int)preview["mainVersion"]! });
 
-        Assert.Contains("dangling reference", await ConflictAsync(Task.FromResult(forced)));
+        Assert.Contains($"Owner element {payments} not found", await ConflictAsync(Task.FromResult(forced)));
         Assert.Empty(await ListAsync<OperationDto>(client, projectId, "operations"));
         Assert.Equal("open", (await client.GetFromJsonAsync<DraftDto>(Url(projectId, $"drafts/{draftId}")))!.Status);
     }
@@ -430,10 +430,11 @@ public class ContractEndpointTests(IntegrationFixture fixture) : IClassFixture<I
         // The import refuses a contract that points at nothing, and writes none of the document.
         var (_, emptyProjectId) = await TestHost.CreateProjectAsync(client);
         var dangling = portable.DeepClone().AsObject();
-        dangling["subscriptions"]![0]!["consumerId"] = Guid.NewGuid();
+        var missingConsumer = Guid.NewGuid();
+        dangling["subscriptions"]![0]!["consumerId"] = missingConsumer;
         var refused = await Import(emptyProjectId, dangling);
         Assert.Equal(HttpStatusCode.BadRequest, refused.StatusCode);
-        Assert.Contains("Consumer element not found", await refused.Content.ReadAsStringAsync());
+        Assert.Contains($"Consumer element {missingConsumer} not found", await refused.Content.ReadAsStringAsync());
         Assert.Empty(await ListAsync<ChannelDto>(client, emptyProjectId, "channels"));
 
         // A document written before contracts existed imports with none.

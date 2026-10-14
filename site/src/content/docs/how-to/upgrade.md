@@ -29,7 +29,7 @@ Vellum has no tagged release yet. An upgrade moves the instance to a newer commi
 
    Vellum applies the database migrations when it starts. The command returns when the app is healthy.
 
-4. Sign in. Open **Settings**, then **Instance**, then **Diagnostics**. Check that no module lists a pending migration.
+4. Sign in. Open **Settings**, then **Instance**, then **Diagnostics**. Check that no pending migration is listed.
 5. Open a project and play a scenario.
 
 Your session, your settings and your stored credentials survive the upgrade.

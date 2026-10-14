@@ -9,6 +9,7 @@ using Vellum.Modules.Schemas;
 using Vellum.Modules.Workspaces;
 using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Shared;
+using static Vellum.Shared.ResultExtensions;
 
 namespace Vellum.Modules.Modelling.Variants;
 
@@ -31,9 +32,10 @@ public static class CreateVariant
         ClaimsPrincipal user,
         HttpContext http,
         WorkspaceAuthorizationService auth,
+        TimeProvider time,
         CancellationToken ct)
     {
-        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var userId = user.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
 
         if (request.Id == Guid.Empty)
@@ -56,15 +58,14 @@ public static class CreateVariant
         // sheet commit together.
         return await SharedTransaction.RunAsync(http.RequestServices, async services =>
         {
-            var workspacesDb = services.GetRequiredService<WorkspacesDbContext>();
-            var modellingDb = services.GetRequiredService<ModellingDbContext>();
+            var db = services.GetRequiredService<AppDbContext>();
             var store = services.GetRequiredService<IEventStore>();
 
-            var project = await workspacesDb.Projects.AsNoTracking()
+            var project = await db.Projects.AsNoTracking()
                 .FirstOrDefaultAsync(p => p.Id == projectId, ct);
             if (project is null) return Results.NotFound(new ErrorResponse("not_found", "Project not found"));
 
-            var existingById = await modellingDb.Variants.AsNoTracking()
+            var existingById = await db.Variants.AsNoTracking()
                 .FirstOrDefaultAsync(v => v.Id == request.Id, ct);
             if (existingById is not null)
             {
@@ -73,7 +74,7 @@ public static class CreateVariant
                     : Results.Conflict(new ErrorResponse("conflict", "Variant id is already in use"));
             }
 
-            if (await modellingDb.Variants.AnyAsync(
+            if (await db.Variants.AnyAsync(
                     v => v.ProjectId == projectId && v.Name == request.Name, ct))
             {
                 return Results.Conflict(new ErrorResponse("conflict", "A variant with this name already exists"));
@@ -81,8 +82,8 @@ public static class CreateVariant
 
             // One transaction: the variant row, the fork event, the branch read-model rows and
             // the hold on the schemas the fork names (see SchemaReferences).
-            await using var transaction = await modellingDb.Database.BeginTransactionAsync(ct);
-            var branches = store.ForProject(projectId).UseDbContext(modellingDb);
+            await using var transaction = await db.Database.BeginTransactionAsync(ct);
+            var branches = store.ForProject(projectId).UseDbContext(db);
 
             ModelState sourceState;
             Guid baseStreamId;
@@ -90,7 +91,7 @@ public static class CreateVariant
 
             if (request.BaseRevisionId is { } revisionId)
             {
-                var revision = await modellingDb.Revisions.AsNoTracking()
+                var revision = await db.Revisions.AsNoTracking()
                     .FirstOrDefaultAsync(r => r.Id == revisionId && r.ProjectId == projectId, ct);
                 if (revision is null)
                     return Results.NotFound(new ErrorResponse("not_found", "Base revision not found"));
@@ -109,7 +110,7 @@ public static class CreateVariant
             }
 
             await SchemaReferences.HoldAsync(
-                modellingDb, projectId, ContractDecider.ReferencedSchemaIds(sourceState), ct);
+                db, projectId, ContractDecider.ReferencedSchemaIds(sourceState), ct);
 
             var variant = new VariantEntity
             {
@@ -122,23 +123,23 @@ public static class CreateVariant
                 ForkVersion = checked((int)forkVersion),
                 Status = "open",
                 CreatedBy = userId,
-                CreatedAt = DateTimeOffset.UtcNow,
+                CreatedAt = time.GetUtcNow(),
             };
-            modellingDb.Variants.Add(variant);
+            db.Variants.Add(variant);
 
             // Read before the first append, like every other stream this unit reads.
             var sheetBranch = sheetFrom ?? baseStreamId;
-            var (sheet, sheetVersion) = await CostAccess.LoadSheetAsync(branches, sheetBranch, ct);
+            var (sheet, sheetVersion) = await CostAccess.LoadSheetAsync(db, sheetBranch, ct);
 
             // One append. Deedbox saves the variant row in the transaction, and the inline
             // projection writes the branch rows in it.
             await branches.Append(
                 StreamId.From(variant.StreamId), ExpectedVersion.NoStream,
                 [ModelStore.Fork(sourceState, baseStreamId, forkVersion)], ct);
-            // The variant starts with a copy of the cost sheet. The stream of that copy is new
-            // and no other writer knows it, so this append waits for no lock.
+            // The variant starts with a copy of the cost sheet. The branch is new and no other
+            // writer knows it, so this write waits for no lock.
             await CostBranches.ForkAsync(
-                branches, projectId, variant.StreamId, sourceState, sheet, sheetBranch, sheetVersion, userId, variant.CreatedAt, ct);
+                db, projectId, variant.StreamId, sourceState, sheet, sheetBranch, sheetVersion, userId, variant.CreatedAt, ct);
             await transaction.CommitAsync(ct);
 
             return Results.Created(
@@ -152,6 +153,4 @@ public static class CreateVariant
         variant.StreamId, variant.BaseStreamId, variant.BaseRevisionId,
         variant.ForkVersion, variant.Status, variant.CreatedBy, variant.CreatedAt);
 
-    private static IResult Invalid(string field, string message) =>
-        Results.BadRequest(new ErrorResponse("validation_error", "Validation failed", Errors: [new FieldError(field, message)]));
 }

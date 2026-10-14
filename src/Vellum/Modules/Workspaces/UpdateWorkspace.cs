@@ -12,11 +12,12 @@ public static class UpdateWorkspace
         Guid id,
         UpdateWorkspaceRequest request,
         ClaimsPrincipal user,
-        WorkspacesDbContext db,
+        AppDbContext db,
         WorkspaceAuthorizationService auth,
+        TimeProvider time,
         CancellationToken ct)
     {
-        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var userId = user.UserId();
         await auth.RequireRoleAsync(id, userId, WorkspaceRole.Owner, ct);
 
         if (WorkspaceText.Refusal(request.Name, nameRequired: false) is { } refusal)
@@ -29,7 +30,7 @@ public static class UpdateWorkspace
         if (request.Name is not null)
             workspace.Name = request.Name;
 
-        workspace.UpdatedAt = DateTimeOffset.UtcNow;
+        workspace.UpdatedAt = time.GetUtcNow();
         await db.SaveChangesAsync(ct);
 
         return Results.Ok(new WorkspaceDto(workspace.Id, workspace.Name, workspace.CreatedBy, workspace.CreatedAt));

@@ -9,6 +9,7 @@ using Vellum.Modules.Import.Proposals;
 using Vellum.Modules.Settings.Document;
 using Vellum.Modules.Workspaces;
 using Vellum.Shared.Telemetry;
+using Vellum.Shared;
 
 namespace Vellum.Modules.Import.Scans;
 
@@ -116,7 +117,7 @@ public sealed class ScanWorker(
     public async Task RunRetentionAsync(CancellationToken ct)
     {
         await using var scope = scopes.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<ImportDbContext>();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var now = time.GetUtcNow();
         await ImportRetention.DeleteOrphansAsync(db, now, ct);
         await ImportRetention.DropUnusedBlobsAsync(db, null, now, ct);
@@ -127,7 +128,7 @@ public sealed class ScanWorker(
     private async Task<Claim?> ClaimAsync(string workerId, CancellationToken ct)
     {
         await using var scope = scopes.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<ImportDbContext>();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var now = time.GetUtcNow();
         var lease = options.LeaseDuration.TotalSeconds;
 
@@ -231,7 +232,7 @@ public sealed class ScanWorker(
                 await Task.Delay(options.WatchInterval, time, run.Token);
 
                 await using var scope = scopes.CreateAsyncScope();
-                var db = scope.ServiceProvider.GetRequiredService<ImportDbContext>();
+                var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
                 var renewed = await db.Database.ExecuteSqlAsync($"""
                     UPDATE import.scans SET lease_expires_at = now() + make_interval(secs => {lease})
                     WHERE id = {scanId} AND lease_token = {leaseToken} AND status = 'running'
@@ -269,7 +270,7 @@ public sealed class ScanWorker(
     {
         await using var scope = scopes.CreateAsyncScope();
         var services = scope.ServiceProvider;
-        var db = services.GetRequiredService<ImportDbContext>();
+        var db = services.GetRequiredService<AppDbContext>();
         var scan = await db.Scans.FirstOrDefaultAsync(s => s.Id == scanId, ct);
         if (scan is null || scan.LeaseToken != leaseToken)
             return;
@@ -280,7 +281,7 @@ public sealed class ScanWorker(
 
         // A scan of a project that was deleted ends here, before anything is asked of
         // GitHub, and takes the rest of the project's import data with it.
-        if (!await services.GetRequiredService<WorkspacesDbContext>().Projects.AnyAsync(p => p.Id == scan.ProjectId, ct))
+        if (!await services.GetRequiredService<AppDbContext>().Projects.AnyAsync(p => p.Id == scan.ProjectId, ct))
         {
             db.ChangeTracker.Clear();
             await ImportRetention.DeleteProjectAsync(db, scan.ProjectId, time.GetUtcNow(), ct);
@@ -520,7 +521,7 @@ public sealed class ScanWorker(
     /// repository keeps its accepted facts. Rows written before IDs were recorded are
     /// claimed by the name they have.
     /// </summary>
-    private static async Task IdentifyRepositoryAsync(ImportDbContext db, ScanEntity scan, GitHubRepository repository, CancellationToken ct)
+    private static async Task IdentifyRepositoryAsync(AppDbContext db, ScanEntity scan, GitHubRepository repository, CancellationToken ct)
     {
         var canonical = repository.FullName.ToLowerInvariant();
         // Without an ID nothing says that another name is the same repository.
@@ -679,14 +680,14 @@ public sealed class ScanWorker(
     /// The checkpoint. The scan row is written with every save, and its fencing token is a
     /// concurrency token: a run that lost the scan fails here, and its file rows with it.
     /// </summary>
-    private async Task SaveAsync(ImportDbContext db, ScanEntity scan, CancellationToken ct)
+    private async Task SaveAsync(AppDbContext db, ScanEntity scan, CancellationToken ct)
     {
         scan.UpdatedAt = time.GetUtcNow();
         await db.SaveChangesAsync(ct);
     }
 
     private async Task StoreBlobAsync(
-        ImportDbContext db, Guid workspaceId, string blobSha, byte[]? content, long size, string? withheld, CancellationToken ct)
+        AppDbContext db, Guid workspaceId, string blobSha, byte[]? content, long size, string? withheld, CancellationToken ct)
     {
         // Two scans of one workspace can fetch the same blob at once. The content is the
         // same, and a row that says "withheld" is never given content.
@@ -707,7 +708,7 @@ public sealed class ScanWorker(
     private async Task FinishAsync(Guid scanId, long leaseToken, ScanStop stop, bool internalError)
     {
         await using var scope = scopes.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<ImportDbContext>();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var now = time.GetUtcNow();
 
         var failures = 0;
@@ -742,7 +743,7 @@ public sealed class ScanWorker(
     private async Task DropUnusedBlobsAsync(Guid workspaceId, CancellationToken ct)
     {
         await using var scope = scopes.CreateAsyncScope();
-        var db = scope.ServiceProvider.GetRequiredService<ImportDbContext>();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         await ImportRetention.DropUnusedBlobsAsync(db, workspaceId, time.GetUtcNow(), ct);
     }
 

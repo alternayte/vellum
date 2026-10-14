@@ -7,6 +7,7 @@ using Vellum.Modules.Settings.Audit;
 using Vellum.Modules.Settings.Document;
 using Vellum.Modules.Settings.Entities;
 using Vellum.Shared;
+using static Vellum.Shared.ResultExtensions;
 
 namespace Vellum.Modules.Settings.Instance;
 
@@ -14,7 +15,7 @@ namespace Vellum.Modules.Settings.Instance;
 /// The instance admin manages the instance: policy, defaults, keys and diagnostics. The role
 /// gives no access to a workspace; that comes from a workspace membership only.
 /// </summary>
-public sealed class InstanceAuthorization(SettingsDbContext db)
+public sealed class InstanceAuthorization(AppDbContext db)
 {
     public Task<bool> IsAdminAsync(string userId, CancellationToken ct = default) =>
         db.InstanceAdmins.AsNoTracking().AnyAsync(a => a.UserId == userId, ct);
@@ -22,7 +23,7 @@ public sealed class InstanceAuthorization(SettingsDbContext db)
     /// <returns>The user ID of the admin.</returns>
     public async Task<string> RequireAdminAsync(ClaimsPrincipal user, CancellationToken ct = default)
     {
-        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var userId = user.UserId();
         if (!await IsAdminAsync(userId, ct))
             throw new UnauthorizedAccessException("Requires the instance admin role");
         return userId;
@@ -56,7 +57,7 @@ public static class GetInstance
         SettingsResolver settings,
         CancellationToken ct)
     {
-        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var userId = user.UserId();
         var instance = await settings.GetInstanceAsync(ct);
         return Results.Ok(new InstanceInfoResponse(
             bootstrap.ProfileName, Version, await auth.IsAdminAsync(userId, ct), instance.Policy.AllowSelfRegistration));
@@ -93,7 +94,7 @@ public static class UpdateInstanceSettings
         HttpContext http,
         ClaimsPrincipal user,
         InstanceAuthorization auth,
-        SettingsDbContext db,
+        AppDbContext db,
         SettingsResolver settings,
         SettingsValidator validator,
         CancellationToken ct)
@@ -206,6 +207,4 @@ public static class UpdateInstanceSettings
 
     private static string Prefix(string field) => field.Length == 0 ? DefaultsField : $"{DefaultsField}.{field}";
 
-    private static IResult Invalid(IReadOnlyList<FieldError> errors) =>
-        Results.BadRequest(new ErrorResponse("validation_error", "Validation failed", Errors: errors));
 }

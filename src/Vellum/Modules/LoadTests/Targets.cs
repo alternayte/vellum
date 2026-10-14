@@ -2,12 +2,12 @@ using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using Deedbox;
 using Microsoft.EntityFrameworkCore;
 using Vellum.Modules.Settings.Audit;
 using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Shared;
 using Decision = Vellum.Shared.CommandResult<System.Collections.Generic.IReadOnlyList<object>>;
+using static Vellum.Shared.ResultExtensions;
 
 namespace Vellum.Modules.LoadTests;
 
@@ -35,8 +35,12 @@ public sealed record TargetAuthorisation(string BaseUrl, string Environment, str
 /// </summary>
 public sealed record TargetOverride(bool AllowNonIdempotent, bool AllowFailureInjection, string Reason, string By, DateTimeOffset At);
 
-/// <summary>The events of a load-test target stream. Plain records; the stream registers every nested type.</summary>
-public static class TargetEvent
+/// <summary>
+/// The changes that a decision about a target makes. They are not stored: the row of the
+/// target holds the state after them, and its version counts them. A change that gives or
+/// takes a permission is written to the audit log in the same transaction.
+/// </summary>
+public static class TargetChange
 {
     public sealed record TargetAdded(Guid ProjectId, string Name, string BaseUrl, string Environment, string By, DateTimeOffset At);
 
@@ -59,28 +63,27 @@ public static class TargetEvent
 public sealed record TargetState(
     Guid? ProjectId, string? Name, string? BaseUrl, string? Environment,
     TargetAuthorisation? Authorisation, TargetOverride? Override, bool Removed, DateTimeOffset? UpdatedAt)
-    : IState<TargetState>
 {
     public static TargetState Initial => new(null, null, null, null, null, null, false, null);
 
-    public static TargetState Evolve(TargetState state, object @event) => @event switch
+    public static TargetState Evolve(TargetState state, object change) => change switch
     {
-        TargetEvent.TargetAdded e => state with { ProjectId = e.ProjectId, Name = e.Name, BaseUrl = e.BaseUrl, Environment = e.Environment, UpdatedAt = e.At },
-        TargetEvent.TargetChanged e => state with { Name = e.Name, BaseUrl = e.BaseUrl, Environment = e.Environment, UpdatedAt = e.At },
-        TargetEvent.TargetAuthorised e => state with { Authorisation = new(e.BaseUrl, e.Environment, e.By, e.At), UpdatedAt = e.At },
-        TargetEvent.AuthorisationVoided e => state with { Authorisation = null, UpdatedAt = e.At },
-        TargetEvent.OverrideSet e => state with { Override = new(e.AllowNonIdempotent, e.AllowFailureInjection, e.Reason, e.By, e.At), UpdatedAt = e.At },
-        TargetEvent.OverrideCleared e => state with { Override = null, UpdatedAt = e.At },
-        TargetEvent.TargetRemoved e => state with { Removed = true, Authorisation = null, Override = null, UpdatedAt = e.At },
+        TargetChange.TargetAdded e => state with { ProjectId = e.ProjectId, Name = e.Name, BaseUrl = e.BaseUrl, Environment = e.Environment, UpdatedAt = e.At },
+        TargetChange.TargetChanged e => state with { Name = e.Name, BaseUrl = e.BaseUrl, Environment = e.Environment, UpdatedAt = e.At },
+        TargetChange.TargetAuthorised e => state with { Authorisation = new(e.BaseUrl, e.Environment, e.By, e.At), UpdatedAt = e.At },
+        TargetChange.AuthorisationVoided e => state with { Authorisation = null, UpdatedAt = e.At },
+        TargetChange.OverrideSet e => state with { Override = new(e.AllowNonIdempotent, e.AllowFailureInjection, e.Reason, e.By, e.At), UpdatedAt = e.At },
+        TargetChange.OverrideCleared e => state with { Override = null, UpdatedAt = e.At },
+        TargetChange.TargetRemoved e => state with { Removed = true, Authorisation = null, Override = null, UpdatedAt = e.At },
         _ => state
     };
 
-    /// <summary>True when the stream holds a target of <paramref name="projectId"/>. Every stream type shares one space of IDs.</summary>
+    /// <summary>True when the state is a target of <paramref name="projectId"/> that is not removed.</summary>
     public bool ExistsIn(Guid projectId) => !Removed && ProjectId == projectId;
 
     /// <summary>
     /// The authorisation, when it is for the URL and the class that the target has now. A
-    /// change of either voids it with an event, so this is a second guard, not the rule.
+    /// change of either voids it, so this is a second guard, not the rule.
     /// </summary>
     public TargetAuthorisation? AuthorisationInForce =>
         Authorisation is { } a && a.BaseUrl == BaseUrl && a.Environment == Environment ? a : null;
@@ -133,7 +136,7 @@ public static class TargetRules
 
 public static class TargetDecider
 {
-    private static Decision Ok(params object[] events) => new Decision.Success(events);
+    private static Decision Ok(params object[] changes) => new Decision.Success(changes);
     private static Decision Invalid(string field, string message) => new Decision.Invalid([new ValidationError(field, message)]);
     private static readonly Decision Missing = new Decision.NotFound("Load-test target not found");
 
@@ -158,7 +161,7 @@ public static class TargetDecider
     {
         if (state.ProjectId is not null)
             return new Decision.Conflict("A target with this ID exists.");
-        return Check(name, environment, baseUrl, out var url) ?? Ok(new TargetEvent.TargetAdded(projectId, name!.Trim(), url, environment!, by, at));
+        return Check(name, environment, baseUrl, out var url) ?? Ok(new TargetChange.TargetAdded(projectId, name!.Trim(), url, environment!, by, at));
     }
 
     /// <summary>
@@ -172,12 +175,12 @@ public static class TargetDecider
         if (Check(name, environment, baseUrl, out var url) is { } refusal)
             return refusal;
 
-        var events = new List<object> { new TargetEvent.TargetChanged(name!.Trim(), url, environment!, by, at) };
+        var events = new List<object> { new TargetChange.TargetChanged(name!.Trim(), url, environment!, by, at) };
         var cause = url != state.BaseUrl ? "base-url-changed" : environment != state.Environment ? "environment-changed" : null;
         if (cause is not null && state.Authorisation is not null)
-            events.Add(new TargetEvent.AuthorisationVoided(cause, by, at));
+            events.Add(new TargetChange.AuthorisationVoided(cause, by, at));
         if (cause is not null && state.Override is not null)
-            events.Add(new TargetEvent.OverrideCleared(cause, by, at));
+            events.Add(new TargetChange.OverrideCleared(cause, by, at));
         return new Decision.Success(events);
     }
 
@@ -194,13 +197,13 @@ public static class TargetDecider
             return new Decision.Conflict(Targets.AuthoriseConflict("base URL"));
         if (!string.Equals(environment, state.Environment, StringComparison.Ordinal))
             return new Decision.Conflict(Targets.AuthoriseConflict("class"));
-        return Ok(new TargetEvent.TargetAuthorised(state.BaseUrl!, state.Environment!, by, at));
+        return Ok(new TargetChange.TargetAuthorised(state.BaseUrl!, state.Environment!, by, at));
     }
 
     public static Decision Revoke(TargetState state, Guid projectId, string by, DateTimeOffset at) =>
         !state.ExistsIn(projectId) ? Missing
         : state.Authorisation is null ? Ok()
-        : Ok(new TargetEvent.AuthorisationVoided("revoked", by, at));
+        : Ok(new TargetChange.AuthorisationVoided("revoked", by, at));
 
     public static Decision SetOverride(
         TargetState state, Guid projectId, bool allowNonIdempotent, bool allowFailureInjection, string? reason, string? confirmName, string by, DateTimeOffset at)
@@ -208,7 +211,7 @@ public static class TargetDecider
         if (!state.ExistsIn(projectId))
             return Missing;
         if (!allowNonIdempotent && !allowFailureInjection)
-            return state.Override is null ? Ok() : Ok(new TargetEvent.OverrideCleared("cleared", by, at));
+            return state.Override is null ? Ok() : Ok(new TargetChange.OverrideCleared("cleared", by, at));
 
         if (!state.IsProduction)
             return Invalid("environment", "An override is for a production-class target. A target of another class has no exclusion to override.");
@@ -218,20 +221,20 @@ public static class TargetDecider
             return Invalid("reason", error.Message + ".");
         if (!string.Equals(confirmName, state.Name, StringComparison.Ordinal))
             return Invalid("confirmName", "Type the name of the target to confirm the override.");
-        return Ok(new TargetEvent.OverrideSet(allowNonIdempotent, allowFailureInjection, reason.Trim(), by, at));
+        return Ok(new TargetChange.OverrideSet(allowNonIdempotent, allowFailureInjection, reason.Trim(), by, at));
     }
 
-    /// <summary>A removal takes the authorisation and the override with it. Each has its own event, so each has its audit entry.</summary>
+    /// <summary>A removal takes the authorisation and the override with it. Each is its own change, so each has its audit entry.</summary>
     public static Decision Remove(TargetState state, Guid projectId, string by, DateTimeOffset at)
     {
         if (!state.ExistsIn(projectId))
             return Missing;
         var events = new List<object>();
         if (state.Authorisation is not null)
-            events.Add(new TargetEvent.AuthorisationVoided("target-removed", by, at));
+            events.Add(new TargetChange.AuthorisationVoided("target-removed", by, at));
         if (state.Override is not null)
-            events.Add(new TargetEvent.OverrideCleared("target-removed", by, at));
-        events.Add(new TargetEvent.TargetRemoved(by, at));
+            events.Add(new TargetChange.OverrideCleared("target-removed", by, at));
+        events.Add(new TargetChange.TargetRemoved(by, at));
         return new Decision.Success(events);
     }
 }
@@ -271,31 +274,20 @@ public static class Targets
     internal static Task LockProjectAsync(Microsoft.EntityFrameworkCore.Infrastructure.DatabaseFacade database, Guid projectId, CancellationToken ct) =>
         database.ExecuteSqlAsync($"SELECT pg_advisory_xact_lock({LockSpace}, hashtext({projectId.ToString()}))", ct);
 
-    internal static string UserId(ClaimsPrincipal user) => user.FindFirstValue(ClaimTypes.NameIdentifier)!;
-
-    internal static IResult NotFound(string what) => Results.NotFound(new ErrorResponse("not_found", $"{what} not found"));
-
     internal static TargetDto Dto(Guid id, TargetState state, long version) => new(
         id, state.Name!, state.BaseUrl!, state.Environment!, version, state.AuthorisationInForce, state.Override, state.UpdatedAt!.Value);
 
-    /// <summary>The target of the project, or null. An ID that names another kind of stream names no target.</summary>
-    internal static async Task<(TargetState State, long Version)?> LoadAsync(IEventStore store, Guid projectId, Guid targetId, CancellationToken ct)
+    /// <summary>The target of the project, or null.</summary>
+    internal static async Task<(TargetState State, long Version)?> LoadAsync(AppDbContext db, Guid projectId, Guid targetId, CancellationToken ct)
     {
-        try
-        {
-            var (state, version) = await store.Load<TargetState>(StreamId.From(targetId), ct);
-            return state.ExistsIn(projectId) ? (state, version) : null;
-        }
-        catch (DeedboxException e) when (e.Code == DeedboxError.StreamTypeMismatch)
-        {
-            return null;
-        }
+        var row = await db.Targets.AsNoTracking().FirstOrDefaultAsync(t => t.Id == targetId && t.ProjectId == projectId && !t.Removed, ct);
+        return row is null ? null : (TargetJson.Read(row.Document), row.Version);
     }
 
     public static async Task<IResult> List(
-        Guid projectId, ClaimsPrincipal user, WorkspaceAuthorizationService auth, LoadTestsDbContext db, CancellationToken ct)
+        Guid projectId, ClaimsPrincipal user, WorkspaceAuthorizationService auth, AppDbContext db, CancellationToken ct)
     {
-        await auth.RequireProjectRoleAsync(projectId, UserId(user), WorkspaceRole.Viewer, ct);
+        await auth.RequireProjectRoleAsync(projectId, user.UserId(), WorkspaceRole.Viewer, ct);
 
         var rows = await db.Targets.AsNoTracking().Where(t => t.ProjectId == projectId && !t.Removed)
             .OrderBy(t => t.Name).ThenBy(t => t.Id).ToListAsync(ct);
@@ -305,7 +297,7 @@ public static class Targets
     public static async Task<IResult> Add(
         Guid projectId, TargetRequest request, HttpContext http, WorkspaceAuthorizationService auth, TimeProvider time, CancellationToken ct)
     {
-        var userId = UserId(http.User);
+        var userId = http.User.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
 
         var targetId = Guid.NewGuid();
@@ -319,7 +311,7 @@ public static class Targets
     public static async Task<IResult> Change(
         Guid projectId, Guid targetId, TargetRequest request, HttpContext http, WorkspaceAuthorizationService auth, TimeProvider time, CancellationToken ct)
     {
-        var userId = UserId(http.User);
+        var userId = http.User.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
         return (await WriteAsync(http, projectId, targetId, checkPlace: false,
             state => TargetDecider.Change(state, projectId, request.Name, request.BaseUrl, request.Environment, userId, time.GetUtcNow()), ct)).ToHttpResult();
@@ -329,7 +321,7 @@ public static class Targets
     public static async Task<IResult> Authorise(
         Guid projectId, Guid targetId, AuthoriseTargetRequest request, HttpContext http, WorkspaceAuthorizationService auth, TimeProvider time, CancellationToken ct)
     {
-        var userId = UserId(http.User);
+        var userId = http.User.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Owner, ct);
         if (request.Version is not { } version)
             return new CommandResult<TargetDto>.Conflict(AuthoriseConflict("version")).ToHttpResult();
@@ -340,7 +332,7 @@ public static class Targets
     public static async Task<IResult> Revoke(
         Guid projectId, Guid targetId, HttpContext http, WorkspaceAuthorizationService auth, TimeProvider time, CancellationToken ct)
     {
-        var userId = UserId(http.User);
+        var userId = http.User.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Owner, ct);
         return (await WriteAsync(http, projectId, targetId, checkPlace: false,
             state => TargetDecider.Revoke(state, projectId, userId, time.GetUtcNow()), ct)).ToHttpResult();
@@ -349,7 +341,7 @@ public static class Targets
     public static async Task<IResult> SetOverride(
         Guid projectId, Guid targetId, TargetOverrideRequest request, HttpContext http, WorkspaceAuthorizationService auth, TimeProvider time, CancellationToken ct)
     {
-        var userId = UserId(http.User);
+        var userId = http.User.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Owner, ct);
         return (await WriteAsync(http, projectId, targetId, checkPlace: false,
             state => TargetDecider.SetOverride(
@@ -360,7 +352,7 @@ public static class Targets
     public static async Task<IResult> Remove(
         Guid projectId, Guid targetId, HttpContext http, WorkspaceAuthorizationService auth, TimeProvider time, CancellationToken ct)
     {
-        var userId = UserId(http.User);
+        var userId = http.User.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
         var result = await WriteAsync(http, projectId, targetId, checkPlace: false,
             state => TargetDecider.Remove(state, projectId, userId, time.GetUtcNow()), ct);
@@ -368,18 +360,19 @@ public static class Targets
     }
 
     /// <summary>
-    /// One transaction: the events, the read model row and the audit entries of the events
-    /// that give or take a permission. An audit entry never exists without its event.
+    /// One transaction: the row of the target and the audit entries of the changes that give
+    /// or take a permission. An audit entry never exists without its change. The row is
+    /// locked from the read to the commit, so writes of one target take turns.
     /// </summary>
     private static async Task<CommandResult<TargetDto>> WriteAsync(
         HttpContext http, Guid projectId, Guid targetId, bool checkPlace, Func<TargetState, Decision> decide, CancellationToken ct, long? readVersion = null)
     {
-        var userId = UserId(http.User);
+        var userId = http.User.UserId();
         var workspaceId = await http.RequestServices.GetRequiredService<WorkspaceAuthorizationService>().GetProjectWorkspaceIdAsync(projectId, ct);
 
         return await SharedTransaction.RunAsync<CommandResult<TargetDto>>(http.RequestServices, async services =>
         {
-            var db = services.GetRequiredService<LoadTestsDbContext>();
+            var db = services.GetRequiredService<AppDbContext>();
             await using var transaction = await db.Database.BeginTransactionAsync(ct);
 
             if (checkPlace)
@@ -390,45 +383,44 @@ public static class Targets
                     return new CommandResult<TargetDto>.Conflict($"A project holds at most {TargetRules.MaxTargetsPerProject} load-test targets. Remove one before you add another.");
             }
 
-            IReadOnlyList<object> appended = [];
-            var before = TargetState.Initial;
-            CommandResult<TargetState> result;
-            try
-            {
-                result = await services.GetRequiredService<IEventStore>().UseDbContext(db)
-                    .DecideInTransaction<TargetState, TargetState>(
-                        targetId,
-                        state =>
-                        {
-                            before = state;
-                            var decision = decide(state);
-                            appended = decision is Decision.Success success ? success.Value : [];
-                            return decision;
-                        },
-                        state => state, ct);
-            }
-            catch (DeedboxException e) when (e.Code == DeedboxError.StreamTypeMismatch)
-            {
-                return new CommandResult<TargetDto>.NotFound("Load-test target not found");
-            }
+            var row = await db.Targets
+                .FromSql($"SELECT * FROM loadtests.targets WHERE id = {targetId} FOR UPDATE")
+                .FirstOrDefaultAsync(ct);
+            var before = row is null ? TargetState.Initial : TargetJson.Read(row.Document);
+            var version = row?.Version ?? 0;
 
-            if (result is not CommandResult<TargetState>.Success { Value: var state })
+            var decision = decide(before);
+            if (decision is not Decision.Success { Value: var changes })
             {
-                return result switch
+                return decision switch
                 {
-                    CommandResult<TargetState>.Invalid invalid => new CommandResult<TargetDto>.Invalid(invalid.Errors),
-                    CommandResult<TargetState>.Conflict conflict => new CommandResult<TargetDto>.Conflict(conflict.Message),
+                    Decision.Invalid invalid => new CommandResult<TargetDto>.Invalid(invalid.Errors),
+                    Decision.Conflict conflict => new CommandResult<TargetDto>.Conflict(conflict.Message),
                     _ => new CommandResult<TargetDto>.NotFound("Load-test target not found"),
                 };
             }
 
-            var version = (await db.Targets.AsNoTracking().Where(t => t.Id == targetId).Select(t => (long?)t.Version).FirstOrDefaultAsync(ct)) ?? 0;
-            // The stream was locked from the decision to here, so the version before the events is exact.
-            // The transaction ends without a commit: the events of this call are not stored.
-            if (readVersion is { } read && version - appended.Count != read)
+            // The row was locked from the read to here, so the version that the caller read is compared exactly.
+            if (readVersion is { } read && version != read)
                 return new CommandResult<TargetDto>.Conflict(AuthoriseConflict("version"));
 
-            foreach (var entry in appended.Select(e => Audit(targetId, before, e)).OfType<(string Action, string Target)>())
+            var state = changes.Aggregate(before, TargetState.Evolve);
+            if (changes.Count > 0)
+            {
+                if (row is null)
+                {
+                    row = new TargetEntity { Id = targetId, ProjectId = projectId };
+                    db.Targets.Add(row);
+                }
+                version += changes.Count;
+                row.Name = state.Name!;
+                row.Version = version;
+                row.Removed = state.Removed;
+                row.Document = TargetJson.Write(state);
+                await db.SaveChangesAsync(ct);
+            }
+
+            foreach (var entry in changes.Select(c => Audit(targetId, before, c)).OfType<(string Action, string Target)>())
                 await AuditLog.AppendAsync(db, workspaceId, userId, entry.Action, entry.Target, ct);
 
             await transaction.CommitAsync(ct);
@@ -440,21 +432,21 @@ public static class Targets
     private const int LockSpace = 0x4C4F4144;
 
     /// <summary>
-    /// The audit entry of an event that gives or takes a permission. It names the class and
+    /// The audit entry of a change that gives or takes a permission. It names the class and
     /// the origin of the URL that the permission is or was for: <paramref name="before"/> is
-    /// the target before the events of the call, so a voided authorisation is named as it was
+    /// the target before the changes of the call, so a voided authorisation is named as it was
     /// given, not as the target is after the change that voids it.
     /// </summary>
-    private static (string Action, string Target)? Audit(Guid targetId, TargetState before, object @event)
+    private static (string Action, string Target)? Audit(Guid targetId, TargetState before, object change)
     {
         string What(string? environment, string? baseUrl) =>
             $"load-test-target:{targetId} environment:{environment} origin:{OutboundUrlPolicy.OriginOf(baseUrl)}";
-        return @event switch
+        return change switch
         {
-            TargetEvent.TargetAuthorised given => (AuditAuthorised, What(given.Environment, given.BaseUrl)),
-            TargetEvent.AuthorisationVoided voided => (AuditAuthorisationVoided, $"{What(before.Authorisation?.Environment ?? before.Environment, before.Authorisation?.BaseUrl ?? before.BaseUrl)} cause:{voided.Cause}"),
-            TargetEvent.OverrideSet set => (AuditOverrideSet, $"{What(before.Environment, before.BaseUrl)} non-idempotent:{(set.AllowNonIdempotent ? "allowed" : "excluded")} failure-injection:{(set.AllowFailureInjection ? "allowed" : "excluded")}"),
-            TargetEvent.OverrideCleared cleared => (AuditOverrideCleared, $"{What(before.Environment, before.BaseUrl)} cause:{cleared.Cause}"),
+            TargetChange.TargetAuthorised given => (AuditAuthorised, What(given.Environment, given.BaseUrl)),
+            TargetChange.AuthorisationVoided voided => (AuditAuthorisationVoided, $"{What(before.Authorisation?.Environment ?? before.Environment, before.Authorisation?.BaseUrl ?? before.BaseUrl)} cause:{voided.Cause}"),
+            TargetChange.OverrideSet set => (AuditOverrideSet, $"{What(before.Environment, before.BaseUrl)} non-idempotent:{(set.AllowNonIdempotent ? "allowed" : "excluded")} failure-injection:{(set.AllowFailureInjection ? "allowed" : "excluded")}"),
+            TargetChange.OverrideCleared cleared => (AuditOverrideCleared, $"{What(before.Environment, before.BaseUrl)} cause:{cleared.Cause}"),
             _ => null,
         };
     }

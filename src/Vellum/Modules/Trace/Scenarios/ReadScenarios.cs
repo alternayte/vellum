@@ -29,10 +29,10 @@ public static class ReadScenarios
         string? cursor, int? limit,
         ClaimsPrincipal user,
         WorkspaceAuthorizationService auth,
-        ScenariosDbContext db,
+        AppDbContext db,
         CancellationToken ct)
     {
-        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var userId = user.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Viewer, ct);
 
         var pageSize = Math.Clamp(limit ?? 50, 1, 200);
@@ -69,7 +69,7 @@ public static class ReadScenarios
         IEventStore store,
         CancellationToken ct)
     {
-        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var userId = user.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Viewer, ct);
 
         var state = await ScenarioStreams.LoadAsync(store, scenarioId, ct);

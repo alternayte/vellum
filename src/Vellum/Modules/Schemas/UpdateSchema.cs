@@ -8,37 +8,27 @@ public sealed record UpdateSchemaRequest(
     string? Name, string? Description, string? Content,
     bool SetDescription = false, bool SetContent = false);
 
-public sealed record UpdateSchemaCommandEnvelope(Guid ProjectId, Guid SchemaId, UpdateSchemaRequest Request);
-
-public sealed class UpdateSchemaHandler : ICommandHandler<UpdateSchemaCommandEnvelope, CommandResult<SchemaDto>>
+public static class UpdateSchema
 {
-    private readonly IEventStore _store;
-    private readonly SchemasDbContext _db;
-
-    public UpdateSchemaHandler(IEventStore store, SchemasDbContext db)
-    {
-        _store = store;
-        _db = db;
-    }
-
-    public async Task<CommandResult<SchemaDto>> HandleAsync(UpdateSchemaCommandEnvelope cmd, CancellationToken ct = default)
+    public static async Task<CommandResult<SchemaDto>> HandleAsync(
+        IEventStore store, AppDbContext db, Guid projectId, Guid schemaId, UpdateSchemaRequest request, CancellationToken ct)
     {
         // Verify schema belongs to project
-        var belongsToProject = await _db.Schemas.AsNoTracking()
-            .AnyAsync(s => s.Id == cmd.SchemaId && s.ProjectId == cmd.ProjectId, ct);
+        var belongsToProject = await db.Schemas.AsNoTracking()
+            .AnyAsync(s => s.Id == schemaId && s.ProjectId == projectId, ct);
         if (!belongsToProject)
             return new CommandResult<SchemaDto>.NotFound("Schema not found");
 
         var updateCmd = new UpdateSchemaCommand(
-            cmd.SchemaId,
-            Name: cmd.Request.Name, SetName: cmd.Request.Name is not null,
-            Description: cmd.Request.Description, SetDescription: cmd.Request.SetDescription || cmd.Request.Description is not null,
-            Content: cmd.Request.Content, SetContent: cmd.Request.SetContent || cmd.Request.Content is not null);
+            schemaId,
+            Name: request.Name, SetName: request.Name is not null,
+            Description: request.Description, SetDescription: request.SetDescription || request.Description is not null,
+            Content: request.Content, SetContent: request.SetContent || request.Content is not null);
 
-        return await _store.Decide<SchemaState, SchemaDto>(
-            cmd.SchemaId,
+        return await store.Decide<SchemaState, SchemaDto>(
+            schemaId,
             state => SchemaDecider.Update(state, updateCmd),
-            state => CreateSchemaHandler.ToDto(state.Schema!),
+            state => CreateSchema.ToDto(state.Schema!),
             ct);
     }
 }

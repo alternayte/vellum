@@ -73,7 +73,7 @@ public class FirstRunSetupTests : SetupAndBootstrapHostTests
             Assert.DoesNotContain(code, refusal);
         }
 
-        Assert.Equal(0, await CountAsync(database, "identity.\"AspNetUsers\""));
+        Assert.Equal(0, await CountAsync(database, "identity.users"));
 
         // No account exists before setup, and registration cannot create the first one.
         var early = await client.PostAsJsonAsync("/api/auth/register",
@@ -126,7 +126,7 @@ public class FirstRunSetupTests : SetupAndBootstrapHostTests
             new { email = "late@vellum.local", password = "Test12345!", displayName = "Late" });
         Assert.Equal(HttpStatusCode.Forbidden, register.StatusCode);
         Assert.Equal("registration_closed", (await register.Content.ReadFromJsonAsync<ErrorResponse>())!.Type);
-        Assert.Equal(1, await CountAsync(database, "identity.\"AspNetUsers\""));
+        Assert.Equal(1, await CountAsync(database, "identity.users"));
     }
 
     [Fact]
@@ -149,7 +149,7 @@ public class FirstRunSetupTests : SetupAndBootstrapHostTests
         }
 
         Assert.True((await client.GetFromJsonAsync<SetupStatusResponse>("/api/setup/status"))!.NeedsSetup);
-        Assert.Equal(0, await CountAsync(database, "identity.\"AspNetUsers\""));
+        Assert.Equal(0, await CountAsync(database, "identity.users"));
 
         var response = await client.PostAsJsonAsync("/api/setup", Account(TestHost.SetupToken));
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
@@ -188,7 +188,7 @@ public class FirstRunSetupTests : SetupAndBootstrapHostTests
 
         Assert.Single(responses, r => r.StatusCode == HttpStatusCode.Created);
         Assert.Equal(7, responses.Count(r => r.StatusCode == HttpStatusCode.Conflict));
-        Assert.Equal(1, await CountAsync(database, "identity.\"AspNetUsers\""));
+        Assert.Equal(1, await CountAsync(database, "identity.users"));
         Assert.Equal(1, await CountAsync(database, "settings.instance_admins"));
         Assert.Equal(1, await CountAsync(database, "workspaces.workspaces"));
         Assert.Equal(1, await CountAsync(database, "workspaces.memberships"));

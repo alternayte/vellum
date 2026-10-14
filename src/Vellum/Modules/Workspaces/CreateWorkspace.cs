@@ -15,10 +15,11 @@ public static class CreateWorkspace
     public static async Task<IResult> Handle(
         CreateWorkspaceRequest request,
         ClaimsPrincipal user,
-        WorkspacesDbContext db,
+        AppDbContext db,
+        TimeProvider time,
         CancellationToken ct)
     {
-        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var userId = user.UserId();
 
         if (WorkspaceText.Refusal(request.Name, nameRequired: true) is { } refusal)
             return refusal;
@@ -47,7 +48,8 @@ public static class CreateWorkspace
             Id = Guid.NewGuid(),
             WorkspaceId = request.Id,
             UserId = userId,
-            Role = nameof(WorkspaceRole.Owner)
+            Role = nameof(WorkspaceRole.Owner),
+            CreatedAt = time.GetUtcNow(),
         });
 
         // The workspace, its first owner and the audit entry commit together.

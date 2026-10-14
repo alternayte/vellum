@@ -5,7 +5,7 @@ using Vellum.Shared;
 namespace Vellum.Modules.Trace.Scenarios;
 
 /// <summary>What the scenario table and the scenario streams keep of a deleted project: nothing.</summary>
-public sealed class ScenariosRetention(ScenariosDbContext db, IEventStore store) : IProjectRetention
+public sealed class ScenariosRetention(AppDbContext db, IEventStore store) : IProjectRetention
 {
     public async Task DeleteProjectAsync(DeletedProject project, CancellationToken ct)
     {

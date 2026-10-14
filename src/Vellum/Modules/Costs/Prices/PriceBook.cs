@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Vellum.Modules.Settings.Audit;
 using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Shared;
+using static Vellum.Shared.ResultExtensions;
 
 namespace Vellum.Modules.Costs.Prices;
 
@@ -101,9 +102,9 @@ public static class PriceBook
 {
     public static async Task<IResult> List(
         Guid workspaceId, string? cursor, int? limit,
-        ClaimsPrincipal user, WorkspaceAuthorizationService auth, CostsDbContext db, CancellationToken ct)
+        ClaimsPrincipal user, WorkspaceAuthorizationService auth, AppDbContext db, CancellationToken ct)
     {
-        await auth.RequireRoleAsync(workspaceId, UserId(user), WorkspaceRole.Viewer, ct);
+        await auth.RequireRoleAsync(workspaceId, user.UserId(), WorkspaceRole.Viewer, ct);
 
         var pageSize = Math.Clamp(limit ?? 50, 1, 200);
         var query = db.PriceEntries.AsNoTracking().Where(p => p.WorkspaceId == workspaceId);
@@ -123,9 +124,9 @@ public static class PriceBook
 
     public static async Task<IResult> AddCustom(
         Guid workspaceId, CustomPriceRequest request,
-        ClaimsPrincipal user, WorkspaceAuthorizationService auth, CostsDbContext db, TimeProvider time, CancellationToken ct)
+        ClaimsPrincipal user, WorkspaceAuthorizationService auth, AppDbContext db, TimeProvider time, CancellationToken ct)
     {
-        var userId = UserId(user);
+        var userId = user.UserId();
         await auth.RequireRoleAsync(workspaceId, userId, WorkspaceRole.Owner, ct);
         if (PriceRules.Check(request) is { Count: > 0 } errors)
             return Invalid(errors);
@@ -151,9 +152,9 @@ public static class PriceBook
     /// <summary>A pinned entry stays: a project said that it depends on it.</summary>
     public static async Task<IResult> Delete(
         Guid workspaceId, Guid priceId,
-        ClaimsPrincipal user, WorkspaceAuthorizationService auth, CostsDbContext db, CancellationToken ct)
+        ClaimsPrincipal user, WorkspaceAuthorizationService auth, AppDbContext db, CancellationToken ct)
     {
-        var userId = UserId(user);
+        var userId = user.UserId();
         await auth.RequireRoleAsync(workspaceId, userId, WorkspaceRole.Owner, ct);
 
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
@@ -182,7 +183,7 @@ public static class PriceBook
     /// commits with the price entry.
     /// </summary>
     /// <param name="action"><see cref="PriceAudit.Added"/> or <see cref="PriceAudit.Imported"/>.</param>
-    internal static async Task<IResult> AddAsync(CostsDbContext db, PriceEntryEntity entry, string action, CancellationToken ct)
+    internal static async Task<IResult> AddAsync(AppDbContext db, PriceEntryEntity entry, string action, CancellationToken ct)
     {
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         // One writer of a workspace's book at a time, so the count is the count at the insert.
@@ -197,9 +198,4 @@ public static class PriceBook
         return Results.Created($"/api/workspaces/{entry.WorkspaceId}/prices/{entry.Id}", PriceEntryDto.From(entry));
     }
 
-    internal static string UserId(ClaimsPrincipal user) => user.FindFirstValue(ClaimTypes.NameIdentifier)!;
-
-    internal static IResult Invalid(IReadOnlyList<ValidationError> errors) =>
-        Results.BadRequest(new ErrorResponse("validation_error", "Validation failed",
-            Errors: errors.Select(e => new FieldError(e.Field, e.Message)).ToList()));
 }

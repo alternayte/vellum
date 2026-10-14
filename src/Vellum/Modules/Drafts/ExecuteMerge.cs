@@ -28,57 +28,53 @@ public static class ExecuteMerge
         ClaimsPrincipal user,
         HttpContext http,
         WorkspaceAuthorizationService auth,
+        TimeProvider time,
         CancellationToken ct)
     {
-        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var userId = user.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
 
         // The merge events, the read-model rows, the merged cost sheet and the draft status
         // commit together. A unit that fails with DBX038 or a deadlock wrote nothing and runs again.
         return await SharedTransaction.RunAsync(http.RequestServices, async services =>
         {
-            var draftsDb = services.GetRequiredService<DraftsDbContext>();
+            var db = services.GetRequiredService<AppDbContext>();
 
-            var streams = await draftsDb.Drafts.AsNoTracking()
+            var streams = await db.Drafts.AsNoTracking()
                 .Where(d => d.Id == draftId && d.ProjectId == projectId)
                 .Select(d => new { d.StreamId, d.BaseStreamId, d.Status })
                 .FirstOrDefaultAsync(ct);
             if (streams is null)
                 return Results.NotFound(new ErrorResponse("not_found", "Draft not found"));
-            // A closed draft has no cost sheet stream to lock. The status is read again under the lock.
+            // The status is read again under the lock.
             if (streams.Status != "open")
                 return Results.Conflict(new ErrorResponse("conflict", $"Draft is {streams.Status}"));
 
             // A return before the commit rolls everything back.
-            await using var transaction = await draftsDb.Database.BeginTransactionAsync(ct);
-            var store = services.GetRequiredService<IEventStore>().ForProject(projectId).UseDbContext(draftsDb);
+            await using var transaction = await db.Database.BeginTransactionAsync(ct);
+            var store = services.GetRequiredService<IEventStore>().ForProject(projectId).UseDbContext(db);
 
-            // The two model streams and the two cost sheet streams stay locked until the
-            // commit, so no model and no sheet moves under the merge, and a second merge or an
-            // abandon of this draft waits its turn. Streams are locked in ID order, the order
-            // every transaction with several streams uses.
+            // The two model streams stay locked until the commit, so no model moves under the
+            // merge, and a second merge or an abandon of this draft waits its turn. Streams are
+            // locked in ID order, the order every transaction with several streams uses. The
+            // two cost sheets are locked after them, before the first append, so no sheet
+            // moves under the merge either.
             ModelState oursState = ModelState.Initial, theirsState = ModelState.Initial;
-            CostSheetState oursSheet = CostSheetState.Initial, theirsSheet = CostSheetState.Initial;
-            long mainVersion = 0, mainSheetVersion = 0;
-            var mainSheetId = CostAccess.SheetStreamId(streams.BaseStreamId);
-            var draftSheetId = CostAccess.SheetStreamId(streams.StreamId);
-            foreach (var streamId in new[] { streams.StreamId, streams.BaseStreamId, mainSheetId, draftSheetId }.Order())
+            long mainVersion = 0;
+            foreach (var streamId in new[] { streams.StreamId, streams.BaseStreamId }.Order())
             {
-                if (streamId == mainSheetId)
-                    (oursSheet, mainSheetVersion) = await CostBranches.LockSheetAsync(store, streamId, ct);
-                else if (streamId == draftSheetId)
-                    (theirsSheet, _) = await CostBranches.LockSheetAsync(store, streamId, ct);
-                else if (streamId == streams.StreamId)
-                    theirsState = (await store.Execute<ModelState>(StreamId.From(streamId), _ => [], ct)).State;
+                var locked = await store.Execute<ModelState>(StreamId.From(streamId), _ => [], ct);
+                if (streamId == streams.StreamId)
+                    theirsState = locked.State;
                 else
-                {
-                    var locked = await store.Execute<ModelState>(StreamId.From(streamId), _ => [], ct);
                     (oursState, mainVersion) = (locked.State, locked.Version);
-                }
             }
+            var sheets = await CostBranches.LockSheetsAsync(db, [streams.BaseStreamId, streams.StreamId], ct);
+            var (oursSheet, mainSheetVersion) = sheets[streams.BaseStreamId];
+            var theirsSheet = sheets[streams.StreamId].State;
 
             // Read under the draft's lock: the status is the one the last writer committed.
-            var draft = await draftsDb.Drafts.FirstAsync(d => d.Id == draftId, ct);
+            var draft = await db.Drafts.FirstAsync(d => d.Id == draftId, ct);
             if (draft.Status != "open")
                 return Results.Conflict(new ErrorResponse("conflict", $"Draft is {draft.Status}"));
 
@@ -107,13 +103,13 @@ public static class ExecuteMerge
             var events = BuildMergeEvents(preview, request.Resolutions, oursState);
 
             // No decider produced these events. An event that does not fit main, or a result
-            // that points at nothing, refuses the merge before anything is written.
+            // that breaks a rule of the model, refuses the merge before anything is written.
             if (MergedModel.Refusal(oursState, events) is { } refusal)
                 return Results.Conflict(new ErrorResponse("conflict", refusal));
 
             // The cost sheet of the draft merges the way the model does. A conflict has no
             // resolution to pick, so it refuses the merge and nothing is written.
-            var now = DateTimeOffset.UtcNow;
+            var now = time.GetUtcNow();
             var sheetPlan = SheetMerge.Plan(oursSheet, theirsSheet, projectId, streams.BaseStreamId, userId, now);
             if (SheetMerge.Refusal(sheetPlan) is { } sheetRefusal)
             {
@@ -140,8 +136,8 @@ public static class ExecuteMerge
 
             // The sheet of main gets the draft's changes. The sheet and the saved estimates of
             // the draft go: the branch is closed and no request reaches them again.
-            await CostBranches.ApplyAsync(store, streams.BaseStreamId, mainSheetVersion, sheetPlan, ct);
-            await CostBranches.CloseAsync(draftsDb, store, projectId, draft.StreamId, ct);
+            await CostBranches.ApplyAsync(db, projectId, streams.BaseStreamId, oursSheet, mainSheetVersion, sheetPlan, now, ct);
+            await CostBranches.CloseAsync(db, projectId, draft.StreamId, ct);
 
             await transaction.CommitAsync(ct);
             return Results.Ok(CreateDraft.ToDto(draft));

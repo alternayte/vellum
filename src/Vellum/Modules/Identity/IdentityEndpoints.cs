@@ -175,17 +175,13 @@ public static class IdentityEndpoints
             };
             var createResult = await userManager.CreateAsync(user);
             if (!createResult.Succeeded)
-                return Results.Problem(
-                    detail: string.Join("; ", createResult.Errors.Select(e => e.Description)),
-                    statusCode: 500,
-                    title: "Failed to create user account");
+                return Results.Json(new ErrorResponse("account_not_created", "Failed to create user account",
+                    string.Join("; ", createResult.Errors.Select(e => e.Description))), statusCode: StatusCodes.Status500InternalServerError);
 
             var linkResult = await userManager.AddLoginAsync(user, info);
             if (!linkResult.Succeeded)
-                return Results.Problem(
-                    detail: string.Join("; ", linkResult.Errors.Select(e => e.Description)),
-                    statusCode: 500,
-                    title: "Failed to link the external account");
+                return Results.Json(new ErrorResponse("account_not_linked", "Failed to link the external account",
+                    string.Join("; ", linkResult.Errors.Select(e => e.Description))), statusCode: StatusCodes.Status500InternalServerError);
             await signInManager.SignInAsync(user, isPersistent: true);
             return Results.Redirect("/");
         }).RequireRateLimiting(RequestLimits.CredentialPolicy);

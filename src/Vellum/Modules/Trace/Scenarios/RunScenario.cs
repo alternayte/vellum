@@ -32,14 +32,14 @@ public static class RunScenario
         Guid projectId, Guid scenarioId, Guid? branchId,
         HttpContext http,
         IEventStore store,
-        SchemasDbContext schemasDb,
+        AppDbContext db,
         CancellationToken ct) =>
         ModelBranches.RunAsync(http, projectId, branchId, WorkspaceRole.Viewer, async (streamId, _) =>
         {
             // One snapshot: the scenario, the branch's model and the project's schemas are read
             // as of the same instant. The transaction only reads and is rolled back.
-            await using var snapshot = await schemasDb.Database.BeginTransactionAsync(IsolationLevel.RepeatableRead, ct);
-            var pinned = store.UseDbContext(schemasDb);
+            await using var snapshot = await db.Database.BeginTransactionAsync(IsolationLevel.RepeatableRead, ct);
+            var pinned = store.UseDbContext(db);
 
             var scenario = await ScenarioStreams.LoadAsync(pinned, scenarioId, ct);
             if (scenario.DocumentIn(projectId) is not { } document)
@@ -50,7 +50,7 @@ public static class RunScenario
             // Only the project's own schemas count. A reference to anything else stays
             // unresolved, and the engine reports it as an issue.
             var referenced = ContractDecider.ReferencedSchemaIds(model);
-            var schemas = await schemasDb.Schemas.AsNoTracking()
+            var schemas = await db.Schemas.AsNoTracking()
                 .Where(s => s.ProjectId == projectId && referenced.Contains(s.Id))
                 .Select(s => new { s.Id, s.Content })
                 .ToListAsync(ct);

@@ -11,7 +11,7 @@ namespace Vellum.Modules.Promises;
 /// rows back. Every statement is safe to run again, and <see cref="DeleteOrphansAsync"/>
 /// repeats the work for a project whose delete was cut short.
 /// </summary>
-public sealed class PromiseRetention(PromisesDbContext db, IEventStore store) : IProjectRetention
+public sealed class PromiseRetention(AppDbContext db, IEventStore store) : IProjectRetention
 {
     public async Task DeleteProjectAsync(DeletedProject project, CancellationToken ct)
     {
@@ -29,7 +29,7 @@ public sealed class PromiseRetention(PromisesDbContext db, IEventStore store) : 
             await store.DeleteStream(StreamId.From(promiseId), ct);
 
         // What is left when a stream was already gone: rows with no stream behind them.
-        await db.Runs.Where(r => r.ProjectId == projectId).ExecuteDeleteAsync(ct);
+        await db.PromiseRuns.Where(r => r.ProjectId == projectId).ExecuteDeleteAsync(ct);
         await db.Promises.Where(p => p.ProjectId == projectId).ExecuteDeleteAsync(ct);
         await db.Numbering.Where(n => n.ProjectId == projectId).ExecuteDeleteAsync(ct);
         await db.ImpactGates.Where(g => g.ProjectId == projectId).ExecuteDeleteAsync(ct);

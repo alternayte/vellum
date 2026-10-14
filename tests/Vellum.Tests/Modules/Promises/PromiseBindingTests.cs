@@ -8,6 +8,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Vellum.Modules.Promises;
 using Vellum.Tests.Modules.Import;
 using Vellum.Tests.Shared.Outbound;
+using Vellum.Shared;
 
 namespace Vellum.Tests.Modules.Promises;
 
@@ -488,8 +489,8 @@ public class PromiseBindingTests(ImportHost import) : IClassFixture<ImportHost>
         async Task<(int Promises, int Runs, int Numbering)> RowsAsync()
         {
             using var scope = import.Host.Factory.Services.CreateScope();
-            var db = scope.ServiceProvider.GetRequiredService<PromisesDbContext>();
-            return (await db.Promises.CountAsync(p => p.ProjectId == projectId), await db.Runs.CountAsync(r => r.ProjectId == projectId),
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+            return (await db.Promises.CountAsync(p => p.ProjectId == projectId), await db.PromiseRuns.CountAsync(r => r.ProjectId == projectId),
                 await db.Numbering.CountAsync(n => n.ProjectId == projectId));
         }
         Assert.Equal((1, 1, 1), await RowsAsync());

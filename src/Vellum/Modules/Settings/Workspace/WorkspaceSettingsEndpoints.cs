@@ -7,6 +7,7 @@ using Vellum.Modules.Settings.Document;
 using Vellum.Modules.Settings.Secrets;
 using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Shared;
+using static Vellum.Shared.ResultExtensions;
 
 namespace Vellum.Modules.Settings.Workspace;
 
@@ -38,7 +39,7 @@ public static class GetWorkspaceSettings
         SettingsResolver settings,
         CancellationToken ct)
     {
-        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var userId = user.UserId();
         await auth.RequireRoleAsync(workspaceId, userId, WorkspaceRole.Viewer, ct);
 
         var workspace = await settings.GetWorkspaceAsync(workspaceId, ct);
@@ -58,12 +59,12 @@ public static class UpdateWorkspaceSettings
         HttpContext http,
         ClaimsPrincipal user,
         WorkspaceAuthorizationService auth,
-        SettingsDbContext db,
+        AppDbContext db,
         SettingsResolver settings,
         SettingsValidator validator,
         CancellationToken ct)
     {
-        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var userId = user.UserId();
         await auth.RequireRoleAsync(workspaceId, userId, WorkspaceRole.Owner, ct);
 
         if (SettingsVersion.ReadIfMatch(http.Request, out var refusal) is not { } expected)
@@ -135,6 +136,4 @@ public static class UpdateWorkspaceSettings
             statusCode: StatusCodes.Status409Conflict);
     }
 
-    private static IResult Invalid(IReadOnlyList<FieldError> errors) =>
-        Results.BadRequest(new ErrorResponse("validation_error", "Validation failed", Errors: errors));
 }

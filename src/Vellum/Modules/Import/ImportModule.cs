@@ -14,10 +14,6 @@ public static class ImportModule
     {
         // The connection string is read when the context is first used, so configuration that
         // a test host overrides applies.
-        services.AddDbContext<ImportDbContext>((provider, options) =>
-            options.UseNpgsql(provider.GetRequiredService<IConfiguration>().GetConnectionString("DefaultConnection"))
-                   .UseSnakeCaseNamingConvention());
-
         services.TryAddSingleton(TimeProvider.System);
         services.AddSingleton<ScanSignal>();
         services.AddSingleton<ScanWorker>();

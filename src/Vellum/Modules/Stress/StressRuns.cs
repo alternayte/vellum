@@ -12,6 +12,7 @@ using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Modules.Settings.Document;
 using Vellum.Shared;
 using Vellum.Shared.Telemetry;
+using static Vellum.Shared.ResultExtensions;
 
 namespace Vellum.Modules.Stress;
 
@@ -48,14 +49,14 @@ public static class StressRuns
     /// </summary>
     public static Task<IResult> Run(
         Guid projectId, Guid profileId, Guid? branchId,
-        HttpContext http, IEventStore store, SchemasDbContext schemasDb, StressDbContext db, LoadTestsDbContext loadTestsDb,
+        HttpContext http, IEventStore store, AppDbContext db,
         WorkspaceAuthorizationService auth, StressRunGate gate, StressLimits limits, StressRunPolicy policy, SettingsResolver settings, TimeProvider time,
         CancellationToken ct) =>
         ModelBranches.RunAsync(http, projectId, branchId, WorkspaceRole.Editor, async (streamId, userId) =>
         {
             var row = await db.Profiles.AsNoTracking().FirstOrDefaultAsync(p => p.Id == profileId && p.ProjectId == projectId, ct);
             if (row is null)
-                return StressAccess.NotFound("Stress profile");
+                return NotFound("Stress profile");
             var profile = StressProfiles.Read(row.Document);
 
             // Read for each run, so a change of the instance policy applies with no restart.
@@ -75,7 +76,7 @@ public static class StressRuns
                     statusCode: StatusCodes.Status429TooManyRequests);
             }
 
-            var world = await StressAccess.LoadAsync(store, schemasDb, projectId, streamId, profile.ScenarioId, ct);
+            var world = await StressAccess.LoadAsync(store, db, projectId, streamId, profile.ScenarioId, ct);
             if (world.Scenario is null)
             {
                 return Refused([new StressIssue("unknown-scenario", profile.ScenarioId.ToString(),
@@ -85,7 +86,7 @@ public static class StressRuns
             // A measured service time counts for the confidence level only when its k6 result is of the model
             // version and the scenario version of this run. A result is never changed, so the same profile
             // version, model version and scenario version give the same doubts and the same hash.
-            var doubts = await MeasuredServiceTimes.DoubtsAsync(loadTestsDb, projectId, profile, streamId, world.ModelVersion, world.ScenarioVersion, ct);
+            var doubts = await MeasuredServiceTimes.DoubtsAsync(db, projectId, profile, streamId, world.ModelVersion, world.ScenarioVersion, ct);
 
             // The budget is real time. It decides whether there is a result, never what the result is.
             using var budget = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -114,14 +115,14 @@ public static class StressRuns
             // The lock holds the profile for this transaction: a delete of it, or of its project, waits and then removes this run too.
             var held = await db.Profiles.FromSql($"SELECT * FROM stress.profiles WHERE id = {profileId} FOR UPDATE").AsNoTracking().ToListAsync(ct);
             if (held.Count == 0)
-                return StressAccess.NotFound("Stress profile");
+                return NotFound("Stress profile");
 
-            db.Runs.Add(run);
+            db.StressRuns.Add(run);
             await db.SaveChangesAsync(ct);
             // Retention: the newest runs stay.
-            var keep = db.Runs.Where(r => r.ProfileId == profileId).OrderByDescending(r => r.At).ThenByDescending(r => r.Id)
+            var keep = db.StressRuns.Where(r => r.ProfileId == profileId).OrderByDescending(r => r.At).ThenByDescending(r => r.Id)
                 .Take(policy.MaxRunsPerProfile).Select(r => r.Id);
-            await db.Runs.Where(r => r.ProfileId == profileId && !keep.Contains(r.Id)).ExecuteDeleteAsync(ct);
+            await db.StressRuns.Where(r => r.ProfileId == profileId && !keep.Contains(r.Id)).ExecuteDeleteAsync(ct);
             await transaction.CommitAsync(ct);
             VellumMetrics.StressRunEnded("stored");
 
@@ -142,17 +143,17 @@ public static class StressRuns
 
     public static async Task<IResult> List(
         Guid projectId, Guid profileId, ClaimsPrincipal user, WorkspaceAuthorizationService auth,
-        StressDbContext db, IEventStore store, CancellationToken ct)
+        AppDbContext db, IEventStore store, CancellationToken ct)
     {
-        await auth.RequireProjectRoleAsync(projectId, StressAccess.UserId(user), WorkspaceRole.Viewer, ct);
+        await auth.RequireProjectRoleAsync(projectId, user.UserId(), WorkspaceRole.Viewer, ct);
 
         var profile = await db.Profiles.AsNoTracking()
             .Where(p => p.Id == profileId && p.ProjectId == projectId).Select(p => new { p.Version }).FirstOrDefaultAsync(ct);
         if (profile is null)
-            return StressAccess.NotFound("Stress profile");
+            return NotFound("Stress profile");
 
         // Without the documents: a list does not read the results.
-        var rows = await db.Runs.AsNoTracking()
+        var rows = await db.StressRuns.AsNoTracking()
             .Where(r => r.ProfileId == profileId)
             .OrderByDescending(r => r.At).ThenByDescending(r => r.Id)
             .Select(r => new StressRunEntity
@@ -172,26 +173,26 @@ public static class StressRuns
 
     public static async Task<IResult> Get(
         Guid projectId, Guid runId, ClaimsPrincipal user, WorkspaceAuthorizationService auth,
-        StressDbContext db, IEventStore store, CancellationToken ct)
+        AppDbContext db, IEventStore store, CancellationToken ct)
     {
-        await auth.RequireProjectRoleAsync(projectId, StressAccess.UserId(user), WorkspaceRole.Viewer, ct);
+        await auth.RequireProjectRoleAsync(projectId, user.UserId(), WorkspaceRole.Viewer, ct);
 
-        return await ReadAsync(db, store, projectId, runId, ct) is { } run ? Results.Ok(run) : StressAccess.NotFound("Stress run");
+        return await ReadAsync(db, store, projectId, runId, ct) is { } run ? Results.Ok(run) : NotFound("Stress run");
     }
 
     public static async Task<IResult> Delete(
-        Guid projectId, Guid runId, ClaimsPrincipal user, WorkspaceAuthorizationService auth, StressDbContext db, CancellationToken ct)
+        Guid projectId, Guid runId, ClaimsPrincipal user, WorkspaceAuthorizationService auth, AppDbContext db, CancellationToken ct)
     {
-        await auth.RequireProjectRoleAsync(projectId, StressAccess.UserId(user), WorkspaceRole.Editor, ct);
+        await auth.RequireProjectRoleAsync(projectId, user.UserId(), WorkspaceRole.Editor, ct);
 
-        var deleted = await db.Runs.Where(r => r.Id == runId && r.ProjectId == projectId).ExecuteDeleteAsync(ct);
-        return deleted == 0 ? StressAccess.NotFound("Stress run") : Results.NoContent();
+        var deleted = await db.StressRuns.Where(r => r.Id == runId && r.ProjectId == projectId).ExecuteDeleteAsync(ct);
+        return deleted == 0 ? NotFound("Stress run") : Results.NoContent();
     }
 
     /// <summary>A run of the project with its documents, or null. A run of another project reads as not found.</summary>
-    internal static async Task<StressRunDto?> ReadAsync(StressDbContext db, IEventStore store, Guid projectId, Guid runId, CancellationToken ct)
+    internal static async Task<StressRunDto?> ReadAsync(AppDbContext db, IEventStore store, Guid projectId, Guid runId, CancellationToken ct)
     {
-        var row = await db.Runs.AsNoTracking().FirstOrDefaultAsync(r => r.Id == runId && r.ProjectId == projectId, ct);
+        var row = await db.StressRuns.AsNoTracking().FirstOrDefaultAsync(r => r.Id == runId && r.ProjectId == projectId, ct);
         if (row is null)
             return null;
 

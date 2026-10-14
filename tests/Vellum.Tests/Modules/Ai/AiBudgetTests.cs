@@ -6,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Vellum.Modules.Ai;
 using Vellum.Modules.Ai.Usage;
 using Vellum.Tests.Shared.Outbound;
+using Vellum.Shared;
 
 namespace Vellum.Tests.Modules.Ai;
 
@@ -118,7 +119,7 @@ public class AiBudgetTests(SharedOutboundHost shared) : IClassFixture<SharedOutb
         var recent = Guid.NewGuid();
         using (var scope = _host.Factory.Services.CreateScope())
         {
-            var db = scope.ServiceProvider.GetRequiredService<AiUsageDbContext>();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             UsageRecordEntity Row(Guid id, DateTimeOffset startedAt, decimal reserved) => new()
             {
                 Id = id, WorkspaceId = ai.WorkspaceId, ProviderId = ai.ProviderId, ProviderKind = ai.Kind, Model = ai.Model,

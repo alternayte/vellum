@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Vellum.Modules.Settings.Document;
 using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Shared;
+using static Vellum.Shared.ResultExtensions;
 
 namespace Vellum.Modules.Costs.Prices;
 
@@ -21,7 +22,7 @@ public static class AzurePriceEndpoints
         Guid workspaceId, string? serviceName, string? region, string? skuName, string? meterName, string? currency,
         ClaimsPrincipal user, WorkspaceAuthorizationService auth, AzureRetailPrices azure, SettingsResolver settings, CancellationToken ct)
     {
-        await auth.RequireRoleAsync(workspaceId, PriceBook.UserId(user), WorkspaceRole.Owner, ct);
+        await auth.RequireRoleAsync(workspaceId, user.UserId(), WorkspaceRole.Owner, ct);
 
         // Without a currency the search uses the currency of the workspace.
         currency ??= (await settings.GetWorkspaceAsync(workspaceId, ct)).Effective.Cost.Currency;
@@ -36,7 +37,7 @@ public static class AzurePriceEndpoints
         if (!AzureRetailPrices.IsCurrency(currency))
             errors.Add(new("currency", "Must be a three-letter currency code in upper case, for example USD."));
         if (errors.Count > 0)
-            return PriceBook.Invalid(errors);
+            return Invalid(errors);
 
         var filter = AzureRetailPrices.Filter(new AzureMeterQuery(serviceName, region, skuName, meterName))!;
         var result = await azure.SearchAsync(workspaceId, filter, currency!, ct);
@@ -50,9 +51,9 @@ public static class AzurePriceEndpoints
     /// </summary>
     public static async Task<IResult> Import(
         Guid workspaceId, AzureImportRequest request,
-        ClaimsPrincipal user, WorkspaceAuthorizationService auth, AzureRetailPrices azure, CostsDbContext db, TimeProvider time, CancellationToken ct)
+        ClaimsPrincipal user, WorkspaceAuthorizationService auth, AzureRetailPrices azure, AppDbContext db, TimeProvider time, CancellationToken ct)
     {
-        var userId = PriceBook.UserId(user);
+        var userId = user.UserId();
         await auth.RequireRoleAsync(workspaceId, userId, WorkspaceRole.Owner, ct);
 
         var errors = new List<ValidationError>();
@@ -65,7 +66,7 @@ public static class AzurePriceEndpoints
         if (!AzureRetailPrices.IsCurrency(request.Currency))
             errors.Add(new("currency", "Must be a three-letter currency code in upper case, for example USD."));
         if (errors.Count > 0)
-            return PriceBook.Invalid(errors);
+            return Invalid(errors);
 
         var filter = AzureRetailPrices.Filter(new AzureMeterQuery(
             ArmRegionName: request.ArmRegionName, MeterId: request.MeterId, SkuId: request.SkuId))!;

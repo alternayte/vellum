@@ -1,15 +1,5 @@
 # Deedbox event contracts. EventContracts.Verify writes this file; commit it.
 
-stream cost_sheet (CostSheetState)
-  cost_sheet.assumption_added v1 { assumption: { effectiveDate: date, id: uuid, kind: string, label: string, name: string, source: string?, subjectId: uuid?, unit: string, value: decimal }, at: date-time, by: string }
-  cost_sheet.assumption_changed v1 { assumption: { effectiveDate: date, id: uuid, kind: string, label: string, name: string, source: string?, subjectId: uuid?, unit: string, value: decimal }, at: date-time, by: string }
-  cost_sheet.assumption_removed v1 { assumptionId: uuid, at: date-time, by: string }
-  cost_sheet.resource_added v1 { at: date-time, by: string, resource: { category: string, elementId: uuid, factStatus: string, id: uuid, name: string, priceRef: uuid?, provenance: { acceptedAt: date-time?, acceptedBy: uuid?, confidence: float64?, revision: string?, source: string? }?, provider: string, quantity: decimal?, region: string, sku: string, unit: string?, usage: [{ assumptionId: uuid, id: uuid, name: string, priceRef: uuid? }] } }
-  cost_sheet.resource_changed v1 { at: date-time, by: string, resource: { category: string, elementId: uuid, factStatus: string, id: uuid, name: string, priceRef: uuid?, provenance: { acceptedAt: date-time?, acceptedBy: uuid?, confidence: float64?, revision: string?, source: string? }?, provider: string, quantity: decimal?, region: string, sku: string, unit: string?, usage: [{ assumptionId: uuid, id: uuid, name: string, priceRef: uuid? }] } }
-  cost_sheet.resource_removed v1 { at: date-time, by: string, resourceId: uuid }
-  cost_sheet.sheet_copied v1 { assumptions: [{ effectiveDate: date, id: uuid, kind: string, label: string, name: string, source: string?, subjectId: uuid?, unit: string, value: decimal }], at: date-time, by: string, fromBranchId: uuid, fromVersion: int64, resources: [{ category: string, elementId: uuid, factStatus: string, id: uuid, name: string, priceRef: uuid?, provenance: { acceptedAt: date-time?, acceptedBy: uuid?, confidence: float64?, revision: string?, source: string? }?, provider: string, quantity: decimal?, region: string, sku: string, unit: string?, usage: [{ assumptionId: uuid, id: uuid, name: string, priceRef: uuid? }] }] }
-  cost_sheet.sheet_opened v1 { at: date-time, branchId: uuid, by: string, projectId: uuid }
-
 stream decision (DecisionState)
   decision.decision_accepted v1 { at: date-time, by: string, contentHash: string?, stamps: [{ fingerprint: string?, ruleId: string, ruleVersion: int32, subjectId: uuid }] }
   decision.decision_changed v1 { at: date-time, by: string, content: { affectedIds: [uuid], alternatives: [{ title: string, whyNot: string? }], consequences: string?, context: string, decision: string, settles: [{ ruleId: string, subjectId: uuid }], supersedes: uuid?, title: string } }
@@ -18,15 +8,6 @@ stream decision (DecisionState)
   decision.decision_rejected v1 { at: date-time, by: string, reason: string? }
   decision.settlement_recorded v1 { at: date-time, by: string, stamp: { fingerprint: string?, ruleId: string, ruleVersion: int32, subjectId: uuid } }
   decision.settlement_removed v1 { at: date-time, by: string, ruleId: string, subjectId: uuid }
-
-stream load_test_target (TargetState)
-  load_test_target.authorisation_voided v1 { at: date-time, by: string, cause: string }
-  load_test_target.override_cleared v1 { at: date-time, by: string, cause: string }
-  load_test_target.override_set v1 { allowFailureInjection: bool, allowNonIdempotent: bool, at: date-time, by: string, reason: string }
-  load_test_target.target_added v1 { at: date-time, baseUrl: string, by: string, environment: string, name: string, projectId: uuid }
-  load_test_target.target_authorised v1 { at: date-time, baseUrl: string, by: string, environment: string }
-  load_test_target.target_changed v1 { at: date-time, baseUrl: string, by: string, environment: string, name: string }
-  load_test_target.target_removed v1 { at: date-time, by: string }
 
 stream model (ModelState)
   model.binding_added v1 { id: custom(BindingId), routingKey: string?, sourceChannelId: custom(ChannelId), targetChannelId: custom(ChannelId) }
