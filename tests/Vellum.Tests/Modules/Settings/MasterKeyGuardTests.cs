@@ -10,18 +10,21 @@ using Vellum.Modules.Settings.Crypto;
 
 namespace Vellum.Tests.Modules.Settings;
 
-/// <summary>An instance never runs with a master key that cannot read what the database holds.</summary>
-public class MasterKeyGuardTests : IDisposable
+/// <summary>
+/// An instance never runs with a master key that cannot read what the database holds. Each
+/// case starts several hosts, so the cases are classes of their own and run in parallel.
+/// </summary>
+public abstract class MasterKeyGuardTests : IDisposable
 {
-    private readonly string _directory = Path.Combine(Path.GetTempPath(), $"vellum-keyguard-{Guid.NewGuid():N}");
+    protected string DataDirectory { get; } = Path.Combine(Path.GetTempPath(), $"vellum-keyguard-{Guid.NewGuid():N}");
 
     public void Dispose()
     {
-        if (Directory.Exists(_directory))
-            Directory.Delete(_directory, recursive: true);
+        if (Directory.Exists(DataDirectory))
+            Directory.Delete(DataDirectory, recursive: true);
     }
 
-    private static BootstrapException StartFails(WebApplicationFactory<Program> factory)
+    protected static BootstrapException StartFails(WebApplicationFactory<Program> factory)
     {
         var thrown = Assert.ThrowsAny<Exception>(() => factory.CreateClient());
         for (var ex = thrown; ex is not null; ex = ex.InnerException)
@@ -33,7 +36,7 @@ public class MasterKeyGuardTests : IDisposable
         throw new Xunit.Sdk.XunitException($"The host failed for another reason: {thrown}");
     }
 
-    private static async Task<long> CountAsync(string connectionString, string sql)
+    protected static async Task<long> CountAsync(string connectionString, string sql)
     {
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync();
@@ -42,7 +45,7 @@ public class MasterKeyGuardTests : IDisposable
     }
 
     /// <summary>An instance that ran with <paramref name="settings"/>: one user, one stored credential.</summary>
-    private static async Task<string> SeedAsync(string database, Dictionary<string, string?> settings)
+    protected static async Task<string> SeedAsync(string database, Dictionary<string, string?> settings)
     {
         using var first = TestHost.Create(database, settings);
         var https = settings.GetValueOrDefault("Vellum:Profile") == "hosted";
@@ -53,6 +56,11 @@ public class MasterKeyGuardTests : IDisposable
         return (string)diagnostics!["masterKeyId"]!;
     }
 
+}
+
+/// <summary>A start with another master key.</summary>
+public class AnotherMasterKeyTests : MasterKeyGuardTests
+{
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -87,12 +95,17 @@ public class MasterKeyGuardTests : IDisposable
         Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/api/setup/status")).StatusCode);
     }
 
+}
+
+/// <summary>A local instance that lost its key file.</summary>
+public class LostKeyFileTests : MasterKeyGuardTests
+{
     [Fact]
     public async Task A_local_instance_that_lost_its_key_file_does_not_create_a_new_key()
     {
         var database = await TestHost.CreateDatabaseAsync();
-        var first = Path.Combine(_directory, "first");
-        var second = Path.Combine(_directory, "second");
+        var first = Path.Combine(DataDirectory, "first");
+        var second = Path.Combine(DataDirectory, "second");
         var keyId = await SeedAsync(database, new() { ["Vellum:DataDirectory"] = first });
         Assert.True(File.Exists(Path.Combine(first, Bootstrap.MasterKeyFileName)));
 
@@ -113,33 +126,38 @@ public class MasterKeyGuardTests : IDisposable
         Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/api/setup/status")).StatusCode);
     }
 
+}
+
+/// <summary>A key file on disk and a master key from the environment.</summary>
+public class KeyFileAndEnvironmentKeyTests : MasterKeyGuardTests
+{
     [Fact]
     public async Task A_key_file_on_disk_never_takes_over_from_the_environment_key_without_notice()
     {
         var database = await TestHost.CreateDatabaseAsync();
         // The instance ran with a generated key file first.
-        var fileKeyId = await SeedAsync(database, new() { ["Vellum:DataDirectory"] = _directory });
-        var fileKey = File.ReadAllText(Path.Combine(_directory, Bootstrap.MasterKeyFileName)).Trim();
+        var fileKeyId = await SeedAsync(database, new() { ["Vellum:DataDirectory"] = DataDirectory });
+        var fileKey = File.ReadAllText(Path.Combine(DataDirectory, Bootstrap.MasterKeyFileName)).Trim();
 
         // The self-hosted rotation: a new key from the environment, the file's key as the previous key.
         var newKey = TestHost.NewMasterKey();
         var rotatingSettings = new Dictionary<string, string?>
         {
-            ["Vellum:DataDirectory"] = _directory, ["Vellum:MasterKey"] = newKey, ["Vellum:PreviousMasterKey"] = fileKey,
+            ["Vellum:DataDirectory"] = DataDirectory, ["Vellum:MasterKey"] = newKey, ["Vellum:PreviousMasterKey"] = fileKey,
         };
         using (var rotating = TestHost.Create(database, rotatingSettings))
         {
             var bootstrap = rotating.Services.GetRequiredService<Bootstrap>();
             // The environment key is used and the file is reported as not used.
             Assert.NotEqual(fileKeyId, bootstrap.Keys.Current.Id);
-            Assert.Equal(Path.Combine(_directory, Bootstrap.MasterKeyFileName), bootstrap.UnusedKeyFile);
+            Assert.Equal(Path.Combine(DataDirectory, Bootstrap.MasterKeyFileName), bootstrap.UnusedKeyFile);
             Assert.True(bootstrap.Keys.IsLoaded(fileKeyId));
         }
 
         // The operator removes the environment key by mistake. The old file is still on disk.
         // Rows written under the environment key would be unreadable, so the start is refused
         // when such rows exist; here the rows are still under the file's key, so it starts.
-        using (var back = TestHost.Create(database, new Dictionary<string, string?> { ["Vellum:DataDirectory"] = _directory }))
+        using (var back = TestHost.Create(database, new Dictionary<string, string?> { ["Vellum:DataDirectory"] = DataDirectory }))
         {
             using var client = TestHost.Client(back);
             Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/api/setup/status")).StatusCode);
@@ -154,10 +172,15 @@ public class MasterKeyGuardTests : IDisposable
             await command.ExecuteNonQueryAsync();
         }
 
-        using var fileOnly = TestHost.Create(database, new Dictionary<string, string?> { ["Vellum:DataDirectory"] = _directory });
+        using var fileOnly = TestHost.Create(database, new Dictionary<string, string?> { ["Vellum:DataDirectory"] = DataDirectory });
         Assert.Contains("is not loaded", StartFails(fileOnly).Message);
     }
 
+}
+
+/// <summary>The keys forget command.</summary>
+public class KeysForgetTests : MasterKeyGuardTests
+{
     [Fact]
     public async Task Keys_forget_deletes_the_rows_of_a_lost_key_only_when_it_is_confirmed()
     {
@@ -168,7 +191,7 @@ public class MasterKeyGuardTests : IDisposable
         {
             ["ConnectionStrings:DefaultConnection"] = database,
             ["Vellum:MasterKey"] = newKey,
-            ["Vellum:DataDirectory"] = _directory,
+            ["Vellum:DataDirectory"] = DataDirectory,
         }).Build();
 
         var output = new StringWriter();

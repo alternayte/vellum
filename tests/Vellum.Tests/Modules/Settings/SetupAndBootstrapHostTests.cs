@@ -12,14 +12,13 @@ using Vellum.Shared;
 
 namespace Vellum.Tests.Modules.Settings;
 
-/// <summary>Each test starts on its own empty database: setup happens once per instance.</summary>
-public class SetupAndBootstrapHostTests : IClassFixture<IntegrationFixture>
+/// <summary>
+/// Each test starts on its own empty database: setup happens once per instance. The tests
+/// start several hosts each, so they are split into classes that run in parallel.
+/// </summary>
+public abstract class SetupAndBootstrapHostTests
 {
-    private readonly IntegrationFixture _fixture;
-
-    public SetupAndBootstrapHostTests(IntegrationFixture fixture) => _fixture = fixture;
-
-    private static object Account(string? setupToken = null, string password = TestHost.AdminPassword) => new
+    protected static object Account(string? setupToken = null, string password = TestHost.AdminPassword) => new
     {
         email = $"admin-{Guid.NewGuid():N}@vellum.local",
         password,
@@ -28,7 +27,7 @@ public class SetupAndBootstrapHostTests : IClassFixture<IntegrationFixture>
         setupToken,
     };
 
-    private static async Task<long> CountAsync(string connectionString, string table)
+    protected static async Task<long> CountAsync(string connectionString, string table)
     {
         await using var connection = new NpgsqlConnection(connectionString);
         await connection.OpenAsync();
@@ -36,6 +35,23 @@ public class SetupAndBootstrapHostTests : IClassFixture<IntegrationFixture>
         return (long)(await command.ExecuteScalarAsync())!;
     }
 
+    protected static BootstrapException StartFails(WebApplicationFactory<Program> factory)
+    {
+        var thrown = Assert.ThrowsAny<Exception>(() => factory.CreateClient());
+        for (var ex = thrown; ex is not null; ex = ex.InnerException)
+        {
+            if (ex is BootstrapException bootstrap)
+                return bootstrap;
+        }
+
+        throw new Xunit.Sdk.XunitException($"The host failed for another reason: {thrown}");
+    }
+
+}
+
+/// <summary>First-run setup of a local and a hosted instance.</summary>
+public class FirstRunSetupTests : SetupAndBootstrapHostTests
+{
     [Fact]
     public async Task Local_setup_creates_the_admin_once_and_then_closes_registration()
     {
@@ -179,20 +195,11 @@ public class SetupAndBootstrapHostTests : IClassFixture<IntegrationFixture>
         clients.ForEach(c => c.Dispose());
     }
 
-    // ---- Unsafe hosted bootstrap stops the host --------------------------------
+}
 
-    private static BootstrapException StartFails(WebApplicationFactory<Program> factory)
-    {
-        var thrown = Assert.ThrowsAny<Exception>(() => factory.CreateClient());
-        for (var ex = thrown; ex is not null; ex = ex.InnerException)
-        {
-            if (ex is BootstrapException bootstrap)
-                return bootstrap;
-        }
-
-        throw new Xunit.Sdk.XunitException($"The host failed for another reason: {thrown}");
-    }
-
+/// <summary>An unsafe hosted bootstrap stops the host.</summary>
+public class UnsafeHostedBootstrapTests : SetupAndBootstrapHostTests
+{
     [Fact]
     public async Task A_hosted_host_without_a_master_key_does_not_start()
     {
@@ -246,6 +253,11 @@ public class SetupAndBootstrapHostTests : IClassFixture<IntegrationFixture>
 
     // ---- Data Protection keys: in Postgres, sealed with the master key --------------
 
+}
+
+/// <summary>Instances that share a master key share sessions.</summary>
+public class SharedMasterKeySessionTests : SetupAndBootstrapHostTests
+{
     [Fact]
     public async Task A_session_cookie_is_accepted_by_another_instance_with_the_same_master_key_and_an_instance_with_a_different_one_does_not_start()
     {
@@ -298,10 +310,15 @@ public class SetupAndBootstrapHostTests : IClassFixture<IntegrationFixture>
         Assert.Equal(HttpStatusCode.OK, await MeAsync(key));
     }
 
+}
+
+/// <summary>The health endpoint.</summary>
+public class HealthTests(IntegrationFixture fixture) : IClassFixture<IntegrationFixture>
+{
     [Fact]
     public async Task Health_is_anonymous_and_says_nothing_but_the_status()
     {
-        var factory = _fixture.Factory;
+        var factory = fixture.Factory;
         using var client = factory.CreateClient();
 
         var response = await client.GetAsync("/health");

@@ -27,10 +27,52 @@ env:
   ASTRO_TELEMETRY_DISABLED: "1"
 
 jobs:
-  backend:
-    name: Backend
+  # Code style and the OpenAPI check run in their own job, beside the tests.
+  backend-style:
+    name: Backend style
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj') }}
+          restore-keys: nuget-${{ runner.os }}-
+
+      - name: Restore
+        run: dotnet restore Vellum.slnx
+
+      - name: Build
+        run: dotnet build Vellum.slnx --no-restore
+
+      # The build of the API writes its OpenAPI document. The web client and the HTTP API
+      # reference of the docs are generated from the committed copy, so the two must be equal.
+      - name: The committed OpenAPI document is current
+        run: diff -u src/Vellum.Web/openapi.json src/Vellum/obj/Vellum.json
+
+      # Code style and whitespace (.editorconfig).
+      - name: Code style
+        run: |
+          dotnet format style Vellum.slnx --verify-no-changes --no-restore
+          dotnet format whitespace Vellum.slnx --verify-no-changes
+
+  # The tests without Category=Slow, in shards that run at the same time. tests/test-shard.py
+  # gives each test class to one shard, so the shards cover every test once.
+  backend:
+    name: Backend (shard ${{ matrix.shard }} of 6)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6]
     steps:
       - uses: actions/checkout@v4
 
@@ -58,29 +100,24 @@ jobs:
       - name: Build
         run: dotnet build Vellum.slnx --no-restore
 
-      # The build of the API writes its OpenAPI document. The web client and the HTTP API
-      # reference of the docs are generated from the committed copy, so the two must be equal.
-      - name: The committed OpenAPI document is current
-        run: diff -u src/Vellum.Web/openapi.json src/Vellum/obj/Vellum.json
-
-      # Code style and whitespace (.editorconfig).
-      - name: Code style
+      - name: Select the tests of this shard
         run: |
-          dotnet format style Vellum.slnx --verify-no-changes --no-restore
-          dotnet format whitespace Vellum.slnx --verify-no-changes
+          dotnet test tests/Vellum.Tests --no-build --list-tests > tests.txt
+          filter=$(python3 tests/test-shard.py 6 $(( ${{ matrix.shard }} - 1 )) < tests.txt)
+          echo "FILTER=$filter" >> "$GITHUB_ENV"
 
       # The integration tests start Postgres with Testcontainers. Docker is on the runner.
       # Test classes run in parallel, each on its own copy of a template database. The step
-      # time-out is about twice the time the suite takes: a slower suite fails here.
+      # time-out is about twice the time a shard takes: a slower suite fails here.
       - name: Test
-        timeout-minutes: 12
-        run: dotnet test Vellum.slnx --no-build --filter "Category!=Slow" --logger "trx;LogFileName=backend.trx" --results-directory test-results
+        timeout-minutes: 4
+        run: dotnet test tests/Vellum.Tests --no-build --filter "$FILTER" --logger "trx;LogFileName=backend-${{ matrix.shard }}.trx" --results-directory test-results
 
       - name: Keep the test results
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: backend-test-results
+          name: backend-test-results-${{ matrix.shard }}
           path: test-results
 
   backend-slow:
