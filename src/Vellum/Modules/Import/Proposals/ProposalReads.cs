@@ -63,9 +63,13 @@ public static class ProposalReads
             return NotFound("Import");
 
         var query = db.ImportProposals.AsNoTracking().Where(p => p.ScanId == importId);
-        if (status is not null) query = query.Where(p => p.Status == status);
-        if (action is not null) query = query.Where(p => p.Action == action);
-        if (entityKind is not null) query = query.Where(p => p.EntityKind == entityKind);
+        // A filter value that names no status, action or kind matches no proposal.
+        if (status is not null)
+            query = EnumText.TryParse(status, out ProposalStatus wantedStatus) ? query.Where(p => p.Status == wantedStatus) : query.Where(p => false);
+        if (action is not null)
+            query = EnumText.TryParse(action, out ProposalAction wantedAction) ? query.Where(p => p.Action == wantedAction) : query.Where(p => false);
+        if (entityKind is not null)
+            query = EnumText.TryParse(entityKind, out StoredEntityKind wantedKind) ? query.Where(p => p.EntityKind == wantedKind) : query.Where(p => false);
         if (After(cursor) is { } after)
             query = query.Where(p => p.Seq > after);
 
@@ -160,14 +164,14 @@ public static class ProposalReads
         ProposalImpactDto? impact = null;
         if (pending && context.Impact is not null)
         {
-            var found = context.Impact.Of(p.Action, p.EntityKind, p.EntityId, [.. changes.Select(c => c.Field)]);
+            var found = context.Impact.Of(p.Action, EnumText.Of(p.EntityKind), p.EntityId, [.. changes.Select(c => c.Field)]);
             impact = found.IsEmpty ? null : found;
         }
 
         return new ProposalDto(
-            p.Id, p.Action, p.EntityKind, p.EntityId, p.Subject, p.FactKey, p.Name, proposed, current,
+            p.Id, EnumText.Of(p.Action), EnumText.Of(p.EntityKind), p.EntityId, EnumText.Of(p.Subject), p.FactKey, p.Name, proposed, current,
             [.. changes.Select(c => new ProposalChangeDto(c.Field, c.From, c.To))],
-            Evidence(context.Repository, context.CommitSha, p.Evidence), p.DependsOn, p.Status, p.Partial,
+            Evidence(context.Repository, context.CommitSha, p.Evidence), p.DependsOn, EnumText.Of(p.Status), p.Partial,
             pending && context.Decidable, pending ? context.Reason : null, impact, truncated);
     }
 
@@ -237,7 +241,7 @@ public static class ProposalReads
 
         var repository = $"{scan.Host}/{scan.Repository}";
         return Results.Ok(new Page<EvidenceItemDto>([.. rows.Select(f => new EvidenceItemDto(
-            f.FactKey, f.Kind, f.Name, ProposalJson.ReadAttributes(f.Attributes),
+            f.FactKey, f.Kind.ToString(), f.Name, ProposalJson.ReadAttributes(f.Attributes),
             Evidence(repository, scan.CommitSha!, f.Evidence), f.Reason ?? FactMapping.NoModelHome))], next));
     }
 

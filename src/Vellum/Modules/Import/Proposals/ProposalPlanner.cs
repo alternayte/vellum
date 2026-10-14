@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Vellum.Modules.Import.Extraction;
 using Vellum.Modules.Import.Scans;
+using Vellum.Shared;
 
 namespace Vellum.Modules.Import.Proposals;
 
@@ -34,7 +35,7 @@ internal sealed record PlanInput(
 internal sealed record FieldChange(string Field, string? From, string? To);
 
 internal sealed record PlannedProposal(
-    Guid Id, string Action, string EntityKind, Guid EntityId, string FactKey, string Name,
+    Guid Id, ProposalAction Action, string EntityKind, Guid EntityId, string FactKey, string Name,
     JsonObject? Proposed, JsonObject? Current, IReadOnlyList<FieldChange> Changes,
     IReadOnlyList<EvidenceRef> Evidence, IReadOnlyDictionary<string, string> Attributes,
     IReadOnlyList<string> ConsumerKeys, IReadOnlyList<Guid> DependsOn, string Fingerprint);
@@ -340,7 +341,7 @@ internal static class ProposalPlanner
 
         return new Plan(proposals, facts, markStale, clearStale, relinked.Moved, relinked.Unresolved.Count, coverage, mapping.Refused);
 
-        void Reclassify(string factKey, string disposition, string? reason)
+        void Reclassify(string factKey, FactDisposition disposition, string? reason)
         {
             if (mappedAt.TryGetValue(factKey, out var index))
                 facts[index] = facts[index] with { Disposition = disposition, Reason = reason };
@@ -385,7 +386,7 @@ internal static class ProposalPlanner
             if (entity.FactStatus == ObservedInSource && entity.Stale is null)
                 markStale.Add(entity.Id);
 
-            var fingerprint = Hash([ProposalAction.Remove, link.EntityKind, link.FactKey, Canonical(entity.Values)]);
+            var fingerprint = Hash([EnumText.Of(ProposalAction.Remove), link.EntityKind, link.FactKey, Canonical(entity.Values)]);
             if (input.Rejections.Contains((link.FactKey, fingerprint)))
                 continue;
 
@@ -459,7 +460,7 @@ internal static class ProposalPlanner
             proposals.Add(new PlannedProposal(
                 newId(), ProposalAction.Relink, link.EntityKind, link.EntityId, link.FactKey, entity?.Name ?? link.FactKey,
                 new JsonObject { ["candidates"] = candidates }, current, [], evidence, link.Attributes, link.ConsumerKeys, [],
-                Hash([ProposalAction.Relink, link.EntityKind, link.FactKey, input.RuleFingerprint, .. options.Select(o => o.FactKey)])));
+                Hash([EnumText.Of(ProposalAction.Relink), link.EntityKind, link.FactKey, input.RuleFingerprint, .. options.Select(o => o.FactKey)])));
         }
     }
 
@@ -544,9 +545,9 @@ internal static class ProposalPlanner
     /// keys in place of new entity IDs. A changed fact, or an entity that a person edited
     /// again, gives another fingerprint, and the proposal is then made again.
     /// </summary>
-    private static string Fingerprint(string action, Candidate candidate, IReadOnlyDictionary<string, string?>? current) => Hash(
+    private static string Fingerprint(ProposalAction action, Candidate candidate, IReadOnlyDictionary<string, string?>? current) => Hash(
     [
-        action, candidate.EntityKind, candidate.FactKey,
+        EnumText.Of(action), candidate.EntityKind, candidate.FactKey,
         Canonical(candidate.Fields),
         Hash(candidate.References.Select(r => $"{r.Field}={r.FactKey}")),
         Hash(candidate.ConsumerKeys),

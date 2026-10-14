@@ -87,7 +87,7 @@ public static class DecideProposals
         // The schema streams must be locked before the first append, so they are read first.
         // A proposal keeps its entity for life, so this list cannot change under the decision.
         var schemaIds = await db.ImportProposals.AsNoTracking()
-            .Where(p => p.ScanId == importId && accept.Contains(p.Id) && p.EntityKind == EntityKinds.Schema)
+            .Where(p => p.ScanId == importId && accept.Contains(p.Id) && p.EntityKind == StoredEntityKind.Schema)
             .Select(p => p.EntityId)
             .Distinct().ToListAsync(ct);
         if (schemaIds.Count > ImportModel.MaxSchemas)
@@ -144,7 +144,7 @@ public static class DecideProposals
             if (!proposals.TryGetValue(id, out var proposal))
                 failures.Add(new DecisionFailure(id, "This is not a proposal of this import."));
             else if (proposal.Status != ProposalStatus.Pending)
-                failures.Add(new DecisionFailure(id, $"The proposal is already {proposal.Status}."));
+                failures.Add(new DecisionFailure(id, $"The proposal is already {EnumText.Of(proposal.Status)}."));
             else if (proposal.Action == ProposalAction.Relink && !relink.Any(r => r.Id == id))
                 failures.Add(new DecisionFailure(id, "A relink proposal is decided under 'relink', with the fact key of one of its candidates or with null."));
             else if (proposal.Action != ProposalAction.Relink && relink.Any(r => r.Id == id))
@@ -169,7 +169,7 @@ public static class DecideProposals
                 if (reject.Contains(needed))
                 {
                     failures.Add(new DecisionFailure(proposal.Id,
-                        $"It depends on proposal {needed} ({proposals[needed].EntityKind} '{proposals[needed].Name}'), which this decision rejects."));
+                        $"It depends on proposal {needed} ({EnumText.Of(proposals[needed].EntityKind)} '{proposals[needed].Name}'), which this decision rejects."));
                     break;
                 }
                 if (!dependencies.TryGetValue(needed, out var dependency))
@@ -180,7 +180,7 @@ public static class DecideProposals
                 if (dependency.Status != ProposalStatus.Accepted)
                 {
                     failures.Add(new DecisionFailure(proposal.Id,
-                        $"It depends on proposal {needed} ({dependency.EntityKind} '{dependency.Name}'), which is {dependency.Status}. " +
+                        $"It depends on proposal {needed} ({EnumText.Of(dependency.EntityKind)} '{dependency.Name}'), which is {EnumText.Of(dependency.Status)}. " +
                         (dependency.Status == ProposalStatus.Pending ? "Accept both in one decision." : "Scan the repository again.")));
                     break;
                 }
@@ -198,7 +198,7 @@ public static class DecideProposals
             foreach (var proposal in accepted)
             {
                 var fields = ProposalJson.ReadChanges(proposal.Changes).Select(c => c.Field).ToList();
-                var found = impact.Of(proposal.Action, proposal.EntityKind, proposal.EntityId, fields);
+                var found = impact.Of(proposal.Action, EnumText.Of(proposal.EntityKind), proposal.EntityId, fields);
                 var broken = found.Scenarios.Select(s => $"scenario '{s.Name}' ({s.Id}; {string.Join(", ", s.StepIds)})")
                     .Concat(found.Entities.Where(e => !handled.Contains(e.Id)).Select(e => $"{e.EntityKind} '{e.Name}' ({e.Id})"))
                     .ToList();
@@ -385,7 +385,7 @@ public static class DecideProposals
         return Results.Ok(new DecideProposalsResponse(accept, reject, [], [.. relink.Select(r => r.Id)]));
     }
 
-    private static Task<FactLinkEntity?> FindLinkAsync(AppDbContext db, ScanEntity scan, string subject, string factKey, CancellationToken ct)
+    private static Task<FactLinkEntity?> FindLinkAsync(AppDbContext db, ScanEntity scan, Subject subject, string factKey, CancellationToken ct)
     {
         var hash = KeyHash.Of(factKey);
         return db.FactLinks.FirstOrDefaultAsync(l =>

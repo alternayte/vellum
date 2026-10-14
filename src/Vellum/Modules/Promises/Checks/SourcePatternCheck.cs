@@ -114,7 +114,7 @@ public static class SourcePatternCheck
         {
             return new CheckOutcome(
                 RunResult.NotRun, "source", $"Pattern '{recipe.Pattern}' in {recipe.Repository}, scan {scan.Id}.",
-                $"The scan has no snapshot (status '{scan.Status}'). Only a completed scan has one.", [], [], ScanId: scan.Id,
+                $"The scan has no snapshot (status '{EnumText.Of(scan.Status)}'). Only a completed scan has one.", [], [], ScanId: scan.Id,
                 Inputs: new RunInputs(obligationHash, ScanId: scan.Id));
         }
 
@@ -275,7 +275,7 @@ public static class SourcePatternCheck
         IReadOnlyCollection<string> projects, IReadOnlyList<string> previousPaths, CancellationToken ct)
     {
         var scan = inputs.Scan;
-        if (scan.ExtractionGap is { } global)
+        if (scan.ExtractionGapText() is { } global)
             return (global, $"the extraction left facts out ({global}).");
         if (!scan.TreeListed)
             return (CoverageGap.Failed, "the file list of the commit was not read in full.");
@@ -285,11 +285,11 @@ public static class SourcePatternCheck
             var rows = await db.ScanFiles.AsNoTracking().Where(f => f.ScanId == scan.Id)
                 .Select(f => new { f.Path, f.State, f.Reason }).ToListAsync(ct);
             inputs.Files = rows.ToDictionary(
-                f => f.Path, f => f.State == ScanFileEntity.Read ? null : f.Reason ?? CoverageGap.ParseFailure, StringComparer.Ordinal);
+                f => f.Path, f => f.State == ScanFileState.Read ? null : f.Reason ?? CoverageGap.ParseFailure, StringComparer.Ordinal);
         }
         var files = inputs.Files;
         var coverage = new ScanCoverage(
-            files, ScanScope.AbsentGap(ScanLimits.FromJson(scan.Limits), scan.IncludePaths, scan.ExcludePaths), scan.ExtractionGap);
+            files, ScanScope.AbsentGap(ScanLimits.FromJson(scan.Limits), scan.IncludePaths, scan.ExcludePaths), scan.ExtractionGapText());
 
         // Where the pattern was found before: the scan must have looked at exactly those files.
         foreach (var path in previousPaths)

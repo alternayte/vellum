@@ -71,7 +71,7 @@ public static class SourceWindow
 
         var pathHash = KeyHash.Of(path);
         var file = await db.ScanFiles.AsNoTracking()
-            .FirstOrDefaultAsync(f => f.ScanId == importId && f.PathHash == pathHash && f.State == ScanFileEntity.Read, ct);
+            .FirstOrDefaultAsync(f => f.ScanId == importId && f.PathHash == pathHash && f.State == ScanFileState.Read, ct);
         if (file is null || file.Path != path || PathFilter.SkipReason(path, out _) is not null)
             return Results.NotFound(new ErrorResponse("not_found", "The scan did not read a file with this path."));
 

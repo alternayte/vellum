@@ -238,7 +238,7 @@ public static class ChangeImpact
         // What the model holds is read from the model of the report, never from the status of
         // a proposal: an accepted proposal is in the model, and a pinned state that is older
         // than the decision does not hold it.
-        var schemaIds = proposals.Where(p => p.EntityKind == EntityKinds.Schema).Select(p => p.EntityId).ToHashSet();
+        var schemaIds = proposals.Where(p => p.EntityKind == StoredEntityKind.Schema).Select(p => p.EntityId).ToHashSet();
         Dictionary<Guid, SchemaRow> schemas = pinned is not null
             ? pinned.Schemas.Where(s => schemaIds.Contains(s.Id)).ToDictionary(s => s.Id)
             : schemaIds.Count == 0 ? [] : await services.GetRequiredService<AppDbContext>().Schemas.AsNoTracking()
@@ -256,10 +256,10 @@ public static class ChangeImpact
             var diff = ProposalJson.ReadChanges(proposal.Changes);
             changedFields[id] = [.. diff.Select(c => c.Field)];
             var relink = proposal.Action == ProposalAction.Relink;
-            var held = Held(proposal.EntityKind, proposal.EntityId);
+            var held = Held(EnumText.Of(proposal.EntityKind), proposal.EntityId);
             var holdsSource = held is not null && diff.Count > 0 && diff.All(c => held.Values.GetValueOrDefault(c.Field) == c.To);
             changes.Add(new ImpactChangeDto(
-                id, "contract", proposal.Action, proposal.EntityKind, proposal.EntityId, proposal.Name,
+                id, "contract", EnumText.Of(proposal.Action), EnumText.Of(proposal.EntityKind), proposal.EntityId, proposal.Name,
                 relink ? ImpactCertainty.Unknown : ImpactCertainty.Definite,
                 proposal.Action switch
                 {
@@ -274,15 +274,15 @@ public static class ChangeImpact
                 },
                 [.. diff.Select(c => new ProposalChangeDto(c.Field, Cut(c.From), Cut(c.To)))],
                 Evidence(repository, head.CommitSha, ProposalJson.ReadEvidence(proposal.Evidence)),
-                OwnerOf(model, proposal.EntityKind, proposal.EntityId), null));
+                OwnerOf(model, EnumText.Of(proposal.EntityKind), proposal.EntityId), null));
 
             if (relink || proposal.Action == ProposalAction.Add)
                 continue;
             var verb = proposal.Action == ProposalAction.Remove ? "removes" : "changes";
-            foreach (var scenario in scenarios.Of(proposal.Action, proposal.EntityKind, proposal.EntityId, changedFields[id]).Scenarios)
+            foreach (var scenario in scenarios.Of(proposal.Action, EnumText.Of(proposal.EntityKind), proposal.EntityId, changedFields[id]).Scenarios)
             {
                 AddFlow(scenario, ImpactCertainty.Definite, id, steps =>
-                    $"{Steps(steps)} {(steps.Count == 1 ? "names" : "name")} the {proposal.EntityKind} '{proposal.Name}', which this change {verb}.");
+                    $"{Steps(steps)} {(steps.Count == 1 ? "names" : "name")} the {EnumText.Of(proposal.EntityKind)} '{proposal.Name}', which this change {verb}.");
             }
         }
 
@@ -297,7 +297,7 @@ public static class ChangeImpact
             {
                 var linked = await db.FactLinks.AsNoTracking()
                     .Where(l => l.ProjectId == projectId && l.Host == scan.Host && l.Repository == scan.Repository
-                        && l.FactKey == factKey && l.EntityKind == EntityKinds.Element)
+                        && l.FactKey == factKey && l.EntityKind == StoredEntityKind.Element)
                     .OrderBy(l => l.Id).Select(l => (Guid?)l.EntityId).FirstOrDefaultAsync(ct);
                 serviceElements[factKey] = element = linked is { } found && model.Elements.ContainsKey(found) ? found : null;
             }
@@ -330,7 +330,7 @@ public static class ChangeImpact
                     stillDeclared.Add(id);
                 if (now is not null)
                 {
-                    changes.Add(new ImpactChangeDto(id, "source-pattern", ProposalAction.Change, "pattern", null, was.Name, ImpactCertainty.Definite,
+                    changes.Add(new ImpactChangeDto(id, "source-pattern", EnumText.Of(ProposalAction.Change), "pattern", null, was.Name, ImpactCertainty.Definite,
                         $"At commit {Short(head.CommitSha)} the source declares the pattern only under #if {now.Condition}. At commit {Short(baseScan.CommitSha)} it declared it with no condition.{remains}",
                         [new ProposalChangeDto(ConditionalAttribute, null, now.Condition)],
                         Evidence(repository, head.CommitSha, now.Evidence), element, was.Pattern));
@@ -339,7 +339,7 @@ public static class ChangeImpact
 
                 headCoverage ??= await CoverageAsync(db, scan, ct);
                 var gap = !scan.IsComplete ? CoverageGap.Limit : !scan.TreeListed ? CoverageGap.Failed : headCoverage.GapFor(was.Evidence);
-                changes.Add(new ImpactChangeDto(id, "source-pattern", ProposalAction.Remove, "pattern", null, was.Name,
+                changes.Add(new ImpactChangeDto(id, "source-pattern", EnumText.Of(ProposalAction.Remove), "pattern", null, was.Name,
                     gap is null ? ImpactCertainty.Definite : ImpactCertainty.Unknown,
                     (gap is null
                         ? $"The scan read every file where the pattern was declared at commit {Short(baseScan.CommitSha)}, and the snapshot of commit {Short(head.CommitSha)} has no such fact."
@@ -354,7 +354,7 @@ public static class ChangeImpact
             {
                 baseCoverage ??= await CoverageAsync(db, baseScan, ct);
                 var gap = !baseScan.IsComplete ? CoverageGap.Limit : !baseScan.TreeListed ? CoverageGap.Failed : baseCoverage.GapFor(now.Evidence);
-                changes.Add(new ImpactChangeDto($"pattern:{key}", "source-pattern", ProposalAction.Add, "pattern", null, now.Name,
+                changes.Add(new ImpactChangeDto($"pattern:{key}", "source-pattern", EnumText.Of(ProposalAction.Add), "pattern", null, now.Name,
                     gap is null ? ImpactCertainty.Definite : ImpactCertainty.Unknown,
                     gap is null
                         ? $"The source declares the pattern at the cited lines of commit {Short(head.CommitSha)}. The base scan read those files at commit {Short(baseScan.CommitSha)}, and its snapshot has no such fact."
@@ -373,7 +373,7 @@ public static class ChangeImpact
             targets.UnionWith(model.Messages.Values.Where(m => m.ProducerId.Value == service).Select(m => m.Id.Value));
             return targets;
         }
-        foreach (var change in changes.Where(c => c is { Kind: "source-pattern", ElementId: not null } && c.Action != ProposalAction.Add))
+        foreach (var change in changes.Where(c => c is { Kind: "source-pattern", ElementId: not null } && ActionOf(c) != ProposalAction.Add))
         {
             var service = change.ElementId!.Value;
             var name = model.Elements[service].Name;
@@ -383,7 +383,7 @@ public static class ChangeImpact
                     $"{Steps(steps)} {(steps.Count == 1 ? "runs" : "run")} in or against '{name}', the service of the pattern '{change.Pattern}'. Nothing shows which step needs the pattern.");
             }
         }
-        foreach (var change in changes.Where(c => c.Kind == "contract" && c.Action is ProposalAction.Change or ProposalAction.Remove or ProposalAction.Conflict))
+        foreach (var change in changes.Where(c => c.Kind == "contract" && ActionOf(c) is ProposalAction.Change or ProposalAction.Remove or ProposalAction.Conflict))
         {
             var owners = new HashSet<Guid>();
             if (change.ElementId is { } owner)
@@ -391,7 +391,7 @@ public static class ChangeImpact
             // A schema has no owner. The producers of the messages that use it run what changed.
             if (change.EntityKind == EntityKinds.Schema && change.EntityId is { } schema)
                 owners.UnionWith(model.Messages.Values.Where(m => m.SchemaId?.Value == schema).Select(m => m.ProducerId.Value));
-            var verb = change.Action == ProposalAction.Remove ? "removes" : "changes";
+            var verb = ActionOf(change) == ProposalAction.Remove ? "removes" : "changes";
             foreach (var element in owners.Where(e => model.Elements.ContainsKey(e)).Order())
             {
                 var name = model.Elements[element].Name;
@@ -405,10 +405,10 @@ public static class ChangeImpact
 
         // 3. Steps that consume a message whose payload changed: the steps in a handler of a
         // step that publishes it. Possible: nothing shows that a consumer reads what changed.
-        foreach (var change in changes.Where(c => c.Kind == "contract" && c.EntityId is not null && c.Action is ProposalAction.Change or ProposalAction.Remove or ProposalAction.Conflict))
+        foreach (var change in changes.Where(c => c.Kind == "contract" && c.EntityId is not null && ActionOf(c) is ProposalAction.Change or ProposalAction.Remove or ProposalAction.Conflict))
         {
             var fields = changedFields[change.Id];
-            var remove = change.Action == ProposalAction.Remove;
+            var remove = ActionOf(change) == ProposalAction.Remove;
             var entity = change.EntityId!.Value;
             var messages = change.EntityKind switch
             {
@@ -472,7 +472,7 @@ public static class ChangeImpact
                 .Concat(revision.RequiresPattern is { } needs ? [(needs.Repository, needs.Pattern, needs.Service)] : [])
                 .Where(r => r.Repository == scan.Repository)
                 .Distinct().ToList();
-            foreach (var change in changes.Where(c => c.Kind == "source-pattern" && c.Action != ProposalAction.Add))
+            foreach (var change in changes.Where(c => c.Kind == "source-pattern" && ActionOf(c) != ProposalAction.Add))
             {
                 if (!required.Any(r => r.Pattern == change.Pattern && (r.Service is null || r.Service == change.ElementId)))
                     continue;
@@ -485,9 +485,9 @@ public static class ChangeImpact
             }
 
             var linked = revision.Links.All().Where(l => l.Kind != "scenario").ToList();
-            foreach (var change in changes.Where(c => c.Kind == "contract" && c.Action is ProposalAction.Change or ProposalAction.Remove or ProposalAction.Conflict))
+            foreach (var change in changes.Where(c => c.Kind == "contract" && ActionOf(c) is ProposalAction.Change or ProposalAction.Remove or ProposalAction.Conflict))
             {
-                var verb = change.Action == ProposalAction.Remove ? "removes" : "changes";
+                var verb = ActionOf(change) == ProposalAction.Remove ? "removes" : "changes";
                 var fields = change.Diff.Count == 0 ? "" : $" ({string.Join(", ", change.Diff.Select(d => d.Field))})";
                 if (linked.Any(l => l.Id == change.EntityId))
                 {
@@ -634,9 +634,9 @@ public static class ChangeImpact
         var rows = await db.ScanFiles.AsNoTracking().Where(f => f.ScanId == scan.Id)
             .Select(f => new { f.Path, f.State, f.Reason }).ToListAsync(ct);
         var files = rows.ToDictionary(
-            f => f.Path, f => f.State == ScanFileEntity.Read ? null : f.Reason ?? CoverageGap.ParseFailure, StringComparer.Ordinal);
+            f => f.Path, f => f.State == ScanFileState.Read ? null : f.Reason ?? CoverageGap.ParseFailure, StringComparer.Ordinal);
         return new ScanCoverage(
-            files, ScanScope.AbsentGap(ScanLimits.FromJson(scan.Limits), scan.IncludePaths, scan.ExcludePaths), scan.ExtractionGap);
+            files, ScanScope.AbsentGap(ScanLimits.FromJson(scan.Limits), scan.IncludePaths, scan.ExcludePaths), scan.ExtractionGapText());
     }
 
     /// <summary>The element that owns the entity: the element itself, the owner of an operation, the consumer of a subscription, the producer of a message.</summary>
@@ -658,6 +658,10 @@ public static class ChangeImpact
         string.Create(CultureInfo.InvariantCulture, $"{(stepIds.Count == 1 ? "Step" : "Steps")} {string.Join(", ", stepIds)}");
 
     private static string Short(string? commitSha) => commitSha is { Length: > 10 } ? commitSha[..10] : commitSha ?? "";
+
+    /// <summary>The action of a change, from its text (<see cref="ImpactChangeDto.Action"/>).</summary>
+    private static ProposalAction ActionOf(ImpactChangeDto change) =>
+        EnumText.TryParse(change.Action, out ProposalAction action) ? action : throw new InvalidOperationException($"Unknown action '{change.Action}'.");
 
     private static string? Cut(string? value) => value is { Length: > MaxDiffValue } ? value[..MaxDiffValue] + "…" : value;
 }

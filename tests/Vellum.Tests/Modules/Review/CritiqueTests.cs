@@ -223,7 +223,7 @@ public class CritiqueTests(SharedOutboundHost shared) : IClassFixture<SharedOutb
             import.FactLinks.Add(new FactLinkEntity
             {
                 ProjectId = projectId, Host = "github.com", Repository = "acme/secret-billing", FactKey = "service:billing", FactKeyHash = KeyHash.Of("service:billing"),
-                EntityKind = EntityKinds.Element, EntityId = model.Billing, ScanId = scan.Id, CommitSha = "4f9a1c7",
+                EntityKind = StoredEntityKind.Element, EntityId = model.Billing, ScanId = scan.Id, CommitSha = "4f9a1c7",
                 AcceptedBy = "user:test", AcceptedAt = DateTimeOffset.UtcNow,
             });
             await import.SaveChangesAsync();

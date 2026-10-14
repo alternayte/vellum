@@ -1,22 +1,20 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using Vellum.Modules.Import.Extraction;
 using Vellum.Shared;
 
 namespace Vellum.Modules.Import;
 
-public static class ScanStatus
+public enum ScanStatus
 {
-    public const string Queued = "queued";
-    public const string Running = "running";
+    Queued,
+    Running,
     /// <summary>The scan starts again by itself at <c>RetryAt</c>: GitHub's rate limit is used up, or an unexpected error is retried.</summary>
-    public const string Waiting = "waiting";
-    public const string Completed = "completed";
-    public const string Failed = "failed";
-    public const string Cancelled = "cancelled";
-
-    /// <summary>The statuses in which a worker has, or will take, the scan.</summary>
-    public static readonly string[] Active = [Queued, Running, Waiting];
+    Waiting,
+    Completed,
+    Failed,
+    Cancelled,
 }
 
 /// <summary>What a scan may conclude, from the line of history it read.</summary>
@@ -68,7 +66,7 @@ public class ScanEntity
     public string[] ExcludePaths { get; set; } = [];
     /// <summary>The <c>import.*</c> settings as they were when the scan was asked for (<see cref="ScanLimits"/>).</summary>
     public string Limits { get; set; } = null!;
-    public string Status { get; set; } = ScanStatus.Queued;
+    public ScanStatus Status { get; set; } = ScanStatus.Queued;
     /// <summary>True when every file of the commit has a row in <c>scan_files</c>.</summary>
     public bool TreeListed { get; set; }
     public int FilesListed { get; set; }
@@ -86,7 +84,7 @@ public class ScanEntity
     /// <c>limit</c> or <c>failed</c>: facts are missing for a reason no single file explains,
     /// so no linked fact counts as covered.
     /// </summary>
-    public string? ExtractionGap { get; set; }
+    public StoredCoverageGap? ExtractionGap { get; set; }
     /// <summary>A JSON <see cref="LinkCoverage"/>: how many accepted facts this scan could judge, and why not the others. Null until the scan completes.</summary>
     public string? Coverage { get; set; }
     /// <summary>Links that the scan moved to a new fact key after the extraction rules changed.</summary>
@@ -131,6 +129,9 @@ public class ScanEntity
 
     /// <summary>True for a scan of the head commit of a pull request. Like a bare commit, it follows no line of history.</summary>
     public bool IsPullRequest() => PullRequestNumber is not null;
+
+    /// <summary><see cref="ExtractionGap"/> as the coverage text of <see cref="Scans.CoverageGap"/>: <c>limit</c>, <c>failed</c> or null.</summary>
+    public string? ExtractionGapText() => ExtractionGap is { } gap ? EnumText.Of(gap) : null;
 }
 
 /// <summary>
@@ -140,12 +141,6 @@ public class ScanEntity
 /// </summary>
 public class ScanFileEntity
 {
-    public const string Pending = "pending";
-    /// <summary>The content was fetched and cleared. When the scan is completed, it was also given to the extractors.</summary>
-    public const string Read = "read";
-    /// <summary>The content was not read, or was read and not used. <see cref="Reason"/> says why.</summary>
-    public const string Skipped = "skipped";
-
     /// <summary>The longest path a scan records. A longer path gets a note and no row.</summary>
     public const int MaxPath = 1024;
 
@@ -155,9 +150,31 @@ public class ScanFileEntity
     public string Path { get; set; } = null!;
     public string BlobSha { get; set; } = null!;
     public long Size { get; set; }
-    public string State { get; set; } = Pending;
+    public ScanFileState State { get; set; } = ScanFileState.Pending;
     /// <summary>Why a skipped file was not read: a note code, or one of the codes of <see cref="CoverageGap"/>.</summary>
     public string? Reason { get; set; }
+}
+
+/// <summary>What the scan did with one file of the commit.</summary>
+public enum ScanFileState
+{
+    Pending,
+    /// <summary>The content was fetched and cleared. When the scan is completed, it was also given to the extractors.</summary>
+    Read,
+    /// <summary>The content was not read, or was read and not used. <see cref="ScanFileEntity.Reason"/> says why.</summary>
+    Skipped,
+}
+
+/// <summary>
+/// The class of <see cref="ScanEntity.ExtractionGap"/> as the column stores it. The same four
+/// classes are the text of <see cref="Scans.CoverageGap"/>, which the coverage reports use.
+/// </summary>
+public enum StoredCoverageGap
+{
+    Scope,
+    Limit,
+    Withheld,
+    Failed,
 }
 
 /// <summary>
@@ -236,16 +253,16 @@ public class SnapshotEntity
     public DateTimeOffset CreatedAt { get; set; }
 }
 
-public static class FactDisposition
+public enum FactDisposition
 {
     /// <summary>The fact maps to a model entity. A proposal exists for it unless nothing differs.</summary>
-    public const string Mapped = "mapped";
+    Mapped,
     /// <summary>The fact is part of another fact's entity: a publication gives a message its producer.</summary>
-    public const string Folded = "folded";
+    Folded,
     /// <summary>The model has no place for the fact yet. It stays readable as evidence.</summary>
-    public const string EvidenceOnly = "evidence-only";
+    EvidenceOnly,
     /// <summary>The fact maps to an entity, and something it needs is missing, was rejected or waits for a relink decision.</summary>
-    public const string Blocked = "blocked";
+    Blocked,
 }
 
 /// <summary>One extracted fact of a snapshot, with what the importer did with it.</summary>
@@ -253,46 +270,62 @@ public class SnapshotFactEntity
 {
     public Guid ScanId { get; set; }
     public int Seq { get; set; }
-    public string Kind { get; set; } = null!;
+    public FactKind Kind { get; set; }
     public string FactKey { get; set; } = null!;
     public string Name { get; set; } = null!;
     /// <summary>A JSON object of attribute name to value.</summary>
     public string Attributes { get; set; } = "{}";
     /// <summary>A JSON list of <see cref="EvidenceRef"/>.</summary>
     public string Evidence { get; set; } = "[]";
-    public string Disposition { get; set; } = null!;
+    public FactDisposition Disposition { get; set; }
     /// <summary>A fixed code for a fact that is not <c>mapped</c>, for example <c>no-model-home</c>.</summary>
     public string? Reason { get; set; }
 }
 
-public static class ProposalStatus
+public enum ProposalStatus
 {
-    public const string Pending = "pending";
-    public const string Accepted = "accepted";
-    public const string Rejected = "rejected";
+    Pending,
+    Accepted,
+    Rejected,
     /// <summary>A later tracking scan of the same repository completed before a person decided, or the scan was planned again.</summary>
-    public const string Superseded = "superseded";
+    Superseded,
 }
 
-public static class ProposalAction
+public enum ProposalAction
 {
-    public const string Add = "add";
-    public const string Change = "change";
-    public const string Remove = "remove";
-    public const string Conflict = "conflict";
+    Add,
+    Change,
+    Remove,
+    Conflict,
     /// <summary>
     /// The extraction rules changed and the exact rule did not say which new fact an accepted
     /// fact is. A person names the fact, or says that none is. It changes the link only.
     /// </summary>
-    public const string Relink = "relink";
+    Relink,
 }
 
 /// <summary>What a link or a proposal is about: a fact of an extractor, or the repository itself.</summary>
-public static class Subject
+public enum Subject
 {
-    public const string Fact = "fact";
+    Fact,
     /// <summary>The repository as the system that holds its services. No extractor makes this one; its fact key is empty.</summary>
-    public const string Repository = "repository";
+    Repository,
+}
+
+/// <summary>
+/// The kind of model entity a proposal or a link names, as the column stores it. The same
+/// kinds are the text of <see cref="Proposals.EntityKinds"/>, which the model lookups and the
+/// impact reports use.
+/// </summary>
+public enum StoredEntityKind
+{
+    Element,
+    Operation,
+    Channel,
+    Subscription,
+    Binding,
+    Message,
+    Schema,
 }
 
 /// <summary>
@@ -305,11 +338,11 @@ public class ProposalEntity
     public Guid ScanId { get; set; }
     public Guid ProjectId { get; set; }
     public int Seq { get; set; }
-    public string Action { get; set; } = null!;
-    public string EntityKind { get; set; } = null!;
+    public ProposalAction Action { get; set; }
+    public StoredEntityKind EntityKind { get; set; }
     /// <summary>The entity the proposal is about. For <c>add</c> it is the ID the new entity gets.</summary>
     public Guid EntityId { get; set; }
-    public string Subject { get; set; } = Import.Subject.Fact;
+    public Subject Subject { get; set; } = Import.Subject.Fact;
     public string FactKey { get; set; } = null!;
     public string Name { get; set; } = null!;
     /// <summary>A JSON object: the values the source establishes. Null for <c>remove</c>. For <c>relink</c>: <c>{ candidates: [...] }</c>.</summary>
@@ -325,7 +358,7 @@ public class ProposalEntity
     /// <summary>For a message: a JSON list of the fact keys of the services whose subscriptions name it.</summary>
     public string ConsumerKeys { get; set; } = "[]";
     public Guid[] DependsOn { get; set; } = [];
-    public string Status { get; set; } = ProposalStatus.Pending;
+    public ProposalStatus Status { get; set; } = ProposalStatus.Pending;
     /// <summary>True when a limit or a failure cut the scan short.</summary>
     public bool Partial { get; set; }
     /// <summary>Identifies what is proposed, so a rejected proposal is not made again.</summary>
@@ -346,11 +379,11 @@ public class FactLinkEntity
     /// <summary>The repository's name in lower case. It follows a rename; <see cref="RepositoryId"/> does not change.</summary>
     public string Repository { get; set; } = null!;
     public long? RepositoryId { get; set; }
-    public string Subject { get; set; } = Import.Subject.Fact;
+    public Subject Subject { get; set; } = Import.Subject.Fact;
     public string FactKey { get; set; } = null!;
     /// <summary><see cref="Scans.KeyHash"/> of <see cref="FactKey"/>: the indexed form.</summary>
     public string FactKeyHash { get; set; } = null!;
-    public string EntityKind { get; set; } = null!;
+    public StoredEntityKind EntityKind { get; set; }
     public Guid EntityId { get; set; }
     public Guid ScanId { get; set; }
     public string CommitSha { get; set; } = null!;
@@ -378,7 +411,7 @@ public class RejectionEntity
     public string Host { get; set; } = null!;
     public string Repository { get; set; } = null!;
     public long? RepositoryId { get; set; }
-    public string Subject { get; set; } = Import.Subject.Fact;
+    public Subject Subject { get; set; } = Import.Subject.Fact;
     public string FactKey { get; set; } = null!;
     public string FactKeyHash { get; set; } = null!;
     public string Fingerprint { get; set; } = null!;

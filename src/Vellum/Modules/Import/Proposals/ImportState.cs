@@ -61,7 +61,7 @@ internal sealed record ImportState(
             .Where(l => l.Host == scan.Host && l.Repository == scan.Repository)
             .OrderBy(l => l.Id)
             .Select(l => new LinkInfo(
-                l.Id, FactMapping.KeyOf(l.Subject, l.FactKey), l.EntityKind, l.EntityId, l.CommitSha, l.RuleFingerprint,
+                l.Id, FactMapping.KeyOf(l.Subject, l.FactKey), EnumText.Of(l.EntityKind), l.EntityId, l.CommitSha, l.RuleFingerprint,
                 ProposalJson.ReadAttributes(l.Attributes), ProposalJson.ReadKeys(l.ConsumerKeys),
                 ProposalJson.ReadValues(l.Accepted), ProposalJson.ReadEvidence(l.Evidence)))
             .ToList();

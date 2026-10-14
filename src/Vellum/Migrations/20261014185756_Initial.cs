@@ -2,6 +2,8 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
+using Vellum.Modules.Import;
+using Vellum.Modules.Import.Extraction;
 using Vellum.Modules.Promises;
 using Vellum.Modules.Review;
 using Vellum.Modules.Workspaces;
@@ -65,6 +67,15 @@ namespace Vellum.Migrations
                 name: "schemas");
 
             migrationBuilder.AlterDatabase()
+                .Annotation("Npgsql:Enum:import.coverage_gap", "failed,limit,scope,withheld")
+                .Annotation("Npgsql:Enum:import.entity_kind", "binding,channel,element,message,operation,schema,subscription")
+                .Annotation("Npgsql:Enum:import.fact_disposition", "blocked,evidence_only,folded,mapped")
+                .Annotation("Npgsql:Enum:import.fact_kind", "channel,data_access,data_store,dependency,deployment,message,operation,pattern,publication,schema,service,subscription")
+                .Annotation("Npgsql:Enum:import.proposal_action", "add,change,conflict,relink,remove")
+                .Annotation("Npgsql:Enum:import.proposal_status", "accepted,pending,rejected,superseded")
+                .Annotation("Npgsql:Enum:import.scan_file_state", "pending,read,skipped")
+                .Annotation("Npgsql:Enum:import.scan_status", "cancelled,completed,failed,queued,running,waiting")
+                .Annotation("Npgsql:Enum:import.subject", "fact,repository")
                 .Annotation("Npgsql:Enum:promises.impact_gate_policy", "fail_on_broken,off")
                 .Annotation("Npgsql:Enum:promises.promise_lifecycle", "approved,draft,retired")
                 .Annotation("Npgsql:Enum:promises.promise_origin", "agent_suggested,ai_suggested,human")
@@ -337,10 +348,10 @@ namespace Vellum.Migrations
                     host = table.Column<string>(type: "text", nullable: false),
                     repository = table.Column<string>(type: "text", nullable: false),
                     repository_id = table.Column<long>(type: "bigint", nullable: true),
-                    subject = table.Column<string>(type: "character varying(20)", maxLength: 20, nullable: false, defaultValue: "fact"),
+                    subject = table.Column<Subject>(type: "import.subject", nullable: false, defaultValue: Subject.Fact),
                     fact_key = table.Column<string>(type: "character varying(1000)", maxLength: 1000, nullable: false),
                     fact_key_hash = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: false),
-                    entity_kind = table.Column<string>(type: "text", nullable: false),
+                    entity_kind = table.Column<StoredEntityKind>(type: "import.entity_kind", nullable: false),
                     entity_id = table.Column<Guid>(type: "uuid", nullable: false),
                     scan_id = table.Column<Guid>(type: "uuid", nullable: false),
                     commit_sha = table.Column<string>(type: "text", nullable: false),
@@ -625,7 +636,7 @@ namespace Vellum.Migrations
                     host = table.Column<string>(type: "text", nullable: false),
                     repository = table.Column<string>(type: "text", nullable: false),
                     repository_id = table.Column<long>(type: "bigint", nullable: true),
-                    subject = table.Column<string>(type: "character varying(20)", maxLength: 20, nullable: false, defaultValue: "fact"),
+                    subject = table.Column<Subject>(type: "import.subject", nullable: false, defaultValue: Subject.Fact),
                     fact_key = table.Column<string>(type: "character varying(1000)", maxLength: 1000, nullable: false),
                     fact_key_hash = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: false),
                     fingerprint = table.Column<string>(type: "text", nullable: false),
@@ -761,7 +772,7 @@ namespace Vellum.Migrations
                     include_paths = table.Column<string[]>(type: "text[]", nullable: false),
                     exclude_paths = table.Column<string[]>(type: "text[]", nullable: false),
                     limits = table.Column<string>(type: "jsonb", nullable: false),
-                    status = table.Column<string>(type: "text", nullable: false),
+                    status = table.Column<ScanStatus>(type: "import.scan_status", nullable: false),
                     tree_listed = table.Column<bool>(type: "boolean", nullable: false),
                     files_listed = table.Column<int>(type: "integer", nullable: false),
                     files_read = table.Column<int>(type: "integer", nullable: false),
@@ -770,7 +781,7 @@ namespace Vellum.Migrations
                     bytes_read = table.Column<long>(type: "bigint", nullable: false),
                     partial = table.Column<bool>(type: "boolean", nullable: false),
                     is_complete = table.Column<bool>(type: "boolean", nullable: false),
-                    extraction_gap = table.Column<string>(type: "text", nullable: true),
+                    extraction_gap = table.Column<StoredCoverageGap>(type: "import.coverage_gap", nullable: true),
                     coverage = table.Column<string>(type: "jsonb", nullable: true),
                     relinked = table.Column<int>(type: "integer", nullable: false),
                     needs_review = table.Column<int>(type: "integer", nullable: false),
@@ -1197,10 +1208,10 @@ namespace Vellum.Migrations
                     scan_id = table.Column<Guid>(type: "uuid", nullable: false),
                     project_id = table.Column<Guid>(type: "uuid", nullable: false),
                     seq = table.Column<int>(type: "integer", nullable: false),
-                    action = table.Column<string>(type: "text", nullable: false),
-                    entity_kind = table.Column<string>(type: "text", nullable: false),
+                    action = table.Column<ProposalAction>(type: "import.proposal_action", nullable: false),
+                    entity_kind = table.Column<StoredEntityKind>(type: "import.entity_kind", nullable: false),
                     entity_id = table.Column<Guid>(type: "uuid", nullable: false),
-                    subject = table.Column<string>(type: "character varying(20)", maxLength: 20, nullable: false, defaultValue: "fact"),
+                    subject = table.Column<Subject>(type: "import.subject", nullable: false, defaultValue: Subject.Fact),
                     fact_key = table.Column<string>(type: "character varying(1000)", maxLength: 1000, nullable: false),
                     name = table.Column<string>(type: "text", nullable: false),
                     proposed = table.Column<string>(type: "jsonb", nullable: true),
@@ -1210,7 +1221,7 @@ namespace Vellum.Migrations
                     attributes = table.Column<string>(type: "jsonb", nullable: false),
                     consumer_keys = table.Column<string>(type: "jsonb", nullable: false, defaultValueSql: "'[]'::jsonb"),
                     depends_on = table.Column<Guid[]>(type: "uuid[]", nullable: false),
-                    status = table.Column<string>(type: "text", nullable: false),
+                    status = table.Column<ProposalStatus>(type: "import.proposal_status", nullable: false),
                     partial = table.Column<bool>(type: "boolean", nullable: false),
                     fingerprint = table.Column<string>(type: "text", nullable: false),
                     decided_by = table.Column<string>(type: "text", nullable: true),
@@ -1238,7 +1249,7 @@ namespace Vellum.Migrations
                     path = table.Column<string>(type: "character varying(1024)", maxLength: 1024, nullable: false),
                     blob_sha = table.Column<string>(type: "text", nullable: false),
                     size = table.Column<long>(type: "bigint", nullable: false),
-                    state = table.Column<string>(type: "text", nullable: false),
+                    state = table.Column<ScanFileState>(type: "import.scan_file_state", nullable: false),
                     reason = table.Column<string>(type: "text", nullable: true)
                 },
                 constraints: table =>
@@ -1496,12 +1507,12 @@ namespace Vellum.Migrations
                 {
                     scan_id = table.Column<Guid>(type: "uuid", nullable: false),
                     seq = table.Column<int>(type: "integer", nullable: false),
-                    kind = table.Column<string>(type: "text", nullable: false),
+                    kind = table.Column<FactKind>(type: "import.fact_kind", nullable: false),
                     fact_key = table.Column<string>(type: "character varying(1000)", maxLength: 1000, nullable: false),
                     name = table.Column<string>(type: "text", nullable: false),
                     attributes = table.Column<string>(type: "jsonb", nullable: false),
                     evidence = table.Column<string>(type: "jsonb", nullable: false),
-                    disposition = table.Column<string>(type: "text", nullable: false),
+                    disposition = table.Column<FactDisposition>(type: "import.fact_disposition", nullable: false),
                     reason = table.Column<string>(type: "text", nullable: true)
                 },
                 constraints: table =>

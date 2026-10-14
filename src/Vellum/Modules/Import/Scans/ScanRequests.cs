@@ -389,8 +389,8 @@ public static partial class ScanRequests
             return true;
         var workspaceId = scan.WorkspaceId;
         return await db.ScanFiles.AnyAsync(f => f.ScanId == scan.Id
-            && ((f.State == ScanFileEntity.Pending && !db.Blobs.Any(b => b.WorkspaceId == workspaceId && b.BlobSha == f.BlobSha))
-                || (f.State == ScanFileEntity.Read && !db.Blobs.Any(b => b.WorkspaceId == workspaceId && b.BlobSha == f.BlobSha && b.Content != null))), ct);
+            && ((f.State == ScanFileState.Pending && !db.Blobs.Any(b => b.WorkspaceId == workspaceId && b.BlobSha == f.BlobSha))
+                || (f.State == ScanFileState.Read && !db.Blobs.Any(b => b.WorkspaceId == workspaceId && b.BlobSha == f.BlobSha && b.Content != null))), ct);
     }
 
     /// <summary>
@@ -436,7 +436,7 @@ public static partial class ScanRequests
         var files = await db.ScanFiles.AsNoTracking().Where(f => f.ScanId == scan.Id)
             .Select(f => new { f.Path, f.State, f.Reason }).ToListAsync(ct);
         var coverageFiles = files.ToDictionary(
-            f => f.Path, f => f.State == ScanFileEntity.Read ? null : f.Reason ?? CoverageGap.ParseFailure, StringComparer.Ordinal);
+            f => f.Path, f => f.State == ScanFileState.Read ? null : f.Reason ?? CoverageGap.ParseFailure, StringComparer.Ordinal);
         var absent = ScanScope.AbsentGap(ScanLimits.FromJson(scan.Limits), scan.IncludePaths, scan.ExcludePaths);
         var facts = await SnapshotWriter.StoredFactsAsync(db, scan.Id, ct);
 
@@ -449,8 +449,8 @@ public static partial class ScanRequests
         var now = time.GetUtcNow();
         var outcome = await SnapshotWriter.WriteAsync(
             http.RequestServices, scan, WriteMode.Track(userId),
-            new SnapshotInput(facts, scan.IsComplete, scan.ExtractionGap, scan.Notes,
-                () => new ScanCoverage(coverageFiles, absent, scan.ExtractionGap), scan.FilesExtracted),
+            new SnapshotInput(facts, scan.IsComplete, scan.ExtractionGapText(), scan.Notes,
+                () => new ScanCoverage(coverageFiles, absent, scan.ExtractionGapText()), scan.FilesExtracted),
             now, ct);
         switch (outcome)
         {
@@ -592,7 +592,7 @@ public static partial class ScanRequests
         var kind = ScanKindInfo.Of(scan, tracked);
         var completed = scan.Status == ScanStatus.Completed;
         return new ScanDto(
-            scan.Id, scan.Repository, scan.RepositoryName, scan.RequestedRef, scan.ResolvedRef, scan.CommitSha, scan.Status, scan.IsComplete,
+            scan.Id, scan.Repository, scan.RepositoryName, scan.RequestedRef, scan.ResolvedRef, scan.CommitSha, EnumText.Of(scan.Status), scan.IsComplete,
             kind.Kind, tracked?.RefName, completed && kind.Tracking, completed ? ScanKindInfo.Describe(kind, tracked) : null,
             new ScanCoverageDto(scan.FilesListed, scan.FilesExtracted, LinkedFactCoverageDto.From(LinkCoverage.FromJson(scan.Coverage))),
             scan.Relinked, scan.NeedsReview,

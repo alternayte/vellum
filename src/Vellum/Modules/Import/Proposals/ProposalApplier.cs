@@ -47,14 +47,14 @@ internal sealed class ProposalApplier(
 
         return proposal.EntityKind switch
         {
-            EntityKinds.Element => Element(proposal, proposed, current, provenance),
-            EntityKinds.Operation => Operation(proposal, proposed, current, provenance),
-            EntityKinds.Channel => Channel(proposal, proposed, current, provenance),
-            EntityKinds.Subscription => Subscription(proposal, proposed, current, provenance),
-            EntityKinds.Binding => Binding(proposal, proposed, current, provenance),
-            EntityKinds.Message => Message(proposal, proposed, current, provenance),
-            EntityKinds.Schema => Schema(proposal, proposed, current),
-            _ => $"Entity kind '{proposal.EntityKind}' is not one the importer writes.",
+            StoredEntityKind.Element => Element(proposal, proposed, current, provenance),
+            StoredEntityKind.Operation => Operation(proposal, proposed, current, provenance),
+            StoredEntityKind.Channel => Channel(proposal, proposed, current, provenance),
+            StoredEntityKind.Subscription => Subscription(proposal, proposed, current, provenance),
+            StoredEntityKind.Binding => Binding(proposal, proposed, current, provenance),
+            StoredEntityKind.Message => Message(proposal, proposed, current, provenance),
+            StoredEntityKind.Schema => Schema(proposal, proposed, current),
+            _ => $"Entity kind '{EnumText.Of(proposal.EntityKind)}' is not one the importer writes.",
         };
     }
 
@@ -263,9 +263,9 @@ internal sealed class ProposalApplier(
 
         if (proposal.Action != ProposalAction.Remove)
         {
-            var entity = ModelIndex.Read(State, proposal.EntityKind, proposal.EntityId);
+            var entity = ModelIndex.Read(State, EnumText.Of(proposal.EntityKind), proposal.EntityId);
             var accepted = new SortedDictionary<string, string?>(StringComparer.Ordinal);
-            foreach (var field in ModelIndex.ComparedFields(proposal.EntityKind))
+            foreach (var field in ModelIndex.ComparedFields(EnumText.Of(proposal.EntityKind)))
                 accepted[field] = entity?.Values.GetValueOrDefault(field);
             AcceptedValues[proposal.Id] = accepted;
         }

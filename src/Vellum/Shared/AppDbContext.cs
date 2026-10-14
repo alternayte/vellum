@@ -163,6 +163,7 @@ public static class AppDatabase
     private static readonly IReadOnlyList<PostgresEnum> Enums =
     [
         .. WorkspacesTables.Enums,
+        .. ImportTables.Enums,
         .. PromisesTables.Enums,
         .. ReviewTables.Enums,
     ];

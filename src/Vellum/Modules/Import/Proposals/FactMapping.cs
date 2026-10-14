@@ -67,7 +67,7 @@ internal sealed record Candidate(
     string? MatchRoute = null);
 
 /// <summary>A fact of the snapshot with what the mapping decided for it.</summary>
-internal sealed record MappedFact(ExtractedFact Fact, string Disposition, string? Reason);
+internal sealed record MappedFact(ExtractedFact Fact, FactDisposition Disposition, string? Reason);
 
 /// <param name="Refused">Facts that are not kept at all, each with the path of its first evidence. See <see cref="FactMapping.Refusal"/>.</param>
 internal sealed record MappingResult(
@@ -111,13 +111,13 @@ internal static class FactMapping
     /// </summary>
     public const string RepositoryKey = "\u0001repository";
 
-    public static string SubjectOf(string key) => key == RepositoryKey ? Subject.Repository : Subject.Fact;
+    public static Subject SubjectOf(string key) => key == RepositoryKey ? Subject.Repository : Subject.Fact;
 
     /// <summary>The fact key as a row holds it.</summary>
     public static string StoredKey(string key) => key == RepositoryKey ? "" : key;
 
     /// <summary>The in-memory key of a stored row.</summary>
-    public static string KeyOf(string subject, string factKey) => subject == Subject.Repository ? RepositoryKey : factKey;
+    public static string KeyOf(Subject subject, string factKey) => subject == Subject.Repository ? RepositoryKey : factKey;
 
     /// <summary>
     /// Why a fact is not kept, or null. Text from a repository reaches <c>jsonb</c> columns,

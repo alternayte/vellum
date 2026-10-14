@@ -355,7 +355,7 @@ public sealed class ScanWorker(
             {
                 ScanId = scan.Id, Path = file.Entry.Path, PathHash = KeyHash.Of(file.Entry.Path),
                 BlobSha = file.Entry.Sha, Size = file.Entry.Size ?? 0,
-                State = file.Reason is null ? ScanFileEntity.Pending : ScanFileEntity.Skipped, Reason = file.Reason,
+                State = file.Reason is null ? ScanFileState.Pending : ScanFileState.Skipped, Reason = file.Reason,
             }).ToList();
             db.ScanFiles.AddRange(rows);
             scan.TreeListed = true;
@@ -372,14 +372,14 @@ public sealed class ScanWorker(
         // is gone goes back to the list of files to fetch.
         var workspaceId = scan.WorkspaceId;
         var lost = await db.ScanFiles
-            .Where(f => f.ScanId == scanId && f.State == ScanFileEntity.Read
+            .Where(f => f.ScanId == scanId && f.State == ScanFileState.Read
                 && !db.Blobs.Any(b => b.WorkspaceId == workspaceId && b.BlobSha == f.BlobSha && b.Content != null))
             .ToListAsync(ct);
         if (lost.Count > 0)
         {
             foreach (var file in lost)
             {
-                file.State = ScanFileEntity.Pending;
+                file.State = ScanFileState.Pending;
                 scan.FilesRead--;
                 scan.BytesRead -= file.Size;
             }
@@ -387,7 +387,7 @@ public sealed class ScanWorker(
         }
 
         // Step 4: the blobs, in path order. One that is stored already is not asked for.
-        var pending = (await db.ScanFiles.Where(f => f.ScanId == scan.Id && f.State == ScanFileEntity.Pending).ToListAsync(ct))
+        var pending = (await db.ScanFiles.Where(f => f.ScanId == scan.Id && f.State == ScanFileState.Pending).ToListAsync(ct))
             .OrderBy(f => f.Path, StringComparer.Ordinal).ToList();
         foreach (var file in pending)
         {
@@ -445,7 +445,7 @@ public sealed class ScanWorker(
         // They get exactly the files that count as read. One file less means stored
         // content went missing, and the scan has no result.
         var files = await db.ScanFiles.Where(f => f.ScanId == scanId).ToListAsync(ct);
-        var readFiles = files.Where(f => f.State == ScanFileEntity.Read).ToList();
+        var readFiles = files.Where(f => f.State == ScanFileState.Read).ToList();
         var shas = readFiles.Select(f => f.BlobSha).Distinct().ToList();
         var contents = new Dictionary<string, byte[]>(StringComparer.Ordinal);
         foreach (var chunk in shas.Chunk(500))
@@ -469,9 +469,9 @@ public sealed class ScanWorker(
         var byPath = readFiles.ToDictionary(f => f.Path, StringComparer.Ordinal);
         foreach (var note in result.Notes)
         {
-            if (FileGap(note) is not { } reason || !byPath.TryGetValue(note.Path, out var file) || file.State != ScanFileEntity.Read)
+            if (FileGap(note) is not { } reason || !byPath.TryGetValue(note.Path, out var file) || file.State != ScanFileState.Read)
                 continue;
-            file.State = ScanFileEntity.Skipped;
+            file.State = ScanFileState.Skipped;
             file.Reason = reason;
             if (CoverageGap.Of(reason) == CoverageGap.Withheld)
             {
@@ -487,7 +487,7 @@ public sealed class ScanWorker(
             .ToList();
         var isComplete = !scan.Partial && result.IsComplete;
 
-        var coverageFiles = files.ToDictionary(f => f.Path, f => f.State == ScanFileEntity.Read ? null : f.Reason ?? CoverageGap.ParseFailure, StringComparer.Ordinal);
+        var coverageFiles = files.ToDictionary(f => f.Path, f => f.State == ScanFileState.Read ? null : f.Reason ?? CoverageGap.ParseFailure, StringComparer.Ordinal);
         var absent = ScanScope.AbsentGap(limits, scan.IncludePaths, scan.ExcludePaths);
 
         // Step 6: the snapshot, the proposals and the stale marks, in one transaction with
@@ -662,14 +662,14 @@ public sealed class ScanWorker(
 
     private static void MarkRead(ScanEntity scan, ScanFileEntity file, long bytes)
     {
-        file.State = ScanFileEntity.Read;
+        file.State = ScanFileState.Read;
         scan.FilesRead++;
         scan.BytesRead += bytes;
     }
 
     private static void Skip(ScanEntity scan, ScanFileEntity file, string reason, bool partial)
     {
-        file.State = ScanFileEntity.Skipped;
+        file.State = ScanFileState.Skipped;
         file.Reason = reason;
         scan.FilesSkipped++;
         scan.Partial |= partial;
@@ -720,7 +720,7 @@ public sealed class ScanWorker(
         }
 
         var waiting = stop.Status == ScanStatus.Waiting;
-        VellumMetrics.ImportScanEnded(stop.Status);
+        VellumMetrics.ImportScanEnded(EnumText.Of(stop.Status));
         DateTimeOffset? retryAt = !waiting ? null : stop.Error is null ? RetryAt(stop.RetryAt) : stop.RetryAt;
         DateTimeOffset? completedAt = waiting ? null : now;
 

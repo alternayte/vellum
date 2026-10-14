@@ -1,6 +1,7 @@
 using System.Collections.Frozen;
 using System.Globalization;
 using Vellum.Modules.GitHub;
+using Vellum.Shared;
 
 namespace Vellum.Modules.Import.Scans;
 
@@ -10,14 +11,14 @@ public sealed record ScanError(string Code, string Message);
 /// <summary>Ends the run of a scan. Thrown inside the worker and never leaves it.</summary>
 internal sealed class ScanStop : Exception
 {
-    private ScanStop(string status, ScanError? error, DateTimeOffset? retryAt) : base(error?.Code ?? status)
+    private ScanStop(ScanStatus status, ScanError? error, DateTimeOffset? retryAt) : base(error?.Code ?? EnumText.Of(status))
     {
         Status = status;
         Error = error;
         RetryAt = retryAt;
     }
 
-    public string Status { get; }
+    public ScanStatus Status { get; }
     public ScanError? Error { get; }
     public DateTimeOffset? RetryAt { get; }
 
@@ -50,7 +51,7 @@ internal static class ScanFailures
     ], StringComparer.Ordinal);
 
     /// <summary>True for a failed or cancelled scan whose failure a resume can cure.</summary>
-    public static bool CanResume(string status, string? errorCode) =>
+    public static bool CanResume(ScanStatus status, string? errorCode) =>
         status is ScanStatus.Failed or ScanStatus.Cancelled && (errorCode is null || !Final.Contains(errorCode));
 
     public static readonly ScanError TreeTruncated = new("tree_truncated",
