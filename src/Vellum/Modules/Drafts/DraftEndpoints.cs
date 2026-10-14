@@ -145,7 +145,7 @@ public static class ListDrafts
         // A status that names no member matches no draft.
         if (!string.IsNullOrEmpty(status))
         {
-            query = EnumText.TryParse(status, out DraftStatus wanted)
+            query = EnumText.TryParseFilter(status, out DraftStatus wanted)
                 ? query.Where(d => d.Status == wanted)
                 : query.Where(d => false);
         }

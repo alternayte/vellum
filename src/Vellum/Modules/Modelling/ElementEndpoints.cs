@@ -83,13 +83,13 @@ public static class ListElements
         // A kind or status that names no member matches no element.
         if (kind is not null)
         {
-            query = EnumText.TryParse(kind.ToLowerInvariant(), out ElementKind wantedKind)
+            query = EnumText.TryParseFilter(kind.ToLowerInvariant(), out ElementKind wantedKind)
                 ? query.Where(e => e.Kind == wantedKind)
                 : query.Where(e => false);
         }
         if (status is not null)
         {
-            query = EnumText.TryParse(status.ToLowerInvariant(), out ElementStatus wantedStatus)
+            query = EnumText.TryParseFilter(status.ToLowerInvariant(), out ElementStatus wantedStatus)
                 ? query.Where(e => e.Status == wantedStatus)
                 : query.Where(e => false);
         }

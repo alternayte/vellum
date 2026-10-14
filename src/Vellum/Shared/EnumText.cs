@@ -22,6 +22,18 @@ public static class EnumText
         return text is not null && Names<T>.Values.TryGetValue(text, out value);
     }
 
+    /// <summary>
+    /// The member that a filter of a query names; a filter that names no member matches nothing.
+    /// Before these columns were enums, the filter text reached Postgres, which refuses U+0000
+    /// with 400 <c>invalid_text</c>. A filter keeps that answer.
+    /// </summary>
+    public static bool TryParseFilter<T>(string text, out T value) where T : struct, Enum
+    {
+        if (text.Contains('\0'))
+            throw new UnstorableTextException();
+        return TryParse(text, out value);
+    }
+
     /// <summary>The member whose text is <paramref name="text"/>; a text that names no member is a bug of the caller.</summary>
     public static T Parse<T>(string text) where T : struct, Enum =>
         TryParse<T>(text, out var value) ? value : throw new ArgumentException($"'{text}' is no {typeof(T).Name}", nameof(text));

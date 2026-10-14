@@ -28,7 +28,8 @@ public sealed class ConcurrencyExceptionHandler : IExceptionHandler
             // Text that Postgres cannot hold or compare, such as U+0000 in a filter or a cursor.
             // TextRule refuses it, with the field, wherever a value is stored; this is the
             // answer for a value that only reaches a query. The statement failed as a whole.
-            _ when HasSqlState(exception, PostgresErrorCodes.CharacterNotInRepertoire, PostgresErrorCodes.UntranslatableCharacter) =>
+            _ when exception is UnstorableTextException
+                || HasSqlState(exception, PostgresErrorCodes.CharacterNotInRepertoire, PostgresErrorCodes.UntranslatableCharacter) =>
                 (StatusCodes.Status400BadRequest,
                     new ErrorResponse("invalid_text", "The request holds text that cannot be stored, such as the character U+0000. Nothing was saved.")),
             _ when IsDeadlock(exception) => (StatusCodes.Status503ServiceUnavailable,
@@ -59,3 +60,6 @@ public sealed class ConcurrencyExceptionHandler : IExceptionHandler
         return false;
     }
 }
+
+/// <summary>Text of a query that Postgres could not hold, refused before the query runs (<see cref="EnumText.TryParseFilter{T}"/>).</summary>
+public sealed class UnstorableTextException() : Exception("The text holds a character that Postgres cannot hold, such as U+0000.");

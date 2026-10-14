@@ -65,11 +65,11 @@ public static class ProposalReads
         var query = db.ImportProposals.AsNoTracking().Where(p => p.ScanId == importId);
         // A filter value that names no status, action or kind matches no proposal.
         if (status is not null)
-            query = EnumText.TryParse(status, out ProposalStatus wantedStatus) ? query.Where(p => p.Status == wantedStatus) : query.Where(p => false);
+            query = EnumText.TryParseFilter(status, out ProposalStatus wantedStatus) ? query.Where(p => p.Status == wantedStatus) : query.Where(p => false);
         if (action is not null)
-            query = EnumText.TryParse(action, out ProposalAction wantedAction) ? query.Where(p => p.Action == wantedAction) : query.Where(p => false);
+            query = EnumText.TryParseFilter(action, out ProposalAction wantedAction) ? query.Where(p => p.Action == wantedAction) : query.Where(p => false);
         if (entityKind is not null)
-            query = EnumText.TryParse(entityKind, out StoredEntityKind wantedKind) ? query.Where(p => p.EntityKind == wantedKind) : query.Where(p => false);
+            query = EnumText.TryParseFilter(entityKind, out StoredEntityKind wantedKind) ? query.Where(p => p.EntityKind == wantedKind) : query.Where(p => false);
         if (After(cursor) is { } after)
             query = query.Where(p => p.Seq > after);
 
