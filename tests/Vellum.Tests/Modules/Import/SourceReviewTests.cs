@@ -168,9 +168,9 @@ public class SourceReviewTests(ImportHost import) : IClassFixture<ImportHost>
 
         var source = Assert.Single(await SourcesAsync(s));
         var bulk = await AcceptAllAsync(s, source.Id());
-        Assert.Empty(bulk["accepted"]!.AsArray().Where(id => id!.GetValue<Guid>() == question.Id()));
-        Assert.Empty((await s.Owner.GetFromJsonAsync<JsonArray>($"/api/projects/{s.ProjectId}/sources/{source.Id()}/bindings"))!
-            .Where(x => x!["elementId"]!.GetValue<string>() == system.ToString()));
+        Assert.DoesNotContain(bulk["accepted"]!.AsArray(), id => id!.GetValue<Guid>() == question.Id());
+        Assert.DoesNotContain((await s.Owner.GetFromJsonAsync<JsonArray>($"/api/projects/{s.ProjectId}/sources/{source.Id()}/bindings"))!,
+            x => x!["elementId"]!.GetValue<string>() == system.ToString());
 
         // Yes binds it; the label change that follows is for a person to accept.
         await AnswerAsync(s, scan.Id(), question.Id(), same: true);
