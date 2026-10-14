@@ -13,6 +13,8 @@ vi.mock('../../../src/hooks/use-auth', () => ({
   useAuth: () => ({ user: null }),
 }))
 vi.mock('../../../src/api/client', () => ({}))
+// The Docs section reads the server; this file tests the panel's own fields.
+vi.mock('../../../src/components/docs/element-docs', () => ({ ElementDocs: () => null }))
 
 const ELEMENTS = [
   {

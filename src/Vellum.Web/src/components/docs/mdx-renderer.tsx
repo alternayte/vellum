@@ -7,7 +7,8 @@ import { renderPage, type PageComponents } from './page-tree'
 interface MdxRendererProps {
   content: string
   elements: { id: string; kind: string; name: string }[]
-  views: { id: string; name: string }[]
+  /** Undefined while the diagrams load. */
+  views: { id: string; name: string }[] | undefined
 }
 
 export function MdxRenderer({ content, elements, views }: MdxRendererProps) {
@@ -16,7 +17,7 @@ export function MdxRenderer({ content, elements, views }: MdxRendererProps) {
   const [error, setError] = useState<string | null>(null)
 
   const elementsKey = useMemo(() => elements.map(e => e.id).join(','), [elements])
-  const viewsKey = useMemo(() => views.map(v => v.id).join(','), [views])
+  const viewsKey = useMemo(() => views?.map(v => v.id).join(',') ?? null, [views])
 
   const components = useMemo<PageComponents>(
     () => ({

@@ -14,6 +14,7 @@ public static class WorkspaceEndpoints
         group.MapPost("/", CreateWorkspace.Handle);
         group.MapGet("/", ListWorkspaces.Handle);
         group.MapPatch("/{id}", UpdateWorkspace.Handle);
+        group.MapDelete("/{id}", DeleteWorkspace.Handle);
 
         var members = group.MapGroup("/{workspaceId}/members").WithTags("Members");
         members.MapGet("/", ListMembers.Handle).Produces<MembersResponse>();

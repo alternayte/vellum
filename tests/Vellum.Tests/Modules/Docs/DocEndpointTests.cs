@@ -52,6 +52,44 @@ public class DocEndpointTests : IClassFixture<IntegrationFixture>
         Assert.Equal(string.Empty, doc.Content);
     }
 
+    /// <summary>A document from a template has its text from the first write: no second request can be lost.</summary>
+    [Fact]
+    public async Task Create_doc_with_content_stores_the_content()
+    {
+        using var client = await CreateAuthenticatedClientAsync(_fixture.Factory);
+        var projectId = await SetupProjectAsync(client);
+        var docId = Guid.NewGuid();
+        const string template = "# SDD: [Title]\n\n## Overview\n\n[High-level description.]";
+
+        var created = await client.PostAsJsonAsync($"/api/projects/{projectId}/docs",
+            new { id = docId, title = "SDD", type = "sdd", content = template });
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+
+        var doc = await client.GetFromJsonAsync<DocDto>($"/api/projects/{projectId}/docs/{docId}");
+        Assert.Equal(template, doc!.Content);
+        Assert.Equal("sdd", doc.Type);
+    }
+
+    [Fact]
+    public async Task List_docs_that_embed_a_view()
+    {
+        using var client = await CreateAuthenticatedClientAsync(_fixture.Factory);
+        var projectId = await SetupProjectAsync(client);
+        var viewId = Guid.NewGuid();
+        var embeds = Guid.NewGuid();
+        var mentions = Guid.NewGuid();
+        await client.PostAsJsonAsync($"/api/projects/{projectId}/docs",
+            new { id = embeds, title = "Embeds", content = $"Text\n\n<LiveView id=\"{viewId}\" />\n" });
+        await client.PostAsJsonAsync($"/api/projects/{projectId}/docs",
+            new { id = mentions, title = "Mentions", content = $"The view {viewId} is not embedded here." });
+        await client.PostAsJsonAsync($"/api/projects/{projectId}/docs",
+            new { id = Guid.NewGuid(), title = "Other", content = $"<LiveView id=\"{Guid.NewGuid()}\" />" });
+
+        using var page = JsonDocument.Parse(await client.GetStringAsync($"/api/projects/{projectId}/docs?embedsViewId={viewId}"));
+        var ids = page.RootElement.GetProperty("items").EnumerateArray().Select(d => d.GetProperty("id").GetGuid()).ToList();
+        Assert.Equal([embeds], ids);
+    }
+
     [Fact]
     public async Task Update_doc_content_and_title()
     {

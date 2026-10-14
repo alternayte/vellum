@@ -102,10 +102,9 @@ client for the agent interface.
 - The hosted, multi-tenant profile ran behind a local TLS proxy with a self-signed
   certificate only. No run used a real reverse proxy. Use the local profile for real work.
 - No run sent telemetry to a real OpenTelemetry collector.
-- Some actions have no control in the app and work through the HTTP API only: rename or
-  delete a project or a workspace, rename, move or delete a project document, manage
-  document spaces, set the kind of a relationship, and read the findings of a named
-  revision. The how-to guides say where.
+- Some actions have no control in the app and work through the HTTP API only: set the
+  kind of a relationship, and read the findings of a named revision. The how-to guides
+  say where.
 - There is no licence file yet.
 
 `PROGRESS.md` holds the exact state of each build step and the evidence for it.

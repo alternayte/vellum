@@ -4,17 +4,19 @@ import { useDocEditorStore } from '@/stores/doc-editor-store'
 
 interface LiveViewCardProps {
   id: string
-  views: { id: string; name: string }[]
+  /** The diagrams of the project. Undefined while they load. */
+  views: { id: string; name: string }[] | undefined
   elementCount?: number
 }
 
 export function LiveViewCard({ id, views, elementCount }: LiveViewCardProps) {
-  const view = views.find((v) => v.id === id)
+  const view = views?.find((v) => v.id === id)
 
   if (!view) {
+    // A diagram delete leaves the text of the document as it is; the embed says what happened.
     return (
-      <div className="my-2 rounded-lg border border-border bg-muted/50 p-4 text-sm text-muted-foreground">
-        View not found
+      <div role={views ? 'note' : undefined} className="my-2 rounded-lg border border-dashed border-border bg-muted/50 p-4 text-sm text-muted-foreground">
+        {views ? 'This diagram was deleted.' : 'Loading diagram…'}
       </div>
     )
   }

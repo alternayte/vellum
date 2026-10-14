@@ -34,9 +34,21 @@ public static class DeleteProject
         db.Projects.Remove(project);
         await db.SaveChangesAsync(ct);
 
-        // The cleanup does not stop when the caller goes away. A module that fails does not
-        // keep the others from deleting their data; the failure is reported afterwards.
-        var deleted = new DeletedProject(project.Id, project.WorkspaceId, project.StreamId, userId);
+        var failures = await RunRetentionsAsync(
+            new DeletedProject(project.Id, project.WorkspaceId, project.StreamId, userId), retentions, loggers);
+        if (failures.Count > 0)
+            throw new AggregateException($"The data of project {projectId} was not deleted in full.", failures);
+        return Results.NoContent();
+    }
+
+    /// <summary>
+    /// Runs every retention for a project whose row is gone. The cleanup does not stop when the
+    /// caller goes away. A module that fails does not keep the others from deleting their data;
+    /// the failures are returned for the caller to report.
+    /// </summary>
+    internal static async Task<List<Exception>> RunRetentionsAsync(
+        DeletedProject deleted, IEnumerable<IProjectRetention> retentions, ILoggerFactory loggers)
+    {
         var failures = new List<Exception>();
         foreach (var retention in retentions)
         {
@@ -47,13 +59,11 @@ public static class DeleteProject
             catch (Exception ex)
             {
                 loggers.CreateLogger(typeof(DeleteProject)).LogError(ex,
-                    "{Retention} did not delete the data of project {ProjectId}", retention.GetType().Name, projectId);
+                    "{Retention} did not delete the data of project {ProjectId}", retention.GetType().Name, deleted.Id);
                 failures.Add(ex);
             }
         }
 
-        if (failures.Count > 0)
-            throw new AggregateException($"The data of project {projectId} was not deleted in full.", failures);
-        return Results.NoContent();
+        return failures;
     }
 }

@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using Vellum.Modules.Docs.Entities;
 using Vellum.Modules.Workspaces.Authorization;
@@ -7,7 +8,8 @@ using static Vellum.Shared.ResultExtensions;
 
 namespace Vellum.Modules.Docs;
 
-public sealed record CreateDocRequest(Guid Id, string Title, Guid? SpaceId = null, Guid? ElementId = null, Guid? DraftId = null, string? Type = null);
+/// <param name="Content">The first text of the document, for example a template. It is written with the row, so a new document never exists without it.</param>
+public sealed record CreateDocRequest(Guid Id, string Title, Guid? SpaceId = null, Guid? ElementId = null, Guid? DraftId = null, string? Type = null, string? Content = null);
 
 public sealed record UpdateDocRequest(
     string? Title, string? Content, Guid? SpaceId, Guid? ElementId,
@@ -58,6 +60,7 @@ public static class DocEndpoints
         if (ResultExtensions.Refusal(
                 ResultExtensions.Required("title", request.Title),
                 TextRule.Line("title", request.Title),
+                TextRule.Lines("content", request.Content, MaxContentChars),
                 TextRule.Line("type", request.Type, TextRule.MaxIdentifier),
                 DocType.Check(request.Type)) is { } refusal)
             return refusal;
@@ -75,6 +78,7 @@ public static class DocEndpoints
             SpaceId = request.SpaceId,
             ElementId = request.ElementId,
             Title = request.Title,
+            Content = request.Content ?? string.Empty,
             CreatedBy = userId,
             DraftId = request.DraftId,
             Type = request.Type
@@ -87,7 +91,7 @@ public static class DocEndpoints
 
     private static async Task<IResult> List(
         Guid projectId,
-        Guid? spaceId, Guid? elementId, Guid? draftId, string? type, string? cursor, int? limit,
+        Guid? spaceId, Guid? elementId, Guid? draftId, string? type, Guid? embedsViewId, string? cursor, int? limit,
         ClaimsPrincipal user,
         AppDbContext db,
         WorkspaceAuthorizationService auth,
@@ -104,6 +108,12 @@ public static class DocEndpoints
         if (elementId.HasValue) query = query.Where(d => d.ElementId == elementId.Value);
         if (draftId.HasValue) query = query.Where(d => d.DraftId == draftId.Value);
         if (type is not null) query = query.Where(d => d.Type == type);
+        // The documents whose text embeds the view: <LiveView id="..." />.
+        if (embedsViewId.HasValue)
+        {
+            var pattern = $"<LiveView\\s[^>]*id\\s*=\\s*[\"']{embedsViewId.Value}[\"']";
+            query = query.Where(d => Regex.IsMatch(d.Content, pattern, RegexOptions.IgnoreCase));
+        }
 
         query = query.OrderBy(d => d.Title).ThenBy(d => d.Id);
 

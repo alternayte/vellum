@@ -31,7 +31,6 @@ import { useAddRelationship, useUpdateRelationship, useRemoveRelationship } from
 import { isProjectRefusal, projectErrorBlocks, refuseWrite, useModel, useProject, writeGuard } from '@/hooks/use-model'
 import { useViews, useView, useCreateView, useSaveLayout } from '@/hooks/use-views'
 import { useDocs, useCreateDoc } from '@/hooks/use-docs'
-import { patchApiProjectsByProjectIdDocsByDocId } from '@/api/generated'
 import { useSpaces } from '@/hooks/use-spaces'
 import { useSchemas } from '@/hooks/use-schemas'
 import { useShellStore } from '@/stores/shell-store'
@@ -520,27 +519,16 @@ function ProjectWorkspace() {
     })
   }, [createView])
 
+  // The template text goes with the create: one request, so the document never exists
+  // without its text.
   const handleCreateDoc = useCallback((title: string, content: string, type?: string) => {
     const id = crypto.randomUUID()
     const draftId = useDraftStore.getState().activeDraftId
     createDoc.mutate(
-      { id, title, draftId: draftId ?? undefined, type },
-      {
-        onSuccess: () => {
-          if (content) {
-            patchApiProjectsByProjectIdDocsByDocId({
-              path: { projectId, docId: id },
-              body: { title: null, content, spaceId: null, elementId: null, setSpaceId: false, setElementId: false },
-            }).finally(() => {
-              useShellStore.getState().openDoc(id)
-            })
-          } else {
-            useShellStore.getState().openDoc(id)
-          }
-        },
-      },
+      { id, title, draftId: draftId ?? undefined, type, content: content || undefined },
+      { onSuccess: () => useShellStore.getState().openDoc(id) },
     )
-  }, [projectId, createDoc])
+  }, [createDoc])
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -659,8 +647,12 @@ function ProjectWorkspace() {
           <div className="min-h-0 flex-1">
           {activeFlyout === 'files' && (
             <FilesFlyout
+              projectId={projectId}
               views={views ?? []}
-              docs={(docs ?? []).map((d) => ({ id: d.id, title: d.title, type: d.type ?? null }))}
+              docs={docs ?? []}
+              spaces={spaces ?? []}
+              elements={elements ?? []}
+              canEdit={!!project && project.yourRole !== 'Viewer'}
               model={project && { projectId, projectName: project.name, canImport: project.yourRole !== 'Viewer' }}
             />
           )}

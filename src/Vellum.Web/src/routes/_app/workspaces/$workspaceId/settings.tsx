@@ -16,14 +16,16 @@ import { NumberField, SectionHeading, SelectField, TextField, Toggle, ToggleFiel
 import { SecretControl } from '@/components/settings/secret-control'
 import { PriceBook } from '@/components/settings/price-book'
 import { Members } from '@/components/settings/members'
+import { WorkspaceGeneral } from '@/components/settings/workspace-general'
 
 export const Route = createFileRoute('/_app/workspaces/$workspaceId/settings')({
   component: SettingsPage,
 })
 
-type SectionId = SettingsSection | 'prices' | 'members' | 'agents' | 'audit' | 'instance'
+type SectionId = SettingsSection | 'general' | 'prices' | 'members' | 'agents' | 'audit' | 'instance'
 
 const SECTIONS: { id: SectionId; label: string; adminOnly?: boolean }[] = [
+  { id: 'general', label: 'General' },
   { id: 'ai', label: 'AI providers' },
   { id: 'github', label: 'GitHub' },
   { id: 'import', label: 'Import limits' },
@@ -62,7 +64,7 @@ function SettingsPage() {
   })
   const instance = useQuery({ queryKey: ['instance'], queryFn: () => api<InstanceInfo>('GET', '/api/instance') })
 
-  const [section, setSection] = useState<SectionId>('ai')
+  const [section, setSection] = useState<SectionId>('general')
   // Edits live in `edited` until they are saved; without edits the form shows what is stored.
   const [edited, setEdited] = useState<SettingsOverrides | null>(null)
   const saved = settings.data?.overrides
@@ -296,6 +298,7 @@ function SettingsPage() {
               </>
             )}
 
+            {section === 'general' && <WorkspaceGeneral workspaceId={workspaceId} />}
             {section === 'members' && <Members workspaceId={workspaceId} registrationOpen={instance.data?.allowSelfRegistration} />}
             {section === 'agents' && <AgentTokens workspaceId={workspaceId} />}
             {section === 'prices' && <PriceBook workspaceId={workspaceId} currency={data.effective.cost.currency} />}
@@ -305,7 +308,7 @@ function SettingsPage() {
         </main>
       </div>
 
-      {(dirty || save.isError) && section !== 'prices' && section !== 'members' && section !== 'agents' && section !== 'audit' && section !== 'instance' && (
+      {(dirty || save.isError) && section !== 'general' && section !== 'prices' && section !== 'members' && section !== 'agents' && section !== 'audit' && section !== 'instance' && (
         <div role="region" aria-label="Unsaved changes" className="fixed inset-x-0 bottom-0 z-20 border-t border-border bg-card/95 px-4 py-3 backdrop-blur">
           <div className="mx-auto flex max-w-3xl flex-wrap items-center gap-3">
             <p className={cn('min-w-0 flex-1 text-sm', save.isError ? 'text-destructive' : 'text-foreground')} role={save.isError ? 'alert' : undefined}>

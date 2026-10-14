@@ -14,17 +14,14 @@ interface CreateFlyoutProps {
 
 type Mode = 'menu' | 'diagram' | 'doc-templates' | 'doc-title'
 
-const FALLBACK_TEMPLATES = [
-  { id: 'sdd', name: 'SDD', type: 'sdd', content: '' },
-  { id: 'prd', name: 'PRD', type: 'prd', content: '' },
-]
-
 export function CreateFlyout({ onCreateDiagram, onCreateDoc, onAddElement }: CreateFlyoutProps) {
   const closeFlyout = useShellStore((s) => s.closeFlyout)
   const startDecision = useShellStore((s) => s.startDecision)
   const [mode, setMode] = useState<Mode>('menu')
   const [name, setName] = useState('')
-  const [templates, setTemplates] = useState<DocTemplate[]>([])
+  // Null until the template files are loaded. A template is offered only with its text: a
+  // document typed as a template but with no text would look like a lost template.
+  const [templates, setTemplates] = useState<DocTemplate[] | null>(null)
   const [selectedTemplate, setSelectedTemplate] = useState<{ content: string; type?: string } | null>(null)
 
   useEffect(() => {
@@ -122,11 +119,12 @@ export function CreateFlyout({ onCreateDiagram, onCreateDoc, onAddElement }: Cre
             >
               Blank
             </button>
-            {(templates.length > 0 ? templates : FALLBACK_TEMPLATES).map((t) => (
+            {templates === null && <p className="px-3 py-2 text-xs text-muted-foreground">Loading templates…</p>}
+            {templates?.map((t) => (
               <button
                 key={t.id}
                 className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm hover:bg-muted"
-                onClick={() => handleSelectTemplate(t as DocTemplate)}
+                onClick={() => handleSelectTemplate(t)}
               >
                 {t.name.toUpperCase()}
               </button>

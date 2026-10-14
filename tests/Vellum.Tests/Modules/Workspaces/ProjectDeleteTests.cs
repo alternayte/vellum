@@ -11,8 +11,9 @@ using static Vellum.Tests.Modules.Ai.Design.DesignKit;
 namespace Vellum.Tests.Modules.Workspaces;
 
 /// <summary>
-/// A project that touches every module, then its delete. The test reads the whole database, so
-/// the class has a database of its own and one test: nothing else writes while it counts.
+/// A project that touches every module, then its delete; a workspace with such a project, then
+/// its delete. The tests read the whole database, so the class has a database of its own and
+/// its tests run one after the other: nothing else writes while one counts.
 /// </summary>
 public class ProjectDeleteTests(SharedOutboundHost shared) : IClassFixture<SharedOutboundHost>
 {
@@ -143,6 +144,97 @@ public class ProjectDeleteTests(SharedOutboundHost shared) : IClassFixture<Share
         Assert.Equal(before.LiveStreams, after.LiveStreams);
         // A deleted stream keeps only its tombstone.
         Assert.Equal(after.DeletedStreams, after.EventsOfDeletedStreams);
+    }
+
+    /// <summary>
+    /// What a workspace delete keeps: the accounts (a person is not data of a workspace) and the
+    /// audit log, which a database trigger keeps append-only. Agent tokens are workspace data.
+    /// </summary>
+    private static bool KeptByWorkspaceDelete(string table) =>
+        (table.StartsWith("identity.") && table != "identity.agent_tokens") || table == "settings.audit_entries";
+
+    [Fact]
+    public async Task Deleting_a_workspace_leaves_no_row_of_it_in_any_module_and_no_live_event_stream()
+    {
+        var host = shared.Host;
+        var before = await CountAsync();
+
+        // A workspace with an AI provider and its key, a second member, an open invitation, a
+        // price, a token for the workspace and one for a project.
+        var ai = await AiScenario.CreateAsync(host, "anthropic");
+        var owner = ai.Owner;
+        var workspaceId = ai.WorkspaceId;
+        await TestHost.SignInMemberAsync(host.Factory, owner, workspaceId, "Editor");
+        await TestHost.Created(owner.PostAsJsonAsync($"/api/workspaces/{workspaceId}/invitations",
+            new { email = $"invited-{Guid.NewGuid():N}@vellum.local", role = "Viewer" }));
+        await TestHost.Created(owner.PostAsJsonAsync($"/api/workspaces/{workspaceId}/prices",
+            new { provider = "custom", region = "local", sku = "small", unit = "hours", unitPrice = 1.5m, currency = "USD", effectiveDate = "2026-01-01" }));
+        await TestHost.CreateAgentAsync(host.Factory, owner, workspaceId);
+
+        // A project with a model, a revision, a view, a space with a doc, a cost sheet, an AI
+        // proposal (and with it an AI usage record) and a project token.
+        var projectId = await NewProjectAsync(owner, workspaceId);
+        await OrdersReference.SeedAsync(owner, projectId);
+        await TestHost.Created(owner.PostAsJsonAsync($"/api/projects/{projectId}/revisions", new { id = Guid.NewGuid(), name = "Baseline" }));
+        await TestHost.Created(owner.PostAsJsonAsync($"/api/projects/{projectId}/views", new { id = Guid.NewGuid(), name = "View", rootElementId = (Guid?)null }));
+        var space = Guid.NewGuid();
+        await TestHost.Created(owner.PostAsJsonAsync($"/api/projects/{projectId}/spaces", new { id = space, name = "Space" }));
+        await TestHost.Created(owner.PostAsJsonAsync($"/api/projects/{projectId}/docs", new { id = Guid.NewGuid(), title = "Doc", spaceId = space, content = "Text" }));
+        await TestHost.Created(owner.PostAsJsonAsync($"/api/projects/{projectId}/costs/resources", new
+        {
+            elementId = OrdersReference.OrdersApi, name = "API", category = "compute", provider = "custom", region = "local", sku = "small",
+            quantity = 1m, unit = "hours", priceRef = (Guid?)null, usage = (object[]?)null,
+        }));
+        ai.Stub.Json(ai.Completion(Reply("flow-orders")));
+        var proposed = await ProposeFlowAsync(owner, projectId, OrdersRequest);
+        Assert.True(proposed.IsSuccessStatusCode, await proposed.Content.ReadAsStringAsync());
+        await TestHost.CreateAgentAsync(host.Factory, owner, workspaceId, projectId: projectId);
+
+        var during = await CountAsync();
+        var touched = during.Rows.Where(t => t.Value > before.Rows.GetValueOrDefault(t.Key)).Select(t => t.Key).ToHashSet();
+        Assert.Superset(
+            new HashSet<string>
+            {
+                "workspaces.workspaces", "workspaces.projects", "workspaces.memberships", "workspaces.invitations",
+                "settings.workspace_settings", "settings.secrets", "costs.price_entries", "identity.agent_tokens", "ai.usage_records",
+                "modelling.elements", "views.views", "docs.documents", "docs.spaces", "costs.sheets", "ai.design_proposals",
+            },
+            touched);
+        Assert.True(during.LiveStreams > before.LiveStreams);
+
+        var deleted = await owner.DeleteAsync($"/api/workspaces/{workspaceId}");
+        Assert.True(deleted.StatusCode == HttpStatusCode.NoContent, await deleted.Content.ReadAsStringAsync());
+
+        var after = await CountAsync();
+        Assert.Empty(after.ProjectRows);
+        var grown = after.Rows
+            .Where(t => !KeptByWorkspaceDelete(t.Key) && t.Value != before.Rows.GetValueOrDefault(t.Key))
+            .Select(t => $"{t.Key}: {before.Rows.GetValueOrDefault(t.Key)} -> {t.Value}");
+        Assert.Empty(grown);
+        Assert.Equal(before.LiveStreams, after.LiveStreams);
+        Assert.Equal(after.DeletedStreams, after.EventsOfDeletedStreams);
+
+        // The owner no longer has the workspace or its project.
+        var workspaces = await owner.GetFromJsonAsync<JsonArray>("/api/workspaces");
+        Assert.DoesNotContain(workspaces!, w => w!["id"]!.GetValue<Guid>() == workspaceId);
+        Assert.Equal(HttpStatusCode.NotFound, (await owner.GetAsync($"/api/projects/{projectId}")).StatusCode);
+    }
+
+    [Fact]
+    public async Task Only_an_owner_deletes_a_workspace()
+    {
+        var host = shared.Host;
+        var owner = await TestHost.SignInAsync(host.Factory);
+        var (workspaceId, projectId) = await TestHost.CreateProjectAsync(owner);
+        var editor = await TestHost.SignInMemberAsync(host.Factory, owner, workspaceId, "Editor");
+        var stranger = await TestHost.SignInAsync(host.Factory);
+
+        Assert.Equal(HttpStatusCode.Forbidden, (await editor.DeleteAsync($"/api/workspaces/{workspaceId}")).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await stranger.DeleteAsync($"/api/workspaces/{workspaceId}")).StatusCode);
+
+        Assert.Equal(HttpStatusCode.OK, (await owner.GetAsync($"/api/projects/{projectId}")).StatusCode);
+        var workspaces = await editor.GetFromJsonAsync<JsonArray>("/api/workspaces");
+        Assert.Contains(workspaces!, w => w!["id"]!.GetValue<Guid>() == workspaceId);
     }
 
     private sealed record Counts(

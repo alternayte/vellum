@@ -24,11 +24,12 @@ describe('CreateFlyout', () => {
     expect(onCreateDiagram).toHaveBeenCalledWith('My Diagram')
   })
 
-  it('shows template options for docs', () => {
+  it('shows template options for docs', async () => {
     render(<CreateFlyout onCreateDiagram={vi.fn()} onCreateDoc={vi.fn()} />)
     fireEvent.click(screen.getByText('New Doc'))
     expect(screen.getByText('Blank')).toBeDefined()
-    expect(screen.getByText('SDD')).toBeDefined()
+    // The templates are offered once their text is loaded.
+    expect(await screen.findByText('SDD')).toBeDefined()
     expect(screen.getByText('PRD')).toBeDefined()
     expect(screen.queryByText('ADR')).toBeNull()
   })

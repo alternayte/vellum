@@ -90,7 +90,28 @@ describe('useCreateDoc', () => {
 
     expect(postApiProjectsByProjectIdDocs).toHaveBeenCalledWith({
       path: { projectId: PROJECT_ID },
-      body: { id: DOC_ID, title: 'Test Doc', spaceId: null, elementId: null, draftId: null, type: null },
+      body: { id: DOC_ID, title: 'Test Doc', spaceId: null, elementId: null, draftId: null, type: null, content: null },
+    })
+  })
+})
+
+describe('useCreateDoc with a template', () => {
+  it('sends the template text with the create, in one request', async () => {
+    vi.mocked(postApiProjectsByProjectIdDocs).mockResolvedValue({
+      data: MOCK_DOC,
+      response: { ok: true } as Response,
+      error: undefined,
+    })
+
+    const { result } = renderHook(() => useCreateDoc(PROJECT_ID), { wrapper: makeWrapper() })
+
+    await act(async () => {
+      await result.current.mutateAsync({ id: DOC_ID, title: 'SDD', type: 'sdd', content: '# SDD: [Title]' })
+    })
+
+    expect(postApiProjectsByProjectIdDocs).toHaveBeenCalledWith({
+      path: { projectId: PROJECT_ID },
+      body: { id: DOC_ID, title: 'SDD', spaceId: null, elementId: null, draftId: null, type: 'sdd', content: '# SDD: [Title]' },
     })
   })
 })

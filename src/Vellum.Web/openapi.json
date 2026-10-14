@@ -352,6 +352,27 @@
             "description": "OK"
           }
         }
+      },
+      "delete": {
+        "tags": [
+          "Workspaces"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
       }
     },
     "/api/workspaces/{workspaceId}/members": {
@@ -3380,6 +3401,14 @@
             "in": "query",
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "embedsViewId",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
             }
           },
           {
@@ -15008,6 +15037,12 @@
             "format": "uuid"
           },
           "type": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "content": {
             "type": [
               "null",
               "string"

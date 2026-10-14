@@ -5,8 +5,12 @@ import {
   getApiProjectsByProjectIdViewsByViewId,
   postApiProjectsByProjectIdViews,
   putApiProjectsByProjectIdViewsByViewIdLayout,
+  patchApiProjectsByProjectIdViewsByViewId,
+  deleteApiProjectsByProjectIdViewsByViewId,
 } from '@/api/generated'
 import '@/api/client' // ensure client is configured
+import { unwrap } from '@/hooks/use-contracts'
+import { shownInline } from '@/lib/mutation-errors'
 
 export interface View {
   id: string
@@ -60,6 +64,44 @@ export function useCreateView(projectId: string) {
         body: { id: view.id, name: view.name, rootElementId: view.rootElementId ?? null },
       })
       return result.data as View
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['projects', projectId, 'views'] })
+    },
+  })
+}
+
+export function useRenameView(projectId: string) {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    // The screen that runs it shows the failure next to its control.
+    onError: shownInline,
+    mutationFn: async ({ id, name }: { id: string; name: string }) => {
+      const result = await patchApiProjectsByProjectIdViewsByViewId({
+        path: { projectId, viewId: id },
+        body: { name, rootElementId: null, visibleElementIds: null, activeLens: null, updatedAt: null },
+      })
+      return unwrap<View>(result, 'The diagram was not renamed.')
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['projects', projectId, 'views'] })
+    },
+  })
+}
+
+/** Deletes a diagram. A document that embeds it keeps its text; the embed says the diagram was deleted. */
+export function useDeleteView(projectId: string) {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    // The screen that runs it shows the failure next to its control.
+    onError: shownInline,
+    mutationFn: async (id: string) => {
+      unwrap(await deleteApiProjectsByProjectIdViewsByViewId({ path: { projectId, viewId: id } }), 'The diagram was not deleted.')
+    },
+    onSuccess: (_, id) => {
+      queryClient.removeQueries({ queryKey: ['projects', projectId, 'views', id] })
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['projects', projectId, 'views'] })

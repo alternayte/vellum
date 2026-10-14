@@ -9,6 +9,8 @@ import {
   deleteApiProjectsByProjectIdDocsByDocId,
 } from '@/api/generated'
 import '@/api/client'
+import { unwrap } from '@/hooks/use-contracts'
+import { shownInline } from '@/lib/mutation-errors'
 
 export interface Doc {
   id: string
@@ -31,7 +33,8 @@ interface DocPage {
 
 export function useDocs(
   projectId: string,
-  filters?: { spaceId?: string; elementId?: string; draftId?: string; type?: string },
+  filters?: { spaceId?: string; elementId?: string; draftId?: string; type?: string; embedsViewId?: string },
+  options?: { enabled?: boolean },
 ) {
   return useQuery({
     queryKey: ['projects', projectId, 'docs', filters],
@@ -44,11 +47,13 @@ export function useDocs(
           elementId: filters?.elementId,
           draftId: filters?.draftId,
           type: filters?.type,
+          embedsViewId: filters?.embedsViewId,
         },
       })
-      return (result.data as DocPage).items
+      return unwrap<DocPage>(result, 'The documents did not load.').items
     },
     staleTime: 30_000,
+    enabled: options?.enabled ?? true,
   })
 }
 
@@ -77,6 +82,8 @@ export function useCreateDoc(projectId: string) {
       elementId?: string
       draftId?: string
       type?: string
+      /** The first text, for example a template. It is written with the row in one request. */
+      content?: string
     }) => {
       const result = await postApiProjectsByProjectIdDocs({
         path: { projectId },
@@ -87,9 +94,10 @@ export function useCreateDoc(projectId: string) {
           elementId: doc.elementId ?? null,
           draftId: doc.draftId ?? null,
           type: doc.type ?? null,
+          content: doc.content ?? null,
         },
       })
-      return result.data as Doc
+      return unwrap<Doc>(result, 'The document was not created.')
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['projects', projectId, 'docs'] })
@@ -101,6 +109,8 @@ export function useUpdateDoc(projectId: string) {
   const queryClient = useQueryClient()
 
   return useMutation({
+    // The screen that runs it shows the failure next to its control.
+    onError: shownInline,
     mutationFn: async ({ id, ...fields }: { id: string } & Partial<Pick<Doc, 'title' | 'content' | 'spaceId' | 'elementId'>>) => {
       const result = await patchApiProjectsByProjectIdDocsByDocId({
         path: { projectId, docId: id },
@@ -113,7 +123,7 @@ export function useUpdateDoc(projectId: string) {
           setElementId: 'elementId' in fields,
         },
       })
-      return result.data as Doc
+      return unwrap<Doc>(result, 'The document was not saved.')
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['projects', projectId, 'docs'] })
@@ -125,10 +135,12 @@ export function useDeleteDoc(projectId: string) {
   const queryClient = useQueryClient()
 
   return useMutation({
+    // The screen that runs it shows the failure next to its control.
+    onError: shownInline,
     mutationFn: async (id: string) => {
-      await deleteApiProjectsByProjectIdDocsByDocId({
+      unwrap(await deleteApiProjectsByProjectIdDocsByDocId({
         path: { projectId, docId: id },
-      })
+      }), 'The document was not deleted.')
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: ['projects', projectId, 'docs'] })

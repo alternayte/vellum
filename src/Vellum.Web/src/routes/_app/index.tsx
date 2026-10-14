@@ -20,6 +20,8 @@ import {
 import { useAuth } from '@/hooks/use-auth'
 import { MyInvitations } from '@/components/settings/my-invitations'
 import { pendingInvitation } from '@/lib/invitation-link'
+import { branchesApi } from '@/lib/branches-api'
+import { ProjectMenu } from '@/components/shell/project-menu'
 
 interface Workspace {
   id: string
@@ -69,6 +71,13 @@ function WorkspacePicker() {
       })
       return result.data as Project[]
     },
+    enabled: !!selectedWorkspaceId,
+  })
+
+  // The role of the signed-in person decides which project actions the cards offer.
+  const { data: members } = useQuery({
+    queryKey: ['workspaces', selectedWorkspaceId, 'members'],
+    queryFn: () => branchesApi.members(selectedWorkspaceId!),
     enabled: !!selectedWorkspaceId,
   })
 
@@ -195,16 +204,25 @@ function WorkspacePicker() {
               ) : (
                 <div className="space-y-2">
                   {projects.map((project) => (
-                    <Button
-                      key={project.id}
-                      variant="outline"
-                      className="w-full justify-start"
-                      onClick={() =>
-                        navigate({ to: '/projects/$projectId', params: { projectId: project.id } })
-                      }
-                    >
-                      {project.name}
-                    </Button>
+                    <div key={project.id} className="flex items-center gap-1 rounded-lg border border-border bg-background pr-1.5 hover:bg-muted">
+                      <button
+                        type="button"
+                        className="min-w-0 flex-1 rounded-lg px-3 py-2 text-left focus-visible:outline-2 focus-visible:outline-primary"
+                        onClick={() =>
+                          navigate({ to: '/projects/$projectId', params: { projectId: project.id } })
+                        }
+                      >
+                        <span className="block truncate text-sm font-medium">{project.name}</span>
+                        {project.description && (
+                          <span className="block truncate text-xs text-muted-foreground">{project.description}</span>
+                        )}
+                      </button>
+                      <ProjectMenu
+                        project={{ ...project, workspaceId: selectedWorkspaceId }}
+                        role={members?.yourRole}
+                        onDeleted={() => {}}
+                      />
+                    </div>
                   ))}
                 </div>
               )}

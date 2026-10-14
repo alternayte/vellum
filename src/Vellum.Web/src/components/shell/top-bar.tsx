@@ -6,6 +6,7 @@ import type { ProjectDetail } from '@/lib/branches-api'
 import { useAuth } from '@/hooks/use-auth'
 import { useNavigate } from '@tanstack/react-router'
 import { Menu } from 'lucide-react'
+import { ProjectMenu } from './project-menu'
 
 interface TopBarProps {
   projectId?: string
@@ -45,7 +46,12 @@ export function TopBar({ projectId, projectName, project, activeDoc }: TopBarPro
       </button>
 
       {projectName && (
-        <span className="min-w-0 truncate text-sm font-medium max-sm:hidden">{projectName}</span>
+        <span className="flex min-w-0 items-center gap-0.5 max-sm:hidden">
+          <span className="min-w-0 truncate text-sm font-medium">{projectName}</span>
+          {project && (
+            <ProjectMenu project={project} role={project.yourRole} onDeleted={() => navigate({ to: '/' })} />
+          )}
+        </span>
       )}
 
       {projectId && project && (

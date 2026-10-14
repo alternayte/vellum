@@ -1,9 +1,9 @@
 ---
 title: Manage workspaces, members and projects
-description: Create workspaces and projects, invite members, change roles and remove members in the app, and rename or delete through the API.
+description: Create, rename and delete workspaces and projects, invite members, change roles and remove members.
 ---
 
-This guide shows you how to create a workspace and a project, how to give a person access and how to rename or delete. The app creates workspaces and projects and manages members. Renaming and deleting use the API. The `curl` examples use the session cookie of a signed-in person in the file `vellum.cookies`. [Use the HTTP API](/how-to/use-the-http-api/) shows how to sign in. An agent token cannot make these calls: these endpoints are not open to agent tokens and answer `403`.
+This guide shows you how to create a workspace and a project, how to give a person access and how to rename or delete. Each task has a control in the app. The `curl` examples use the session cookie of a signed-in person in the file `vellum.cookies`. [Use the HTTP API](/how-to/use-the-http-api/) shows how to sign in. An agent token cannot make these calls: these endpoints are not open to agent tokens and answer `403`.
 
 ## Know the roles
 
@@ -13,7 +13,7 @@ A workspace holds projects, settings, secrets and members. A member has one role
 |---|---|
 | `Viewer` | Read the projects, the models, the documents, the scans, the review and the estimates. Preview the merge of a draft. |
 | `Editor` | All that a viewer can do. Create and rename projects. Change the model, the scenarios, the documents, the drafts, the variants and the cost sheet. Start scans and decide proposals. Write the draft of a promise. |
-| `Owner` | All that an editor can do. Invite and remove members. Rename the workspace. Delete a project. Change the settings and the secrets. Create agent tokens. Test the AI provider and the GitHub connection. Change the price book. Approve a promise. Accept or reject a decision. Authorise a load-test target. |
+| `Owner` | All that an editor can do. Invite and remove members. Rename and delete the workspace. Delete a project. Change the settings and the secrets. Create agent tokens. Test the AI provider and the GitHub connection. Change the price book. Approve a promise. Accept or reject a decision. Authorise a load-test target. |
 
 A person who is not a member of the workspace gets `403` for each request on it. A member with a role that is too low gets `403` with the text `Requires at least <role> role`.
 
@@ -215,12 +215,17 @@ The status of a removal is `204`.
 
 Vellum writes each invitation, each revoked or declined invitation, each added member, each removed member and each changed role to the audit log of the workspace. An invitation entry names the invitation ID and the role. It does not contain the email address. See the log at `GET /api/workspaces/{workspaceId}/audit`. The app shows the log in **Settings**, then **Audit log**.
 
-## Rename a workspace or a project
+## Rename a project or change its description
 
-The app has no control for this.
+You need the editor role.
 
-- Workspace, owner role: `PATCH /api/workspaces/{id}` with `name`.
-- Project, editor role: `PATCH /api/projects/{projectId}` with `name` and `description`.
+1. Open the project menu. On the workspace list, select the **⋯** button of the project. In an open project, select the **⋯** button next to the project name in the top bar.
+2. Select **Rename** or **Edit description**.
+3. Enter the text and select **Rename** or **Save**.
+
+A viewer sees no **⋯** button.
+
+The request is `PATCH /api/projects/{projectId}` with `name` and `description`. A `null` value keeps the value.
 
 ```sh
 curl -X PATCH "http://localhost:8080/api/projects/<project-id>" \
@@ -229,15 +234,53 @@ curl -X PATCH "http://localhost:8080/api/projects/<project-id>" \
   -d '{"name":"Orders platform","description":null}'
 ```
 
+## Rename a workspace
+
+You need the owner role.
+
+1. Open the workspace settings.
+2. Select **General**.
+3. Enter the new **Name** and select **Rename**.
+
+The request is `PATCH /api/workspaces/{id}` with `name`.
+
 ## Delete a project
 
-You need the owner role. The app has no control for this.
+You need the owner role.
+
+1. Open the project menu: the **⋯** button of the project on the workspace list, or next to the project name in the top bar.
+2. Select **Delete project…**.
+3. Read the list of what goes.
+4. Type the name of the project and select **Delete project**.
+
+![The dialog Delete project for the project Sample Architecture. It lists what goes with the project, one line for each module, from the model of main to the agent tokens of the project. The name Sample Architecture is typed in the field below the list. The buttons are Cancel and Delete project.](../../../assets/screenshots/project-delete-dialog.png)
+
+The button stays off until the typed name matches. The delete cannot be reversed. Vellum deletes the model with its revisions, variants and drafts, the diagrams, the documents and spaces, the schemas and scenarios, the promises and their runs, the cost data, the review data, the stress profiles and runs, the load-test data, the scans, the AI proposals and the agent tokens of the project, with their event streams. Make a backup first if you can need the project again: see [Back up and restore](/how-to/back-up-and-restore/).
+
+The request is `DELETE /api/projects/{projectId}`. The status is `204`.
 
 ```sh
 curl -X DELETE "http://localhost:8080/api/projects/<project-id>" \
   -b vellum.cookies
 ```
 
-The delete cannot be reversed. Vellum also deletes the scans, the promises, the cost data, the review data, the stress profiles and runs, the load-test data and the agent tokens of the project. Make a backup first if you can need the project again: see [Back up and restore](/how-to/back-up-and-restore/).
+## Delete a workspace
 
-Vellum has no endpoint that deletes a workspace.
+You need the owner role.
+
+1. Open the workspace settings.
+2. Select **General**.
+3. Below **Danger area**, select **Delete workspace…**.
+4. Read the list of what goes.
+5. Type the name of the workspace and select **Delete workspace**.
+
+Vellum deletes each project of the workspace as a project delete does. Then it deletes the members, the open invitations, the settings, the stored credentials, the price book, the agent tokens, the AI usage records and the cached repository files. The delete cannot be reversed.
+
+The audit log keeps its entries, because it is append-only. Vellum writes the entry `workspace.deleted` to the audit log of the instance. The instance administrator sees it.
+
+The request is `DELETE /api/workspaces/{id}`. The status is `204`. A member who is not an owner gets `403`.
+
+```sh
+curl -X DELETE "http://localhost:8080/api/workspaces/<workspace-id>" \
+  -b vellum.cookies
+```

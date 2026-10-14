@@ -1,6 +1,6 @@
 ---
 title: Write project documents
-description: Create a Markdown document in a project, edit it, link it to elements and diagrams, and manage documents through the API.
+description: Create a Markdown document in a project, edit it, link it to elements and diagrams, and rename, move, attach, delete and group documents in spaces.
 ---
 
 This guide shows you how to write a text document in a project and how to link it to the model. You need the editor role.
@@ -15,7 +15,9 @@ A document is text that people read. It is not the model. Vellum does not read a
 4. Enter a **Document title**.
 5. Select **Create**.
 
-Vellum opens the document in the editor. A template gives the document its first text.
+Vellum opens the document in the editor. A template gives the document its first text. Vellum stores the text with the new document, so the document keeps it when you open it again.
+
+To write a document about one element, select the element on the canvas. In the detail panel, below **Docs**, select **New doc for this element**, enter a **Title** and select **Create**. The document is attached to the element.
 
 A document cannot be an ADR. An ADR is a decision of the review: select **New Decision (ADR)** in **Create new**, or see [Record a decision](/how-to/record-a-decision/). The API refuses a document of type `adr` with `400`. When Vellum upgrades its database, a document of type `adr` gets the type `note`. Its title and text stay.
 
@@ -25,7 +27,38 @@ A document cannot be an ADR. An ADR is a decision of the review: select **New De
 2. Enter part of the title to filter the list. This step is optional.
 3. Select the document.
 
-The list shows the diagrams and the documents of the project. With no file it shows **No files yet**.
+The list shows the diagrams, then the spaces with their documents, then the documents that are in no space. With no file it shows **No files yet**.
+
+The detail panel of an element lists below **Docs** the documents that are attached to the element. Select one to open it.
+
+## Rename, move, attach or delete a document
+
+You need the editor role.
+
+1. Select **Project files** in the left toolbar.
+2. Point to the document and select its **⋯** button. The same menu is at the right of the title in the open document.
+3. Select an action.
+
+| Action | Result |
+|---|---|
+| **Rename** | Enter the new **Title** and select **Rename**. You can also edit the title at the top of the open document: Enter saves, Escape goes back. |
+| **Move to space…** | Select a space, or **No space (top level)**, and select **Move**. |
+| **Attach to element…** | Select an element, or **No element**, and select **Attach**. The document shows below **Docs** in the detail panel of that element. |
+| **Delete…** | Select **Delete document**. The document and its text are deleted. |
+
+To move a document into a space, you can also drag it onto the space. Drag it onto the list below the spaces to take it out of its space.
+
+## Group documents in spaces
+
+A space is a folder of documents. A space holds no other space. You need the editor role.
+
+1. Select **Project files** in the left toolbar.
+2. Select **New space**, enter a **Name** and select **Create**.
+3. To rename or delete a space, point to it and select its **⋯** button, then **Rename** or **Delete…**.
+
+When you delete a space, its documents move to the top level. Vellum deletes no document with the space.
+
+![The Files panel. It lists the diagrams Checkout flow and Default, then the space Design with one document, Orders design, then the documents SDD and Template check at the top level. The button New space is at the top right.](../../../assets/screenshots/files-flyout-spaces.png)
 
 ## Edit the text
 
@@ -64,7 +97,7 @@ A live view is a card with the name of a diagram. A reader selects it to close t
 <LiveView id="0f6d7a3b-2c1e-4b8a-9d7f-5e4c3b2a1f00"/>
 ```
 
-When the diagram does not exist, the card shows **View not found**.
+When the diagram was deleted, the card shows **This diagram was deleted.** The text of the document stays as it is. See [Model a system](/how-to/model-a-system/#rename-or-delete-a-diagram).
 
 ## Know what the text can contain
 
@@ -107,11 +140,12 @@ The page of Vellum loads images from its own origin only. An image with an addre
 
 ## Manage documents through the API
 
-The app does not rename, move or delete a document, and it has no control for spaces. Use the API. The `curl` examples use the session cookie of a signed-in person in the file `vellum.cookies`. [Use the HTTP API](/how-to/use-the-http-api/) shows how to sign in. An agent token cannot make these calls: these endpoints are not open to agent tokens and answer `403`.
+The app does each of these tasks. The API does them too. The `curl` examples use the session cookie of a signed-in person in the file `vellum.cookies`. [Use the HTTP API](/how-to/use-the-http-api/) shows how to sign in. An agent token cannot make these calls: these endpoints are not open to agent tokens and answer `403`.
 
 | Task | Request |
 |---|---|
-| List the documents | `GET /api/projects/{projectId}/docs` with the optional filters `spaceId`, `elementId`, `draftId` and `type` |
+| List the documents | `GET /api/projects/{projectId}/docs` with the optional filters `spaceId`, `elementId`, `draftId`, `type` and `embedsViewId` |
+| Create a document | `POST /api/projects/{projectId}/docs` with `id`, `title` and the optional `content`, `spaceId`, `elementId`, `draftId` and `type` |
 | Read a document | `GET /api/projects/{projectId}/docs/{docId}` |
 | Change the title, the text, the space or the element | `PATCH /api/projects/{projectId}/docs/{docId}` |
 | Delete a document | `DELETE /api/projects/{projectId}/docs/{docId}` |
@@ -119,8 +153,6 @@ The app does not rename, move or delete a document, and it has no control for sp
 | List the spaces | `GET /api/projects/{projectId}/spaces` |
 | Rename a space | `PATCH /api/projects/{projectId}/spaces/{spaceId}` |
 | Delete a space | `DELETE /api/projects/{projectId}/spaces/{spaceId}` |
-
-A space is a named group of documents. The app does not show spaces.
 
 This request renames a document and puts it in a space. A `null` title or text keeps the value. `spaceId` and `elementId` change only when `setSpaceId` or `setElementId` is `true`.
 

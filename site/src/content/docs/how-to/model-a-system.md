@@ -115,7 +115,17 @@ A diagram is a saved view of the model. It has a name and a position for each el
 
 Each diagram shows the same model. An element that you delete is gone from each diagram.
 
-The app does not rename or delete a diagram. Use `PATCH /api/projects/{projectId}/views/{viewId}` and `DELETE /api/projects/{projectId}/views/{viewId}`.
+## Rename or delete a diagram
+
+1. Select **Project files** in the left toolbar.
+2. Point to the diagram and select its **⋯** button.
+3. Select **Rename**, enter the new name and select **Rename**. Or select **Delete…**.
+
+Before a delete, the dialog lists each document that embeds the diagram with a `<LiveView>` tag. Select **Delete diagram** to delete it. The diagram and its layout go. The elements and the relationships stay in the model. The text of each document stays as it is, and its embed shows **This diagram was deleted.**
+
+![The dialog Delete diagram for the diagram Checkout flow. It says that the diagram and its layout are deleted and that the elements and relationships stay in the model. It lists the document Orders design, which embeds the diagram. The buttons are Cancel and Delete diagram.](../../../assets/screenshots/diagram-delete-embeds.png)
+
+The API calls are `PATCH /api/projects/{projectId}/views/{viewId}` and `DELETE /api/projects/{projectId}/views/{viewId}`. `GET /api/projects/{projectId}/docs?embedsViewId={viewId}` lists the documents that embed a diagram.
 
 ## Read the truth labels
 

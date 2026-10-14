@@ -17,6 +17,7 @@ import { ConflictResolver } from '@/components/review/conflict-resolver'
 import { CommentList } from '@/components/comments/comment-list'
 import { CommentInput } from '@/components/comments/comment-input'
 import { useComments } from '@/hooks/use-draft-comments'
+import { ElementDocs } from '@/components/docs/element-docs'
 
 interface ElementData {
   id: string
@@ -400,6 +401,7 @@ export function DetailPanel({
                     )}
                   </section>
                 )}
+                <ElementDocs projectId={projectId} element={selectedElement} />
               </div>
                 )}
               </>

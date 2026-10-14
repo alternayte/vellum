@@ -14,7 +14,14 @@ Vellum has two kinds of copy. Select the one that fits your goal.
 
 The model document is not a backup of a project. It holds the elements, the relationships, the messages, the schemas and the contracts, with their truth labels. It does not hold scenarios, promises, evidence, views, decisions, cost sheets or project documents. [Model document format](/reference/model-document-format/) lists what it holds.
 
-The app has no button for the model document. Use the HTTP API. [Use the HTTP API](/how-to/use-the-http-api/) shows how to sign in and get the cookie file `vellum.cookies`.
+## Export and import in the app
+
+1. Open the project.
+2. Select **Project files** in the left toolbar.
+3. Below **Model document**, select **Export JSON** or **Export YAML**. The browser saves the file.
+4. To put a file back, select **Import a document…**. You need the editor role. Read the preview, then select the import. [Model document format](/reference/model-document-format/#export-and-import-in-the-app) describes the dialog.
+
+The steps below do the same through the HTTP API. [Use the HTTP API](/how-to/use-the-http-api/) shows how to sign in and get the cookie file `vellum.cookies`.
 
 ## Export the model
 
