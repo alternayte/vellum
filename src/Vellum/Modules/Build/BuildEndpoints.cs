@@ -8,6 +8,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Vellum.Modules.Drafts;
 using Vellum.Modules.Identity.AgentTokens;
+using Vellum.Modules.Import.Proposals;
+using Vellum.Modules.Import.Scans;
 using Vellum.Modules.Modelling;
 using Vellum.Modules.Modelling.Model;
 using Vellum.Modules.Promises;
@@ -235,13 +237,16 @@ public static partial class BuildModule
             return TooLarge(tooLarge);
         }
 
-        // A change selects what its impact names, of the things the pinned state holds.
+        // A change selects what its impact names, of the things the pinned state holds. The
+        // impact is read against the pinned state, so the same pinned state and scan give the
+        // same brief. Only an approved promise is named: a draft is no requirement.
         ChangeImpactDto? change = null;
         if (request.ChangeScanId is { } scanId)
         {
-            (change, var noImpact) = await ChangeImpact.ComputeAsync(http.RequestServices, projectId, scanId, ct);
+            (change, var noImpact) = await ChangeImpact.ComputeAsync(http.RequestServices, projectId, scanId, ImpactInputsOf(input), ct);
             if (change is null)
                 return noImpact!;
+            change = change with { Promises = [.. change.Promises.Where(p => p.State == PromiseLifecycle.Approved)] };
             selection = new BriefSelection(
                 [.. selection.PromiseIds.Union(change.Promises.Select(p => p.Id).Where(id => input.Promises.Any(p => p.Id == id)))],
                 [.. selection.ScenarioIds.Union(change.Flows.Select(f => f.ScenarioId).Where(id => input.Scenarios.Any(s => s.Id.Value == id)))],
@@ -268,6 +273,18 @@ public static partial class BuildModule
             return TooLarge(tooLarge);
         }
     }
+
+    /// <summary>The pinned state of a build input as the impact report reads it.</summary>
+    private static ImpactInputs ImpactInputsOf(BuildInput input) => new(
+        input.Model,
+        [.. input.Schemas.Select(s => new SchemaRow(s.Id, s.Name, s.Content))],
+        input.Scenarios,
+        input.Promises,
+        input.Pinned.Promises.ToDictionary(p => p.Id, p => p.Version),
+        input.Pinned.Sources.Where(s => s.TrackedRef is not null).ToDictionary(
+            s => s.Repository,
+            s => new TrackedRefEntity { ProjectId = input.ProjectId, RefName = s.TrackedRef!, CommitSha = s.TrackedCommit, ScanId = s.TrackedScan },
+            StringComparer.Ordinal));
 
     /// <summary>What a caller gave to verify: the manifest as it was written, and the SHA-256 of each file.</summary>
     /// <param name="ManifestBytes">The bytes of <c>manifest.json</c> of a zip. For a manifest alone, its JSON in canonical form.</param>

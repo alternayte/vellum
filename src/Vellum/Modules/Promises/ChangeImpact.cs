@@ -6,6 +6,8 @@ using Vellum.Modules.Import;
 using Vellum.Modules.Import.Proposals;
 using Vellum.Modules.Import.Scans;
 using Vellum.Modules.Modelling.Model;
+using Vellum.Modules.Schemas;
+using Vellum.Modules.Trace.Engine;
 using Vellum.Modules.Workspaces;
 using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Shared;
@@ -67,7 +69,7 @@ public sealed record ImpactReasonDto(string Certainty, string ChangeId, string T
 public sealed record ImpactFlowDto(Guid ScenarioId, string Name, IReadOnlyList<string> StepIds, string Certainty, IReadOnlyList<ImpactReasonDto> Reasons);
 
 /// <summary>A source pattern check of the promise and its result against this scan.</summary>
-/// <param name="Result">The result of the newest run when that run read this scan. Else <c>not-run</c>.</param>
+/// <param name="Result">The result of the newest run of the obligation that read this scan, whatever ran after it against other scans. Else <c>not-run</c>.</param>
 public sealed record ImpactCheckDto(string ObligationId, string Key, string Title, string Result, string? Detail);
 
 /// <param name="State"><c>draft</c> or <c>approved</c>. A draft is not a requirement.</param>
@@ -76,6 +78,15 @@ public sealed record ImpactCheckDto(string ObligationId, string Key, string Titl
 public sealed record ImpactPromiseDto(
     Guid Id, string RequirementId, string Title, string State, int Revision, string Standing, string Certainty,
     IReadOnlyList<ImpactReasonDto> Reasons, IReadOnlyList<ImpactCheckDto> Checks);
+
+/// <summary>
+/// A pinned state that an impact report is read against, in place of the project as it is now.
+/// </summary>
+/// <param name="PromiseVersions">The version of each promise stream: runs recorded after it are not read.</param>
+/// <param name="Tracked">The followed ref of each repository (<c>host/owner/name</c>), as the pinned state names it.</param>
+internal sealed record ImpactInputs(
+    ModelState Model, IReadOnlyList<SchemaRow> Schemas, IReadOnlyList<Scenario> Scenarios, IReadOnlyList<PromiseDto> Promises,
+    IReadOnlyDictionary<Guid, long> PromiseVersions, IReadOnlyDictionary<string, TrackedRefEntity> Tracked);
 
 /// <param name="Kind"><c>tracking</c> or <c>comparison</c>.</param>
 /// <param name="Limits">What the report does not show, as sentences.</param>
@@ -94,7 +105,8 @@ public sealed record ChangeImpactDto(
 /// scan the accepted facts follow, or, when this scan is that scan, of the newest older scan
 /// that read another commit of the repository whole. A proposal is <c>definite</c>: it cites its lines. A pattern that is
 /// gone is <c>definite</c> only when the scan read every file where the base found it, else
-/// <c>unknown</c>.</item>
+/// <c>unknown</c>. A pattern that is new is <c>definite</c> only when the base scan read every
+/// file where this scan finds it, else <c>unknown</c>.</item>
 /// <item>Flows: a scenario with a step that names a removed or changed contract is
 /// <c>definite</c> (<see cref="ProposalImpact"/>). A scenario that runs in the service of a
 /// changed pattern is <c>possible</c>: nothing says which step needs the pattern.</item>
@@ -123,9 +135,18 @@ public static class ChangeImpact
         return impact is null ? refusal! : Results.Ok(impact);
     }
 
-    /// <summary>The report, or the refusal: 404 for a scan that is not of the project, 409 for one that is not completed.</summary>
-    public static async Task<(ChangeImpactDto? Impact, IResult? Refusal)> ComputeAsync(
-        IServiceProvider services, Guid projectId, Guid scanId, CancellationToken ct)
+    /// <summary>The report against the project as it is now, or the refusal: 404 for a scan that is not of the project, 409 for one that is not completed.</summary>
+    public static Task<(ChangeImpactDto? Impact, IResult? Refusal)> ComputeAsync(
+        IServiceProvider services, Guid projectId, Guid scanId, CancellationToken ct) =>
+        ComputeAsync(services, projectId, scanId, null, ct);
+
+    /// <summary>
+    /// The report against <paramref name="pinned"/> when it is given: the model, scenarios,
+    /// schemas, promises, runs and followed refs of a pinned state, and nothing as it is now
+    /// except the scan itself (its snapshot, its proposals and its files).
+    /// </summary>
+    internal static async Task<(ChangeImpactDto? Impact, IResult? Refusal)> ComputeAsync(
+        IServiceProvider services, Guid projectId, Guid scanId, ImpactInputs? pinned, CancellationToken ct)
     {
         var db = services.GetRequiredService<ImportDbContext>();
         var scan = await db.Scans.AsNoTracking().FirstOrDefaultAsync(s => s.Id == scanId && s.ProjectId == projectId, ct);
@@ -135,16 +156,30 @@ public static class ChangeImpact
         if (scan.Status != ScanStatus.Completed || head is null)
             return (null, Results.Conflict(new ErrorResponse("import_not_completed", "Only a completed scan has an impact report.")));
 
-        var streamId = await services.GetRequiredService<WorkspacesDbContext>().Projects.AsNoTracking()
-            .Where(p => p.Id == projectId).Select(p => (Guid?)p.StreamId).FirstOrDefaultAsync(ct);
-        if (streamId is null)
-            return (null, Results.NotFound(new ErrorResponse("not_found", "Import not found")));
-        var store = services.GetRequiredService<IEventStore>().ForProject(projectId);
-        var (model, _) = await store.Load<ModelState>(StreamId.From(streamId.Value), ct);
-        var scenarios = await ProposalImpact.LoadAsync(services, store, projectId, model, ct);
-
-        var tracked = await db.TrackedRefs.AsNoTracking()
-            .FirstOrDefaultAsync(t => t.ProjectId == projectId && t.Host == scan.Host && t.Repository == scan.Repository, ct);
+        ModelState model;
+        ProposalImpact scenarios;
+        IReadOnlyList<PromiseDto> current;
+        TrackedRefEntity? tracked;
+        if (pinned is null)
+        {
+            var streamId = await services.GetRequiredService<WorkspacesDbContext>().Projects.AsNoTracking()
+                .Where(p => p.Id == projectId).Select(p => (Guid?)p.StreamId).FirstOrDefaultAsync(ct);
+            if (streamId is null)
+                return (null, Results.NotFound(new ErrorResponse("not_found", "Import not found")));
+            var store = services.GetRequiredService<IEventStore>().ForProject(projectId);
+            (model, _) = await store.Load<ModelState>(StreamId.From(streamId.Value), ct);
+            scenarios = await ProposalImpact.LoadAsync(services, store, projectId, model, ct);
+            current = await services.GetRequiredService<PromiseReader>().AllAsync(projectId, ct);
+            tracked = await db.TrackedRefs.AsNoTracking()
+                .FirstOrDefaultAsync(t => t.ProjectId == projectId && t.Host == scan.Host && t.Repository == scan.Repository, ct);
+        }
+        else
+        {
+            model = pinned.Model;
+            scenarios = ProposalImpact.Of(model, pinned.Scenarios);
+            current = pinned.Promises;
+            tracked = pinned.Tracked.GetValueOrDefault(PromiseWorld.RepositoryKey(scan.Host, scan.Repository));
+        }
         var kind = ScanKindInfo.Of(scan, tracked);
         var repository = $"{scan.Host}/{scan.Repository}";
         var limits = new List<string>
@@ -171,6 +206,20 @@ public static class ChangeImpact
             .Where(p => p.ScanId == scan.Id && p.Status != ProposalStatus.Superseded)
             .OrderBy(p => p.Seq)
             .ToListAsync(ct);
+        // What the model holds is read from the model of the report, never from the status of
+        // a proposal: an accepted proposal is in the model, and a pinned state that is older
+        // than the decision does not hold it.
+        var schemaIds = proposals.Where(p => p.EntityKind == EntityKinds.Schema).Select(p => p.EntityId).ToHashSet();
+        Dictionary<Guid, SchemaRow> schemas = pinned is not null
+            ? pinned.Schemas.Where(s => schemaIds.Contains(s.Id)).ToDictionary(s => s.Id)
+            : schemaIds.Count == 0 ? [] : await services.GetRequiredService<SchemasDbContext>().Schemas.AsNoTracking()
+                .Where(s => s.ProjectId == projectId && schemaIds.Contains(s.Id))
+                .Select(s => new SchemaRow(s.Id, s.Name, s.Content))
+                .ToDictionaryAsync(s => s.Id, ct);
+        ModelEntity? Held(string entityKind, Guid entityId) => entityKind == EntityKinds.Schema
+            ? schemas.TryGetValue(entityId, out var schema) ? ModelIndex.Of(schema) : null
+            : ModelIndex.Read(model, entityKind, entityId);
+
         var changedFields = new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal);
         foreach (var proposal in proposals)
         {
@@ -178,14 +227,19 @@ public static class ChangeImpact
             var diff = ProposalJson.ReadChanges(proposal.Changes);
             changedFields[id] = [.. diff.Select(c => c.Field)];
             var relink = proposal.Action == ProposalAction.Relink;
+            var held = Held(proposal.EntityKind, proposal.EntityId);
+            var holdsSource = held is not null && diff.Count > 0 && diff.All(c => held.Values.GetValueOrDefault(c.Field) == c.To);
             changes.Add(new ImpactChangeDto(
                 id, "contract", proposal.Action, proposal.EntityKind, proposal.EntityId, proposal.Name,
                 relink ? ImpactCertainty.Unknown : ImpactCertainty.Definite,
                 proposal.Action switch
                 {
+                    ProposalAction.Add when held is not null => "The source declares it at the cited lines. The model holds it now.",
                     ProposalAction.Add => "The source declares it at the cited lines. The model does not hold it.",
+                    ProposalAction.Remove when held is null => "The scan read the files where it was declared and does not find it. The model does not hold it any more.",
                     ProposalAction.Remove => "The scan read the files where it was declared and does not find it. The model holds it.",
                     ProposalAction.Relink => "The extraction rules changed, and no exact rule says which fact of this scan it is. A person must choose.",
+                    ProposalAction.Conflict or ProposalAction.Change when holdsSource => "The source at the cited lines differed from the model. The model holds the value of the source now.",
                     ProposalAction.Conflict => "The source at the cited lines differs from a value that a person set in the model.",
                     _ => "The source at the cited lines differs from the model.",
                 },
@@ -221,13 +275,16 @@ public static class ChangeImpact
             return element;
         }
 
+        // A pattern change whose pattern the head still declares in the same service: the change
+        // names one declaration, and nothing shows that a promise needed that one.
+        var stillDeclared = new HashSet<string>(StringComparer.Ordinal);
         if (baseScan is null)
             limits.Add("No other snapshot of this repository exists, so the report cannot say which source patterns this scan adds or removes.");
         else
         {
             var before = await PatternsAsync(db, baseScan.Id, ct);
             var after = await PatternsAsync(db, scan.Id, ct);
-            ScanCoverage? coverage = null;
+            ScanCoverage? headCoverage = null;
             foreach (var (key, was) in before.OrderBy(p => p.Key, StringComparer.Ordinal))
             {
                 after.TryGetValue(key, out var now);
@@ -237,28 +294,42 @@ public static class ChangeImpact
                 var id = $"pattern:{key}";
                 var element = await ServiceElementAsync(was.Service);
                 var lines = Evidence(repository, baseScan.CommitSha!, was.Evidence);
+                var other = after.Where(p => p.Key != key).OrderBy(p => p.Key, StringComparer.Ordinal).Select(p => p.Value)
+                    .FirstOrDefault(f => f.Pattern == was.Pattern && f.Service == was.Service && (f.Condition is null || was.Condition is not null));
+                var remains = other is null ? "" : $" The snapshot of commit {Short(head.CommitSha)} still declares the pattern in the same service: '{other.Name}'.";
+                if (other is not null)
+                    stillDeclared.Add(id);
                 if (now is not null)
                 {
                     changes.Add(new ImpactChangeDto(id, "source-pattern", ProposalAction.Change, "pattern", null, was.Name, ImpactCertainty.Definite,
-                        $"At commit {Short(head.CommitSha)} the source declares the pattern only under #if {now.Condition}. At commit {Short(baseScan.CommitSha)} it declared it with no condition.",
+                        $"At commit {Short(head.CommitSha)} the source declares the pattern only under #if {now.Condition}. At commit {Short(baseScan.CommitSha)} it declared it with no condition.{remains}",
                         [new ProposalChangeDto(ConditionalAttribute, null, now.Condition)],
                         Evidence(repository, head.CommitSha, now.Evidence), element, was.Pattern));
                     continue;
                 }
 
-                coverage ??= await CoverageAsync(db, scan, ct);
-                var gap = !scan.IsComplete ? CoverageGap.Limit : !scan.TreeListed ? CoverageGap.Failed : coverage.GapFor(was.Evidence);
+                headCoverage ??= await CoverageAsync(db, scan, ct);
+                var gap = !scan.IsComplete ? CoverageGap.Limit : !scan.TreeListed ? CoverageGap.Failed : headCoverage.GapFor(was.Evidence);
                 changes.Add(new ImpactChangeDto(id, "source-pattern", ProposalAction.Remove, "pattern", null, was.Name,
                     gap is null ? ImpactCertainty.Definite : ImpactCertainty.Unknown,
-                    gap is null
+                    (gap is null
                         ? $"The scan read every file where the pattern was declared at commit {Short(baseScan.CommitSha)}, and the snapshot of commit {Short(head.CommitSha)} has no such fact."
-                        : $"The snapshot of commit {Short(head.CommitSha)} has no such fact, and the scan did not look at every file where the pattern was declared ({gap}). The pattern may still be there.",
+                        : $"The snapshot of commit {Short(head.CommitSha)} has no such fact, and the scan did not look at every file where the pattern was declared ({gap}). The pattern may still be there.") + remains,
                     [], lines, element, was.Pattern));
             }
+
+            // An added pattern is definite only when the base scan read the files where the head
+            // declares it: a base that did not look there proves no absence.
+            ScanCoverage? baseCoverage = null;
             foreach (var (key, now) in after.Where(p => !before.ContainsKey(p.Key)).OrderBy(p => p.Key, StringComparer.Ordinal))
             {
-                changes.Add(new ImpactChangeDto($"pattern:{key}", "source-pattern", ProposalAction.Add, "pattern", null, now.Name, ImpactCertainty.Definite,
-                    $"The source declares the pattern at the cited lines of commit {Short(head.CommitSha)}. The snapshot of commit {Short(baseScan.CommitSha)} has no such fact.",
+                baseCoverage ??= await CoverageAsync(db, baseScan, ct);
+                var gap = !baseScan.IsComplete ? CoverageGap.Limit : !baseScan.TreeListed ? CoverageGap.Failed : baseCoverage.GapFor(now.Evidence);
+                changes.Add(new ImpactChangeDto($"pattern:{key}", "source-pattern", ProposalAction.Add, "pattern", null, now.Name,
+                    gap is null ? ImpactCertainty.Definite : ImpactCertainty.Unknown,
+                    gap is null
+                        ? $"The source declares the pattern at the cited lines of commit {Short(head.CommitSha)}. The base scan read those files at commit {Short(baseScan.CommitSha)}, and its snapshot has no such fact."
+                        : $"The source declares the pattern at the cited lines of commit {Short(head.CommitSha)}. The snapshot of commit {Short(baseScan.CommitSha)} has no such fact, and the base scan did not look at every file where the pattern is now declared ({gap}). The pattern may have been there before.",
                     [], Evidence(repository, head.CommitSha, now.Evidence), await ServiceElementAsync(now.Service), now.Pattern));
             }
         }
@@ -286,8 +357,29 @@ public static class ChangeImpact
             .ToList();
 
         // 3. Promises.
-        var all = (await services.GetRequiredService<PromiseReader>().AllAsync(projectId, ct))
-            .Where(p => p.State != PromiseLifecycle.Retired).ToList();
+        var all = current.Where(p => p.State != PromiseLifecycle.Retired).ToList();
+        // The runs that read this scan. A run against another scan, however new, says nothing about this one.
+        List<RunRow> scanRuns = all.Count == 0 ? [] : await services.GetRequiredService<PromisesDbContext>().Runs.AsNoTracking()
+            .Where(r => r.ProjectId == projectId && EF.Functions.JsonContains(r.Document, $$"""{"scanId":"{{scan.Id}}"}"""))
+            .Select(r => new RunRow(r.PromiseId, r.PromiseRevision, r.ObligationId, r.Version, r.Document))
+            .ToListAsync(ct);
+        // The newest run of the obligation that read this scan and applies to the revision as it
+        // is: of the same obligation (a run of an edited obligation does not apply), and not of a
+        // draft when the revision is approved. With a pinned state, only the runs its promise
+        // stream held at the pinned version.
+        VerificationRun? RunOn(Guid promiseId, PromiseRevisionDto revision, ObligationDto obligation)
+        {
+            var upTo = pinned?.PromiseVersions.GetValueOrDefault(promiseId) ?? long.MaxValue;
+            var hash = PromiseViews.ObligationHash(obligation.Kind, obligation.Recipe);
+            return scanRuns
+                .Where(r => r.PromiseId == promiseId && r.PromiseRevision == revision.Revision && r.ObligationId == obligation.Id && r.Version <= upTo)
+                .OrderByDescending(r => r.Version)
+                .Select(r => PromiseJson.Read<VerificationRun>(r.Document))
+                .FirstOrDefault(run => run.ScanId == scan.Id
+                    && (run.Inputs is null || run.ObligationHash == hash)
+                    && !(run.Draft == true && revision.Status != RevisionStatus.Draft));
+        }
+
         var promises = new List<ImpactPromiseDto>();
         foreach (var promise in all)
         {
@@ -301,11 +393,14 @@ public static class ChangeImpact
                 .Distinct().ToList();
             foreach (var change in changes.Where(c => c.Kind == "source-pattern" && c.Action != ProposalAction.Add))
             {
-                if (required.Any(r => r.Pattern == change.Pattern && (r.Service is null || r.Service == change.ElementId)))
-                {
-                    reasons.Add(new ImpactReasonDto(change.Certainty, change.Id,
+                if (!required.Any(r => r.Pattern == change.Pattern && (r.Service is null || r.Service == change.ElementId)))
+                    continue;
+                reasons.Add(stillDeclared.Contains(change.Id)
+                    ? new ImpactReasonDto(
+                        change.Certainty == ImpactCertainty.Definite ? ImpactCertainty.Possible : ImpactCertainty.Unknown, change.Id,
+                        $"It requires the pattern '{change.Pattern}' in {scan.Repository}. {change.Basis} Nothing shows that the promise needs the declaration that changed.")
+                    : new ImpactReasonDto(change.Certainty, change.Id,
                         $"It requires the pattern '{change.Pattern}' in {scan.Repository}. {change.Basis}"));
-                }
             }
 
             var linked = revision.Links.All().Where(l => l.Kind != "scenario").ToList();
@@ -349,13 +444,9 @@ public static class ChangeImpact
 
             var checks = revision.Obligations
                 .Where(o => o.Recipe.SourcePattern is { } recipe && recipe.Repository == scan.Repository)
-                .Select(o =>
-                {
-                    var status = revision.EvidenceStatus.Obligations.FirstOrDefault(s => s.ObligationId == o.Id);
-                    return status is not null && status.ScanId == scan.Id
-                        ? new ImpactCheckDto(o.Id, o.Key, o.Title, status.Result, status.Detail)
-                        : new ImpactCheckDto(o.Id, o.Key, o.Title, RunResult.NotRun, "This check was not run against this scan.");
-                })
+                .Select(o => RunOn(promise.Id, revision, o) is { } run
+                    ? new ImpactCheckDto(o.Id, o.Key, o.Title, run.Result, run.Detail)
+                    : new ImpactCheckDto(o.Id, o.Key, o.Title, RunResult.NotRun, "This check was not run against this scan."))
                 .ToList();
             var certain = ImpactCertainty.Strongest(reasons.Select(r => r.Certainty));
             promises.Add(new ImpactPromiseDto(
@@ -374,6 +465,15 @@ public static class ChangeImpact
             limits, changes, flows, promises, all.Count - promises.Count), null);
     }
 
+    private sealed record RunRow(Guid PromiseId, int PromiseRevision, string ObligationId, long Version, string Document);
+
+    internal sealed record PatternRow(string FactKey, string Name, string Attributes, string Evidence);
+
+    /// <summary>The facts of one snapshot that have a <c>pattern</c> attribute. The database filters them: a snapshot can hold many thousand facts.</summary>
+    internal static IQueryable<PatternRow> PatternRows(ImportDbContext db, Guid scanId) =>
+        db.SnapshotFacts.AsNoTracking().Where(f => f.ScanId == scanId && EF.Functions.JsonExists(f.Attributes, PatternAttribute)).OrderBy(f => f.Seq)
+            .Select(f => new PatternRow(f.FactKey, f.Name, f.Attributes, f.Evidence));
+
     private sealed record PatternFact(string Name, string Pattern, string? Service, string? Condition, List<EvidenceRef> Evidence);
 
     /// <summary>
@@ -382,10 +482,9 @@ public static class ChangeImpact
     /// </summary>
     private static async Task<Dictionary<string, PatternFact>> PatternsAsync(ImportDbContext db, Guid scanId, CancellationToken ct)
     {
-        var rows = await db.SnapshotFacts.AsNoTracking().Where(f => f.ScanId == scanId).OrderBy(f => f.Seq)
-            .Select(f => new { f.FactKey, f.Name, f.Attributes, f.Evidence }).ToListAsync(ct);
+        var rows = await PatternRows(db, scanId).ToListAsync(ct);
         var found = new Dictionary<string, PatternFact>(StringComparer.Ordinal);
-        foreach (var row in rows.Where(r => r.Attributes.Contains(PatternAttribute, StringComparison.Ordinal)))
+        foreach (var row in rows)
         {
             var attributes = ProposalJson.ReadAttributes(row.Attributes);
             if (attributes.TryGetValue(PatternAttribute, out var pattern))
