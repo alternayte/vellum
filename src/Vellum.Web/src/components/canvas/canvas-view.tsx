@@ -246,7 +246,9 @@ function CanvasViewInner({
   const { selectElement, selectRelationship, selectMessage, focusElementId, clearFocusElement } = useShellStore()
 
   useEffect(() => {
-    onFitViewReady?.(() => fitView(fitAll()))
+    // The click on Fit can close the detail sheet. The fit waits a frame, so it measures the
+    // panels that are still open after that click.
+    onFitViewReady?.(() => requestAnimationFrame(() => fitView(fitAll())))
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fitView, fitAll])
 
