@@ -1,4 +1,4 @@
-import { useId, type ReactNode } from 'react'
+import { useId, useState, type ReactNode } from 'react'
 import { Pencil, Plus, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
@@ -7,13 +7,33 @@ export interface NamedElement {
   name: string
 }
 
-/** The choices of a schema select: none, then each schema with its version. */
-export function SchemaOptions({ schemas }: { schemas: { id: string; name: string; version: number }[] }) {
+type SchemaChoice = { id: string; name: string; version: number }
+
+/**
+ * A schema choice inside a form that is read with FormData. The choice is held in state, not
+ * in the DOM's default value: the schema list loads on its own, and a select that is given a
+ * default value before its option exists shows "None" and then submits "None", which removes
+ * the schema. A chosen schema that is not in the list keeps an option of its own.
+ */
+export function SchemaSelect({
+  name, initial, schemas, loading, ...rest
+}: {
+  name: string
+  initial: string | null | undefined
+  schemas: SchemaChoice[]
+  /** True while the schema list has not loaded. */
+  loading?: boolean
+  'aria-invalid'?: true
+  'aria-describedby'?: string
+}) {
+  const [value, setValue] = useState(initial ?? '')
+  const known = value === '' || schemas.some((s) => s.id === value)
   return (
-    <>
+    <select name={name} className={selectClass} value={value} onChange={(e) => setValue(e.target.value)} {...rest}>
       <option value="">None</option>
+      {!known && <option value={value}>{loading ? 'Loading the schema…' : 'Schema not found'}</option>}
       {schemas.map((schema) => <option key={schema.id} value={schema.id}>{schema.name} · v{schema.version}</option>)}
-    </>
+    </select>
   )
 }
 

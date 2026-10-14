@@ -9,7 +9,7 @@ import {
 import { useMessages } from '@/hooks/use-messages'
 import { useSchemas, type Schema } from '@/hooks/use-schemas'
 import {
-  Field, FormError, Row, SchemaOptions, Section, selectClass, type NamedElement,
+  Field, FormError, Row, SchemaSelect, Section, selectClass, type NamedElement,
 } from './contract-parts'
 import { MessagesSection } from './messages-section'
 import { SchemasSection } from './schemas-section'
@@ -26,13 +26,15 @@ interface OperationFormProps {
   operation?: Operation
   elements: NamedElement[]
   schemas: Schema[]
+  /** True while the schema list has not loaded. */
+  schemasLoading: boolean
   failure: FormFailure
   pending: boolean
   onSubmit: (operation: NewOperation & { requestSchemaId: string | null; responseSchemaId: string | null }) => void
   onCancel?: () => void
 }
 
-function OperationForm({ operation, elements, schemas, failure, pending, onSubmit, onCancel }: OperationFormProps) {
+function OperationForm({ operation, elements, schemas, schemasLoading, failure, pending, onSubmit, onCancel }: OperationFormProps) {
   const submit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     const form = new FormData(e.currentTarget)
@@ -61,19 +63,15 @@ function OperationForm({ operation, elements, schemas, failure, pending, onSubmi
       </Field>
       <Field label="Request schema" error={failure.fields.requestSchemaId}>
         {(invalid) => (
-          <select name="requestSchemaId" className={selectClass} defaultValue={operation?.requestSchemaId ?? ''} {...invalid}>
-            <SchemaOptions schemas={schemas} />
-          </select>
+          <SchemaSelect name="requestSchemaId" initial={operation?.requestSchemaId} schemas={schemas} loading={schemasLoading} {...invalid} />
         )}
       </Field>
       <Field label="Response schema" error={failure.fields.responseSchemaId}>
         {(invalid) => (
-          <select name="responseSchemaId" className={selectClass} defaultValue={operation?.responseSchemaId ?? ''} {...invalid}>
-            <SchemaOptions schemas={schemas} />
-          </select>
+          <SchemaSelect name="responseSchemaId" initial={operation?.responseSchemaId} schemas={schemas} loading={schemasLoading} {...invalid} />
         )}
       </Field>
-      {schemas.length === 0 && (
+      {!schemasLoading && schemas.length === 0 && (
         <p className="text-[11px] leading-relaxed text-muted-foreground">No schema exists yet. Add one under Schemas, then choose it here.</p>
       )}
       <div className="grid grid-cols-2 gap-2">
@@ -115,7 +113,7 @@ export function ContractsFlyout({ projectId, branchId, elements }: ContractsFlyo
   const { data: subscriptions = [] } = useSubscriptions(projectId, branchId)
   const { data: bindings = [] } = useBindings(projectId, branchId)
   const { data: messages = [] } = useMessages(projectId, branchId ?? undefined)
-  const { data: schemas = [] } = useSchemas(projectId)
+  const { data: schemas = [], isPending: schemasLoading } = useSchemas(projectId)
   const mutations = useContractMutations(projectId, branchId)
 
   const [adding, setAdding] = useState<'operation' | 'channel' | 'subscription' | null>(null)
@@ -208,7 +206,7 @@ export function ContractsFlyout({ projectId, branchId, elements }: ContractsFlyo
         >
           {adding === 'operation' && (
             <OperationForm
-              elements={elements} schemas={schemas} failure={operationFailure} pending={mutations.addOperation.isPending}
+              elements={elements} schemas={schemas} schemasLoading={schemasLoading} failure={operationFailure} pending={mutations.addOperation.isPending}
               onSubmit={(operation) => mutations.addOperation.mutate(operation, operationDone)}
             />
           )}
@@ -216,7 +214,7 @@ export function ContractsFlyout({ projectId, branchId, elements }: ContractsFlyo
             {operations.map((op) => editingOperation === op.id ? (
               <li key={op.id} className="rounded-md border border-border px-2 pb-2">
                 <OperationForm
-                  operation={op} elements={elements} schemas={schemas} failure={operationFailure} pending={mutations.updateOperation.isPending}
+                  operation={op} elements={elements} schemas={schemas} schemasLoading={schemasLoading} failure={operationFailure} pending={mutations.updateOperation.isPending}
                   onSubmit={(operation) => mutations.updateOperation.mutate({ id: op.id, ...operation }, operationDone)}
                   onCancel={() => { setEditingOperation(null); setOperationFailure(NO_FAILURE) }}
                 />
@@ -353,7 +351,7 @@ export function ContractsFlyout({ projectId, branchId, elements }: ContractsFlyo
           </ul>
         </Section>
 
-        <MessagesSection projectId={projectId} branchId={branchId} messages={messages} elements={elements} schemas={schemas} />
+        <MessagesSection projectId={projectId} branchId={branchId} messages={messages} elements={elements} schemas={schemas} schemasLoading={schemasLoading} />
         <SchemasSection projectId={projectId} schemas={schemas} usedBy={schemaUsers} />
       </div>
     </div>
