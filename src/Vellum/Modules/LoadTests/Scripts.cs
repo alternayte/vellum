@@ -6,7 +6,7 @@ using Npgsql;
 using Vellum.Modules.Modelling;
 using Vellum.Modules.Schemas;
 using Vellum.Modules.Stress;
-using Vellum.Modules.Workspaces.Authorization;
+using Vellum.Modules.Workspaces;
 using Vellum.Shared;
 using static Vellum.Shared.ResultExtensions;
 

@@ -1,6 +1,4 @@
-// src/Vellum/Modules/Docs/AppDbContext.cs
 using Microsoft.EntityFrameworkCore;
-using Vellum.Modules.Docs.Entities;
 using Vellum.Shared;
 
 namespace Vellum.Modules.Docs;
@@ -36,4 +34,28 @@ public static class DocsTables
                 .OnDelete(DeleteBehavior.SetNull);
         });
     }
+}
+
+public class SpaceEntity
+{
+    public Guid Id { get; set; }
+    public Guid ProjectId { get; set; }
+    public string Name { get; set; } = null!;
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset UpdatedAt { get; set; }
+}
+
+public class DocumentEntity
+{
+    public Guid Id { get; set; }
+    public Guid ProjectId { get; set; }
+    public Guid? SpaceId { get; set; }
+    public Guid? ElementId { get; set; }
+    public string Title { get; set; } = null!;
+    public string Content { get; set; } = string.Empty;
+    public string CreatedBy { get; set; } = null!;
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset UpdatedAt { get; set; }
+    public Guid? DraftId { get; set; }
+    public string? Type { get; set; }
 }

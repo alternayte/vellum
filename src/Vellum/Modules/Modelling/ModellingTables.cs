@@ -1,5 +1,4 @@
 using Microsoft.EntityFrameworkCore;
-using Vellum.Modules.Modelling.Entities;
 
 namespace Vellum.Modules.Modelling;
 
@@ -48,4 +47,123 @@ public static class ModellingTables
             b.HasIndex(v => v.StreamId).IsUnique();
         });
     }
+}
+
+public class ElementEntity
+{
+    /// <summary>Synthetic row identity. The architecture ID lives in <see cref="Id"/> and is unique per branch.</summary>
+    public Guid RowId { get; set; } = Guid.NewGuid();
+    public Guid Id { get; set; }
+    public Guid ProjectId { get; set; }
+    public Guid Branch { get; set; }
+    public string Kind { get; set; } = null!;
+    public string Name { get; set; } = null!;
+    public string? Description { get; set; }
+    public string? Technology { get; set; }
+    public Guid? OwnerId { get; set; }
+    public string Status { get; set; } = "current";
+    public Guid? ParentId { get; set; }
+    public string[] Tags { get; set; } = [];
+    public string? Icon { get; set; }
+    public string FactStatus { get; set; } = "declared";
+    public string? ProvenanceSource { get; set; }
+    public string? ProvenanceRevision { get; set; }
+    public double? ProvenanceConfidence { get; set; }
+    public Guid? ProvenanceAcceptedBy { get; set; }
+    public DateTimeOffset? ProvenanceAcceptedAt { get; set; }
+    public long? ProvenanceAcceptedAtVersion { get; set; }
+    public Guid? ProvenanceAcceptedOnBranch { get; set; }
+    /// <summary>Both stale columns are set, or both are null.</summary>
+    public string? StaleSinceRevision { get; set; }
+    public string? StaleReason { get; set; }
+}
+
+public class RelationshipEntity
+{
+    /// <summary>Synthetic row identity. The architecture ID lives in <see cref="Id"/> and is unique per branch.</summary>
+    public Guid RowId { get; set; } = Guid.NewGuid();
+    public Guid Id { get; set; }
+    public Guid ProjectId { get; set; }
+    public Guid Branch { get; set; }
+    public Guid FromId { get; set; }
+    public Guid ToId { get; set; }
+    public string? Label { get; set; }
+    public string? Technology { get; set; }
+    public Guid? MessageId { get; set; }
+    public string? LineShape { get; set; }
+    public string Kind { get; set; } = "structural";
+    public string FactStatus { get; set; } = "declared";
+    public string? ProvenanceSource { get; set; }
+    public string? ProvenanceRevision { get; set; }
+    public double? ProvenanceConfidence { get; set; }
+    public Guid? ProvenanceAcceptedBy { get; set; }
+    public DateTimeOffset? ProvenanceAcceptedAt { get; set; }
+    public long? ProvenanceAcceptedAtVersion { get; set; }
+    public Guid? ProvenanceAcceptedOnBranch { get; set; }
+    /// <summary>Both stale columns are set, or both are null.</summary>
+    public string? StaleSinceRevision { get; set; }
+    public string? StaleReason { get; set; }
+}
+
+public class MessageEntity
+{
+    /// <summary>Synthetic row identity. The architecture ID lives in <see cref="Id"/> and is unique per branch.</summary>
+    public Guid RowId { get; set; } = Guid.NewGuid();
+    public Guid Id { get; set; }
+    public Guid ProjectId { get; set; }
+    public Guid Branch { get; set; }
+    public string Name { get; set; } = null!;
+    public string? Description { get; set; }
+    public Guid ProducerId { get; set; }
+    public Guid[] ConsumerIds { get; set; } = [];
+    public Guid? SchemaId { get; set; }
+    public string[] Tags { get; set; } = [];
+    public string FactStatus { get; set; } = "declared";
+    public string? ProvenanceSource { get; set; }
+    public string? ProvenanceRevision { get; set; }
+    public double? ProvenanceConfidence { get; set; }
+    public Guid? ProvenanceAcceptedBy { get; set; }
+    public DateTimeOffset? ProvenanceAcceptedAt { get; set; }
+    public long? ProvenanceAcceptedAtVersion { get; set; }
+    public Guid? ProvenanceAcceptedOnBranch { get; set; }
+    /// <summary>Both stale columns are set, or both are null.</summary>
+    public string? StaleSinceRevision { get; set; }
+    public string? StaleReason { get; set; }
+}
+
+/// <summary>
+/// A named, immutable snapshot of a model stream at a pinned version. The state is stored
+/// with the revision so downstream features (diff, impact, agent briefs) can compare
+/// pinned revisions without replaying the event log.
+/// </summary>
+public class RevisionEntity
+{
+    public Guid Id { get; set; }
+    public Guid ProjectId { get; set; }
+    public string Name { get; set; } = null!;
+    public string? Note { get; set; }
+    public Guid StreamId { get; set; }
+    public int Version { get; set; }
+    public string State { get; set; } = null!;
+    public string CreatedBy { get; set; } = null!;
+    public DateTimeOffset CreatedAt { get; set; }
+}
+
+/// <summary>
+/// A forked model stream used to compare architecture alternatives. Forking copies the
+/// pinned state into a new event stream and materialises complete read-model rows for the
+/// variant branch.
+/// </summary>
+public class VariantEntity
+{
+    public Guid Id { get; set; }
+    public Guid ProjectId { get; set; }
+    public string Name { get; set; } = null!;
+    public Guid StreamId { get; set; }
+    public Guid BaseStreamId { get; set; }
+    public Guid? BaseRevisionId { get; set; }
+    public int ForkVersion { get; set; }
+    public string Status { get; set; } = "open";
+    public string CreatedBy { get; set; } = null!;
+    public DateTimeOffset CreatedAt { get; set; }
 }

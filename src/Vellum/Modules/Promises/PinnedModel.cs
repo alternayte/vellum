@@ -2,8 +2,6 @@ using Deedbox;
 using Microsoft.EntityFrameworkCore;
 using Vellum.Modules.Drafts;
 using Vellum.Modules.Modelling;
-using Vellum.Modules.Modelling.Model;
-using Vellum.Modules.Modelling.Revisions;
 using Vellum.Modules.Workspaces;
 using Vellum.Shared;
 using static Vellum.Shared.ResultExtensions;

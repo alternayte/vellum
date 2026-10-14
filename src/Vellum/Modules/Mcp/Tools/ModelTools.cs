@@ -5,12 +5,6 @@ using Microsoft.EntityFrameworkCore;
 using ModelContextProtocol.Protocol;
 using Vellum.Modules.Identity.AgentTokens;
 using Vellum.Modules.Modelling;
-using Vellum.Modules.Modelling.Contracts;
-using Vellum.Modules.Modelling.Elements;
-using Vellum.Modules.Modelling.Entities;
-using Vellum.Modules.Modelling.Messages;
-using Vellum.Modules.Modelling.Model;
-using Vellum.Modules.Modelling.Relationships;
 using Vellum.Modules.Schemas;
 using Vellum.Shared;
 

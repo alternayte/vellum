@@ -1,6 +1,6 @@
 using System.Collections.Immutable;
-using Vellum.Modules.Drafts.Merge;
-using Vellum.Modules.Modelling.Model;
+using Vellum.Modules.Drafts;
+using Vellum.Modules.Modelling;
 using Vellum.Modules.Trace.Engine;
 
 namespace Vellum.Tests.Modules.Drafts;

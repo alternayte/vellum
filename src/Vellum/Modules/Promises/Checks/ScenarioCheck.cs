@@ -1,10 +1,10 @@
 using System.Globalization;
 using Deedbox;
 using Microsoft.EntityFrameworkCore;
-using Vellum.Modules.Modelling.Model;
+using Vellum.Modules.Modelling;
 using Vellum.Modules.Schemas;
 using Vellum.Modules.Trace.Engine;
-using Vellum.Modules.Trace.Scenarios;
+using Vellum.Modules.Trace;
 using Vellum.Shared;
 
 namespace Vellum.Modules.Promises.Checks;

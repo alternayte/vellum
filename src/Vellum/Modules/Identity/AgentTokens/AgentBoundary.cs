@@ -3,8 +3,6 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Vellum.Modules.Workspaces;
-using Vellum.Modules.Workspaces.Authorization;
-using Vellum.Modules.Workspaces.Entities;
 using Vellum.Shared;
 
 namespace Vellum.Modules.Identity.AgentTokens;

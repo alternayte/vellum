@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Vellum.Modules.Settings.Audit;
 using Vellum.Modules.Settings.Document;
 using Vellum.Modules.Settings.Entities;
-using Vellum.Modules.Workspaces.Authorization;
+using Vellum.Modules.Workspaces;
 using Vellum.Shared;
 
 namespace Vellum.Modules.Settings.Secrets;

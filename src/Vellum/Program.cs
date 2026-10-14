@@ -15,13 +15,9 @@ using Vellum.Modules.Identity.AgentTokens;
 using Vellum.Modules.Import;
 using Vellum.Modules.Mcp;
 using Vellum.Modules.Modelling;
-using Vellum.Modules.Modelling.Contracts;
-using Vellum.Modules.Modelling.Model;
-using Vellum.Modules.Modelling.Revisions;
 using Vellum.Modules.Build;
 using Vellum.Modules.Costs;
 using Vellum.Modules.LoadTests;
-using Vellum.Modules.Modelling.Variants;
 using Vellum.Modules.Promises;
 using Vellum.Modules.Docs;
 using Vellum.Modules.Drafts;
@@ -33,10 +29,9 @@ using Vellum.Modules.Settings.Instance;
 using Vellum.Modules.Settings.Entities;
 using Vellum.Modules.Settings.Setup;
 using Vellum.Modules.Stress;
-using Vellum.Modules.Trace.Scenarios;
+using Vellum.Modules.Trace;
 using Vellum.Modules.Views;
 using Vellum.Modules.Workspaces;
-using Vellum.Modules.Workspaces.Entities;
 
 // A start that is refused must end the process. As process 1 of a container, a process that
 // dies of an unhandled exception does not end: the runtime aborts, and the kernel ignores
@@ -126,7 +121,7 @@ builder.Services.AddViewsModule();
 builder.Services.AddDocsModule();
 builder.Services.AddDraftsModule();
 builder.Services.AddSchemasModule();
-builder.Services.AddScenariosModule();
+builder.Services.AddTraceModule();
 builder.Services.AddMcpModule();
 builder.Services.AddSettingsModule(generatingOpenApi);
 builder.Services.AddOutbound();

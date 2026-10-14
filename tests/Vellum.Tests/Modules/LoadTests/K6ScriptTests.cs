@@ -4,7 +4,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Vellum.Modules.LoadTests;
-using Vellum.Modules.Modelling.Model;
+using Vellum.Modules.Modelling;
 using Vellum.Modules.Stress.Engine;
 using Vellum.Modules.Trace.Engine;
 

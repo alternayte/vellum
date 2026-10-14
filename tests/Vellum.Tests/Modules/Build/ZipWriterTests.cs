@@ -3,7 +3,7 @@ using System.IO.Compression;
 using System.Security.Cryptography;
 using System.Text;
 using Vellum.Modules.Build;
-using Vellum.Modules.Modelling.Model;
+using Vellum.Modules.Modelling;
 using Vellum.Modules.Promises;
 
 namespace Vellum.Tests.Modules.Build;

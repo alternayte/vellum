@@ -1,5 +1,5 @@
 using System.Globalization;
-using Vellum.Modules.Modelling.Model;
+using Vellum.Modules.Modelling;
 using Vellum.Modules.Trace.Engine;
 using Vellum.Shared;
 

@@ -3,7 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Vellum.Modules.Settings.Audit;
 using Vellum.Modules.Settings.Document;
 using Vellum.Modules.Settings.Instance;
-using Vellum.Modules.Workspaces.Authorization;
+using Vellum.Modules.Workspaces;
 using Vellum.Shared;
 
 namespace Vellum.Modules.Ai.Usage;

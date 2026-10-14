@@ -1,7 +1,6 @@
 using System.Security.Claims;
 using Microsoft.EntityFrameworkCore;
-using Vellum.Modules.Docs.Entities;
-using Vellum.Modules.Workspaces.Authorization;
+using Vellum.Modules.Workspaces;
 using Vellum.Shared;
 using static Vellum.Shared.ResultExtensions;
 

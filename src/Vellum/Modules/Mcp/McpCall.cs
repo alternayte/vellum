@@ -9,7 +9,7 @@ using Microsoft.AspNetCore.Http.Json;
 using Microsoft.Extensions.Options;
 using ModelContextProtocol.Protocol;
 using Vellum.Modules.Identity.AgentTokens;
-using Vellum.Modules.Workspaces.Entities;
+using Vellum.Modules.Workspaces;
 using Vellum.Shared;
 
 namespace Vellum.Modules.Mcp;

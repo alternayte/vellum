@@ -1,10 +1,10 @@
 using System.Text.Json;
-using Vellum.Modules.Modelling.Model;
+using Vellum.Modules.Modelling;
 using Vellum.Modules.Promises;
 using Vellum.Modules.Review;
 using Vellum.Modules.Review.Decisions;
 using Vellum.Modules.Trace.Engine;
-using Vellum.Modules.Trace.Scenarios;
+using Vellum.Modules.Trace;
 
 namespace Vellum.Modules.Build;
 

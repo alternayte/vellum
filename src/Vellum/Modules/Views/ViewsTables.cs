@@ -1,5 +1,5 @@
 using Microsoft.EntityFrameworkCore;
-using Vellum.Modules.Views.Entities;
+using System.Text.Json;
 
 namespace Vellum.Modules.Views;
 
@@ -43,4 +43,36 @@ public static class ViewsTables
                 .OnDelete(DeleteBehavior.Cascade);
         });
     }
+}
+
+public class ViewEntity
+{
+    public Guid Id { get; set; }
+    public Guid ProjectId { get; set; }
+    public string Name { get; set; } = null!;
+    public Guid? RootElementId { get; set; }
+    public Guid[] VisibleElementIds { get; set; } = [];
+    public string? ActiveLens { get; set; }
+    public Guid? ActiveFlowId { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset UpdatedAt { get; set; }
+}
+
+public class LayoutPositionEntity
+{
+    public Guid Id { get; set; }
+    public Guid ViewId { get; set; }
+    public Guid ElementId { get; set; }
+    public double X { get; set; }
+    public double Y { get; set; }
+    public double? Width { get; set; }
+    public double? Height { get; set; }
+}
+
+public class LayoutEdgeEntity
+{
+    public Guid Id { get; set; }
+    public Guid ViewId { get; set; }
+    public Guid RelationshipId { get; set; }
+    public JsonDocument? RoutePoints { get; set; }
 }

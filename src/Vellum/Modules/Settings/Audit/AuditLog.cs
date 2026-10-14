@@ -1,7 +1,7 @@
 using System.Security.Claims;
 using Microsoft.EntityFrameworkCore;
 using Vellum.Modules.Settings.Instance;
-using Vellum.Modules.Workspaces.Authorization;
+using Vellum.Modules.Workspaces;
 using Vellum.Shared;
 
 namespace Vellum.Modules.Settings.Audit;

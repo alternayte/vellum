@@ -4,7 +4,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Vellum.Modules.Ai;
 using Vellum.Modules.Ai.Design;
-using Vellum.Modules.Modelling.Model;
+using Vellum.Modules.Modelling;
 
 namespace Vellum.Tests.Modules.Ai.Design;
 

@@ -4,7 +4,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Vellum.Modules.Build;
-using Vellum.Modules.Modelling.Model;
+using Vellum.Modules.Modelling;
 using Vellum.Modules.Promises;
 using Vellum.Modules.Trace.Engine;
 using YamlDotNet.Core;

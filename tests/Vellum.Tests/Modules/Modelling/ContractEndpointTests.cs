@@ -3,8 +3,7 @@ using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json.Nodes;
 using Vellum.Modules.Drafts;
-using Vellum.Modules.Modelling.Contracts;
-using Vellum.Modules.Modelling.Variants;
+using Vellum.Modules.Modelling;
 using Vellum.Shared;
 
 namespace Vellum.Tests.Modules.Modelling;

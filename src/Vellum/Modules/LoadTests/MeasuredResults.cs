@@ -5,9 +5,9 @@ using Deedbox;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using Vellum.Modules.Identity.AgentTokens;
-using Vellum.Modules.Modelling.Model;
+using Vellum.Modules.Modelling;
 using Vellum.Modules.Stress;
-using Vellum.Modules.Workspaces.Authorization;
+using Vellum.Modules.Workspaces;
 using Vellum.Shared;
 using static Vellum.Shared.ResultExtensions;
 

@@ -1,8 +1,8 @@
 using Vellum.Modules.Build;
-using Vellum.Modules.Modelling.Model;
+using Vellum.Modules.Modelling;
 using Vellum.Modules.Promises;
 using Vellum.Modules.Trace.Engine;
-using Vellum.Modules.Trace.Scenarios;
+using Vellum.Modules.Trace;
 
 namespace Vellum.Modules.Review.Rules;
 

@@ -4,7 +4,7 @@ using System.Text;
 using System.Text.Json.Nodes;
 using Deedbox;
 using Microsoft.Extensions.DependencyInjection;
-using Vellum.Modules.Modelling.Model;
+using Vellum.Modules.Modelling;
 
 namespace Vellum.Tests.Modules.Modelling;
 

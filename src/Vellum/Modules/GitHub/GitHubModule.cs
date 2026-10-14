@@ -1,5 +1,5 @@
 using System.Security.Claims;
-using Vellum.Modules.Workspaces.Authorization;
+using Vellum.Modules.Workspaces;
 using Vellum.Shared.Outbound;
 using Vellum.Shared;
 

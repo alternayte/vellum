@@ -2,9 +2,9 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using Vellum.Modules.Modelling.Model;
+using Vellum.Modules.Modelling;
 using Vellum.Modules.Trace.Engine;
-using Vellum.Modules.Trace.Scenarios;
+using Vellum.Modules.Trace;
 using Vellum.Shared;
 
 namespace Vellum.Modules.Ai.Design;

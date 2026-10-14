@@ -1,7 +1,7 @@
 using System.Globalization;
 using System.Text;
 using System.Text.Json;
-using Vellum.Modules.Modelling.Model;
+using Vellum.Modules.Modelling;
 using Vellum.Modules.Promises;
 using Vellum.Modules.Review.Decisions;
 using Vellum.Modules.Trace.Engine;

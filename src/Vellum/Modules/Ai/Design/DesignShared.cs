@@ -6,12 +6,10 @@ using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
 using Vellum.Modules.Drafts;
 using Vellum.Modules.Identity.AgentTokens;
-using Vellum.Modules.Modelling.Model;
 using Vellum.Modules.Modelling;
 using Vellum.Modules.Trace.Engine;
-using Vellum.Modules.Trace.Scenarios;
+using Vellum.Modules.Trace;
 using Vellum.Modules.Workspaces;
-using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Shared;
 
 namespace Vellum.Modules.Ai.Design;

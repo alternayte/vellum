@@ -7,7 +7,7 @@ using Vellum.Modules.Import;
 using Vellum.Modules.Promises.Checks;
 using Vellum.Modules.Schemas;
 using Vellum.Modules.Settings.Document;
-using Vellum.Modules.Workspaces.Authorization;
+using Vellum.Modules.Workspaces;
 using Vellum.Shared;
 using static Vellum.Shared.ResultExtensions;
 

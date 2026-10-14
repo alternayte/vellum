@@ -1,7 +1,7 @@
 using System.Collections.Immutable;
-using Vellum.Modules.Drafts.Merge;
+using Vellum.Modules.Drafts;
 using Deedbox.Testing;
-using Vellum.Modules.Modelling.Model;
+using Vellum.Modules.Modelling;
 
 namespace Vellum.Tests.Modules.Drafts;
 

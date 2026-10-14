@@ -1,4 +1,4 @@
-using Vellum.Modules.Modelling.Model;
+using Vellum.Modules.Modelling;
 using Vellum.Modules.Trace.Engine;
 
 namespace Vellum.Modules.Review.Rules;

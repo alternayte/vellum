@@ -2,7 +2,7 @@ using System.Globalization;
 using System.Security.Claims;
 using Microsoft.EntityFrameworkCore;
 using Vellum.Modules.Identity.AgentTokens;
-using Vellum.Modules.Workspaces.Authorization;
+using Vellum.Modules.Workspaces;
 using Vellum.Shared;
 using static Vellum.Shared.ResultExtensions;
 

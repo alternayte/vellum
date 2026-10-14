@@ -2,7 +2,6 @@ using System.Security.Claims;
 using Microsoft.EntityFrameworkCore;
 using Vellum.Modules.Drafts;
 using Vellum.Modules.Workspaces;
-using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Shared;
 
 namespace Vellum.Modules.Modelling;

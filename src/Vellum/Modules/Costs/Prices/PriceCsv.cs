@@ -1,7 +1,7 @@
 using System.Globalization;
 using System.Security.Claims;
 using System.Text;
-using Vellum.Modules.Workspaces.Authorization;
+using Vellum.Modules.Workspaces;
 using Vellum.Shared;
 using static Vellum.Shared.ResultExtensions;
 

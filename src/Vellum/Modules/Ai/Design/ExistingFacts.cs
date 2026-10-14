@@ -1,7 +1,7 @@
 using System.Globalization;
 using System.Text;
 using Vellum.Modules.Import.Proposals;
-using Vellum.Modules.Modelling.Model;
+using Vellum.Modules.Modelling;
 
 namespace Vellum.Modules.Ai.Design;
 

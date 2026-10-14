@@ -2,7 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json.Nodes;
 using Vellum.Modules.Import.Proposals;
-using Vellum.Modules.Modelling.Model;
+using Vellum.Modules.Modelling;
 
 namespace Vellum.Tests.Modules.Import;
 

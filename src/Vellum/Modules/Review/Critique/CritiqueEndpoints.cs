@@ -4,11 +4,11 @@ using Deedbox;
 using Microsoft.EntityFrameworkCore;
 using Vellum.Modules.Ai;
 using Vellum.Modules.Ai.Design;
-using Vellum.Modules.Modelling.Model;
+using Vellum.Modules.Modelling;
 using Vellum.Modules.Promises;
 using Vellum.Modules.Review.Decisions;
 using Vellum.Modules.Review.Rules;
-using Vellum.Modules.Workspaces.Authorization;
+using Vellum.Modules.Workspaces;
 using Vellum.Shared;
 using static Vellum.Shared.ResultExtensions;
 
@@ -108,7 +108,7 @@ public static class CritiqueEndpoints
         // sentence of a finding can. Such a thing may be named by text that does not cite it,
         // so the names are compared as text. Text that holds one is left out while the
         // private-code setting forbids it, and makes the part private code when it is sent.
-        var labels = Trace.Scenarios.TraceModelBuilder.Labels(model);
+        var labels = Trace.TraceModelBuilder.Labels(model);
         var schemaNames = review.Input.Schemas.ToDictionary(s => s.Id, s => s.Name);
         var privateNames = gate.Ids.Select(id => labels.GetValueOrDefault(id) ?? schemaNames.GetValueOrDefault(id, "")).Where(name => name.Length > 0).ToList();
         bool NamesPrivate(params string?[] texts) =>

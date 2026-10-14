@@ -3,7 +3,7 @@ using Vellum.Modules.Modelling;
 using Vellum.Modules.Promises;
 using Vellum.Modules.Review;
 using Vellum.Modules.Schemas;
-using Vellum.Modules.Trace.Scenarios;
+using Vellum.Modules.Trace;
 
 namespace Vellum.Tests;
 

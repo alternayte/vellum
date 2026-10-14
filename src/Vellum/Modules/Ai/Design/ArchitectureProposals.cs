@@ -2,10 +2,10 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using Deedbox;
 using Microsoft.EntityFrameworkCore;
-using Vellum.Modules.Modelling.Model;
+using Vellum.Modules.Modelling;
 using Vellum.Modules.Schemas;
 using Vellum.Modules.Trace.Engine;
-using Vellum.Modules.Workspaces.Authorization;
+using Vellum.Modules.Workspaces;
 using Vellum.Shared;
 using static Vellum.Shared.ResultExtensions;
 

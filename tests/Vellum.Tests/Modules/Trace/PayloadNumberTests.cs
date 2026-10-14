@@ -1,8 +1,8 @@
 using System.Text;
 using System.Text.Json;
-using Vellum.Modules.Modelling.Model;
+using Vellum.Modules.Modelling;
 using Vellum.Modules.Trace.Engine;
-using Vellum.Modules.Trace.Scenarios;
+using Vellum.Modules.Trace;
 
 namespace Vellum.Tests.Modules.Trace;
 

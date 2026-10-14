@@ -7,7 +7,7 @@ using Vellum.Modules.Ai.Providers.Gemini;
 using Vellum.Modules.Ai.Providers.OpenAi;
 using Vellum.Modules.Ai.Providers.OpenAiCompatible;
 using Vellum.Modules.Ai.Usage;
-using Vellum.Modules.Workspaces.Authorization;
+using Vellum.Modules.Workspaces;
 using Vellum.Shared;
 using Vellum.Shared.Outbound;
 

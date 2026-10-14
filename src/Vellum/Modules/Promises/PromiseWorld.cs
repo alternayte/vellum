@@ -2,11 +2,11 @@ using Deedbox;
 using Microsoft.EntityFrameworkCore;
 using Vellum.Modules.Import;
 using Vellum.Modules.Import.Scans;
-using Vellum.Modules.Modelling.Model;
+using Vellum.Modules.Modelling;
 using Vellum.Modules.Schemas;
 using Vellum.Modules.Settings.Document;
 using Vellum.Modules.Trace.Engine;
-using Vellum.Modules.Trace.Scenarios;
+using Vellum.Modules.Trace;
 using Vellum.Modules.Workspaces;
 using Vellum.Shared;
 

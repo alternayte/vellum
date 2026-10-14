@@ -3,7 +3,6 @@ using Microsoft.EntityFrameworkCore;
 using Vellum.Modules.Settings;
 using Vellum.Modules.Settings.Audit;
 using Vellum.Modules.Workspaces;
-using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Shared;
 using static Vellum.Shared.ResultExtensions;
 

@@ -6,7 +6,6 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Vellum.Modules.Drafts;
 using Vellum.Modules.Modelling;
-using Vellum.Modules.Modelling.Variants;
 using Vellum.Shared;
 
 namespace Vellum.Tests.Modules.Drafts;

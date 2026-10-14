@@ -1,4 +1,4 @@
-using Vellum.Modules.Modelling.Model;
+using Vellum.Modules.Modelling;
 
 namespace Vellum.Modules.Modelling.Export;
 

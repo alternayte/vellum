@@ -4,7 +4,7 @@ using ModelContextProtocol.Protocol;
 using ModelContextProtocol.Server;
 using Vellum.Modules.Identity.AgentTokens;
 using Vellum.Modules.Mcp.Tools;
-using Vellum.Modules.Workspaces.Entities;
+using Vellum.Modules.Workspaces;
 
 namespace Vellum.Modules.Mcp;
 

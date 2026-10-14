@@ -7,11 +7,10 @@ using Microsoft.AspNetCore.Http.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Vellum.Modules.Modelling;
-using Vellum.Modules.Modelling.Model;
 using Vellum.Modules.Schemas;
 using Vellum.Modules.Stress.Engine;
 using Vellum.Modules.Trace.Engine;
-using Vellum.Modules.Trace.Scenarios;
+using Vellum.Modules.Trace;
 using Vellum.Shared;
 
 namespace Vellum.Modules.Stress;

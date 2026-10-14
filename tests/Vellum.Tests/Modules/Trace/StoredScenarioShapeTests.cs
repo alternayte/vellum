@@ -4,9 +4,9 @@ using System.Text.Json.Nodes;
 using Deedbox;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
-using Vellum.Modules.Modelling.Model;
+using Vellum.Modules.Modelling;
 using Vellum.Modules.Trace.Engine;
-using Vellum.Modules.Trace.Scenarios;
+using Vellum.Modules.Trace;
 
 namespace Vellum.Tests.Modules.Trace;
 

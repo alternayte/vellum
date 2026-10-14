@@ -4,7 +4,7 @@ using Deedbox;
 using Microsoft.EntityFrameworkCore;
 using Vellum.Modules.Drafts;
 using Vellum.Shared;
-using Vellum.Modules.Modelling.Model;
+using Vellum.Modules.Modelling;
 using Vellum.Modules.Schemas;
 using Vellum.Modules.Trace.Engine;
 using Vellum.Modules.Workspaces;

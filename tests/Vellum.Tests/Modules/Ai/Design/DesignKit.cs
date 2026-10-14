@@ -5,7 +5,7 @@ using System.Text.Json.Nodes;
 using Deedbox;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
-using Vellum.Modules.Modelling.Model;
+using Vellum.Modules.Modelling;
 using Vellum.Modules.Workspaces;
 using Vellum.Tests.Shared.Outbound;
 using Vellum.Shared;

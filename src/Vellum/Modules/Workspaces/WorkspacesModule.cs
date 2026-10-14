@@ -1,6 +1,5 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Shared;
 
 namespace Vellum.Modules.Workspaces;

@@ -3,7 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Vellum.Modules.Promises;
 using Vellum.Modules.Review.Decisions;
 using Vellum.Modules.Review.Rules;
-using Vellum.Modules.Workspaces.Authorization;
+using Vellum.Modules.Workspaces;
 using Vellum.Shared;
 using static Vellum.Shared.ResultExtensions;
 

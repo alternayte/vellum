@@ -3,9 +3,7 @@ using System.Net;
 using System.Net.Http.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Vellum.Modules.Drafts;
-using Vellum.Modules.Modelling.Elements;
-using Vellum.Modules.Modelling.Messages;
-using Vellum.Modules.Modelling.Relationships;
+using Vellum.Modules.Modelling;
 
 namespace Vellum.Tests.Modules.Drafts;
 

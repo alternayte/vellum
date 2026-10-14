@@ -1,5 +1,5 @@
 using Deedbox.Testing;
-using Vellum.Modules.Modelling.Model;
+using Vellum.Modules.Modelling;
 
 namespace Vellum.Tests.Modules.Modelling;
 

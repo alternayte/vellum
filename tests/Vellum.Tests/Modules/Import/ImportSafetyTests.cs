@@ -434,7 +434,7 @@ public class ImportSafetyTests(ImportHost import) : IClassFixture<ImportHost>
             new Dictionary<string, string>(), [], new Dictionary<string, string?> { ["name"] = e.Name, ["content"] = e.Content },
             [FactMapping.Ref(facts[i].Evidence[0])])).ToList();
 
-        var model = ModelIndex.From(Vellum.Modules.Modelling.Model.ModelState.Initial, entities);
+        var model = ModelIndex.From(Vellum.Modules.Modelling.ModelState.Initial, entities);
         PlanInput Input(IReadOnlyList<ExtractedFact> input, IReadOnlyList<LinkInfo> accepted, ScanCoverage coverage) => new(
             repository, new string('2', 40), RuleSet.CurrentFingerprint, input, model, accepted,
             accepted.Select(l => l.EntityId).ToHashSet(), new HashSet<(string, string)>(), coverage);

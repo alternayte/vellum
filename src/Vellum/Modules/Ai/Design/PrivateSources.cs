@@ -1,6 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Vellum.Modules.Import;
-using Vellum.Modules.Modelling.Model;
+using Vellum.Modules.Modelling;
 using Vellum.Modules.Settings.Document;
 using Vellum.Shared;
 

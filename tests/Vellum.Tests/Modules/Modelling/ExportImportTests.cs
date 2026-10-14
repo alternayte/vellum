@@ -5,9 +5,7 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
-using Vellum.Modules.Modelling.Elements;
-using Vellum.Modules.Modelling.Messages;
-using Vellum.Modules.Modelling.Relationships;
+using Vellum.Modules.Modelling;
 using Vellum.Modules.Schemas;
 using Vellum.Shared;
 
@@ -457,7 +455,7 @@ public class ExportImportTests : IClassFixture<IntegrationFixture>
         Assert.Equal([mapped], await SchemaIdsAsync(second));
         var messages = await client.GetFromJsonAsync<Page<MessageDto>>($"/api/projects/{second}/messages");
         Assert.Equal(mapped, Assert.Single(messages!.Items).SchemaId);
-        var operations = await client.GetFromJsonAsync<Page<Vellum.Modules.Modelling.Contracts.OperationDto>>($"/api/projects/{second}/operations");
+        var operations = await client.GetFromJsonAsync<Page<Vellum.Modules.Modelling.OperationDto>>($"/api/projects/{second}/operations");
         Assert.Equal(mapped, Assert.Single(operations!.Items).RequestSchemaId);
         Assert.Equal(2, (await client.GetFromJsonAsync<Page<ElementDto>>($"/api/projects/{second}/elements"))!.Items.Count);
 

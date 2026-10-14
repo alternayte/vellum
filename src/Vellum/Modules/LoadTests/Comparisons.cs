@@ -2,7 +2,7 @@ using System.Security.Claims;
 using Deedbox;
 using Vellum.Modules.Stress;
 using Vellum.Modules.Stress.Engine;
-using Vellum.Modules.Workspaces.Authorization;
+using Vellum.Modules.Workspaces;
 using Vellum.Shared;
 using static Vellum.Shared.ResultExtensions;
 

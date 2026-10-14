@@ -12,7 +12,7 @@ using Vellum.Modules.Ai.Usage;
 using Vellum.Modules.Import;
 using Vellum.Modules.Import.Proposals;
 using Vellum.Modules.Import.Scans;
-using Vellum.Modules.Modelling.Model;
+using Vellum.Modules.Modelling;
 using Vellum.Modules.Workspaces;
 using Vellum.Shared;
 using Vellum.Tests.Shared.Outbound;

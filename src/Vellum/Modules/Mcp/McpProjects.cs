@@ -3,7 +3,6 @@ using Microsoft.EntityFrameworkCore;
 using Vellum.Modules.Identity;
 using Vellum.Modules.Identity.AgentTokens;
 using Vellum.Modules.Workspaces;
-using Vellum.Modules.Workspaces.Entities;
 using Vellum.Shared;
 
 namespace Vellum.Modules.Mcp;

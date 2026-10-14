@@ -1,4 +1,3 @@
-// src/Vellum/Modules/Docs/DocsModule.cs
 using Microsoft.EntityFrameworkCore;
 using Vellum.Shared;
 
@@ -11,5 +10,15 @@ public static class DocsModule
         services.AddScoped<Shared.IProjectRetention, DocsRetention>();
 
         return services;
+    }
+}
+
+/// <summary>What the doc tables keep of a deleted project: nothing.</summary>
+public sealed class DocsRetention(AppDbContext db) : IProjectRetention
+{
+    public async Task DeleteProjectAsync(DeletedProject project, CancellationToken ct)
+    {
+        await db.Documents.Where(d => d.ProjectId == project.Id).ExecuteDeleteAsync(ct);
+        await db.Spaces.Where(s => s.ProjectId == project.Id).ExecuteDeleteAsync(ct);
     }
 }

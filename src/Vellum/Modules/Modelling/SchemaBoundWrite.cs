@@ -1,5 +1,4 @@
 using Deedbox;
-using Vellum.Modules.Modelling.Model;
 using Vellum.Modules.Schemas;
 using Vellum.Shared;
 

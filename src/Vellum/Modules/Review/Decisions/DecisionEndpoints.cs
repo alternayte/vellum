@@ -2,9 +2,8 @@ using System.Text;
 using Deedbox;
 using Microsoft.EntityFrameworkCore;
 using Vellum.Modules.Promises;
-using Vellum.Modules.Trace.Scenarios;
+using Vellum.Modules.Trace;
 using Vellum.Modules.Workspaces;
-using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Shared;
 using static Vellum.Shared.ResultExtensions;
 

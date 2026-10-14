@@ -1,7 +1,7 @@
 using System.Text.Json;
 using Deedbox;
 using Microsoft.EntityFrameworkCore;
-using Vellum.Modules.Modelling.Model;
+using Vellum.Modules.Modelling;
 using Vellum.Modules.Schemas;
 using Vellum.Modules.Workspaces;
 using Vellum.Shared;

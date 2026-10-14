@@ -4,10 +4,9 @@ using Deedbox;
 using Microsoft.EntityFrameworkCore;
 using Vellum.Modules.Import.Scans;
 using Vellum.Modules.Modelling.Export;
-using Vellum.Modules.Modelling.Model;
+using Vellum.Modules.Modelling;
 using Vellum.Modules.Schemas;
 using Vellum.Modules.Workspaces;
-using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Shared;
 using static Vellum.Shared.ResultExtensions;
 

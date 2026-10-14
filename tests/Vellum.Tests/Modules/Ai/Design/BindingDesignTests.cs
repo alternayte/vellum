@@ -2,7 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Deedbox.Testing;
 using Vellum.Modules.Ai.Design;
-using Vellum.Modules.Modelling.Model;
+using Vellum.Modules.Modelling;
 using Vellum.Modules.Trace.Engine;
 
 namespace Vellum.Tests.Modules.Ai.Design;

@@ -9,7 +9,7 @@ using Vellum.Modules.Ai.Design;
 using Vellum.Modules.Import;
 using Vellum.Modules.Import.Proposals;
 using Vellum.Modules.Import.Scans;
-using Vellum.Modules.Modelling.Model;
+using Vellum.Modules.Modelling;
 using Vellum.Modules.Review.Critique;
 using Vellum.Modules.Review.Rules;
 using Vellum.Modules.Workspaces;

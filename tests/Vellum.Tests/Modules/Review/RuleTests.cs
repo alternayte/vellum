@@ -1,5 +1,5 @@
 using Vellum.Modules.Build;
-using Vellum.Modules.Modelling.Model;
+using Vellum.Modules.Modelling;
 using Vellum.Modules.Promises;
 using Vellum.Modules.Review.Rules;
 using Vellum.Modules.Trace.Engine;

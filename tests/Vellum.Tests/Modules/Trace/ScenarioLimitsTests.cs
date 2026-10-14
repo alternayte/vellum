@@ -4,8 +4,7 @@ using System.Text;
 using System.Text.Json.Nodes;
 using Microsoft.Extensions.DependencyInjection;
 using Vellum.Modules.Trace.Engine;
-using Vellum.Modules.Trace.Scenarios;
-using Vellum.Modules.Trace.Scenarios.Entities;
+using Vellum.Modules.Trace;
 using Vellum.Shared;
 
 namespace Vellum.Tests.Modules.Trace;

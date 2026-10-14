@@ -3,11 +3,11 @@ using System.Text;
 using System.Text.Json;
 using Deedbox;
 using Microsoft.EntityFrameworkCore;
-using Vellum.Modules.Modelling.Model;
+using Vellum.Modules.Modelling;
 using Vellum.Modules.Schemas;
 using Vellum.Modules.Trace.Engine;
-using Vellum.Modules.Trace.Scenarios;
-using Vellum.Modules.Workspaces.Authorization;
+using Vellum.Modules.Trace;
+using Vellum.Modules.Workspaces;
 using Vellum.Shared;
 using static Vellum.Shared.ResultExtensions;
 

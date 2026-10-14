@@ -1,6 +1,6 @@
 using System.Collections.Immutable;
 using System.Text.RegularExpressions;
-using Vellum.Modules.Modelling.Model;
+using Vellum.Modules.Modelling;
 using Vellum.Shared;
 
 namespace Vellum.Modules.Costs;
@@ -79,7 +79,7 @@ public sealed record UsageLine(Guid Id, string Name, Guid AssumptionId, Guid? Pr
 /// A deployment resource of one model element. <paramref name="Quantity"/> and
 /// <paramref name="Unit"/> are the monthly baseline; both are null for a resource that has
 /// usage lines only. <paramref name="FactStatus"/> is the API word of a
-/// <see cref="Modelling.Model.FactStatus"/>.
+/// <see cref="Modelling.FactStatus"/>.
 /// </summary>
 public sealed record CostResource(
     Guid Id, Guid ElementId, string Name, string Category, string Provider, string Region, string Sku,
