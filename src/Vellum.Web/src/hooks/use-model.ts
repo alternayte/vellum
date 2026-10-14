@@ -24,6 +24,14 @@ export function isProjectRefusal(error: unknown): boolean {
 }
 
 /**
+ * Whether a project error replaces the workbench. A refusal always does. Any other error does
+ * only when no project is loaded yet: a failed background refetch keeps the loaded workbench.
+ */
+export function projectErrorBlocks(hasProject: boolean, error: unknown): boolean {
+  return !!error && (!hasProject || isProjectRefusal(error))
+}
+
+/**
  * The model the workbench shows: the lists of the selected branch, or the stored state of
  * the selected revision. A revision has no lists of its own, so one request gives all of it.
  */

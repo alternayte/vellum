@@ -26,7 +26,11 @@ public sealed record InvitationDto(Guid Id, Guid WorkspaceId, string Email, stri
 /// </summary>
 public sealed record IssuedInvitationDto(Guid Id, Guid WorkspaceId, string Email, string Role, string Status, DateTimeOffset CreatedAt, DateTimeOffset ExpiresAt, string Secret, string Path);
 
-/// <summary>An invitation as the invited person reads it: the workspace, the role and who sent it.</summary>
+/// <summary>
+/// An invitation as the invited person reads it: the workspace, the role and who sent it.
+/// <paramref name="InvitedBy"/> is the display name of the sender, or null. It is never the
+/// sender's email address: anyone can register an account with the invited address.
+/// </summary>
 public sealed record MyInvitationDto(Guid Id, Guid WorkspaceId, string WorkspaceName, string Role, string? InvitedBy, string Status, DateTimeOffset CreatedAt, DateTimeOffset ExpiresAt);
 
 /// <summary>The secret of the invitation link, in the body so it is in no URL and no request log.</summary>
@@ -93,6 +97,33 @@ public static class InvitationRules
     internal static IssuedInvitationDto Issued(InvitationEntity i, string secret, DateTimeOffset now) =>
         new(i.Id, i.WorkspaceId, i.Email, MemberRoles.Canonical(i.Role), StatusAt(i, now), i.CreatedAt, i.ExpiresAt,
             secret, $"/invitations/{i.Id}#secret={secret}");
+
+    /// <summary>
+    /// Revokes the open invitations that <paramref name="issuerId"/> issued in the workspace,
+    /// because the issuer stops being an owner. An invitation carries the authority of the
+    /// owner who issued it, so it does not outlive that authority. The rows are locked: an
+    /// accept that holds one finishes first, and its invitation is then no longer pending.
+    /// The caller has the transaction open, so the revocations and their audit entries commit
+    /// with the membership change.
+    /// </summary>
+    internal static async Task RevokeIssuedByAsync(
+        WorkspacesDbContext db, Guid workspaceId, string issuerId, string actorId, string reason, DateTimeOffset now, CancellationToken ct)
+    {
+        var pending = InvitationStatus.Pending;
+        var invitations = await db.Invitations
+            .FromSql($"SELECT * FROM workspaces.invitations WHERE workspace_id = {workspaceId} AND invited_by = {issuerId} AND status = {pending} ORDER BY id FOR UPDATE")
+            .ToListAsync(ct);
+        foreach (var invitation in invitations)
+        {
+            invitation.Status = InvitationStatus.Revoked;
+            invitation.RespondedBy = actorId;
+            invitation.RespondedAt = now;
+        }
+        await db.SaveChangesAsync(ct);
+        foreach (var invitation in invitations)
+            await AuditLog.AppendAsync(db, workspaceId, actorId, AuditLog.InvitationRevoked,
+                $"invitation:{invitation.Id} role:{invitation.Role.ToLowerInvariant()} issuer:{issuerId} reason:{reason}", ct);
+    }
 
     internal static IResult NotFound() => Results.NotFound(new ErrorResponse("not_found", "Invitation not found"));
 
@@ -336,6 +367,13 @@ public static class MyInvitations
             return Results.Ok(ToDto(membership));
         if (status != InvitationStatus.Pending)
             return InvitationRules.Closed(status);
+        // An owner who is demoted or removed revokes what they issued (RevokeIssuedByAsync).
+        // This check holds when the membership changed by another path.
+        var issuerRole = await db.Memberships
+            .Where(m => m.WorkspaceId == invitation.WorkspaceId && m.UserId == invitation.InvitedBy)
+            .Select(m => m.Role).FirstOrDefaultAsync(ct);
+        if (issuerRole is null || MemberRoles.Canonical(issuerRole) != nameof(WorkspaceRole.Owner))
+            return InvitationRules.Closed(InvitationStatus.Revoked);
 
         var added = membership is null;
         if (membership is null)
@@ -410,7 +448,7 @@ public static class MyInvitations
         var inviterIds = rows.Select(r => r.Invitation.InvitedBy).Distinct().ToList();
         var inviters = await identity.Users.AsNoTracking()
             .Where(u => inviterIds.Contains(u.Id))
-            .Select(u => new { u.Id, Name = u.DisplayName ?? u.Email })
+            .Select(u => new { u.Id, Name = u.DisplayName })
             .ToDictionaryAsync(u => u.Id, u => u.Name, ct);
         return rows.Select(r => new MyInvitationDto(
             r.Invitation.Id, r.Invitation.WorkspaceId, r.WorkspaceName, MemberRoles.Canonical(r.Invitation.Role),

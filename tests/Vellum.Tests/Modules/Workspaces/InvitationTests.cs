@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -365,6 +366,98 @@ public class InvitationTests(IntegrationFixture fixture)
             Assert.Single(results, r => r.IsSuccessStatusCode);
             Assert.Equal(1, await OwnersAsync(connection, workspaceId));
         }
+    }
+
+    // Accounts register with any address and nobody checks it, so the list of invitations of
+    // an address must not hand the inviter's address to whoever registered it.
+    [Fact]
+    public async Task The_invited_person_reads_the_display_name_of_the_inviter_and_never_the_address()
+    {
+        using var factory = TestHost.Create(fixture);
+        using var owner = await TestHost.SignInAsync(factory);
+        var (workspaceId, _) = await TestHost.CreateProjectAsync(owner);
+        var me = (await owner.GetFromJsonAsync<UserInfoResponse>("/api/auth/me"))!;
+        using var invitee = await TestHost.SignInAsync(factory);
+        var invitation = await InviteAsync(owner, workspaceId, invitee, "Editor");
+
+        Assert.Equal("Test User", Assert.Single((await invitee.GetFromJsonAsync<MyInvitationDto[]>("/api/invitations"))!).InvitedBy);
+
+        await using (var connection = new NpgsqlConnection(fixture.ConnectionString))
+        {
+            await connection.OpenAsync();
+            await using var clear = new NpgsqlCommand("""UPDATE identity."AspNetUsers" SET display_name = NULL WHERE id = @id""", connection);
+            clear.Parameters.AddWithValue("id", me.Id);
+            Assert.Equal(1, await clear.ExecuteNonQueryAsync());
+        }
+        var listed = await invitee.GetStringAsync("/api/invitations");
+        Assert.Null(Assert.Single(JsonSerializer.Deserialize<MyInvitationDto[]>(listed, JsonSerializerOptions.Web)!).InvitedBy);
+        Assert.DoesNotContain(me.Email, listed, StringComparison.OrdinalIgnoreCase);
+        var opened = await (await Answer(invitee, invitation.Id, "open", invitation.Secret)).Content.ReadAsStringAsync();
+        Assert.DoesNotContain(me.Email, opened, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task An_owner_who_is_demoted_or_removed_takes_the_open_invitations_they_issued_with_them()
+    {
+        using var factory = TestHost.Create(fixture.ConnectionString, configure: services => services.AddSingleton(new InvitationLimits(PerMinute: 1_000)));
+        using var first = await TestHost.SignInAsync(factory);
+        var (workspaceId, _) = await TestHost.CreateProjectAsync(first);
+        using var demoted = await TestHost.SignInMemberAsync(factory, first, workspaceId, "Owner");
+        var demotedId = (await demoted.GetFromJsonAsync<UserInfoResponse>("/api/auth/me"))!.Id;
+        using var removed = await TestHost.SignInMemberAsync(factory, first, workspaceId, "Owner");
+        var removedId = (await removed.GetFromJsonAsync<UserInfoResponse>("/api/auth/me"))!.Id;
+        using var a = await TestHost.SignInAsync(factory);
+        using var b = await TestHost.SignInAsync(factory);
+        using var c = await TestHost.SignInAsync(factory);
+        var fromDemoted = await InviteAsync(demoted, workspaceId, a, "Owner");
+        var fromRemoved = await InviteAsync(removed, workspaceId, b, "Owner");
+        var fromFirst = await InviteAsync(first, workspaceId, c, "Editor");
+
+        Assert.Equal(HttpStatusCode.OK, (await first.PatchAsJsonAsync($"/api/workspaces/{workspaceId}/members/{demotedId}", new { role = "Editor" })).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await first.DeleteAsync($"/api/workspaces/{workspaceId}/members/{removedId}")).StatusCode);
+
+        Assert.Equal([fromFirst.Id], (await first.GetFromJsonAsync<InvitationDto[]>($"/api/workspaces/{workspaceId}/invitations"))!.Select(i => i.Id));
+        foreach (var (invitee, invitation) in new[] { (a, fromDemoted), (b, fromRemoved) })
+        {
+            var refused = await Answer(invitee, invitation.Id, "accept", invitation.Secret);
+            Assert.Equal(HttpStatusCode.Conflict, refused.StatusCode);
+            Assert.Equal(("invitation_closed", "The invitation is revoked"), await refused.Content.ReadFromJsonAsync<ErrorResponse>() is { } e ? (e.Type, e.Title) : default);
+        }
+        Assert.Equal(HttpStatusCode.OK, (await Answer(c, fromFirst.Id, "accept", fromFirst.Secret)).StatusCode);
+
+        var audit = JsonNode.Parse(await first.GetStringAsync($"/api/workspaces/{workspaceId}/audit"))!.AsArray();
+        var revocations = audit.Where(e => (string)e!["action"]! == "member.invitation-revoked").Select(e => (string)e!["target"]!).ToList();
+        Assert.Equal(2, revocations.Count);
+        Assert.Contains(revocations, t => t.StartsWith($"invitation:{fromDemoted.Id} ") && t.Contains($"issuer:{demotedId}"));
+        Assert.Contains(revocations, t => t.StartsWith($"invitation:{fromRemoved.Id} ") && t.Contains($"issuer:{removedId}"));
+    }
+
+    // A membership can change by a path other than the member endpoints (a restore, a manual
+    // fix in the database). Accept checks the issuer itself.
+    [Fact]
+    public async Task An_invitation_whose_issuer_is_no_owner_any_more_is_not_accepted()
+    {
+        using var factory = TestHost.Create(fixture);
+        using var first = await TestHost.SignInAsync(factory);
+        var (workspaceId, _) = await TestHost.CreateProjectAsync(first);
+        using var issuer = await TestHost.SignInMemberAsync(factory, first, workspaceId, "Owner");
+        var issuerId = (await issuer.GetFromJsonAsync<UserInfoResponse>("/api/auth/me"))!.Id;
+        using var invitee = await TestHost.SignInAsync(factory);
+        var invitation = await InviteAsync(issuer, workspaceId, invitee, "Owner");
+
+        await using (var connection = new NpgsqlConnection(fixture.ConnectionString))
+        {
+            await connection.OpenAsync();
+            await using var demote = new NpgsqlCommand("UPDATE workspaces.memberships SET role = 'Viewer' WHERE workspace_id = @w AND user_id = @u", connection);
+            demote.Parameters.AddWithValue("w", workspaceId);
+            demote.Parameters.AddWithValue("u", issuerId);
+            Assert.Equal(1, await demote.ExecuteNonQueryAsync());
+        }
+
+        var refused = await Answer(invitee, invitation.Id, "accept", invitation.Secret);
+        Assert.Equal(HttpStatusCode.Conflict, refused.StatusCode);
+        Assert.Equal(("invitation_closed", "The invitation is revoked"), await refused.Content.ReadFromJsonAsync<ErrorResponse>() is { } e ? (e.Type, e.Title) : default);
+        Assert.Equal(HttpStatusCode.Forbidden, (await invitee.GetAsync($"/api/workspaces/{workspaceId}/members")).StatusCode);
     }
 
     private static Task<HttpResponseMessage> Answer(HttpClient client, Guid invitationId, string action, string secret) =>

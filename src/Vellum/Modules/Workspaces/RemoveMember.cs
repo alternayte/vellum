@@ -14,6 +14,7 @@ public static class RemoveMember
         ClaimsPrincipal user,
         WorkspacesDbContext db,
         WorkspaceAuthorizationService auth,
+        TimeProvider time,
         CancellationToken ct)
     {
         var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
@@ -38,11 +39,13 @@ public static class RemoveMember
                 "Cannot remove the last owner",
                 "A workspace must have at least one owner."));
 
-        // The removal and its audit entry commit together.
+        // The removal, the revoked invitations of a removed owner and the audit entries commit together.
         db.Memberships.Remove(membership);
         await db.SaveChangesAsync(ct);
         await AuditLog.AppendAsync(db, workspaceId, userId, AuditLog.MemberRemoved,
             $"user:{membership.UserId} role:{role.ToLowerInvariant()}", ct);
+        if (role == nameof(WorkspaceRole.Owner))
+            await InvitationRules.RevokeIssuedByAsync(db, workspaceId, membership.UserId, userId, "issuer-removed", time.GetUtcNow(), ct);
         await transaction.CommitAsync(ct);
         return Results.NoContent();
     }

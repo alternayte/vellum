@@ -453,7 +453,7 @@ function JsonField({ label, value, onChange, schema }: { label: string; value: u
   )
 }
 
-function HeadersField({ headers, onChange }: { headers: Record<string, string>; onChange: (headers: Record<string, string>) => void }) {
+export function HeadersField({ headers, onChange }: { headers: Record<string, string>; onChange: (headers: Record<string, string>) => void }) {
   const entries = Object.entries(headers)
   const groupId = useId()
   const rename = (from: string, to: string) => onChange(Object.fromEntries(entries.map(([k, v]) => [k === from ? to : k, v])))
@@ -467,7 +467,9 @@ function HeadersField({ headers, onChange }: { headers: Record<string, string>; 
       <p id={groupId} className="text-[11px] font-medium text-muted-foreground">Headers</p>
       <ul className="mt-1 space-y-1">
         {entries.map(([name, value], index) => (
-          <li key={index} className="flex items-center gap-1.5">
+          // The name input keeps its own text until it loses focus, so a row is keyed by the
+          // header it edits: a row keyed by position would keep the text of a removed header.
+          <li key={name} className="flex items-center gap-1.5">
             <Input
               aria-label={`Header ${index + 1} name`} className="h-7 w-40 font-mono text-xs" defaultValue={name} maxLength={200}
               onBlur={(e) => { const next = e.target.value.trim(); if (next && next !== name && !(next in headers)) rename(name, next); else e.target.value = name }}
