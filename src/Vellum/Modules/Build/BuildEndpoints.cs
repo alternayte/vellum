@@ -246,7 +246,14 @@ public static partial class BuildModule
             (change, var noImpact) = await ChangeImpact.ComputeAsync(http.RequestServices, projectId, scanId, ImpactInputsOf(input), ct);
             if (change is null)
                 return noImpact!;
-            change = change with { Promises = [.. change.Promises.Where(p => p.State == PromiseLifecycle.Approved)] };
+            // The count of promises not affected is of the approved promises too, so it is
+            // computed after the drafts are taken out.
+            var approved = change.Promises.Where(p => p.State == PromiseLifecycle.Approved).ToList();
+            change = change with
+            {
+                Promises = approved,
+                PromisesNotAffected = input.Promises.Count(p => p.State == PromiseLifecycle.Approved) - approved.Count,
+            };
             selection = new BriefSelection(
                 [.. selection.PromiseIds.Union(change.Promises.Select(p => p.Id).Where(id => input.Promises.Any(p => p.Id == id)))],
                 [.. selection.ScenarioIds.Union(change.Flows.Select(f => f.ScenarioId).Where(id => input.Scenarios.Any(s => s.Id.Value == id)))],

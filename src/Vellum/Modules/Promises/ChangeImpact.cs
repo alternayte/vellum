@@ -201,9 +201,11 @@ public static class ChangeImpact
             flow.Reasons.Add(reason);
         }
 
-        // 1a. Contract changes: the proposals of the scan.
+        // 1a. Contract changes: the proposals of the scan. A later scan of the followed ref
+        // supersedes pending ones; against a pinned state they stay, because the proposals of
+        // a scan are its inputs and the same pinned state and scan give the same report.
         var proposals = await db.Proposals.AsNoTracking()
-            .Where(p => p.ScanId == scan.Id && p.Status != ProposalStatus.Superseded)
+            .Where(p => p.ScanId == scan.Id && (pinned != null || p.Status != ProposalStatus.Superseded))
             .OrderBy(p => p.Seq)
             .ToListAsync(ct);
         // What the model holds is read from the model of the report, never from the status of

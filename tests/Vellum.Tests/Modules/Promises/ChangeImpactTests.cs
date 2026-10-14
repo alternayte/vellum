@@ -338,6 +338,31 @@ public class ChangeImpactTests(ImportHost import) : IClassFixture<ImportHost>
         Assert.DoesNotContain(ord016, selected);
     }
 
+    // A later scan of the followed ref supersedes the pending proposals of earlier scans of it.
+    // The proposals of a scan are inputs of its pinned brief, so the brief does not change.
+    [Fact]
+    public async Task A_brief_of_a_change_stays_the_same_when_a_later_scan_of_the_ref_supersedes_its_proposals()
+    {
+        var (s, _, _, _, _, _, _, _, _) = await ArrangeAsync();
+        s.GitHub.Commit(ImportScenario.Commit2, FixtureGitHub.Load("orders-outbox-removed"));
+        var tracking = await s.ScanAsync();
+        Assert.Equal(("completed", "tracking"), (tracking.Text("status"), tracking.Text("kind")));
+        Assert.Contains(await s.ProposalsAsync(tracking.Id()), p => p.Text("status") == "pending" && p.Text("entityKind") == "schema");
+        var revision = Guid.NewGuid();
+        await TestHost.Created(s.Owner.PostAsJsonAsync(s.Model("revisions"), new { id = revision, name = "Before the next scan" }));
+        Task<JsonObject> BriefAsync() => Ok(s.Owner.PostAsJsonAsync(s.Model("build/brief"), new { changeScanId = tracking.Id(), revisionId = revision }));
+
+        var first = await BriefAsync();
+        Assert.Contains("| change | schema | OrderCreated |", first.Text("brief"));
+        var later = await s.ScanAsync();
+        Assert.NotEqual(tracking.Id(), later.Id());
+        Assert.Contains(await s.ProposalsAsync(tracking.Id()), p => p.Text("status") == "superseded");
+
+        var second = await BriefAsync();
+        Assert.Equal(first.Text("brief"), second.Text("brief"));
+        Assert.Equal(first["manifest"]!["sha256"]!.GetValue<string>(), second["manifest"]!["sha256"]!.GetValue<string>());
+    }
+
     [Fact]
     public async Task The_impact_of_a_scan_whose_proposals_were_accepted_does_not_say_the_model_lacks_them()
     {
