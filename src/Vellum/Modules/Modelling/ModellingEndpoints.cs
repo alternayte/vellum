@@ -4,6 +4,7 @@ using Deedbox;
 using Vellum.Shared;
 using Vellum.Modules.Modelling.Elements;
 using Vellum.Modules.Modelling.Export;
+using Vellum.Modules.Modelling.Facts;
 using Vellum.Modules.Modelling.Messages;
 using Vellum.Modules.Modelling.Relationships;
 using Vellum.Modules.Workspaces.Authorization;
@@ -16,6 +17,8 @@ public static class ModellingEndpoints
     {
         var project = app.MapGroup("/api/projects/{projectId}")
             .RequireAuthorization();
+
+        FactLabels.Map(project);
 
         var elements = project.MapGroup("/elements").WithTags("Elements");
 

@@ -49,6 +49,8 @@ public static class ListElements
                 e.ProvenanceConfidence,
                 e.ProvenanceAcceptedBy,
                 e.ProvenanceAcceptedAt,
+                e.ProvenanceAcceptedAtVersion,
+                e.ProvenanceAcceptedOnBranch,
                 e.StaleSinceRevision,
                 e.StaleReason,
             })
@@ -66,7 +68,7 @@ public static class ListElements
             e.Id, e.Kind, e.Name, e.Description, e.Technology, e.OwnerId, e.Status,
             e.ParentId, e.Tags, e.Icon, e.FactStatus,
             Model.ProvenanceMapper.ToDto(e.ProvenanceSource, e.ProvenanceRevision, e.ProvenanceConfidence,
-                e.ProvenanceAcceptedBy, e.ProvenanceAcceptedAt),
+                e.ProvenanceAcceptedBy, e.ProvenanceAcceptedAt, e.ProvenanceAcceptedAtVersion, e.ProvenanceAcceptedOnBranch),
             Model.StaleDto.From(e.StaleSinceRevision, e.StaleReason))).ToList();
 
         return Results.Ok(new Page<ElementDto>(items, nextCursor));

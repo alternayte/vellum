@@ -15,6 +15,8 @@ vi.mock('../../../src/hooks/use-auth', () => ({
 vi.mock('../../../src/api/client', () => ({}))
 // The Docs section reads the server; this file tests the panel's own fields.
 vi.mock('../../../src/components/docs/element-docs', () => ({ ElementDocs: () => null }))
+// The truth label reads and writes through the API; these tests are about the other fields.
+vi.mock('../../../src/components/shell/fact-truth', () => ({ FactTruth: () => null }))
 
 const ELEMENTS = [
   {

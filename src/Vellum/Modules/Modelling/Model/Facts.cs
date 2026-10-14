@@ -20,14 +20,19 @@ public enum FactStatus
 /// <c>github.com/acme/orders@abc123:src/Api/Orders.cs:41-57</c>; <paramref name="Revision"/>
 /// pins the revision the source was read at; <paramref name="Confidence"/> is required for
 /// inferred facts; <paramref name="AcceptedBy"/> and <paramref name="AcceptedAt"/> record
-/// who accepted the claim and when.
+/// who accepted the claim and when. <paramref name="AcceptedAtVersion"/> and
+/// <paramref name="AcceptedOnBranch"/> record the model the person accepted it on: the version
+/// of the model stream that the acceptance read, and that stream. Both are null for a fact
+/// that was accepted before they were recorded, or by an import or a proposal.
 /// </summary>
 public sealed record Provenance(
     string? Source = null,
     string? Revision = null,
     double? Confidence = null,
     Guid? AcceptedBy = null,
-    DateTimeOffset? AcceptedAt = null);
+    DateTimeOffset? AcceptedAt = null,
+    long? AcceptedAtVersion = null,
+    Guid? AcceptedOnBranch = null);
 
 /// <summary>
 /// A mark on an accepted fact whose evidence a complete repository scan no longer finds. It
@@ -52,7 +57,8 @@ public sealed record ProvenanceInput(string? Source, string? Revision, double? C
 /// <summary>Provenance as returned by the API.</summary>
 public sealed record ProvenanceDto(
     string? Source, string? Revision, double? Confidence,
-    Guid? AcceptedBy, DateTimeOffset? AcceptedAt);
+    Guid? AcceptedBy, DateTimeOffset? AcceptedAt,
+    long? AcceptedAtVersion = null, Guid? AcceptedOnBranch = null);
 
 public static class FactStatusFormat
 {
@@ -96,13 +102,14 @@ public static class ProvenanceMapper
             ? null
             : new ProvenanceDto(
                 provenance.Source, provenance.Revision, provenance.Confidence,
-                provenance.AcceptedBy, provenance.AcceptedAt);
+                provenance.AcceptedBy, provenance.AcceptedAt, provenance.AcceptedAtVersion, provenance.AcceptedOnBranch);
 
     public static ProvenanceDto? ToDto(
-        string? source, string? revision, double? confidence, Guid? acceptedBy, DateTimeOffset? acceptedAt) =>
+        string? source, string? revision, double? confidence, Guid? acceptedBy, DateTimeOffset? acceptedAt,
+        long? acceptedAtVersion = null, Guid? acceptedOnBranch = null) =>
         source is null && revision is null && confidence is null && acceptedBy is null && acceptedAt is null
             ? null
-            : new ProvenanceDto(source, revision, confidence, acceptedBy, acceptedAt);
+            : new ProvenanceDto(source, revision, confidence, acceptedBy, acceptedAt, acceptedAtVersion, acceptedOnBranch);
 
     public static Provenance? ToDomain(ProvenanceInput? input, Guid actorId, DateTimeOffset acceptedAt) =>
         input is null

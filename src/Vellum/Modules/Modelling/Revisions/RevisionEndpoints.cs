@@ -13,6 +13,8 @@ public static class RevisionEndpoints
         group.MapPost("/", CreateRevision.Handle);
         group.MapGet("/", ListRevisions.Handle).AllowAgent(AgentScope.Read);
         group.MapGet("/{revisionId}", GetRevision.Handle).AllowAgent(AgentScope.Read);
+        group.MapPatch("/{revisionId}", RenameRevision.Handle).Produces<RevisionDto>();
+        group.MapDelete("/{revisionId}", DeleteRevision.Handle).Produces(StatusCodes.Status204NoContent);
         group.MapGet("/{revisionId}/model", PinnedModelRead.RevisionModel).Produces<RevisionModelDto>();
 
         app.MapGet("/api/projects/{projectId}/model/compare", PinnedModelRead.Compare)

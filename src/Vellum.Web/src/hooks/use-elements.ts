@@ -6,6 +6,7 @@ import {
   deleteApiProjectsByProjectIdElementsByElementId,
 } from '@/api/generated'
 import '@/api/client' // ensure client is configured
+import type { Provenance } from '@/lib/fact-status'
 
 export interface Element {
   id: string
@@ -18,6 +19,8 @@ export interface Element {
   parentId: string | null
   tags: string[]
   icon: string | null
+  factStatus?: string
+  provenance?: Provenance | null
 }
 
 interface Page<T> {

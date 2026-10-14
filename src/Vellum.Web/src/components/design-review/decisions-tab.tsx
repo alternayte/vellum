@@ -10,11 +10,13 @@ import { DecisionDialog } from './decision-dialog'
 interface Props {
   projectId: string
   branchId?: string | null
+  /** The named revision that the workbench shows. A decision settles its findings. */
+  revision?: { id: string; name: string } | null
   references: ScenarioReference[]
 }
 
 /** The decision records (ADRs) of the project. An accepted decision is the only thing that settles a blocking finding. */
-export function DecisionsTab({ projectId, branchId, references }: Props) {
+export function DecisionsTab({ projectId, branchId, revision = null, references }: Props) {
   const decisions = useQuery({ queryKey: ['projects', projectId, 'decisions'], queryFn: () => reviewApi.decisions(projectId) })
   // A decision ID, or a new decision with the decision it supersedes.
   // "New decision (ADR)" in the Create flyout asks for the form of a new decision once.
@@ -70,6 +72,7 @@ export function DecisionsTab({ projectId, branchId, references }: Props) {
           key={'id' in open ? open.id : `new-${open.supersedes}`}
           projectId={projectId}
           branchId={branchId}
+          revision={revision}
           decision={'id' in open ? (list.find((d) => d.id === open.id) ?? null) : null}
           supersedes={'id' in open ? null : open.supersedes}
           decisions={list}

@@ -32,7 +32,7 @@ Select **What would change this** to see which change of the model gives another
 
 Use the filters to show verified and not-applicable results, or to show one severity or one category.
 
-The tab shows the findings of the model that you have open: the main model, or a draft or a variant. The tab has no control to select a named revision. To read the findings of a revision, send `GET /api/projects/{projectId}/review/findings` with the query parameter `revisionId`. See [Use the HTTP API](/how-to/use-the-http-api/).
+The tab shows the findings of the model that you have open: the main model, a draft, a variant or a named revision. With a revision open, a note at the top of the panel names the revision, and a snapshot or a decision records the findings of that revision. The **Assistant** tab reads main or the open draft or variant, not a revision. In the API, send `GET /api/projects/{projectId}/review/findings` with the query parameter `revisionId`. See [Use the HTTP API](/how-to/use-the-http-api/).
 
 The page [Review rules](/reference/review-rules/) describes each rule.
 

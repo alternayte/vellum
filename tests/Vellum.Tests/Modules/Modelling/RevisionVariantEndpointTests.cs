@@ -156,6 +156,70 @@ public class RevisionVariantEndpointTests : IClassFixture<IntegrationFixture>
     }
 
     [Fact]
+    public async Task A_revision_that_a_record_names_is_not_deleted_and_the_refusal_names_the_record()
+    {
+        using var client = await CreateAuthenticatedClientAsync(_fixture.Factory);
+        var projectId = await SetupProjectAsync(client);
+        var url = (string path) => $"/api/projects/{projectId}/{path}";
+        await AddSystemAsync(client, projectId, "Orders");
+
+        var pinned = Guid.NewGuid();
+        Assert.Equal(HttpStatusCode.Created, (await client.PostAsJsonAsync(url("revisions"), new { id = pinned, name = "v1" })).StatusCode);
+        var free = Guid.NewGuid();
+        Assert.Equal(HttpStatusCode.Created, (await client.PostAsJsonAsync(url("revisions"), new { id = free, name = "v2" })).StatusCode);
+
+        // A rename keeps the stored model and refuses a name in use.
+        Assert.Equal(HttpStatusCode.Conflict, (await client.PatchAsJsonAsync(url($"revisions/{pinned}"), new { name = "v2" })).StatusCode);
+        var renamed = await client.PatchAsJsonAsync(url($"revisions/{pinned}"), new { name = "Baseline" });
+        var revision = (await renamed.Content.ReadFromJsonAsync<RevisionDto>())!;
+        Assert.Equal(("Baseline", 1), (revision.Name, revision.Version));
+
+        var variant = await (await client.PostAsJsonAsync(url("variants"), new { id = Guid.NewGuid(), name = "from-baseline", baseRevisionId = pinned }))
+            .Content.ReadFromJsonAsync<VariantDto>();
+        var snapshot = await client.PostAsJsonAsync(url("review/snapshots"), new { revisionId = pinned, note = "Baseline review" });
+        Assert.Equal(HttpStatusCode.Created, snapshot.StatusCode);
+        var snapshotId = (await snapshot.Content.ReadFromJsonAsync<Vellum.Modules.Review.SnapshotSummary>())!.Id;
+
+        var refused = await client.DeleteAsync(url($"revisions/{pinned}"));
+        Assert.Equal(HttpStatusCode.Conflict, refused.StatusCode);
+        var error = (await refused.Content.ReadFromJsonAsync<Vellum.Shared.ErrorResponse>())!;
+        Assert.Equal("revision_in_use", error.Type);
+        Assert.Equal(
+            ["The review snapshot 'Baseline review'", "The variant 'from-baseline', which was forked from it"],
+            error.Errors!.Select(e => e.Message));
+
+        // With the records gone, the revision goes. A revision that nothing names goes at once.
+        Assert.Equal(HttpStatusCode.NoContent, (await client.DeleteAsync(url($"review/snapshots/{snapshotId}"))).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await client.DeleteAsync(url($"variants/{variant!.Id}"))).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await client.DeleteAsync(url($"revisions/{pinned}"))).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await client.DeleteAsync(url($"revisions/{free}"))).StatusCode);
+        Assert.Empty((await client.GetFromJsonAsync<List<RevisionDto>>(url("revisions")))!);
+        Assert.Equal(HttpStatusCode.NotFound, (await client.DeleteAsync(url($"revisions/{free}"))).StatusCode);
+    }
+
+    [Fact]
+    public async Task A_deleted_variant_leaves_the_lists_and_takes_no_write()
+    {
+        using var client = await CreateAuthenticatedClientAsync(_fixture.Factory);
+        var projectId = await SetupProjectAsync(client);
+        var url = (string path) => $"/api/projects/{projectId}/{path}";
+        await AddSystemAsync(client, projectId, "Orders");
+
+        var variant = (await (await client.PostAsJsonAsync(url("variants"), new { id = Guid.NewGuid(), name = "event-driven" }))
+            .Content.ReadFromJsonAsync<VariantDto>())!;
+        Assert.Equal(HttpStatusCode.NoContent, (await client.DeleteAsync(url($"variants/{variant.Id}"))).StatusCode);
+
+        Assert.Empty((await client.GetFromJsonAsync<List<VariantDto>>(url("variants")))!);
+        Assert.Equal(HttpStatusCode.BadRequest,
+            (await client.PostAsJsonAsync(url($"elements?branchId={variant.StreamId}"), new { id = Guid.NewGuid(), kind = "system", name = "Late" })).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await client.DeleteAsync(url($"variants/{variant.Id}"))).StatusCode);
+
+        // The name is free again, and main kept its model.
+        Assert.Equal(HttpStatusCode.Created, (await client.PostAsJsonAsync(url("variants"), new { id = Guid.NewGuid(), name = "event-driven" })).StatusCode);
+        Assert.Single((await client.GetFromJsonAsync<Page<ElementDto>>(url("elements")))!.Items);
+    }
+
+    [Fact]
     public async Task Reused_revision_and_variant_ids_are_idempotent()
     {
         var factory = _fixture.Factory;

@@ -8,6 +8,7 @@ import {
   getApiProjectsByProjectIdChannels,
   getApiProjectsByProjectIdOperations,
   getApiProjectsByProjectIdSubscriptions,
+  patchApiProjectsByProjectIdBindingsByBindingId,
   patchApiProjectsByProjectIdChannelsByChannelId,
   patchApiProjectsByProjectIdOperationsByOperationId,
   patchApiProjectsByProjectIdSubscriptionsBySubscriptionId,
@@ -18,6 +19,7 @@ import {
 } from '@/api/generated'
 import '@/api/client'
 import { shownInline } from '@/lib/mutation-errors'
+import type { Provenance } from '@/lib/fact-status'
 
 export interface RetryPolicy {
   maxAttempts: number
@@ -34,6 +36,7 @@ export interface Operation {
   timeoutMs: number
   retry: RetryPolicy
   factStatus: string
+  provenance?: Provenance | null
 }
 
 export interface Channel {
@@ -41,6 +44,7 @@ export interface Channel {
   name: string
   kind: string
   factStatus: string
+  provenance?: Provenance | null
 }
 
 export interface Subscription {
@@ -50,6 +54,7 @@ export interface Subscription {
   retry: RetryPolicy
   deadLetterChannelId: string | null
   factStatus: string
+  provenance?: Provenance | null
 }
 
 /** A route from an exchange or a topic to a queue or an exchange. A null key passes every message. */
@@ -59,6 +64,7 @@ export interface Binding {
   targetChannelId: string
   routingKey: string | null
   factStatus: string
+  provenance?: Provenance | null
 }
 
 /** The channel kinds a binding may start at and end at. The server holds the same rule. */
@@ -308,6 +314,20 @@ export function useContractMutations(projectId: string, branchId?: string | null
       mutationFn: async (binding: NewBinding) =>
         unwrap<Binding>(
           await postApiProjectsByProjectIdBindings({ path: { projectId }, query, body: { id: crypto.randomUUID(), ...binding } }),
+          'The binding was not saved.',
+        ),
+      onSuccess: refresh('bindings'),
+      onError: shownInline,
+    }),
+    updateBinding: useMutation({
+      // A null routing key passes every message: the request says so with setRoutingKey.
+      mutationFn: async ({ id, targetChannelId, routingKey }: Pick<Binding, 'id' | 'targetChannelId' | 'routingKey'>) =>
+        unwrap<Binding>(
+          await patchApiProjectsByProjectIdBindingsByBindingId({
+            path: { projectId, bindingId: id },
+            query,
+            body: { sourceChannelId: null, targetChannelId, routingKey, setRoutingKey: true },
+          }),
           'The binding was not saved.',
         ),
       onSuccess: refresh('bindings'),

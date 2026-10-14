@@ -12,6 +12,8 @@ import { areaClass, selectClass } from './styles'
 interface Props {
   projectId: string
   branchId?: string | null
+  /** The named revision that the workbench shows. The dialog lists and settles its findings. */
+  revision?: { id: string; name: string } | null
   /** Null for a new decision. */
   decision: Decision | null
   /** For a new decision: the decision it replaces when it is accepted. */
@@ -38,15 +40,17 @@ const STATUS_NOTE: Record<Decision['status'], string> = {
  * One decision record (ADR). A person, an agent or the assistant can propose one. Only a
  * person with the Owner role accepts it, and only an accepted decision settles a finding.
  */
-export function DecisionDialog({ projectId, branchId, decision: initial, supersedes, decisions, references, onClose, onSupersede }: Props) {
+export function DecisionDialog({ projectId, branchId, revision = null, decision: initial, supersedes, decisions, references, onClose, onSupersede }: Props) {
   const queryClient = useQueryClient()
   const [decision, setDecision] = useState(initial)
   const [edited, setEdited] = useState<DecisionInput | null>(null)
   const [rejectReason, setRejectReason] = useState('')
   const [settleKey, setSettleKey] = useState('')
+  const revisionId = revision?.id ?? null
+  const model = modelLabel(branchId, revision?.name)
   const findings = useQuery({
-    queryKey: ['projects', projectId, 'review', 'findings', { branchId: branchId ?? null }],
-    queryFn: () => reviewApi.findings(projectId, branchId),
+    queryKey: ['projects', projectId, 'review', 'findings', { branchId: branchId ?? null, revisionId }],
+    queryFn: () => reviewApi.findings(projectId, branchId, revisionId),
   })
   const editable = decision === null || decision.status === 'proposed'
   const form = edited ?? (decision ? toInput(decision) : emptyDecision(supersedes ?? null))
@@ -64,7 +68,7 @@ export function DecisionDialog({ projectId, branchId, decision: initial, superse
   })
   // Both name the content hash of the decision on the screen, so the server refuses a decision that changed since.
   // The acceptance records the findings of the model that this dialog lists them for.
-  const accept = useMutation({ mutationFn: () => reviewApi.acceptDecision(projectId, decision!, branchId), onSuccess: store, onError: shownInline })
+  const accept = useMutation({ mutationFn: () => reviewApi.acceptDecision(projectId, decision!, branchId, revisionId), onSuccess: store, onError: shownInline })
   const reject = useMutation({ mutationFn: () => reviewApi.rejectDecision(projectId, decision!, rejectReason.trim() || null), onSuccess: store, onError: shownInline })
   const reload = useMutation({
     mutationFn: async () => (await reviewApi.decisions(projectId)).find((d) => d.id === decision!.id) ?? null,
@@ -78,7 +82,7 @@ export function DecisionDialog({ projectId, branchId, decision: initial, superse
   })
   const remove = useMutation({ mutationFn: () => reviewApi.deleteDecision(projectId, decision!.id), onSuccess: () => { refresh(); onClose() }, onError: shownInline })
   const settle = useMutation({
-    mutationFn: (view: FindingView) => reviewApi.setDisposition(projectId, branchId, view.finding, 'accepted-by-decision', { decisionId: decision!.id }),
+    mutationFn: (view: FindingView) => reviewApi.setDisposition(projectId, branchId, view.finding, 'accepted-by-decision', { decisionId: decision!.id }, revisionId),
     onSuccess: async () => {
       setSettleKey('')
       refresh()
@@ -193,7 +197,7 @@ export function DecisionDialog({ projectId, branchId, decision: initial, superse
                     ))}
                   </ul>
                   {fired.length === 0 && <p className="mt-1 text-xs text-muted-foreground">The review has no concern and no unknown.</p>}
-                  <p className="mt-1 text-[11px] text-muted-foreground">These are the findings of {modelLabel(branchId)}. The decision settles the ones you select when an owner accepts it.</p>
+                  <p className="mt-1 text-[11px] text-muted-foreground">These are the findings of {model}. The decision settles the ones you select when an owner accepts it.</p>
                 </>
               ) : (
                 <ul className="mt-1 space-y-0.5 text-xs text-foreground">
@@ -216,7 +220,7 @@ export function DecisionDialog({ projectId, branchId, decision: initial, superse
             <section aria-labelledby="decision-accept-records" className="rounded-md border border-border p-2.5">
               <h3 id="decision-accept-records" className="text-xs font-medium uppercase tracking-wider text-muted-foreground">What an acceptance records</h3>
               <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                An acceptance records each finding below as it is now on {modelLabel(branchId)}. The decision settles exactly that finding. When the finding changes, or is another one on another model, it needs a new review there.
+                An acceptance records each finding below as it is now on {model}. The decision settles exactly that finding. When the finding changes, or is another one on another model, it needs a new review there.
               </p>
               {findings.isLoading && <p className="mt-1 text-xs text-muted-foreground">Reading the findings…</p>}
               {findings.isError && <p role="alert" className="mt-1 text-xs text-destructive">{findings.error.message}</p>}
@@ -232,7 +236,7 @@ export function DecisionDialog({ projectId, branchId, decision: initial, superse
                           {found && <span className="text-muted-foreground"> · {RESULT_LABEL[found.finding.result]}</span>}
                         </p>
                         <p className="mt-0.5 leading-relaxed text-muted-foreground">
-                          {found ? found.finding.reason : `The rule gives no finding for this subject on ${modelLabel(branchId)}. The acceptance records that, and a finding that appears later needs a review.`}
+                          {found ? found.finding.reason : `The rule gives no finding for this subject on ${model}. The acceptance records that, and a finding that appears later needs a review.`}
                         </p>
                       </li>
                     )
@@ -245,7 +249,7 @@ export function DecisionDialog({ projectId, branchId, decision: initial, superse
 
           {decision?.status === 'accepted' && (
             <section aria-labelledby="decision-settle">
-              <h3 id="decision-settle" className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Settle a finding of {modelLabel(branchId)} with this decision</h3>
+              <h3 id="decision-settle" className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Settle a finding of {model} with this decision</h3>
               {open.length === 0 ? (
                 <p className="mt-1 text-xs text-muted-foreground">No open finding.</p>
               ) : (

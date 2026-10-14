@@ -11,6 +11,8 @@ import { AssistantTab } from './assistant-tab'
 interface ReviewFlyoutProps {
   projectId: string
   branchId?: string | null
+  /** The named revision that the workbench shows. Findings and decisions read it; the assistant does not. */
+  revision?: { id: string; name: string } | null
   references: ScenarioReference[]
   elementIds: string[]
   /** The element that owns each contract: the owner of an operation, the consumer of a subscription, the producer of a message. */
@@ -29,7 +31,7 @@ const TABS = [
  * the findings, the open questions, and the suggestions of the assistant. The findings
  * need no AI.
  */
-export function ReviewFlyout({ projectId, branchId, references, elementIds, owners }: ReviewFlyoutProps) {
+export function ReviewFlyout({ projectId, branchId, revision = null, references, elementIds, owners }: ReviewFlyoutProps) {
   // "New decision (ADR)" in the Create flyout opens Review on the form of a new decision.
   const [tab, setTab] = useState<(typeof TABS)[number]['id']>(() => (useShellStore.getState().newDecisionRequested ? 'decisions' : 'findings'))
   const focusElement = useShellStore((s) => s.focusElement)
@@ -59,8 +61,8 @@ export function ReviewFlyout({ projectId, branchId, references, elementIds, owne
         ))}
       </div>
       <div role="tabpanel" id="review-panel" aria-labelledby={`review-tab-${tab}`} className="min-h-0 flex-1 overflow-y-auto">
-        {tab === 'findings' && <FindingsTab projectId={projectId} branchId={branchId} focusTarget={focusTarget} onFocus={focusElement} />}
-        {tab === 'decisions' && <DecisionsTab projectId={projectId} branchId={branchId} references={references} />}
+        {tab === 'findings' && <FindingsTab projectId={projectId} branchId={branchId} revision={revision} focusTarget={focusTarget} onFocus={focusElement} />}
+        {tab === 'decisions' && <DecisionsTab projectId={projectId} branchId={branchId} revision={revision} references={references} />}
         {tab === 'questions' && <QuestionsTab projectId={projectId} />}
         {tab === 'assistant' && <AssistantTab projectId={projectId} branchId={branchId} labels={labels} focusTarget={focusTarget} onFocus={focusElement} />}
       </div>

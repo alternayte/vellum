@@ -22,6 +22,8 @@ To change an operation, a channel or a subscription, select the pencil button on
 
 **Attempts** is a number from 1 to 10. A binding starts at an exchange or a topic and ends at a queue or an exchange.
 
+To change a binding, point at its row below the exchange or the topic and select the pencil. Change **Route to** or **Routing key (optional)** and select **Save binding**. The binding keeps its source channel.
+
 A scenario then publishes to the exchange, as the code does. The trace shows each binding that the message follows and each binding that it does not follow.
 
 Vellum refuses to remove an element, a channel or a schema that a contract uses.

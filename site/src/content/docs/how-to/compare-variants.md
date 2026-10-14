@@ -18,8 +18,7 @@ A variant is for an alternative that you want to keep next to main. A draft is f
 ## Know the limits
 
 - Vellum cannot merge a variant into main.
-- Vellum has no control and no endpoint that deletes or closes a variant.
-- Vellum has no control and no endpoint that deletes or renames a revision.
+- A revision that a promise run, a review snapshot or a variant names cannot be deleted. See [Rename or delete a revision](#rename-or-delete-a-revision).
 - A revision holds the model. It holds no cost sheet and no stress run.
 
 ## Find the model switcher
@@ -44,7 +43,7 @@ A revision name is unique in the project. A second revision with the same name i
 
 The model switcher then shows **Revision**, the name and **read-only**. The canvas shows the model of the revision. You can pan, zoom, select and drill in. You cannot move, add, change or delete.
 
-The other panels do not show the revision. Each of them says in a note at its top that it shows main. To see the review findings, the cost or the build state of a revision, compare it: see [Compare two models](#compare-two-models).
+**Contracts** and **Review** show the revision. The note at the top of each panel names it. The other panels do not show the revision: each of them says in a note at its top that it shows main. To see the cost or the build state of a revision, compare it: see [Compare two models](#compare-two-models).
 
 ## Make a variant
 
@@ -65,6 +64,24 @@ The **Costs** panel has a second control, **New variant from main**. It forks ma
 3. Change the model and the cost sheet as you do on main.
 
 The same panels follow a variant as follow a draft. [Work in a draft](/how-to/work-in-a-draft/#change-the-draft) has the list.
+
+## Rename or delete a revision
+
+1. Select the model switcher. Below **Revisions · read-only**, select the revision.
+2. Select the model switcher again.
+3. Select **Rename this revision…**, enter the new name and select **Rename**. Or select **Delete this revision…** and then **Delete revision**.
+
+A rename keeps the model of the revision. A record that names the revision keeps the name it had: a build export pinned to the revision is generated again with that name.
+
+Vellum refuses the delete while a record names the revision. The dialog lists each record: a promise run on the revision, a review snapshot of the revision, or a variant made from it. Delete the snapshot or the variant first, or keep the revision. A promise run is evidence and is never deleted, so a revision that a run names stays.
+
+## Delete a variant
+
+1. Select the model switcher. Below **Variants**, select the variant.
+2. Select the model switcher again.
+3. Select **Delete this variant…**, then **Delete variant**.
+
+Vellum removes the variant, its cost sheet and its saved estimates. Main does not change, and the name is free again. The history of the variant model stays, so a stress run or a check that ran on the variant can still be repeated on its version.
 
 ## Compare two models
 
@@ -122,6 +139,10 @@ curl -X POST "http://localhost:8080/api/projects/<project-id>/revisions" \
 
 A second revision with the same name gets `409` with `A revision with this name already exists`. A request with an `id` that the project already has gives the stored revision and changes nothing.
 
+`PATCH /api/projects/{projectId}/revisions/{revisionId}` with `{"name":"<new name>"}` renames the revision. A name in use gets `409`.
+
+`DELETE /api/projects/{projectId}/revisions/{revisionId}` deletes it and answers `204`. A revision that a record names gets `409` with the error type `revision_in_use`. Each entry of `errors` names one record.
+
 Two endpoints read a revision instead of main when you add `?revisionId=<revision-id>`:
 
 - `GET /api/projects/{projectId}/review/findings`
@@ -145,7 +166,7 @@ curl -X POST "http://localhost:8080/api/projects/<project-id>/variants" \
 
 The answer has `streamId`. That value is the branch ID of the variant. Keep it.
 
-`GET /api/projects/{projectId}/variants` lists the variants. `GET /api/projects/{projectId}/variants/{variantId}` gives one.
+`GET /api/projects/{projectId}/variants` lists the variants. `GET /api/projects/{projectId}/variants/{variantId}` gives one. `DELETE /api/projects/{projectId}/variants/{variantId}` deletes one and answers `204`.
 
 ### Change a variant
 

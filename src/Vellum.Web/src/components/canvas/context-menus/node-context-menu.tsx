@@ -1,5 +1,7 @@
 import {
+  BadgeCheck,
   ChevronRight,
+  CircleHelp,
   Copy,
   Maximize2,
   Minimize2,
@@ -8,6 +10,7 @@ import {
   Trash2,
 } from 'lucide-react'
 import { ContextMenu, MenuItem, MenuSeparator } from './menu'
+import { LABEL_ACTION_TEXT } from '@/lib/fact-labels'
 
 interface NodeContextMenuProps {
   open: boolean
@@ -25,6 +28,9 @@ interface NodeContextMenuProps {
   onDrillInto: () => void
   onDuplicate: () => void
   onDelete: () => void
+  /** The one label change a person can make to this fact, or null. */
+  labelAction?: 'accept' | 'mark-unknown' | null
+  onLabelAction?: () => void
   /** The model cannot be changed: the menu shows what looks and leaves out what writes. */
   readOnly?: boolean
 }
@@ -43,6 +49,8 @@ export function NodeContextMenu({
   onDrillInto,
   onDuplicate,
   onDelete,
+  labelAction = null,
+  onLabelAction,
   readOnly = false,
 }: NodeContextMenuProps) {
   if (!open) return null
@@ -78,6 +86,13 @@ export function NodeContextMenu({
       {!readOnly && (
         <>
           <MenuSeparator />
+          {labelAction && onLabelAction && (
+            <MenuItem
+              icon={labelAction === 'accept' ? <BadgeCheck className="h-3.5 w-3.5" /> : <CircleHelp className="h-3.5 w-3.5" />}
+              label={LABEL_ACTION_TEXT[labelAction]}
+              onSelect={() => { onLabelAction(); onClose() }}
+            />
+          )}
           <MenuItem icon={<Copy className="h-3.5 w-3.5" />} label="Duplicate" onSelect={() => { onDuplicate(); onClose() }} />
           <MenuSeparator />
           <MenuItem icon={<Trash2 className="h-3.5 w-3.5" />} label="Delete" onSelect={() => { onDelete(); onClose() }} destructive />

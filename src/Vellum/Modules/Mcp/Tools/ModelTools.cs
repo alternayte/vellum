@@ -311,12 +311,12 @@ internal static class ModelTools
 
     private static ElementDto Element(ElementEntity e) => new(
         e.Id, e.Kind, e.Name, e.Description, e.Technology, e.OwnerId, e.Status, e.ParentId, e.Tags, e.Icon, e.FactStatus,
-        ProvenanceMapper.ToDto(e.ProvenanceSource, e.ProvenanceRevision, e.ProvenanceConfidence, e.ProvenanceAcceptedBy, e.ProvenanceAcceptedAt),
+        ProvenanceMapper.ToDto(e.ProvenanceSource, e.ProvenanceRevision, e.ProvenanceConfidence, e.ProvenanceAcceptedBy, e.ProvenanceAcceptedAt, e.ProvenanceAcceptedAtVersion, e.ProvenanceAcceptedOnBranch),
         StaleDto.From(e.StaleSinceRevision, e.StaleReason));
 
     private static MessageDto Message(MessageEntity m) => new(
         m.Id, m.Name, m.Description, m.ProducerId, m.ConsumerIds, m.SchemaId, m.Tags, m.FactStatus,
-        ProvenanceMapper.ToDto(m.ProvenanceSource, m.ProvenanceRevision, m.ProvenanceConfidence, m.ProvenanceAcceptedBy, m.ProvenanceAcceptedAt),
+        ProvenanceMapper.ToDto(m.ProvenanceSource, m.ProvenanceRevision, m.ProvenanceConfidence, m.ProvenanceAcceptedBy, m.ProvenanceAcceptedAt, m.ProvenanceAcceptedAtVersion, m.ProvenanceAcceptedOnBranch),
         StaleDto.From(m.StaleSinceRevision, m.StaleReason));
 
     /// <summary>The relationships of the main model that match, by ID, one more than a result lists so that a longer list shows.</summary>
@@ -329,7 +329,7 @@ internal static class ModelTools
             .ToListAsync(call.Aborted);
         return new JsonArray([.. rows.Select(r => call.Node(new RelationshipDto(
             r.Id, r.FromId, r.ToId, r.Label, r.Technology, r.MessageId, r.LineShape, r.Kind, r.FactStatus,
-            ProvenanceMapper.ToDto(r.ProvenanceSource, r.ProvenanceRevision, r.ProvenanceConfidence, r.ProvenanceAcceptedBy, r.ProvenanceAcceptedAt),
+            ProvenanceMapper.ToDto(r.ProvenanceSource, r.ProvenanceRevision, r.ProvenanceConfidence, r.ProvenanceAcceptedBy, r.ProvenanceAcceptedAt, r.ProvenanceAcceptedAtVersion, r.ProvenanceAcceptedOnBranch),
             StaleDto.From(r.StaleSinceRevision, r.StaleReason))))]);
     }
 

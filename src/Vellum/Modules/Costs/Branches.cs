@@ -143,11 +143,15 @@ public static class CostBranches
     }
 
     /// <summary>
-    /// True when the branch is a draft that was merged or abandoned. Its sheet is gone, and a
-    /// writer that waited for the lock of the sheet while the branch closed writes nothing.
+    /// True when the branch is a draft that was merged or abandoned, or a variant that was
+    /// deleted. Its sheet is gone, and a writer that waited for the lock of the sheet while the
+    /// branch closed writes nothing.
     /// </summary>
-    public static Task<bool> IsClosedAsync(AppDbContext db, Guid branch, CancellationToken ct) =>
-        db.Drafts.AnyAsync(d => d.StreamId == branch && d.Status != "open", ct);
+    public static async Task<bool> IsClosedAsync(AppDbContext db, Guid branch, CancellationToken ct) =>
+        await db.Drafts.AnyAsync(d => d.StreamId == branch && d.Status != "open", ct)
+        || !(await db.Projects.AnyAsync(p => p.StreamId == branch, ct)
+            || await db.Drafts.AnyAsync(d => d.StreamId == branch, ct)
+            || await db.Variants.AnyAsync(v => v.StreamId == branch, ct));
 
     /// <summary>
     /// Gives a new branch a copy of <paramref name="source"/>, the sheet of

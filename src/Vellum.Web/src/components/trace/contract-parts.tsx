@@ -79,7 +79,8 @@ export function Section({
   hint: string
   /** True while the section shows its form. Leave it out when Add opens a dialog. */
   adding?: boolean
-  onToggle: () => void
+  /** Leave it out for a list that takes no addition, such as the contracts of a revision. */
+  onToggle?: () => void
   children: ReactNode
 }) {
   return (
@@ -88,13 +89,15 @@ export function Section({
         <h3 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
           {title} <span className="font-mono text-muted-foreground/70">{count}</span>
         </h3>
-        <Button
-          variant="ghost" size="sm" className="h-6 gap-1 px-1.5 text-xs" onClick={onToggle} aria-expanded={adding}
-          aria-label={adding ? `Cancel adding to ${title}` : `Add to ${title}`}
-        >
-          <Plus className="h-3 w-3" />
-          {adding ? 'Cancel' : 'Add'}
-        </Button>
+        {onToggle && (
+          <Button
+            variant="ghost" size="sm" className="h-6 gap-1 px-1.5 text-xs" onClick={onToggle} aria-expanded={adding}
+            aria-label={adding ? `Cancel adding to ${title}` : `Add to ${title}`}
+          >
+            <Plus className="h-3 w-3" />
+            {adding ? 'Cancel' : 'Add'}
+          </Button>
+        )}
       </div>
       {count === 0 && !adding && <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">{hint}</p>}
       {children}
@@ -105,17 +108,21 @@ export function Section({
 const rowButton =
   'mt-0.5 rounded p-1 text-muted-foreground opacity-0 focus-visible:opacity-100 focus-visible:outline-2 focus-visible:outline-primary group-hover:opacity-100 pointer-coarse:opacity-100'
 
-/** One contract in a list. `error` is the server's reason for a refused removal of this row. */
+/**
+ * One contract in a list. `error` is the server's reason for a refused removal of this row.
+ * `truth` is the truth label of the contract. A row with no `onRemove` takes no removal.
+ */
 export function Row({
-  title, detail, onEdit, editLabel, onRemove, removeLabel, error,
+  title, detail, onEdit, editLabel, onRemove, removeLabel, error, truth,
 }: {
   title: string
   detail: string
   onEdit?: () => void
   editLabel?: string
-  onRemove: () => void
-  removeLabel: string
+  onRemove?: () => void
+  removeLabel?: string
   error?: string | null
+  truth?: ReactNode
 }) {
   return (
     <li className="group rounded-md px-1.5 py-1 hover:bg-muted">
@@ -123,15 +130,18 @@ export function Row({
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm text-foreground">{title}</p>
           <p className="break-words font-mono text-[10px] leading-snug text-muted-foreground">{detail}</p>
+          {truth}
         </div>
         {onEdit && (
           <button type="button" onClick={onEdit} aria-label={editLabel} className={`${rowButton} hover:text-foreground`}>
             <Pencil className="h-3.5 w-3.5" />
           </button>
         )}
-        <button type="button" onClick={onRemove} aria-label={removeLabel} className={`${rowButton} hover:text-[var(--trace-failure)]`}>
-          <Trash2 className="h-3.5 w-3.5" />
-        </button>
+        {onRemove && (
+          <button type="button" onClick={onRemove} aria-label={removeLabel} className={`${rowButton} hover:text-[var(--trace-failure)]`}>
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+        )}
       </div>
       {error && <p role="alert" className="mt-1 break-words text-[11px] leading-snug text-[var(--trace-failure)]">{error}</p>}
     </li>

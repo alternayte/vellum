@@ -278,6 +278,8 @@ namespace Vellum.Migrations
                     provenance_confidence = table.Column<double>(type: "double precision", nullable: true),
                     provenance_accepted_by = table.Column<Guid>(type: "uuid", nullable: true),
                     provenance_accepted_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
+                    provenance_accepted_at_version = table.Column<long>(type: "bigint", nullable: true),
+                    provenance_accepted_on_branch = table.Column<Guid>(type: "uuid", nullable: true),
                     stale_since_revision = table.Column<string>(type: "text", nullable: true),
                     stale_reason = table.Column<string>(type: "text", nullable: true)
                 },
@@ -445,6 +447,8 @@ namespace Vellum.Migrations
                     provenance_confidence = table.Column<double>(type: "double precision", nullable: true),
                     provenance_accepted_by = table.Column<Guid>(type: "uuid", nullable: true),
                     provenance_accepted_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
+                    provenance_accepted_at_version = table.Column<long>(type: "bigint", nullable: true),
+                    provenance_accepted_on_branch = table.Column<Guid>(type: "uuid", nullable: true),
                     stale_since_revision = table.Column<string>(type: "text", nullable: true),
                     stale_reason = table.Column<string>(type: "text", nullable: true)
                 },
@@ -640,6 +644,8 @@ namespace Vellum.Migrations
                     provenance_confidence = table.Column<double>(type: "double precision", nullable: true),
                     provenance_accepted_by = table.Column<Guid>(type: "uuid", nullable: true),
                     provenance_accepted_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
+                    provenance_accepted_at_version = table.Column<long>(type: "bigint", nullable: true),
+                    provenance_accepted_on_branch = table.Column<Guid>(type: "uuid", nullable: true),
                     stale_since_revision = table.Column<string>(type: "text", nullable: true),
                     stale_reason = table.Column<string>(type: "text", nullable: true)
                 },
