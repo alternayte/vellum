@@ -116,13 +116,13 @@ public class WorkspaceEndpointTests
         // The invitation makes no member. The address matches in any case.
         var invited = await owner.PostAsJsonAsync($"/api/workspaces/{workspaceId}/invitations", new { email = email.ToUpperInvariant(), role = "viewer" });
         Assert.Equal(HttpStatusCode.Created, invited.StatusCode);
-        var invitation = (await invited.Content.ReadFromJsonAsync<InvitationDto>())!;
+        var invitation = (await invited.Content.ReadFromJsonAsync<IssuedInvitationDto>())!;
         Assert.Equal(("Viewer", "pending"), (invitation.Role, invitation.Status));
         Assert.Equal(HttpStatusCode.Forbidden, (await other.GetAsync($"/api/workspaces/{workspaceId}/members")).StatusCode);
 
         var offered = Assert.Single((await other.GetFromJsonAsync<MyInvitationDto[]>("/api/invitations"))!);
         Assert.Equal((invitation.Id, "Members", "Viewer", "Test User"), (offered.Id, offered.WorkspaceName, offered.Role, offered.InvitedBy));
-        Assert.Equal(HttpStatusCode.OK, (await other.PostAsync($"/api/invitations/{invitation.Id}/accept", null)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await other.PostAsJsonAsync($"/api/invitations/{invitation.Id}/accept", new { secret = invitation.Secret })).StatusCode);
         Assert.Empty((await other.GetFromJsonAsync<MyInvitationDto[]>("/api/invitations"))!);
         Assert.Empty((await owner.GetFromJsonAsync<InvitationDto[]>($"/api/workspaces/{workspaceId}/invitations"))!);
 

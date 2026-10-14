@@ -17,6 +17,12 @@ public class InvitationEntity
     /// <summary>One of <see cref="InvitationStatus"/>. An expired invitation stays pending here: expiry is read from <see cref="ExpiresAt"/>.</summary>
     public string Status { get; set; } = InvitationStatus.Pending;
     public string InvitedBy { get; set; } = null!;
+    /// <summary>
+    /// The SHA-256 hash of the secret of the invitation link. The secret itself is shown once,
+    /// to the owner, and stored nowhere. Null for an invitation made before links had a
+    /// secret: it cannot be accepted, and inviting the address again gives it a secret.
+    /// </summary>
+    public byte[]? SecretHash { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset ExpiresAt { get; set; }
     /// <summary>Who accepted, declined or revoked it, and when.</summary>

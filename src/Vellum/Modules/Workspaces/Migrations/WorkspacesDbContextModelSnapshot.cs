@@ -69,6 +69,10 @@ namespace Vellum.Modules.Workspaces.Migrations
                         .HasColumnType("character varying(16)")
                         .HasColumnName("role");
 
+                    b.Property<byte[]>("SecretHash")
+                        .HasColumnType("bytea")
+                        .HasColumnName("secret_hash");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasMaxLength(16)

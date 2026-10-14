@@ -2,17 +2,20 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json.Nodes;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Npgsql;
 using Vellum.Modules.Identity;
 using Vellum.Modules.Workspaces;
 using Vellum.Shared;
+using Vellum.Tests.Shared.Outbound;
 
 namespace Vellum.Tests.Modules.Workspaces;
 
 /// <summary>
-/// A person joins a workspace by accepting an invitation of their email address. The
-/// invitation tells the owner nothing about accounts, stays in its workspace, and closes for
-/// good when it is accepted, declined, revoked or expired. The workspace keeps an owner.
+/// A person joins a workspace by accepting an invitation of their email address, with the
+/// secret of the link the owner sent. The invitation tells the owner nothing about accounts,
+/// stays in its workspace, and closes for good when it is accepted, declined, revoked or
+/// expired. The workspace keeps an owner.
 /// </summary>
 [Collection("Integration")]
 public class InvitationTests(IntegrationFixture fixture)
@@ -32,7 +35,7 @@ public class InvitationTests(IntegrationFixture fixture)
             var response = await owner.PostAsJsonAsync($"/api/workspaces/{workspaceId}/invitations", new { email, role = "Editor" });
             var body = (await response.Content.ReadFromJsonAsync<JsonObject>())!;
             // Every field, with the values that differ for any two invitations blanked.
-            foreach (var key in new[] { "id", "email", "createdAt", "expiresAt" })
+            foreach (var key in new[] { "id", "email", "createdAt", "expiresAt", "secret", "path" })
             {
                 Assert.True(body.ContainsKey(key), key);
                 body[key] = "*";
@@ -55,26 +58,74 @@ public class InvitationTests(IntegrationFixture fixture)
     }
 
     [Fact]
-    public async Task Only_the_person_with_the_invited_address_accepts_and_a_second_accept_changes_nothing()
+    public async Task The_link_holds_a_secret_of_256_bits_that_the_owner_reads_once()
     {
         using var factory = TestHost.Create(fixture);
         using var owner = await TestHost.SignInAsync(factory);
         var (workspaceId, _) = await TestHost.CreateProjectAsync(owner);
         using var invitee = await TestHost.SignInAsync(factory);
-        using var stranger = await TestHost.SignInAsync(factory);
         var invitation = await InviteAsync(owner, workspaceId, invitee, "Editor");
 
-        // Another account does not see it, cannot accept and cannot decline it.
-        Assert.Empty((await stranger.GetFromJsonAsync<MyInvitationDto[]>("/api/invitations"))!);
-        Assert.Equal(HttpStatusCode.NotFound, (await stranger.PostAsync($"/api/invitations/{invitation.Id}/accept", null)).StatusCode);
-        Assert.Equal(HttpStatusCode.NotFound, (await stranger.PostAsync($"/api/invitations/{invitation.Id}/decline", null)).StatusCode);
-        Assert.Equal(HttpStatusCode.Forbidden, (await stranger.GetAsync($"/api/workspaces/{workspaceId}/members")).StatusCode);
-        // Nor does the owner who sent it.
-        Assert.Equal(HttpStatusCode.NotFound, (await owner.PostAsync($"/api/invitations/{invitation.Id}/accept", null)).StatusCode);
+        // 32 bytes in base64url with no padding, in the fragment of the link.
+        Assert.Matches("^[A-Za-z0-9_-]{43}$", invitation.Secret);
+        Assert.Equal($"/invitations/{invitation.Id}#secret={invitation.Secret}", invitation.Path);
+        Assert.DoesNotContain(invitation.Secret, await owner.GetStringAsync($"/api/workspaces/{workspaceId}/invitations"));
+        Assert.DoesNotContain(invitation.Secret, await invitee.GetStringAsync("/api/invitations"));
 
-        var first = await invitee.PostAsync($"/api/invitations/{invitation.Id}/accept", null);
+        // The database holds its hash and not the secret.
+        await using var connection = new NpgsqlConnection(fixture.ConnectionString);
+        await connection.OpenAsync();
+        await using var read = new NpgsqlCommand("SELECT secret_hash FROM workspaces.invitations WHERE id = @id", connection);
+        read.Parameters.AddWithValue("id", invitation.Id);
+        Assert.Equal(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(invitation.Secret)), (byte[])(await read.ExecuteScalarAsync())!);
+    }
+
+    [Fact]
+    public async Task Accepting_needs_the_secret_and_the_invited_account_and_a_failure_does_not_say_which_was_wrong()
+    {
+        using var factory = TestHost.Create(fixture.ConnectionString, configure: services => services.AddSingleton(new InvitationLimits(ResponsesPerMinute: 1_000)));
+        using var owner = await TestHost.SignInAsync(factory);
+        var (workspaceId, _) = await TestHost.CreateProjectAsync(owner);
+        using var invitee = await TestHost.SignInAsync(factory);
+        using var stranger = await TestHost.SignInAsync(factory);
+        var invitation = await InviteAsync(owner, workspaceId, invitee, "Editor");
+        var other = await InviteAsync(owner, workspaceId, stranger, "Viewer");
+
+        // The invitee with no secret, an empty one, a wrong one or the secret of another
+        // invitation; the stranger and the owner with the right secret; an unknown ID.
+        var refusals = new List<HttpResponseMessage>();
+        foreach (var action in new[] { "open", "accept", "decline" })
+        {
+            refusals.Add(await invitee.PostAsync($"/api/invitations/{invitation.Id}/{action}", null));
+            refusals.Add(await invitee.PostAsJsonAsync($"/api/invitations/{invitation.Id}/{action}", new { }));
+            refusals.Add(await Answer(invitee, invitation.Id, action, ""));
+            refusals.Add(await Answer(invitee, invitation.Id, action, invitation.Secret[..^1] + (invitation.Secret[^1] == 'A' ? 'B' : 'A')));
+            refusals.Add(await Answer(invitee, invitation.Id, action, other.Secret));
+            refusals.Add(await Answer(invitee, invitation.Id, action, new string('x', 5000)));
+            refusals.Add(await Answer(stranger, invitation.Id, action, invitation.Secret));
+            refusals.Add(await Answer(owner, invitation.Id, action, invitation.Secret));
+            refusals.Add(await Answer(invitee, Guid.NewGuid(), action, invitation.Secret));
+        }
+        var bodies = new HashSet<string>();
+        foreach (var refusal in refusals)
+        {
+            Assert.Equal(HttpStatusCode.NotFound, refusal.StatusCode);
+            bodies.Add(await refusal.Content.ReadAsStringAsync());
+        }
+        Assert.Single(bodies);
+        Assert.Equal(HttpStatusCode.Forbidden, (await invitee.GetAsync($"/api/workspaces/{workspaceId}/members")).StatusCode);
+
+        // Without the secret the invitee sees that the invitation exists, and no more.
+        var listed = Assert.Single((await invitee.GetFromJsonAsync<MyInvitationDto[]>("/api/invitations"))!);
+        Assert.Equal(invitation.Id, listed.Id);
+
+        var opened = await Answer(invitee, invitation.Id, "open", invitation.Secret);
+        Assert.Equal(HttpStatusCode.OK, opened.StatusCode);
+        Assert.Equal(("Test WS", "Editor", "pending"), await opened.Content.ReadFromJsonAsync<MyInvitationDto>() is { } o ? (o.WorkspaceName, o.Role, o.Status) : default);
+
+        var first = await Answer(invitee, invitation.Id, "accept", invitation.Secret);
         Assert.Equal(HttpStatusCode.OK, first.StatusCode);
-        var second = await invitee.PostAsync($"/api/invitations/{invitation.Id}/accept", null);
+        var second = await Answer(invitee, invitation.Id, "accept", invitation.Secret);
         Assert.Equal(HttpStatusCode.OK, second.StatusCode);
         var accepted = (await first.Content.ReadFromJsonAsync<MembershipDto>())!;
         Assert.Equal(accepted, await second.Content.ReadFromJsonAsync<MembershipDto>());
@@ -82,8 +133,95 @@ public class InvitationTests(IntegrationFixture fixture)
         Assert.Equal(2, (await owner.GetFromJsonAsync<MembersResponse>($"/api/workspaces/{workspaceId}/members"))!.Members.Count);
 
         // An accepted invitation is not declined or revoked afterwards.
-        Assert.Equal(HttpStatusCode.Conflict, (await invitee.PostAsync($"/api/invitations/{invitation.Id}/decline", null)).StatusCode);
+        Assert.Equal(HttpStatusCode.Conflict, (await Answer(invitee, invitation.Id, "decline", invitation.Secret)).StatusCode);
         Assert.Equal(HttpStatusCode.Conflict, (await owner.DeleteAsync($"/api/workspaces/{workspaceId}/invitations/{invitation.Id}")).StatusCode);
+    }
+
+    [Fact]
+    public async Task An_account_that_registered_with_the_invited_address_but_has_no_link_cannot_accept_or_decline()
+    {
+        using var factory = TestHost.Create(fixture);
+        using var owner = await TestHost.SignInAsync(factory);
+        var (workspaceId, _) = await TestHost.CreateProjectAsync(owner);
+
+        // The owner invites an address with no account; somebody else registers it.
+        var email = $"squatted-{Guid.NewGuid():N}@vellum.local";
+        var response = await TestHost.Created(owner.PostAsJsonAsync($"/api/workspaces/{workspaceId}/invitations", new { email, role = "Owner" }));
+        var invitation = (await response.Content.ReadFromJsonAsync<IssuedInvitationDto>())!;
+        using var squatter = TestHost.Client(factory);
+        Assert.True((await squatter.PostAsJsonAsync("/api/auth/register", new { email, password = "Test12345!", displayName = "Squatter" })).IsSuccessStatusCode);
+
+        Assert.Equal(HttpStatusCode.NotFound, (await squatter.PostAsync($"/api/invitations/{invitation.Id}/accept", null)).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await squatter.PostAsync($"/api/invitations/{invitation.Id}/decline", null)).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await squatter.GetAsync($"/api/workspaces/{workspaceId}/members")).StatusCode);
+        Assert.Equal("pending", Assert.Single((await owner.GetFromJsonAsync<InvitationDto[]>($"/api/workspaces/{workspaceId}/invitations"))!).Status);
+    }
+
+    [Fact]
+    public async Task A_renewed_invitation_has_a_new_secret_and_the_old_link_stops_working()
+    {
+        using var factory = TestHost.Create(fixture);
+        using var owner = await TestHost.SignInAsync(factory);
+        var (workspaceId, _) = await TestHost.CreateProjectAsync(owner);
+        using var invitee = await TestHost.SignInAsync(factory);
+        var first = await InviteAsync(owner, workspaceId, invitee, "Editor");
+
+        var email = (await invitee.GetFromJsonAsync<UserInfoResponse>("/api/auth/me"))!.Email;
+        var renewed = await owner.PostAsJsonAsync($"/api/workspaces/{workspaceId}/invitations", new { email, role = "Viewer" });
+        Assert.Equal(HttpStatusCode.OK, renewed.StatusCode);
+        var second = (await renewed.Content.ReadFromJsonAsync<IssuedInvitationDto>())!;
+        Assert.Equal(first.Id, second.Id);
+        Assert.NotEqual(first.Secret, second.Secret);
+
+        Assert.Equal(HttpStatusCode.NotFound, (await Answer(invitee, first.Id, "accept", first.Secret)).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await Answer(invitee, first.Id, "decline", first.Secret)).StatusCode);
+        var accepted = await Answer(invitee, second.Id, "accept", second.Secret);
+        Assert.Equal(HttpStatusCode.OK, accepted.StatusCode);
+        Assert.Equal("Viewer", (await accepted.Content.ReadFromJsonAsync<MembershipDto>())!.Role);
+    }
+
+    [Fact]
+    public async Task The_secret_is_in_no_log_line_and_no_audit_entry()
+    {
+        var logs = new LogCapture();
+        using var factory = TestHost.Create(fixture.ConnectionString,
+            configure: services => services.AddLogging(logging => logging.AddProvider(logs).SetMinimumLevel(LogLevel.Trace)));
+        using var owner = await TestHost.SignInAsync(factory);
+        var (workspaceId, _) = await TestHost.CreateProjectAsync(owner);
+        using var invitee = await TestHost.SignInAsync(factory);
+        var invitation = await InviteAsync(owner, workspaceId, invitee, "Editor");
+        var renewal = await TestHost.Created(owner.PostAsJsonAsync($"/api/workspaces/{workspaceId}/invitations", new { email = "other@vellum.local", role = "Viewer" }));
+        var otherSecret = (await renewal.Content.ReadFromJsonAsync<IssuedInvitationDto>())!.Secret;
+
+        Assert.Equal(HttpStatusCode.NotFound, (await Answer(invitee, invitation.Id, "accept", otherSecret)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await Answer(invitee, invitation.Id, "open", invitation.Secret)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await Answer(invitee, invitation.Id, "accept", invitation.Secret)).StatusCode);
+
+        var lines = logs.Lines;
+        Assert.NotEmpty(lines);
+        foreach (var secret in new[] { invitation.Secret, otherSecret })
+        {
+            Assert.DoesNotContain(lines, line => line.Contains(secret, StringComparison.Ordinal));
+            Assert.DoesNotContain(secret, await owner.GetStringAsync($"/api/workspaces/{workspaceId}/audit"));
+        }
+    }
+
+    [Fact]
+    public async Task Answers_to_invitations_are_rate_limited_for_each_caller()
+    {
+        using var factory = TestHost.Create(fixture.ConnectionString, configure: services => services.AddSingleton(new InvitationLimits(ResponsesPerMinute: 3)));
+        using var owner = await TestHost.SignInAsync(factory);
+        var (workspaceId, _) = await TestHost.CreateProjectAsync(owner);
+        using var invitee = await TestHost.SignInAsync(factory);
+        var invitation = await InviteAsync(owner, workspaceId, invitee, "Editor");
+
+        for (var i = 0; i < 3; i++)
+            Assert.Equal(HttpStatusCode.NotFound, (await Answer(invitee, invitation.Id, "accept", $"guess-{i}")).StatusCode);
+        // The right secret, too late: the window is spent.
+        var limited = await Answer(invitee, invitation.Id, "accept", invitation.Secret);
+        Assert.Equal(HttpStatusCode.TooManyRequests, limited.StatusCode);
+        Assert.Equal("rate_limited", (await limited.Content.ReadFromJsonAsync<ErrorResponse>())!.Type);
+        Assert.Equal(HttpStatusCode.Forbidden, (await invitee.GetAsync($"/api/workspaces/{workspaceId}/members")).StatusCode);
     }
 
     [Fact]
@@ -111,7 +249,7 @@ public class InvitationTests(IntegrationFixture fixture)
         Assert.Equal(HttpStatusCode.Forbidden, (await editor.PostAsJsonAsync($"/api/workspaces/{workspaceA}/invitations", new { email = "x@vellum.local", role = "Owner" })).StatusCode);
 
         // The invitation is still open, and accepting it opens A and not B.
-        Assert.Equal(HttpStatusCode.OK, (await invitee.PostAsync($"/api/invitations/{invitation.Id}/accept", null)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await Answer(invitee, invitation.Id, "accept", invitation.Secret)).StatusCode);
         Assert.Equal(HttpStatusCode.OK, (await invitee.GetAsync($"/api/workspaces/{workspaceA}/members")).StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden, (await invitee.GetAsync($"/api/workspaces/{workspaceB}/members")).StatusCode);
     }
@@ -124,9 +262,9 @@ public class InvitationTests(IntegrationFixture fixture)
         var (workspaceId, _) = await TestHost.CreateProjectAsync(owner);
         using var invitee = await TestHost.SignInAsync(factory);
 
-        async Task AssertClosedAsync(Guid id, string status)
+        async Task AssertClosedAsync(IssuedInvitationDto invitation, string status)
         {
-            var refused = await invitee.PostAsync($"/api/invitations/{id}/accept", null);
+            var refused = await Answer(invitee, invitation.Id, "accept", invitation.Secret);
             Assert.Equal(HttpStatusCode.Conflict, refused.StatusCode);
             var error = (await refused.Content.ReadFromJsonAsync<ErrorResponse>())!;
             Assert.Equal(("invitation_closed", $"The invitation is {status}"), (error.Type, error.Title));
@@ -138,13 +276,13 @@ public class InvitationTests(IntegrationFixture fixture)
         Assert.Equal(HttpStatusCode.NoContent, (await owner.DeleteAsync($"/api/workspaces/{workspaceId}/invitations/{revoked.Id}")).StatusCode);
         Assert.Equal(HttpStatusCode.NoContent, (await owner.DeleteAsync($"/api/workspaces/{workspaceId}/invitations/{revoked.Id}")).StatusCode);
         Assert.Empty((await owner.GetFromJsonAsync<InvitationDto[]>($"/api/workspaces/{workspaceId}/invitations"))!);
-        await AssertClosedAsync(revoked.Id, "revoked");
+        await AssertClosedAsync(revoked, "revoked");
 
         var declined = await InviteAsync(owner, workspaceId, invitee, "Editor");
         Assert.NotEqual(revoked.Id, declined.Id);
-        Assert.Equal(HttpStatusCode.NoContent, (await invitee.PostAsync($"/api/invitations/{declined.Id}/decline", null)).StatusCode);
-        Assert.Equal(HttpStatusCode.NoContent, (await invitee.PostAsync($"/api/invitations/{declined.Id}/decline", null)).StatusCode);
-        await AssertClosedAsync(declined.Id, "declined");
+        Assert.Equal(HttpStatusCode.NoContent, (await Answer(invitee, declined.Id, "decline", declined.Secret)).StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, (await Answer(invitee, declined.Id, "decline", declined.Secret)).StatusCode);
+        await AssertClosedAsync(declined, "declined");
 
         // An invitation lives 14 days.
         var expiring = await InviteAsync(owner, workspaceId, invitee, "Editor");
@@ -157,15 +295,15 @@ public class InvitationTests(IntegrationFixture fixture)
             Assert.Equal(1, await expire.ExecuteNonQueryAsync());
         }
         Assert.Empty((await owner.GetFromJsonAsync<InvitationDto[]>($"/api/workspaces/{workspaceId}/invitations"))!);
-        await AssertClosedAsync(expiring.Id, "expired");
+        await AssertClosedAsync(expiring, "expired");
 
-        // A new invitation of the same address renews the expired one, which can then be accepted.
+        // A new invitation of the same address renews the expired one, with a new secret.
         var email = (await invitee.GetFromJsonAsync<UserInfoResponse>("/api/auth/me"))!.Email;
         var renewed = await owner.PostAsJsonAsync($"/api/workspaces/{workspaceId}/invitations", new { email, role = "Viewer" });
         Assert.Equal(HttpStatusCode.OK, renewed.StatusCode);
-        var renewedDto = (await renewed.Content.ReadFromJsonAsync<InvitationDto>())!;
+        var renewedDto = (await renewed.Content.ReadFromJsonAsync<IssuedInvitationDto>())!;
         Assert.Equal((expiring.Id, "pending", "Viewer"), (renewedDto.Id, renewedDto.Status, renewedDto.Role));
-        Assert.Equal(HttpStatusCode.OK, (await invitee.PostAsync($"/api/invitations/{expiring.Id}/accept", null)).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await Answer(invitee, renewedDto.Id, "accept", renewedDto.Secret)).StatusCode);
     }
 
     [Fact]
@@ -229,6 +367,9 @@ public class InvitationTests(IntegrationFixture fixture)
         }
     }
 
+    private static Task<HttpResponseMessage> Answer(HttpClient client, Guid invitationId, string action, string secret) =>
+        client.PostAsJsonAsync($"/api/invitations/{invitationId}/{action}", new { secret });
+
     private static async Task<long> OwnersAsync(NpgsqlConnection connection, Guid workspaceId)
     {
         await using var count = new NpgsqlCommand("SELECT count(*) FROM workspaces.memberships WHERE workspace_id = @w AND lower(role) = 'owner'", connection);
@@ -236,10 +377,10 @@ public class InvitationTests(IntegrationFixture fixture)
         return (long)(await count.ExecuteScalarAsync())!;
     }
 
-    private static async Task<InvitationDto> InviteAsync(HttpClient owner, Guid workspaceId, HttpClient invitee, string role)
+    private static async Task<IssuedInvitationDto> InviteAsync(HttpClient owner, Guid workspaceId, HttpClient invitee, string role)
     {
         var email = (await invitee.GetFromJsonAsync<UserInfoResponse>("/api/auth/me"))!.Email;
         var response = await TestHost.Created(owner.PostAsJsonAsync($"/api/workspaces/{workspaceId}/invitations", new { email, role }));
-        return (await response.Content.ReadFromJsonAsync<InvitationDto>())!;
+        return (await response.Content.ReadFromJsonAsync<IssuedInvitationDto>())!;
     }
 }

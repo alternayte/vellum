@@ -588,6 +588,7 @@ public class AgentTokenTests(IntegrationFixture fixture)
         "POST /api/workspaces/{workspaceId}/invitations/",
         "DELETE /api/workspaces/{workspaceId}/invitations/{invitationId:guid}",
         "GET /api/invitations/",
+        "POST /api/invitations/{invitationId:guid}/open",
         "POST /api/invitations/{invitationId:guid}/accept",
         "POST /api/invitations/{invitationId:guid}/decline",
         "DELETE /api/workspaces/{workspaceId}/members/{memberUserId}",

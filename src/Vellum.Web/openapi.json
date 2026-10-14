@@ -524,7 +524,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/InvitationDto"
+                  "$ref": "#/components/schemas/IssuedInvitationDto"
                 }
               }
             }
@@ -534,7 +534,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/InvitationDto"
+                  "$ref": "#/components/schemas/IssuedInvitationDto"
                 }
               }
             }
@@ -670,6 +670,52 @@
         }
       }
     },
+    "/api/invitations/{invitationId}/open": {
+      "post": {
+        "tags": [
+          "Members"
+        ],
+        "parameters": [
+          {
+            "name": "invitationId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/InvitationSecretRequest"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MyInvitationDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/invitations/{invitationId}/accept": {
       "post": {
         "tags": [
@@ -686,6 +732,22 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/InvitationSecretRequest"
+                  }
+                ]
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK",
@@ -716,6 +778,22 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/InvitationSecretRequest"
+                  }
+                ]
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "OK"
@@ -18741,6 +18819,67 @@
           }
         }
       },
+      "InvitationSecretRequest": {
+        "required": [
+          "secret"
+        ],
+        "type": "object",
+        "properties": {
+          "secret": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "IssuedInvitationDto": {
+        "required": [
+          "id",
+          "workspaceId",
+          "email",
+          "role",
+          "status",
+          "createdAt",
+          "expiresAt",
+          "secret",
+          "path"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "workspaceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "email": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "secret": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          }
+        }
+      },
       "JsonDocument": { },
       "JsonElement": { },
       "JsonObject": {
@@ -20077,6 +20216,7 @@
           "workspaceName",
           "role",
           "invitedBy",
+          "status",
           "createdAt",
           "expiresAt"
         ],
@@ -20101,6 +20241,9 @@
               "null",
               "string"
             ]
+          },
+          "status": {
+            "type": "string"
           },
           "createdAt": {
             "type": "string",
