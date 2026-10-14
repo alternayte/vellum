@@ -220,7 +220,7 @@ public static class FlowProposals
     public static async Task<IResult> Create(
         Guid projectId, CreateFlowProposalRequest body, HttpContext http,
         AiClient ai, IEventStore store, AppDbContext db, PrivateSources privateSources,
-        CancellationToken ct)
+        TimeProvider time, CancellationToken ct)
     {
         var (caller, refusal) = await DesignAccess.ResolveAsync(http, projectId, body.BranchId, WorkspaceRole.Editor, forWrite: true, ct);
         if (caller is null)
@@ -291,7 +291,7 @@ public static class FlowProposals
             Request = body.Request!,
             Document = Write(document),
             CreatedBy = caller.UserId,
-            CreatedAt = DateTimeOffset.UtcNow,
+            CreatedAt = time.GetUtcNow(),
         };
         if (!await ProposalStore.InsertDraftAsync(db, row, ct))
             return ProposalStore.TooManyDrafts();
@@ -308,7 +308,7 @@ public static class FlowProposals
     /// </summary>
     public static async Task<IResult> Submit(
         Guid projectId, SubmitFlowProposalRequest body, HttpContext http,
-        IEventStore store, AppDbContext db, CancellationToken ct)
+        IEventStore store, AppDbContext db, TimeProvider time, CancellationToken ct)
     {
         var (caller, refusal) = await DesignAccess.ResolveAsync(http, projectId, null, WorkspaceRole.Editor, forWrite: true, ct);
         if (caller is null)
@@ -353,7 +353,7 @@ public static class FlowProposals
             Document = Write(document),
             CreatedBy = caller.UserId,
             Origin = origin,
-            CreatedAt = DateTimeOffset.UtcNow,
+            CreatedAt = time.GetUtcNow(),
         };
         if (!await ProposalStore.InsertDraftAsync(db, row, ct))
             return ProposalStore.TooManyDrafts();
@@ -399,7 +399,7 @@ public static class FlowProposals
     /// <c>acceptWithIssues</c>; the scenario that is written is always the fresh resolution.
     /// </summary>
     public static async Task<IResult> Accept(
-        Guid projectId, Guid proposalId, AcceptFlowProposalRequest? body, HttpContext http, CancellationToken ct)
+        Guid projectId, Guid proposalId, AcceptFlowProposalRequest? body, HttpContext http, TimeProvider time, CancellationToken ct)
     {
         var (_, userId) = await DesignAccess.RequireAsync(http, projectId, WorkspaceRole.Editor, ct);
         if (body?.Name is { } requested && (string.IsNullOrWhiteSpace(requested) || TextRule.Line("name", requested) is not null))
@@ -483,7 +483,7 @@ public static class FlowProposals
             row.Status = "accepted";
             row.Name = scenario.Name;
             row.DecidedBy = userId;
-            row.DecidedAt = DateTimeOffset.UtcNow;
+            row.DecidedAt = time.GetUtcNow();
             row.Document = Write(Decide(document, view));
             await db.SaveChangesAsync(ct);
             await transaction.CommitAsync(ct);
@@ -493,7 +493,7 @@ public static class FlowProposals
 
     public static async Task<IResult> Reject(
         Guid projectId, Guid proposalId, HttpContext http,
-        IEventStore store, AppDbContext db, CancellationToken ct)
+        IEventStore store, AppDbContext db, TimeProvider time, CancellationToken ct)
     {
         var (_, userId) = await DesignAccess.RequireAsync(http, projectId, WorkspaceRole.Editor, ct);
 
@@ -511,7 +511,7 @@ public static class FlowProposals
 
         row.Status = "rejected";
         row.DecidedBy = userId;
-        row.DecidedAt = DateTimeOffset.UtcNow;
+        row.DecidedAt = time.GetUtcNow();
         document = Decide(document, view);
         row.Document = Write(document);
         await db.SaveChangesAsync(ct);
@@ -543,7 +543,7 @@ public static class FlowProposals
     /// now is not created: the request is refused with the existing thing's name and ID.
     /// </summary>
     public static async Task<IResult> CreateMissing(
-        Guid projectId, Guid proposalId, string alias, HttpContext http, CancellationToken ct)
+        Guid projectId, Guid proposalId, string alias, HttpContext http, TimeProvider time, CancellationToken ct)
     {
         await DesignAccess.RequireAsync(http, projectId, WorkspaceRole.Editor, ct);
         var branch = await ProposalStore.BranchOfAsync(http, projectId, proposalId, Kind, ct);
@@ -587,7 +587,7 @@ public static class FlowProposals
 
             var refused = await InferredWrites.ApplyAsync(
                 store, caller.StreamId, [(addition, entry.Confidence)],
-                InferredWrites.Source(document.Provider, document.Origin, Kind, row.Id), caller.UserId, ct);
+                InferredWrites.Source(document.Provider, document.Origin, Kind, row.Id), caller.UserId, time.GetUtcNow(), ct);
             if (refused is not null)
                 return refused.Conflict ? Conflict(refused.Reason) : Invalid(alias, refused.Reason);
 

@@ -16,6 +16,7 @@ public static class CreateWorkspace
         CreateWorkspaceRequest request,
         ClaimsPrincipal user,
         AppDbContext db,
+        TimeProvider time,
         CancellationToken ct)
     {
         var userId = user.UserId();
@@ -47,7 +48,8 @@ public static class CreateWorkspace
             Id = Guid.NewGuid(),
             WorkspaceId = request.Id,
             UserId = userId,
-            Role = nameof(WorkspaceRole.Owner)
+            Role = nameof(WorkspaceRole.Owner),
+            CreatedAt = time.GetUtcNow(),
         });
 
         // The workspace, its first owner and the audit entry commit together.

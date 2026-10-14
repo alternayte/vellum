@@ -112,7 +112,7 @@ public class LiveSmokeTests
     {
         await using var provider = Build();
         var connection = new GitHubConnection(
-            provider.GetRequiredService<IGitHubApi>(), new Uri("https://api.github.com"), allowPrivateNetwork: false, requireHttps: true,
+            provider.GetRequiredService<IGitHubApi>(), TimeProvider.System, new Uri("https://api.github.com"), allowPrivateNetwork: false, requireHttps: true,
             new OutboundCredential("Authorization", "Bearer", Variable("VELLUM_LIVE_GITHUB_TOKEN")));
 
         var identity = await connection.IdentifyAsync();

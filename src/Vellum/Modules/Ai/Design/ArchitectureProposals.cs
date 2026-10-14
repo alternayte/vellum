@@ -119,7 +119,7 @@ public static partial class ArchitectureProposals
     public static async Task<IResult> Create(
         Guid projectId, CreateArchitectureProposalRequest body, HttpContext http,
         AiClient ai, IEventStore store, AppDbContext db, PrivateSources privateSources,
-        CancellationToken ct)
+        TimeProvider time, CancellationToken ct)
     {
         var (caller, refusal) = await DesignAccess.ResolveAsync(http, projectId, body.BranchId, WorkspaceRole.Editor, forWrite: true, ct);
         if (caller is null)
@@ -171,7 +171,7 @@ public static partial class ArchitectureProposals
             Request = body.Request!,
             Document = JsonSerializer.Serialize(document, DesignJson.Options),
             CreatedBy = caller.UserId,
-            CreatedAt = DateTimeOffset.UtcNow,
+            CreatedAt = time.GetUtcNow(),
         };
         if (!await ProposalStore.InsertDraftAsync(db, row, ct))
             return ProposalStore.TooManyDrafts();
@@ -189,7 +189,7 @@ public static partial class ArchitectureProposals
     /// </summary>
     public static async Task<IResult> Submit(
         Guid projectId, SubmitArchitectureProposalRequest body, HttpContext http,
-        IEventStore store, AppDbContext db, CancellationToken ct)
+        IEventStore store, AppDbContext db, TimeProvider time, CancellationToken ct)
     {
         var (caller, refusal) = await DesignAccess.ResolveAsync(http, projectId, null, WorkspaceRole.Editor, forWrite: true, ct);
         if (caller is null)
@@ -234,7 +234,7 @@ public static partial class ArchitectureProposals
             Document = JsonSerializer.Serialize(document, DesignJson.Options),
             CreatedBy = caller.UserId,
             Origin = origin,
-            CreatedAt = DateTimeOffset.UtcNow,
+            CreatedAt = time.GetUtcNow(),
         };
         if (!await ProposalStore.InsertDraftAsync(db, row, ct))
             return ProposalStore.TooManyDrafts();
@@ -301,7 +301,7 @@ public static partial class ArchitectureProposals
     /// </para>
     /// </summary>
     public static async Task<IResult> Decide(
-        Guid projectId, Guid proposalId, DecideArchitectureProposalRequest body, HttpContext http, CancellationToken ct)
+        Guid projectId, Guid proposalId, DecideArchitectureProposalRequest body, HttpContext http, TimeProvider time, CancellationToken ct)
     {
         var (_, userId) = await DesignAccess.RequireAsync(http, projectId, WorkspaceRole.Editor, ct);
         var accept = (body.Accept ?? []).Distinct().ToList();
@@ -380,7 +380,7 @@ public static partial class ArchitectureProposals
                 }
 
                 var refused = await InferredWrites.ApplyAsync(
-                    store, streamId, additions, InferredWrites.Source(document.Provider, document.Origin, Kind, row.Id), userId, ct);
+                    store, streamId, additions, InferredWrites.Source(document.Provider, document.Origin, Kind, row.Id), userId, time.GetUtcNow(), ct);
                 if (refused is not null)
                     return Refused([new(refused.Id, refused.Reason)]);
             }
@@ -395,7 +395,7 @@ public static partial class ArchitectureProposals
             {
                 row.Status = "decided";
                 row.DecidedBy = userId;
-                row.DecidedAt = DateTimeOffset.UtcNow;
+                row.DecidedAt = time.GetUtcNow();
             }
             await db.SaveChangesAsync(ct);
             await transaction.CommitAsync(ct);

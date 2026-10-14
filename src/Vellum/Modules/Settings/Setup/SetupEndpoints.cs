@@ -64,6 +64,7 @@ public static class RunSetup
         AppDbContext db,
         UserManager<ApplicationUser> users,
         SignInManager<ApplicationUser> signIn,
+        TimeProvider time,
         CancellationToken ct)
     {
         if (!await SetupState.NeedsSetupAsync(db, ct))
@@ -116,6 +117,7 @@ public static class RunSetup
             WorkspaceId = workspaceId,
             UserId = user.Id,
             Role = nameof(WorkspaceRole.Owner),
+            CreatedAt = time.GetUtcNow(),
         });
         db.InstanceAdmins.Add(new InstanceAdminEntity { UserId = user.Id });
         await db.SaveChangesAsync(ct);

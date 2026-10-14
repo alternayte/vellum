@@ -14,6 +14,7 @@ public static class UpdateWorkspace
         ClaimsPrincipal user,
         AppDbContext db,
         WorkspaceAuthorizationService auth,
+        TimeProvider time,
         CancellationToken ct)
     {
         var userId = user.UserId();
@@ -29,7 +30,7 @@ public static class UpdateWorkspace
         if (request.Name is not null)
             workspace.Name = request.Name;
 
-        workspace.UpdatedAt = DateTimeOffset.UtcNow;
+        workspace.UpdatedAt = time.GetUtcNow();
         await db.SaveChangesAsync(ct);
 
         return Results.Ok(new WorkspaceDto(workspace.Id, workspace.Name, workspace.CreatedBy, workspace.CreatedAt));

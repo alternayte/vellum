@@ -274,7 +274,7 @@ if (app.Environment.IsDevelopment())
             var projectId = Guid.Parse("00000000-0000-0000-0000-000000000002");
 
             db.Workspaces.Add(new WorkspaceEntity { Id = workspaceId, Name = "Dev Workspace", CreatedBy = devUser.Id });
-            db.Memberships.Add(new MembershipEntity { Id = Guid.NewGuid(), WorkspaceId = workspaceId, UserId = devUser.Id, Role = "Owner" });
+            db.Memberships.Add(new MembershipEntity { Id = Guid.NewGuid(), WorkspaceId = workspaceId, UserId = devUser.Id, Role = "Owner", CreatedAt = services.GetRequiredService<TimeProvider>().GetUtcNow() });
             db.Projects.Add(new ProjectEntity { Id = projectId, WorkspaceId = workspaceId, Name = "Sample Architecture", StreamId = streamId });
 
             var userId = Guid.NewGuid();

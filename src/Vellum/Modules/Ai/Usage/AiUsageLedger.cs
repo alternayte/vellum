@@ -63,7 +63,7 @@ public sealed record CallCost(decimal? CostUsd, int? InputTokens, int? OutputTok
 /// <c>abandoned</c>. No background job is needed.
 /// </para>
 /// </summary>
-public sealed class AiUsageLedger(AppDbContext db)
+public sealed class AiUsageLedger(AppDbContext db, TimeProvider time)
 {
     public const string Started = "started";
     public const string Abandoned = "abandoned";
@@ -92,7 +92,7 @@ public sealed class AiUsageLedger(AppDbContext db)
         var lockKey = BitConverter.ToInt64(call.WorkspaceId.ToByteArray(), 0);
         await db.Database.ExecuteSqlAsync($"SELECT pg_advisory_xact_lock({lockKey})", ct);
 
-        var now = DateTimeOffset.UtcNow;
+        var now = time.GetUtcNow();
         if (call.RequestsPerMinute is { } perMinute)
         {
             var windowStart = now.AddMinutes(-1);

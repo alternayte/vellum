@@ -10,5 +10,5 @@ public class MembershipEntity
     /// When the membership was made. No writer set this before the member list showed it,
     /// so a row from that time holds the zero date; the list reads that as not recorded.
     /// </summary>
-    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset CreatedAt { get; set; }
 }
