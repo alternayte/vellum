@@ -25,6 +25,8 @@ A source pattern check fails against a pull request scan only when the scan read
 
 A result against a pull request scan is for the head commit of the pull request only. The promise keeps its result against the ref that the model follows.
 
+A check runs once against a scan. A second call for the same scan returns the first run. A scan whose service is not found under the key that the accepted import linked, because its directory moved or a second project file is in its directory, gives `unsupported` and not `failed`.
+
 ## Set the gate policy
 
 1. Scan a pull request or a ref of the repository. On the completed scan, select **Impact**.
@@ -43,6 +45,8 @@ The audit log of the workspace records the change with the old and the new polic
 |---|---|
 | `scan-pull-request` | Starts a scan of a pull request, and runs the checks of the approved promises against a scan that it started. A token with this scope cannot scan a branch, a tag or a commit. |
 | `read` | Reads the state of the scan and its report. |
+
+The token scans only a repository that the project follows: a repository with a tracked ref or with accepted facts. It cannot scan another repository that the GitHub token of the workspace can read.
 
 The token acts for the person who created it. That person needs the editor role or higher to start a scan. To restrict the token to the project, create it with the API and a `projectId`. See [Connect a coding agent](/how-to/connect-a-coding-agent/).
 
@@ -91,8 +95,17 @@ for _ in $(seq 1 120); do
 done
 [ "$status" = completed ] || no_verdict "scan $scan did not complete in time."
 
-curl -fsS -X POST "$api/$scan/impact/checks" -H "$auth" | jq -r '.runs[] | "\(.requirementId) \(.key): \(.result)"' \
-  || no_verdict "the checks did not run against scan $scan."
+# Each new run takes one unit of the run rate. A check that ran against this scan does not
+# run again, so a call after 429 goes on where the last one stopped.
+code=429
+for _ in 1 2 3 4 5; do
+  code=$(curl -sS -o vellum-checks.json -w '%{http_code}' -X POST "$api/$scan/impact/checks" -H "$auth") \
+    || no_verdict "the checks did not run against scan $scan."
+  [ "$code" = 429 ] || break
+  sleep 60
+done
+[ "$code" = 200 ] || no_verdict "the checks did not run against scan $scan (HTTP $code)."
+jq -r '.runs[] | "\(.requirementId) \(.key): \(.result)"' vellum-checks.json
 
 curl -fsS "$api/$scan/impact/report" -H "$auth" -H "Accept: text/markdown" -o vellum-impact.md \
   || no_verdict "the report of scan $scan is not readable."
@@ -213,6 +226,6 @@ ORD-014 keeps its result against `main`. Only the report of this scan says that 
 | `403` `agent_not_allowed` on the checks | The token did not start this scan, and it has no `propose` scope. | Let the same token start the scan and run the checks. |
 | `403` `agent_not_allowed` on the report | The token has no `read` scope, or it is restricted to another project. | Add the scope, or use a token of this project. |
 | `403` on the scan with a token that has the scope | The person who created the token has the viewer role. | Give that person the editor role, or create the token as an editor. |
-| `409` `scan_in_progress` | A scan of the repository is already queued or running for the project. | Run the job again when that scan ends. |
+| `409` `scan_in_progress` | A scan of the repository is already queued or running for the project. A pull request scan of CI also holds this place: while it runs, a person cannot start a scan of the same repository in the project. | Run the job again when that scan ends. |
 | `429` `scan_limit_reached` | The workspace started its scans of the day. | Raise `usage.maxScansPerDay` in the workspace settings. |
 | `pull_request_not_found` in the scan | GitHub has no pull request with this number that Vellum can see. | Check the GitHub settings of the workspace. See [Connect GitHub](/how-to/connect-github/). |

@@ -25,7 +25,7 @@ These parts of change impact are not available.
 
 The scan list shows the ref, the commit and the word **comparison**.
 
-The request is `POST /api/projects/{projectId}/imports`. The `curl` examples use the session cookie of a signed-in person in the file `vellum.cookies`. [Use the HTTP API](/how-to/use-the-http-api/) shows how to sign in. An agent token cannot scan a branch, a tag or a commit: the answer is `403`. A token with the `scan-pull-request` scope can scan a pull request.
+The request is `POST /api/projects/{projectId}/imports`. The `curl` examples use the session cookie of a signed-in person in the file `vellum.cookies`. [Use the HTTP API](/how-to/use-the-http-api/) shows how to sign in. An agent token cannot scan a branch, a tag or a commit: the answer is `403`. A token with the `scan-pull-request` scope can scan a pull request of a repository that the project follows.
 
 ```sh
 curl -X POST "http://localhost:8080/api/projects/<project-id>/imports" \
@@ -184,6 +184,10 @@ Select **Run checks against this scan** in the **Gate** box. Vellum runs the sou
 A result against a comparison scan is for that commit only. The promise keeps its result against the ref that the model follows, and Build Ready does not change. The result shows in the impact report of this scan.
 
 The request is `POST /api/projects/{projectId}/imports/{importId}/impact/checks`. An agent token with `propose` can call it for any scan. A token with only `scan-pull-request` can call it for a scan that it started.
+
+A check runs once against a comparison scan: a second call returns the first run. These runs have their own bound of 5,000 for each obligation of a revision. They never use up the 1,000 runs against the ref that the model follows. Each new run takes one unit of the run rate of the caller, 120 in a minute. When the rate is used up, the answer is `429`, and the next call goes on where the last one stopped.
+
+When the service of the check is not found under the key that the accepted import linked, the result is **Unknown**. This happens when the directory of the service moved, or when a second project file is in its directory. Accept a scan of the followed ref to link the service again.
 
 The request is `GET /api/projects/{projectId}/imports/{importId}/impact`.
 
