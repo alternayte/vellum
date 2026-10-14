@@ -61,6 +61,7 @@ public static class ChangeMemberRole
         ClaimsPrincipal user,
         WorkspacesDbContext db,
         WorkspaceAuthorizationService auth,
+        TimeProvider time,
         CancellationToken ct)
     {
         var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
@@ -96,6 +97,9 @@ public static class ChangeMemberRole
         await db.SaveChangesAsync(ct);
         await AuditLog.AppendAsync(db, workspaceId, userId, AuditLog.MemberRoleChanged,
             $"user:{membership.UserId} role:{before.ToLowerInvariant()}->{membership.Role.ToLowerInvariant()}", ct);
+        // A demoted owner's open invitations are revoked in the same transaction.
+        if (before == nameof(WorkspaceRole.Owner))
+            await InvitationRules.RevokeIssuedByAsync(db, workspaceId, membership.UserId, userId, "issuer-demoted", time.GetUtcNow(), ct);
         await transaction.CommitAsync(ct);
         return Results.Ok(ToDto(membership));
     }
