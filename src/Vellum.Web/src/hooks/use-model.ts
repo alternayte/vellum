@@ -5,11 +5,22 @@ import { useElements } from '@/hooks/use-elements'
 import { useMessages } from '@/hooks/use-messages'
 import { useRelationships } from '@/hooks/use-relationships'
 import { branchesApi } from '@/lib/branches-api'
+import { ApiError } from '@/lib/settings-api'
 import { useDraftStore } from '@/stores/draft-store'
 
 /** The project with the role of the signed-in person in its workspace. */
 export function useProject(projectId: string) {
-  return useQuery({ queryKey: ['projects', projectId, 'detail'], queryFn: () => branchesApi.project(projectId) })
+  return useQuery({
+    queryKey: ['projects', projectId, 'detail'],
+    queryFn: () => branchesApi.project(projectId),
+    // A project that does not exist, or that the person may not read, stays so: no retry.
+    retry: (failures, error) => !isProjectRefusal(error) && failures < 3,
+  })
+}
+
+/** The answer for a project ID that names no project the signed-in person can read. */
+export function isProjectRefusal(error: unknown): boolean {
+  return error instanceof ApiError && [400, 403, 404].includes(error.status)
 }
 
 /**
