@@ -9,6 +9,16 @@ public sealed record ErrorResponse(
 
 public sealed record FieldError(string Field, string Message);
 
+/// <summary>
+/// The answer to a create with a client ID that a record outside the caller's scope already
+/// has. It shows nothing of that record.
+/// </summary>
+public static class IdInUse
+{
+    public static IResult Conflict() =>
+        Results.Conflict(new ErrorResponse("id_in_use", "The ID is in use. Send a new ID."));
+}
+
 public static class ResultExtensions
 {
     /// <summary>

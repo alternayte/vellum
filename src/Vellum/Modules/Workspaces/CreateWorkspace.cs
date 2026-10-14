@@ -61,13 +61,6 @@ public static class CreateWorkspace
     private static WorkspaceDto ToDto(WorkspaceEntity w) => new(w.Id, w.Name, w.CreatedBy, w.CreatedAt);
 }
 
-/// <summary>The answer to a create with a client ID that another record already has.</summary>
-internal static class IdInUse
-{
-    public static IResult Conflict() =>
-        Results.Conflict(new ErrorResponse("id_in_use", "The ID is in use. Send a new ID."));
-}
-
 /// <summary>What a workspace or a project may be called and described as.</summary>
 internal static class WorkspaceText
 {

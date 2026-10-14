@@ -158,4 +158,48 @@ public class WorkspaceIsolationTests(IntegrationFixture fixture) : IClassFixture
         await AssertClosed(HttpStatusCode.BadRequest, Url(mine, $"model/compare?left=revision:{revision}&right=main"), "compare with a foreign revision");
         await AssertClosed(HttpStatusCode.BadRequest, Url(mine, $"model/compare?left=main&right={draft.StreamId}"), "compare with a foreign draft");
     }
+
+    [Fact]
+    public async Task A_create_with_the_id_of_another_projects_doc_space_or_view_is_refused_and_shows_nothing_of_it()
+    {
+        var factory = fixture.Factory;
+
+        using var owner = await TestHost.SignInAsync(factory);
+        var (_, theirs) = await TestHost.CreateProjectAsync(owner);
+        Guid space = Guid.NewGuid(), doc = Guid.NewGuid(), view = Guid.NewGuid();
+        (string Path, object Body)[] creates =
+        [
+            ("spaces", new { id = space, name = "Secret space" }),
+            ("docs", new { id = doc, title = "Secret doc", spaceId = space }),
+            ("views", new { id = view, name = "Secret view", rootElementId = (Guid?)null }),
+        ];
+        foreach (var (path, body) in creates)
+            await TestHost.Created(owner.PostAsJsonAsync(Url(theirs, path), body));
+        await AssertStatus(HttpStatusCode.OK, owner.PatchAsJsonAsync(Url(theirs, $"docs/{doc}"), new { content = "Secret content" }), "PATCH doc");
+
+        // A retry by the owner in the same project gets the row back.
+        foreach (var (path, body) in creates)
+            await AssertStatus(HttpStatusCode.OK, owner.PostAsJsonAsync(Url(theirs, path), body), $"retry POST {path}");
+
+        using var stranger = await TestHost.SignInAsync(factory);
+        var (_, mine) = await TestHost.CreateProjectAsync(stranger);
+        (string Path, object Body)[] planted =
+        [
+            ("spaces", new { id = space, name = "Mine" }),
+            ("docs", new { id = doc, title = "Mine" }),
+            ("views", new { id = view, name = "Mine", rootElementId = (Guid?)null }),
+        ];
+        foreach (var (path, body) in planted)
+        {
+            var response = await stranger.PostAsJsonAsync(Url(mine, path), body);
+            var text = await response.Content.ReadAsStringAsync();
+            Assert.True(response.StatusCode == HttpStatusCode.Conflict, $"POST {path}: expected Conflict, got {response.StatusCode} {text}");
+            Assert.Contains("id_in_use", text);
+            Assert.DoesNotContain("ecret", text);
+            Assert.DoesNotContain(theirs.ToString(), text);
+        }
+
+        foreach (var path in new[] { "spaces", "docs", "views" })
+            Assert.DoesNotContain("ecret", await stranger.GetStringAsync(Url(mine, path)));
+    }
 }

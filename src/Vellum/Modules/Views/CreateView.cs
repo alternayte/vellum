@@ -23,9 +23,11 @@ public static class CreateView
         if (ResultExtensions.Refusal(ResultExtensions.Required("name", request.Name), TextRule.Line("name", request.Name)) is { } refusal)
             return refusal;
 
+        // A retry in the same project gets the view back. A view of another project is not
+        // shown: the caller learns only that the ID is taken.
         var existing = await db.Views.FindAsync([request.Id], ct);
         if (existing is not null)
-            return Results.Ok(ToDto(existing));
+            return existing.ProjectId == projectId ? Results.Ok(ToDto(existing)) : IdInUse.Conflict();
 
         var view = new ViewEntity
         {

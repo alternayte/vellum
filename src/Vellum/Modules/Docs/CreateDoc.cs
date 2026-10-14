@@ -27,9 +27,11 @@ public static class CreateDoc
                 TextRule.Line("type", request.Type, TextRule.MaxIdentifier)) is { } refusal)
             return refusal;
 
+        // A retry in the same project gets the document back. A document of another project is
+        // not shown: the caller learns only that the ID is taken.
         var existing = await db.Documents.FindAsync([request.Id], ct);
         if (existing is not null)
-            return Results.Ok(ToDto(existing));
+            return existing.ProjectId == projectId ? Results.Ok(ToDto(existing)) : IdInUse.Conflict();
 
         var doc = new DocumentEntity
         {
