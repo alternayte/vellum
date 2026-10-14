@@ -292,7 +292,8 @@ public class AgentTokenTests(IntegrationFixture fixture)
     [InlineData("PUT", "/api/workspaces/{workspaceId}/secrets/github:token")]
     [InlineData("PUT", "/api/instance/settings")]
     [InlineData("POST", "/api/instance/keys/rotate")]
-    [InlineData("POST", "/api/workspaces/{workspaceId}/members")]
+    [InlineData("POST", "/api/workspaces/{workspaceId}/invitations")]
+    [InlineData("POST", "/api/invitations/{id}/accept")]
     [InlineData("POST", "/api/projects/{projectId}/imports/{id}/proposals/decide")]
     [InlineData("POST", "/api/projects/{projectId}/ai/flow-proposals/{id}/accept")]
     [InlineData("POST", "/api/projects/{projectId}/ai/architecture-proposals/{id}/decide")]
@@ -483,7 +484,7 @@ public class AgentTokenTests(IntegrationFixture fixture)
         await Json(orphan.Client.PostAsJsonAsync(Promises(projectId), Promise()), HttpStatusCode.Created);
         Assert.Equal(HttpStatusCode.NoContent, (await owner.DeleteAsync($"/api/workspaces/{workspaceId}/members/{secondId}")).StatusCode);
         await Refused(orphan.Client.GetAsync(Promises(projectId)), AgentBoundary.AgentNotAllowedError);
-        await TestHost.Created(owner.PostAsJsonAsync($"/api/workspaces/{workspaceId}/members", new { userId = secondId, role = "Viewer" }));
+        await TestHost.AddMemberAsync(owner, second, workspaceId, "Viewer");
         await Json(orphan.Client.GetAsync(Promises(projectId)), HttpStatusCode.OK);
         Assert.Equal(HttpStatusCode.Forbidden, (await orphan.Client.PostAsJsonAsync(Promises(projectId), Promise())).StatusCode);
 
@@ -583,7 +584,12 @@ public class AgentTokenTests(IntegrationFixture fixture)
         "PUT /api/workspaces/{workspaceId}/settings",
         "PUT /api/workspaces/{workspaceId}/secrets/{name}",
         "DELETE /api/workspaces/{workspaceId}/secrets/{name}",
-        "POST /api/workspaces/{workspaceId}/members/",
+        "GET /api/workspaces/{workspaceId}/invitations/",
+        "POST /api/workspaces/{workspaceId}/invitations/",
+        "DELETE /api/workspaces/{workspaceId}/invitations/{invitationId:guid}",
+        "GET /api/invitations/",
+        "POST /api/invitations/{invitationId:guid}/accept",
+        "POST /api/invitations/{invitationId:guid}/decline",
         "DELETE /api/workspaces/{workspaceId}/members/{memberUserId}",
         "PATCH /api/workspaces/{workspaceId}/members/{memberUserId}",
         "POST /api/workspaces/{workspaceId}/agent-tokens/",

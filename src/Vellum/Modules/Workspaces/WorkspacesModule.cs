@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Vellum.Modules.Workspaces.Authorization;
 
 namespace Vellum.Modules.Workspaces;
@@ -14,6 +15,9 @@ public static class WorkspacesModule
                    .UseSnakeCaseNamingConvention());
 
         services.AddScoped<WorkspaceAuthorizationService>();
+        services.TryAddSingleton(TimeProvider.System);
+        services.TryAddSingleton(InvitationLimits.Default);
+        services.TryAddSingleton<InvitationRate>();
 
         return services;
     }

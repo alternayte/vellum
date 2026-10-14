@@ -90,6 +90,29 @@ export interface Member {
   createdAt: string | null
 }
 
+/** An open invitation of the workspace, as an owner reads it. */
+export interface Invitation {
+  id: string
+  workspaceId: string
+  email: string
+  role: Role
+  status: 'pending' | 'accepted' | 'declined' | 'revoked' | 'expired'
+  createdAt: string
+  expiresAt: string
+}
+
+/** An open invitation for the signed-in person. */
+export interface MyInvitation {
+  id: string
+  workspaceId: string
+  workspaceName: string
+  role: Role
+  /** The name of the owner who sent it. Null when that account does not exist any more. */
+  invitedBy: string | null
+  createdAt: string
+  expiresAt: string
+}
+
 export interface ImportItem {
   kind: EntityType | 'schema'
   id: string
@@ -144,8 +167,15 @@ export const branchesApi = {
 
   members: (workspaceId: string) =>
     api<{ yourRole: Role; members: Member[] }>('GET', `/api/workspaces/${workspaceId}/members`),
-  addMember: (workspaceId: string, email: string, role: Role) =>
-    api<unknown>('POST', `/api/workspaces/${workspaceId}/members`, { email, role }),
+  invitations: (workspaceId: string) => api<Invitation[]>('GET', `/api/workspaces/${workspaceId}/invitations`),
+  /** The answer is the same whether the address has an account here or not. */
+  invite: (workspaceId: string, email: string, role: Role) =>
+    api<Invitation>('POST', `/api/workspaces/${workspaceId}/invitations`, { email, role }),
+  revokeInvitation: (workspaceId: string, invitationId: string) =>
+    api<void>('DELETE', `/api/workspaces/${workspaceId}/invitations/${invitationId}`),
+  myInvitations: () => api<MyInvitation[]>('GET', '/api/invitations'),
+  acceptInvitation: (invitationId: string) => api<unknown>('POST', `/api/invitations/${invitationId}/accept`),
+  declineInvitation: (invitationId: string) => api<void>('POST', `/api/invitations/${invitationId}/decline`),
   changeRole: (workspaceId: string, userId: string, role: Role) =>
     api<unknown>('PATCH', `/api/workspaces/${workspaceId}/members/${userId}`, { role }),
   removeMember: (workspaceId: string, userId: string) =>

@@ -1,6 +1,6 @@
 ---
 title: Manage workspaces, members and projects
-description: Create workspaces and projects, add members, change roles and remove members in the app, and rename or delete through the API.
+description: Create workspaces and projects, invite members, change roles and remove members in the app, and rename or delete through the API.
 ---
 
 This guide shows you how to create a workspace and a project, how to give a person access and how to rename or delete. The app creates workspaces and projects and manages members. Renaming and deleting use the API. The `curl` examples use the session cookie of a signed-in person in the file `vellum.cookies`. [Use the HTTP API](/how-to/use-the-http-api/) shows how to sign in. An agent token cannot make these calls: these endpoints are not open to agent tokens and answer `403`.
@@ -13,7 +13,7 @@ A workspace holds projects, settings, secrets and members. A member has one role
 |---|---|
 | `Viewer` | Read the projects, the models, the documents, the scans, the review and the estimates. Preview the merge of a draft. |
 | `Editor` | All that a viewer can do. Create and rename projects. Change the model, the scenarios, the documents, the drafts, the variants and the cost sheet. Start scans and decide proposals. Write the draft of a promise. |
-| `Owner` | All that an editor can do. Add and remove members. Rename the workspace. Delete a project. Change the settings and the secrets. Create agent tokens. Test the AI provider and the GitHub connection. Change the price book. Approve a promise. Accept or reject a decision. Authorise a load-test target. |
+| `Owner` | All that an editor can do. Invite and remove members. Rename the workspace. Delete a project. Change the settings and the secrets. Create agent tokens. Test the AI provider and the GitHub connection. Change the price book. Approve a promise. Accept or reject a decision. Authorise a load-test target. |
 
 A person who is not a member of the workspace gets `403` for each request on it. A member with a role that is too low gets `403` with the text `Requires at least <role> role`.
 
@@ -46,26 +46,55 @@ The list shows each member with the name, the email address, the role and the da
 
 Each member of the workspace can read the list. Only an owner sees the controls that change it.
 
-## Add a member
+## Invite a person
 
-You need the owner role. The person must already have an account on this instance.
+You need the owner role. A person becomes a member only when they accept an invitation. Vellum adds nobody directly.
 
 Know these limits first.
 
-- Vellum sends no invitation. The person has access as soon as you add them.
-- When registration is closed, a new person cannot create an account. See [Let a new person register](#let-a-new-person-register).
+- Vellum sends no email. Tell the person that you invited them.
+- The person needs an account on this instance with the email address that you invite. When registration is closed, a new person cannot create an account. See [Let a new person register](#let-a-new-person-register).
+- An invitation expires after 14 days.
+- One owner can make 10 invitations in one minute. A workspace can have 100 open invitations.
 
 1. Open the member list.
-2. Below **Add a member**, enter the **Email address of the account**.
+2. Below **Invite a person**, enter the **Email address**.
 3. Select a **Role**: **Viewer**, **Editor** or **Owner**.
-4. Select **Add member**.
+4. Select **Invite**.
 
-If the request fails, the form shows **No member was added.** and the reason.
+The invitation shows below **Open invitations**, with the address, the role and the expiry date. The answer is the same for an address with an account and an address without one. The owner does not learn from the invitation whether a person has an account.
+
+When you invite an address that has an open invitation, Vellum renews that invitation: it takes the new role and a new expiry date.
+
+If the request fails, the form shows **No invitation was made.** and the reason.
 
 | Reason | Cause |
 |---|---|
-| `No account on this instance has this email address. The person must create an account first.` | No account has this address. |
-| `User is already a member` | The person is a member. Change the role in the list. |
+| `This person is already a member.` | A member has this address. Change the role in the list. |
+| `An email address of at most 256 characters is required.` | The text is not an email address. |
+| `The workspace has too many open invitations.` | The workspace has 100 open invitations. Revoke some first. |
+| `Too many attempts.` | You made 10 invitations in the last minute. Wait and try again. |
+
+## Revoke an invitation
+
+You need the owner role.
+
+1. Open the member list.
+2. Below **Open invitations**, in the row of the invitation, select **Revoke**.
+
+The person cannot accept a revoked invitation. To invite the person again, make a new invitation.
+
+## Accept or decline an invitation
+
+1. Sign in with the account that has the invited email address.
+2. Open `http://localhost:8080`. Above **Workspaces**, the box **You have an invitation** shows the workspace, the role, the owner who invited you and the expiry date.
+3. Select **Accept** or **Decline**.
+
+When you accept, you become a member with the invited role, and the workspace shows below **Workspaces**. When you decline, the invitation closes.
+
+Only the account with the invited email address sees the invitation and can accept it. Vellum compares the address of the signed-in account with the invited address. Upper and lower case do not matter.
+
+You cannot accept an invitation that is revoked, declined or expired. The box then shows `The invitation is revoked.`, `The invitation is declined.` or `The invitation is expired.`. Ask an owner to invite you again.
 
 ## Change a role
 
@@ -88,9 +117,9 @@ You need the owner role.
 
 The person loses access to each project of the workspace at once. The account stays.
 
-When you remove the only owner, Vellum refuses, and the dialog shows `Cannot remove the last owner`. Add a second owner first.
+When you remove the only owner, Vellum refuses, and the dialog shows `Cannot remove the last owner`. Add a second owner first. Vellum checks this also when two owners change roles or remove members at the same time.
 
-When you remove yourself, you lose access to the workspace. An owner must add you again.
+When you remove yourself, you lose access to the workspace. An owner must invite you again.
 
 ## Let a new person register
 
@@ -101,7 +130,7 @@ Only the instance administrator can do this.
 3. Switch on **Let people register themselves**.
 4. Ask the person to open the sign-in screen, to select **Register** and to create the account.
 5. Switch off **Let people register themselves**.
-6. Add the person as a member.
+6. Invite the person. See [Invite a person](#invite-a-person).
 
 The sign-in screen shows **Register** only while registration is open. It shows a button for GitHub or Google only when the instance has that provider. See [Configure settings](/how-to/configure-settings/).
 
@@ -111,19 +140,40 @@ Vellum has no function that lets an administrator create an account for another 
 
 `GET /api/workspaces/{workspaceId}/members` gives the list. Each member can call it. The answer has `yourRole` and `members`. Each member has `userId`, `email`, `displayName`, `role` and `createdAt`.
 
-To add a member, give the `email` of the account or its `userId`, not both. The `role` is `Owner`, `Editor` or `Viewer`.
+To invite a person, send the `email` and the `role`. The `role` is `Owner`, `Editor` or `Viewer`. You need the owner role.
 
 ```sh
-curl -X POST "http://localhost:8080/api/workspaces/<workspace-id>/members"   -b vellum.cookies   -H "Content-Type: application/json"   -d '{"email":"person@example.com","role":"Editor"}'
+curl -X POST "http://localhost:8080/api/workspaces/<workspace-id>/invitations"   -b vellum.cookies   -H "Content-Type: application/json"   -d '{"email":"person@example.com","role":"Editor"}'
 ```
+
+The answer has `id`, `workspaceId`, `email`, `role`, `status`, `createdAt` and `expiresAt`. The `status` is `pending`.
 
 | Status | Text | Cause |
 |---|---|---|
-| `201` | | The person is a member. |
-| `400` | `No account on this instance has this email address. The person must create an account first.` | No account has this address. |
-| `400` | `Must be the ID of an existing user.` | No account has this ID. |
+| `201` | | Vellum made the invitation. |
+| `200` | | An open invitation for this address exists. Vellum renewed it with the new role and a new expiry date. |
+| `400` | `An email address of at most 256 characters is required.` | The `email` is not an email address. |
 | `400` | `Must be Owner, Editor, or Viewer` | The role is not one of the three. |
-| `409` | `User is already a member` | The person is a member. |
+| `409` | `already_member` | A member has this address. |
+| `409` | `too_many_invitations` | The workspace has 100 open invitations. |
+| `429` | `rate_limited` | You made 10 invitations in the last minute. The `Retry-After` header gives the seconds to wait. |
+
+`GET /api/workspaces/{workspaceId}/invitations` gives the open invitations. Only an owner can call it. To revoke an invitation, send a delete. The status is `204`, also for an invitation that is already revoked. An accepted or declined invitation gives `409`, type `invitation_closed`.
+
+```sh
+curl -X DELETE "http://localhost:8080/api/workspaces/<workspace-id>/invitations/<invitation-id>"   -b vellum.cookies
+```
+
+The invited person uses these calls:
+
+- `GET /api/invitations` gives the open invitations for the email address of the signed-in account. Each has `id`, `workspaceId`, `workspaceName`, `role`, `invitedBy`, `createdAt` and `expiresAt`.
+- `POST /api/invitations/{invitationId}/accept` makes the membership. The answer is `200` with the membership. A second accept gives the same answer.
+- `POST /api/invitations/{invitationId}/decline` closes the invitation. The status is `204`.
+
+| Status | Type | Cause |
+|---|---|---|
+| `404` | `not_found` | No invitation for the address of your account has this ID. |
+| `409` | `invitation_closed` | The invitation is revoked, declined or expired. |
 
 To change a role, send the new role.
 
@@ -144,7 +194,7 @@ The status of a removal is `204`.
 | `404` | `not_found` | The account is not a member. |
 | `409` | `last_owner` | The member is the only owner. A workspace must have at least one owner. Add a second owner first. |
 
-Vellum writes each added member, each removed member and each changed role to the audit log of the workspace: `GET /api/workspaces/{workspaceId}/audit`. The app shows the log in **Settings**, then **Audit log**.
+Vellum writes each invitation, each revoked or declined invitation, each added member, each removed member and each changed role to the audit log of the workspace. An invitation entry names the invitation ID and the role. It does not contain the email address. See the log at `GET /api/workspaces/{workspaceId}/audit`. The app shows the log in **Settings**, then **Audit log**.
 
 ## Rename a workspace or a project
 

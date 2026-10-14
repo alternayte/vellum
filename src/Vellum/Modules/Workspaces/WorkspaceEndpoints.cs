@@ -1,4 +1,5 @@
 using Vellum.Modules.Identity.AgentTokens;
+using Vellum.Shared;
 
 namespace Vellum.Modules.Workspaces;
 
@@ -16,9 +17,25 @@ public static class WorkspaceEndpoints
 
         var members = group.MapGroup("/{workspaceId}/members").WithTags("Members");
         members.MapGet("/", ListMembers.Handle).Produces<MembersResponse>();
-        members.MapPost("/", InviteMember.Handle).RequireHuman();
         members.MapPatch("/{memberUserId}", ChangeMemberRole.Handle).RequireHuman().Produces<MembershipDto>();
         members.MapDelete("/{memberUserId}", RemoveMember.Handle).RequireHuman();
+
+        // A person joins a workspace only by accepting an invitation; nobody adds a member directly.
+        var invitations = group.MapGroup("/{workspaceId}/invitations").WithTags("Members").RequireHuman();
+        invitations.MapGet("/", ListInvitations.Handle).Produces<List<InvitationDto>>();
+        invitations.MapPost("/", CreateInvitation.Handle).WithBodyLimit(RequestBodyLimit.Default)
+            .Produces<InvitationDto>(StatusCodes.Status201Created)
+            .Produces<InvitationDto>()
+            .Produces<ErrorResponse>(StatusCodes.Status409Conflict)
+            .Produces<ErrorResponse>(StatusCodes.Status429TooManyRequests)
+            .AddEndpointFilter(CallerRate.Filter<InvitationRate>);
+        invitations.MapDelete("/{invitationId:guid}", RevokeInvitation.Handle);
+
+        // The invitations of the signed-in person, in any workspace.
+        var mine = app.MapGroup("/api/invitations").WithTags("Members").RequireHuman();
+        mine.MapGet("/", MyInvitations.List).Produces<List<MyInvitationDto>>();
+        mine.MapPost("/{invitationId:guid}/accept", MyInvitations.Accept).Produces<MembershipDto>();
+        mine.MapPost("/{invitationId:guid}/decline", MyInvitations.Decline);
 
         var projects = group.MapGroup("/{workspaceId}/projects").WithTags("Projects");
         projects.MapPost("/", CreateProject.Handle);

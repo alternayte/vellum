@@ -192,7 +192,8 @@ export async function api<T>(method: string, url: string, body?: unknown, option
     throw new ApiError(
       response.status,
       payload.title
-        ? (payload.detail ? `${payload.title} ${payload.detail}` : payload.title)
+        // A title is a heading with no full stop; joined to the detail it ends the sentence.
+        ? (payload.detail ? `${/[.!?]$/.test(payload.title) ? payload.title : `${payload.title}.`} ${payload.detail}` : payload.title)
         : response.status === 403 ? 'You do not have permission to do this.' : 'The request did not complete.',
       Array.isArray(payload.errors) ? payload.errors : [],
     )

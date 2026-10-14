@@ -17,6 +17,8 @@ public sealed record MembersResponse(string YourRole, IReadOnlyList<MemberDto> M
 
 public sealed record ChangeMemberRoleRequest(string Role);
 
+public sealed record MembershipDto(Guid Id, Guid WorkspaceId, string UserId, string Role, DateTimeOffset CreatedAt);
+
 public static class ListMembers
 {
     /// <summary>Every member reads the list: a member sees who else can read and change the workspace.</summary>
@@ -72,6 +74,8 @@ public static class ChangeMemberRole
         // owner take turns, and the workspace keeps an owner.
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         var owners = await MemberRoles.LockOwnersAsync(db, workspaceId, ct);
+        // The caller can have stopped being an owner while this call waited for the lock.
+        await auth.RequireRoleAsync(workspaceId, userId, WorkspaceRole.Owner, ct);
 
         var membership = await db.Memberships
             .FirstOrDefaultAsync(m => m.WorkspaceId == workspaceId && m.UserId == memberUserId, ct);

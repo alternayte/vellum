@@ -100,7 +100,7 @@ public class WorkspaceEndpointTests
     }
 
     [Fact]
-    public async Task An_owner_adds_a_member_by_email_and_changes_the_role_but_the_last_owner_stays_an_owner()
+    public async Task An_owner_invites_by_email_the_person_accepts_and_the_last_owner_stays_an_owner()
     {
         using var factory = CreateFactory();
         using var owner = await CreateAuthenticatedClientAsync(factory);
@@ -113,11 +113,21 @@ public class WorkspaceEndpointTests
         await other.PostAsJsonAsync("/api/auth/register", new { email, password = "Test12345!", displayName = "Second Person" });
         var otherId = (await other.GetFromJsonAsync<Vellum.Modules.Identity.UserInfoResponse>("/api/auth/me"))!.Id;
 
-        // An address with no account is refused; the address of an account is found in any case.
-        var unknown = await owner.PostAsJsonAsync($"/api/workspaces/{workspaceId}/members", new { email = "nobody@vellum.local", role = "Viewer" });
-        Assert.Equal(HttpStatusCode.BadRequest, unknown.StatusCode);
-        var added = await owner.PostAsJsonAsync($"/api/workspaces/{workspaceId}/members", new { email = email.ToUpperInvariant(), role = "viewer" });
-        Assert.Equal(HttpStatusCode.Created, added.StatusCode);
+        // The invitation makes no member. The address matches in any case.
+        var invited = await owner.PostAsJsonAsync($"/api/workspaces/{workspaceId}/invitations", new { email = email.ToUpperInvariant(), role = "viewer" });
+        Assert.Equal(HttpStatusCode.Created, invited.StatusCode);
+        var invitation = (await invited.Content.ReadFromJsonAsync<InvitationDto>())!;
+        Assert.Equal(("Viewer", "pending"), (invitation.Role, invitation.Status));
+        Assert.Equal(HttpStatusCode.Forbidden, (await other.GetAsync($"/api/workspaces/{workspaceId}/members")).StatusCode);
+
+        var offered = Assert.Single((await other.GetFromJsonAsync<MyInvitationDto[]>("/api/invitations"))!);
+        Assert.Equal((invitation.Id, "Members", "Viewer", "Test User"), (offered.Id, offered.WorkspaceName, offered.Role, offered.InvitedBy));
+        Assert.Equal(HttpStatusCode.OK, (await other.PostAsync($"/api/invitations/{invitation.Id}/accept", null)).StatusCode);
+        Assert.Empty((await other.GetFromJsonAsync<MyInvitationDto[]>("/api/invitations"))!);
+        Assert.Empty((await owner.GetFromJsonAsync<InvitationDto[]>($"/api/workspaces/{workspaceId}/invitations"))!);
+
+        // A member is not invited again.
+        Assert.Equal(HttpStatusCode.Conflict, (await owner.PostAsJsonAsync($"/api/workspaces/{workspaceId}/invitations", new { email, role = "Owner" })).StatusCode);
 
         // Each member reads the list. It names the role of the reader.
         var seen = await other.GetFromJsonAsync<MembersResponse>($"/api/workspaces/{workspaceId}/members");

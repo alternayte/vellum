@@ -165,9 +165,21 @@ internal static class TestHost
         WebApplicationFactory<Program> factory, HttpClient owner, Guid workspaceId, string role)
     {
         var member = await SignInAsync(factory);
-        var me = await member.GetFromJsonAsync<UserInfoResponse>("/api/auth/me");
-        await Created(owner.PostAsJsonAsync($"/api/workspaces/{workspaceId}/members", new { userId = me!.Id, role }));
+        await AddMemberAsync(owner, member, workspaceId, role);
         return member;
+    }
+
+    /// <summary>
+    /// Makes the signed-in person of <paramref name="member"/> a member as the app does: the
+    /// owner invites the email address of the account and the person accepts.
+    /// </summary>
+    public static async Task AddMemberAsync(HttpClient owner, HttpClient member, Guid workspaceId, string role)
+    {
+        var me = await member.GetFromJsonAsync<UserInfoResponse>("/api/auth/me");
+        var invited = await Created(owner.PostAsJsonAsync($"/api/workspaces/{workspaceId}/invitations", new { email = me!.Email, role }));
+        var invitation = (await invited.Content.ReadFromJsonAsync<InvitationDto>())!;
+        var accepted = await member.PostAsync($"/api/invitations/{invitation.Id}/accept", null);
+        Assert.True(accepted.StatusCode == HttpStatusCode.OK, await accepted.Content.ReadAsStringAsync());
     }
 
     /// <summary>

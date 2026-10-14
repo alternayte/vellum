@@ -189,7 +189,7 @@ public class BoundedTextEndpointTests(IntegrationFixture fixture)
         Assert.Equal(HttpStatusCode.BadRequest, filtered.StatusCode);
         Assert.Equal("invalid_text", (await filtered.Content.ReadFromJsonAsync<ErrorResponse>())!.Type);
 
-        await AssertRefused(client.PostAsJsonAsync($"/api/workspaces/{workspaceId}/members", new { userId = Nul, role = "Viewer" }), "userId");
+        await AssertRefused(client.PostAsJsonAsync($"/api/workspaces/{workspaceId}/invitations", new { email = "a\0b@vellum.local", role = "Viewer" }), "email");
     }
 
     [Fact]

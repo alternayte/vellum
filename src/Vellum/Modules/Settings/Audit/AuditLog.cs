@@ -22,6 +22,12 @@ public static class AuditLog
     public const string MemberAdded = "member.added";
     public const string MemberRemoved = "member.removed";
     public const string MemberRoleChanged = "member.role-changed";
+    /// <summary>The target names the invitation and the role, and never the email address.</summary>
+    public const string MemberInvited = "member.invited";
+    public const string InvitationRevoked = "member.invitation-revoked";
+    /// <summary>An accept by a person who is a member already: the role stays as it is.</summary>
+    public const string InvitationAccepted = "member.invitation-accepted";
+    public const string InvitationDeclined = "member.invitation-declined";
 
     private const int MaxFieldsInTarget = 40;
 

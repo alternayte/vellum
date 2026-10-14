@@ -11,6 +11,7 @@ public class WorkspacesDbContext : DbContext
     public DbSet<WorkspaceEntity> Workspaces => Set<WorkspaceEntity>();
     public DbSet<ProjectEntity> Projects => Set<ProjectEntity>();
     public DbSet<MembershipEntity> Memberships => Set<MembershipEntity>();
+    public DbSet<InvitationEntity> Invitations => Set<InvitationEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -35,6 +36,19 @@ public class WorkspacesDbContext : DbContext
         {
             b.HasKey(m => m.Id);
             b.HasIndex(m => new { m.WorkspaceId, m.UserId }).IsUnique();
+        });
+
+        modelBuilder.Entity<InvitationEntity>(b =>
+        {
+            b.HasKey(i => i.Id);
+            b.Property(i => i.Email).HasMaxLength(InvitationRules.MaxEmailLength);
+            b.Property(i => i.NormalizedEmail).HasMaxLength(InvitationRules.MaxEmailLength);
+            b.Property(i => i.Role).HasMaxLength(16);
+            b.Property(i => i.Status).HasMaxLength(16);
+            // One open invitation for an address in a workspace: a second invitation renews it.
+            b.HasIndex(i => new { i.WorkspaceId, i.NormalizedEmail }).IsUnique().HasFilter("status = 'pending'");
+            // The invitations of the signed-in person are read by address.
+            b.HasIndex(i => new { i.NormalizedEmail, i.Status });
         });
     }
 }
