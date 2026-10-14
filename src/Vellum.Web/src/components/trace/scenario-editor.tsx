@@ -68,6 +68,8 @@ export function ScenarioEditor({ projectId, branchId, scenario, isNew, reference
   }, [])
 
   const stepIds = useMemo(() => allStepIds(body.steps), [body.steps])
+  // A thread names a step of the stored scenario, so only saved steps take comments.
+  const savedStepIds = useMemo(() => (isNew ? [] : allStepIds(initial.body.steps)), [isNew, initial])
   const stepsById = useMemo(() => {
     const map = new Map<string, Step>()
     const walk = (steps: Step[]) => steps.forEach((s) => { map.set(s.id, s); childLists(s).forEach((l) => walk(l.steps)) })
@@ -109,7 +111,8 @@ export function ScenarioEditor({ projectId, branchId, scenario, isNew, reference
       setBody((current) => renameStep(current, from, to))
       return null
     },
-  }), [stepIds, byStep, reportJson, stepSummary])
+    comments: isNew ? null : { projectId, scenarioId: scenario.id, scenarioName: scenario.name, savedStepIds },
+  }), [stepIds, byStep, reportJson, stepSummary, isNew, projectId, scenario.id, scenario.name, savedStepIds])
 
   const change = (next: ScenarioBody) => {
     setBody(next)

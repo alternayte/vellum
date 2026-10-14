@@ -102,13 +102,14 @@ export function CommentsFlyout({ projectId, projectName }: { projectId: string; 
   )
 }
 
-/** Selects the target of a thread on the canvas, when it is a part of the model that the panel shows. */
+/** Selects the target of a thread on the canvas, or opens its document page. */
 function TargetLink({ thread }: { thread: Thread }) {
-  const { selectElement, selectRelationship, selectMessage, focusThread } = useShellStore()
+  const { selectElement, selectRelationship, selectMessage, openDoc, focusThread } = useShellStore()
   const select = thread.status === 'detached' ? null
     : thread.target.kind === 'element' ? selectElement
     : thread.target.kind === 'relationship' ? selectRelationship
     : thread.target.kind === 'message' ? selectMessage
+    : thread.target.kind === 'document' ? openDoc
     : null
   if (!select) return null
   return (

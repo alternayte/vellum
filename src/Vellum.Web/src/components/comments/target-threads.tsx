@@ -12,16 +12,23 @@ const HEADING = 'mb-2 text-[11px] font-medium uppercase tracking-wider text-mute
  * The comment threads of one target, in the detail panel, and a new thread on it. The
  * threads are those of the selected branch: main, or the selected draft.
  */
-export function TargetThreads({ projectId, kind, id, name }: { projectId: string; kind: TargetKind; id: string; name: string }) {
+export function TargetThreads({ projectId, kind, id, stepId, name }: {
+  projectId: string
+  kind: TargetKind
+  id: string
+  /** The step ID, for a flow step. `id` is then the scenario ID. */
+  stepId?: string
+  name: string
+}) {
   const access = useCommentAccess(projectId)
   const { data: threads, isLoading, error } = useThreads(projectId, access.draftId)
   const actions = useThreadActions(projectId, access.draftId)
   const [writing, setWriting] = useState(false)
   const [showResolved, setShowResolved] = useState(false)
   const focusId = useShellStore((s) => s.focusThreadId)
-  const headingId = `threads-${id}`
+  const headingId = `threads-${id}${stepId ? `-${stepId}` : ''}`
 
-  const mine = (threads ?? []).filter((t) => t.target.id === id)
+  const mine = (threads ?? []).filter((t) => t.target.kind === kind && t.target.id === id && (kind !== 'step' || t.target.stepId === stepId))
   const resolved = mine.filter((t) => t.status === 'resolved')
   const shown = showResolved || resolved.some((t) => t.id === focusId) ? mine : mine.filter((t) => t.status !== 'resolved')
 
@@ -55,7 +62,7 @@ export function TargetThreads({ projectId, kind, id, name }: { projectId: string
             submitLabel="Comment"
             autoFocus
             pending={actions.create.isPending}
-            onSubmit={(body, mentions) => actions.create.mutate({ target: { kind, id }, body, mentions }, { onSuccess: () => setWriting(false) })}
+            onSubmit={(body, mentions) => actions.create.mutate({ target: { kind, id, stepId: kind === 'step' ? stepId : null }, body, mentions }, { onSuccess: () => setWriting(false) })}
             onCancel={() => setWriting(false)}
           />
         ) : (

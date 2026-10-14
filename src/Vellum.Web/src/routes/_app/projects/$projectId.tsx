@@ -882,7 +882,9 @@ function useOpenLinkedThread(
       (kind === 'element' && elements?.some((e) => e.id === id))
       || (kind === 'relationship' && relationships?.some((r) => r.id === id))
       || (kind === 'message' && messages?.some((m) => m.id === id)))
-    if (onCanvas) {
+    if (kind === 'document' && found.status !== 'detached') {
+      shell.openDoc(id)
+    } else if (onCanvas) {
       if (kind === 'element') shell.selectElement(id)
       else if (kind === 'relationship') shell.selectRelationship(id)
       else shell.selectMessage(id)

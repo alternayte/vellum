@@ -44,6 +44,17 @@ The answer is `201` with the thread. The thread has `id`, `target` (`kind`, `id`
 | `403` | Your role is Viewer, or you are not a member of the workspace. |
 | `409` | The draft is merged or abandoned, or the ID is in use. |
 
+## Start a thread on a promise, a decision, a page or a flow step
+
+Each of these has a **Comments** section with the same controls.
+
+- **Promise**: select **Promises** in the toolbar, open the promise, and go to **Comments** at the end of the dialog.
+- **Decision (ADR)**: select **Review**, then **Decisions**, open the decision, and go to **Comments**.
+- **Document page**: open the page and select **Comments** in its header. The threads show beside the page.
+- **Flow step**: select **Scenarios**, edit the scenario, and select the comment button beside the step ID. Only a saved step takes comments.
+
+The lists of promises, decisions, documents and scenarios show the number of open threads beside each item. For a scenario, the number counts the threads on all its steps.
+
 ## Reply
 
 1. Open the thread.

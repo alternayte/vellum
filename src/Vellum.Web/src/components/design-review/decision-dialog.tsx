@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { TargetThreads } from '@/components/comments/target-threads'
 import { Input } from '@/components/ui/input'
 import { shownInline } from '@/lib/mutation-errors'
 import { ApiError } from '@/lib/settings-api'
@@ -277,6 +278,7 @@ export function DecisionDialog({ projectId, branchId, revision = null, decision:
               </ul>
             </details>
           )}
+          {decision && <TargetThreads projectId={projectId} kind="decision" id={decision.id} name={`${decision.number} ${decision.title}`} />}
         </div>
 
         {failure && (

@@ -19,6 +19,7 @@ import {
 import type { ScenarioReference } from '@/components/trace/scenario-editor'
 import { ObligationDialog } from './obligation-dialog'
 import { RunHistory } from './run-history'
+import { TargetThreads } from '@/components/comments/target-threads'
 import { Failure, Field, ForbiddenEvents, PatternFields, areaClass, smallSelect } from './promise-fields'
 
 interface Props {
@@ -389,6 +390,9 @@ export function PromiseDialog({ projectId, promiseId, references, scenarios, own
               )}
               <p className="mt-2 text-[11px] text-muted-foreground">A passed check is evidence for what it checked, in the scope shown. It does not prove the promise in general.</p>
             </section>
+          )}
+          {promise && revision && (
+            <TargetThreads projectId={projectId} kind="promise" id={promise.id} name={`${promise.requirementId} ${revision.title}`} />
           )}
         </div>
 

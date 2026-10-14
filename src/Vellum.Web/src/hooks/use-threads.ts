@@ -36,6 +36,8 @@ export interface Thread {
   draftId: string | null
   target: ThreadTarget
   modelVersion: number
+  /** The model stream that `modelVersion` counts: main, or the draft the thread was made on. */
+  modelStreamId: string
   status: ThreadStatus
   createdBy: string
   createdAt: string
@@ -165,4 +167,20 @@ export function openThreadMarkers(threads: Thread[] | undefined): Record<string,
     markers[thread.target.id] = current ? { ...current, count: current.count + 1 } : { count: 1, threadId: thread.id }
   }
   return markers
+}
+
+/** The key of one target for counts: the kind, the ID and, for a flow step, the step ID. */
+export function targetKey(kind: TargetKind, id: string, stepId?: string | null): string {
+  return kind === 'step' ? `step:${id}:${stepId ?? ''}` : `${kind}:${id}`
+}
+
+/** The open threads of each target, by `targetKey`, for the counts beside listed items. */
+export function openThreadCounts(threads: Thread[] | undefined): Record<string, number> {
+  const counts: Record<string, number> = {}
+  for (const thread of threads ?? []) {
+    if (thread.status !== 'open') continue
+    const key = targetKey(thread.target.kind, thread.target.id, thread.target.stepId)
+    counts[key] = (counts[key] ?? 0) + 1
+  }
+  return counts
 }

@@ -6,6 +6,8 @@ import { reviewApi } from '@/lib/review-api'
 import { useShellStore } from '@/stores/shell-store'
 import type { ScenarioReference } from '@/components/trace/scenario-editor'
 import { DecisionDialog } from './decision-dialog'
+import { ThreadCount } from '@/components/comments/thread-count'
+import { useOpenThreadCounts } from '@/components/comments/use-open-thread-counts'
 
 interface Props {
   projectId: string
@@ -27,6 +29,7 @@ export function DecisionsTab({ projectId, branchId, revision = null, references 
     useShellStore.getState().clearDecisionRequest()
   }, [])
   const list = decisions.data ?? []
+  const threadCount = useOpenThreadCounts(projectId)
 
   return (
     <div className="space-y-2 p-3">
@@ -55,6 +58,7 @@ export function DecisionsTab({ projectId, branchId, revision = null, references 
               <p className="flex items-baseline gap-2">
                 <span className="shrink-0 font-mono text-xs text-foreground">{decision.number}</span>
                 <span className="min-w-0 flex-1 truncate text-sm text-foreground">{decision.title}</span>
+                <ThreadCount count={threadCount('decision', decision.id)} />
               </p>
               <p className="mt-1 flex flex-wrap items-center gap-x-2 text-[11px] text-muted-foreground">
                 <span className="rounded-full border border-border px-1.5">{decision.status}</span>

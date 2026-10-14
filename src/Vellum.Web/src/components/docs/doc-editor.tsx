@@ -11,10 +11,15 @@ import { useViews } from '@/hooks/use-views'
 import { useSpaces } from '@/hooks/use-spaces'
 import { useProject } from '@/hooks/use-model'
 import { useDocEditorStore } from '@/stores/doc-editor-store'
+import { useShellStore } from '@/stores/shell-store'
 import { MdxRenderer } from './mdx-renderer'
 import { DocToolbar } from './doc-toolbar'
 import { DocActions } from './doc-actions'
 import { canEditModel } from '@/lib/branches-api'
+import { MessageSquare } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { TargetThreads } from '@/components/comments/target-threads'
+import { useOpenThreadCounts } from '@/components/comments/use-open-thread-counts'
 
 interface DocEditorProps {
   projectId: string
@@ -35,6 +40,12 @@ export function DocEditor({ projectId, docId }: DocEditorProps) {
   const { data: spaces } = useSpaces(projectId)
   const { data: project } = useProject(projectId)
   const canEdit = project !== undefined && canEditModel(project.yourRole)
+  const threadCount = useOpenThreadCounts(projectId)
+  const openThreads = threadCount('document', docId)
+  // Open or closed by the person; until then, open when a thread was opened from the inbox or a link.
+  const [commentsToggled, setShowComments] = useState<boolean | null>(null)
+  const focusThreadId = useShellStore((s) => s.focusThreadId)
+  const showComments = commentsToggled ?? Boolean(focusThreadId)
 
   const handleChange = useCallback(
     (content: string) => {
@@ -100,18 +111,32 @@ export function DocEditor({ projectId, docId }: DocEditorProps) {
             />
           </>
         ) : (
-          <h2 className="font-display text-sm font-medium">{doc?.title ?? 'Untitled'}</h2>
+          <h2 className="flex-1 font-display text-sm font-medium">{doc?.title ?? 'Untitled'}</h2>
         )}
+        <Button
+          variant={showComments ? 'secondary' : 'ghost'} size="sm" className="h-7 shrink-0 gap-1 px-2 text-xs"
+          aria-pressed={showComments} onClick={() => setShowComments(!showComments)}
+        >
+          <MessageSquare className="h-3.5 w-3.5" aria-hidden="true" />
+          Comments{openThreads > 0 ? ` ${openThreads}` : ''}
+        </Button>
       </div>
       <DocToolbar getEditorView={getEditorView} mode={mode} onToggleMode={toggleMode} />
 
-      {mode === 'edit' ? (
-        <div ref={editorRef} className="flex-1 overflow-hidden" />
-      ) : (
-        <div className="flex-1 overflow-y-auto p-6">
-          <MdxRenderer content={typed ?? doc?.content ?? ''} elements={elements ?? []} views={views} />
-        </div>
-      )}
+      <div className="flex min-h-0 flex-1">
+        {mode === 'edit' ? (
+          <div ref={editorRef} className="min-w-0 flex-1 overflow-hidden" />
+        ) : (
+          <div className="min-w-0 flex-1 overflow-y-auto p-6">
+            <MdxRenderer content={typed ?? doc?.content ?? ''} elements={elements ?? []} views={views} />
+          </div>
+        )}
+        {showComments && doc && (
+          <aside aria-label="Comments on this page" className="w-80 shrink-0 overflow-y-auto border-l border-border p-3 max-md:w-64">
+            <TargetThreads projectId={projectId} kind="document" id={doc.id} name={doc.title} />
+          </aside>
+        )}
+      </div>
     </div>
   )
 }

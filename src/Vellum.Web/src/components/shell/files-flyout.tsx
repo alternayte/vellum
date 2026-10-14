@@ -1,4 +1,6 @@
 import { useState, type DragEvent } from 'react'
+import { ThreadCount } from '@/components/comments/thread-count'
+import { useOpenThreadCounts } from '@/components/comments/use-open-thread-counts'
 import { useMutation } from '@tanstack/react-query'
 import { useShellStore } from '@/stores/shell-store'
 import { ChevronDown, ChevronRight, Download, FileCode, FileImage, FileText, Folder, FolderPlus, LayoutDashboard, Pencil, Trash2, Upload } from 'lucide-react'
@@ -158,6 +160,7 @@ export function FilesFlyout({ projectId, views, docs, spaces, elements, canEdit,
   const activeDocId = useShellStore((s) => s.activeDocId)
   const setActiveView = useShellStore((s) => s.setActiveView)
   const openDoc = useShellStore((s) => s.openDoc)
+  const threadCount = useOpenThreadCounts(projectId)
   const closeFlyout = useShellStore((s) => s.closeFlyout)
   const [filter, setFilter] = useState('')
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
@@ -229,6 +232,7 @@ export function FilesFlyout({ projectId, views, docs, spaces, elements, canEdit,
       >
         <FileText className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
         <span className="flex-1 truncate">{doc.title}</span>
+        <ThreadCount count={threadCount('document', doc.id)} />
         {doc.type && (
           <span className={cn(
             'inline-flex items-center rounded border px-1 py-0 text-[10px] font-medium uppercase',
