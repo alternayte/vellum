@@ -6,7 +6,7 @@ using Vellum.Modules.Ai;
 using Vellum.Modules.Ai.Design;
 using Vellum.Modules.Modelling;
 using Vellum.Modules.Promises;
-using Vellum.Modules.Review.Decisions;
+using Vellum.Modules.Review;
 using Vellum.Modules.Review.Rules;
 using Vellum.Modules.Workspaces;
 using Vellum.Shared;

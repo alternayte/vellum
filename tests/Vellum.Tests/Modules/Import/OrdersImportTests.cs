@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Text.Json.Nodes;
 using Microsoft.Extensions.DependencyInjection;
 using Vellum.Modules.Import.Extraction;
+using Vellum.Modules.Import;
 using Vellum.Modules.Import.Scans;
 
 namespace Vellum.Tests.Modules.Import;

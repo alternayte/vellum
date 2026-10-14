@@ -1,5 +1,5 @@
 using System.Security.Claims;
-using Vellum.Modules.Settings.Document;
+using Vellum.Modules.Settings;
 using Vellum.Modules.Workspaces;
 using Vellum.Shared;
 using static Vellum.Shared.ResultExtensions;

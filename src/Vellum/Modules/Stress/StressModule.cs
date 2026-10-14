@@ -63,3 +63,11 @@ public static class StressModule
         return app;
     }
 }
+
+/// <summary>What the stress tables keep of a deleted project: nothing.</summary>
+public sealed class StressRetention(AppDbContext db) : IProjectRetention
+{
+    // The runs of a profile go with its row (ON DELETE CASCADE).
+    public Task DeleteProjectAsync(DeletedProject project, CancellationToken ct) =>
+        db.Profiles.Where(p => p.ProjectId == project.Id).ExecuteDeleteAsync(ct);
+}

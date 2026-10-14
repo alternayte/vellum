@@ -5,53 +5,6 @@ using Vellum.Modules.Identity.AgentTokens;
 
 namespace Vellum.Modules.Promises;
 
-/// <summary>
-/// The events of a promise stream. Plain records; the stream registers every nested type.
-/// <para>
-/// <c>By</c> and <c>CreatedBy</c> are the user: the person, or the user an agent token acts
-/// for. <c>Actor</c> is who made the call (<c>AgentPrincipal.Actor</c>):
-/// <c>user:&lt;id&gt;</c> for a person in a session, <c>agent-token:&lt;id&gt;</c> for an
-/// agent token. It is null only in an event stored before the member existed; such an event
-/// does not say whether a token made it.
-/// </para>
-/// </summary>
-public static class PromiseEvent
-{
-    public sealed record PromiseCreated(
-        Guid ProjectId, string RequirementId, int Number, string Origin, PromiseContent Content, string CreatedBy, DateTimeOffset At,
-        string? Actor = null);
-
-    /// <summary>The draft revision has new content. An approved revision never gets this event.</summary>
-    public sealed record PromiseDraftChanged(int Revision, PromiseContent Content, string By, DateTimeOffset At, string? Actor = null);
-
-    /// <summary>
-    /// A new draft revision. It starts as a copy of the revision in force, obligations
-    /// included. With <paramref name="Retires"/> it copies nothing: it only names the revision
-    /// in force, and approving it retires the promise.
-    /// </summary>
-    public sealed record PromiseRevised(int Revision, bool Retires, string By, DateTimeOffset At, string? Actor = null);
-
-    /// <param name="ModelVersion">The version of the project's main model stream at approval.</param>
-    /// <param name="Links">A hash of every linked thing as it was at approval, by <c>kind:id</c>.</param>
-    /// <param name="ContentHash">
-    /// <see cref="PromiseContentHash"/> of the revision the approver read. Null only in an
-    /// approval stored before the hash existed.
-    /// </param>
-    public sealed record PromiseApproved(
-        int Revision, string ApprovedBy, DateTimeOffset At, long ModelVersion, IReadOnlyDictionary<string, string> Links,
-        string? ContentHash = null);
-
-    public sealed record PromiseDeleted(string By, DateTimeOffset At, string? Actor = null);
-
-    public sealed record ObligationAdded(int Revision, Obligation Obligation, string By, DateTimeOffset At, string? Actor = null);
-
-    public sealed record ObligationChanged(int Revision, Obligation Obligation, string By, DateTimeOffset At, string? Actor = null);
-
-    public sealed record ObligationRemoved(int Revision, string ObligationId, string By, DateTimeOffset At, string? Actor = null);
-
-    public sealed record VerificationRunRecorded(VerificationRun Run);
-}
-
 /// <summary>Who added an obligation to a draft and who changed it last, as the events name their actor.</summary>
 /// <param name="LastChangedBy">Null while nobody changed the obligation after it was added.</param>
 public sealed record ObligationActors(string? AddedBy, string? LastChangedBy)
@@ -280,7 +233,7 @@ public sealed record PromiseState(
     /// against a comparison scan (a pull request, another ref, a bare commit) is not: its
     /// result is for that commit only, and the change impact of that scan reads it by its scan.
     /// </summary>
-    public static bool CountsAsLatest(VerificationRun run) => run.Inputs?.ScanKind != Import.Scans.ScanKind.Comparison;
+    public static bool CountsAsLatest(VerificationRun run) => run.Inputs?.ScanKind != Import.ScanKind.Comparison;
 
     public static string RunKey(int revision, string obligationId) =>
         string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{revision}:{obligationId}");
@@ -305,4 +258,25 @@ public sealed record PromiseState(
         var index = Revisions.FindIndex(r => r.Revision == number);
         return index < 0 ? this : this with { UpdatedAt = at, Revisions = Revisions.SetItem(index, update(Revisions[index])) };
     }
+}
+
+/// <summary>
+/// The hash of everything a person approves when they approve a revision: the requirement
+/// ID, the revision number, whether it retires (and which revision), every field and link of
+/// the content, and every obligation with its recipe. The server computes it and returns it
+/// on every read; an approval names it, so an approval binds exactly the content the approver
+/// saw. A member that is null is left out, so a member added later does not change the hash
+/// of content that was approved before it existed.
+/// </summary>
+public static class PromiseContentHash
+{
+    public static string Of(string? requirementId, PromiseRevisionState revision) => PromiseJson.StableHash(new
+    {
+        requirementId,
+        revision = revision.Revision,
+        retires = revision.Retires,
+        retiresRevision = revision.RetiresRevision,
+        content = revision.Content,
+        obligations = revision.Obligations.Select(o => new { o.Id, o.Number, o.Kind, o.Title, o.Recipe, o.Source }),
+    });
 }

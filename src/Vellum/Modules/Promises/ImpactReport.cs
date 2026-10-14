@@ -6,7 +6,7 @@ using Vellum.Modules.Identity.AgentTokens;
 using Vellum.Modules.Import;
 using Vellum.Modules.Import.Proposals;
 using Vellum.Modules.Import.Scans;
-using Vellum.Modules.Settings.Audit;
+using Vellum.Modules.Settings;
 using Vellum.Modules.Workspaces;
 using Vellum.Shared;
 using static Vellum.Shared.ResultExtensions;

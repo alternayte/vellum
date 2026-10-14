@@ -3,7 +3,7 @@ using Deedbox;
 using Microsoft.EntityFrameworkCore;
 using Vellum.Modules.Costs.Prices;
 using Vellum.Modules.Modelling;
-using Vellum.Modules.Settings.Document;
+using Vellum.Modules.Settings;
 using Vellum.Modules.Workspaces;
 using Vellum.Shared;
 using static Vellum.Shared.ResultExtensions;

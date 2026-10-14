@@ -4,7 +4,7 @@ using System.Text;
 using System.Text.Json.Nodes;
 using Microsoft.Extensions.DependencyInjection;
 using Vellum.Modules.Ai;
-using Vellum.Modules.Ai.Providers.Anthropic;
+using Vellum.Modules.Ai.Providers;
 using Vellum.Modules.GitHub;
 using Vellum.Shared;
 using Vellum.Shared.Outbound;

@@ -6,7 +6,6 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Options;
 using Microsoft.Net.Http.Headers;
 using Vellum.Modules.Settings;
-using Vellum.Modules.Settings.Audit;
 using Vellum.Shared;
 
 namespace Vellum.Modules.Identity.AgentTokens;

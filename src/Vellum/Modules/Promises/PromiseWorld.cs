@@ -4,7 +4,7 @@ using Vellum.Modules.Import;
 using Vellum.Modules.Import.Scans;
 using Vellum.Modules.Modelling;
 using Vellum.Modules.Schemas;
-using Vellum.Modules.Settings.Document;
+using Vellum.Modules.Settings;
 using Vellum.Modules.Trace.Engine;
 using Vellum.Modules.Trace;
 using Vellum.Modules.Workspaces;

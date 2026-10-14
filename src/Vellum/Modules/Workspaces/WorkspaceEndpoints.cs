@@ -2,7 +2,7 @@ using Vellum.Modules.Identity.AgentTokens;
 using Vellum.Shared;
 using System.Security.Claims;
 using Microsoft.EntityFrameworkCore;
-using Vellum.Modules.Settings.Audit;
+using Vellum.Modules.Settings;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Vellum.Modules.Workspaces;

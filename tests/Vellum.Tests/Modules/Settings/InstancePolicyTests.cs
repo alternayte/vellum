@@ -4,8 +4,7 @@ using System.Text;
 using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
-using Vellum.Modules.Settings.Document;
-using Vellum.Modules.Settings.Instance;
+using Vellum.Modules.Settings;
 using Vellum.Shared;
 
 namespace Vellum.Tests.Modules.Settings;

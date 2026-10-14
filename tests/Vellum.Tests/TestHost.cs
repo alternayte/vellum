@@ -13,7 +13,7 @@ using Vellum.Modules.Identity;
 using Vellum.Modules.Modelling;
 using Vellum.Modules.Schemas;
 using Vellum.Modules.Review;
-using Vellum.Modules.Settings.Setup;
+using Vellum.Modules.Settings;
 using Vellum.Shared;
 using Vellum.Modules.Views;
 using Vellum.Modules.Workspaces;

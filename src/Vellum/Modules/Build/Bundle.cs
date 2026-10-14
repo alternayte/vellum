@@ -1,7 +1,7 @@
 using System.Text;
 using Vellum.Modules.Import.Extraction;
 using Vellum.Modules.Promises;
-using Vellum.Modules.Review.Decisions;
+using Vellum.Modules.Review;
 
 namespace Vellum.Modules.Build;
 

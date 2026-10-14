@@ -6,7 +6,7 @@ using System.Text;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Vellum.Modules.Identity;
-using Vellum.Modules.Settings.Audit;
+using Vellum.Modules.Settings;
 using Vellum.Shared;
 using static Vellum.Shared.ResultExtensions;
 

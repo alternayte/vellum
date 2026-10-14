@@ -3,7 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using Refit;
-using Vellum.Modules.Settings.Document;
+using Vellum.Modules.Settings;
 using Vellum.Shared.Outbound;
 
 namespace Vellum.Modules.Costs.Prices;

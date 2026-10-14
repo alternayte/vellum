@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using Vellum.Modules.Identity.AgentTokens;
 using Vellum.Modules.Import.Proposals;
-using Vellum.Modules.Settings.Document;
+using Vellum.Modules.Settings;
 using Vellum.Modules.Workspaces;
 using Vellum.Shared;
 using static Vellum.Shared.ResultExtensions;

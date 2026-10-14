@@ -17,7 +17,7 @@ public class AiProviderTests(SharedOutboundHost shared) : IClassFixture<SharedOu
 
     public static TheoryData<string> Kinds => new(AiScenario.Kinds);
 
-    private static IReadOnlyList<string> Outcomes(IEnumerable<Vellum.Modules.Ai.Usage.UsageRecordEntity> rows) =>
+    private static IReadOnlyList<string> Outcomes(IEnumerable<Vellum.Modules.Ai.UsageRecordEntity> rows) =>
         rows.Select(r => r.Outcome).ToList();
 
     [Theory, MemberData(nameof(Kinds))]

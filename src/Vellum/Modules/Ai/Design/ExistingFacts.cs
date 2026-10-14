@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using Vellum.Modules.Import;
 using Vellum.Modules.Import.Proposals;
 using Vellum.Modules.Modelling;
 

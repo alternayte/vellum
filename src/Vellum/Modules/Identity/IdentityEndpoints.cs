@@ -1,7 +1,7 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Identity;
 using Vellum.Modules.Identity.AgentTokens;
-using Vellum.Modules.Settings.Setup;
+using Vellum.Modules.Settings;
 using Vellum.Shared;
 using Vellum.Shared.Telemetry;
 

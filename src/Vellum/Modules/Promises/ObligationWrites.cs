@@ -6,7 +6,7 @@ using Vellum.Modules.Identity.AgentTokens;
 using Vellum.Modules.Import;
 using Vellum.Modules.Promises.Checks;
 using Vellum.Modules.Schemas;
-using Vellum.Modules.Settings.Document;
+using Vellum.Modules.Settings;
 using Vellum.Modules.Workspaces;
 using Vellum.Shared;
 using static Vellum.Shared.ResultExtensions;
@@ -78,7 +78,7 @@ public static class ObligationWrites
                 "A token with the scope scan-pull-request runs the checks only against a scan that it started."),
                 statusCode: StatusCodes.Status403Forbidden);
         }
-        if (scan.Status != Import.Scans.ScanStatus.Completed)
+        if (scan.Status != Import.ScanStatus.Completed)
             return Results.Conflict(new ErrorResponse("import_not_completed", "Only a completed scan can be checked."));
 
         var rows = await db.Promises.AsNoTracking()
@@ -127,7 +127,7 @@ public static class ObligationWrites
     private static async Task<VerificationRun?> ExistingComparisonRunAsync(
         AppDbContext db, Guid promiseId, int revision, bool draft, string obligationId, Guid scanId, string obligationHash, CancellationToken ct)
     {
-        var probe = System.Text.Json.JsonSerializer.Serialize(new { scanId, obligationHash, inputs = new { scanKind = Import.Scans.ScanKind.Comparison } });
+        var probe = System.Text.Json.JsonSerializer.Serialize(new { scanId, obligationHash, inputs = new { scanKind = Import.ScanKind.Comparison } });
         var documents = await db.PromiseRuns.AsNoTracking()
             .Where(r => r.PromiseId == promiseId && r.PromiseRevision == revision && r.ObligationId == obligationId && EF.Functions.JsonContains(r.Document, probe))
             .OrderByDescending(r => r.Version)

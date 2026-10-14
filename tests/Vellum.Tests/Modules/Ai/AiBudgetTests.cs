@@ -4,7 +4,6 @@ using System.Text;
 using System.Text.Json.Nodes;
 using Microsoft.Extensions.DependencyInjection;
 using Vellum.Modules.Ai;
-using Vellum.Modules.Ai.Usage;
 using Vellum.Tests.Shared.Outbound;
 using Vellum.Shared;
 

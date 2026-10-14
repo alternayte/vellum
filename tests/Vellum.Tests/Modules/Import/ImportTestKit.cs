@@ -7,6 +7,7 @@ using System.Text.Json.Nodes;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Vellum.Modules.Import.Extraction;
+using Vellum.Modules.Import;
 using Vellum.Modules.Import.Proposals;
 using Vellum.Modules.Import.Scans;
 using Vellum.Tests.Shared.Outbound;

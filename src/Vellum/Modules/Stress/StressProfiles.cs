@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Vellum.Modules.LoadTests;
 using Vellum.Modules.Modelling;
 using Vellum.Modules.Schemas;
-using Vellum.Modules.Settings.Document;
+using Vellum.Modules.Settings;
 using Vellum.Modules.Stress.Engine;
 using Vellum.Modules.Workspaces;
 using Vellum.Shared;

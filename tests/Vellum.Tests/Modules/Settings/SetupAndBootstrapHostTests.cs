@@ -5,8 +5,6 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 using Vellum.Modules.Settings;
-using Vellum.Modules.Settings.Instance;
-using Vellum.Modules.Settings.Setup;
 using Vellum.Modules.Workspaces;
 using Vellum.Shared;
 

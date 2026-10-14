@@ -3,7 +3,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
-using Vellum.Modules.Settings.Audit;
+using Vellum.Modules.Settings;
 using Vellum.Modules.Workspaces;
 using Vellum.Shared;
 using Decision = Vellum.Shared.CommandResult<System.Collections.Generic.IReadOnlyList<object>>;

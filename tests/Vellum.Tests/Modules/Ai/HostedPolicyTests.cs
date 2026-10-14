@@ -7,7 +7,6 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Vellum.Modules.Ai;
-using Vellum.Modules.Ai.Usage;
 using Vellum.Modules.GitHub;
 using Vellum.Shared;
 using Vellum.Shared.Outbound;

@@ -1,7 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Vellum.Modules.Import;
 using Vellum.Modules.Modelling;
-using Vellum.Modules.Settings.Document;
+using Vellum.Modules.Settings;
 using Vellum.Shared;
 
 namespace Vellum.Modules.Ai.Design;

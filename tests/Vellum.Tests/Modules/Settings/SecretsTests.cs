@@ -6,8 +6,7 @@ using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
-using Vellum.Modules.Settings.Instance;
-using Vellum.Modules.Settings.Secrets;
+using Vellum.Modules.Settings;
 using Vellum.Shared;
 
 namespace Vellum.Tests.Modules.Settings;

@@ -8,7 +8,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 using Vellum.Modules.Ai.Design;
-using Vellum.Modules.Ai.Usage;
+using Vellum.Modules.Ai;
 using Vellum.Modules.Import;
 using Vellum.Modules.Import.Proposals;
 using Vellum.Modules.Import.Scans;
@@ -729,7 +729,7 @@ public class ReviewFixTests(SharedOutboundHost shared) : IClassFixture<SharedOut
             var row = await db.DesignProposals.AsNoTracking().SingleAsync(p => p.Id == (Guid)first["id"]!);
             for (var i = 1; i < ProposalStore.MaxDraftsPerProject; i++)
             {
-                db.DesignProposals.Add(new Vellum.Modules.Ai.Design.ProposalEntity
+                db.DesignProposals.Add(new Vellum.Modules.Ai.ProposalEntity
                 {
                     Id = Guid.NewGuid(), Kind = i % 2 == 0 ? FlowProposals.Kind : ArchitectureProposals.Kind, WorkspaceId = row.WorkspaceId,
                     ProjectId = projectId, Status = "draft", Name = $"Draft {i}", Request = row.Request, Document = row.Document,

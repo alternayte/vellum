@@ -4,7 +4,7 @@ using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
-using Vellum.Modules.Settings.Document;
+using Vellum.Modules.Settings;
 using Vellum.Modules.Stress;
 using Vellum.Modules.Stress.Engine;
 using Vellum.Tests.Modules.Promises;

@@ -6,7 +6,7 @@ using Npgsql;
 using Vellum.Modules.GitHub;
 using Vellum.Modules.Import.Extraction;
 using Vellum.Modules.Import.Proposals;
-using Vellum.Modules.Settings.Document;
+using Vellum.Modules.Settings;
 using Vellum.Modules.Workspaces;
 using Vellum.Shared.Telemetry;
 using Vellum.Shared;

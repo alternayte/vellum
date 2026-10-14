@@ -8,8 +8,6 @@ using Vellum.Modules.Ai;
 using Vellum.Modules.Ai.Providers;
 using Vellum.Modules.GitHub;
 using Vellum.Modules.Settings;
-using Vellum.Modules.Settings.Entities;
-using Vellum.Modules.Settings.Secrets;
 using Vellum.Tests.Shared.Outbound;
 using Vellum.Shared;
 

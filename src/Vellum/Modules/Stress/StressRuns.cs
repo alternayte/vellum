@@ -8,7 +8,7 @@ using Vellum.Modules.Modelling;
 using Vellum.Modules.Schemas;
 using Vellum.Modules.Stress.Engine;
 using Vellum.Modules.Workspaces;
-using Vellum.Modules.Settings.Document;
+using Vellum.Modules.Settings;
 using Vellum.Shared;
 using Vellum.Shared.Telemetry;
 using static Vellum.Shared.ResultExtensions;

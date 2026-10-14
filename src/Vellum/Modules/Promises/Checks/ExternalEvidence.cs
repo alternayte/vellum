@@ -3,7 +3,7 @@ using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using Vellum.Modules.GitHub;
 using Vellum.Modules.Import;
-using Vellum.Modules.Settings.Document;
+using Vellum.Modules.Settings;
 using Vellum.Shared;
 
 namespace Vellum.Modules.Promises.Checks;

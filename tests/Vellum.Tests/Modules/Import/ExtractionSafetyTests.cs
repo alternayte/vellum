@@ -324,7 +324,7 @@ public class ExtractionSafetyTests
     [Fact]
     public void The_default_bounds_equal_the_import_defaults_of_the_settings_module()
     {
-        var settings = Vellum.Modules.Settings.Document.SettingsDefaults.BuiltIn.Import;
+        var settings = Vellum.Modules.Settings.SettingsDefaults.BuiltIn.Import;
 
         Assert.Equal((settings.MaxFiles, settings.MaxFileBytes, settings.MaxTotalBytes),
             (ExtractionLimits.Default.MaxFiles, ExtractionLimits.Default.MaxFileBytes, ExtractionLimits.Default.MaxTotalBytes));

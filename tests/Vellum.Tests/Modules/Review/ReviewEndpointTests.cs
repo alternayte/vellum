@@ -552,7 +552,7 @@ public class ReviewEndpointTests(IntegrationFixture fixture) : IClassFixture<Int
         using (var scope = factory.Services.CreateScope())
         {
             var store = scope.ServiceProvider.GetRequiredService<Deedbox.IEventStore>();
-            Assert.Null(await Vellum.Modules.Promises.StreamAt.FoldAsync<Vellum.Modules.Review.Decisions.DecisionState>(store, (Guid)decision["id"]!, null, CancellationToken.None));
+            Assert.Null(await Vellum.Modules.Promises.StreamAt.FoldAsync<Vellum.Modules.Review.DecisionState>(store, (Guid)decision["id"]!, null, CancellationToken.None));
         }
     }
 

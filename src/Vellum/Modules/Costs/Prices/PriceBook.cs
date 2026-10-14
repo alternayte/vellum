@@ -1,6 +1,6 @@
 using System.Security.Claims;
 using Microsoft.EntityFrameworkCore;
-using Vellum.Modules.Settings.Audit;
+using Vellum.Modules.Settings;
 using Vellum.Modules.Workspaces;
 using Vellum.Shared;
 using static Vellum.Shared.ResultExtensions;

@@ -7,13 +7,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using Vellum.Modules.Identity.AgentTokens;
-using Vellum.Modules.Settings.Audit;
 using Vellum.Modules.Settings.Crypto;
-using Vellum.Modules.Settings.Document;
-using Vellum.Modules.Settings.Instance;
-using Vellum.Modules.Settings.Secrets;
-using Vellum.Modules.Settings.Setup;
-using Vellum.Modules.Settings.Workspace;
 using Vellum.Shared;
 
 namespace Vellum.Modules.Settings;

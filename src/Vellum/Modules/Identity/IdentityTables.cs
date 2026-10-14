@@ -1,6 +1,11 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Vellum.Modules.Identity.AgentTokens;
+using System.Buffers.Text;
+using System.Security.Cryptography;
+using System.Text;
+using Microsoft.Net.Http.Headers;
+using Vellum.Modules.Settings.Crypto;
 
 namespace Vellum.Modules.Identity;
 
@@ -47,4 +52,34 @@ public static class IdentityTables
             e.HasIndex(t => t.ProjectId);
         });
     }
+}
+
+/// <summary>
+/// One agent token. No column holds the token: <see cref="TokenHash"/> is an HMAC-SHA-256
+/// under a key that is derived from the master key <see cref="MasterKeyId"/> names.
+/// </summary>
+public class AgentTokenEntity
+{
+    public Guid Id { get; set; }
+    public Guid WorkspaceId { get; set; }
+    /// <summary>The one project the token works on, or null for every project of the workspace.</summary>
+    public Guid? ProjectId { get; set; }
+    public string Name { get; set; } = null!;
+    public string[] Scopes { get; set; } = [];
+    public byte[] TokenHash { get; set; } = null!;
+    public string MasterKeyId { get; set; } = null!;
+    /// <summary>The user the token acts for. The token has no more access than this user's role gives.</summary>
+    public string CreatedBy { get; set; } = null!;
+    public DateTimeOffset CreatedAt { get; set; }
+    public DateTimeOffset ExpiresAt { get; set; }
+    public DateTimeOffset? LastUsedAt { get; set; }
+    /// <summary>When a refused use was last written to the audit log.</summary>
+    public DateTimeOffset? LastRefusedAt { get; set; }
+    public DateTimeOffset? RevokedAt { get; set; }
+    public string? RevokedBy { get; set; }
+}
+
+public class ApplicationUser : IdentityUser
+{
+    public string? DisplayName { get; set; }
 }

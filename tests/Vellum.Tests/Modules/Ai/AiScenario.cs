@@ -3,7 +3,6 @@ using System.Text.Json.Nodes;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Vellum.Modules.Ai;
-using Vellum.Modules.Ai.Usage;
 using Vellum.Tests.Shared.Outbound;
 using Vellum.Shared;
 

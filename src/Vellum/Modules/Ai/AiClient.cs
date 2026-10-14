@@ -3,9 +3,7 @@ using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Vellum.Modules.Ai.Providers;
-using Vellum.Modules.Ai.Usage;
-using Vellum.Modules.Settings.Document;
-using Vellum.Modules.Settings.Secrets;
+using Vellum.Modules.Settings;
 using Vellum.Shared.Outbound;
 using Vellum.Shared.Telemetry;
 
