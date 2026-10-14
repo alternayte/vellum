@@ -351,6 +351,8 @@ public static class PromiseViews
     }
 
     /// <summary>What a run is bound to: the kind and the recipe. A new title does not unbind a run.</summary>
-    public static string ObligationHash(Obligation obligation) =>
-        PromiseJson.StableHash(new { obligation.Kind, obligation.Recipe });
+    public static string ObligationHash(Obligation obligation) => ObligationHash(obligation.Kind, obligation.Recipe);
+
+    public static string ObligationHash(string kind, ObligationRecipe recipe) =>
+        PromiseJson.StableHash(new { Kind = kind, Recipe = recipe });
 }

@@ -1,7 +1,10 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json.Nodes;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Vellum.Tests.Modules.Import;
+using Vellum.Tests.Shared.Outbound;
 
 namespace Vellum.Tests.Modules.Promises;
 
@@ -39,11 +42,22 @@ public class ChangeImpactTests(ImportHost import) : IClassFixture<ImportHost>
         };
     }
 
-    [Fact]
-    public async Task A_comparison_that_removes_the_outbox_names_the_flow_and_the_promise_and_marks_only_what_it_can_show_as_definite()
+    /// <summary>What the outbox tests share: the accepted import, the declared flow and three promises.</summary>
+    private sealed record Arranged(
+        ImportScenario S, Guid OrdersApi, Guid Billing, Guid Scenario, Guid Ord014, Guid Ord015, Guid Ord016, string SourceCheck, Guid MainScan);
+
+    /// <summary>
+    /// Imports <paramref name="files"/> (the fixture <c>orders</c> when null) and accepts every
+    /// proposal; declares the flow "Place an order"; creates ORD-014 (requires the outbox, links
+    /// the flow, OrderCreated and Orders.Api, approved, with a source pattern check), ORD-015
+    /// (links Billing) and ORD-016 (a draft that links the flow).
+    /// </summary>
+    private async Task<Arranged> ArrangeAsync(IDictionary<string, byte[]>? files = null)
     {
         var s = await ImportScenario.CreateAsync(import);
-        await s.ScanAndAcceptAllAsync();
+        if (files is not null)
+            s.GitHub.Commit(ImportScenario.Commit1, files);
+        var main = await s.ScanAndAcceptAllAsync();
         async Task<Guid> IdOf(string kind, string name) => (await s.AllAsync(s.Model(kind))).Single("name", name).Id();
         var (ordersApi, billing, database) = (await IdOf("elements", "Orders.Api"), await IdOf("elements", "Billing"), await IdOf("elements", "postgres"));
         var (placeOrder, channel, message) = (await IdOf("operations", "POST /orders"), await IdOf("channels", "order-events"), await IdOf("messages", "OrderCreated"));
@@ -75,11 +89,24 @@ public class ChangeImpactTests(ImportHost import) : IClassFixture<ImportHost>
         var sourceCheck = generated["promise"]!["current"]!["obligations"]!.AsArray().Single(o => o!["kind"]!.GetValue<string>() == "source-pattern-check")!["key"]!.GetValue<string>();
         var hash = (await s.Owner.GetFromJsonAsync<JsonObject>(s.Model($"promises/{ord014}")))!["current"]!["contentHash"]!.GetValue<string>();
         await Ok(s.Owner.PostAsJsonAsync(s.Model($"promises/{ord014}/approve"), new { revision = 1, contentHash = hash }));
+        return new Arranged(s, ordersApi, billing, scenario, ord014, ord015, ord016, sourceCheck, main.Id());
+    }
+
+    /// <summary>Puts <paramref name="files"/> on the branch <c>remove-outbox</c> as Commit2; <c>main</c> stays at Commit1.</summary>
+    private static void Branch(ImportScenario s, IDictionary<string, byte[]> files, string name = "remove-outbox")
+    {
+        s.GitHub.Commit(ImportScenario.Commit2, files);
+        s.GitHub.Head = ImportScenario.Commit1;
+        s.GitHub.Branches[name] = ImportScenario.Commit2;
+    }
+
+    [Fact]
+    public async Task A_comparison_that_removes_the_outbox_names_the_flow_and_the_promise_and_marks_only_what_it_can_show_as_definite()
+    {
+        var (s, ordersApi, billing, scenario, ord014, ord015, ord016, sourceCheck, _) = await ArrangeAsync();
 
         // The branch that removes the outbox, scanned beside the tracked ref.
-        s.GitHub.Commit(ImportScenario.Commit2, FixtureGitHub.Load("orders-outbox-removed"));
-        s.GitHub.Head = ImportScenario.Commit1;
-        s.GitHub.Branches["remove-outbox"] = ImportScenario.Commit2;
+        Branch(s, FixtureGitHub.Load("orders-outbox-removed"));
         // A scan of the same ref that reads only billing did not look where the outbox was: unknown, never definite.
         var scoped = await s.ScanAsync(body: new { repository = "acme/orders", @ref = "remove-outbox", includePaths = new[] { "billing" } });
         var narrow = await Ok(s.Owner.GetAsync(s.Url($"/{scoped.Id()}/impact")));
@@ -165,6 +192,173 @@ public class ChangeImpactTests(ImportHost import) : IClassFixture<ImportHost>
         Assert.Equal(("broken", "failed"), (followed["promises"]![0]!["standing"]!.GetValue<string>(), followed["promises"]![0]!["checks"]![0]!["result"]!.GetValue<string>()));
         // The scan is now the one the model follows. The report compares it with the newest whole scan of another commit.
         Assert.Equal("remove", followed["changes"]!.AsArray().Select(c => c!.AsObject()).Single(c => c.Text("kind") == "source-pattern").Text("action"));
+    }
+
+    private static List<JsonObject> Items(JsonObject impact, string member) => [.. impact[member]!.AsArray().Select(c => c!.AsObject())];
+
+    private static Task<JsonObject> RemoveOutboxAsync(ImportScenario s) =>
+        s.ScanAsync(body: new { repository = "acme/orders", @ref = "remove-outbox" });
+
+    [Fact]
+    public async Task A_later_run_of_the_check_against_another_scan_leaves_the_promise_broken_against_the_scan_where_it_failed()
+    {
+        var (s, _, _, _, ord014, _, _, sourceCheck, main) = await ArrangeAsync();
+        Branch(s, FixtureGitHub.Load("orders-outbox-removed"));
+        var comparison = await RemoveOutboxAsync(s);
+        await Ok(s.Owner.PostAsync(s.Url($"/{comparison.Id()}/track"), null));
+        var failed = await Ok(s.Owner.PostAsJsonAsync(s.Model($"promises/{ord014}/obligations/{sourceCheck}/run"), new { scanId = comparison.Id() }));
+        Assert.Equal("failed", failed.Text("result"));
+
+        // Someone runs the same check again, against another scan. That run says nothing about this scan.
+        await Ok(s.Owner.PostAsJsonAsync(s.Model($"promises/{ord014}/obligations/{sourceCheck}/run"), new { scanId = main }));
+
+        var impact = await Ok(s.Owner.GetAsync(s.Url($"/{comparison.Id()}/impact")));
+        var promise = Items(impact, "promises").Single(p => p.Id() == ord014);
+        Assert.Equal(("broken", "failed"), (promise.Text("standing"), promise["checks"]![0]!["result"]!.GetValue<string>()));
+        var brief = await Ok(s.Owner.PostAsJsonAsync(s.Model("build/brief"), new { changeScanId = comparison.Id() }));
+        Assert.Contains("| `ORD-014` | broken |", brief.Text("brief"));
+    }
+
+    private static Dictionary<string, byte[]> WithHandWrittenOutbox(string fixture) =>
+        new(FixtureGitHub.Load(fixture), StringComparer.Ordinal)
+        {
+            ["orders-api/OutboxDb.cs"] = System.Text.Encoding.UTF8.GetBytes("""
+                using Microsoft.EntityFrameworkCore;
+
+                namespace Orders.Api;
+
+                public class OutboxDb(DbContextOptions<OutboxDb> options) : DbContext(options)
+                {
+                    public DbSet<OutboxMessage> Outbox { get; set; }
+                }
+                """),
+            ["orders-api/OutboxDispatcher.cs"] = System.Text.Encoding.UTF8.GetBytes("""
+                namespace Orders.Api;
+
+                public sealed class OutboxDispatcher(IServiceScopeFactory scopes) : BackgroundService
+                {
+                    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+                    {
+                        using var scope = scopes.CreateScope();
+                        var db = scope.ServiceProvider.GetRequiredService<OutboxDb>();
+                        var bus = scope.ServiceProvider.GetRequiredService<IPublishEndpoint>();
+                        var pending = await db.Outbox.Where(m => m.SentAt == null).ToListAsync(stoppingToken);
+                        foreach (var message in pending)
+                            await bus.Publish(message.ToEvent(), stoppingToken);
+                    }
+                }
+                """),
+        };
+
+    [Fact]
+    public async Task One_outbox_fact_gone_while_another_of_the_same_pattern_and_service_stays_does_not_put_the_promise_at_risk()
+    {
+        // Both commits hold a hand-written outbox in orders-api. Only the MassTransit outbox goes.
+        var (s, _, billing, _, _, _, _, _, _) = await ArrangeAsync(WithHandWrittenOutbox("orders"));
+        var needsOutbox = (await Ok(s.Owner.PostAsync(s.Model("promises"),
+            OrdersReference.Json(Promise("An order survives an outage", Links(elements: [billing]), requiresOutbox: true))), HttpStatusCode.Created)).Id();
+        Branch(s, WithHandWrittenOutbox("orders-outbox-removed"));
+        var comparison = await RemoveOutboxAsync(s);
+
+        var impact = await Ok(s.Owner.GetAsync(s.Url($"/{comparison.Id()}/impact")));
+        // The MassTransit fact is gone, and the change says so. The hand-written one is in both snapshots, so it is no change.
+        var gone = Assert.Single(Items(impact, "changes"), c => c.Text("kind") == "source-pattern");
+        Assert.Equal(("remove", "definite", "transactional-outbox"), (gone.Text("action"), gone.Text("certainty"), gone.Text("pattern")));
+        Assert.Contains("still declares the pattern", gone.Text("basis"));
+
+        // The pattern is still declared in the same service: the promise is not at risk on a definite reason.
+        var promise = Items(impact, "promises").Single(p => p.Id() == needsOutbox);
+        Assert.Equal(("possible", "possible"), (promise.Text("standing"), promise.Text("certainty")));
+        var reason = Assert.Single(promise["reasons"]!.AsArray().Select(r => r!.AsObject()), r => r.Text("changeId") == gone.Text("id"));
+        Assert.Equal("possible", reason.Text("certainty"));
+        Assert.Contains("still declares the pattern", reason.Text("text"));
+    }
+
+    [Fact]
+    public async Task A_pattern_that_the_head_adds_is_not_definite_against_a_partial_base_scan()
+    {
+        // The followed scan read five files of a commit with no outbox.
+        var s = await ImportScenario.CreateAsync(import, fixture: null);
+        s.GitHub.Commit(ImportScenario.Commit1, FixtureGitHub.Load("orders-outbox-removed"));
+        JsonObject GitHub() => new() { ["apiBaseUrl"] = $"https://{s.GitHubHost}" };
+        await OutboundHost.PutSettingsAsync(s.Owner, s.WorkspaceId, new JsonObject { ["github"] = GitHub(), ["import"] = new JsonObject { ["maxFiles"] = 5 } });
+        var partial = await s.ScanAsync();
+        Assert.Equal(("completed", false), (partial.Text("status"), partial["isComplete"]!.GetValue<bool>()));
+        var proposals = await s.ProposalsAsync(partial.Id());
+        Assert.NotEmpty(proposals);
+        await s.DecideAsync(partial.Id(), accept: proposals.Select(p => p.Id()));
+
+        // A whole scan of a branch with the outbox.
+        await OutboundHost.PutSettingsAsync(s.Owner, s.WorkspaceId, new JsonObject { ["github"] = GitHub() });
+        Branch(s, FixtureGitHub.Load("orders"), "add-outbox");
+        var head = await s.ScanAsync(body: new { repository = "acme/orders", @ref = "add-outbox" });
+        Assert.Equal(("completed", true, "comparison"), (head.Text("status"), head["isComplete"]!.GetValue<bool>(), head.Text("kind")));
+
+        var impact = await Ok(s.Owner.GetAsync(s.Url($"/{head.Id()}/impact")));
+        Assert.Equal(partial.Id(), impact["base"]!.AsObject().Id("scanId"));
+        var added = Items(impact, "changes").Single(c => c.Text("kind") == "source-pattern" && c.Text("pattern") == "transactional-outbox");
+        Assert.Equal(("add", "unknown"), (added.Text("action"), added.Text("certainty")));
+        Assert.Contains("did not look", added.Text("basis"));
+    }
+
+    [Fact]
+    public void The_impact_reads_only_the_pattern_facts_of_a_snapshot_from_the_database()
+    {
+        using var scope = import.Host.Factory.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<Vellum.Modules.Import.ImportDbContext>();
+        var sql = Vellum.Modules.Promises.ChangeImpact.PatternRows(db, Guid.NewGuid()).ToQueryString();
+        Assert.Contains("attributes ? 'pattern'", sql);
+    }
+
+    [Fact]
+    public async Task A_brief_of_a_change_is_the_same_for_the_same_pinned_state_and_names_only_approved_promises_in_the_change()
+    {
+        var (s, ordersApi, _, _, ord014, _, ord016, _, _) = await ArrangeAsync();
+        Branch(s, FixtureGitHub.Load("orders-outbox-removed"));
+        var comparison = await RemoveOutboxAsync(s);
+        var revision = Guid.NewGuid();
+        await TestHost.Created(s.Owner.PostAsJsonAsync(s.Model("revisions"), new { id = revision, name = "Before the rename" }));
+        Task<JsonObject> BriefAsync() => Ok(s.Owner.PostAsJsonAsync(s.Model("build/brief"), new { changeScanId = comparison.Id(), revisionId = revision }));
+
+        var first = await BriefAsync();
+        // The main model moves on. The revision, the scan and every other input stay as they were.
+        Assert.Equal(HttpStatusCode.OK, (await s.Owner.PatchAsJsonAsync(s.Model($"elements/{ordersApi}"), new { name = "Orders API" })).StatusCode);
+        var second = await BriefAsync();
+        Assert.Equal(first["manifest"]!["pinned"]!.ToJsonString(), second["manifest"]!["pinned"]!.ToJsonString());
+        Assert.Equal(first.Text("brief"), second.Text("brief"));
+        Assert.Equal(first["manifest"]!["sha256"]!.GetValue<string>(), second["manifest"]!["sha256"]!.GetValue<string>());
+
+        // The draft ORD-016 plays the affected flow. The change does not select it and its section does not name it.
+        var text = first.Text("brief")!;
+        var change = text[text.IndexOf("## 8. Change under review", StringComparison.Ordinal)..];
+        Assert.Contains("| `ORD-014` | at-risk |", change);
+        Assert.DoesNotContain("ORD-016", change);
+        var selected = first["manifest"]!["selection"]!["promiseIds"]!.AsArray().Select(p => p!.GetValue<Guid>()).ToList();
+        Assert.Contains(ord014, selected);
+        Assert.DoesNotContain(ord016, selected);
+    }
+
+    [Fact]
+    public async Task The_impact_of_a_scan_whose_proposals_were_accepted_does_not_say_the_model_lacks_them()
+    {
+        var s = await ImportScenario.CreateAsync(import);
+        var main = await s.ScanAndAcceptAllAsync();
+        var accepted = (await s.ProposalsAsync(main.Id())).Count;
+        async Task<List<JsonObject>> ContractsAsync() =>
+            Items(await Ok(s.Owner.GetAsync(s.Url($"/{main.Id()}/impact"))), "changes").Where(c => c.Text("kind") == "contract").ToList();
+
+        var before = await ContractsAsync();
+        Branch(s, FixtureGitHub.Load("orders-outbox-removed"));
+        await RemoveOutboxAsync(s);
+        var after = await ContractsAsync();
+
+        foreach (var changes in new[] { before, after })
+        {
+            Assert.Equal(accepted, changes.Count);
+            Assert.All(changes, c => Assert.Equal("add", c.Text("action")));
+            Assert.All(changes, c => Assert.DoesNotContain("The model does not hold it", c.Text("basis")));
+            Assert.All(changes, c => Assert.Contains("The model holds it", c.Text("basis")));
+        }
     }
 
     [Fact]

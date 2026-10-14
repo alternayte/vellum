@@ -63,6 +63,12 @@ internal sealed class ProposalImpact
         return new ProposalImpact(model, scenarios);
     }
 
+    /// <summary>The same, over scenarios the caller holds: the ones a pinned state names, at their pinned versions.</summary>
+    public static ProposalImpact Of(ModelState model, IEnumerable<Scenario> scenarios) => new(model, [.. scenarios
+        .OrderBy(s => s.Name, StringComparer.Ordinal).ThenBy(s => s.Id.Value)
+        .Take(MaxScenarios)
+        .Select(s => (s.Id.Value, s.Name, s))]);
+
     /// <param name="changedFields">For a change: the model fields the proposal alters.</param>
     public ProposalImpactDto Of(string action, string entityKind, Guid entityId, IReadOnlyCollection<string> changedFields)
     {
