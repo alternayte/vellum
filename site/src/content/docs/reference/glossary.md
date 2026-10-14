@@ -109,6 +109,8 @@ Each entry gives the meaning of a term in Vellum and the page that defines it.
 
 **Setup code**: The one-time code that Vellum writes to the log at the first start in the local profile. The first administrator types it in the setup screen. See [Self-host quickstart](/tutorials/self-host-quickstart/#get-the-setup-code).
 
+**Share link**: A read-only URL to a project or a view for people without an account, either live (it follows the accepted model on main) or pinned to a named revision. See [Share and embed a read-only page](/how-to/share-and-embed/).
+
 **Snapshot**: Of a review: the stored findings of one model version with their answers. Of a scan: one immutable import of a Source, identified by the SHA-256 of its manifest of path, size and git blob SHA. See [Review a design](/how-to/review-a-design/#save-a-snapshot) and [Sources, Snapshots and bindings](/concepts/sources-and-snapshots/#a-snapshot-is-what-one-scan-read).
 
 **Source**: A configured origin of architecture evidence for a project, with a kind such as `github`. See [Sources, Snapshots and bindings](/concepts/sources-and-snapshots/).

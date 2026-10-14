@@ -13,7 +13,8 @@ public sealed record SettingsDocument(
     SimulationSettings Simulation,
     PrivacySettings Privacy,
     UsageSettings Usage,
-    NotificationSettings Notifications);
+    NotificationSettings Notifications,
+    SharingSettings Sharing);
 
 public sealed record AiSettings(IReadOnlyList<AiProviderSettings> Providers, TaskRouting TaskRouting);
 
@@ -61,6 +62,47 @@ public sealed record PrivacySettings(bool SendPrivateCodeToAi);
 public sealed record UsageSettings(decimal? MonthlyAiBudgetUsd, int MaxScansPerDay);
 public sealed record NotificationSettings(string? WebhookUrl);
 
+/// <summary>
+/// Who outside the workspace may read it through a share link, and which sites may frame a
+/// shared view. A change applies to the links that exist: a link that the policy no longer
+/// allows answers 404 until the policy allows it again.
+/// </summary>
+/// <param name="LinkPolicy">
+/// <c>off</c> (no link works), <c>password-only</c> (a link without a password answers 404) or
+/// <c>public</c> (a link may have a password or none).
+/// </param>
+/// <param name="EmbedHosts">
+/// The origins that may show <c>/embed/{token}</c> in a frame, such as
+/// <c>https://wiki.example.com</c> or <c>https://*.atlassian.net</c>. Empty: no site may.
+/// </param>
+public sealed record SharingSettings(string LinkPolicy, IReadOnlyList<string> EmbedHosts)
+{
+    public const string Off = "off";
+    public const string PasswordOnly = "password-only";
+    public const string Public = "public";
+    public static readonly IReadOnlyList<string> Policies = [Off, PasswordOnly, Public];
+    public const int MaxEmbedHosts = 20;
+}
+
+/// <summary>
+/// The form of an origin that may frame an embedded view. It goes into a response header, so
+/// it is a scheme, a host name that may start with <c>*.</c> and an optional port: no path,
+/// no quote, no space and no semicolon can pass.
+/// </summary>
+public static partial class EmbedOrigin
+{
+    [System.Text.RegularExpressions.GeneratedRegex(
+        @"^(?<scheme>https?)://(\*\.)?[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*(?::[0-9]{1,5})?\z",
+        System.Text.RegularExpressions.RegexOptions.CultureInvariant)]
+    private static partial System.Text.RegularExpressions.Regex Pattern();
+
+    /// <param name="httpsOnly">True when only <c>https</c> passes.</param>
+    public static bool IsValid(string? origin, bool httpsOnly) =>
+        origin is { Length: > 0 and <= 300 }
+        && Pattern().Match(origin) is { Success: true } match
+        && (!httpsOnly || match.Groups["scheme"].Value == "https");
+}
+
 /// <summary>What the instance admin allows every workspace to choose.</summary>
 /// <param name="MaxConcurrentStressRuns">
 /// How many stress runs of all workspaces together one app process does at the same time. One
@@ -98,7 +140,7 @@ public static class AiProviderKinds
 
 public static class SettingsDefaults
 {
-    /// <summary>The defaults of a new instance, before the admin changes them.</summary>
+    /// <summary>The defaults of a new local instance, before the admin changes them.</summary>
     public static readonly SettingsDocument BuiltIn = new(
         new AiSettings([], new TaskRouting(null, null, null, null)),
         new GithubSettings("https://api.github.com", ""),
@@ -108,7 +150,16 @@ public static class SettingsDefaults
         new SimulationSettings(1, 300, 10),
         new PrivacySettings(false),
         new UsageSettings(null, 20),
-        new NotificationSettings(null));
+        new NotificationSettings(null),
+        new SharingSettings(SharingSettings.Public, []));
+
+    /// <summary>
+    /// The defaults of a new instance of <paramref name="profile"/>. A hosted instance is open
+    /// to the internet, so a share link there needs a password until an Owner allows public links.
+    /// </summary>
+    public static SettingsDocument For(OperatingProfile profile) => profile == OperatingProfile.Hosted
+        ? BuiltIn with { Sharing = new SharingSettings(SharingSettings.PasswordOnly, []) }
+        : BuiltIn;
 
     /// <summary>
     /// A local instance trusts its own network and its one operator. A hosted instance

@@ -1,12 +1,13 @@
 import { useState, type DragEvent } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { useShellStore } from '@/stores/shell-store'
-import { ChevronDown, ChevronRight, Download, FileText, Folder, FolderPlus, LayoutDashboard, Pencil, Trash2, Upload } from 'lucide-react'
+import { ChevronDown, ChevronRight, Download, FileCode, FileImage, FileText, Folder, FolderPlus, LayoutDashboard, Pencil, Trash2, Upload } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { ActionMenu } from '@/components/ui/action-menu'
 import { ImportModelDialog } from '@/components/branch/import-model-dialog'
 import { downloadModel } from '@/lib/branches-api'
+import { downloadStructurizr, downloadView, type ViewExportFormat } from '@/lib/diagram-export'
 import { shownInline } from '@/lib/mutation-errors'
 import { DocActions } from '@/components/docs/doc-actions'
 import { useDocs, useUpdateDoc } from '@/hooks/use-docs'
@@ -53,7 +54,8 @@ const DOC_DRAG = 'application/x-vellum-doc'
 function ModelDocument({ projectId, projectName, canImport }: NonNullable<FilesFlyoutProps['model']>) {
   const [importing, setImporting] = useState(false)
   const download = useMutation({
-    mutationFn: (format: 'json' | 'yaml') => downloadModel(projectId, projectName, format),
+    mutationFn: (format: 'json' | 'yaml' | 'structurizr') =>
+      format === 'structurizr' ? downloadStructurizr(projectId, projectName) : downloadModel(projectId, projectName, format),
     onError: shownInline,
   })
 
@@ -71,6 +73,12 @@ function ModelDocument({ projectId, projectName, canImport }: NonNullable<FilesF
           <Download className="h-3.5 w-3.5" aria-hidden="true" /> Export YAML
         </Button>
       </div>
+      <Button size="sm" variant="secondary" className="mt-1.5 w-full gap-1.5" disabled={download.isPending} onClick={() => download.mutate('structurizr')}>
+        <FileCode className="h-3.5 w-3.5" aria-hidden="true" /> Export Structurizr DSL
+      </Button>
+      <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
+        Structurizr DSL holds the elements, relationships and views. It drops truth labels, layout, messages, contracts, scenarios, promises and costs, and cannot be imported back.
+      </p>
       {download.isError && <p role="alert" className="mt-1.5 text-xs text-destructive">{download.error.message}</p>}
       {canImport && (
         <Button size="sm" variant="ghost" className="mt-1.5 w-full gap-1.5" onClick={() => setImporting(true)}>
@@ -157,6 +165,10 @@ export function FilesFlyout({ projectId, views, docs, spaces, elements, canEdit,
   const [spaceDialog, setSpaceDialog] = useState<{ mode: 'new' } | { mode: 'rename' | 'delete'; space: { id: string; name: string } } | null>(null)
   const [dropTarget, setDropTarget] = useState<string | null>(null)
   const moveDoc = useUpdateDoc(projectId)
+  const exportView = useMutation({
+    mutationFn: ({ view, format }: { view: ViewItem; format: ViewExportFormat }) => downloadView(projectId, view.id, view.name, format),
+    onError: shownInline,
+  })
   const createSpace = useCreateSpace(projectId)
   const renameSpace = useUpdateSpace(projectId)
   const deleteSpace = useDeleteSpace(projectId)
@@ -282,16 +294,19 @@ export function FilesFlyout({ projectId, views, docs, spaces, elements, canEdit,
               <LayoutDashboard className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
               <span className="truncate">{view.name}</span>
             </button>
-            {canEdit && (
-              <ActionMenu
-                label={`Actions for diagram ${view.name}`}
-                className="mr-1 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
-                items={[
+            <ActionMenu
+              label={`Actions for diagram ${view.name}`}
+              className="mr-1 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
+              items={[
+                { label: 'Export SVG', icon: <FileImage className="h-3.5 w-3.5" aria-hidden="true" />, disabled: exportView.isPending, onSelect: () => exportView.mutate({ view, format: 'svg' }) },
+                { label: 'Export PNG', icon: <FileImage className="h-3.5 w-3.5" aria-hidden="true" />, disabled: exportView.isPending, onSelect: () => exportView.mutate({ view, format: 'png' }) },
+                { label: 'Export Mermaid', icon: <FileCode className="h-3.5 w-3.5" aria-hidden="true" />, disabled: exportView.isPending, onSelect: () => exportView.mutate({ view, format: 'mermaid' }) },
+                ...(canEdit ? [
                   { label: 'Rename', icon: <Pencil className="h-3.5 w-3.5" aria-hidden="true" />, onSelect: () => setViewDialog({ view, mode: 'rename' }) },
                   { label: 'Delete…', icon: <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />, destructive: true, onSelect: () => setViewDialog({ view, mode: 'delete' }) },
-                ]}
-              />
-            )}
+                ] : []),
+              ]}
+            />
           </div>
         ))}
 
@@ -352,6 +367,7 @@ export function FilesFlyout({ projectId, views, docs, spaces, elements, canEdit,
         </div>
 
         {moveDoc.isError && <p role="alert" className="px-2 py-1 text-xs text-destructive">{moveDoc.error.message}</p>}
+        {exportView.isError && <p role="alert" className="px-2 py-1 text-xs text-destructive">{exportView.error.message}</p>}
 
         {filteredViews.length === 0 && filteredDocs.length === 0 && spaces.length === 0 && (
           <p className="px-2 py-4 text-center text-xs text-muted-foreground">

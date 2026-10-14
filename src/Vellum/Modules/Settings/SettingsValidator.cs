@@ -59,7 +59,32 @@ public sealed class SettingsValidator(OutboundUrlPolicy urls, Bootstrap bootstra
         if (!string.IsNullOrEmpty(document.Notifications.WebhookUrl))
             await RequireUrlAsync("notifications.webhookUrl", document.Notifications.WebhookUrl, policy, errors, ct);
 
+        ValidateSharing(document.Sharing, errors);
+
         return errors;
+    }
+
+    /// <summary>
+    /// An embed host goes into the <c>frame-ancestors</c> directive of a response header, so
+    /// it is an origin and nothing else: a scheme, a host name that may start with <c>*.</c>
+    /// and an optional port. No path, no quote, no space and no semicolon can pass. A hosted
+    /// instance takes https origins only.
+    /// </summary>
+    private void ValidateSharing(SharingSettings sharing, List<FieldError> errors)
+    {
+        if (!SharingSettings.Policies.Contains(sharing.LinkPolicy))
+            errors.Add(new("sharing.linkPolicy", $"Must be one of: {string.Join(", ", SharingSettings.Policies)}."));
+        if (sharing.EmbedHosts.Count > SharingSettings.MaxEmbedHosts)
+            errors.Add(new("sharing.embedHosts", $"At most {SharingSettings.MaxEmbedHosts} origins."));
+
+        var httpsOnly = bootstrap.Profile == OperatingProfile.Hosted;
+        for (var i = 0; i < sharing.EmbedHosts.Count; i++)
+        {
+            if (!EmbedOrigin.IsValid(sharing.EmbedHosts[i], httpsOnly))
+                errors.Add(new($"sharing.embedHosts[{i}]", httpsOnly
+                    ? "Must be an https origin such as https://wiki.example.com or https://*.example.com, with no path."
+                    : "Must be an origin such as https://wiki.example.com or https://*.example.com, with no path."));
+        }
     }
 
     private async Task ValidateAiAsync(AiSettings ai, InstancePolicy policy, List<FieldError> errors, CancellationToken ct)
