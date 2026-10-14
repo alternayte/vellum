@@ -171,12 +171,6 @@ internal static class DesignAccess
         branchId ?? await http.RequestServices.GetRequiredService<AppDbContext>().Projects.AsNoTracking()
             .Where(p => p.Id == projectId).Select(p => p.StreamId).FirstAsync(ct);
 
-    public static IResult Invalid(string field, string message) =>
-        Results.BadRequest(new ErrorResponse("validation_error", "Validation failed", Errors: [new FieldError(field, message)]));
-
-    public static IResult Conflict(string message) => Results.Conflict(new ErrorResponse("conflict", message));
-
-    public static IResult NotFound(string what) => Results.NotFound(new ErrorResponse("not_found", $"{what} not found"));
 }
 
 /// <summary>How this feature writes and reads its stored documents.</summary>

@@ -4,6 +4,7 @@ using Deedbox;
 using Vellum.Modules.Stress.Engine;
 using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Shared;
+using static Vellum.Shared.ResultExtensions;
 
 namespace Vellum.Modules.Stress;
 
@@ -37,7 +38,7 @@ public static class StressCompare
 
         if (await StressRuns.ReadAsync(db, store, projectId, left, ct) is not { } a
             || await StressRuns.ReadAsync(db, store, projectId, right, ct) is not { } b)
-            return StressAccess.NotFound("Stress run");
+            return NotFound("Stress run");
 
         return Results.Ok(new StressComparisonDto(StressResult.Estimated, a.Run, b.Run, Metrics(a.Result, b.Result), Inputs(a, b), Note,
             a.Run.Hash == b.Run.Hash));

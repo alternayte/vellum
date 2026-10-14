@@ -10,6 +10,7 @@ using Vellum.Modules.Settings.Audit;
 using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Modules.Workspaces.Entities;
 using Vellum.Shared;
+using static Vellum.Shared.ResultExtensions;
 
 namespace Vellum.Modules.Workspaces;
 
@@ -134,8 +135,6 @@ public static class InvitationRules
             await AuditLog.AppendAsync(db, workspaceId, actorId, AuditLog.InvitationRevoked,
                 $"invitation:{invitation.Id} role:{invitation.Role.ToLowerInvariant()} issuer:{issuerId} reason:{reason}", ct);
     }
-
-    internal static IResult NotFound() => Results.NotFound(new ErrorResponse("not_found", "Invitation not found"));
 
     internal static IResult Closed(string status) => Results.Conflict(new ErrorResponse(
         "invitation_closed",
@@ -275,7 +274,7 @@ public static class RevokeInvitation
         var invitation = await InvitationRules.LockAsync(db, invitationId, ct);
         // An invitation of another workspace is no invitation of this one.
         if (invitation is null || invitation.WorkspaceId != workspaceId)
-            return InvitationRules.NotFound();
+            return NotFound("Invitation");
 
         var now = InvitationRules.Now(time);
         switch (invitation.Status)
@@ -337,7 +336,7 @@ public static class MyInvitations
         var email = await EmailOfAsync(user, db, ct);
         var invitation = await db.Invitations.AsNoTracking().FirstOrDefaultAsync(i => i.Id == invitationId, ct);
         if (invitation is null || !IsFor(invitation, email, request?.Secret))
-            return InvitationRules.NotFound();
+            return NotFound("Invitation");
 
         var workspaceName = await db.Workspaces.Where(w => w.Id == invitation.WorkspaceId).Select(w => w.Name).FirstAsync(ct);
         var dtos = await ToDtosAsync([(invitation, workspaceName)], db, time.GetUtcNow(), ct);
@@ -363,7 +362,7 @@ public static class MyInvitations
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         var invitation = await InvitationRules.LockAsync(db, invitationId, ct);
         if (invitation is null || !IsFor(invitation, email, request?.Secret))
-            return InvitationRules.NotFound();
+            return NotFound("Invitation");
 
         var membership = await db.Memberships
             .FirstOrDefaultAsync(m => m.WorkspaceId == invitation.WorkspaceId && m.UserId == userId, ct);
@@ -424,7 +423,7 @@ public static class MyInvitations
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         var invitation = await InvitationRules.LockAsync(db, invitationId, ct);
         if (invitation is null || !IsFor(invitation, email, request?.Secret))
-            return InvitationRules.NotFound();
+            return NotFound("Invitation");
 
         var now = InvitationRules.Now(time);
         var status = InvitationRules.StatusAt(invitation, now);

@@ -7,6 +7,7 @@ using Vellum.Modules.Settings.Document;
 using Vellum.Modules.Settings.Secrets;
 using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Shared;
+using static Vellum.Shared.ResultExtensions;
 
 namespace Vellum.Modules.Settings.Workspace;
 
@@ -135,6 +136,4 @@ public static class UpdateWorkspaceSettings
             statusCode: StatusCodes.Status409Conflict);
     }
 
-    private static IResult Invalid(IReadOnlyList<FieldError> errors) =>
-        Results.BadRequest(new ErrorResponse("validation_error", "Validation failed", Errors: errors));
 }

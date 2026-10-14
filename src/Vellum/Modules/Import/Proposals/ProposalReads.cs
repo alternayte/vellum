@@ -8,6 +8,7 @@ using Vellum.Modules.Modelling.Model;
 using Vellum.Modules.Workspaces;
 using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Shared;
+using static Vellum.Shared.ResultExtensions;
 
 namespace Vellum.Modules.Import.Proposals;
 
@@ -60,7 +61,7 @@ public static class ProposalReads
         await auth.RequireProjectRoleAsync(projectId, user.UserId(), WorkspaceRole.Viewer, ct);
         var scan = await db.Scans.AsNoTracking().FirstOrDefaultAsync(s => s.Id == importId && s.ProjectId == projectId, ct);
         if (scan is null)
-            return ScanRequests.NotFound();
+            return NotFound("Import");
 
         var query = db.ImportProposals.AsNoTracking().Where(p => p.ScanId == importId);
         if (status is not null) query = query.Where(p => p.Status == status);
@@ -106,7 +107,7 @@ public static class ProposalReads
         await auth.RequireProjectRoleAsync(projectId, user.UserId(), WorkspaceRole.Viewer, ct);
         var scan = await db.Scans.AsNoTracking().FirstOrDefaultAsync(s => s.Id == importId && s.ProjectId == projectId, ct);
         if (scan is null)
-            return ScanRequests.NotFound();
+            return NotFound("Import");
         var row = await db.ImportProposals.AsNoTracking().FirstOrDefaultAsync(p => p.Id == proposalId && p.ScanId == importId, ct);
         if (row is null)
             return Results.NotFound(new ErrorResponse("not_found", "Proposal not found"));
@@ -218,7 +219,7 @@ public static class ProposalReads
         await auth.RequireProjectRoleAsync(projectId, user.UserId(), WorkspaceRole.Viewer, ct);
         var scan = await db.Scans.AsNoTracking().FirstOrDefaultAsync(s => s.Id == importId && s.ProjectId == projectId, ct);
         if (scan is null)
-            return ScanRequests.NotFound();
+            return NotFound("Import");
 
         var query = db.SnapshotFacts.AsNoTracking().Where(f =>
             f.ScanId == importId && (f.Disposition == FactDisposition.EvidenceOnly || f.Disposition == FactDisposition.Blocked));

@@ -6,6 +6,7 @@ using Vellum.Modules.Modelling.Model;
 using Vellum.Modules.Modelling.Revisions;
 using Vellum.Modules.Workspaces;
 using Vellum.Shared;
+using static Vellum.Shared.ResultExtensions;
 
 namespace Vellum.Modules.Promises;
 
@@ -103,6 +104,4 @@ public sealed record PinnedModel(ModelPin Pin, ModelState State)
     public static async Task<ModelState?> AtVersionAsync(IEventStore store, Guid streamId, long version, CancellationToken ct) =>
         (await StreamAt.FoldAsync<ModelState>(store, streamId, version, ct))?.State;
 
-    private static IResult Invalid(string field, string message) =>
-        Results.BadRequest(new ErrorResponse("validation_error", "Validation failed", Errors: [new FieldError(field, message)]));
 }

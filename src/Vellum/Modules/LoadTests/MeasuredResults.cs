@@ -9,6 +9,7 @@ using Vellum.Modules.Modelling.Model;
 using Vellum.Modules.Stress;
 using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Shared;
+using static Vellum.Shared.ResultExtensions;
 
 namespace Vellum.Modules.LoadTests;
 
@@ -288,7 +289,7 @@ public static class MeasuredResults
         Guid projectId, Guid resultId, ClaimsPrincipal user, WorkspaceAuthorizationService auth, AppDbContext db, IEventStore store, CancellationToken ct)
     {
         await auth.RequireProjectRoleAsync(projectId, user.UserId(), WorkspaceRole.Viewer, ct);
-        return await ReadAsync(db, store, projectId, resultId, ct) is { } result ? Results.Ok(result) : Targets.NotFound("Measured result");
+        return await ReadAsync(db, store, projectId, resultId, ct) is { } result ? Results.Ok(result) : NotFound("Measured result");
     }
 
     /// <summary>
@@ -315,7 +316,7 @@ public static class MeasuredResults
 
         var deleted = await db.Results.Where(r => r.Id == resultId && r.ProjectId == projectId).ExecuteDeleteAsync(ct);
         await transaction.CommitAsync(ct);
-        return deleted == 0 ? Targets.NotFound("Measured result") : Results.NoContent();
+        return deleted == 0 ? NotFound("Measured result") : Results.NoContent();
     }
 
     /// <summary>A result of the project with its script, or null. A result of another project reads as not found.</summary>

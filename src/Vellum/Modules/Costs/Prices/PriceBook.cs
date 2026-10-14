@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Vellum.Modules.Settings.Audit;
 using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Shared;
+using static Vellum.Shared.ResultExtensions;
 
 namespace Vellum.Modules.Costs.Prices;
 
@@ -197,7 +198,4 @@ public static class PriceBook
         return Results.Created($"/api/workspaces/{entry.WorkspaceId}/prices/{entry.Id}", PriceEntryDto.From(entry));
     }
 
-    internal static IResult Invalid(IReadOnlyList<ValidationError> errors) =>
-        Results.BadRequest(new ErrorResponse("validation_error", "Validation failed",
-            Errors: errors.Select(e => new FieldError(e.Field, e.Message)).ToList()));
 }

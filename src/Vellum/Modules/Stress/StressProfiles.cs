@@ -9,6 +9,7 @@ using Vellum.Modules.Settings.Document;
 using Vellum.Modules.Stress.Engine;
 using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Shared;
+using static Vellum.Shared.ResultExtensions;
 
 namespace Vellum.Modules.Stress;
 
@@ -55,7 +56,7 @@ public static class StressProfiles
         await auth.RequireProjectRoleAsync(projectId, user.UserId(), WorkspaceRole.Viewer, ct);
 
         var row = await db.Profiles.AsNoTracking().FirstOrDefaultAsync(p => p.Id == profileId && p.ProjectId == projectId, ct);
-        return row is null ? StressAccess.NotFound("Stress profile") : Results.Ok(await DtoAsync(row, db, store, ct));
+        return row is null ? NotFound("Stress profile") : Results.Ok(await DtoAsync(row, db, store, ct));
     }
 
     /// <summary>What a profile for the scenario must state, read from the model of the branch.</summary>
@@ -66,7 +67,7 @@ public static class StressProfiles
         {
             var world = await StressAccess.LoadAsync(store, db, projectId, streamId, scenarioId, ct);
             return world.Scenario is null
-                ? StressAccess.NotFound("Scenario")
+                ? NotFound("Scenario")
                 : Results.Ok(StressEngine.Requirements(world.Model, world.Scenario));
         }, ct);
 
@@ -138,7 +139,7 @@ public static class StressProfiles
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         var row = await db.Profiles.FirstOrDefaultAsync(p => p.Id == profileId && p.ProjectId == projectId, ct);
         if (row is null)
-            return StressAccess.NotFound("Stress profile");
+            return NotFound("Stress profile");
         var (profile, refusal) = await ResolveAsync(sent, projectId, db, store, limits, ct);
         if (refusal is not null)
             return refusal;
@@ -169,7 +170,7 @@ public static class StressProfiles
         await auth.RequireProjectRoleAsync(projectId, user.UserId(), WorkspaceRole.Editor, ct);
 
         var deleted = await db.Profiles.Where(p => p.Id == profileId && p.ProjectId == projectId).ExecuteDeleteAsync(ct);
-        return deleted == 0 ? StressAccess.NotFound("Stress profile") : Results.NoContent();
+        return deleted == 0 ? NotFound("Stress profile") : Results.NoContent();
     }
 
     internal static StressProfile Read(string document) => JsonSerializer.Deserialize<StressProfile>(document, StressJson.Options)!;

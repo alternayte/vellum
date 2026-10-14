@@ -122,7 +122,6 @@ internal static class CostAccess
             .ToList(),
         state.Assumptions.OrderBy(a => a.Name, StringComparer.Ordinal).ThenBy(a => a.Id).ToList());
 
-    public static IResult NotFound(string what) => Results.NotFound(new ErrorResponse("not_found", $"{what} not found"));
 }
 
 public static class CostSheets

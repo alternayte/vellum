@@ -9,6 +9,7 @@ using Vellum.Modules.Schemas;
 using Vellum.Modules.Settings.Document;
 using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Shared;
+using static Vellum.Shared.ResultExtensions;
 
 namespace Vellum.Modules.Promises;
 
@@ -234,7 +235,7 @@ public static class ObligationWrites
 
         var row = await db.Promises.AsNoTracking().FirstOrDefaultAsync(p => p.Id == promiseId && p.ProjectId == projectId, ct);
         if (row is null)
-            return PromiseAccess.NotFound();
+            return NotFound("Promise");
         var before = PromiseJson.Read<PromiseState>(row.Document);
         var world = await PromiseWorld.LoadAsync(http.RequestServices, projectId, before.Latest!.Content.Links.ScenarioIds, ct);
 
@@ -299,7 +300,7 @@ public static class ObligationWrites
                 }
                 var (scan, scanRefusal) = await SourcePatternCheck.FindScanAsync(db, projectId, recipe, scanId, ct);
                 if (scan is null)
-                    return PromiseAccess.Invalid("scanId", scanRefusal!);
+                    return Invalid("scanId", scanRefusal!);
                 var inputs = await SourcePatternCheck.ScanInputs.LoadAsync(db, projectId, scan, ct);
                 if (inputs.IsComparison
                     && await ExistingComparisonRunAsync(db, promiseId, revision, isDraft, obligation.Id, scan.Id, obligationHash, ct) is { } existing)
@@ -362,7 +363,7 @@ public static class ObligationWrites
     {
         var row = await db.Promises.AsNoTracking().FirstOrDefaultAsync(p => p.Id == promiseId && p.ProjectId == projectId, ct);
         if (row is null)
-            return (null, PromiseAccess.NotFound());
+            return (null, NotFound("Promise"));
 
         // With no revision named, the run is of the approved revision in force. A draft is
         // checked only when the caller names it.

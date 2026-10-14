@@ -9,6 +9,7 @@ using Vellum.Modules.Schemas;
 using Vellum.Modules.Workspaces;
 using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Shared;
+using static Vellum.Shared.ResultExtensions;
 
 namespace Vellum.Modules.Modelling.Variants;
 
@@ -152,6 +153,4 @@ public static class CreateVariant
         variant.StreamId, variant.BaseStreamId, variant.BaseRevisionId,
         variant.ForkVersion, variant.Status, variant.CreatedBy, variant.CreatedAt);
 
-    private static IResult Invalid(string field, string message) =>
-        Results.BadRequest(new ErrorResponse("validation_error", "Validation failed", Errors: [new FieldError(field, message)]));
 }

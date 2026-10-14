@@ -27,11 +27,29 @@ public static class ResultExtensions
     /// </summary>
     public static IResult? Refusal(params ValidationError?[] checks)
     {
-        var errors = checks.Where(c => c is not null).Select(c => new FieldError(c!.Field, c.Message)).ToList();
-        return errors.Count == 0
-            ? null
-            : Results.BadRequest(new ErrorResponse("validation_error", "Validation failed", Errors: errors));
+        var errors = checks.OfType<ValidationError>().ToList();
+        return errors.Count == 0 ? null : Invalid(errors);
     }
+
+    /// <summary>400 <c>validation_error</c> for one field.</summary>
+    public static IResult Invalid(string field, string message) => Invalid([new FieldError(field, message)]);
+
+    /// <summary>400 <c>validation_error</c> for one broken rule.</summary>
+    public static IResult Invalid(ValidationError error) => Invalid(error.Field, error.Message);
+
+    /// <summary>400 <c>validation_error</c> for each broken rule.</summary>
+    public static IResult Invalid(IEnumerable<ValidationError> errors) =>
+        Invalid(errors.Select(e => new FieldError(e.Field, e.Message)).ToList());
+
+    /// <summary>400 <c>validation_error</c> with the errors of the fields.</summary>
+    public static IResult Invalid(IReadOnlyList<FieldError> errors) =>
+        Results.BadRequest(new ErrorResponse("validation_error", "Validation failed", Errors: errors));
+
+    /// <summary>404 <c>not_found</c>: "<paramref name="what"/> not found".</summary>
+    public static IResult NotFound(string what) => Results.NotFound(new ErrorResponse("not_found", $"{what} not found"));
+
+    /// <summary>409 <c>conflict</c> with the sentence that says why.</summary>
+    public static IResult Conflict(string message) => Results.Conflict(new ErrorResponse("conflict", message));
 
     /// <summary>A value that must be present and hold more than white space.</summary>
     public static ValidationError? Required(string field, string? value) =>
@@ -40,9 +58,8 @@ public static class ResultExtensions
     public static IResult ToHttpResult(this CommandResult result) => result switch
     {
         CommandResult.Success => Results.NoContent(),
-        CommandResult.Invalid inv => Results.BadRequest(new ErrorResponse(
-            "validation_error", "Validation failed", Errors: inv.Errors.Select(e => new FieldError(e.Field, e.Message)).ToList())),
-        CommandResult.Conflict c => Results.Conflict(new ErrorResponse("conflict", c.Message)),
+        CommandResult.Invalid inv => Invalid(inv.Errors),
+        CommandResult.Conflict c => Conflict(c.Message),
         CommandResult.NotFound n => Results.NotFound(new ErrorResponse("not_found", n.Message)),
         _ => Results.StatusCode(500)
     };
@@ -50,9 +67,8 @@ public static class ResultExtensions
     public static IResult ToHttpResult<T>(this CommandResult<T> result) => result switch
     {
         CommandResult<T>.Success s => Results.Ok(s.Value),
-        CommandResult<T>.Invalid inv => Results.BadRequest(new ErrorResponse(
-            "validation_error", "Validation failed", Errors: inv.Errors.Select(e => new FieldError(e.Field, e.Message)).ToList())),
-        CommandResult<T>.Conflict c => Results.Conflict(new ErrorResponse("conflict", c.Message)),
+        CommandResult<T>.Invalid inv => Invalid(inv.Errors),
+        CommandResult<T>.Conflict c => Conflict(c.Message),
         CommandResult<T>.NotFound n => Results.NotFound(new ErrorResponse("not_found", n.Message)),
         _ => Results.StatusCode(500)
     };

@@ -6,6 +6,7 @@ using Vellum.Modules.Trace.Scenarios;
 using Vellum.Modules.Workspaces;
 using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Shared;
+using static Vellum.Shared.ResultExtensions;
 
 namespace Vellum.Modules.Review.Decisions;
 
@@ -78,7 +79,7 @@ public static class DecisionEndpoints
         Guid projectId, Guid decisionId, HttpContext http, WorkspaceAuthorizationService auth, AppDbContext db, CancellationToken ct)
     {
         await auth.RequireProjectRoleAsync(projectId, http.User.UserId(), WorkspaceRole.Viewer, ct);
-        return await ReadAsync(db, projectId, decisionId, ct) is { } decision ? Results.Ok(decision) : ReviewAccess.NotFound("Decision");
+        return await ReadAsync(db, projectId, decisionId, ct) is { } decision ? Results.Ok(decision) : NotFound("Decision");
     }
 
     public static async Task<IResult> Create(
@@ -91,7 +92,7 @@ public static class DecisionEndpoints
             return error!;
         // The origin comes from who calls, not from what the body says.
         if (PromiseAccess.Origin(http.User, request.Origin) is not { } origin)
-            return ReviewAccess.Invalid("origin", "The origin of a decision a person creates is human or ai-suggested");
+            return Invalid("origin", "The origin of a decision a person creates is human or ai-suggested");
 
         var created = await CreateAsync(http.RequestServices, projectId, request.ToContent(), origin, userId, time.GetUtcNow(), ct);
         return created.Dto is { } dto ? Results.Created($"/api/projects/{projectId}/decisions/{dto.Id}", dto) : created.Refusal!;
@@ -107,7 +108,7 @@ public static class DecisionEndpoints
     {
         var db = requestServices.GetRequiredService<AppDbContext>();
         if (content.Supersedes is { } supersedes && !await db.Decisions.AsNoTracking().AnyAsync(d => d.Id == supersedes && d.ProjectId == projectId, ct))
-            return (null, ReviewAccess.Invalid("supersedes", "No decision with this ID exists in the project"));
+            return (null, Invalid("supersedes", "No decision with this ID exists in the project"));
 
         var decisionId = Guid.NewGuid();
         var result = await SharedTransaction.RunAsync(requestServices, async services =>
@@ -145,7 +146,7 @@ public static class DecisionEndpoints
             return error!;
         if (request.Supersedes is { } supersedes
             && (supersedes == decisionId || !await db.Decisions.AsNoTracking().AnyAsync(d => d.Id == supersedes && d.ProjectId == projectId, ct)))
-            return ReviewAccess.Invalid("supersedes", "No other decision with this ID exists in the project");
+            return Invalid("supersedes", "No other decision with this ID exists in the project");
 
         var now = time.GetUtcNow();
         return await RespondAsync(
@@ -176,7 +177,7 @@ public static class DecisionEndpoints
         if (string.IsNullOrEmpty(request.ContentHash))
             return RequireHash("accept");
         if (!await db.Decisions.AsNoTracking().AnyAsync(d => d.Id == decisionId && d.ProjectId == projectId, ct))
-            return ReviewAccess.NotFound("Decision");
+            return NotFound("Decision");
 
         var (review, refusal) = await ReviewEngine.LoadAsync(http.RequestServices, projectId, request.RevisionId, request.BranchId, ct);
         if (review is null)
@@ -192,7 +193,7 @@ public static class DecisionEndpoints
         return await RespondAsync(result, changed, db, projectId, decisionId, ct);
     }
 
-    private static IResult RequireHash(string act) => ReviewAccess.Invalid(
+    private static IResult RequireHash(string act) => Invalid(
         "contentHash", $"The content hash of the decision is required. Read the decision and send the contentHash of the decision you {act}.");
 
     internal static SettlementStamp Stamp(IReadOnlyDictionary<(string, Guid), Rules.Finding> findings, string ruleId, Guid subjectId) =>
@@ -244,7 +245,7 @@ public static class DecisionEndpoints
         await auth.RequireProjectRoleAsync(projectId, http.User.UserId(), WorkspaceRole.Viewer, ct);
         var book = new DecisionBook(await DecisionReads.CurrentAsync(db, projectId, ct));
         if (book.All.FirstOrDefault(d => d.Id == decisionId) is not { } decision)
-            return ReviewAccess.NotFound("Decision");
+            return NotFound("Decision");
         var text = DecisionDocuments.Markdown(book, decision, await NamesAsync(http.RequestServices, projectId, ct));
         return Results.Bytes(Encoding.UTF8.GetBytes(text), "text/markdown; charset=utf-8", $"{DecisionState.Label(decision.State.Number)}.md");
     }

@@ -7,6 +7,7 @@ using Vellum.Modules.Settings.Audit;
 using Vellum.Modules.Settings.Document;
 using Vellum.Modules.Settings.Entities;
 using Vellum.Shared;
+using static Vellum.Shared.ResultExtensions;
 
 namespace Vellum.Modules.Settings.Instance;
 
@@ -206,6 +207,4 @@ public static class UpdateInstanceSettings
 
     private static string Prefix(string field) => field.Length == 0 ? DefaultsField : $"{DefaultsField}.{field}";
 
-    private static IResult Invalid(IReadOnlyList<FieldError> errors) =>
-        Results.BadRequest(new ErrorResponse("validation_error", "Validation failed", Errors: errors));
 }

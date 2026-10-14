@@ -9,6 +9,7 @@ using Vellum.Modules.Import.Proposals;
 using Vellum.Modules.Settings.Document;
 using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Shared;
+using static Vellum.Shared.ResultExtensions;
 
 namespace Vellum.Modules.Import.Scans;
 
@@ -241,7 +242,7 @@ public static partial class ScanRequests
     {
         await auth.RequireProjectRoleAsync(projectId, user.UserId(), WorkspaceRole.Viewer, ct);
         var scan = await db.Scans.AsNoTracking().FirstOrDefaultAsync(s => s.Id == importId && s.ProjectId == projectId, ct);
-        return scan is null ? NotFound() : Results.Ok(await DetailAsync(db, scan, ct));
+        return scan is null ? NotFound("Import") : Results.Ok(await DetailAsync(db, scan, ct));
     }
 
     private static async Task<ScanDetailDto> DetailAsync(AppDbContext db, ScanEntity scan, CancellationToken ct)
@@ -290,7 +291,7 @@ public static partial class ScanRequests
 
         return await db.Scans.AnyAsync(s => s.Id == importId && s.ProjectId == projectId, ct)
             ? Results.Conflict(new ErrorResponse("scan_finished", "The scan already ended. There is nothing to cancel."))
-            : NotFound();
+            : NotFound("Import");
     }
 
     /// <summary>
@@ -317,7 +318,7 @@ public static partial class ScanRequests
 
         var scan = await db.Scans.AsNoTracking().FirstOrDefaultAsync(s => s.Id == importId && s.ProjectId == projectId, ct);
         if (scan is null)
-            return NotFound();
+            return NotFound("Import");
         if (scan.Status is not (ScanStatus.Failed or ScanStatus.Cancelled))
             return Results.Conflict(new ErrorResponse("scan_not_resumable", "Only a failed or cancelled scan can be resumed."));
         if (!ScanFailures.CanResume(scan.Status, scan.ErrorCode))
@@ -407,7 +408,7 @@ public static partial class ScanRequests
 
         var scan = await db.Scans.AsNoTracking().FirstOrDefaultAsync(s => s.Id == importId && s.ProjectId == projectId, ct);
         if (scan is null)
-            return NotFound();
+            return NotFound("Import");
         if (scan.Status != ScanStatus.Completed || scan.CommitSha is null)
             return Results.Conflict(new ErrorResponse("import_not_completed", "Only a completed scan can be made the tracked one."));
         if (scan.IsPullRequest())
@@ -454,7 +455,7 @@ public static partial class ScanRequests
         switch (outcome)
         {
             case SnapshotOutcome.ProjectGone:
-                return NotFound();
+                return NotFound("Import");
             case SnapshotOutcome.ModelBusy:
                 return Results.Conflict(new ErrorResponse("model_busy",
                     "The project's model changed each time the scan was compared with it. Nothing was written. Try again."));
@@ -476,8 +477,6 @@ public static partial class ScanRequests
         }
         return false;
     }
-
-    internal static IResult NotFound() => Results.NotFound(new ErrorResponse("not_found", "Import not found"));
 
     /// <summary>
     /// The host of the repository pages for an API address: <c>github.com</c> for
@@ -604,6 +603,4 @@ public static partial class ScanRequests
             scan.PullRequestNumber, ScanPullRequest.FromJson(scan.PullRequest), ScanFailures.CanResume(scan.Status, scan.ErrorCode));
     }
 
-    private static IResult Invalid(string field, string message) =>
-        Results.BadRequest(new ErrorResponse("validation_error", "Validation failed", Errors: [new FieldError(field, message)]));
 }

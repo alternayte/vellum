@@ -7,6 +7,7 @@ using Vellum.Modules.Schemas;
 using Vellum.Modules.Trace.Engine;
 using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Shared;
+using static Vellum.Shared.ResultExtensions;
 
 namespace Vellum.Modules.Ai.Design;
 
@@ -126,7 +127,7 @@ public static partial class ArchitectureProposals
         if (FlowProposals.RequestText(body.Request) is { } invalid)
             return invalid;
         if (body.Selection is { Count: > FlowProposals.MaxSelection })
-            return DesignAccess.Invalid("selection", $"A selection holds at most {FlowProposals.MaxSelection} IDs");
+            return Invalid("selection", $"A selection holds at most {FlowProposals.MaxSelection} IDs");
         // Asked before the provider is called, so a full project spends nothing.
         if (await ProposalStore.DraftsFullAsync(db, projectId, ct))
             return ProposalStore.TooManyDrafts();
@@ -196,7 +197,7 @@ public static partial class ArchitectureProposals
         if (FlowProposals.RequestText(body.Request) is { } invalid)
             return invalid;
         if (body.Proposal is not { } proposal)
-            return DesignAccess.Invalid("proposal", "A proposal is required: an object with summary, items, openQuestions and reasoningSummary");
+            return Invalid("proposal", "A proposal is required: an object with summary, items, openQuestions and reasoningSummary");
         if (await ProposalStore.DraftsFullAsync(db, projectId, ct))
             return ProposalStore.TooManyDrafts();
 
@@ -260,7 +261,7 @@ public static partial class ArchitectureProposals
         await DesignAccess.RequireAsync(http, projectId, WorkspaceRole.Viewer, ct);
         var row = await db.DesignProposals.AsNoTracking().FirstOrDefaultAsync(p => p.Id == proposalId && p.ProjectId == projectId && p.Kind == Kind, ct);
         if (row is null)
-            return DesignAccess.NotFound("Proposal");
+            return NotFound("Proposal");
         if (row.Status != "draft")
             return Results.Ok(ToDto(row, Read(row), null));
 
@@ -275,11 +276,11 @@ public static partial class ArchitectureProposals
 
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         if (await ProposalStore.LockAsync(db, projectId, proposalId, Kind, ct) is not { } row)
-            return DesignAccess.NotFound("Proposal");
+            return NotFound("Proposal");
         if (row.Status != "draft")
-            return DesignAccess.Conflict($"The proposal is {row.Status}. Only a draft can be deleted.");
+            return Conflict($"The proposal is {row.Status}. Only a draft can be deleted.");
         if (Read(row).Items.Any(i => i.Status != "pending"))
-            return DesignAccess.Conflict("The proposal holds a decided item. Reject the pending items to close it; a decision is not deleted.");
+            return Conflict("The proposal holds a decided item. Reject the pending items to close it; a decision is not deleted.");
 
         db.DesignProposals.Remove(row);
         await db.SaveChangesAsync(ct);
@@ -306,15 +307,15 @@ public static partial class ArchitectureProposals
         var accept = (body.Accept ?? []).Distinct().ToList();
         var reject = (body.Reject ?? []).Distinct().ToList();
         if (accept.Count + reject.Count == 0)
-            return DesignAccess.Invalid("accept", "Name at least one item to accept or to reject");
+            return Invalid("accept", "Name at least one item to accept or to reject");
         if (accept.Count + reject.Count > MaxItems)
-            return DesignAccess.Invalid("accept", $"A proposal holds at most {MaxItems} items");
+            return Invalid("accept", $"A proposal holds at most {MaxItems} items");
         if (accept.Intersect(reject).Any())
-            return DesignAccess.Invalid("reject", "An item cannot be accepted and rejected in one request");
+            return Invalid("reject", "An item cannot be accepted and rejected in one request");
 
         var branch = await ProposalStore.BranchOfAsync(http, projectId, proposalId, Kind, ct);
         if (branch is null)
-            return DesignAccess.NotFound("Proposal");
+            return NotFound("Proposal");
 
         // Only an accept writes to the branch, so only an accept needs a branch that is open.
         Guid streamId;
@@ -339,12 +340,12 @@ public static partial class ArchitectureProposals
             // The stream lock comes before the row lock in every write of this feature.
             var snapshot = await BranchSnapshot.LockAsync(store, services.GetRequiredService<AppDbContext>(), projectId, streamId, ct);
             if (await ProposalStore.LockAsync(db, projectId, proposalId, Kind, ct) is not { } row)
-                return DesignAccess.NotFound("Proposal");
+                return NotFound("Proposal");
 
             var document = Read(row);
             var items = document.Items.ToDictionary(i => i.Id);
             if (accept.Concat(reject).Where(id => !items.ContainsKey(id)).Take(1).ToList() is [var unknown])
-                return DesignAccess.Invalid(accept.Contains(unknown) ? "accept" : "reject", $"The proposal has no item {unknown}");
+                return Invalid(accept.Contains(unknown) ? "accept" : "reject", $"The proposal has no item {unknown}");
 
             var failures = new List<ProposalItemFailure>();
             foreach (var id in accept.Concat(reject))

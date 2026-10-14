@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Vellum.Modules.Settings.Document;
 using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Shared;
+using static Vellum.Shared.ResultExtensions;
 
 namespace Vellum.Modules.Costs.Prices;
 
@@ -36,7 +37,7 @@ public static class AzurePriceEndpoints
         if (!AzureRetailPrices.IsCurrency(currency))
             errors.Add(new("currency", "Must be a three-letter currency code in upper case, for example USD."));
         if (errors.Count > 0)
-            return PriceBook.Invalid(errors);
+            return Invalid(errors);
 
         var filter = AzureRetailPrices.Filter(new AzureMeterQuery(serviceName, region, skuName, meterName))!;
         var result = await azure.SearchAsync(workspaceId, filter, currency!, ct);
@@ -65,7 +66,7 @@ public static class AzurePriceEndpoints
         if (!AzureRetailPrices.IsCurrency(request.Currency))
             errors.Add(new("currency", "Must be a three-letter currency code in upper case, for example USD."));
         if (errors.Count > 0)
-            return PriceBook.Invalid(errors);
+            return Invalid(errors);
 
         var filter = AzureRetailPrices.Filter(new AzureMeterQuery(
             ArmRegionName: request.ArmRegionName, MeterId: request.MeterId, SkuId: request.SkuId))!;

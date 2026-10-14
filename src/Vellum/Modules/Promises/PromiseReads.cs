@@ -3,6 +3,7 @@ using System.Security.Claims;
 using Microsoft.EntityFrameworkCore;
 using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Shared;
+using static Vellum.Shared.ResultExtensions;
 
 namespace Vellum.Modules.Promises;
 
@@ -83,7 +84,7 @@ public static class PromiseReads
         ClaimsPrincipal user, WorkspaceAuthorizationService auth, PromiseReader reader, CancellationToken ct)
     {
         await auth.RequireProjectRoleAsync(projectId, user.UserId(), WorkspaceRole.Viewer, ct);
-        return await reader.GetAsync(projectId, promiseId, ct) is { } promise ? Results.Ok(promise) : PromiseAccess.NotFound();
+        return await reader.GetAsync(projectId, promiseId, ct) is { } promise ? Results.Ok(promise) : NotFound("Promise");
     }
 
     /// <summary>The runs of a promise, newest first. Runs are appended and never changed.</summary>
@@ -93,10 +94,10 @@ public static class PromiseReads
     {
         await auth.RequireProjectRoleAsync(projectId, user.UserId(), WorkspaceRole.Viewer, ct);
         if (!await db.Promises.AsNoTracking().AnyAsync(p => p.Id == promiseId && p.ProjectId == projectId, ct))
-            return PromiseAccess.NotFound();
+            return NotFound("Promise");
 
         if (obligation is { Length: > MaxObligationFilterChars })
-            return PromiseAccess.Invalid("obligation", $"An obligation is named by its ID or its key, at most {MaxObligationFilterChars} characters");
+            return Invalid("obligation", $"An obligation is named by its ID or its key, at most {MaxObligationFilterChars} characters");
 
         var pageSize = Math.Clamp(limit ?? 50, 1, 200);
         var query = db.PromiseRuns.AsNoTracking().Where(r => r.PromiseId == promiseId);

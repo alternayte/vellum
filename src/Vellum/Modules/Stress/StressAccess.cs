@@ -135,8 +135,6 @@ internal sealed record StressWorld(TraceModel Model, long ModelVersion, Scenario
 /// <summary>What the stress handlers share: who calls, how a body is read and how the model is pinned.</summary>
 internal static class StressAccess
 {
-    public static IResult NotFound(string what) => Results.NotFound(new ErrorResponse("not_found", $"{what} not found"));
-
     /// <summary>
     /// Reads a JSON body with the app's options. A body that is not the expected document gets
     /// 400 with the error envelope and the reader's message, not a bare status.

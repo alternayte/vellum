@@ -8,6 +8,7 @@ using Vellum.Modules.Schemas;
 using Vellum.Modules.Stress;
 using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Shared;
+using static Vellum.Shared.ResultExtensions;
 
 namespace Vellum.Modules.LoadTests;
 
@@ -51,9 +52,9 @@ public static class Scripts
         {
             var profileRow = await db.Profiles.AsNoTracking().FirstOrDefaultAsync(p => p.Id == request.ProfileId && p.ProjectId == projectId, ct);
             if (profileRow is null)
-                return Targets.NotFound("Stress profile");
+                return NotFound("Stress profile");
             if (await Targets.LoadAsync(db, projectId, request.TargetId, ct) is not (var target, _))
-                return Targets.NotFound("Load-test target");
+                return NotFound("Load-test target");
 
             var profile = StressProfiles.Read(profileRow.Document);
             var world = await StressAccess.LoadAsync(store, db, projectId, streamId, profile.ScenarioId, ct);
@@ -154,7 +155,7 @@ public static class Scripts
         await auth.RequireProjectRoleAsync(projectId, user.UserId(), WorkspaceRole.Viewer, ct);
 
         var row = await db.Scripts.AsNoTracking().FirstOrDefaultAsync(s => s.Id == scriptId && s.ProjectId == projectId, ct);
-        return row is null ? Targets.NotFound("Script") : Results.Ok(Dto(row, withContent: true));
+        return row is null ? NotFound("Script") : Results.Ok(Dto(row, withContent: true));
     }
 
     internal static ScriptDto Dto(ScriptEntity row, bool withContent)

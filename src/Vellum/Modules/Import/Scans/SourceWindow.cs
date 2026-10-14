@@ -6,6 +6,7 @@ using Vellum.Modules.Import.Extraction;
 using Vellum.Modules.Import.Proposals;
 using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Shared;
+using static Vellum.Shared.ResultExtensions;
 
 namespace Vellum.Modules.Import.Scans;
 
@@ -49,7 +50,7 @@ public static class SourceWindow
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Viewer, ct);
         var scan = await db.Scans.AsNoTracking().FirstOrDefaultAsync(s => s.Id == importId && s.ProjectId == projectId, ct);
         if (scan is null)
-            return ScanRequests.NotFound();
+            return NotFound("Import");
         if (scan.RepositoryIsPrivate != false)
             await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
 
@@ -117,8 +118,6 @@ public static class SourceWindow
             && e.StartLine <= start && end <= e.EndLine);
     }
 
-    private static IResult Invalid(string field, string message) =>
-        Results.BadRequest(new ErrorResponse("validation_error", "Validation failed", Errors: [new FieldError(field, message)]));
 }
 
 /// <summary>

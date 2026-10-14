@@ -9,6 +9,7 @@ using Vellum.Modules.Import.Scans;
 using Vellum.Modules.Settings.Audit;
 using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Shared;
+using static Vellum.Shared.ResultExtensions;
 
 namespace Vellum.Modules.Promises;
 
@@ -427,7 +428,7 @@ public static class ImpactGate
         if (request is null)
             return error!;
         if (!ImpactGatePolicy.IsKnown(request.Policy))
-            return PromiseAccess.Invalid("policy", $"The policy is {ImpactGatePolicy.Off} or {ImpactGatePolicy.FailOnBroken}");
+            return Invalid("policy", $"The policy is {ImpactGatePolicy.Off} or {ImpactGatePolicy.FailOnBroken}");
 
         var workspaceId = await auth.GetProjectWorkspaceIdAsync(projectId, ct);
         var now = time.GetUtcNow();

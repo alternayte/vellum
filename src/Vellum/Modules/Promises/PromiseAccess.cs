@@ -6,6 +6,7 @@ using Microsoft.Extensions.Options;
 using Vellum.Modules.Identity;
 using Vellum.Modules.Identity.AgentTokens;
 using Vellum.Shared;
+using static Vellum.Shared.ResultExtensions;
 
 namespace Vellum.Modules.Promises;
 
@@ -123,11 +124,6 @@ internal static class PromiseAccess
         var changed = events.Aggregate(state, PromiseState.Evolve).Latest!;
         return PromiseJson.Write(new { changed.Content, changed.Obligations }).Length > PromiseRules.MaxRevisionChars;
     }
-
-    public static IResult Invalid(string field, string message) =>
-        Results.BadRequest(new ErrorResponse("validation_error", "Validation failed", Errors: [new FieldError(field, message)]));
-
-    public static IResult NotFound() => Results.NotFound(new ErrorResponse("not_found", "Promise not found"));
 
     /// <summary>
     /// Runs a decision on a promise stream. Every stream type shares one space of IDs, so an

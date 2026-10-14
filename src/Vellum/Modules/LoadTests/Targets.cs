@@ -7,6 +7,7 @@ using Vellum.Modules.Settings.Audit;
 using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Shared;
 using Decision = Vellum.Shared.CommandResult<System.Collections.Generic.IReadOnlyList<object>>;
+using static Vellum.Shared.ResultExtensions;
 
 namespace Vellum.Modules.LoadTests;
 
@@ -272,8 +273,6 @@ public static class Targets
     /// </summary>
     internal static Task LockProjectAsync(Microsoft.EntityFrameworkCore.Infrastructure.DatabaseFacade database, Guid projectId, CancellationToken ct) =>
         database.ExecuteSqlAsync($"SELECT pg_advisory_xact_lock({LockSpace}, hashtext({projectId.ToString()}))", ct);
-
-    internal static IResult NotFound(string what) => Results.NotFound(new ErrorResponse("not_found", $"{what} not found"));
 
     internal static TargetDto Dto(Guid id, TargetState state, long version) => new(
         id, state.Name!, state.BaseUrl!, state.Environment!, version, state.AuthorisationInForce, state.Override, state.UpdatedAt!.Value);

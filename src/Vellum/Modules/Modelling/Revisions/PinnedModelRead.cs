@@ -10,6 +10,7 @@ using Vellum.Modules.Promises;
 using Vellum.Modules.Workspaces;
 using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Shared;
+using static Vellum.Shared.ResultExtensions;
 
 namespace Vellum.Modules.Modelling.Revisions;
 
@@ -149,13 +150,13 @@ public static class PinnedModelRead
         if (side is not null && side.StartsWith(RevisionPrefix, StringComparison.Ordinal))
         {
             if (!Guid.TryParse(side[RevisionPrefix.Length..], out var id))
-                return (null, Invalid(field));
+                return (null, Invalid(field, NotABranch));
             revisionId = id;
         }
         else if (side != "main")
         {
             if (!Guid.TryParse(side, out var id))
-                return (null, Invalid(field));
+                return (null, Invalid(field, NotABranch));
             branchId = id;
         }
 
@@ -171,8 +172,7 @@ public static class PinnedModelRead
         return await PinnedModel.ResolveAsync(services, projectId, revisionId, branchId, ct);
     }
 
-    private static IResult Invalid(string field, string message = "Must be main, the stream ID of an open draft or variant, or revision: and the ID of a revision") =>
-        Results.BadRequest(new ErrorResponse("validation_error", "Validation failed", Errors: [new FieldError(field, message)]));
+    private const string NotABranch = "Must be main, the stream ID of an open draft or variant, or revision: and the ID of a revision";
 
     private static ElementDto ToDto(ElementState e) => new(
         e.Id, e.Kind.ToString().ToLowerInvariant(), e.Name, e.Description, e.Technology, e.OwnerId,

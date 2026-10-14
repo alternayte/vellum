@@ -12,6 +12,7 @@ using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Modules.Settings.Document;
 using Vellum.Shared;
 using Vellum.Shared.Telemetry;
+using static Vellum.Shared.ResultExtensions;
 
 namespace Vellum.Modules.Stress;
 
@@ -55,7 +56,7 @@ public static class StressRuns
         {
             var row = await db.Profiles.AsNoTracking().FirstOrDefaultAsync(p => p.Id == profileId && p.ProjectId == projectId, ct);
             if (row is null)
-                return StressAccess.NotFound("Stress profile");
+                return NotFound("Stress profile");
             var profile = StressProfiles.Read(row.Document);
 
             // Read for each run, so a change of the instance policy applies with no restart.
@@ -114,7 +115,7 @@ public static class StressRuns
             // The lock holds the profile for this transaction: a delete of it, or of its project, waits and then removes this run too.
             var held = await db.Profiles.FromSql($"SELECT * FROM stress.profiles WHERE id = {profileId} FOR UPDATE").AsNoTracking().ToListAsync(ct);
             if (held.Count == 0)
-                return StressAccess.NotFound("Stress profile");
+                return NotFound("Stress profile");
 
             db.StressRuns.Add(run);
             await db.SaveChangesAsync(ct);
@@ -149,7 +150,7 @@ public static class StressRuns
         var profile = await db.Profiles.AsNoTracking()
             .Where(p => p.Id == profileId && p.ProjectId == projectId).Select(p => new { p.Version }).FirstOrDefaultAsync(ct);
         if (profile is null)
-            return StressAccess.NotFound("Stress profile");
+            return NotFound("Stress profile");
 
         // Without the documents: a list does not read the results.
         var rows = await db.StressRuns.AsNoTracking()
@@ -176,7 +177,7 @@ public static class StressRuns
     {
         await auth.RequireProjectRoleAsync(projectId, user.UserId(), WorkspaceRole.Viewer, ct);
 
-        return await ReadAsync(db, store, projectId, runId, ct) is { } run ? Results.Ok(run) : StressAccess.NotFound("Stress run");
+        return await ReadAsync(db, store, projectId, runId, ct) is { } run ? Results.Ok(run) : NotFound("Stress run");
     }
 
     public static async Task<IResult> Delete(
@@ -185,7 +186,7 @@ public static class StressRuns
         await auth.RequireProjectRoleAsync(projectId, user.UserId(), WorkspaceRole.Editor, ct);
 
         var deleted = await db.StressRuns.Where(r => r.Id == runId && r.ProjectId == projectId).ExecuteDeleteAsync(ct);
-        return deleted == 0 ? StressAccess.NotFound("Stress run") : Results.NoContent();
+        return deleted == 0 ? NotFound("Stress run") : Results.NoContent();
     }
 
     /// <summary>A run of the project with its documents, or null. A run of another project reads as not found.</summary>

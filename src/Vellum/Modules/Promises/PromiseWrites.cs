@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Vellum.Modules.Identity.AgentTokens;
 using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Shared;
+using static Vellum.Shared.ResultExtensions;
 
 namespace Vellum.Modules.Promises;
 
@@ -49,9 +50,9 @@ public static class PromiseWrites
         if (request is null)
             return error!;
         if (!PromiseRules.IsPrefix(request.Prefix))
-            return PromiseAccess.Invalid("prefix", "A prefix is 2 to 6 upper-case letters, for example ORD");
+            return Invalid("prefix", "A prefix is 2 to 6 upper-case letters, for example ORD");
         if (request.StartAt is < 1 or > 100_000)
-            return PromiseAccess.Invalid("startAt", "The first number is between 1 and 100000");
+            return Invalid("startAt", "The first number is between 1 and 100000");
 
         var startAt = request.StartAt ?? 1;
         var inserted = await db.Database.ExecuteSqlAsync(
@@ -73,7 +74,7 @@ public static class PromiseWrites
 
         // The origin comes from who calls, not from what the body says.
         if (PromiseAccess.Origin(http.User, request.Origin) is not { } origin)
-            return PromiseAccess.Invalid("origin", "The origin of a promise a person creates is human or ai-suggested");
+            return Invalid("origin", "The origin of a promise a person creates is human or ai-suggested");
 
         var content = request.ToContent();
         var promiseId = Guid.NewGuid();
@@ -177,11 +178,11 @@ public static class PromiseWrites
         if (request is null)
             return error!;
         if (string.IsNullOrEmpty(request.ContentHash))
-            return PromiseAccess.Invalid("contentHash", "The content hash of the revision is required. Read the promise and send the contentHash of the draft you approve.");
+            return Invalid("contentHash", "The content hash of the revision is required. Read the promise and send the contentHash of the draft you approve.");
 
         var row = await db.Promises.AsNoTracking().FirstOrDefaultAsync(p => p.Id == promiseId && p.ProjectId == projectId, ct);
         if (row is null)
-            return PromiseAccess.NotFound();
+            return NotFound("Promise");
         var links = PromiseJson.Read<PromiseState>(row.Document).Latest!.Content.Links;
 
         // The hashes record what the approver saw. A link that changes later shows as a gap.

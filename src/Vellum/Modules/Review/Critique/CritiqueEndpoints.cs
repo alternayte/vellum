@@ -10,6 +10,7 @@ using Vellum.Modules.Review.Decisions;
 using Vellum.Modules.Review.Rules;
 using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Shared;
+using static Vellum.Shared.ResultExtensions;
 
 namespace Vellum.Modules.Review.Critique;
 
@@ -86,9 +87,9 @@ public static class CritiqueEndpoints
         if (caller is null)
             return refusal!;
         if (body.Question is not null && TextRule.Lines("question", body.Question, MaxQuestionChars) is { } invalid)
-            return ReviewAccess.Invalid(invalid.Field, invalid.Message);
+            return Invalid(invalid.Field, invalid.Message);
         if (body.Focus is { Count: > MaxFocus })
-            return ReviewAccess.Invalid("focus", $"A focus holds at most {MaxFocus} IDs");
+            return Invalid("focus", $"A focus holds at most {MaxFocus} IDs");
 
         var (review, reviewRefusal) = await ReviewEngine.LoadAsync(http.RequestServices, projectId, null, body.BranchId, ct);
         if (review is null)
@@ -248,7 +249,7 @@ public static class CritiqueEndpoints
     {
         await DesignAccess.RequireAsync(http, projectId, WorkspaceRole.Viewer, ct);
         if (await db.Critiques.AsNoTracking().FirstOrDefaultAsync(c => c.Id == critiqueId && c.ProjectId == projectId, ct) is not { } row)
-            return ReviewAccess.NotFound("Critique");
+            return NotFound("Critique");
         return Results.Ok(ToDto(row, Read(row), await VersionAsync(http, store, projectId, row.BranchId, ct)));
     }
 
@@ -257,7 +258,7 @@ public static class CritiqueEndpoints
         await DesignAccess.RequireAsync(http, projectId, WorkspaceRole.Editor, ct);
         return await db.Critiques.Where(c => c.Id == critiqueId && c.ProjectId == projectId).ExecuteDeleteAsync(ct) == 1
             ? Results.NoContent()
-            : ReviewAccess.NotFound("Critique");
+            : NotFound("Critique");
     }
 
     /// <summary>
@@ -272,13 +273,13 @@ public static class CritiqueEndpoints
         var (_, userId) = await DesignAccess.RequireAsync(http, projectId, WorkspaceRole.Editor, ct);
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         if (await LockAsync(db, projectId, critiqueId, ct) is not { } row)
-            return ReviewAccess.NotFound("Critique");
+            return NotFound("Critique");
         var document = Read(row);
         if (index < 0 || index >= document.Content.ProposedDecisions.Count)
-            return ReviewAccess.NotFound("Proposed decision of the critique");
+            return NotFound("Proposed decision of the critique");
         var proposed = document.Content.ProposedDecisions[index];
         if (proposed.KeptAs is { } kept)
-            return ReviewAccess.Conflict($"This proposal is kept already, as the decision {kept}.");
+            return Conflict($"This proposal is kept already, as the decision {kept}.");
         if (await VersionAsync(http, store, projectId, row.BranchId, ct) != document.ModelVersion)
         {
             return Results.Conflict(new ErrorResponse("critique_stale",
@@ -309,13 +310,13 @@ public static class CritiqueEndpoints
         var (_, userId) = await DesignAccess.RequireAsync(http, projectId, WorkspaceRole.Editor, ct);
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         if (await LockAsync(db, projectId, critiqueId, ct) is not { } row)
-            return ReviewAccess.NotFound("Critique");
+            return NotFound("Critique");
         var document = Read(row);
         if (index < 0 || index >= document.Content.Questions.Count)
-            return ReviewAccess.NotFound("Question of the critique");
+            return NotFound("Question of the critique");
         var question = document.Content.Questions[index];
         if (question.KeptAs is { } kept)
-            return ReviewAccess.Conflict($"This question is kept already, as the question {kept}.");
+            return Conflict($"This question is kept already, as the question {kept}.");
 
         var (added, refusal) = await Questions.AddAsync(
             db, projectId, question.Text, [.. question.About.Select(a => a.Id)], PromiseOrigin.AiSuggested, userId, time.GetUtcNow(), ct);

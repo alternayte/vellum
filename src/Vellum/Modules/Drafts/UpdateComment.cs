@@ -3,6 +3,7 @@ using System.Security.Claims;
 using Microsoft.EntityFrameworkCore;
 using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Shared;
+using static Vellum.Shared.ResultExtensions;
 
 namespace Vellum.Modules.Drafts;
 
@@ -23,7 +24,7 @@ public static class UpdateComment
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
 
         if (CommentRules.Check(request.Body, entityType: null) is { } invalid)
-            return CommentRules.Invalid(invalid);
+            return Invalid(invalid);
 
         // The draft must be one of this project. Without that, a caller could name a draft of
         // another project and learn from the 403 below that the comment exists.

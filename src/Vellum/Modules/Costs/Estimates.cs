@@ -6,6 +6,7 @@ using Vellum.Modules.Modelling;
 using Vellum.Modules.Settings.Document;
 using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Shared;
+using static Vellum.Shared.ResultExtensions;
 
 namespace Vellum.Modules.Costs;
 
@@ -166,7 +167,7 @@ public static class Estimates
             var asOf = request.AsOf ?? Today(time);
             var name = string.IsNullOrWhiteSpace(request.Name) ? $"Estimate {Estimator.Day(asOf)}" : request.Name.Trim();
             if (TextRule.Line("name", name) is { } error)
-                return PriceBook.Invalid([error]);
+                return Invalid([error]);
 
             var built = await reader.BuildAsync(projectId, branch, asOf, ct);
             await using var transaction = await db.Database.BeginTransactionAsync(ct);
@@ -219,7 +220,7 @@ public static class Estimates
             var row = await db.Estimates.AsNoTracking()
                 .FirstOrDefaultAsync(e => e.Id == estimateId && e.ProjectId == projectId && e.BranchId == branch, ct);
             if (row is null)
-                return CostAccess.NotFound("Saved estimate");
+                return NotFound("Saved estimate");
             var now = (await reader.BuildAsync(projectId, branch, Today(time), ct)).Inputs;
             return Results.Ok(ToDto(row, now, withResult: true));
         }, ct);
@@ -229,7 +230,7 @@ public static class Estimates
         ModelBranches.RunAsync(http, projectId, branchId, WorkspaceRole.Editor, async (branch, _) =>
             await db.Estimates.Where(e => e.Id == estimateId && e.ProjectId == projectId && e.BranchId == branch).ExecuteDeleteAsync(ct) == 1
                 ? Results.NoContent()
-                : CostAccess.NotFound("Saved estimate"), ct);
+                : NotFound("Saved estimate"), ct);
 
     private static SavedEstimateDto ToDto(SavedEstimateEntity row, EstimateInputsIndex now, bool withResult)
     {
@@ -281,7 +282,7 @@ public static class Pins
             .FromSql($"SELECT * FROM costs.price_entries WHERE id = {priceId} AND workspace_id = {workspaceId} FOR SHARE")
             .AsNoTracking().ToListAsync(ct);
         if (entry.Count == 0)
-            return CostAccess.NotFound("Price entry");
+            return NotFound("Price entry");
         if (await db.Pins.CountAsync(p => p.ProjectId == projectId, ct) >= MaxPerProject)
             return Results.Conflict(new ErrorResponse("conflict", $"A project pins at most {MaxPerProject} price entries."));
 

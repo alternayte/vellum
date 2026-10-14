@@ -5,6 +5,7 @@ using Vellum.Modules.Settings.Audit;
 using Vellum.Modules.Workspaces;
 using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Shared;
+using static Vellum.Shared.ResultExtensions;
 
 namespace Vellum.Modules.Identity.AgentTokens;
 
@@ -179,6 +180,4 @@ public static class AgentTokenEndpoints
         return Results.NoContent();
     }
 
-    private static IResult Invalid(string field, string message) =>
-        Results.BadRequest(new ErrorResponse("validation_error", "Validation failed", Errors: [new FieldError(field, message)]));
 }

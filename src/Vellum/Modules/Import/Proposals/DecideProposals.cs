@@ -9,6 +9,7 @@ using Vellum.Modules.Schemas;
 using Vellum.Modules.Workspaces;
 using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Shared;
+using static Vellum.Shared.ResultExtensions;
 
 namespace Vellum.Modules.Import.Proposals;
 
@@ -425,6 +426,4 @@ public static class DecideProposals
     private static IResult Failed(List<DecisionFailure> failures) =>
         Results.Ok(new DecideProposalsResponse([], [], [.. failures.DistinctBy(f => f.Id)], []));
 
-    private static IResult Invalid(string field, string message) =>
-        Results.BadRequest(new ErrorResponse("validation_error", "Validation failed", Errors: [new FieldError(field, message)]));
 }
