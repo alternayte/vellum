@@ -43,7 +43,7 @@ public class ChangeImpactTests(ImportHost import) : IClassFixture<ImportHost>
     }
 
     /// <summary>What the outbox tests share: the accepted import, the declared flow and three promises.</summary>
-    private sealed record Arranged(
+    internal sealed record Arranged(
         ImportScenario S, Guid OrdersApi, Guid Billing, Guid Scenario, Guid Ord014, Guid Ord015, Guid Ord016, string SourceCheck, Guid MainScan);
 
     /// <summary>
@@ -52,7 +52,9 @@ public class ChangeImpactTests(ImportHost import) : IClassFixture<ImportHost>
     /// the flow, OrderCreated and Orders.Api, approved, with a source pattern check), ORD-015
     /// (links Billing) and ORD-016 (a draft that links the flow).
     /// </summary>
-    private async Task<Arranged> ArrangeAsync(IDictionary<string, byte[]>? files = null)
+    private Task<Arranged> ArrangeAsync(IDictionary<string, byte[]>? files = null) => ArrangeAsync(import, files);
+
+    internal static async Task<Arranged> ArrangeAsync(ImportHost import, IDictionary<string, byte[]>? files = null)
     {
         var s = await ImportScenario.CreateAsync(import);
         if (files is not null)
@@ -93,7 +95,7 @@ public class ChangeImpactTests(ImportHost import) : IClassFixture<ImportHost>
     }
 
     /// <summary>Puts <paramref name="files"/> on the branch <c>remove-outbox</c> as Commit2; <c>main</c> stays at Commit1.</summary>
-    private static void Branch(ImportScenario s, IDictionary<string, byte[]> files, string name = "remove-outbox")
+    internal static void Branch(ImportScenario s, IDictionary<string, byte[]> files, string name = "remove-outbox")
     {
         s.GitHub.Commit(ImportScenario.Commit2, files);
         s.GitHub.Head = ImportScenario.Commit1;

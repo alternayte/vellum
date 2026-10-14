@@ -23,6 +23,34 @@ namespace Vellum.Modules.Promises.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("Vellum.Modules.Promises.ImpactGateEntity", b =>
+                {
+                    b.Property<Guid>("ProjectId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("project_id");
+
+                    b.Property<DateTimeOffset>("ChangedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("changed_at");
+
+                    b.Property<string>("ChangedBy")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("changed_by");
+
+                    b.Property<string>("Policy")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("policy");
+
+                    b.HasKey("ProjectId")
+                        .HasName("pk_impact_gates");
+
+                    b.ToTable("impact_gates", "promises");
+                });
+
             modelBuilder.Entity("Vellum.Modules.Promises.NumberingEntity", b =>
                 {
                     b.Property<Guid>("ProjectId")

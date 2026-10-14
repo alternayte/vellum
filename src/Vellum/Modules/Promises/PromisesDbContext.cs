@@ -56,11 +56,25 @@ public class NumberingEntity
     public int NextNumber { get; set; }
 }
 
+/// <summary>
+/// The gate policy of the impact report of a project (<see cref="ImpactGatePolicy"/>). No row
+/// means <c>off</c>. Only an owner changes it, and the audit log records each change.
+/// </summary>
+public class ImpactGateEntity
+{
+    public Guid ProjectId { get; set; }
+    public string Policy { get; set; } = null!;
+    /// <summary>The user who set the policy.</summary>
+    public string ChangedBy { get; set; } = null!;
+    public DateTimeOffset ChangedAt { get; set; }
+}
+
 public class PromisesDbContext(DbContextOptions<PromisesDbContext> options) : DbContext(options)
 {
     public DbSet<PromiseEntity> Promises => Set<PromiseEntity>();
     public DbSet<RunEntity> Runs => Set<RunEntity>();
     public DbSet<NumberingEntity> Numbering => Set<NumberingEntity>();
+    public DbSet<ImpactGateEntity> ImpactGates => Set<ImpactGateEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -87,6 +101,13 @@ public class PromisesDbContext(DbContextOptions<PromisesDbContext> options) : Db
         {
             b.ToTable("numbering");
             b.HasKey(n => n.ProjectId);
+        });
+
+        modelBuilder.Entity<ImpactGateEntity>(b =>
+        {
+            b.ToTable("impact_gates");
+            b.HasKey(g => g.ProjectId);
+            b.Property(g => g.Policy).HasMaxLength(32);
         });
     }
 }

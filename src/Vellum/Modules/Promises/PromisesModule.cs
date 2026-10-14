@@ -1,6 +1,7 @@
 using Deedbox;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection.Extensions;
+using Microsoft.OpenApi;
 using Vellum.Modules.Identity.AgentTokens;
 using Vellum.Modules.Promises.Checks;
 using Vellum.Shared;
@@ -120,6 +121,34 @@ public static class PromisesModule
             .Produces<ChangeImpactDto>()
             .Produces<ErrorResponse>(StatusCodes.Status404NotFound)
             .Produces<ErrorResponse>(StatusCodes.Status409Conflict);
+
+        // The compact report for a pull request or a CI job: Markdown, or JSON for Accept:
+        // application/json. A read token reads it; Vellum sends it nowhere.
+        app.MapGet("/api/projects/{projectId}/imports/{importId:guid}/impact/report", ImpactReport.Handle)
+            .RequireAuthorization()
+            .AllowAgent(AgentScope.Read)
+            .WithTags("Imports")
+            .Produces<ImpactReportDto>(StatusCodes.Status200OK, "application/json")
+            // The same 200 is Markdown without Accept: application/json.
+            .AddOpenApiOperationTransformer((operation, _, _) =>
+            {
+                if (operation.Responses?.TryGetValue("200", out var ok) == true && ok.Content is { } content)
+                    content["text/markdown"] = new OpenApiMediaType { Schema = new OpenApiSchema { Type = JsonSchemaType.String } };
+                return Task.CompletedTask;
+            })
+            .Produces<ErrorResponse>(StatusCodes.Status404NotFound)
+            .Produces<ErrorResponse>(StatusCodes.Status409Conflict);
+
+        var gate = app.MapGroup("/api/projects/{projectId}/impact-gate")
+            .RequireAuthorization()
+            .WithBodyLimit(RequestBodyLimit.Default)
+            .WithTags("Promises");
+        gate.MapGet("/", ImpactGate.Get).AllowAgent(AgentScope.Read).Produces<ImpactGateSettingDto>();
+        // A policy that can fail a build is for an owner, never for a token.
+        gate.MapPut("/", ImpactGate.Set).RequireHuman()
+            .Accepts<SetImpactGateRequest>("application/json")
+            .Produces<ImpactGateSettingDto>()
+            .Produces<ErrorResponse>(StatusCodes.Status400BadRequest);
 
         return app;
     }

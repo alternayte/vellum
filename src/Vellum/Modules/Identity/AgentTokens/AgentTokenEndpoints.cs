@@ -8,7 +8,7 @@ using Vellum.Shared;
 
 namespace Vellum.Modules.Identity.AgentTokens;
 
-/// <param name="Scopes">One or more of <c>read</c>, <c>propose</c>, <c>export</c>.</param>
+/// <param name="Scopes">One or more of <c>read</c>, <c>propose</c>, <c>export</c>, <c>scan-pull-request</c>.</param>
 /// <param name="ProjectId">Restricts the token to one project of the workspace. Null for every project.</param>
 /// <param name="ExpiresAt">Null for 90 days from now. At most 365 days from now.</param>
 public sealed record CreateAgentTokenRequest(string? Name, IReadOnlyList<string>? Scopes, Guid? ProjectId, DateTimeOffset? ExpiresAt);
@@ -65,11 +65,11 @@ public static class AgentTokenEndpoints
         foreach (var requested in request.Scopes ?? [])
         {
             if (!AgentScopes.TryParse(requested, out var scope))
-                return Invalid("scopes", "A scope is read, propose or export");
+                return Invalid("scopes", "A scope is read, propose, export or scan-pull-request");
             scopes.Add(scope);
         }
         if (scopes.Count == 0)
-            return Invalid("scopes", "At least one scope is required: read, propose or export");
+            return Invalid("scopes", "At least one scope is required: read, propose, export or scan-pull-request");
 
         var now = time.GetUtcNow();
         var expiresAt = (request.ExpiresAt ?? now + AgentTokenRules.DefaultLifetime).ToUniversalTime();

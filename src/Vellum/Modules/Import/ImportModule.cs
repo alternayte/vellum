@@ -50,16 +50,18 @@ public static class ImportModule
             .RequireAuthorization()
             .WithTags("Imports");
 
-        imports.MapPost("/", ScanRequests.Start)
+        // An agent token starts a scan of a pull request and no other scan (ScanRequests.Start).
+        imports.MapPost("/", ScanRequests.Start).AllowAgent(AgentScope.ScanPullRequest)
             .Produces<StartScanResponse>(StatusCodes.Status202Accepted)
             .Produces<ErrorResponse>(StatusCodes.Status400BadRequest)
+            .Produces<ErrorResponse>(StatusCodes.Status403Forbidden)
             .Produces<ErrorResponse>(StatusCodes.Status409Conflict)
             .Produces<ErrorResponse>(StatusCodes.Status429TooManyRequests);
 
         imports.MapGet("/", ScanRequests.List)
             .Produces<Page<ScanDto>>();
 
-        imports.MapGet("/{importId}", ScanRequests.Get)
+        imports.MapGet("/{importId}", ScanRequests.Get).AllowAgent(AgentScope.Read)
             .Produces<ScanDetailDto>()
             .Produces<ErrorResponse>(StatusCodes.Status404NotFound);
 

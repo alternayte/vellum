@@ -579,6 +579,7 @@ public class AgentTokenTests(IntegrationFixture fixture)
     [
         "POST /api/projects/{projectId}/promises/{promiseId:guid}/approve",
         "PUT /api/projects/{projectId}/promises/prefix",
+        "PUT /api/projects/{projectId}/impact-gate/",
         "PUT /api/instance/settings",
         "POST /api/instance/keys/rotate",
         "PUT /api/workspaces/{workspaceId}/settings",
@@ -649,6 +650,11 @@ public class AgentTokenTests(IntegrationFixture fixture)
         ["GET /api/projects/{projectId}/promises/prefix"] = "read",
         ["GET /api/projects/{projectId}/promises/{promiseId:guid}"] = "read",
         ["GET /api/projects/{projectId}/promises/{promiseId:guid}/runs"] = "read",
+        // The CI recipe: a scan of a pull request, polled and reported; the gate policy is read only.
+        ["POST /api/projects/{projectId}/imports/"] = "scan-pull-request",
+        ["GET /api/projects/{projectId}/imports/{importId}"] = "read",
+        ["GET /api/projects/{projectId}/imports/{importId:guid}/impact/report"] = "read",
+        ["GET /api/projects/{projectId}/impact-gate/"] = "read",
         ["POST /api/projects/{projectId}/promises/"] = "propose",
         ["PUT /api/projects/{projectId}/promises/{promiseId:guid}"] = "propose",
         ["POST /api/projects/{projectId}/promises/{promiseId:guid}/revise"] = "propose",

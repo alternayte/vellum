@@ -75,7 +75,8 @@ public sealed class AgentReference(IEnumerable<McpServerTool> registered, AgentE
     public static string ToolsMarkdown(IEnumerable<McpServerTool> registered)
     {
         var text = new StringBuilder();
-        foreach (var scope in Enum.GetValues<AgentScope>())
+        // A scope that opens HTTP endpoints only, such as scan-pull-request, has no section.
+        foreach (var scope in Enum.GetValues<AgentScope>().Where(scope => Tools(registered).Any(tool => tool.Entry.Scope == scope)))
         {
             text.Append("### Scope `").Append(AgentScopes.Name(scope)).Append("`\n\n");
             foreach (var (entry, protocol) in Tools(registered).Where(tool => tool.Entry.Scope == scope))

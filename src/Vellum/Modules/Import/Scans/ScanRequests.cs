@@ -4,6 +4,7 @@ using System.Text.RegularExpressions;
 using Deedbox;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
+using Vellum.Modules.Identity.AgentTokens;
 using Vellum.Modules.Import.Proposals;
 using Vellum.Modules.Settings.Document;
 using Vellum.Modules.Workspaces.Authorization;
@@ -100,6 +101,14 @@ public static partial class ScanRequests
     {
         var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
+        // A token scans a pull request, which is always a comparison: it writes nothing to the
+        // model, marks no fact stale and cannot become the tracked ref. A scan of a ref can.
+        if (AgentPrincipal.IsAgent(user) && (request.PullRequest is null || request.Ref is not null))
+        {
+            return Results.Json(new ErrorResponse(AgentBoundary.AgentNotAllowedError, "This agent token cannot do this",
+                "An agent token starts only a scan of a pull request: give pullRequest and no ref. A person scans a branch, a tag or a commit."),
+                statusCode: StatusCodes.Status403Forbidden);
+        }
         var workspaceId = await auth.GetProjectWorkspaceIdAsync(projectId, ct);
 
         var workspace = await settings.GetWorkspaceAsync(workspaceId, ct);
@@ -135,7 +144,8 @@ public static partial class ScanRequests
             Host = host, Repository = repository, RequestedRef = reference, PullRequestNumber = request.PullRequest,
             IncludePaths = include, ExcludePaths = exclude,
             Limits = new ScanLimits(import.MaxFiles, import.MaxFileBytes, import.MaxTotalBytes, [.. import.ExcludeGlobs]).ToJson(),
-            Status = ScanStatus.Queued, RequestedBy = userId, CreatedAt = now, UpdatedAt = now,
+            // A token's scan names the token, so a person can tell it from their own.
+            Status = ScanStatus.Queued, RequestedBy = AgentPrincipal.IsAgent(user) ? AgentPrincipal.Actor(user)! : userId, CreatedAt = now, UpdatedAt = now,
         };
 
         // The count and the insert are one transaction under a lock for the workspace, so

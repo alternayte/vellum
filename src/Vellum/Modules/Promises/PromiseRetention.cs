@@ -5,7 +5,7 @@ namespace Vellum.Modules.Promises;
 
 /// <summary>
 /// What the promise tables keep when a project is deleted: nothing. The promises of a
-/// project, their runs and the project's requirement numbering go with it. A promise is a
+/// project, their runs, the project's requirement numbering and its impact gate policy go with it. A promise is a
 /// stream, so its stream is deleted too: a rebuild of the read model then does not bring the
 /// rows back. Every statement is safe to run again, and <see cref="DeleteOrphansAsync"/>
 /// repeats the work for a project whose delete was cut short.
@@ -25,6 +25,7 @@ public static class PromiseRetention
         await db.Runs.Where(r => r.ProjectId == projectId).ExecuteDeleteAsync(ct);
         await db.Promises.Where(p => p.ProjectId == projectId).ExecuteDeleteAsync(ct);
         await db.Numbering.Where(n => n.ProjectId == projectId).ExecuteDeleteAsync(ct);
+        await db.ImpactGates.Where(g => g.ProjectId == projectId).ExecuteDeleteAsync(ct);
     }
 
     /// <summary>Runs <see cref="DeleteProjectAsync"/> for every project that the promise tables name and that no longer exists.</summary>
@@ -34,7 +35,8 @@ public static class PromiseRetention
             SELECT i.project_id AS "Value"
             FROM (SELECT project_id FROM promises.promises
                   UNION SELECT project_id FROM promises.runs
-                  UNION SELECT project_id FROM promises.numbering) i
+                  UNION SELECT project_id FROM promises.numbering
+                  UNION SELECT project_id FROM promises.impact_gates) i
             WHERE NOT EXISTS (SELECT 1 FROM workspaces.projects p WHERE p.id = i.project_id)
             """).ToListAsync(ct);
         foreach (var projectId in gone)
