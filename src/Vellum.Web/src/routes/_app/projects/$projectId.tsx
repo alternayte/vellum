@@ -28,7 +28,7 @@ import { useTraceStore } from '@/stores/trace-store'
 import type { ScenarioReference } from '@/components/trace/scenario-editor'
 import { useAddElement, useUpdateElement, useRemoveElement } from '@/hooks/use-elements'
 import { useAddRelationship, useUpdateRelationship, useRemoveRelationship } from '@/hooks/use-relationships'
-import { isProjectRefusal, refuseWrite, useModel, useProject, writeGuard } from '@/hooks/use-model'
+import { isProjectRefusal, projectErrorBlocks, refuseWrite, useModel, useProject, writeGuard } from '@/hooks/use-model'
 import { useViews, useView, useCreateView, useSaveLayout } from '@/hooks/use-views'
 import { useDocs, useCreateDoc } from '@/hooks/use-docs'
 import { patchApiProjectsByProjectIdDocsByDocId } from '@/api/generated'
@@ -56,7 +56,7 @@ function ProjectPage() {
   const { projectId } = Route.useParams()
   const { data: project, error } = useProject(projectId)
 
-  if (error) {
+  if (projectErrorBlocks(!!project, error)) {
     const refused = isProjectRefusal(error)
     return (
       <main className="flex h-screen items-center justify-center bg-background px-4">
@@ -65,7 +65,7 @@ function ProjectPage() {
           <p className="mt-2 text-sm text-muted-foreground">
             {refused
               ? 'No project with this address exists in a workspace you are a member of.'
-              : error.message}
+              : error?.message}
           </p>
           <Button asChild size="sm" className="mt-4">
             <Link to="/">Back to projects</Link>
@@ -83,7 +83,17 @@ function ProjectPage() {
     )
   }
 
-  return <ProjectWorkspace />
+  return (
+    <>
+      <ProjectWorkspace />
+      {/* A failed refetch keeps what loaded; the query tries again on its own schedule. */}
+      {error && (
+        <div role="status" className="fixed bottom-10 left-1/2 z-50 max-w-md -translate-x-1/2 rounded-md border border-border bg-background px-3 py-2 text-xs text-muted-foreground shadow-md">
+          The project did not refresh ({error.message}). The workbench shows what loaded last.
+        </div>
+      )}
+    </>
+  )
 }
 
 function ProjectWorkspace() {
