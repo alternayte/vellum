@@ -570,6 +570,9 @@ public class AgentTokenTests(IntegrationFixture fixture) : IClassFixture<Integra
     private static readonly string[] ForAPerson =
     [
         "POST /api/projects/{projectId}/promises/{promiseId:guid}/approve",
+        // A truth label changes only by a person's decision (guarantee 2).
+        "POST /api/projects/{projectId}/facts/{entityType}/{entityId:guid}/accept",
+        "POST /api/projects/{projectId}/facts/{entityType}/{entityId:guid}/mark-unknown",
         "PUT /api/projects/{projectId}/promises/prefix",
         "PUT /api/projects/{projectId}/impact-gate/",
         "PUT /api/instance/settings",
