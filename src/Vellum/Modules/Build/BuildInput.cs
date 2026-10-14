@@ -255,7 +255,7 @@ public sealed record BuildInput(
             return null;
 
         var runs = new Dictionary<string, VerificationRun>(StringComparer.Ordinal);
-        foreach (var recorded in folded.Kept.Cast<PromiseEvent.VerificationRunRecorded>())
+        foreach (var recorded in folded.Kept.Cast<PromiseEvent.VerificationRunRecorded>().Where(r => PromiseState.CountsAsLatest(r.Run)))
             runs[PromiseState.RunKey(recorded.Run.PromiseRevision, recorded.Run.ObligationId)] = recorded.Run;
         return (folded.State, runs, folded.Version);
     }

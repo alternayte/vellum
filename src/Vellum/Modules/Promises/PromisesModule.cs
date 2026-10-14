@@ -139,6 +139,19 @@ public static class PromisesModule
             .Produces<ErrorResponse>(StatusCodes.Status404NotFound)
             .Produces<ErrorResponse>(StatusCodes.Status409Conflict);
 
+        // The CI recipe runs the checks of approved promises against the scan it started, then reads the report.
+        app.MapPost("/api/projects/{projectId}/imports/{importId:guid}/impact/checks", ObligationWrites.RunForScan)
+            .RequireAuthorization()
+            .AllowAgent(AgentScope.Propose, AgentScope.ScanPullRequest)
+            .WithBodyLimit(RequestBodyLimit.Default)
+            .WithTags("Imports")
+            .Produces<ScanChecksResponse>()
+            .Produces<ErrorResponse>(StatusCodes.Status403Forbidden)
+            .Produces<ErrorResponse>(StatusCodes.Status404NotFound)
+            .Produces<ErrorResponse>(StatusCodes.Status409Conflict)
+            .Produces<ErrorResponse>(StatusCodes.Status429TooManyRequests)
+            .AddEndpointFilter(CallerRate.Filter<PromiseRunRate>);
+
         var gate = app.MapGroup("/api/projects/{projectId}/impact-gate")
             .RequireAuthorization()
             .WithBodyLimit(RequestBodyLimit.Default)

@@ -118,17 +118,99 @@ public class ImpactReportTests(ImportHost import) : IClassFixture<ImportHost>
         Assert.NotEmpty(unknown["unknowns"]!.AsArray());
         Assert.Equal("pass", unknown["gate"]!["verdict"]!.GetValue<string>());
 
-        // The pull request: ORD-014 at risk on a definite reason, ORD-016 possible. The check that ran against it could not decide.
+        // The check against a scan that did not look everywhere cannot decide: unknown, never a failure.
+        var checks = await Json(s.Owner.PostAsync(s.Url($"/{narrow}/impact/checks"), null));
+        Assert.Equal("unsupported", Assert.Single(checks["runs"]!.AsArray())!["result"]!.GetValue<string>());
+        var undecided = await ReportJsonAsync(s.Owner, ReportUrl(s, narrow));
+        Assert.Equal("unknown", undecided["promises"]!.AsArray().Single(p => p!.AsObject().Id() == a.Ord014)!["checks"]![0]!["result"]!.GetValue<string>());
+        Assert.Equal("pass", undecided["gate"]!["verdict"]!.GetValue<string>());
+        Assert.Contains(undecided["gate"]!["reasons"]!.AsArray(), r => r!.GetValue<string>().Contains("could not decide"));
+
+        // The pull request with no check run: ORD-014 at risk on a definite reason, ORD-016 possible.
         var pull = (await s.ScanAsync(body: new { repository = "acme/orders", pullRequest = 1 })).Id();
-        await Json(s.Owner.PostAsJsonAsync(s.Model($"promises/{a.Ord014}/obligations/{a.SourceCheck}/run"), new { scanId = pull }));
         var report = await ReportJsonAsync(s.Owner, ReportUrl(s, pull));
         var standings = report["promises"]!.AsArray().ToDictionary(p => p!.AsObject().Id(), p => p!["standing"]!.GetValue<string>());
         Assert.Equal(("at-risk", "possible"), (standings[a.Ord014], standings[a.Ord016]));
-        Assert.Equal("unknown", report["promises"]!.AsArray().Single(p => p!.AsObject().Id() == a.Ord014)!["checks"]![0]!["result"]!.GetValue<string>());
         var gate = report["gate"]!.AsObject();
         Assert.Equal(("fail-on-broken", "pass"), (gate.Text("policy"), gate.Text("verdict")));
         Assert.Contains(gate["reasons"]!.AsArray(), r => r!.GetValue<string>().Contains("never fail the gate"));
-        Assert.Contains(gate["reasons"]!.AsArray(), r => r!.GetValue<string>().Contains("This scan is a comparison"));
+        Assert.Contains(gate["reasons"]!.AsArray(), r => r!.GetValue<string>().Contains("not run against this scan"));
+    }
+
+    [Fact]
+    public async Task A_pull_request_that_removes_the_outbox_breaks_the_promise_in_its_report_and_fails_the_gate_only_with_the_policy_on()
+    {
+        var a = await WithPullRequestAsync();
+        var s = a.S;
+        var factory = import.Host.Factory;
+        // The promise passes against the followed ref.
+        Assert.Equal("passed", (await Json(s.Owner.PostAsJsonAsync(s.Model($"promises/{a.Ord014}/obligations/{a.SourceCheck}/run"), new { scanId = a.MainScan }))).Text("result"));
+        async Task<JsonObject> StatusAsync() => (await Json(s.Owner.GetAsync(s.Model($"promises/{a.Ord014}"))))["current"]!["evidenceStatus"]!.AsObject();
+        var before = await StatusAsync();
+
+        // The CI token starts the scan, runs the checks against it and reads the report.
+        var ci = await TestHost.CreateAgentAsync(factory, s.Owner, s.WorkspaceId, ["read", "scan-pull-request"], projectId: s.ProjectId);
+        var scan = (await Json(ci.Client.PostAsJsonAsync(s.Url(), new { repository = "acme/orders", pullRequest = 1 }), HttpStatusCode.Accepted)).Id();
+        await s.DrainAsync();
+        var checks = await Json(ci.Client.PostAsync(s.Url($"/{scan}/impact/checks"), null));
+        var run = Assert.Single(checks["runs"]!.AsArray())!.AsObject();
+        Assert.Equal(("ORD-014", a.SourceCheck, "failed"), (run.Text("requirementId"), run.Text("key"), run.Text("result")));
+
+        // The run is for the head commit of the pull request, and names the scan.
+        var recorded = (await Json(s.Owner.GetAsync(s.Model($"promises/{a.Ord014}/runs"))))["items"]![0]!.AsObject();
+        Assert.Equal((scan, ImportScenario.Commit2, "comparison"), (recorded.Id("scanId"), recorded.Text("commitSha"), recorded["inputs"]!["scanKind"]!.GetValue<string>()));
+
+        var off = await ReportJsonAsync(ci.Client, ReportUrl(s, scan));
+        var ord014 = off["promises"]!.AsArray().Single(p => p!.AsObject().Id() == a.Ord014)!.AsObject();
+        Assert.Equal(("broken", "failed"), (ord014.Text("standing"), ord014["checks"]![0]!["result"]!.GetValue<string>()));
+        Assert.Equal("off", off["gate"]!["verdict"]!.GetValue<string>());
+
+        await SetPolicyAsync(s.Owner, s, ImpactGatePolicy.FailOnBroken);
+        var on = await ReportJsonAsync(ci.Client, ReportUrl(s, scan));
+        Assert.Equal("fail", on["gate"]!["verdict"]!.GetValue<string>());
+        Assert.StartsWith("ORD-014 ", Assert.Single(on["gate"]!["reasons"]!.AsArray())!.GetValue<string>());
+
+        // Against the followed ref, the promise is as it was.
+        var after = await StatusAsync();
+        Assert.Equal(before["counts"]!.ToJsonString(), after["counts"]!.ToJsonString());
+        Assert.Equal(1, after["counts"]!["passed"]!.GetValue<int>());
+        Assert.Equal(a.MainScan, after["obligations"]!.AsArray().Single(o => o!["obligationId"]!.GetValue<string>() == run.Text("obligationId"))!.AsObject().Id("scanId"));
+        // The followed ref has no failed run, so its own report does not fail the gate.
+        Assert.Equal("pass", (await ReportJsonAsync(s.Owner, ReportUrl(s, a.MainScan)))["gate"]!["verdict"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task Only_the_token_that_started_a_scan_or_a_propose_token_runs_its_checks()
+    {
+        var a = await WithPullRequestAsync();
+        var s = a.S;
+        var factory = import.Host.Factory;
+        var reader = await TestHost.CreateAgentAsync(factory, s.Owner, s.WorkspaceId, ["read"], projectId: s.ProjectId);
+        var scanner = await TestHost.CreateAgentAsync(factory, s.Owner, s.WorkspaceId, ["scan-pull-request"], projectId: s.ProjectId);
+        var other = await TestHost.CreateAgentAsync(factory, s.Owner, s.WorkspaceId, ["scan-pull-request"], projectId: s.ProjectId);
+        var proposer = await TestHost.CreateAgentAsync(factory, s.Owner, s.WorkspaceId, ["propose"], projectId: s.ProjectId);
+
+        var byPerson = (await s.ScanAsync(body: new { repository = "acme/orders", pullRequest = 1 })).Id();
+        var byToken = (await Json(scanner.Client.PostAsJsonAsync(s.Url(), new { repository = "acme/orders", pullRequest = 1 }), HttpStatusCode.Accepted)).Id();
+        await s.DrainAsync();
+
+        Assert.Equal("agent_not_allowed", (await Json(reader.Client.PostAsync(s.Url($"/{byToken}/impact/checks"), null), HttpStatusCode.Forbidden)).Text("type"));
+        Assert.Equal("agent_not_allowed", (await Json(scanner.Client.PostAsync(s.Url($"/{byPerson}/impact/checks"), null), HttpStatusCode.Forbidden)).Text("type"));
+        Assert.Equal("agent_not_allowed", (await Json(other.Client.PostAsync(s.Url($"/{byToken}/impact/checks"), null), HttpStatusCode.Forbidden)).Text("type"));
+        await Json(scanner.Client.PostAsync(s.Url($"/{byToken}/impact/checks"), null));
+        await Json(proposer.Client.PostAsync(s.Url($"/{byPerson}/impact/checks"), null));
+        // The single-check endpoint stays closed to the scan token.
+        Assert.Equal(HttpStatusCode.Forbidden, (await scanner.Client.PostAsJsonAsync(s.Model($"promises/{a.Ord014}/obligations/{a.SourceCheck}/run"), new { scanId = byToken })).StatusCode);
+
+        // A viewer cannot run checks, and another workspace reaches nothing.
+        using var viewer = await TestHost.SignInMemberAsync(factory, s.Owner, s.WorkspaceId, "Viewer");
+        Assert.Equal(HttpStatusCode.Forbidden, (await viewer.PostAsync(s.Url($"/{byPerson}/impact/checks"), null)).StatusCode);
+        using var stranger = await TestHost.SignInAsync(factory);
+        var (strangerWorkspace, mine) = await TestHost.CreateProjectAsync(stranger);
+        Assert.Equal(HttpStatusCode.Forbidden, (await stranger.PostAsync(s.Url($"/{byPerson}/impact/checks"), null)).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await stranger.PostAsync($"/api/projects/{mine}/imports/{byPerson}/impact/checks", null)).StatusCode);
+        var strangerToken = await TestHost.CreateAgentAsync(factory, stranger, strangerWorkspace, ["propose", "scan-pull-request"]);
+        Assert.Equal(HttpStatusCode.Forbidden, (await strangerToken.Client.PostAsync(s.Url($"/{byToken}/impact/checks"), null)).StatusCode);
     }
 
     [Fact]

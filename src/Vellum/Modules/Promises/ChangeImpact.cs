@@ -200,7 +200,7 @@ public static class ChangeImpact
             "A change in the source does not prove a change in behaviour. An entry marked definite names a thing that the change touches. Whether a flow or a promise still holds needs its checks.",
         };
         if (!kind.Tracking)
-            limits.Add("This scan is a comparison. The model does not change, and a source pattern check against it cannot fail: only a scan of the ref that the model follows establishes that a pattern is absent.");
+            limits.Add("This scan is a comparison. The model does not change. A source pattern check against it reads the snapshot of this commit, and its result is for this commit only: it does not change the result of the promise against the ref that the model follows.");
         if (!scan.IsComplete)
             limits.Add("This scan is partial. A limit stopped it before every file was read, so it proposes no removals and a missing item proves nothing.");
 
