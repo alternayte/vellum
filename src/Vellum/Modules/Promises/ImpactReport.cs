@@ -255,7 +255,7 @@ public static class ImpactReport
         var checks = impact.Promises.SelectMany(p => p.Checks).ToList();
         var notRun = checks.Count(c => c.Result == RunResult.NotRun);
         if (notRun > 0)
-            unknowns.Add(Count(notRun, "source pattern check was", "source pattern checks were") + " not run against this scan. The report states no result for them.");
+            unknowns.Add(Count(notRun, "source pattern check was not run against this scan, so it has", "source pattern checks were not run against this scan, so they have") + " no result here.");
         var unsupported = checks.Count(c => c.Result == RunResult.Unsupported);
         if (unsupported > 0)
             unknowns.Add(Count(unsupported, "source pattern check", "source pattern checks") + " ran against this scan and could not decide. Each says why.");
@@ -318,7 +318,8 @@ public static class ImpactReport
             md.Line(Md.Raw("No stored scenario names anything that changed.")).Blank();
         else
         {
-            var names = report.Changes.ToDictionary(c => c.Id, c => c.Name, StringComparer.Ordinal);
+            // Two changes can share a name, such as a message and its schema, so each is named with its kind.
+            var names = report.Changes.ToDictionary(c => c.Id, c => $"{(c.Kind == "source-pattern" ? "pattern" : c.EntityKind)} {c.Name}", StringComparer.Ordinal);
             var rows = new List<Md[]>();
             foreach (var flow in report.Flows)
             {
