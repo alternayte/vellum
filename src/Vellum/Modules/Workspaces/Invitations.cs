@@ -58,6 +58,16 @@ public static class InvitationRules
 {
     public const int MaxEmailLength = 256;
     public static readonly TimeSpan Lifetime = TimeSpan.FromDays(14);
+
+    /// <summary>
+    /// The current time at the precision Postgres stores (microseconds), so an answer built
+    /// from a new row equals the answer read back from that row.
+    /// </summary>
+    public static DateTimeOffset Now(TimeProvider time)
+    {
+        var now = time.GetUtcNow();
+        return now.AddTicks(-(now.Ticks % TimeSpan.TicksPerMicrosecond));
+    }
     /// <summary>Open invitations of one workspace. A workspace with more revokes some or waits for them to expire.</summary>
     public const int MaxPendingPerWorkspace = 100;
 
@@ -176,7 +186,7 @@ public static class CreateInvitation
             return Results.Conflict(new ErrorResponse("already_member", "This person is already a member",
                 "Change the role in the member list."));
 
-        var now = time.GetUtcNow();
+        var now = InvitationRules.Now(time);
         // The workspace row stays locked until the commit, so two invitations of one address
         // take turns, and the count of open invitations holds.
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
@@ -239,7 +249,7 @@ public static class ListInvitations
         var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
         await auth.RequireRoleAsync(workspaceId, userId, WorkspaceRole.Owner, ct);
 
-        var now = time.GetUtcNow();
+        var now = InvitationRules.Now(time);
         var invitations = await db.Invitations.AsNoTracking()
             .Where(i => i.WorkspaceId == workspaceId && i.Status == InvitationStatus.Pending && i.ExpiresAt > now)
             .OrderBy(i => i.CreatedAt).ThenBy(i => i.Id)
@@ -268,7 +278,7 @@ public static class RevokeInvitation
         if (invitation is null || invitation.WorkspaceId != workspaceId)
             return InvitationRules.NotFound();
 
-        var now = time.GetUtcNow();
+        var now = InvitationRules.Now(time);
         switch (invitation.Status)
         {
             case InvitationStatus.Revoked:
@@ -308,7 +318,7 @@ public static class MyInvitations
         if (email is null)
             return Results.Ok(Array.Empty<MyInvitationDto>());
 
-        var now = time.GetUtcNow();
+        var now = InvitationRules.Now(time);
         var rows = await db.Invitations.AsNoTracking()
             .Where(i => i.NormalizedEmail == email && i.Status == InvitationStatus.Pending && i.ExpiresAt > now)
             .Join(db.Workspaces, i => i.WorkspaceId, w => w.Id, (i, w) => new { Invitation = i, WorkspaceName = w.Name })
@@ -361,7 +371,7 @@ public static class MyInvitations
 
         var membership = await db.Memberships
             .FirstOrDefaultAsync(m => m.WorkspaceId == invitation.WorkspaceId && m.UserId == userId, ct);
-        var now = time.GetUtcNow();
+        var now = InvitationRules.Now(time);
         var status = InvitationRules.StatusAt(invitation, now);
         if (status == InvitationStatus.Accepted && invitation.RespondedBy == userId && membership is not null)
             return Results.Ok(ToDto(membership));
@@ -421,7 +431,7 @@ public static class MyInvitations
         if (invitation is null || !IsFor(invitation, email, request?.Secret))
             return InvitationRules.NotFound();
 
-        var now = time.GetUtcNow();
+        var now = InvitationRules.Now(time);
         var status = InvitationRules.StatusAt(invitation, now);
         if (status == InvitationStatus.Declined)
             return Results.NoContent();
