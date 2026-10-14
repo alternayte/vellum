@@ -124,6 +124,15 @@ These four values are what the form of a new stress profile shows first. `GET /a
 |---|---|---|---|---|---|
 | `notifications.webhookUrl` | string or `null` | `null` | `null`, empty, or a URL that obeys the [URL rules](#url-rules) | **Notifications** → **Webhook URL** | Vellum sends the comment events `comment.created`, `comment.mentioned` and `comment.resolved` to it. The secret `notifications:webhookSecret` is bound to its origin and signs each request. See [Comment on a design](/how-to/comment-on-a-design/#send-comment-events-to-a-webhook). |
 
+### `sharing`
+
+| JSON path | Type | Default | Allowed | UI | Effect |
+|---|---|---|---|---|---|
+| `sharing.linkPolicy` | string | `public` (local), `password-only` (hosted) | `off`, `password-only`, `public` | **Sharing** → **Link policy** | Which share links answer. `off`: none. `password-only`: a link without a password answers `404`. `public`: every link that is not revoked or expired. The policy applies to the links that exist. A link that it does not allow answers `404` and has the status `blocked`. A link that it does not allow cannot be created. |
+| `sharing.embedHosts` | list of strings | `[]` | At most 20 origins. Each is a scheme, a host name that can start with `*.`, and an optional port, with no path, for example `https://wiki.example.com`. A hosted instance accepts `https` only. | **Sharing** → **Embed allow-list** | The `frame-ancestors` of the page `/embed/{token}` of a view link. Empty: no site can frame it. Every other response sends `frame-ancestors 'none'` and `X-Frame-Options: DENY`. |
+
+See [Share and embed a read-only page](/how-to/share-and-embed/).
+
 ## The instance policy
 
 The policy is in `policy` of the instance settings. A `PUT` must state the first four keys. `policy.maxConcurrentStressRuns` is optional: a `PUT` that leaves it out sets it to `4`. The policy holds no other field.

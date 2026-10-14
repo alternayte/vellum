@@ -76,6 +76,9 @@ namespace Vellum.Migrations
             migrationBuilder.EnsureSchema(
                 name: "schemas");
 
+            migrationBuilder.EnsureSchema(
+                name: "sharing");
+
             migrationBuilder.AlterDatabase()
                 .Annotation("Npgsql:Enum:ai.ai_call_outcome", "abandoned,cancelled,failed,invalid_output,provider_error,rate_limited,refused,started,succeeded,timed_out,truncated")
                 .Annotation("Npgsql:Enum:ai.ai_provider_kind", "anthropic,gemini,openai,openai_compatible")
@@ -924,6 +927,45 @@ namespace Vellum.Migrations
                 });
 
             migrationBuilder.CreateTable(
+                name: "share_links",
+                schema: "sharing",
+                columns: table => new
+                {
+                    id = table.Column<Guid>(type: "uuid", nullable: false),
+                    workspace_id = table.Column<Guid>(type: "uuid", nullable: false),
+                    project_id = table.Column<Guid>(type: "uuid", nullable: false),
+                    scope = table.Column<string>(type: "character varying(16)", maxLength: 16, nullable: false),
+                    view_id = table.Column<Guid>(type: "uuid", nullable: true),
+                    mode = table.Column<string>(type: "character varying(16)", maxLength: 16, nullable: false),
+                    revision_id = table.Column<Guid>(type: "uuid", nullable: true),
+                    revision_name = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: true),
+                    revision_created_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
+                    label = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: false),
+                    show_costs = table.Column<bool>(type: "boolean", nullable: false),
+                    show_promises = table.Column<bool>(type: "boolean", nullable: false),
+                    token_hash = table.Column<byte[]>(type: "bytea", nullable: false),
+                    password_hash = table.Column<string>(type: "text", nullable: true),
+                    password_version = table.Column<int>(type: "integer", nullable: false),
+                    expires_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
+                    created_by = table.Column<string>(type: "text", nullable: false),
+                    created_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false, defaultValueSql: "now()"),
+                    updated_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false, defaultValueSql: "now()"),
+                    revoked_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
+                    revoked_by = table.Column<string>(type: "text", nullable: true),
+                    last_accessed_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
+                    failed_attempts = table.Column<int>(type: "integer", nullable: false),
+                    attempt_window_start = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("pk_share_links", x => x.id);
+                    table.CheckConstraint("ck_share_links_mode", "mode IN ('live', 'pinned')");
+                    table.CheckConstraint("ck_share_links_revision", "(mode = 'pinned') = (revision_id IS NOT NULL)");
+                    table.CheckConstraint("ck_share_links_scope", "scope IN ('project', 'view')");
+                    table.CheckConstraint("ck_share_links_view", "(scope = 'view') = (view_id IS NOT NULL)");
+                });
+
+            migrationBuilder.CreateTable(
                 name: "sheets",
                 schema: "costs",
                 columns: table => new
@@ -1383,6 +1425,26 @@ namespace Vellum.Migrations
                         principalTable: "scripts",
                         principalColumn: "id",
                         onDelete: ReferentialAction.Restrict);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "share_snapshots",
+                schema: "sharing",
+                columns: table => new
+                {
+                    link_id = table.Column<Guid>(type: "uuid", nullable: false),
+                    content = table.Column<string>(type: "jsonb", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("pk_share_snapshots", x => x.link_id);
+                    table.ForeignKey(
+                        name: "fk_share_snapshots_share_links_link_id",
+                        column: x => x.link_id,
+                        principalSchema: "sharing",
+                        principalTable: "share_links",
+                        principalColumn: "id",
+                        onDelete: ReferentialAction.Cascade);
                 });
 
             migrationBuilder.CreateTable(
@@ -2007,6 +2069,25 @@ namespace Vellum.Migrations
                 unique: true);
 
             migrationBuilder.CreateIndex(
+                name: "ix_share_links_project_id_created_at",
+                schema: "sharing",
+                table: "share_links",
+                columns: new[] { "project_id", "created_at" });
+
+            migrationBuilder.CreateIndex(
+                name: "ix_share_links_token_hash",
+                schema: "sharing",
+                table: "share_links",
+                column: "token_hash",
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "ix_share_links_workspace_id",
+                schema: "sharing",
+                table: "share_links",
+                column: "workspace_id");
+
+            migrationBuilder.CreateIndex(
                 name: "ix_sheets_project_id",
                 schema: "costs",
                 table: "sheets",
@@ -2296,6 +2377,10 @@ namespace Vellum.Migrations
                 schema: "settings");
 
             migrationBuilder.DropTable(
+                name: "share_snapshots",
+                schema: "sharing");
+
+            migrationBuilder.DropTable(
                 name: "sheets",
                 schema: "costs");
 
@@ -2370,6 +2455,10 @@ namespace Vellum.Migrations
             migrationBuilder.DropTable(
                 name: "profiles",
                 schema: "stress");
+
+            migrationBuilder.DropTable(
+                name: "share_links",
+                schema: "sharing");
 
             migrationBuilder.DropTable(
                 name: "snapshots",

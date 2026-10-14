@@ -26,6 +26,8 @@ The export and the import use main. They do not use the draft, the variant or th
 
 This document is not the bundle. [Bundle and SDD format](/reference/bundle-and-sdd-format/) describes the export for a coding agent.
 
+[Diagram export formats](/reference/diagram-export-formats/) describes the SVG, PNG, Mermaid and Structurizr DSL exports.
+
 ## Endpoints
 
 | Endpoint | Role | Behaviour |

@@ -164,7 +164,7 @@ Vellum sends these headers with each response.
 |---|---|---|
 | `Content-Security-Policy` | See below. | The page loads code and data from its own origin only. |
 | `X-Content-Type-Options` | `nosniff` | The browser does not guess the type of a file. |
-| `X-Frame-Options` | `DENY` | No page can show Vellum in a frame. |
+| `X-Frame-Options` | `DENY` | No page can show Vellum in a frame. The one exception is the embed page of a view link, below. |
 | `Referrer-Policy` | `no-referrer` | A link from Vellum does not tell the other site the address of the page. |
 | `Cross-Origin-Opener-Policy` | `same-origin` | A window of another origin gets no reference to the Vellum window. |
 | `Permissions-Policy` | `camera=(), microphone=(), geolocation=(), payment=()` | The page cannot use these functions of the browser. |
@@ -181,6 +181,7 @@ default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsa
 - `'wasm-unsafe-eval'` lets the code highlighter compile its grammar engine. It allows no script text.
 - Styles need `'unsafe-inline'`, because the canvas and the editor position their parts with style attributes.
 - The page connects to its own origin only. A script in the page cannot send data to another host.
+- The page `/embed/{token}` of a view link that answers now sends `frame-ancestors` with the origins of the workspace setting `sharing.embedHosts`, and no `X-Frame-Options`. With an empty list it sends `'none'` like every other page. See [Share and embed a read-only page](/how-to/share-and-embed/).
 
 The local profile sends no `Strict-Transport-Security` header. A local instance on plain HTTP must not make a browser use HTTPS for its host name. In the hosted profile, the scheme of a request comes from a trusted proxy: see [Behind a reverse proxy](#behind-a-reverse-proxy).
 

@@ -9,6 +9,7 @@ import { Menu } from 'lucide-react'
 import { ProjectMenu } from './project-menu'
 import { canEditModel } from '@/lib/branches-api'
 import { InboxButton } from '@/components/comments/inbox-button'
+import { ShareButton } from '@/components/share/share-dialog'
 
 interface TopBarProps {
   projectId?: string
@@ -74,6 +75,8 @@ export function TopBar({ projectId, projectName, project, activeDoc }: TopBarPro
       <div className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap sm:mx-2">
         <StrataBreadcrumb activeDoc={activeDoc} />
       </div>
+
+      {projectId && project && <ShareButton projectId={projectId} workspaceId={project.workspaceId} role={project.yourRole} />}
 
       <Button
         variant="outline"

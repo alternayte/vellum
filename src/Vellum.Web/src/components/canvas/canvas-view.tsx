@@ -1013,6 +1013,9 @@ function CanvasViewInner({
         onPaneContextMenu={readOnly ? noMenu : handlePaneContextMenu}
         nodesDraggable={!readOnly}
         nodesConnectable={!readOnly}
+        // A node that cannot be dragged has no `nopan` class, so the zoom of the pane takes its
+        // double-click and stops it before the node sees it. Read-only, a double-click drills in.
+        zoomOnDoubleClick={!readOnly}
         deleteKeyCode={readOnly ? null : ['Delete', 'Backspace']}
         onNodesDelete={handleNodesDelete}
         onEdgesDelete={handleEdgesDelete}

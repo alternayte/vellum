@@ -20,12 +20,14 @@ using Vellum.Modules.Comments;
 using Vellum.Modules.Costs;
 using Vellum.Modules.LoadTests;
 using Vellum.Modules.Promises;
+using Vellum.Modules.Diagrams;
 using Vellum.Modules.Docs;
 using Vellum.Modules.Drafts;
 using Vellum.Modules.Schemas;
 using Vellum.Modules.Review;
 using Vellum.Modules.Settings;
 using Vellum.Modules.Settings.Crypto;
+using Vellum.Modules.Sharing;
 using Vellum.Modules.Stress;
 using Vellum.Modules.Trace;
 using Vellum.Modules.Views;
@@ -135,6 +137,7 @@ builder.Services.AddStressModule();
 builder.Services.AddLoadTestsModule();
 builder.Services.AddCostsModule();
 builder.Services.AddReviewModule();
+builder.Services.AddSharingModule();
 
 var app = builder.Build();
 
@@ -154,6 +157,8 @@ if (app.Environment.IsDevelopment())
 app.UseTrustedProxies();
 app.UseExceptionHandler(new ExceptionHandlerOptions { ExceptionHandler = UnhandledException.WriteAsync });
 app.UseSecurityHeaders();
+// Only /embed/{token} of a view link may be framed, by the origins its workspace allows.
+app.UseEmbedFraming();
 app.UseNoPageOutsideTheApp();
 app.UseSameOriginWrites();
 app.UseAuthentication();
@@ -185,6 +190,7 @@ app.MapContractEndpoints();
 app.MapRevisionEndpoints();
 app.MapVariantEndpoints();
 app.MapViewEndpoints();
+app.MapDiagramEndpoints();
 app.MapSpaceEndpoints();
 app.MapDocEndpoints();
 app.MapDraftEndpoints();
@@ -203,6 +209,7 @@ app.MapStressEndpoints();
 app.MapLoadTestEndpoints();
 app.MapCostEndpoints();
 app.MapReviewEndpoints();
+app.MapSharingEndpoints();
 
 if (!generatingOpenApi && app.Configuration.GetValue("Database:MigrateOnStartup", true))
 {
