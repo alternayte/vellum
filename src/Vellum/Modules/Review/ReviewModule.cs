@@ -23,6 +23,7 @@ public static class ReviewModule
         services.AddDbContext<ReviewDbContext>((provider, options) =>
             options.UseNpgsql(provider.GetRequiredService<IConfiguration>().GetConnectionString("DefaultConnection"))
                    .UseSnakeCaseNamingConvention());
+        services.AddScoped<IProjectRetention, ReviewRetention>();
         return services;
     }
 
@@ -146,9 +147,15 @@ public static class ReviewModule
 /// Every statement is safe to run again, and <see cref="DeleteOrphansAsync"/> repeats the
 /// work for a project whose delete was cut short.
 /// </summary>
-public static class ReviewRetention
+public sealed class ReviewRetention(ReviewDbContext db, IEventStore store) : IProjectRetention
 {
-    public static async Task DeleteProjectAsync(ReviewDbContext db, IEventStore store, Guid projectId, CancellationToken ct)
+    public async Task DeleteProjectAsync(DeletedProject project, CancellationToken ct)
+    {
+        await DeleteProjectAsync(project.Id, ct);
+        await DeleteOrphansAsync(ct);
+    }
+
+    private async Task DeleteProjectAsync(Guid projectId, CancellationToken ct)
     {
         // A row exists only for a decision stream, so each ID names one. The projection
         // removes the row when it sees the tombstone.
@@ -164,7 +171,7 @@ public static class ReviewRetention
     }
 
     /// <summary>Runs <see cref="DeleteProjectAsync"/> for every project that the review tables name and that no longer exists.</summary>
-    public static async Task<int> DeleteOrphansAsync(ReviewDbContext db, IEventStore store, CancellationToken ct)
+    private async Task DeleteOrphansAsync(CancellationToken ct)
     {
         var gone = await db.Database.SqlQuery<Guid>($"""
             SELECT i.project_id AS "Value"
@@ -177,7 +184,6 @@ public static class ReviewRetention
             WHERE NOT EXISTS (SELECT 1 FROM workspaces.projects p WHERE p.id = i.project_id)
             """).ToListAsync(ct);
         foreach (var projectId in gone)
-            await DeleteProjectAsync(db, store, projectId, ct);
-        return gone.Count;
+            await DeleteProjectAsync(projectId, ct);
     }
 }

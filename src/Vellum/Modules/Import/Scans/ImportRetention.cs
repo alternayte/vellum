@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Vellum.Shared;
 
 namespace Vellum.Modules.Import.Scans;
 
@@ -83,4 +84,11 @@ public static class ImportRetention
                             WHERE ranked.n <= 2)))
             """, ct);
     }
+}
+
+/// <summary>Runs <see cref="ImportRetention.DeleteProjectAsync"/> when a project is deleted.</summary>
+public sealed class ImportProjectRetention(ImportDbContext db, TimeProvider time) : IProjectRetention
+{
+    public Task DeleteProjectAsync(DeletedProject project, CancellationToken ct) =>
+        ImportRetention.DeleteProjectAsync(db, project.Id, time.GetUtcNow(), ct);
 }

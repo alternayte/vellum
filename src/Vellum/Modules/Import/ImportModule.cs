@@ -21,6 +21,7 @@ public static class ImportModule
         services.TryAddSingleton(TimeProvider.System);
         services.AddSingleton<ScanSignal>();
         services.AddSingleton<ScanWorker>();
+        services.AddScoped<IProjectRetention, ImportProjectRetention>();
 
         // Import:Worker:Enabled=false turns the worker of this instance off; scans then wait
         // for an instance that runs one. Import:Worker:Parallelism is how many scans one

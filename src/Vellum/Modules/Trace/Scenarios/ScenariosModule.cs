@@ -14,6 +14,7 @@ public static class ScenariosModule
         services.AddDbContext<ScenariosDbContext>((provider, options) =>
             options.UseNpgsql(provider.GetRequiredService<IConfiguration>().GetConnectionString("DefaultConnection"))
                    .UseSnakeCaseNamingConvention());
+        services.AddScoped<Shared.IProjectRetention, ScenariosRetention>();
 
         // Scenario documents and trace results name their enum members (`Succeeded`,
         // `RequestSent`) in JSON. A member name in any letter case, or its number, is read.

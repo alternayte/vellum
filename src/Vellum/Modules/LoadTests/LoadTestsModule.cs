@@ -21,6 +21,7 @@ public static class LoadTestsModule
             options.UseNpgsql(provider.GetRequiredService<IConfiguration>().GetConnectionString("DefaultConnection"))
                    .UseSnakeCaseNamingConvention());
         services.TryAddSingleton(TimeProvider.System);
+        services.AddScoped<IProjectRetention, LoadTestRetention>();
         return services;
     }
 
@@ -85,15 +86,16 @@ public static class LoadTestsModule
 }
 
 /// <summary>Load-test data does not outlive its project.</summary>
-public static class LoadTestRetention
+public sealed class LoadTestRetention(LoadTestsDbContext db, IEventStore store) : IProjectRetention
 {
     /// <summary>
     /// Deletes the results, the scripts and the targets of a project. The row of a target goes
     /// with its stream. A delete that is cut short leaves rows and streams that no request
     /// reaches: every load-test endpoint resolves the project first.
     /// </summary>
-    public static async Task DeleteProjectAsync(LoadTestsDbContext db, IEventStore store, Guid projectId, CancellationToken ct)
+    public async Task DeleteProjectAsync(DeletedProject project, CancellationToken ct)
     {
+        var projectId = project.Id;
         // One unit under the lock of the load-test writes: an import that started before the project went
         // cannot add a result between the two deletes, which would keep its script from being deleted.
         await using (var transaction = await db.Database.BeginTransactionAsync(ct))

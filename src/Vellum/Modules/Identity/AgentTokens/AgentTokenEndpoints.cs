@@ -179,23 +179,6 @@ public static class AgentTokenEndpoints
         return Results.NoContent();
     }
 
-    /// <summary>
-    /// Deletes the tokens that are restricted to a project, when the project is deleted. A
-    /// token for one project must not stay behind as a row that names a project that is gone.
-    /// It writes on the connection of <paramref name="db"/>, which is any context of the app,
-    /// and is safe to repeat.
-    /// </summary>
-    public static Task DeleteForProjectAsync(DbContext db, Guid projectId, string actorId, CancellationToken ct)
-    {
-        var target = $" project-deleted:{projectId}";
-        return db.Database.ExecuteSqlAsync($"""
-            WITH deleted AS (
-                DELETE FROM identity.agent_tokens WHERE project_id = {projectId} RETURNING id, workspace_id)
-            INSERT INTO settings.audit_entries (workspace_id, actor_id, action, target)
-            SELECT workspace_id, {actorId}, {AgentTokenAudit.Deleted}, 'agent-token:' || id::text || {target} FROM deleted ORDER BY id
-            """, ct);
-    }
-
     private static IResult Invalid(string field, string message) =>
         Results.BadRequest(new ErrorResponse("validation_error", "Validation failed", Errors: [new FieldError(field, message)]));
 }

@@ -19,6 +19,7 @@ public static class IdentityModule
         services.AddDbContext<AppIdentityDbContext>(options =>
             options.UseNpgsql(connectionString)
                    .UseSnakeCaseNamingConvention());
+        services.AddScoped<Shared.IProjectRetention, AgentTokenRetention>();
 
         services.AddIdentity<ApplicationUser, IdentityRole>(options =>
             {

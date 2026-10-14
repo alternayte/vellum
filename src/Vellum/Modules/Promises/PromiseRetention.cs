@@ -1,5 +1,6 @@
 using Deedbox;
 using Microsoft.EntityFrameworkCore;
+using Vellum.Shared;
 
 namespace Vellum.Modules.Promises;
 
@@ -10,9 +11,15 @@ namespace Vellum.Modules.Promises;
 /// rows back. Every statement is safe to run again, and <see cref="DeleteOrphansAsync"/>
 /// repeats the work for a project whose delete was cut short.
 /// </summary>
-public static class PromiseRetention
+public sealed class PromiseRetention(PromisesDbContext db, IEventStore store) : IProjectRetention
 {
-    public static async Task DeleteProjectAsync(PromisesDbContext db, IEventStore store, Guid projectId, CancellationToken ct)
+    public async Task DeleteProjectAsync(DeletedProject project, CancellationToken ct)
+    {
+        await DeleteProjectAsync(project.Id, ct);
+        await DeleteOrphansAsync(ct);
+    }
+
+    private async Task DeleteProjectAsync(Guid projectId, CancellationToken ct)
     {
         var promiseIds = await db.Promises.AsNoTracking().Where(p => p.ProjectId == projectId).Select(p => p.Id).ToListAsync(ct);
         // A row exists only for a promise stream, so each ID names one. The projection removes
@@ -29,7 +36,7 @@ public static class PromiseRetention
     }
 
     /// <summary>Runs <see cref="DeleteProjectAsync"/> for every project that the promise tables name and that no longer exists.</summary>
-    public static async Task<int> DeleteOrphansAsync(PromisesDbContext db, IEventStore store, CancellationToken ct)
+    private async Task DeleteOrphansAsync(CancellationToken ct)
     {
         var gone = await db.Database.SqlQuery<Guid>($"""
             SELECT i.project_id AS "Value"
@@ -40,7 +47,6 @@ public static class PromiseRetention
             WHERE NOT EXISTS (SELECT 1 FROM workspaces.projects p WHERE p.id = i.project_id)
             """).ToListAsync(ct);
         foreach (var projectId in gone)
-            await DeleteProjectAsync(db, store, projectId, ct);
-        return gone.Count;
+            await DeleteProjectAsync(projectId, ct);
     }
 }

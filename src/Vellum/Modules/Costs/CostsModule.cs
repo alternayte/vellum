@@ -32,6 +32,7 @@ public static class CostsModule
         services.AddOutboundClient<IAzureRetailPricesApi>();
         services.AddScoped<AzureRetailPrices>();
         services.AddScoped<EstimateReader>();
+        services.AddScoped<IProjectRetention, CostRetention>();
         services.TryAddSingleton(TimeProvider.System);
 
         // One window for each workspace: the price API is a shared public service, and every
@@ -103,7 +104,7 @@ public static class CostsModule
 }
 
 /// <summary>Cost data does not outlive its project.</summary>
-public static class CostRetention
+public sealed class CostRetention(CostsDbContext db, IEventStore store) : IProjectRetention
 {
     /// <summary>
     /// Deletes the saved estimates, the pins and the cost sheets of a project. The sheet and
@@ -112,8 +113,9 @@ public static class CostRetention
     /// of a sheet goes after its stream. A delete that is cut short leaves rows and streams
     /// that no request reaches: every cost endpoint resolves the project first.
     /// </summary>
-    public static async Task DeleteProjectAsync(CostsDbContext db, IEventStore store, Guid projectId, CancellationToken ct)
+    public async Task DeleteProjectAsync(DeletedProject project, CancellationToken ct)
     {
+        var projectId = project.Id;
         await db.Estimates.Where(e => e.ProjectId == projectId).ExecuteDeleteAsync(ct);
         await db.Pins.Where(p => p.ProjectId == projectId).ExecuteDeleteAsync(ct);
 

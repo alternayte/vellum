@@ -25,6 +25,7 @@ public static class StressModule
         services.TryAddSingleton(StressLimits.Default);
         services.TryAddSingleton(new StressRunPolicy());
         services.AddSingleton<StressRunGate>();
+        services.AddScoped<IProjectRetention, StressRetention>();
         services.TryAddSingleton(TimeProvider.System);
 
         // Labels, arrival kinds and distribution kinds are lower-case words in JSON (`declared`, `poisson`).

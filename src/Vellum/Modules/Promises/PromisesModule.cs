@@ -22,6 +22,7 @@ public static class PromisesModule
             options.UseNpgsql(provider.GetRequiredService<IConfiguration>().GetConnectionString("DefaultConnection"))
                    .UseSnakeCaseNamingConvention());
         services.AddScoped<PromiseReader>();
+        services.AddScoped<IProjectRetention, PromiseRetention>();
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton(PromiseLimits.Default);
 

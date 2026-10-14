@@ -12,6 +12,7 @@ public static class SchemasModule
         services.AddDbContext<SchemasDbContext>(options =>
             options.UseNpgsql(connectionString)
                    .UseSnakeCaseNamingConvention());
+        services.AddScoped<Shared.IProjectRetention, SchemasRetention>();
 
         return services;
     }

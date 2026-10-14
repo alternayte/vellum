@@ -13,6 +13,7 @@ public static class ModellingModule
         services.AddDbContext<ModellingDbContext>(options =>
             options.UseNpgsql(connectionString)
                    .UseSnakeCaseNamingConvention());
+        services.AddScoped<Shared.IProjectRetention, ModellingRetention>();
 
         return services;
     }

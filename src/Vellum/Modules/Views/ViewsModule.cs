@@ -11,6 +11,7 @@ public static class ViewsModule
         services.AddDbContext<ViewsDbContext>(options =>
             options.UseNpgsql(connectionString)
                    .UseSnakeCaseNamingConvention());
+        services.AddScoped<Shared.IProjectRetention, ViewsRetention>();
 
         return services;
     }

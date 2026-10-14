@@ -11,6 +11,7 @@ public static class DraftsModule
         services.AddDbContext<DraftsDbContext>(options =>
             options.UseNpgsql(connectionString)
                    .UseSnakeCaseNamingConvention());
+        services.AddScoped<Shared.IProjectRetention, DraftsRetention>();
         return services;
     }
 }

@@ -12,6 +12,7 @@ public static class DocsModule
         services.AddDbContext<DocsDbContext>(options =>
             options.UseNpgsql(connectionString)
                    .UseSnakeCaseNamingConvention());
+        services.AddScoped<Shared.IProjectRetention, DocsRetention>();
 
         return services;
     }

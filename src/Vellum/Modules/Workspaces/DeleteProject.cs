@@ -1,12 +1,5 @@
 using System.Security.Claims;
-using Deedbox;
-using Vellum.Modules.Costs;
-using Vellum.Modules.Import;
-using Vellum.Modules.Import.Scans;
-using Vellum.Modules.LoadTests;
-using Vellum.Modules.Promises;
-using Vellum.Modules.Stress;
-using Vellum.Modules.Review;
+using Microsoft.AspNetCore.Mvc;
 using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Shared;
 
@@ -15,27 +8,17 @@ namespace Vellum.Modules.Workspaces;
 public static class DeleteProject
 {
     /// <summary>
-    /// Deletes the project with its stress profiles and runs, then everything the importer holds for it: scans, snapshots,
-    /// proposals, links and the repository text that nothing else needs. Imported text does
-    /// not outlive the project it was imported for. The second step is safe to repeat, and
-    /// the scan worker repeats it on its timer for a project whose delete was cut short
-    /// between the two. The promises of the project go the same way: their streams, their
-    /// rows, their runs and the requirement numbering. A delete that was cut short before
-    /// that step is finished by the next delete of any project. The project's cost sheets, pins and saved estimates go as well. The review data goes last, in
-    /// the same way: the decisions with their streams, the dispositions, the snapshots, the
-    /// open questions and the critiques. The load-test targets, scripts and measured results go too.
+    /// Deletes the project, then everything each module holds for it (<see cref="IProjectRetention"/>):
+    /// the model and its branches, drafts, schemas, scenarios, views, docs, promises, cost
+    /// sheets, review data, load tests, stress runs, imports, AI proposals and agent tokens,
+    /// with their event streams. Imported text and modelled data do not outlive the project.
     /// </summary>
     public static async Task<IResult> Handle(
         Guid projectId,
         ClaimsPrincipal user,
         WorkspacesDbContext db,
-        ImportDbContext importDb,
-        PromisesDbContext promisesDb,
-        CostsDbContext costsDb,
-        ReviewDbContext reviewDb,
-        LoadTestsDbContext loadTestsDb,
-        IEventStore store,
-        TimeProvider time,
+        [FromServices] IEnumerable<IProjectRetention> retentions,
+        ILoggerFactory loggers,
         WorkspaceAuthorizationService auth,
         CancellationToken ct)
     {
@@ -46,24 +29,31 @@ public static class DeleteProject
         if (project is null)
             return Results.NotFound(new ErrorResponse("not_found", "Project not found"));
 
-        // One transaction: the project and its stress profiles and runs go together.
-        await using (var transaction = await db.Database.BeginTransactionAsync(ct))
+        // The row goes first: every endpoint resolves the project, so no request reaches the
+        // data of a module while it goes.
+        db.Projects.Remove(project);
+        await db.SaveChangesAsync(ct);
+
+        // The cleanup does not stop when the caller goes away. A module that fails does not
+        // keep the others from deleting their data; the failure is reported afterwards.
+        var deleted = new DeletedProject(project.Id, project.WorkspaceId, project.StreamId, userId);
+        var failures = new List<Exception>();
+        foreach (var retention in retentions)
         {
-            db.Projects.Remove(project);
-            await db.SaveChangesAsync(ct);
-            await StressDbContext.DeleteProjectAsync(db, projectId, ct);
-            await transaction.CommitAsync(ct);
+            try
+            {
+                await retention.DeleteProjectAsync(deleted, CancellationToken.None);
+            }
+            catch (Exception ex)
+            {
+                loggers.CreateLogger(typeof(DeleteProject)).LogError(ex,
+                    "{Retention} did not delete the data of project {ProjectId}", retention.GetType().Name, projectId);
+                failures.Add(ex);
+            }
         }
 
-        // The project is gone for every reader. The cleanup does not stop when the caller goes away.
-        await ImportRetention.DeleteProjectAsync(importDb, projectId, time.GetUtcNow(), CancellationToken.None);
-        await Identity.AgentTokens.AgentTokenEndpoints.DeleteForProjectAsync(db, projectId, userId, CancellationToken.None);
-        await PromiseRetention.DeleteProjectAsync(promisesDb, store, projectId, CancellationToken.None);
-        await PromiseRetention.DeleteOrphansAsync(promisesDb, store, CancellationToken.None);
-        await CostRetention.DeleteProjectAsync(costsDb, store, projectId, CancellationToken.None);
-        await ReviewRetention.DeleteProjectAsync(reviewDb, store, projectId, CancellationToken.None);
-        await ReviewRetention.DeleteOrphansAsync(reviewDb, store, CancellationToken.None);
-        await LoadTestRetention.DeleteProjectAsync(loadTestsDb, store, projectId, CancellationToken.None);
+        if (failures.Count > 0)
+            throw new AggregateException($"The data of project {projectId} was not deleted in full.", failures);
         return Results.NoContent();
     }
 }

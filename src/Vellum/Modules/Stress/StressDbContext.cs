@@ -75,13 +75,6 @@ public class StressDbContext(DbContextOptions<StressDbContext> options) : DbCont
             b.HasOne<StressProfileEntity>().WithMany().HasForeignKey(r => r.ProfileId).OnDelete(DeleteBehavior.Cascade);
         });
     }
-
-    /// <summary>
-    /// Removes the stress data of a project. It runs on <paramref name="db"/>, any context of
-    /// this database, so that the delete of a project and of its stress data is one transaction.
-    /// </summary>
-    public static Task DeleteProjectAsync(DbContext db, Guid projectId, CancellationToken ct) =>
-        db.Database.ExecuteSqlAsync($"DELETE FROM stress.profiles WHERE project_id = {projectId}", ct);
 }
 
 public class StressDbContextFactory : IDesignTimeDbContextFactory<StressDbContext>

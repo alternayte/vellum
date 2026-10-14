@@ -40,6 +40,7 @@ public static class DesignModule
             options.UseNpgsql(provider.GetRequiredService<IConfiguration>().GetConnectionString("DefaultConnection"))
                    .UseSnakeCaseNamingConvention());
         services.AddScoped<PrivateSources>();
+        services.AddScoped<Shared.IProjectRetention, DesignRetention>();
         services.AddSingleton<ExplainStreams>();
         services.AddSingleton<ProposalSubmitRate>();
 
