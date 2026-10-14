@@ -106,6 +106,35 @@ public class WorkspaceEndpointTests
     }
 
     [Fact]
+    public async Task A_create_with_the_id_of_another_tenants_record_is_409_and_shows_nothing_of_it()
+    {
+        using var factory = CreateFactory();
+        using var a = await CreateAuthenticatedClientAsync(factory);
+        using var b = await CreateAuthenticatedClientAsync(factory);
+        var workspaceA = Guid.NewGuid();
+        var projectA = Guid.NewGuid();
+        await a.PostAsJsonAsync("/api/workspaces", new { id = workspaceA, name = "Secret workspace" });
+        await a.PostAsJsonAsync($"/api/workspaces/{workspaceA}/projects", new { id = projectA, name = "Secret project" });
+        var workspaceB = Guid.NewGuid();
+        await b.PostAsJsonAsync("/api/workspaces", new { id = workspaceB, name = "B" });
+
+        var workspace = await b.PostAsJsonAsync("/api/workspaces", new { id = workspaceA, name = "x" });
+        var project = await b.PostAsJsonAsync($"/api/workspaces/{workspaceB}/projects", new { id = projectA, name = "x" });
+
+        foreach (var response in new[] { workspace, project })
+        {
+            Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
+            var body = await response.Content.ReadAsStringAsync();
+            Assert.DoesNotContain("Secret", body);
+            Assert.DoesNotContain(workspaceA.ToString(), body);
+        }
+
+        // The creator's retry still gets the records back.
+        Assert.Equal(HttpStatusCode.OK, (await a.PostAsJsonAsync("/api/workspaces", new { id = workspaceA, name = "Secret workspace" })).StatusCode);
+        Assert.Equal(HttpStatusCode.OK, (await a.PostAsJsonAsync($"/api/workspaces/{workspaceA}/projects", new { id = projectA, name = "Secret project" })).StatusCode);
+    }
+
+    [Fact]
     public async Task Unauthenticated_workspace_request_returns_401()
     {
         using var factory = CreateFactory();

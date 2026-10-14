@@ -27,9 +27,11 @@ public static class CreateProject
             return Results.BadRequest(new ErrorResponse("validation_error", "Validation failed",
                 Errors: [new FieldError("id", "An ID is required")]));
 
+        // A retry in the same workspace gets the project back. A project of another workspace
+        // is not shown: the caller learns only that the ID is taken.
         var existing = await db.Projects.FindAsync([request.Id], ct);
         if (existing is not null)
-            return Results.Ok(ToDto(existing));
+            return existing.WorkspaceId == workspaceId ? Results.Ok(ToDto(existing)) : IdInUse.Conflict();
 
         var project = new ProjectEntity
         {

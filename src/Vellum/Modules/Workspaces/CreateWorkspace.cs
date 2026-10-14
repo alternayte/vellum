@@ -28,9 +28,11 @@ public static class CreateWorkspace
             return Results.BadRequest(new ErrorResponse("validation_error", "Validation failed",
                 Errors: [new FieldError("id", "An ID is required")]));
 
+        // A retry by the creator gets the workspace back. Any other caller learns only that
+        // the ID is taken, never the workspace.
         var existing = await db.Workspaces.FindAsync([request.Id], ct);
         if (existing is not null)
-            return Results.Ok(ToDto(existing));
+            return existing.CreatedBy == userId ? Results.Ok(ToDto(existing)) : IdInUse.Conflict();
 
         var workspace = new WorkspaceEntity
         {
@@ -57,6 +59,13 @@ public static class CreateWorkspace
     }
 
     private static WorkspaceDto ToDto(WorkspaceEntity w) => new(w.Id, w.Name, w.CreatedBy, w.CreatedAt);
+}
+
+/// <summary>The answer to a create with a client ID that another record already has.</summary>
+internal static class IdInUse
+{
+    public static IResult Conflict() =>
+        Results.Conflict(new ErrorResponse("id_in_use", "The ID is in use. Send a new ID."));
 }
 
 /// <summary>What a workspace or a project may be called and described as.</summary>
