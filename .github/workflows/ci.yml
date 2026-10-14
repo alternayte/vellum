@@ -46,6 +46,10 @@ jobs:
           key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj') }}
           restore-keys: nuget-${{ runner.os }}-
 
+      # Every module has one layout (checks/module-layout.sh says which files).
+      - name: Module layout
+        run: checks/module-layout.sh
+
       - name: Restore
         run: dotnet restore Vellum.slnx
 

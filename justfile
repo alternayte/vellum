@@ -86,6 +86,7 @@ docs-verify-live:
 check: check-backend check-web check-docs
 
 check-backend:
+    checks/module-layout.sh
     dotnet build Vellum.slnx -warnaserror
     diff -u src/Vellum.Web/openapi.json src/Vellum/obj/Vellum.json
     dotnet format style Vellum.slnx --verify-no-changes --no-restore
