@@ -1,13 +1,14 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Crosshair, FileText, Play } from 'lucide-react'
+import { Copy, Crosshair, FileText, Play } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { BriefDialog } from '@/components/build/brief-dialog'
 import { fetchScenario, useRunScenario } from '@/hooks/use-scenarios'
 import { shownInline } from '@/lib/mutation-errors'
-import { prefersReducedMotion } from '@/lib/utils'
-import { importApi, pullRequestState, scanSubject, type ChangeImpact, type ImpactCertainty, type ImpactChange, type ImpactFlow, type ImpactPromise, type ImpactReason, type ImpactStep, type ScanSummary } from '@/lib/import-api'
+import { cn, prefersReducedMotion } from '@/lib/utils'
+import { selectClass } from '@/components/settings/fields'
+import { importApi, pullRequestState, scanSubject, type ChangeImpact, type ImpactGate, type ImpactGatePolicy, type ImpactCertainty, type ImpactChange, type ImpactFlow, type ImpactPromise, type ImpactReason, type ImpactStep, type ScanSummary } from '@/lib/import-api'
 import { CERTAINTY, flowStepImpact, strongest } from '@/lib/impact'
 import { RESULT_COLOR, RESULT_LABEL, promisesApi } from '@/lib/promises-api'
 import { promiseElementIds, scenarioSteps, stepEnds } from '@/lib/scenario-parts'
@@ -31,6 +32,70 @@ const ACTION: Record<string, { label: string; color: string; sign: string }> = {
 }
 
 const short = (sha: string | null) => sha?.slice(0, 10) ?? 'no commit'
+
+const VERDICT: Record<ImpactGate['verdict'], { label: string; color: string }> = {
+  pass: { label: 'Pass', color: 'var(--trace-request)' },
+  fail: { label: 'Fail', color: 'var(--trace-failure)' },
+  off: { label: 'Off', color: 'var(--muted-foreground)' },
+}
+
+const POLICIES: { id: ImpactGatePolicy; label: string }[] = [
+  { id: 'off', label: 'Off: never fails' },
+  { id: 'fail-on-broken', label: 'Fail on a broken approved promise' },
+]
+
+/**
+ * The gate policy of the project and its verdict on this scan. Only an approved promise
+ * that a deterministic check broke against this scan fails it; nothing else does. Only an
+ * owner changes the policy. Vellum sends the verdict nowhere: a CI job reads the report.
+ */
+function GateSection({ projectId, reportKey, scanId }: { projectId: string; reportKey: unknown[]; scanId: string }) {
+  const queryClient = useQueryClient()
+  const settingKey = ['projects', projectId, 'impact-gate']
+  const setting = useQuery({ queryKey: settingKey, queryFn: () => importApi.gate(projectId) })
+  const report = useQuery({ queryKey: reportKey, queryFn: () => importApi.report(projectId, scanId), staleTime: 0 })
+  const change = useMutation({
+    mutationFn: (policy: ImpactGatePolicy) => importApi.setGate(projectId, policy),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: settingKey })
+      void queryClient.invalidateQueries({ queryKey: reportKey })
+    },
+    onError: shownInline,
+  })
+  const gate = report.data?.gate
+  const policy = setting.data?.policy ?? gate?.policy ?? 'off'
+  return (
+    <section aria-labelledby="impact-gate" className="rounded-md border border-border px-3 py-2">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+        <h3 id="impact-gate" className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Gate</h3>
+        {gate
+          ? <span className="rounded-full border px-1.5 text-[11px]" style={{ borderColor: VERDICT[gate.verdict].color, color: VERDICT[gate.verdict].color }}>{VERDICT[gate.verdict].label}</span>
+          : <span className="text-xs text-muted-foreground">{report.isError ? report.error.message : 'Reading…'}</span>}
+        <label className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
+          Policy
+          <select
+            className={cn(selectClass, 'w-auto')} value={policy} disabled={!setting.data?.canChange || change.isPending}
+            aria-describedby="impact-gate-who"
+            onChange={(e) => change.mutate(e.target.value as ImpactGatePolicy)}
+          >
+            {POLICIES.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
+          </select>
+        </label>
+      </div>
+      {gate && (
+        <ul className="mt-1.5 list-disc space-y-0.5 pl-4 text-xs text-muted-foreground">
+          {gate.reasons.map((reason) => <li key={reason}>{reason}</li>)}
+        </ul>
+      )}
+      <p id="impact-gate-who" className="mt-1.5 text-xs text-muted-foreground">
+        {setting.data?.canChange
+          ? 'Possible, unknown and at-risk entries never fail the gate. A CI job reads the verdict from the report; Vellum writes nothing to GitHub.'
+          : 'Only an owner changes the policy. A CI job reads the verdict from the report; Vellum writes nothing to GitHub.'}
+      </p>
+      {change.isError && <p role="alert" className="mt-1 text-xs text-destructive">{change.error.message}</p>}
+    </section>
+  )
+}
 
 function Certainty({ value }: { value: ImpactCertainty }) {
   return <span className={`shrink-0 rounded-full border px-1.5 text-[11px] ${CERTAINTY[value].className}`} title={CERTAINTY[value].meaning}>{CERTAINTY[value].label}</span>
@@ -96,6 +161,18 @@ export function ImpactDialog({ projectId, scan, owners, onClose }: {
   const loaded = useQuery({ queryKey: key, queryFn: () => importApi.impact(projectId, scan.id), staleTime: 0 })
   const impact = loaded.data
   const [briefing, setBriefing] = useState(false)
+  const reportKey = [...key, 'report']
+  // The Markdown is read before the click, so the copy happens in the click itself.
+  const markdown = useQuery({ queryKey: [...key, 'report', 'markdown'], queryFn: () => importApi.reportMarkdown(projectId, scan.id), staleTime: 0, enabled: !!impact })
+  const [copied, setCopied] = useState<'done' | 'failed' | null>(null)
+  const copyReport = async () => {
+    try {
+      await navigator.clipboard.writeText(markdown.data!)
+      setCopied('done')
+    } catch {
+      setCopied('failed')
+    }
+  }
 
   const show = useMutation({
     mutationFn: async (target: { title: string; ids: () => Promise<string[]> }) => ({ title: target.title, elementIds: await target.ids() }),
@@ -159,6 +236,7 @@ export function ImpactDialog({ projectId, scan, owners, onClose }: {
 
         {impact && (
           <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
+            <GateSection projectId={projectId} reportKey={reportKey} scanId={scan.id} />
             <div className="rounded-md border border-border px-3 py-2 text-xs">
               <dl className="grid gap-x-3 gap-y-1 sm:grid-cols-[auto_minmax(0,1fr)]">
                 {(Object.keys(CERTAINTY) as ImpactCertainty[]).map((value) => (
@@ -275,7 +353,16 @@ export function ImpactDialog({ projectId, scan, owners, onClose }: {
         {failure && <p role="alert" className="text-xs text-destructive">{failure.message}</p>}
 
         <div className="flex flex-wrap items-center justify-end gap-2">
+          <p className="min-w-0 flex-1 text-xs text-muted-foreground" role="status">
+            {copied === 'done' ? 'The report is on the clipboard as Markdown.' : copied === 'failed' ? 'The browser did not allow the copy.' : markdown.isError ? markdown.error.message : ''}
+          </p>
           <Button variant="ghost" size="sm" onClick={onClose}>Close</Button>
+          <Button
+            variant="secondary" size="sm" className="gap-1.5" disabled={!markdown.data} onClick={() => void copyReport()}
+            title="The compact report as a CI job reads it: Markdown, with the gate verdict"
+          >
+            <Copy className="h-3.5 w-3.5" /> Copy report
+          </Button>
           <Button
             size="sm" className="gap-1.5" disabled={!impact || impact.changes.length === 0} onClick={() => setBriefing(true)}
             title={impact && impact.changes.length === 0 ? 'This scan changes nothing, so there is nothing to brief' : undefined}

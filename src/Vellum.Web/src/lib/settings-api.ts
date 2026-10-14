@@ -175,10 +175,11 @@ export class ApiError extends Error {
   }
 }
 
-export async function api<T>(method: string, url: string, body?: unknown, options?: { ifMatch?: number }): Promise<T> {
+export async function api<T>(method: string, url: string, body?: unknown, options?: { ifMatch?: number; accept?: string }): Promise<T> {
   const headers: Record<string, string> = {}
   if (body !== undefined) headers['Content-Type'] = 'application/json'
   if (options?.ifMatch !== undefined) headers['If-Match'] = `"${options.ifMatch}"`
+  if (options?.accept !== undefined) headers.Accept = options.accept
   const response = await fetch(url, {
     method,
     headers,

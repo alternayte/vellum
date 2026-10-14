@@ -1,4 +1,4 @@
-import { api } from '@/lib/settings-api'
+import { ApiError, api } from '@/lib/settings-api'
 
 export type ScanStatus = 'queued' | 'running' | 'waiting' | 'completed' | 'failed' | 'cancelled'
 
@@ -194,6 +194,31 @@ export interface ChangeImpact {
   pullRequest: ScanPullRequest | null
 }
 
+export type ImpactGatePolicy = 'off' | 'fail-on-broken'
+
+/** The verdict of the gate policy of the project on one report. `off`: the policy is off and nothing fails. */
+export interface ImpactGate {
+  policy: ImpactGatePolicy
+  verdict: 'pass' | 'fail' | 'off'
+  reasons: string[]
+}
+
+export interface ImpactGateSetting {
+  policy: ImpactGatePolicy
+  changedBy: string | null
+  changedAt: string | null
+  /** True for a person with the owner role. */
+  canChange: boolean
+}
+
+/** The compact report for pull request CI. Only the members the app reads are typed. */
+export interface ImpactReport {
+  format: number
+  scanId: string
+  gate: ImpactGate
+  omitted: { changes: number; flows: number; promises: number }
+}
+
 interface Page<T> {
   items: T[]
   cursor: string | null
@@ -225,6 +250,18 @@ export const importApi = {
   decide: (projectId: string, id: string, decision: { accept: string[]; reject: string[]; acknowledgeImpact: boolean; relink: { id: string; factKey: string | null }[] }) =>
     api<DecisionResult>('POST', `${base(projectId)}/${id}/proposals/decide`, decision),
   impact: (projectId: string, id: string) => api<ChangeImpact>('GET', `${base(projectId)}/${id}/impact`),
+  report: (projectId: string, id: string) => api<ImpactReport>('GET', `${base(projectId)}/${id}/impact/report`, undefined, { accept: 'application/json' }),
+  /** The same report as Markdown, as a CI job reads it. */
+  reportMarkdown: async (projectId: string, id: string): Promise<string> => {
+    const response = await fetch(`${base(projectId)}/${id}/impact/report`, { headers: { Accept: 'text/markdown' } })
+    if (!response.ok) {
+      const payload = (await response.json().catch(() => ({}))) as { title?: string; detail?: string | null }
+      throw new ApiError(response.status, [payload.title, payload.detail].filter(Boolean).join('. ') || 'The request did not complete.')
+    }
+    return response.text()
+  },
+  gate: (projectId: string) => api<ImpactGateSetting>('GET', `/api/projects/${projectId}/impact-gate`),
+  setGate: (projectId: string, policy: ImpactGatePolicy) => api<ImpactGateSetting>('PUT', `/api/projects/${projectId}/impact-gate`, { policy }),
   track: (projectId: string, id: string) => api<ScanDetail>('POST', `${base(projectId)}/${id}/track`),
   source: (projectId: string, id: string, evidence: Pick<ProposalEvidence, 'path' | 'startLine' | 'endLine'>) =>
     api<SourceWindow>(
