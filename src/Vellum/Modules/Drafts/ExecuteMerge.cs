@@ -28,6 +28,7 @@ public static class ExecuteMerge
         ClaimsPrincipal user,
         HttpContext http,
         WorkspaceAuthorizationService auth,
+        TimeProvider time,
         CancellationToken ct)
     {
         var userId = user.UserId();
@@ -102,13 +103,13 @@ public static class ExecuteMerge
             var events = BuildMergeEvents(preview, request.Resolutions, oursState);
 
             // No decider produced these events. An event that does not fit main, or a result
-            // that points at nothing, refuses the merge before anything is written.
+            // that breaks a rule of the model, refuses the merge before anything is written.
             if (MergedModel.Refusal(oursState, events) is { } refusal)
                 return Results.Conflict(new ErrorResponse("conflict", refusal));
 
             // The cost sheet of the draft merges the way the model does. A conflict has no
             // resolution to pick, so it refuses the merge and nothing is written.
-            var now = DateTimeOffset.UtcNow;
+            var now = time.GetUtcNow();
             var sheetPlan = SheetMerge.Plan(oursSheet, theirsSheet, projectId, streams.BaseStreamId, userId, now);
             if (SheetMerge.Refusal(sheetPlan) is { } sheetRefusal)
             {

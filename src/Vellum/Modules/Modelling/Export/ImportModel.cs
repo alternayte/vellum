@@ -297,6 +297,7 @@ public static class ImportModel
         knownSchemaIds.UnionWith(named.Except(missing));
 
         var events = new List<object>();
+        var locked = state;
 
         // One entry: all of its decisions count, or none of them does. `decide` returns the
         // reason of a refusal, or null.
@@ -522,6 +523,13 @@ public static class ImportModel
                     ?? Relabel(id.Value, factStatus, provenance, stale);
             });
         }
+
+        // The deciders held each entry to the rules of its own fact. The events of the accepted
+        // entries are held to the rules of the model as a whole too, as a merge's are, so a
+        // rule written in ModelInvariants binds an import even when no decider asks for it.
+        var (imported, misfit) = ModelInvariants.Apply(locked, events);
+        foreach (var broken in misfit is null ? ModelInvariants.NewViolations(locked, imported) : [misfit])
+            Refuse("model", modelStreamId, null, broken);
 
         // Schemas: each is its own stream.
         var schemaAppends = new List<(Guid Id, long Version, IReadOnlyList<object> Events)>();

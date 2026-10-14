@@ -159,11 +159,11 @@ public class ContractMergeTests
             [Channel(OrderEvents, "order-events")],
             [Subscription(DeadLetters)]);
 
-        var problems = ContractDecider.DanglingReferences(broken);
+        var problems = ModelInvariants.Check(broken);
 
         Assert.Equal(2, problems.Count);
         Assert.Contains(problems, p => p.Contains("operation 'POST /orders'") && p.Contains(Orders.ToString()));
-        Assert.Contains(problems, p => p.Contains("dead-letters") && p.Contains(DeadLetters.ToString()));
-        Assert.Empty(ContractDecider.DanglingReferences(State(BothElements, [Operation()])));
+        Assert.Contains(problems, p => p.Contains("Dead-letter channel") && p.Contains(DeadLetters.ToString()));
+        Assert.Empty(ModelInvariants.Check(State(BothElements, [Operation()])));
     }
 }

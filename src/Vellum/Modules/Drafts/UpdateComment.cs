@@ -16,6 +16,7 @@ public static class UpdateComment
         ClaimsPrincipal user,
         AppDbContext db,
         WorkspaceAuthorizationService auth,
+        TimeProvider time,
         CancellationToken ct)
     {
         var userId = user.UserId();
@@ -37,7 +38,7 @@ public static class UpdateComment
                 statusCode: 403);
 
         comment.Body = request.Body;
-        comment.UpdatedAt = DateTimeOffset.UtcNow;
+        comment.UpdatedAt = time.GetUtcNow();
 
         await db.SaveChangesAsync(ct);
         return Results.Ok(CreateComment.ToDto(comment));

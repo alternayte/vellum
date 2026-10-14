@@ -45,15 +45,6 @@ public sealed record UpdateMessageCommand(
 
 public static class ModelDecider
 {
-    private static readonly IReadOnlyDictionary<ElementKind, ElementKind?> ValidParentKinds = new Dictionary<ElementKind, ElementKind?>
-    {
-        [ElementKind.Actor] = null,
-        [ElementKind.System] = null,
-        [ElementKind.App] = ElementKind.System,
-        [ElementKind.Store] = ElementKind.System,
-        [ElementKind.Component] = ElementKind.App,
-    };
-
     public static CommandResult<IReadOnlyList<object>> AddElement(ModelState state, AddElementCommand cmd)
     {
         if (string.IsNullOrWhiteSpace(cmd.Name))
@@ -69,7 +60,7 @@ public static class ModelDecider
         if (state.RefuseNewId(cmd.Id) is { } idRefusal)
             return idRefusal;
 
-        var parentError = ValidateContainment(state, cmd.Kind, cmd.ParentId);
+        var parentError = ModelInvariants.Containment(state, cmd.Kind, cmd.ParentId);
         if (parentError is not null)
             return new CommandResult<IReadOnlyList<object>>.Invalid([parentError]);
 
@@ -112,7 +103,7 @@ public static class ModelDecider
 
         if (cmd.SetParentId && cmd.ParentId != element.ParentId)
         {
-            var parentError = ValidateContainment(state, element.Kind, cmd.ParentId);
+            var parentError = ModelInvariants.Containment(state, element.Kind, cmd.ParentId);
             if (parentError is not null)
                 return new CommandResult<IReadOnlyList<object>>.Invalid([parentError]);
             events.Add(new ModelEvent.ElementReparented(cmd.ElementId, cmd.ParentId));
@@ -168,11 +159,8 @@ public static class ModelDecider
         if (state.RefuseNewId(cmd.Id) is { } idRefusal)
             return idRefusal;
 
-        if (!state.Elements.ContainsKey(cmd.FromId))
-            return new CommandResult<IReadOnlyList<object>>.Invalid([new ValidationError("fromId", "Source element not found")]);
-
-        if (!state.Elements.ContainsKey(cmd.ToId))
-            return new CommandResult<IReadOnlyList<object>>.Invalid([new ValidationError("toId", "Target element not found")]);
+        if (ModelInvariants.Relationship(state, cmd.FromId, cmd.ToId) is { } endError)
+            return new CommandResult<IReadOnlyList<object>>.Invalid([endError]);
 
         return new CommandResult<IReadOnlyList<object>>.Success(
             [new ModelEvent.RelationshipAdded(cmd.Id, cmd.FromId, cmd.ToId, cmd.Label, cmd.Technology, null, cmd.Kind)]);
@@ -230,14 +218,8 @@ public static class ModelDecider
         if (state.RefuseNewId(cmd.Id) is { } idRefusal)
             return idRefusal;
 
-        if (!state.Elements.ContainsKey(cmd.ProducerId))
-            return new CommandResult<IReadOnlyList<object>>.Invalid([new ValidationError("producerId", "Producer element not found")]);
-
-        foreach (var consumerId in cmd.ConsumerIds)
-        {
-            if (!state.Elements.ContainsKey(consumerId))
-                return new CommandResult<IReadOnlyList<object>>.Invalid([new ValidationError("consumerIds", $"Consumer element {consumerId} not found")]);
-        }
+        if (ModelInvariants.Message(state, cmd.ProducerId, cmd.ConsumerIds) is { } endError)
+            return new CommandResult<IReadOnlyList<object>>.Invalid([endError]);
 
         return new CommandResult<IReadOnlyList<object>>.Success(
             [new ModelEvent.MessageAdded(cmd.Id, cmd.Name, cmd.Description,
@@ -259,17 +241,8 @@ public static class ModelDecider
         if (textError is not null)
             return new CommandResult<IReadOnlyList<object>>.Invalid([textError]);
 
-        if (cmd.SetProducerId && cmd.ProducerId.HasValue && !state.Elements.ContainsKey(cmd.ProducerId.Value))
-            return new CommandResult<IReadOnlyList<object>>.Invalid([new ValidationError("producerId", "Producer element not found")]);
-
-        if (cmd.SetConsumerIds && cmd.ConsumerIds is not null)
-        {
-            foreach (var consumerId in cmd.ConsumerIds)
-            {
-                if (!state.Elements.ContainsKey(consumerId))
-                    return new CommandResult<IReadOnlyList<object>>.Invalid([new ValidationError("consumerIds", $"Consumer element {consumerId} not found")]);
-            }
-        }
+        if (ModelInvariants.Message(state, cmd.SetProducerId ? cmd.ProducerId : null, cmd.SetConsumerIds ? cmd.ConsumerIds : null) is { } endError)
+            return new CommandResult<IReadOnlyList<object>>.Invalid([endError]);
 
         var hasChanges =
             (cmd.SetName && cmd.Name != msg.Name) ||
@@ -390,28 +363,5 @@ public static class ModelDecider
         }
 
         events.Add(new ModelEvent.ElementRemoved(elementId));
-    }
-
-    private static ValidationError? ValidateContainment(ModelState state, ElementKind kind, ElementId? parentId)
-    {
-        var requiredParentKind = ValidParentKinds[kind];
-
-        if (requiredParentKind is null)
-        {
-            if (parentId.HasValue)
-                return new ValidationError("parentId", $"{kind} must be top-level (no parent)");
-            return null;
-        }
-
-        if (!parentId.HasValue)
-            return new ValidationError("parentId", $"{kind} requires a parent of kind {requiredParentKind}");
-
-        if (!state.Elements.TryGetValue(parentId.Value, out var parent))
-            return new ValidationError("parentId", "Parent element not found");
-
-        if (parent.Kind != requiredParentKind)
-            return new ValidationError("parentId", $"{kind} requires a parent of kind {requiredParentKind}, got {parent.Kind}");
-
-        return null;
     }
 }

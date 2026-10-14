@@ -16,6 +16,7 @@ public static class AbandonDraft
         ClaimsPrincipal user,
         HttpContext http,
         WorkspaceAuthorizationService auth,
+        TimeProvider time,
         CancellationToken ct)
     {
         var userId = user.UserId();
@@ -52,7 +53,7 @@ public static class AbandonDraft
                 return Results.Conflict(new ErrorResponse("conflict", $"Draft is already {draft.Status}"));
 
             draft.Status = "abandoned";
-            draft.AbandonedAt = DateTimeOffset.UtcNow;
+            draft.AbandonedAt = time.GetUtcNow();
 
             // One append. Deedbox saves the status in the transaction, and the inline projection
             // drops the draft's rows.

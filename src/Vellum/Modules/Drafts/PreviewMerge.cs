@@ -31,6 +31,7 @@ public static class PreviewMerge
         AppDbContext db,
         IEventStore store,
         WorkspaceAuthorizationService auth,
+        TimeProvider time,
         CancellationToken ct)
     {
         var userId = user.UserId();
@@ -51,7 +52,7 @@ public static class PreviewMerge
 
         var (oursSheet, _) = await CostAccess.LoadSheetAsync(db, draft.BaseStreamId, ct);
         var (theirsSheet, _) = await CostAccess.LoadSheetAsync(db, draft.StreamId, ct);
-        var sheet = SheetMerge.Preview(SheetMerge.Plan(oursSheet, theirsSheet, projectId, draft.BaseStreamId, userId, DateTimeOffset.UtcNow));
+        var sheet = SheetMerge.Preview(SheetMerge.Plan(oursSheet, theirsSheet, projectId, draft.BaseStreamId, userId, time.GetUtcNow()));
 
         return Results.Ok(new MergePreviewResponse(result.AutoResolved, result.Conflicts, checked((int)mainVersion), sheet));
     }

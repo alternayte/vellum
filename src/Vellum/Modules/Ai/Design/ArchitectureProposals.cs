@@ -676,8 +676,8 @@ public static partial class ArchitectureProposals
         {
             var item = candidate.Output;
             var problem = item.From == item.To ? "The source and the target of a binding are two channels."
-                : KindOfChannel(item.From) is { } from && !ContractDecider.CanRouteFrom(from) ? "The source of a binding is an exchange or a topic."
-                : KindOfChannel(item.To) is { } to && !ContractDecider.CanRouteTo(to) ? "The target of a binding is a queue or an exchange."
+                : KindOfChannel(item.From) is { } from && !ModelInvariants.CanRouteFrom(from) ? "The source of a binding is an exchange or a topic."
+                : KindOfChannel(item.To) is { } to && !ModelInvariants.CanRouteTo(to) ? "The target of a binding is a queue or an exchange."
                 : null;
             if (problem is null)
                 continue;
