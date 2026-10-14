@@ -1,12 +1,14 @@
-using System;
+﻿using System;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
+using Vellum.Modules.Workspaces;
 
 #nullable disable
 
 namespace Vellum.Migrations
 {
+    /// <inheritdoc />
     public partial class Initial : Migration
     {
         /// <inheritdoc />
@@ -59,6 +61,10 @@ namespace Vellum.Migrations
 
             migrationBuilder.EnsureSchema(
                 name: "schemas");
+
+            migrationBuilder.AlterDatabase()
+                .Annotation("Npgsql:Enum:workspaces.invitation_status", "accepted,declined,expired,pending,revoked")
+                .Annotation("Npgsql:Enum:workspaces.workspace_role", "editor,owner,viewer");
 
             migrationBuilder.CreateTable(
                 name: "agent_tokens",
@@ -396,8 +402,8 @@ namespace Vellum.Migrations
                     workspace_id = table.Column<Guid>(type: "uuid", nullable: false),
                     email = table.Column<string>(type: "character varying(256)", maxLength: 256, nullable: false),
                     normalized_email = table.Column<string>(type: "character varying(256)", maxLength: 256, nullable: false),
-                    role = table.Column<string>(type: "character varying(16)", maxLength: 16, nullable: false),
-                    status = table.Column<string>(type: "character varying(16)", maxLength: 16, nullable: false),
+                    role = table.Column<WorkspaceRole>(type: "workspaces.workspace_role", nullable: false),
+                    status = table.Column<InvitationStatus>(type: "workspaces.invitation_status", nullable: false),
                     invited_by = table.Column<string>(type: "text", nullable: false),
                     secret_hash = table.Column<byte[]>(type: "bytea", nullable: true),
                     created_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
@@ -418,7 +424,7 @@ namespace Vellum.Migrations
                     id = table.Column<Guid>(type: "uuid", nullable: false),
                     workspace_id = table.Column<Guid>(type: "uuid", nullable: false),
                     user_id = table.Column<string>(type: "text", nullable: false),
-                    role = table.Column<string>(type: "text", nullable: false),
+                    role = table.Column<WorkspaceRole>(type: "workspaces.workspace_role", nullable: false),
                     created_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false)
                 },
                 constraints: table =>

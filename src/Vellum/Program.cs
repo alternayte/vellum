@@ -107,8 +107,7 @@ if (generatingOpenApi)
 // connection string is read when the context is made, so configuration that a test host
 // overrides applies.
 builder.Services.AddDbContext<AppDbContext>((services, options) => options
-    .UseNpgsql(services.GetRequiredService<IConfiguration>().GetConnectionString("DefaultConnection"))
-    .UseSnakeCaseNamingConvention());
+    .UseAppDatabase(services.GetRequiredService<IConfiguration>().GetConnectionString("DefaultConnection")));
 
 // Modules
 builder.Services.AddIdentityModule(builder.Configuration);
@@ -266,7 +265,7 @@ if (app.Environment.IsDevelopment())
             var projectId = Guid.Parse("00000000-0000-0000-0000-000000000002");
 
             db.Workspaces.Add(new WorkspaceEntity { Id = workspaceId, Name = "Dev Workspace", CreatedBy = devUser.Id });
-            db.Memberships.Add(new MembershipEntity { Id = Guid.NewGuid(), WorkspaceId = workspaceId, UserId = devUser.Id, Role = "Owner", CreatedAt = services.GetRequiredService<TimeProvider>().GetUtcNow() });
+            db.Memberships.Add(new MembershipEntity { Id = Guid.NewGuid(), WorkspaceId = workspaceId, UserId = devUser.Id, Role = WorkspaceRole.Owner, CreatedAt = services.GetRequiredService<TimeProvider>().GetUtcNow() });
             db.Projects.Add(new ProjectEntity { Id = projectId, WorkspaceId = workspaceId, Name = "Sample Architecture", StreamId = streamId });
 
             var userId = Guid.NewGuid();

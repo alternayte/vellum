@@ -23,7 +23,7 @@ public sealed class WorkspaceAuthorizationService
             .FirstOrDefaultAsync(m => m.WorkspaceId == workspaceId && m.UserId == userId, ct);
 
         if (membership is null) return null;
-        return Enum.Parse<WorkspaceRole>(membership.Role, ignoreCase: true);
+        return membership.Role;
     }
 
     public async Task RequireRoleAsync(Guid workspaceId, string userId, WorkspaceRole minimumRole, CancellationToken ct = default)

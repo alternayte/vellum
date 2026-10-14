@@ -196,8 +196,7 @@ internal static class TestDatabase
     private static async Task MigrateAsync(string connectionString)
     {
         var options = new DbContextOptionsBuilder<AppDbContext>()
-            .UseNpgsql(connectionString)
-            .UseSnakeCaseNamingConvention()
+            .UseAppDatabase(connectionString)
             .Options;
         await using var db = new AppDbContext(options);
         await db.Database.MigrateAsync();

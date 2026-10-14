@@ -103,7 +103,7 @@ public static class CreateWorkspace
             Id = Guid.NewGuid(),
             WorkspaceId = request.Id,
             UserId = userId,
-            Role = nameof(WorkspaceRole.Owner),
+            Role = WorkspaceRole.Owner,
             CreatedAt = time.GetUtcNow(),
         });
 

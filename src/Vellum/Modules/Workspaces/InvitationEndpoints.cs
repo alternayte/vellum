@@ -70,11 +70,11 @@ public static class InvitationRules
     /// <summary>Open invitations of one workspace. A workspace with more revokes some or waits for them to expire.</summary>
     public const int MaxPendingPerWorkspace = 100;
 
-    internal static string StatusAt(InvitationEntity invitation, DateTimeOffset now) =>
+    internal static InvitationStatus StatusAt(InvitationEntity invitation, DateTimeOffset now) =>
         invitation.Status == InvitationStatus.Pending && invitation.ExpiresAt <= now ? InvitationStatus.Expired : invitation.Status;
 
     internal static InvitationDto ToDto(InvitationEntity i, DateTimeOffset now) =>
-        new(i.Id, i.WorkspaceId, i.Email, MemberRoles.Canonical(i.Role), StatusAt(i, now), i.CreatedAt, i.ExpiresAt);
+        new(i.Id, i.WorkspaceId, i.Email, MemberRoles.Canonical(i.Role), EnumText.Of(StatusAt(i, now)), i.CreatedAt, i.ExpiresAt);
 
     /// <summary>The invitation row, locked for the open transaction.</summary>
     internal static async Task<InvitationEntity?> LockAsync(AppDbContext db, Guid invitationId, CancellationToken ct) =>
@@ -104,7 +104,7 @@ public static class InvitationRules
     }
 
     internal static IssuedInvitationDto Issued(InvitationEntity i, string secret, DateTimeOffset now) =>
-        new(i.Id, i.WorkspaceId, i.Email, MemberRoles.Canonical(i.Role), StatusAt(i, now), i.CreatedAt, i.ExpiresAt,
+        new(i.Id, i.WorkspaceId, i.Email, MemberRoles.Canonical(i.Role), EnumText.Of(StatusAt(i, now)), i.CreatedAt, i.ExpiresAt,
             secret, $"/invitations/{i.Id}#secret={secret}");
 
     /// <summary>
@@ -131,12 +131,12 @@ public static class InvitationRules
         await db.SaveChangesAsync(ct);
         foreach (var invitation in invitations)
             await AuditLog.AppendAsync(db, workspaceId, actorId, AuditLog.InvitationRevoked,
-                $"invitation:{invitation.Id} role:{invitation.Role.ToLowerInvariant()} issuer:{issuerId} reason:{reason}", ct);
+                $"invitation:{invitation.Id} role:{invitation.Role.ToString().ToLowerInvariant()} issuer:{issuerId} reason:{reason}", ct);
     }
 
-    internal static IResult Closed(string status) => Results.Conflict(new ErrorResponse(
+    internal static IResult Closed(InvitationStatus status) => Results.Conflict(new ErrorResponse(
         "invitation_closed",
-        $"The invitation is {status}",
+        $"The invitation is {EnumText.Of(status)}",
         status == InvitationStatus.Expired
             ? "An owner of the workspace can invite you again."
             : "The invitation cannot change any more."));
@@ -216,12 +216,12 @@ public static class CreateInvitation
         var secret = InvitationRules.NewSecret();
         invitation.SecretHash = InvitationRules.Hash(secret);
         invitation.Email = email;
-        invitation.Role = role.ToString();
+        invitation.Role = role;
         invitation.InvitedBy = userId;
         invitation.ExpiresAt = now + InvitationRules.Lifetime;
         await db.SaveChangesAsync(ct);
         await AuditLog.AppendAsync(db, workspaceId, userId, AuditLog.MemberInvited,
-            $"invitation:{invitation.Id} role:{invitation.Role.ToLowerInvariant()}", ct);
+            $"invitation:{invitation.Id} role:{invitation.Role.ToString().ToLowerInvariant()}", ct);
         await transaction.CommitAsync(ct);
 
         var dto = InvitationRules.Issued(invitation, secret, now);
@@ -288,7 +288,7 @@ public static class RevokeInvitation
         invitation.RespondedAt = now;
         await db.SaveChangesAsync(ct);
         await AuditLog.AppendAsync(db, workspaceId, userId, AuditLog.InvitationRevoked,
-            $"invitation:{invitation.Id} role:{invitation.Role.ToLowerInvariant()}", ct);
+            $"invitation:{invitation.Id} role:{invitation.Role.ToString().ToLowerInvariant()}", ct);
         await transaction.CommitAsync(ct);
         return Results.NoContent();
     }
@@ -374,8 +374,8 @@ public static class MyInvitations
         // This check holds when the membership changed by another path.
         var issuerRole = await db.Memberships
             .Where(m => m.WorkspaceId == invitation.WorkspaceId && m.UserId == invitation.InvitedBy)
-            .Select(m => m.Role).FirstOrDefaultAsync(ct);
-        if (issuerRole is null || MemberRoles.Canonical(issuerRole) != nameof(WorkspaceRole.Owner))
+            .Select(m => (WorkspaceRole?)m.Role).FirstOrDefaultAsync(ct);
+        if (issuerRole != WorkspaceRole.Owner)
             return InvitationRules.Closed(InvitationStatus.Revoked);
 
         var added = membership is null;
@@ -435,7 +435,7 @@ public static class MyInvitations
         invitation.RespondedAt = now;
         await db.SaveChangesAsync(ct);
         await AuditLog.AppendAsync(db, invitation.WorkspaceId, userId, AuditLog.InvitationDeclined,
-            $"invitation:{invitation.Id} role:{invitation.Role.ToLowerInvariant()}", ct);
+            $"invitation:{invitation.Id} role:{invitation.Role.ToString().ToLowerInvariant()}", ct);
         await transaction.CommitAsync(ct);
         return Results.NoContent();
     }
@@ -454,7 +454,7 @@ public static class MyInvitations
             .ToDictionaryAsync(u => u.Id, u => u.Name, ct);
         return rows.Select(r => new MyInvitationDto(
             r.Invitation.Id, r.Invitation.WorkspaceId, r.WorkspaceName, MemberRoles.Canonical(r.Invitation.Role),
-            inviters.GetValueOrDefault(r.Invitation.InvitedBy), InvitationRules.StatusAt(r.Invitation, now),
+            inviters.GetValueOrDefault(r.Invitation.InvitedBy), EnumText.Of(InvitationRules.StatusAt(r.Invitation, now)),
             r.Invitation.CreatedAt, r.Invitation.ExpiresAt)).ToList();
     }
 

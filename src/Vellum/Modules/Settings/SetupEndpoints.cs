@@ -111,7 +111,7 @@ public static class RunSetup
             Id = Guid.NewGuid(),
             WorkspaceId = workspaceId,
             UserId = user.Id,
-            Role = nameof(WorkspaceRole.Owner),
+            Role = WorkspaceRole.Owner,
             CreatedAt = time.GetUtcNow(),
         });
         db.InstanceAdmins.Add(new InstanceAdminEntity { UserId = user.Id });

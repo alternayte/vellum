@@ -322,7 +322,7 @@ public class InvitationTests(IntegrationFixture fixture) : IClassFixture<Integra
     }
 
     [Fact]
-    public async Task The_last_owner_is_not_removed_whatever_the_case_of_the_stored_role()
+    public async Task The_last_owner_is_not_removed_after_a_direct_write_of_the_role()
     {
         var factory = fixture.Factory;
         using var owner = await TestHost.SignInAsync(factory);
@@ -447,7 +447,7 @@ public class InvitationTests(IntegrationFixture fixture) : IClassFixture<Integra
         await using (var connection = new NpgsqlConnection(fixture.ConnectionString))
         {
             await connection.OpenAsync();
-            await using var demote = new NpgsqlCommand("UPDATE workspaces.memberships SET role = 'Viewer' WHERE workspace_id = @w AND user_id = @u", connection);
+            await using var demote = new NpgsqlCommand("UPDATE workspaces.memberships SET role = 'viewer' WHERE workspace_id = @w AND user_id = @u", connection);
             demote.Parameters.AddWithValue("w", workspaceId);
             demote.Parameters.AddWithValue("u", issuerId);
             Assert.Equal(1, await demote.ExecuteNonQueryAsync());
@@ -464,7 +464,7 @@ public class InvitationTests(IntegrationFixture fixture) : IClassFixture<Integra
 
     private static async Task<long> OwnersAsync(NpgsqlConnection connection, Guid workspaceId)
     {
-        await using var count = new NpgsqlCommand("SELECT count(*) FROM workspaces.memberships WHERE workspace_id = @w AND lower(role) = 'owner'", connection);
+        await using var count = new NpgsqlCommand("SELECT count(*) FROM workspaces.memberships WHERE workspace_id = @w AND role = 'owner'", connection);
         count.Parameters.AddWithValue("w", workspaceId);
         return (long)(await count.ExecuteScalarAsync())!;
     }

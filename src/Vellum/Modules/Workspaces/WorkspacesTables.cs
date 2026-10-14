@@ -1,4 +1,6 @@
 using Microsoft.EntityFrameworkCore;
+using Npgsql.EntityFrameworkCore.PostgreSQL.Infrastructure;
+using Vellum.Shared;
 
 namespace Vellum.Modules.Workspaces;
 
@@ -6,6 +8,12 @@ namespace Vellum.Modules.Workspaces;
 public static class WorkspacesTables
 {
     public const string Schema = "workspaces";
+
+    public static void MapEnums(NpgsqlDbContextOptionsBuilder npgsql)
+    {
+        npgsql.MapEnum<WorkspaceRole>("workspace_role", Schema, AppDatabase.EnumLabels);
+        npgsql.MapEnum<InvitationStatus>("invitation_status", Schema, AppDatabase.EnumLabels);
+    }
 
     public static void Configure(ModelBuilder modelBuilder)
     {
@@ -39,8 +47,6 @@ public static class WorkspacesTables
             b.HasKey(i => i.Id);
             b.Property(i => i.Email).HasMaxLength(InvitationRules.MaxEmailLength);
             b.Property(i => i.NormalizedEmail).HasMaxLength(InvitationRules.MaxEmailLength);
-            b.Property(i => i.Role).HasMaxLength(16);
-            b.Property(i => i.Status).HasMaxLength(16);
             // One open invitation for an address in a workspace: a second invitation renews it.
             b.HasIndex(i => new { i.WorkspaceId, i.NormalizedEmail }).IsUnique().HasFilter("status = 'pending'");
             // The invitations of the signed-in person are read by address.
@@ -74,7 +80,7 @@ public class MembershipEntity
     public Guid Id { get; set; }
     public Guid WorkspaceId { get; set; }
     public string UserId { get; set; } = null!;
-    public string Role { get; set; } = null!;
+    public WorkspaceRole Role { get; set; }
     /// <summary>
     /// When the membership was made. No writer set this before the member list showed it,
     /// so a row from that time holds the zero date; the list reads that as not recorded.
@@ -95,9 +101,9 @@ public class InvitationEntity
     public string Email { get; set; } = null!;
     /// <summary>The address as Identity normalizes it for a lookup (upper case).</summary>
     public string NormalizedEmail { get; set; } = null!;
-    public string Role { get; set; } = null!;
+    public WorkspaceRole Role { get; set; }
     /// <summary>One of <see cref="InvitationStatus"/>. An expired invitation stays pending here: expiry is read from <see cref="ExpiresAt"/>.</summary>
-    public string Status { get; set; } = InvitationStatus.Pending;
+    public InvitationStatus Status { get; set; } = InvitationStatus.Pending;
     public string InvitedBy { get; set; } = null!;
     /// <summary>
     /// The SHA-256 hash of the secret of the invitation link. The secret itself is shown once,
@@ -112,12 +118,12 @@ public class InvitationEntity
     public DateTimeOffset? RespondedAt { get; set; }
 }
 
-public static class InvitationStatus
+public enum InvitationStatus
 {
-    public const string Pending = "pending";
-    public const string Accepted = "accepted";
-    public const string Declined = "declined";
-    public const string Revoked = "revoked";
+    Pending,
+    Accepted,
+    Declined,
+    Revoked,
     /// <summary>Not stored: a pending invitation whose expiry has passed.</summary>
-    public const string Expired = "expired";
+    Expired,
 }

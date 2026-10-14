@@ -1,5 +1,8 @@
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
+using Npgsql.NameTranslation;
+using Npgsql.EntityFrameworkCore.PostgreSQL.Infrastructure;
 using Vellum.Modules.Ai.Design;
 using Vellum.Modules.Ai;
 using Vellum.Modules.Costs;
@@ -144,5 +147,28 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : IdentityDbCo
         CostsTables.Configure(modelBuilder);
         ReviewTables.Configure(modelBuilder);
         LoadTestsTables.Configure(modelBuilder);
+    }
+}
+
+/// <summary>
+/// The database options of <see cref="AppDbContext"/>, in one place for the app, <c>dotnet ef</c>
+/// and the tests: Npgsql, snake_case names, and the native Postgres enum types of the modules.
+/// </summary>
+public static class AppDatabase
+{
+    /// <summary>The labels of every Postgres enum type: the member names in snake_case.</summary>
+    public static readonly INpgsqlNameTranslator EnumLabels = new NpgsqlSnakeCaseNameTranslator();
+
+    public static TBuilder UseAppDatabase<TBuilder>(this TBuilder options, string? connectionString)
+        where TBuilder : DbContextOptionsBuilder
+    {
+        options.UseNpgsql(connectionString, MapEnums).UseSnakeCaseNamingConvention();
+        return options;
+    }
+
+    /// <summary>Each module maps the enums of its tables to enum types in its own schema.</summary>
+    private static void MapEnums(NpgsqlDbContextOptionsBuilder npgsql)
+    {
+        WorkspacesTables.MapEnums(npgsql);
     }
 }

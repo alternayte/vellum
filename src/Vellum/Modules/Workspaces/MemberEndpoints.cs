@@ -90,10 +90,10 @@ public static class ChangeMemberRole
                 "Cannot change the role of the last owner",
                 "A workspace must have at least one owner. Make another member an owner first."));
 
-        membership.Role = role.ToString();
+        membership.Role = role;
         await db.SaveChangesAsync(ct);
         await AuditLog.AppendAsync(db, workspaceId, userId, AuditLog.MemberRoleChanged,
-            $"user:{membership.UserId} role:{before.ToLowerInvariant()}->{membership.Role.ToLowerInvariant()}", ct);
+            $"user:{membership.UserId} role:{before.ToLowerInvariant()}->{membership.Role.ToString().ToLowerInvariant()}", ct);
         // A demoted owner's open invitations are revoked in the same transaction.
         if (before == nameof(WorkspaceRole.Owner))
             await InvitationRules.RevokeIssuedByAsync(db, workspaceId, membership.UserId, userId, "issuer-demoted", time.GetUtcNow(), ct);
@@ -114,8 +114,8 @@ internal static class MemberRoles
             ? role
             : null;
 
-    /// <summary>The role as the enum writes it. A stored role can differ in case.</summary>
-    public static string Canonical(string role) => Enum.Parse<WorkspaceRole>(role, ignoreCase: true).ToString();
+    /// <summary>The role as the API writes it: the enum member name.</summary>
+    public static string Canonical(WorkspaceRole role) => role.ToString();
 
     /// <summary>Locks the owner rows of the workspace for the open transaction and returns how many there are.</summary>
     public static async Task<int> LockOwnersAsync(AppDbContext db, Guid workspaceId, CancellationToken ct)
@@ -123,7 +123,7 @@ internal static class MemberRoles
         var owners = await db.Database
             .SqlQuery<Guid>($"""
                 SELECT id AS "Value" FROM workspaces.memberships
-                WHERE workspace_id = {workspaceId} AND lower(role) = 'owner'
+                WHERE workspace_id = {workspaceId} AND role = 'owner'
                 ORDER BY id
                 FOR UPDATE
                 """)
