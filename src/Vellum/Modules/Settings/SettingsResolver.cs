@@ -144,7 +144,7 @@ public sealed class SettingsResolver(AppDbContext db, Bootstrap bootstrap)
                 stored.MaxConcurrentStressRuns ?? policy.MaxConcurrentStressRuns);
         }
 
-        var defaultsJson = SettingsJson.ToJson(SettingsDefaults.BuiltIn);
+        var defaultsJson = SettingsJson.ToJson(SettingsDefaults.For(bootstrap.Profile));
         if (row?.Defaults is { } storedDefaults)
             defaultsJson = SettingsJson.Merge(defaultsJson, JsonNode.Parse(storedDefaults)!.AsObject());
 
