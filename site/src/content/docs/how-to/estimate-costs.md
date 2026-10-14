@@ -80,6 +80,8 @@ When you delete an assumption, a usage line that names it stays. The estimate li
 
 The flyout shows one total for each currency. Vellum converts no currency.
 
+![The Costs flyout of the project Online shop on the branch main. The estimate for one month is 894.65 USD, known lines only, as of 2026-10-14. A line in orange says that 1 line is unknown and in no total. Below Unknown 1, the resource Shipping worker has No price. Below Resources, each resource is in a group with the name of its element: Storefront API, Instances, 246.74 USD; Catalogue DB, Server, 129.94 USD; Orders API, Instances, 246.74 USD; Order worker, Instance, 123.37 USD and Messages, 3.20 USD.](../../../assets/screenshots/costs-flyout-estimate.png)
+
 - The total holds known lines only.
 - **Unknown** lists each line that has no amount, with the reason.
 - Select **Lines, saved estimates and compare** to see each line with its quantity, its price, the unit conversion and the amount.

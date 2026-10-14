@@ -48,7 +48,9 @@ A scenario that came from a proposal records that origin.
 2. Describe what to add. For example: "Add a notification service that listens to OrderCreated."
 3. Select **Propose additions**.
 
-The proposal lists each addition with the confidence the assistant states and its reason. Select the ones you want and select **Accept**. Accepting an item also accepts what it needs.
+The proposal lists each addition with the confidence the assistant states and its reason. Select the ones you want and select the accept button, for example **Accept 3**. Accepting an item also accepts what it needs.
+
+![The dialog Proposed additions. It says that the suggestion is from stand-in-model, and that accepted items are added as inferred facts. The summary reads: A Notifications app in Fulfilment hears about each shipment and emails the customer a tracking link. Three items are selected: the element Notifications (app, Go, inside Fulfilment), the relationship Shipping worker to Notifications (reports shipments) and the relationship Notifications to Customer (emails tracking links). Each item has the label inferred and a confidence of 80% or 70%. The buttons are Close, Reject selected and Accept 3.](../../../assets/screenshots/assistant-proposed-additions.png)
 
 Each accepted item is added with the label **inferred**. A proposal never changes or removes what is in the model.
 

@@ -16,19 +16,25 @@ You need no AI provider and no repository.
 1. On the home screen, select your workspace.
 2. Select **+ New Project**.
 3. In **Project name**, give `First system`. Select **Create**.
-4. Select the project to open it.
 
-The canvas is empty. It shows the text "Start with a system. Draw a connection to add the next one."
+Vellum opens the project. The canvas is empty. It shows the text "Start with a system. Draw a connection to add the next one." and the button **Add System**.
+
+![The empty canvas of the project First system at the level Context. The middle of the canvas says: Start with a system. Draw a connection to add the next one. Below the text is the button Add System. The left toolbar has a button for each tool. The bottom bar has Tidy and Fit.](../../../assets/screenshots/tutorial-empty-project.png)
 
 ## Add the elements
 
 1. Select **Add System**. The dialog **Add Element** opens.
-2. In **Element name**, give `Shop`. Select **Add**.
-3. Press `N`. The dialog opens again. If the name field holds the letter `n`, remove it.
+2. In **Name**, give `Shop`. Select **Add**.
+
+   ![The dialog Add Element over the empty canvas. Inside is Top level, Kind is System and Name holds Shop. The button Add is at the bottom right.](../../../assets/screenshots/tutorial-add-element.png)
+
+3. Press `N`. The dialog opens again.
 4. Select the kind **Actor**. Give the name `Customer`. Select **Add**.
 5. Press `N`. Keep the kind **System**. Give the name `Billing`. Select **Add**.
 6. Press `N`. Keep the kind **System**. Give the name `Warehouse`. Select **Add**.
 7. Select **Tidy** at the bottom of the screen. Vellum arranges the four elements.
+
+![The canvas after Tidy. The actor Customer and the systems Billing, Shop and Warehouse each have a card with the name and the kind. Each system card has the button Add an app or a store inside.](../../../assets/screenshots/tutorial-four-elements.png)
 
 You now have one actor and three systems. Each has the label `declared`, because you state it.
 
@@ -37,10 +43,27 @@ The positions on the canvas are layout. They are not part of the model, and they
 ## Connect two elements
 
 1. Move the pointer over `Customer`. A handle shows on each side.
-2. Drag from a handle of `Customer` to `Shop`.
+2. Drag from the handle on the right side of `Customer` to the handle at the top of `Shop`. A line starts at a handle on the left or the right side, and ends at a handle at the top or the bottom.
 3. Select the new line. In the **Relationship** panel, give the **Label** `places orders`.
 
+![The canvas with a line from Customer to Shop. The label of the line reads places orders. The Relationship panel at the right shows From Customer, To Shop, the Label places orders, an empty Technology field and the Line Style Curved (Bezier).](../../../assets/screenshots/tutorial-relationship.png)
+
 A relationship states structure: the customer uses the shop. It does not state behaviour. The line alone plays nothing. The contracts and the scenario of the next sections state the behaviour.
+
+## Look inside a system
+
+A system holds apps and stores. You add them at the level of the system.
+
+1. Double-click `Shop`. The breadcrumb at the top shows **Context › Shop**, and the detail panel of `Shop` opens. Select the close button of the panel.
+2. Select **Add Element**. The dialog shows `Shop (system)` in **Inside** and the kind **App**. Give the name `Orders API`. Select **Add**.
+3. Press `N`. Select the kind **Store**. Give the name `Orders database`. Select **Add**.
+4. Select **Tidy**. A frame with the name `Shop` holds the app and the store.
+
+![The canvas at the level Context › Shop. A frame with the name Shop and the kind System holds two cards: the app Orders API and the store Orders database.](../../../assets/screenshots/tutorial-drill-in-shop.png)
+
+5. Select **Context** in the breadcrumb to go back to the top level. The card of `Shop` shows the number 2: it holds two elements.
+
+The rest of this tutorial uses `Shop`, not the app or the store inside it.
 
 ## Declare the contracts
 
@@ -88,6 +111,8 @@ A publish step names a message.
 
 The flyout lists the message as **Shop → Billing, Warehouse · no schema**. The message has the label `declared`.
 
+![The Contracts flyout at the left of the canvas. Operations lists POST /orders: Shop, http, 1000 ms, 1 attempt, no schema. Channels lists order-events (topic) and order-events.dlq (queue). Subscriptions lists Warehouse on order-events with 1 attempt and no DLQ, and Billing on order-events with 2 attempts and the DLQ order-events.dlq. Messages lists OrderCreated: Shop to Billing and Warehouse, no schema.](../../../assets/screenshots/tutorial-contracts.png)
+
 ## Write the scenario
 
 A scenario is the steps of one behaviour, in order. You build it in the scenario editor. You select each element and each contract by its name.
@@ -105,6 +130,8 @@ A scenario is the steps of one behaviour, in order. You build it in the scenario
 11. Below **Expected results**, select **Step outcome**. In **Step**, select `place`. Keep **Ends** at **Succeeded**.
 12. Select **Event count**. In **Exactly**, give `2`. In **Events**, select **deliveries (Delivered)**. Keep **For** at **Any part**.
 13. Select **Save and play**.
+
+![The dialog New scenario with the name Place an order. Step 1 is a call with the mark Trigger: Customer calls POST /orders. The request is sku apple, qty 2, and the response is orderId o-1. The text below the fields says that Shop serves the operation and that it times out after 1000 ms. Step 2 publishes OrderCreated from Shop to order-events. The step IDs place and announce show at the right of each step.](../../../assets/screenshots/tutorial-scenario-editor.png)
 
 The scenario has two steps. `place` is a call from the customer to `POST /orders`. `announce` publishes `OrderCreated` to `order-events`. The two expected results state what you expect: the call succeeds, and the trace has two deliveries. The editor gives them the IDs `expect-1` and `expect-2`.
 
@@ -126,6 +153,8 @@ The dock at the bottom of the canvas opens. It always shows the line "Declared b
 
 2. Select **Restart**, then select **Next event** two times. The dock shows event 2 and its payload: the response with `orderId`.
 3. Read the right side of the dock: **2 expectations hold**.
+
+   ![The trace dock at event 2 of 5. The event reads: Shop responds to Customer for POST /orders, step place. The payload is orderId o-1. The canvas rings Customer and Shop in green, with the line POST /orders · response between them. The right side of the dock says 2 expectations hold and Declared behaviour, not a measurement.](../../../assets/screenshots/tutorial-playback-event-2.png)
 4. Select **Close trace**.
 
 Vellum did not call a system. It played what you declared: one operation, one channel, two subscriptions and two steps. The same model and the same scenario always give the same events.
@@ -149,6 +178,8 @@ Now ask a question: what happens to the message when Billing cannot handle it?
 
 5. Read the right side of the dock: **1 of 2 expectations fail**. Select that text. The failed expectation is `expect-2`, with the reason "3 Delivered event(s); expected 2."
 
+![The trace dock at event 10 of 10, at t = 100 ms. The event reads: OrderCreated for Billing moves to order-events.dlq. The canvas rings Billing in red. The timeline has grey segments for the first five events, then red and orange segments for the failures and the retry. The right side of the dock says 1 of 2 expectations fail.](../../../assets/screenshots/tutorial-playback-dead-letter.png)
+
 Read what the trace tells you:
 
 - The subscription of Billing has two attempts and a backoff of 100 ms. The trace shows the second attempt. Time in a trace is virtual: only a timeout and a backoff move it.
@@ -160,7 +191,7 @@ To see a lost message, move the fault to the subscription of the warehouse, whic
 
 ## What you did
 
-- You modelled four elements and one relationship, and each has the label `declared`.
+- You modelled six elements and one relationship, and each has the label `declared`.
 - You declared one operation, two channels, two subscriptions and one message.
 - You played a flow that the contracts permit, and you saw each payload.
 - You injected a failure and read the retry and the dead-letter path.

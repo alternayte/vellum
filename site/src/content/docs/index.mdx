@@ -14,25 +14,49 @@ hero:
 ---
 
 import { Card, CardGrid, LinkCard } from '@astrojs/starlight/components'
+import { Image } from 'astro:assets'
+import canvas from '../../assets/screenshots/canvas-online-shop.png'
+import connections from '../../assets/screenshots/canvas-detail-panel-connections.png'
+import trace from '../../assets/screenshots/trace-dock-playback.png'
+import promise from '../../assets/screenshots/promise-obligations-results.png'
+import importReview from '../../assets/screenshots/import-review-select-all.png'
+import review from '../../assets/screenshots/review-findings.png'
+import costs from '../../assets/screenshots/costs-flyout-estimate.png'
+
+<Image src={canvas} alt="The Vellum canvas with the model of an online shop. The actor Customer uses the system Storefront. Storefront places orders with the system Orders. Orders is expanded: a frame holds the apps Orders API and Order worker and the store Orders DB. Orders requests payment from Payments, and sends paid orders to Fulfilment. Payments authorises cards with the external system Card network. Each card shows the kind, the technology and a description, and each line has a label." />
 
 Vellum is a web app with one database. `docker compose up -d` starts both. An AI provider is optional, and so is GitHub.
 
 **Status: work in progress, not released.** No version is tagged, and the data format can change. Do not put an instance on a public address yet.
 
-```json
-{
-  "requirementId": "ORD-014",
-  "state": "approved",
-  "current": {
-    "title": "An accepted order must survive a broker outage",
-    "evidenceStatus": {
-      "counts": { "passed": 1, "failed": 1, "notRun": 1, "unsupported": 0, "stale": 0 }
-    }
-  }
-}
-```
+## What it looks like
 
-A promise is a requirement with a stable ID that a person approves. Each check gives evidence for it, in a stated scope. A check that nobody ran counts as not run, never as a pass. This is a part of the answer of `GET /api/projects/{projectId}/promises/{promiseId}` at the end of the tutorial [The promise loop](/tutorials/promise-loop/).
+<div class="tour">
+  <figure>
+    <Image src={connections} alt="The detail panel of the app Order worker on the tab Connections. It lists three outgoing relationships: to Orders DB, Payments API and Shipping worker, each with its label and its technology." />
+    <figcaption><strong>Model.</strong> Select an element to edit it. The tab Connections lists each relationship of the element.</figcaption>
+  </figure>
+  <figure>
+    <Image src={trace} alt="The trace dock at event 5 of 7. Billing fails to handle the message. The canvas rings Orders.Api and Billing in red inside the frame of the system orders. The dock says 1 of 2 expectations fail." />
+    <figcaption><strong>Trace.</strong> A scenario plays one event at a time on the canvas. A failure, a retry and a dead letter show as events.</figcaption>
+  </figure>
+  <figure>
+    <Image src={promise} alt="The promise ORD-014 with three obligations. ORD-014/O1 has the label Passed, ORD-014/O2 has the label Not run, and ORD-014/O3 has the label Failed." />
+    <figcaption><strong>Promises.</strong> A promise has a stable ID. Each obligation shows its evidence: passed, failed or not run.</figcaption>
+  </figure>
+  <figure>
+    <Image src={importReview} alt="The dialog Review acme/orders with 21 proposals in groups: binding, channel, element, message and operation. Each row names the file and the line in the repository." />
+    <figcaption><strong>Import.</strong> A scan reads a GitHub repository at one commit. Each proposal names its file and line. You accept or reject it.</figcaption>
+  </figure>
+  <figure>
+    <Image src={review} alt="The Review flyout on the tab Findings. One finding blocks Build Ready: CON-001 for the operation POST /orders, with the button Settle with a decision." />
+    <figcaption><strong>Review.</strong> Fixed rules report concerns about the design. A decision that an owner accepts settles a finding.</figcaption>
+  </figure>
+  <figure>
+    <Image src={costs} alt="The Costs flyout. The estimate for one month is 894.65 USD for the known lines. One line is unknown because it has no price. The resources show in groups by element." />
+    <figcaption><strong>Costs.</strong> An estimate uses only the prices in your price book. A line with no price is unknown, never zero.</figcaption>
+  </figure>
+</div>
 
 ## What Vellum does
 

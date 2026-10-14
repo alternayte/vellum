@@ -32,6 +32,8 @@ A project holds at most 500 decisions. One decision holds at most 20 alternative
 3. Read the list below **What an acceptance records**. It shows each finding that the decision names, as the finding is now, and it says which model the findings are of.
 4. Select **Accept** or **Reject**. A reason for a rejection is optional.
 
+![The dialog of ADR-0001 · Orders API owns the Orders DB. It says: This is a proposal. It decides nothing until an owner accepts it. Origin: human. The fields Title, Context, Decision and Consequences are filled in. One alternative is listed: A database for the worker, with the reason The outbox needs one transaction. Below Affected parts, Orders API, Orders DB and Order worker are selected. Below Findings it answers, CON-005 · Orders DB is selected. The buttons are Reject, Delete, Save and Accept.](../../../assets/screenshots/decision-proposed.png)
+
 **Accept** is not available while the dialog has changes that are not saved. Select **Save** first.
 
 Only a person with the owner role, signed in to Vellum, accepts or rejects a decision. An agent token cannot, whatever scopes it has.

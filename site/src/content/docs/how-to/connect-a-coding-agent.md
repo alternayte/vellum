@@ -19,6 +19,8 @@ An agent reads the model, runs the review, exports a specification, and records 
 4. Select **Create token**.
 5. Select **Copy**. Vellum shows the token one time only.
 
+![The Agent tokens section of the workspace settings. The form has a Name and the checkboxes Read, Propose, Export and Scan pull requests below The token can. The table below lists the token Claude Code on my laptop that can read, propose and export, was never used, expires on 12/01/2027 and has the button Revoke.](../../../assets/screenshots/settings-agent-tokens.png)
+
 Give an agent only the scopes its task needs. A token that only reads cannot write a draft.
 
 A token that you create in the app works on every project of the workspace and expires after 90 days.
