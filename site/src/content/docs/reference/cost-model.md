@@ -22,7 +22,7 @@ Each model branch of a project has one cost sheet: main, each draft and each var
 | `elementId` | The model element that the resource runs. The element must be in the model of the branch. |
 | `name` | Unique for the element. One line of at most 200 characters. |
 | `category` | `compute`, `database`, `queue`, `storage`, `egress` or `other`. |
-| `provider` | `azure`, `aws`, `gcp` or `custom`. |
+| `provider` | A name of 1 to 40 letters, digits, spaces, dots, hyphens and underscores that starts with a letter or a digit, for example `aws` or `hetzner`. A price applies when its provider is the same, in any case. |
 | `region`, `sku` | Text. The region has at most 100 characters. The SKU has at most 200 characters. |
 | `quantity`, `unit` | The baseline for one month. Leave both out for a resource that has usage lines only. The quantity is from 0 to 1,000,000,000,000 with at most 6 decimal places. |
 | `priceRef` | The ID of a price entry of the workspace, or null. A resource without a quantity takes no `priceRef`. |
@@ -250,17 +250,24 @@ A project endpoint takes `?branchId=` with the stream ID of a draft or a variant
 | `GET`, `POST /api/projects/{projectId}/costs/estimates` | List the saved estimates, newest first, or save one. The body of a save has `name` and `asOf`. Both are optional. |
 | `GET`, `DELETE /api/projects/{projectId}/costs/estimates/{estimateId}` | Read or delete a saved estimate. |
 | `GET /api/projects/{projectId}/costs/compare` | Compare the branches in `left` and `right` at the date in `asOf`. A side is `main` or a branch ID. |
-| `GET /api/projects/{projectId}/costs/prices` | The price book of the workspace of the project, and the IDs of the pinned entries. |
-| `PUT`, `DELETE /api/projects/{projectId}/costs/pins/{priceId}` | Pin or unpin a price entry. |
-| `GET`, `POST /api/workspaces/{workspaceId}/prices` | List the price book, or add a custom price. The list is in pages: `limit` is from 1 to 200 with a default of 50, and `cursor` is the `cursor` of the page before. |
-| `DELETE /api/workspaces/{workspaceId}/prices/{priceId}` | Delete an entry that no project pins. |
+| `GET /api/projects/{projectId}/costs/prices` | The price book of the workspace of the project. |
+| `GET`, `POST /api/workspaces/{workspaceId}/prices` | List the price book, or add a custom price. The list is in pages: `limit` is from 1 to 200 with a default of 50, and `cursor` is the `cursor` of the page before. Each entry has `usedBy`: the projects that use it. |
+| `DELETE /api/workspaces/{workspaceId}/prices/{priceId}` | Delete an entry that no project uses. A used entry gets `409` with the type `price_in_use` and the names of the projects. |
+| `POST /api/workspaces/{workspaceId}/prices/csv` | Import custom prices from the CSV text in `csv`. All lines or none. An error names `line N` or `line N.column`. |
+| `GET /api/workspaces/{workspaceId}/prices/aws/services` | The AWS services, by offer code. |
+| `GET /api/workspaces/{workspaceId}/prices/aws/regions` | The regions of the AWS service in `service`. |
+| `GET /api/workspaces/{workspaceId}/prices/aws/prices` | The on-demand prices of `service` in `region` whose product holds each word of `search`. |
+| `POST /api/workspaces/{workspaceId}/prices/aws` | Store the rows with `service`, `region` and `rateCodes` (1 to 50). Vellum reads the price file again. |
+| `GET /api/workspaces/{workspaceId}/prices/gcp/services` | The Google Cloud services. Needs the secret `gcp:apiKey`. |
+| `GET /api/workspaces/{workspaceId}/prices/gcp/skus` | The SKUs of `serviceId` in `region` whose text holds each word of `search`, priced in `currency`. |
+| `POST /api/workspaces/{workspaceId}/prices/gcp` | Store the SKUs with `serviceId`, `region`, `currency` and `skuIds` (1 to 50). Vellum reads the catalog again. |
 | `GET /api/workspaces/{workspaceId}/prices/azure/meters` | Search Azure meters. Parameters: `serviceName`, `region`, `skuName`, `meterName`, `currency`. |
 | `POST /api/workspaces/{workspaceId}/prices/azure` | Store the row with `meterId`, `skuId`, `armRegionName` and `currency`. Vellum reads the row again. |
 
-A workspace makes at most 30 Azure requests in one minute. A request over the limit gets `429` with the type `rate_limited` and a `Retry-After` header.
+A workspace makes at most 30 requests to the Azure, AWS and Google Cloud endpoints in one minute. A request over the limit gets `429` with the type `rate_limited` and a `Retry-After` header.
 
 A request body without `value` for an assumption, or without `unitPrice` for a custom price, gets `400` with the name of the field. Vellum does not read a missing number as 0.
 
-When a project is deleted, Vellum deletes its cost sheets, its pins and its saved estimates. The price book stays with the workspace.
+When a project is deleted, Vellum deletes its cost sheets and its saved estimates. The price book stays with the workspace. The prices that only this project used can then be deleted.
 
 See [Estimate costs](/how-to/estimate-costs/) for the procedure and [An estimate is not a measurement](/concepts/estimates-are-not-measurements/) for what a cost estimate can show.

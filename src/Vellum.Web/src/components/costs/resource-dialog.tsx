@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input'
 import { selectClass } from '@/components/settings/fields'
 import { shownInline } from '@/lib/mutation-errors'
 import {
-  CATEGORIES, PROVIDERS, UNKNOWN_REASON, FLAG_LABEL, costsApi, describeError, describePrice, formatAmount, priceEntryLabel, priceFor, priceLabel,
+  CATEGORIES, PROVIDER_SUGGESTIONS, UNKNOWN_REASON, FLAG_LABEL, costsApi, describeError, describePrice, formatAmount, priceEntryLabel, priceFor, priceLabel,
   type CostAssumption, type CostResource, type EstimateLine, type PriceEntry, type ResourceInput,
 } from '@/lib/costs-api'
 
@@ -66,7 +66,7 @@ export function ResourceDialog({ projectId, branchId, resource, elements, assump
         region: resource.region, sku: resource.sku, quantity: resource.quantity, unit: resource.unit, priceRef: resource.priceRef,
         usage: resource.usage.map((u) => ({ ...u })),
       }
-    : { elementId: elements[0]?.id ?? '', name: '', category: 'compute', provider: 'custom', region: '', sku: '', quantity: 1, unit: 'instances', priceRef: null, usage: [] })
+    : { elementId: elements[0]?.id ?? '', name: '', category: 'compute', provider: '', region: '', sku: '', quantity: 1, unit: 'instances', priceRef: null, usage: [] })
   // The lines of the estimate describe the stored resource. They are hidden while the form differs from it.
   const [stored] = useState(() => JSON.stringify(form))
   const shown = JSON.stringify(form) === stored ? lines : []
@@ -114,9 +114,10 @@ export function ResourceDialog({ projectId, branchId, resource, elements, assump
             </label>
             <label className={labelClass}>
               Provider
-              <select className={`${selectClass} mt-1`} value={form.provider} onChange={(e) => set('provider', e.target.value)}>
-                {PROVIDERS.map((p) => <option key={p} value={p}>{p}</option>)}
-              </select>
+              <Input className="mt-1" list="resource-providers" value={form.provider} onChange={(e) => set('provider', e.target.value)} placeholder="azure, aws, gcp, hetzner" maxLength={40} required />
+              <datalist id="resource-providers">
+                {[...new Set([...PROVIDER_SUGGESTIONS, ...prices.map((p) => p.provider)])].map((p) => <option key={p} value={p} />)}
+              </datalist>
             </label>
             <label className={labelClass}>
               Region

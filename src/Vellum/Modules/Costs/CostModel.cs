@@ -1,5 +1,7 @@
 using System.Collections.Immutable;
+using System.Text.RegularExpressions;
 using Vellum.Modules.Modelling.Model;
+using Vellum.Shared;
 
 namespace Vellum.Modules.Costs;
 
@@ -16,14 +18,28 @@ public static class CostCategory
     public static readonly string[] All = [Compute, Database, Queue, Storage, Egress, Other];
 }
 
-public static class CostProvider
+/// <summary>
+/// The provider of a resource or a price is a name that a person chooses, such as
+/// <c>hetzner</c> or <c>on-premises</c>. Vellum names the sources it fetches from with the
+/// constants below. A price is for a resource when both name the same provider, in any case.
+/// </summary>
+public static partial class CostProvider
 {
     public const string Azure = "azure";
     public const string Aws = "aws";
     public const string Gcp = "gcp";
-    public const string Custom = "custom";
+    public const int MaxChars = 40;
 
-    public static readonly string[] All = [Azure, Aws, Gcp, Custom];
+    public static bool Same(string a, string b) => string.Equals(a.Trim(), b.Trim(), StringComparison.OrdinalIgnoreCase);
+
+    public static ValidationError? Check(string field, string? name) =>
+        name is not null && Name().IsMatch(name)
+            ? null
+            : new ValidationError(field,
+                $"Must be 1 to {MaxChars} characters: letters, digits, spaces, dots, hyphens and underscores, starting with a letter or a digit. For example: azure, aws, gcp, hetzner.");
+
+    [GeneratedRegex(@"\A[\p{L}\p{N}][\p{L}\p{N} ._-]{0,39}\z")]
+    private static partial Regex Name();
 }
 
 /// <summary>

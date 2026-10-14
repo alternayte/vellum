@@ -1,0 +1,115 @@
+{
+  "skus": [
+    {
+      "name": "services/6F81-5844-456A/skus/9DE9-9092-B3BC",
+      "skuId": "9DE9-9092-B3BC",
+      "description": "Network Internet Egress from Belgium to Americas",
+      "category": {
+        "serviceDisplayName": "Compute Engine",
+        "resourceFamily": "Network",
+        "resourceGroup": "PremiumInternetEgress",
+        "usageType": "OnDemand"
+      },
+      "serviceRegions": [
+        "europe-west1"
+      ],
+      "pricingInfo": [
+        {
+          "summary": "",
+          "pricingExpression": {
+            "usageUnit": "GiBy",
+            "displayQuantity": 1,
+            "tieredRates": [
+              {
+                "startUsageAmount": 0,
+                "unitPrice": {
+                  "currencyCode": "USD",
+                  "units": "0",
+                  "nanos": 120000000
+                }
+              },
+              {
+                "startUsageAmount": 1024,
+                "unitPrice": {
+                  "currencyCode": "USD",
+                  "units": "0",
+                  "nanos": 110000000
+                }
+              }
+            ],
+            "usageUnitDescription": "gibibyte",
+            "baseUnit": "By",
+            "baseUnitDescription": "byte",
+            "baseUnitConversionFactor": 1073741824
+          },
+          "aggregationInfo": {
+            "aggregationLevel": "ACCOUNT",
+            "aggregationInterval": "MONTHLY",
+            "aggregationCount": 1
+          },
+          "currencyConversionRate": 1,
+          "effectiveTime": "2026-10-13T22:31:05.214Z"
+        }
+      ],
+      "serviceProviderName": "Google",
+      "geoTaxonomy": {
+        "type": "REGIONAL",
+        "regions": [
+          "europe-west1"
+        ]
+      }
+    },
+    {
+      "name": "services/6F81-5844-456A/skus/D973-5D65-BAB2",
+      "skuId": "D973-5D65-BAB2",
+      "description": "Storage PD Capacity in Belgium",
+      "category": {
+        "serviceDisplayName": "Compute Engine",
+        "resourceFamily": "Storage",
+        "resourceGroup": "PDStandard",
+        "usageType": "OnDemand"
+      },
+      "serviceRegions": [
+        "europe-west1"
+      ],
+      "pricingInfo": [
+        {
+          "summary": "",
+          "pricingExpression": {
+            "usageUnit": "GiBy.mo",
+            "displayQuantity": 1,
+            "tieredRates": [
+              {
+                "startUsageAmount": 0,
+                "unitPrice": {
+                  "currencyCode": "USD",
+                  "units": "0",
+                  "nanos": 40000000
+                }
+              }
+            ],
+            "usageUnitDescription": "gibibyte month",
+            "baseUnit": "By.s",
+            "baseUnitDescription": "byte second",
+            "baseUnitConversionFactor": 2.8759101014016e15
+          },
+          "aggregationInfo": {
+            "aggregationLevel": "ACCOUNT",
+            "aggregationInterval": "MONTHLY",
+            "aggregationCount": 1
+          },
+          "currencyConversionRate": 1,
+          "effectiveTime": "2026-10-13T22:31:05.214Z"
+        }
+      ],
+      "serviceProviderName": "Google",
+      "geoTaxonomy": {
+        "type": "REGIONAL",
+        "regions": [
+          "europe-west1"
+        ]
+      }
+    }
+  ],
+  "nextPageToken": ""
+}

@@ -175,6 +175,11 @@ public static class Estimates
             await db.Database.ExecuteSqlAsync($"SELECT pg_advisory_xact_lock(hashtextextended({"costs.estimates:" + branch}, 0))", ct);
             if (await db.Estimates.CountAsync(e => e.ProjectId == projectId && e.BranchId == branch, ct) >= MaxSavedPerBranch)
                 return Results.Conflict(new ErrorResponse("conflict", $"A branch holds at most {MaxSavedPerBranch} saved estimates. Delete one first."));
+            // The entries the estimate was made with are locked until the commit, so a delete of
+            // one of them waits and then sees that this estimate uses it.
+            var used = built.Inputs.Prices.Keys.ToList();
+            if ((await PriceUsage.LockAsync(db, used, ct)).Count < used.Count)
+                return Results.Conflict(new ErrorResponse("conflict", "A price entry of the estimate was deleted while it was saved. Save again."));
 
             var row = new SavedEstimateEntity
             {
@@ -238,66 +243,5 @@ public static class Estimates
         return new SavedEstimateDto(
             row.Id, row.Name, row.BranchId, row.ModelVersion, row.AsOf, row.InputsFingerprint, row.Hash, row.SavedBy, row.SavedAt,
             changes.Count > 0, changes, withResult ? CostJson.Read<Estimate>(row.Result) : null);
-    }
-}
-
-/// <param name="WorkspaceId">The workspace that owns the price book.</param>
-/// <param name="Pinned">The IDs of the entries this project pinned.</param>
-public sealed record ProjectPricesDto(Guid WorkspaceId, IReadOnlyList<PriceEntryDto> Entries, IReadOnlyList<Guid> Pinned);
-
-/// <summary>The price entries a project pinned. A pin keeps an entry in the price book of the workspace.</summary>
-public static class Pins
-{
-    public const int MaxPerProject = 500;
-
-    /// <summary>
-    /// The price book of the project's workspace, as a project member picks from it, with
-    /// the entries the project pinned. A book holds at most <see cref="PriceRules.MaxPerWorkspace"/> entries.
-    /// </summary>
-    public static async Task<IResult> Prices(
-        Guid projectId, ClaimsPrincipal user, WorkspaceAuthorizationService auth, AppDbContext db, CancellationToken ct)
-    {
-        await auth.RequireProjectRoleAsync(projectId, user.UserId(), WorkspaceRole.Viewer, ct);
-        var workspaceId = await auth.GetProjectWorkspaceIdAsync(projectId, ct);
-
-        var entries = await db.PriceEntries.AsNoTracking()
-            .Where(p => p.WorkspaceId == workspaceId)
-            .OrderBy(p => p.Provider).ThenBy(p => p.Sku).ThenBy(p => p.Region).ThenBy(p => p.Id)
-            .ToListAsync(ct);
-        var pinned = await db.Pins.AsNoTracking()
-            .Where(p => p.ProjectId == projectId).OrderBy(p => p.PriceEntryId).Select(p => p.PriceEntryId).ToListAsync(ct);
-        return Results.Ok(new ProjectPricesDto(workspaceId, entries.Select(PriceEntryDto.From).ToList(), pinned));
-    }
-
-    public static async Task<IResult> Pin(
-        Guid projectId, Guid priceId, ClaimsPrincipal user, WorkspaceAuthorizationService auth, AppDbContext db, TimeProvider time, CancellationToken ct)
-    {
-        var userId = user.UserId();
-        await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
-        var workspaceId = await auth.GetProjectWorkspaceIdAsync(projectId, ct);
-
-        await using var transaction = await db.Database.BeginTransactionAsync(ct);
-        // The row lock makes this pin and a delete of the entry take turns.
-        var entry = await db.PriceEntries
-            .FromSql($"SELECT * FROM costs.price_entries WHERE id = {priceId} AND workspace_id = {workspaceId} FOR SHARE")
-            .AsNoTracking().ToListAsync(ct);
-        if (entry.Count == 0)
-            return NotFound("Price entry");
-        if (await db.Pins.CountAsync(p => p.ProjectId == projectId, ct) >= MaxPerProject)
-            return Results.Conflict(new ErrorResponse("conflict", $"A project pins at most {MaxPerProject} price entries."));
-
-        await db.Database.ExecuteSqlAsync(
-            $"INSERT INTO costs.pins (project_id, price_entry_id, pinned_by, pinned_at) VALUES ({projectId}, {priceId}, {userId}, {time.GetUtcNow()}) ON CONFLICT DO NOTHING",
-            ct);
-        await transaction.CommitAsync(ct);
-        return Results.NoContent();
-    }
-
-    public static async Task<IResult> Unpin(
-        Guid projectId, Guid priceId, ClaimsPrincipal user, WorkspaceAuthorizationService auth, AppDbContext db, CancellationToken ct)
-    {
-        await auth.RequireProjectRoleAsync(projectId, user.UserId(), WorkspaceRole.Editor, ct);
-        await db.Pins.Where(p => p.ProjectId == projectId && p.PriceEntryId == priceId).ExecuteDeleteAsync(ct);
-        return Results.NoContent();
     }
 }

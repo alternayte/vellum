@@ -118,32 +118,8 @@ public static class AzurePriceEndpoints
         }, PriceAudit.Imported, ct);
     }
 
-    /// <summary>A failure of the price API is a 502 or a 409 with a fixed sentence. No text of the remote answer is passed on.</summary>
-    private static IResult Refuse(AzurePricesFailure failure) => failure switch
-    {
-        AzurePricesFailure.NotConfigured notConfigured => Results.Conflict(new ErrorResponse(
-            "price_source_not_configured", "The Azure price API has no usable address in the settings of this workspace",
-            notConfigured.Reason ?? "Set cost.azureRetailPricesBaseUrl in the settings.")),
-        AzurePricesFailure.BadFilter => Results.BadRequest(new ErrorResponse(
-            "price_source_refused", "The Azure price API refused the search", "Check the service name, the region and the SKU name. The values are case sensitive.")),
-        AzurePricesFailure.RateLimited => Results.Json(new ErrorResponse(
-            "price_source_rate_limited", "The Azure price API limits the requests of this server", "Try again in a minute."),
-            statusCode: StatusCodes.Status503ServiceUnavailable),
-        AzurePricesFailure.Unavailable unavailable => Results.Json(new ErrorResponse(
-            "price_source_unavailable", "The Azure price API gave no usable answer", Describe(unavailable.Reason)),
-            statusCode: StatusCodes.Status502BadGateway),
-        _ => throw new InvalidOperationException($"Unknown failure {failure.GetType().Name}"),
-    };
-
-    private static string Describe(string reason) => reason switch
-    {
-        "url_refused" => "The instance policy refuses the address of the price API.",
-        "invalid_setting" => "The address of the price API in the settings cannot be used.",
-        "timeout" => "The price API did not answer in time.",
-        "network" => "No connection to the price API.",
-        "server_error" => "The price API reported an error on its side.",
-        "too_large" => "The answer of the price API is too large. Narrow the search.",
-        "next_page_refused" => "The price API pointed at another server for the next page. Vellum did not follow it.",
-        _ => "The answer of the price API is not the documented format.",
-    };
+    private static IResult Refuse(PriceSourceFailure failure) => PriceSources.Refuse(
+        "Azure",
+        failure is PriceSourceFailure.NotConfigured { Reason: null } ? new PriceSourceFailure.NotConfigured("Set cost.azureRetailPricesBaseUrl in the settings.") : failure,
+        "Check the service name, the region and the SKU name. The values are case sensitive.");
 }

@@ -1,7 +1,8 @@
 import { ApiError, api } from '@/lib/settings-api'
 
 export const CATEGORIES = ['compute', 'database', 'queue', 'storage', 'egress', 'other'] as const
-export const PROVIDERS = ['azure', 'aws', 'gcp', 'custom'] as const
+/** The providers Vellum fetches prices from. A provider is a free name; these are suggestions. */
+export const PROVIDER_SUGGESTIONS = ['azure', 'aws', 'gcp'] as const
 export const ASSUMPTION_KINDS = ['requests', 'storage', 'egress', 'messages', 'other'] as const
 export const ASSUMPTION_LABELS = ['declared', 'measured', 'inferred'] as const
 
@@ -200,6 +201,8 @@ export interface PriceEntry {
   acceptedAt: string
   fetched: { url: string; fetchedAt: string; meterId: string; providerEffectiveDate: string | null } | null
   unitReadable: boolean
+  /** The projects whose resources or saved estimates use the entry. A used entry cannot be deleted. */
+  usedBy: { projectId: string; name: string }[]
 }
 
 export interface CustomPriceInput {
@@ -237,6 +240,56 @@ export interface AzureMeter {
 
 export interface AzureMeterPage {
   items: AzureMeter[]
+  more: boolean
+  sourceUrl: string
+}
+
+export interface AwsPrice {
+  sku: string
+  rateCode: string
+  productFamily: string
+  attributes: Record<string, string>
+  description: string
+  unit: string
+  unitOfMeasure: string
+  pricePerUnit: number
+  currency: string
+  beginRange: string
+  endRange: string
+  effectiveDate: string | null
+  notImportable: string | null
+}
+
+export interface AwsPricePage {
+  service: string
+  region: string
+  items: AwsPrice[]
+  more: boolean
+  sourceUrl: string
+  publicationDate: string | null
+}
+
+export interface GcpSku {
+  skuId: string
+  description: string
+  serviceDisplayName: string
+  resourceFamily: string
+  resourceGroup: string
+  usageType: string
+  regions: string[]
+  unit: string
+  usageUnit: string
+  usageUnitDescription: string
+  unitPrice: number
+  currency: string
+  tiers: number
+  effectiveDate: string | null
+  notImportable: string | null
+}
+
+export interface GcpSkuPage {
+  serviceId: string
+  items: GcpSku[]
   more: boolean
   sourceUrl: string
 }
@@ -279,10 +332,8 @@ export const costsApi = {
   compare: (projectId: string, left: string | null, right: string | null) =>
     api<ComparisonResult>('GET', `${costs(projectId)}/compare?left=${left ?? 'main'}&right=${right ?? 'main'}`),
 
-  /** The price book of the project's workspace, sorted by provider and SKU, with the entries the project pinned. */
-  prices: (projectId: string) => api<{ workspaceId: string; entries: PriceEntry[]; pinned: string[] }>('GET', `${costs(projectId)}/prices`),
-  pin: (projectId: string, priceId: string) => api<void>('PUT', `${costs(projectId)}/pins/${priceId}`),
-  unpin: (projectId: string, priceId: string) => api<void>('DELETE', `${costs(projectId)}/pins/${priceId}`),
+  /** The price book of the project's workspace, sorted by provider and SKU. */
+  prices: (projectId: string) => api<{ workspaceId: string; entries: PriceEntry[] }>('GET', `${costs(projectId)}/prices`),
 
   /** Every open branch of the project: main, the open drafts and the open variants. */
   branches: async (projectId: string): Promise<Branch[]> => {
@@ -325,6 +376,26 @@ export const costsApi = {
     api<PriceEntry>('POST', `${prices(workspaceId)}/azure`, {
       meterId: meter.meterId, skuId: meter.skuId || null, armRegionName: meter.armRegionName || null, currency: meter.currencyCode,
     }),
+  /** Every line of the file is checked first. A file with one bad line adds nothing. */
+  importCsv: (workspaceId: string, csv: string) =>
+    api<{ imported: number; entries: PriceEntry[] }>('POST', `${prices(workspaceId)}/csv`, { csv }),
+  awsServices: (workspaceId: string) => api<{ services: string[] }>('GET', `${prices(workspaceId)}/aws/services`),
+  awsRegions: (workspaceId: string, service: string) =>
+    api<{ service: string; regions: string[] }>('GET', `${prices(workspaceId)}/aws/regions?service=${encodeURIComponent(service)}`),
+  searchAws: (workspaceId: string, query: { service: string; region: string; search: string }) =>
+    api<AwsPricePage>('GET', `${prices(workspaceId)}/aws/prices?${new URLSearchParams({ service: query.service, region: query.region, search: query.search.trim() })}`),
+  importAws: (workspaceId: string, service: string, region: string, rateCodes: string[]) =>
+    api<PriceEntry[]>('POST', `${prices(workspaceId)}/aws`, { service, region, rateCodes }),
+  gcpServices: (workspaceId: string) =>
+    api<{ services: { id: string; displayName: string }[]; more: boolean }>('GET', `${prices(workspaceId)}/gcp/services`),
+  searchGcp: (workspaceId: string, query: { serviceId: string; region: string; search: string; currency: string }) => {
+    const params = new URLSearchParams({ serviceId: query.serviceId, currency: query.currency })
+    if (query.region.trim()) params.set('region', query.region.trim())
+    if (query.search.trim()) params.set('search', query.search.trim())
+    return api<GcpSkuPage>('GET', `${prices(workspaceId)}/gcp/skus?${params}`)
+  },
+  importGcp: (workspaceId: string, serviceId: string, region: string, currency: string, skuIds: string[]) =>
+    api<PriceEntry[]>('POST', `${prices(workspaceId)}/gcp`, { serviceId, region: region.trim() || null, currency, skuIds }),
 }
 
 /** The message of a failed call, with the first refused field when the server names one. */

@@ -427,34 +427,6 @@ namespace Vellum.Migrations
                     b.ToTable("usage_records", "ai");
                 });
 
-            modelBuilder.Entity("Vellum.Modules.Costs.PinEntity", b =>
-                {
-                    b.Property<Guid>("ProjectId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("project_id");
-
-                    b.Property<Guid>("PriceEntryId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("price_entry_id");
-
-                    b.Property<DateTimeOffset>("PinnedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("pinned_at");
-
-                    b.Property<string>("PinnedBy")
-                        .IsRequired()
-                        .HasColumnType("text")
-                        .HasColumnName("pinned_by");
-
-                    b.HasKey("ProjectId", "PriceEntryId")
-                        .HasName("pk_pins");
-
-                    b.HasIndex("PriceEntryId")
-                        .HasDatabaseName("ix_pins_price_entry_id");
-
-                    b.ToTable("pins", "costs");
-                });
-
             modelBuilder.Entity("Vellum.Modules.Costs.PriceEntryEntity", b =>
                 {
                     b.Property<Guid>("Id")

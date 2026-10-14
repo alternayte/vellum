@@ -223,7 +223,7 @@ public static class Estimator
             price.UnitPrice, price.Unit, price.Currency, price.Source, price.EffectiveDate, price.ObservedOn);
         // A price is the price of one provider, and of one region when it names one. A price
         // for something else is no price of this resource, so the line gets no amount.
-        if (!string.Equals(price.Provider, resource.Provider, StringComparison.Ordinal))
+        if (!CostProvider.Same(price.Provider, resource.Provider))
         {
             return Unknown(resource, usage, name, kind, quantity, source, UnknownReason.PriceProviderMismatch,
                 $"The resource is on '{resource.Provider}' and the price is for '{price.Provider}'.");

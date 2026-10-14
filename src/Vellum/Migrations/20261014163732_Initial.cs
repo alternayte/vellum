@@ -496,21 +496,6 @@ namespace Vellum.Migrations
                 });
 
             migrationBuilder.CreateTable(
-                name: "pins",
-                schema: "costs",
-                columns: table => new
-                {
-                    project_id = table.Column<Guid>(type: "uuid", nullable: false),
-                    price_entry_id = table.Column<Guid>(type: "uuid", nullable: false),
-                    pinned_by = table.Column<string>(type: "text", nullable: false),
-                    pinned_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("pk_pins", x => new { x.project_id, x.price_entry_id });
-                });
-
-            migrationBuilder.CreateTable(
                 name: "price_entries",
                 schema: "costs",
                 columns: table => new
@@ -1679,12 +1664,6 @@ namespace Vellum.Migrations
                 unique: true);
 
             migrationBuilder.CreateIndex(
-                name: "ix_pins_price_entry_id",
-                schema: "costs",
-                table: "pins",
-                column: "price_entry_id");
-
-            migrationBuilder.CreateIndex(
                 name: "ix_price_entries_workspace_id_provider_sku_id",
                 schema: "costs",
                 table: "price_entries",
@@ -2092,10 +2071,6 @@ namespace Vellum.Migrations
             migrationBuilder.DropTable(
                 name: "numbering",
                 schema: "promises");
-
-            migrationBuilder.DropTable(
-                name: "pins",
-                schema: "costs");
 
             migrationBuilder.DropTable(
                 name: "price_entries",

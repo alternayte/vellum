@@ -89,7 +89,7 @@ client for the agent interface.
 | Review | 18 fixed rules report concerns about resilience, contracts, truth labels and needless complexity. Record a decision (ADR) to settle a finding. |
 | Build | Export a standalone `SDD.md` and a bundle with OpenAPI, AsyncAPI, scenarios and promises. The same model gives the same bytes. Vellum can check a bundle against its source. |
 | Agents | Create an agent token. A coding agent connects over MCP at `/mcp` and reads the model, proposes draft promises and exports the specification. A token cannot approve anything. |
-| Costs | Enter prices, or fetch one from the public Azure price API. Vellum ships no price table. A resource with no price shows as unknown, never as zero. |
+| Costs | Enter prices one at a time or from a CSV file, or fetch them from the Azure, AWS and Google Cloud price APIs. Vellum ships no price table. A resource with no price shows as unknown, never as zero. A price that a project uses cannot be deleted. |
 | Stress | Simulate one scenario under load with a fixed seed. The result is an estimate and lists what the model leaves out. |
 | Settings | AI providers (OpenAI, Anthropic, Gemini, OpenAI-compatible), GitHub token, limits, encrypted secrets, key rotation, audit log. |
 

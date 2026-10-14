@@ -90,6 +90,8 @@ A scan records the limits that applied when it was requested.
 | `cost.azureRetailPricesBaseUrl` | string | `https://prices.azure.com` | Empty, or a URL that obeys the [URL rules](#url-rules) | **Cost** → **Azure price API** | The address of the Azure Retail Prices API or of a mirror. Empty turns the price search off. Vellum sends no credential to it. |
 | `cost.stalePriceAfterDays` | integer | `90` | 1 to 3650 | **Cost** → **A price is stale after** | An estimate flags a price that was entered or fetched more than this number of days before the date of the estimate. |
 
+The AWS and Google Cloud price APIs have fixed addresses and no setting. The Google Cloud price search needs the workspace secret `gcp:apiKey`; Vellum sends it to `https://cloudbilling.googleapis.com` only. See [Estimate costs](/how-to/estimate-costs/#aws-and-google-cloud).
+
 A save does not resolve the host name of `cost.azureRetailPricesBaseUrl`. The price search resolves it and checks the addresses when it runs. See [Cost model](/reference/cost-model/).
 
 ### `simulation`
@@ -213,6 +215,7 @@ A body over the limit gets `413`.
 | `github:token` | The GitHub access token | `github.apiBaseUrl` | Printable ASCII only |
 | `ai:<provider id>:apiKey` | The API key of one AI provider. `<provider id>` is the `id` of the provider, in the form `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`. | The `baseUrl` of the provider, or the address of its kind | Printable ASCII only |
 | `notifications:webhookSecret` | The webhook signing secret | `notifications.webhookUrl` | No control characters |
+| `gcp:apiKey` | The API key of the Google Cloud Billing Catalog API | `https://cloudbilling.googleapis.com`, a fixed address | Printable ASCII only |
 
 Vellum refuses a secret with `400` in these cases:
 
