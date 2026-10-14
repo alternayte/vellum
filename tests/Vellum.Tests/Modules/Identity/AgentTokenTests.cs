@@ -601,6 +601,9 @@ public class AgentTokenTests(IntegrationFixture fixture) : IClassFixture<Integra
         "DELETE /api/workspaces/{workspaceId}/agent-tokens/{tokenId}",
         "POST /api/projects/{projectId}/imports/{importId}/proposals/decide",
         "POST /api/projects/{projectId}/sources/{sourceId}/accept",
+        "DELETE /api/projects/{projectId}/sources/{sourceId}",
+        "POST /api/projects/{projectId}/sources/{sourceId}/archive",
+        "POST /api/projects/{projectId}/sources/bulk",
         "POST /api/projects/{projectId}/ai/flow-proposals/",
         "POST /api/projects/{projectId}/ai/flow-proposals/{proposalId}/accept",
         "POST /api/projects/{projectId}/ai/flow-proposals/{proposalId}/missing/{alias}/create",
@@ -798,7 +801,7 @@ public class AgentTokenTests(IntegrationFixture fixture) : IClassFixture<Integra
             if (method == "HEAD")
                 continue;
             var refusal = (await response.Content.ReadFromJsonAsync<JsonObject>())!["type"]!.GetValue<string>();
-            Assert.Equal(ForAPerson.Contains(name) ? AgentBoundary.HumanOnlyError : AgentBoundary.AgentNotAllowedError, refusal);
+            Assert.True((ForAPerson.Contains(name) ? AgentBoundary.HumanOnlyError : AgentBoundary.AgentNotAllowedError) == refusal, $"{name}: {refusal}");
         }
 
         // A token that lacks the scope of an endpoint: 403 there, before the endpoint runs.

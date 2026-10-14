@@ -188,6 +188,10 @@ public static class BulkAdd
                     : "The host has no public organization, group or workspace of this name. Save a token to list private ones.",
             }),
             GitHubFailure.RateLimited => Results.Json(body, statusCode: StatusCodes.Status429TooManyRequests),
+            // The workspace's token or setting: a person fixes it here, not the host.
+            GitHubFailure.Unauthorized or GitHubFailure.Forbidden
+                or GitHubFailure.Unavailable { Reason: "url_refused" or "token_saved_for_another_host" or "secret_unavailable" or "invalid_setting" } =>
+                Results.Conflict(body),
             _ => Results.Json(body, statusCode: StatusCodes.Status502BadGateway),
         };
     }

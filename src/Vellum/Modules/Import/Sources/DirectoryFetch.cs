@@ -116,6 +116,10 @@ internal static partial class DirectoryFetch
             return Encoding.UTF8.GetBytes(target);
         if (!info.Exists || !IsRegular(info))
             return null;
+        // A pipe, a socket or a device reports no length; opening a pipe would wait for a writer.
+        // An entry of length 0 is read as empty without being opened.
+        if (info.Length == 0)
+            return [];
         try
         {
             using var stream = new FileStream(info.FullName, new FileStreamOptions
@@ -140,9 +144,9 @@ internal static partial class DirectoryFetch
     }
 
     /// <summary>
-    /// A plain file. .NET reports a pipe, a socket or a device as a file without the
-    /// <c>Normal</c>-style attributes of one; opening a pipe would wait for a writer, so only a
-    /// file the platform calls regular is read.
+    /// Not a folder, not a link and not what Windows calls a device. On Unix .NET does not tell a
+    /// pipe or a socket from a file; those report length 0, and <see cref="Read"/> opens no entry of
+    /// length 0.
     /// </summary>
     private static bool IsRegular(FileInfo file) =>
         (file.Attributes & (FileAttributes.Device | FileAttributes.ReparsePoint | FileAttributes.Directory)) == 0;
@@ -187,7 +191,7 @@ internal static partial class DirectoryFetch
     private static string? ReadSmall(string path, long maxBytes)
     {
         var info = new FileInfo(path);
-        if (!info.Exists || info.LinkTarget is not null || !IsRegular(info) || info.Length > maxBytes)
+        if (!info.Exists || info.LinkTarget is not null || !IsRegular(info) || info.Length == 0 || info.Length > maxBytes)
             return null;
         try
         {

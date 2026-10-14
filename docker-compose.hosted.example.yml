@@ -76,6 +76,7 @@ services:
       Vellum__TrustedProxies: ${VELLUM_TRUSTED_PROXIES:?Set VELLUM_TRUSTED_PROXIES to the addresses of your reverse proxies}
       ConnectionStrings__DefaultConnection: Host=postgres;Database=vellum;Username=vellum;Password=${VELLUM_POSTGRES_PASSWORD}
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+      # No sources root: a hosted instance refuses directory Sources. Upload an archive or connect a git host.
     volumes:
       - vellum-data:/data
     read_only: true

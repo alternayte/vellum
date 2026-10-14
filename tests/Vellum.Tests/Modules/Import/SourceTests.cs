@@ -91,8 +91,8 @@ public class SourceTests(ImportHost import) : IClassFixture<ImportHost>
         // One Source per place; a kind this instance cannot read is refused by name.
         var twice = await s.Owner.PostAsJsonAsync($"/api/projects/{s.ProjectId}/sources", new { kind = "github", repository = "acme/orders" });
         Assert.Equal((HttpStatusCode.Conflict, "source_exists"), (twice.StatusCode, await CodeAsync(twice)));
-        var archive = await s.Owner.PostAsJsonAsync($"/api/projects/{s.ProjectId}/sources", new { kind = "archive", repository = "acme/orders" });
-        Assert.Equal((HttpStatusCode.BadRequest, "source_kind_unavailable"), (archive.StatusCode, await CodeAsync(archive)));
+        var push = await s.Owner.PostAsJsonAsync($"/api/projects/{s.ProjectId}/sources", new { kind = "agent-push", repository = "acme/orders" });
+        Assert.Equal((HttpStatusCode.BadRequest, "source_kind_unavailable"), (push.StatusCode, await CodeAsync(push)));
         var unknown = await s.Owner.PostAsJsonAsync($"/api/projects/{s.ProjectId}/sources", new { kind = "svn", repository = "acme/orders" });
         Assert.Equal((HttpStatusCode.BadRequest, "validation_error"), (unknown.StatusCode, await CodeAsync(unknown)));
     }

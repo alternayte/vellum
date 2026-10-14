@@ -125,17 +125,20 @@ public static class ImportModule
             .Produces(StatusCodes.Status204NoContent)
             .Produces<ErrorResponse>(StatusCodes.Status404NotFound);
 
-        // The body is the archive itself, streamed to a temporary file. The workspace's
-        // import.maxArchiveBytes bounds it further inside the handler.
+        // The body is the archive itself (any content type), streamed to a temporary file. The
+        // workspace's import.maxArchiveBytes bounds it further inside the handler. No Accepts
+        // metadata: it would make routing answer 415 for other content types before the checks.
         sources.MapPost("/{sourceId}/archive", ArchiveUpload.Handle).RequireHuman()
             .WithBodyLimit(ArchiveUpload.MaxBodyBytes)
-            .Accepts<Stream>("application/zip", "application/gzip", "application/octet-stream")
             .Produces<StartScanResponse>(StatusCodes.Status202Accepted)
             .Produces<ErrorResponse>(StatusCodes.Status400BadRequest)
             .Produces<ErrorResponse>(StatusCodes.Status404NotFound)
             .Produces<ErrorResponse>(StatusCodes.Status409Conflict)
             .Produces<ErrorResponse>(StatusCodes.Status413PayloadTooLarge)
             .Produces<ErrorResponse>(StatusCodes.Status429TooManyRequests);
+
+        sources.MapGet("/kinds", SourceRequests.Kinds)
+            .Produces<SourceKindsDto>();
 
         sources.MapGet("/repositories", BulkAdd.Repositories)
             .Produces<RepositoryListDto>()

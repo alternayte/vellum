@@ -242,14 +242,17 @@ public sealed class ImportHost : IAsyncLifetime, IDisposable
     /// <summary>An app with more services, such as smaller limits. The caller disposes it.</summary>
     internal static ImportHost With(IntegrationFixture fixture, Action<IServiceCollection> configure) => new(fixture, runWorker: false, configure);
 
-    private ImportHost(IntegrationFixture fixture, bool runWorker, Action<IServiceCollection>? configure = null)
+    /// <summary>An app with other bootstrap values, such as a sources root. The caller disposes it.</summary>
+    internal static ImportHost With(IntegrationFixture fixture, IReadOnlyDictionary<string, string?> settings) => new(fixture, runWorker: false, null, settings);
+
+    private ImportHost(IntegrationFixture fixture, bool runWorker, Action<IServiceCollection>? configure = null, IReadOnlyDictionary<string, string?>? settings = null)
     {
         Fixture = fixture;
-        Host = Start(runWorker, configure);
+        Host = Start(runWorker, configure, settings);
     }
 
-    private OutboundHost Start(bool runWorker, Action<IServiceCollection>? configure) =>
-        new(Fixture, configure: services =>
+    private OutboundHost Start(bool runWorker, Action<IServiceCollection>? configure, IReadOnlyDictionary<string, string?>? settings = null) =>
+        new(Fixture, settings, configure: services =>
         {
             configure?.Invoke(services);
             services.AddSingleton<TimeProvider>(Time);

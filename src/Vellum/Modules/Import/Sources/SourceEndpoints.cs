@@ -52,6 +52,14 @@ public sealed record CreateSourceRequest(string? Kind, string? Name, string? Rep
 
 public sealed record UpdateSourceRequest(string? Name);
 
+/// <param name="Kind">A kind this instance reads: <c>github</c>, <c>gitlab</c>, <c>bitbucket</c>, <c>azure-devops</c>, <c>directory</c> or <c>archive</c>.</param>
+/// <param name="Reason">Why the kind cannot be used now. Null when it can.</param>
+/// <param name="Where">The web host of a git host, or the sources root of a directory. Null otherwise.</param>
+public sealed record SourceKindDto(string Kind, bool Available, string? Reason, string? Where);
+
+/// <param name="MaxArchiveBytes">The workspace limit <c>import.maxArchiveBytes</c>.</param>
+public sealed record SourceKindsDto(IReadOnlyList<SourceKindDto> Kinds, long MaxArchiveBytes);
+
 /// <param name="Ref">A branch, a tag or a commit SHA. Without it the workspace's default ref applies, else the repository's default branch.</param>
 /// <param name="PullRequest">The number of a pull request, in place of a ref. Such a scan is a comparison.</param>
 public sealed record StartSourceScanRequest(string? Ref, string[]? IncludePaths, string[]? ExcludePaths, int? PullRequest = null);
@@ -95,6 +103,27 @@ public static class SourceRequests
         foreach (var source in sources)
             result.Add(await ToDtoAsync(db, source, ct));
         return Results.Ok(result);
+    }
+
+    /// <summary>
+    /// The kinds a new Source of this project can have on this instance, with the reason a kind
+    /// cannot be used now: a git host whose API base URL is empty or refused, a directory on a
+    /// hosted instance or without a sources root.
+    /// </summary>
+    public static async Task<IResult> Kinds(
+        Guid projectId, ClaimsPrincipal user, WorkspaceAuthorizationService auth, SettingsResolver settings, SourcesRoot roots, CancellationToken ct)
+    {
+        await auth.RequireProjectRoleAsync(projectId, user.UserId(), WorkspaceRole.Viewer, ct);
+        var workspace = await settings.GetWorkspaceAsync(await auth.GetProjectWorkspaceIdAsync(projectId, ct), ct);
+        SourceKindDto Host(string kind, SettingsUrl url, string field, Func<Uri, string> webHost) => url is SettingsUrl.Usable usable
+            ? new SourceKindDto(kind, true, null, webHost(usable.Url))
+            : new SourceKindDto(kind, false, $"Set {field} in the workspace settings.", null);
+        var kinds = new List<SourceKindDto> { Host("github", workspace.GithubApiBaseUrl, WorkspaceSettings.GithubField, ScanRequests.WebHost) };
+        kinds.AddRange(GitHostInfo.All.Select(h => Host(h.Name, h.ApiBaseUrl(workspace), h.SettingsField, h.WebHost)));
+        var directory = roots.Unavailable();
+        kinds.Add(new SourceKindDto("directory", directory is null, directory?.Title, directory is null ? roots.RealRoot() : null));
+        kinds.Add(new SourceKindDto("archive", true, null, null));
+        return Results.Ok(new SourceKindsDto(kinds, workspace.Effective.Import.MaxArchiveBytes));
     }
 
     public static async Task<IResult> Get(

@@ -25,3 +25,6 @@ site/.astro/
 
 # Written by the backup runbook when it is run in the repository directory
 /backup/
+
+# The folder that Compose mounts read-only at /sources for directory Sources
+/sources/
