@@ -55,14 +55,7 @@ Except for the **Add Element** dialog, a new element has the name `New <kind>`. 
 
 **Expand** in the same menu shows the children in place. **Collapse** hides them again.
 
-Limit: **Drill into** and the double-click work only for an element that already has a child. The app has no control that adds the first child to an empty system or an empty app. Add the first child with the API. Send the ID of the parent as `parentId`.
-
-```sh
-curl -X POST "http://localhost:8080/api/projects/<project-id>/elements" \
-  -b vellum.cookies \
-  -H "Content-Type: application/json" \
-  -d '{"id":"<new-uuid>","kind":"app","name":"Orders API","description":null,"technology":null,"ownerId":null,"status":null,"parentId":"<system-id>","tags":[]}'
-```
+To add the first child of an empty system or app, right-click it and select **Add app inside**, **Add store inside** or **Add component inside**. As an alternative, select it and use the buttons below **Inside this system** in the detail panel. **Drill into** and the double-click work only for an element that already has a child.
 
 The import from GitHub and the assistant also add children when you accept their proposals. See [Import a repository](/how-to/import-a-repository/) and [Design with the assistant](/how-to/design-with-the-assistant/).
 

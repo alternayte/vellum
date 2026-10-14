@@ -10,7 +10,6 @@ You need no AI provider and no repository.
 ## Before you start
 
 - Complete [Run Vellum on your machine](/tutorials/self-host-quickstart/). You are signed in as the owner of a workspace.
-- You need `curl`, `jq` and `uuidgen` for one step. In this version the app shows a message and cannot create one.
 
 ## Create a project
 
@@ -73,59 +72,27 @@ A relationship states structure: the customer uses the shop. It does not state b
 
 The flyout now lists one operation, two channels and two subscriptions: **Billing on order-events** and **Warehouse on order-events**.
 
-## Add the message from the terminal
+## Add the message
 
-A publish step names a message. The app has no form for a message yet, so you create it with one call of the HTTP API.
+A publish step names a message.
 
-1. Set the address of your instance and your account.
+1. In **Contracts**, next to **Messages**, select **Add**.
+2. Give these values and select **Add message**.
 
-   <!-- snippet: syntax -->
-   ```sh
-   export VELLUM_URL=http://localhost:8080
-   export VELLUM_EMAIL=<email>
-   export VELLUM_PASSWORD=<password>
-   ```
+   | Field | Value |
+   |---|---|
+   | **Name** | `OrderCreated` |
+   | **Producer** | `Shop` |
+   | **Schema** | **None** |
+   | **Consumers** | `Billing` and `Warehouse` |
 
-2. Sign in, find the project and read the IDs of its parts.
-
-   <!-- snippet: live -->
-   ```sh
-   jq -n --arg email "$VELLUM_EMAIL" --arg password "$VELLUM_PASSWORD" '{email: $email, password: $password}' |
-     curl -sS --fail-with-body -c vellum.cookies -H 'content-type: application/json' -d @- "$VELLUM_URL/api/auth/login" -o /dev/null
-   WORKSPACE=$(curl -sS --fail-with-body -b vellum.cookies "$VELLUM_URL/api/workspaces" | jq -r '.[0].id')
-   PROJECT=$(curl -sS --fail-with-body -b vellum.cookies "$VELLUM_URL/api/workspaces/$WORKSPACE/projects" |
-     jq -r '.[] | select(.name == "First system") | .id')
-   api() {
-     curl -sS --fail-with-body -b vellum.cookies -H 'content-type: application/json' -X "$1" "$VELLUM_URL/api/projects/$PROJECT/$2" ${3:+-d "$3"}
-   }
-   element() { api GET elements | jq -r --arg name "$1" '.items[] | select(.name == $name) | .id'; }
-   CUSTOMER=$(element Customer)
-   SHOP=$(element Shop)
-   BILLING=$(element Billing)
-   WAREHOUSE=$(element Warehouse)
-   echo "$PROJECT $CUSTOMER $SHOP $BILLING $WAREHOUSE"
-   ```
-
-   The command prints five IDs. If it prints fewer, check the names of the project and of the elements.
-
-3. Create the message `OrderCreated`. The shop produces it. Billing and the warehouse consume it.
-
-   <!-- snippet: live -->
-   ```sh
-   MESSAGE=$(uuidgen | tr '[:upper:]' '[:lower:]')
-   api POST messages "$(jq -n --arg id "$MESSAGE" --arg shop "$SHOP" --arg billing "$BILLING" --arg warehouse "$WAREHOUSE" \
-     '{id: $id, name: "OrderCreated", producerId: $shop, consumerIds: [$billing, $warehouse], tags: []}')" | jq -c '{name, factStatus}'
-   ```
-
-   ```json
-   {"name":"OrderCreated","factStatus":"declared"}
-   ```
+The flyout lists the message as **Shop → Billing, Warehouse · no schema**. The message has the label `declared`.
 
 ## Write the scenario
 
 A scenario is the steps of one behaviour, in order. You build it in the scenario editor. You select each element and each contract by its name.
 
-1. In the app, reload the page. Select **Scenarios** in the left toolbar, then **New**.
+1. Select **Scenarios** in the left toolbar, then **New**.
 2. In **Name**, give `Place an order`.
 3. Below **Steps**, select **Call**. The editor adds a call step with the mark **Trigger**.
 4. In **Caller**, select `Customer`. In **Operation**, select `POST /orders`. The editor shows that Shop serves the operation, with its timeout of 1000 ms.
@@ -200,8 +167,6 @@ To see a lost message, move the fault to the subscription of the warehouse, whic
 
 ## Limits that you met
 
-- The app creates actors and systems on an empty canvas. It cannot add the first app or store inside an empty system. [Model a system](/how-to/model-a-system/) gives the API call.
-- The app does not create a message or a JSON schema.
 - A trace shows the declared design. It does not show that your code does the same. See [A trace is declared behaviour](/concepts/traces-are-declared/).
 
 ## Next
