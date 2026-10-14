@@ -202,7 +202,7 @@ function SettingsPage() {
                 <TextField label="API base URL" hint="Change this only for GitHub Enterprise Server." {...bind('github', 'apiBaseUrl')} />
                 <TextField label="Default ref" hint="The branch or tag an import reads when you give none. Empty uses the default branch of the repository." {...bind('github', 'defaultRef')} />
                 <div className="mt-4">
-                  {canEdit && <GitHubCredentialLine workspaceId={workspaceId} tokenSet={secretFor('github:token')?.isSet ?? false} />}
+                  {canEdit && <GitHubCredentialLine workspaceId={workspaceId} tokenSet={secretFor('github:token')?.isSet ?? false} apiBaseUrl={data.effective.github.apiBaseUrl} />}
                   <SecretControl workspaceId={workspaceId} name="github:token" label="Fine-grained access token (read-only)" status={secretFor('github:token')} canEdit={canEdit} />
                   {canEdit && <ConnectionTest url={`${base}/github/test`} blocked={dirty} kind="github" />}
                 </div>
@@ -553,15 +553,24 @@ function AuditLog({ workspaceId }: { workspaceId: string }) {
     <>
       <SectionHeading title="Audit log" description="Changes to settings, credentials, keys and roles. The log records who changed what, never the values." />
       {audit.isError && <p className="mt-4 text-sm text-muted-foreground">Only a workspace administrator can read the audit log.</p>}
-      {audit.data?.length === 0 && <p className="mt-4 text-sm text-muted-foreground">Nothing has changed yet.</p>}
-      {audit.data && audit.data.length > 0 && (
+      {audit.data && <AuditTable entries={audit.data} />}
+    </>
+  )
+}
+
+/** The newest entries first. An entry names who changed what, never a value. */
+function AuditTable({ entries }: { entries: AuditEntry[] }) {
+  return (
+    <>
+      {entries.length === 0 && <p className="mt-4 text-sm text-muted-foreground">Nothing has changed yet.</p>}
+      {entries.length > 0 && (
         <div className="mt-4 overflow-x-auto rounded-lg border border-border">
           <table className="w-full text-left text-sm">
             <thead className="border-b border-border text-xs text-muted-foreground">
               <tr><th className="px-3 py-2 font-medium">When</th><th className="px-3 py-2 font-medium">Action</th><th className="px-3 py-2 font-medium">Target</th><th className="px-3 py-2 font-medium">By</th></tr>
             </thead>
             <tbody>
-              {audit.data.map((entry, i) => (
+              {entries.map((entry, i) => (
                 <tr key={i} className="border-b border-border last:border-b-0">
                   <td className="whitespace-nowrap px-3 py-2 text-muted-foreground">{new Date(entry.at).toLocaleString()}</td>
                   <td className="px-3 py-2">{entry.action}</td>
@@ -581,6 +590,7 @@ function InstancePanel({ info }: { info: InstanceInfo }) {
   const queryClient = useQueryClient()
   const settings = useQuery({ queryKey: ['instance', 'settings'], queryFn: () => api<InstanceSettings>('GET', '/api/instance/settings') })
   const diagnostics = useQuery({ queryKey: ['instance', 'diagnostics'], queryFn: () => api<InstanceDiagnostics>('GET', '/api/instance/diagnostics') })
+  const instanceAudit = useQuery({ queryKey: ['instance', 'audit'], queryFn: () => api<AuditEntry[]>('GET', '/api/instance/audit?limit=100') })
   const savePolicy = useMutation({
     // The body is exactly the policy and the defaults; the other fields are read-only.
     mutationFn: (next: InstanceSettings) =>
@@ -667,6 +677,13 @@ function InstancePanel({ info }: { info: InstanceInfo }) {
         </p>
       )}
 
+      <h3 className="mt-8 text-sm font-medium text-foreground">Instance audit log</h3>
+      <p className="mt-1 max-w-prose text-xs leading-relaxed text-muted-foreground">
+        The newest 100 changes to the instance: its setup, its policy and the master key. A workspace has its own log under Audit log.
+      </p>
+      {instanceAudit.isError && <p role="alert" className="mt-2 text-sm text-destructive">{instanceAudit.error.message}</p>}
+      {instanceAudit.data && <AuditTable entries={instanceAudit.data} />}
+
       <h3 className="mt-8 text-sm font-medium text-foreground">Diagnostics</h3>
       {diagnostics.data && (
         <pre tabIndex={0} className="mt-2 max-h-96 overflow-auto rounded-lg border border-border bg-background p-3 font-mono text-xs leading-relaxed focus-visible:outline-2 focus-visible:outline-primary">
@@ -743,9 +760,10 @@ function describeProviderTest(result: ProviderTestResult): string {
 }
 
 /** Which token the reads use: the workspace's own, the gh login of a local instance, or none. */
-function GitHubCredentialLine({ workspaceId, tokenSet }: { workspaceId: string; tokenSet: boolean }) {
+function GitHubCredentialLine({ workspaceId, tokenSet, apiBaseUrl }: { workspaceId: string; tokenSet: boolean; apiBaseUrl: string }) {
+  // The server answers from the saved token and the saved API base URL, so both are in the key.
   const credential = useQuery({
-    queryKey: ['workspaces', workspaceId, 'github-credential', tokenSet],
+    queryKey: ['workspaces', workspaceId, 'github-credential', tokenSet, apiBaseUrl],
     queryFn: () => api<GitHubCredential>('GET', `/api/workspaces/${workspaceId}/github/credential`),
   })
   const c = credential.data

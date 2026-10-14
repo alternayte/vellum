@@ -74,7 +74,7 @@ The result shows these parts:
 - **Confidence** and the rule that sets it.
 - **Assumptions**: every input of the run with its label.
 
-Vellum stores the run. A profile keeps its 20 newest runs.
+Vellum stores the run. A profile keeps its 20 newest runs. To delete one run, select the bin on its line in the list. To delete the profile and all its runs, select the bin on the profile.
 
 ![The result of a stress run, with the label Estimated on each part. The first line gives the profile version, the model version, the seed 42 and the result hash. The headline numbers are throughput 9.62 for each second, latency p50 and p95 of 40.0 ms and 529 completed flows. The part Bottleneck gives the rule in one sentence with the link Show the full rule, and says that no resource is saturated by the rule.](../../../assets/screenshots/stress-result.png)
 

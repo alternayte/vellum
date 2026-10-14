@@ -286,7 +286,7 @@ Lists the verification runs of a promise, the newest first. A run is appended an
 | `limit` | integer or null | no | The most items to return: 1 to 200. Default 50. |
 
 - Scope: `read`
-- Result `data`: items[] { id, obligationId, promiseRevision, result, scope, environment, modelRevision, commitSha, evidence[], limitations[], detail, inputs, assertions[], draft, startedBy, at }
+- Result `data`: items[] { id, obligationId, promiseRevision, result, scope, environment, modelRevision, commitSha, evidence[], limitations[], detail, inputs, assertions[], draft, startedBy, actor, at }
 - Truth: `declared`. A run is passed, failed, not-run or unsupported, for exactly the inputs it names. A scenario-check is the playback of declared behaviour: it is not a measurement. A source-pattern-check is observed-in-source at the commit the run names. evidence[].identity claimed means only the caller says so. draft true means the revision was a draft at the run: such a run does not count after approval. The list says nothing about whether a result is still current: get_promise does.
 - Limits: 50 items by default, 200 at most; nextCursor gets the next page. 100000 bytes at most.
 - HTTP: `GET /api/projects/{projectId}/promises/{promiseId:guid}/runs`

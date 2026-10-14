@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { cn } from '@/lib/utils'
 import { useShellStore } from '@/stores/shell-store'
 import type { Cited } from '@/lib/review-api'
@@ -37,6 +37,7 @@ export function ReviewFlyout({ projectId, branchId, references, elementIds, owne
     (cited: Cited) => (cited.kind === 'element' && elementIds.includes(cited.id) ? cited.id : (owners[cited.id] ?? null)),
     [elementIds, owners],
   )
+  const labels = useMemo(() => Object.fromEntries(references.map((r) => [r.id, r.label])), [references])
 
   return (
     <div className="flex h-full flex-col">
@@ -61,7 +62,7 @@ export function ReviewFlyout({ projectId, branchId, references, elementIds, owne
         {tab === 'findings' && <FindingsTab projectId={projectId} branchId={branchId} focusTarget={focusTarget} onFocus={focusElement} />}
         {tab === 'decisions' && <DecisionsTab projectId={projectId} branchId={branchId} references={references} />}
         {tab === 'questions' && <QuestionsTab projectId={projectId} />}
-        {tab === 'assistant' && <AssistantTab projectId={projectId} branchId={branchId} focusTarget={focusTarget} onFocus={focusElement} />}
+        {tab === 'assistant' && <AssistantTab projectId={projectId} branchId={branchId} labels={labels} focusTarget={focusTarget} onFocus={focusElement} />}
       </div>
     </div>
   )

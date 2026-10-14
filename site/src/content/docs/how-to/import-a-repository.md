@@ -35,6 +35,8 @@ The list shows each scan and its state.
 | Cancelled | You stopped the scan. Select **Resume** to continue from the files already read. |
 | A failure message | The scan failed. The line says why and what to do. When a resume can help, select **Resume** to continue from the files already read. A failure that a resume meets again, for example a pull request that does not exist, has no **Resume**: start a new scan. |
 
+The list updates by itself while a scan runs, also when the browser window is in the background. A scan that CI, the API or another session starts appears in the list within 15 seconds.
+
 You can resume one scan 3 times. A scan that stopped more than 7 days ago cannot be resumed. Start a new scan.
 
 ## Review the proposals
@@ -120,7 +122,7 @@ A scan uses the limits that were set when it started.
 
 **Settings → Usage limits** sets **Repository scans per day**. The default is 20 for one workspace. The day is a UTC day. A resume that must ask GitHub for files again counts as one scan. When the limit is reached, Vellum refuses the scan with status `429` and the code `scan_limit_reached`.
 
-The review shows proposals only for things that have a place in the model. Other facts, such as an operation that has no owning service in the source, are kept as evidence and get no proposal. The web client does not show them. `GET /api/projects/{projectId}/imports/{importId}/evidence` returns them.
+The review shows proposals only for things that have a place in the model. Other facts, such as an operation that has no owning service in the source, are kept as evidence and get no proposal. Open **Facts with no proposal** at the end of the review to read them. Each fact shows its kind, its name, the reason, the attributes the source states and a link to the cited lines. The section is read-only. `GET /api/projects/{projectId}/imports/{importId}/evidence` returns the same facts.
 
 The review shows a value that is not text as unformatted JSON.
 

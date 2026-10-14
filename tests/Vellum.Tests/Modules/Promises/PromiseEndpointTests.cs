@@ -244,6 +244,43 @@ public class PromiseEndpointTests(ImportHost import) : IClassFixture<ImportHost>
     }
 
     [Fact]
+    public async Task Run_history_pages_newest_first_and_names_who_or_what_started_each_run()
+    {
+        using var factory = TestHost.Create(import.Fixture.ConnectionString);
+        var owner = await TestHost.SignInAsync(factory);
+        var (workspaceId, projectId) = await TestHost.CreateProjectAsync(owner);
+        var ownerId = (await owner.GetFromJsonAsync<UserInfoResponse>("/api/auth/me"))!.Id;
+        var orders = await OrdersReference.SeedAsync(owner, projectId);
+        var id = (await orders.CreateOrd014Async())["id"]!.GetValue<Guid>();
+        await orders.ApproveAsync(id);
+
+        // An agent token runs as the user who created it; the run must still name the token.
+        var agent = await TestHost.CreateAgentAsync(factory, owner, workspaceId, ["read", "propose"]);
+        var ci = await TestHost.CreateAgentAsync(factory, owner, workspaceId, ["read", "propose", "scan-pull-request"]);
+        var byOwner = await orders.RunAsync(id, "O1");
+        var byAgent = await Ok(Post(agent.Client, Url(projectId, $"/{id}/obligations/O1/run")));
+        var byCi = await Ok(Post(ci.Client, Url(projectId, $"/{id}/obligations/O1/run")));
+        Assert.Equal(ownerId, byAgent["startedBy"]!.GetValue<string>());
+        Assert.Equal($"agent-token:{agent.TokenId}", byAgent["actor"]!.GetValue<string>());
+
+        // Two at a time, the newest first, and the next page goes on where the first stopped.
+        var first = await Ok(owner.GetAsync(Url(projectId, $"/{id}/runs?obligation=O1&limit=2")));
+        Assert.Equal([byCi["id"]!.GetValue<Guid>(), byAgent["id"]!.GetValue<Guid>()], first["items"]!.AsArray().Select(r => r!["id"]!.GetValue<Guid>()));
+        var cursor = first["cursor"]!.GetValue<string>();
+        var second = await Ok(owner.GetAsync(Url(projectId, $"/{id}/runs?obligation=O1&limit=2&cursor={Uri.EscapeDataString(cursor)}")));
+        Assert.Equal([byOwner["id"]!.GetValue<Guid>()], second["items"]!.AsArray().Select(r => r!["id"]!.GetValue<Guid>()));
+        Assert.Null(second["cursor"]);
+
+        // Each page says who or what each actor is: a person by name, a token by its name and kind.
+        var startedBy = first["startedBy"]!.AsObject();
+        Assert.Equal(("agent-token", "Test agent"), (startedBy[$"agent-token:{agent.TokenId}"]!["kind"]!.GetValue<string>(), startedBy[$"agent-token:{agent.TokenId}"]!["name"]!.GetValue<string>()));
+        Assert.Equal("ci-token", startedBy[$"agent-token:{ci.TokenId}"]!["kind"]!.GetValue<string>());
+        var person = second["startedBy"]![$"user:{ownerId}"]!;
+        Assert.Equal("person", person["kind"]!.GetValue<string>());
+        Assert.False(string.IsNullOrEmpty(person["name"]!.GetValue<string>()));
+    }
+
+    [Fact]
     public void No_mcp_tool_approves_a_promise()
     {
         // The tools are the catalog; no method carries the tool attribute any more.

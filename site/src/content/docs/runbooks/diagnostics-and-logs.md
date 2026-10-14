@@ -162,7 +162,7 @@ The audit logs record who changed what. They are in the database, not in the con
 | Log | Who reads it | Where |
 |---|---|---|
 | Workspace audit log | An owner of the workspace | Workspace **Settings**, then **Audit log**. `GET /api/workspaces/{workspaceId}/audit` |
-| Instance audit log | The instance administrator | `GET /api/instance/audit` |
+| Instance audit log | The instance administrator | **Settings**, then **Instance**, then **Instance audit log**. `GET /api/instance/audit` |
 
 An entry has the time, the account, the action and the target. An entry holds no secret value. [Configure a workspace](/how-to/configure-settings/#read-the-audit-log) lists what an entry holds.
 

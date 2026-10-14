@@ -264,6 +264,11 @@ public sealed record AssertionOutcome(string Id, bool Passed, string Detail, boo
 /// <param name="Assertions">For a scenario check: each assertion with its result.</param>
 /// <param name="EffectiveFaults">For a scenario check: the faults that were played, the scenario's and the obligation's.</param>
 /// <param name="Draft">True when the revision was a draft at the time of the run. Such a run never counts for an approved revision.</param>
+/// <param name="StartedBy">The user of the call. For an agent token that is the user who created the token: <paramref name="Actor"/> names the token.</param>
+/// <param name="Actor">
+/// Who made the call: <c>user:&lt;id&gt;</c> for a person, <c>agent-token:&lt;id&gt;</c> for an
+/// agent token. Null in a run recorded before the actor was kept.
+/// </param>
 public sealed record VerificationRun(
     Guid Id,
     string ObligationId,
@@ -283,4 +288,5 @@ public sealed record VerificationRun(
     RunInputs? Inputs = null,
     IReadOnlyList<AssertionOutcome>? Assertions = null,
     IReadOnlyList<Fault>? EffectiveFaults = null,
-    bool? Draft = null);
+    bool? Draft = null,
+    string? Actor = null);

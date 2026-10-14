@@ -40,6 +40,8 @@ When the assistant asks for a part that the model already has, Vellum uses the e
 
 If the model changes after the assistant made the proposal, Vellum checks the proposal again and tells you. Decide again with the current check.
 
+**Close** keeps the proposal undecided. A proposal costs tokens, so Vellum keeps it.
+
 A scenario that came from a proposal records that origin.
 
 ## Ask for additions to the model
@@ -55,6 +57,19 @@ The proposal lists each addition with the confidence the assistant states and it
 Each accepted item is added with the label **inferred**. A proposal never changes or removes what is in the model.
 
 The confidence is what the assistant claims. It is not a measurement.
+
+## Find a proposal again
+
+Select **Review** in the left toolbar, then the **Assistant** tab.
+
+- **Your proposals** lists the flows and additions that the assistant made for you and that nobody decided. Select one to open it and decide. Select the bin to discard it. A discarded proposal is deleted.
+- **History** lists every decided proposal of the project: the decision, who decided and when. Select one to read it.
+
+Additions are decided item by item. Each item records who accepted or rejected it, and when. A proposal with a decided item cannot be discarded. Reject its other items to close it.
+
+Each list shows 20 proposals of each kind. Select **Show more** for older ones.
+
+![The Assistant tab of the Review panel. Below Stored answers, Your proposals says that no proposal waits for you. History lists one proposal: model, Add notifications and an audit trail, 1 accepted, 1 rejected, decided by Dev User on 14/10/2026 at 19:26:09.](../../../assets/screenshots/review-assistant-proposals.png)
 
 ## Ask for an explanation
 
@@ -72,7 +87,7 @@ Parts of the model that came from a private repository go to an AI provider only
 
 ## Limits
 
-A project holds at most 50 undecided proposals. Accept, reject or delete old ones to make room. The assistant also limits how many requests one person and one project can make in a minute.
+A project holds at most 50 undecided proposals. Accept, reject or discard old ones to make room. The assistant also limits how many requests one person and one project can make in a minute.
 
 ## Decide on a proposal from an agent
 

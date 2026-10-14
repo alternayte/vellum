@@ -61,6 +61,15 @@ export function StressFlyout({ projectId, branchId, scenarios }: StressFlyoutPro
     onError: (e) => { setError(e.message); shownInline() },
   })
 
+  const removeRun = useMutation({
+    mutationFn: (runId: string) => stressApi.removeRun(projectId, runId),
+    onSuccess: (_, runId) => {
+      setShown((current) => (current?.run.id === runId ? null : current))
+      refresh()
+    },
+    onError: (e) => { setError(e.message); shownInline() },
+  })
+
   const open = async (work: () => Promise<void>) => {
     setError(null)
     try {
@@ -175,10 +184,10 @@ export function StressFlyout({ projectId, branchId, scenarios }: StressFlyoutPro
                     {runs.data?.length === 0 && <p className="px-1 text-[11px] text-muted-foreground">No stored run yet.</p>}
                     <ul className="space-y-1">
                       {runs.data?.map((stored) => (
-                        <li key={stored.id}>
+                        <li key={stored.id} className="flex items-start gap-0.5">
                           <button
                             type="button"
-                            className="w-full rounded px-1.5 py-1 text-left hover:bg-muted focus-visible:outline-2 focus-visible:outline-primary"
+                            className="min-w-0 flex-1 rounded px-1.5 py-1 text-left hover:bg-muted focus-visible:outline-2 focus-visible:outline-primary"
                             onClick={() => open(async () => setShown(await stressApi.getRun(projectId, stored.id)))}
                           >
                             <p className="flex items-baseline gap-1.5 text-[11px] text-muted-foreground">
@@ -193,6 +202,14 @@ export function StressFlyout({ projectId, branchId, scenarios }: StressFlyoutPro
                               estimated · {stored.summary.bottleneck ? `bottleneck: ${stored.summary.bottleneck}` : `no bottleneck by the rule of engine ${stored.engineVersion}`}
                             </p>
                           </button>
+                          <Button
+                            variant="ghost" size="sm" className="mt-1 h-6 w-6 shrink-0 p-0 text-muted-foreground"
+                            aria-label={`Delete the run of ${new Date(stored.at).toLocaleString()}`} title="Delete this run"
+                            disabled={removeRun.isPending}
+                            onClick={() => { if (window.confirm(`Delete the run of ${new Date(stored.at).toLocaleString()}? This cannot be undone.`)) removeRun.mutate(stored.id) }}
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </Button>
                         </li>
                       ))}
                     </ul>

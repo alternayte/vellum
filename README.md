@@ -82,8 +82,8 @@ client for the agent interface.
 | Contracts | Declare operations, channels, subscriptions, bindings between channels, messages and JSON schemas. |
 | Trace | Write a scenario of calls, publishes and writes. Add faults. Play it step by step and read each payload. A trace shows the declared design. It does not run your code. |
 | Import | Scan a GitHub repository at one commit. Vellum reads .NET, Go, OpenAPI, AsyncAPI, Compose, Dockerfile and Kubernetes files, and proposes what it found with file and line. You accept or reject each proposal. |
-| Assistant | With an AI provider: ask for a flow or for model additions in words, review the proposal, then accept it. Additions get the label `inferred`. |
-| Promises | State a requirement with a stable ID such as `ORD-014`. An owner approves it. Checks give evidence for it, and a result goes stale when its inputs change. |
+| Assistant | With an AI provider: ask for a flow or for model additions in words, review the proposal, then accept it. Additions get the label `inferred`. An undecided proposal stays until you decide or discard it, and the history keeps who decided and when. |
+| Promises | State a requirement with a stable ID such as `ORD-014`. An owner approves it. Checks give evidence for it, and a result goes stale when its inputs change. Each obligation keeps the history of its runs and who started each. |
 | Impact | Scan a branch or a pull request and compare it with the ref that the model follows. Vellum labels each changed fact, flow step and promise `definite`, `possible` or `unknown`, and shows the steps on the canvas. A CI job can read a compact report and an opt-in gate. Vellum writes nothing to GitHub. |
 | Drafts and variants | Change the model in a draft, read the diff and merge it into main. Keep a variant next to main, save named revisions and compare two models. |
 | Review | 18 fixed rules report concerns about resilience, contracts, truth labels and needless complexity. Record a decision (ADR) to settle a finding. |

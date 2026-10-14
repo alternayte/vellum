@@ -4,6 +4,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { shownInline } from '@/lib/mutation-errors'
+import { usePersonName } from '@/hooks/use-person-name'
 import { OpenQuestions } from './open-questions'
 import { childLists, describeOrigin, describeStep, designApi, type FlowProposal, type FlowStep, type MissingEntry } from '@/lib/design-api'
 
@@ -28,6 +29,7 @@ function describeMissing(entry: MissingEntry): string {
  */
 export function FlowProposalDialog({ projectId, proposal: initial, labels, onClose, onAccepted }: Props) {
   const queryClient = useQueryClient()
+  const personOf = usePersonName(projectId)
   const [proposal, setProposal] = useState(initial)
   const refreshModel = () => queryClient.invalidateQueries({ queryKey: ['projects', projectId] })
 
@@ -65,7 +67,10 @@ export function FlowProposalDialog({ projectId, proposal: initial, labels, onClo
         <DialogHeader>
           <DialogTitle>{proposal.name || 'Proposed flow'}</DialogTitle>
           <DialogDescription>
-            {describeOrigin(proposal)} It describes declared behaviour. It is not saved, and nothing is verified, until you decide.
+            {describeOrigin(proposal)} It describes declared behaviour.{' '}
+            {proposal.status === 'draft'
+              ? 'It is not saved, and nothing is verified, until you decide.'
+              : `${proposal.status === 'accepted' ? 'Accepted as a scenario' : 'Rejected'}${proposal.decidedBy ? ` by ${personOf(proposal.decidedBy)}` : ''}${proposal.decidedAt ? ` on ${new Date(proposal.decidedAt).toLocaleString()}` : ''}. A decided proposal does not change.`}
           </DialogDescription>
         </DialogHeader>
 

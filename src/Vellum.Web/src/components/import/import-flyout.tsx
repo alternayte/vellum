@@ -47,8 +47,12 @@ export function ImportFlyout({ projectId, owners }: {
   const scans = useQuery({
     queryKey: ['projects', projectId, 'imports'],
     queryFn: () => importApi.list(projectId),
-    // Poll only while a scan is moving.
-    refetchInterval: (query) => (query.state.data?.some((s) => isActive(s.status)) ? 2000 : false),
+    // Poll fast while a scan is moving, and slowly otherwise: a scan that CI, the API or another
+    // session starts must also show. The browser reports a page as hidden when its window is
+    // covered or in the background, and the default skips every poll then, so the list stayed
+    // on the first state it read ("Listing files") until a reload.
+    refetchInterval: (query) => (query.state.data?.some((s) => isActive(s.status)) ? 2000 : 15000),
+    refetchIntervalInBackground: true,
   })
   const refresh = () => queryClient.invalidateQueries({ queryKey: ['projects', projectId, 'imports'] })
   const start = useMutation({

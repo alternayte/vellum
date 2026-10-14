@@ -3,6 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { shownInline } from '@/lib/mutation-errors'
+import { usePersonName } from '@/hooks/use-person-name'
 import { OpenQuestions } from './open-questions'
 import { describeOrigin, designApi, type ArchitectureItem, type ArchitectureProposal } from '@/lib/design-api'
 
@@ -35,6 +36,7 @@ function withDependencies(selected: Set<string>, items: ArchitectureItem[]): Set
  */
 export function ArchitectureProposalDialog({ projectId, proposal: initial, labels, onClose }: Props) {
   const queryClient = useQueryClient()
+  const personOf = usePersonName(projectId)
   const [proposal, setProposal] = useState(initial)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const names = useMemo(() => ({ ...labels, ...Object.fromEntries(proposal.items.map((item) => [item.id, item.name])) }), [labels, proposal.items])
@@ -107,6 +109,11 @@ export function ArchitectureProposalDialog({ projectId, proposal: initial, label
                   </p>
                   <p className="font-mono text-[11px] text-muted-foreground">{detail(item)}</p>
                   {item.rationale && <p className="mt-0.5 text-xs text-muted-foreground">{item.rationale}</p>}
+                  {item.status !== 'pending' && item.decidedBy && (
+                    <p className="mt-0.5 font-mono text-[10px] text-muted-foreground">
+                      {item.status} by {personOf(item.decidedBy)}{item.decidedAt ? ` · ${new Date(item.decidedAt).toLocaleString()}` : ''}
+                    </p>
+                  )}
                   {proposal.itemIssues.filter((issue) => issue.itemId === item.id).map((issue, i) => (
                     <p key={i} className="mt-0.5 text-xs text-[var(--trace-retry)]">Cannot be added now: {issue.reason}</p>
                   ))}

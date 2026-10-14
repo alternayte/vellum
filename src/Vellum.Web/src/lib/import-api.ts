@@ -108,6 +108,35 @@ export interface Proposal {
   truncated: boolean
 }
 
+/** A fact of a scan that is no proposal: the model has no home for it, or it needs something the source does not state. */
+export interface EvidenceItem {
+  factKey: string
+  kind: string
+  name: string
+  attributes: Record<string, string>
+  evidence: ProposalEvidence[]
+  /** Why the fact is no proposal. */
+  reason: string
+}
+
+const FACT_REASONS: Record<string, string> = {
+  'no-model-home': 'The model has no place for this kind of fact.',
+  'several-code-declarations': 'The source declares it in more than one place, so Vellum cannot tell which one it is.',
+  'no-owning-service': 'The source names no service that owns it.',
+  'unsupported-transport': 'The model does not support its transport.',
+  'unsupported-channel-kind': 'The model does not support its kind of channel.',
+  'binding-channel-not-resolved': 'It names a channel that this scan did not find.',
+  'no-channel-or-consumer': 'The source does not name its channel or its consumer.',
+  'pattern-has-no-model-home': 'A pattern is evidence for a promise check, not a part of the model.',
+  'no-producing-service': 'The source names no one service that produces it.',
+  'contract-document-has-no-model-home': 'A contract document as a whole has no place in the model.',
+}
+
+/** Why a fact is no proposal, in words. An unknown code is shown as it is. */
+export function describeFactReason(reason: string): string {
+  return FACT_REASONS[reason] ?? reason
+}
+
 export interface DecisionResult {
   accepted: string[]
   rejected: string[]
@@ -251,6 +280,9 @@ export const importApi = {
   proposal: (projectId: string, id: string, proposalId: string) => api<Proposal>('GET', `${base(projectId)}/${id}/proposals/${proposalId}`),
   decide: (projectId: string, id: string, decision: { accept: string[]; reject: string[]; acknowledgeImpact: boolean; relink: { id: string; factKey: string | null }[] }) =>
     api<DecisionResult>('POST', `${base(projectId)}/${id}/proposals/decide`, decision),
+  /** One page of the facts of a scan that are no proposal, in the order the scan found them. */
+  evidence: (projectId: string, id: string, cursor: string | null) =>
+    api<Page<EvidenceItem>>('GET', `${base(projectId)}/${id}/evidence?limit=50${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`),
   impact: (projectId: string, id: string) => api<ChangeImpact>('GET', `${base(projectId)}/${id}/impact`),
   report: (projectId: string, id: string) => api<ImpactReport>('GET', `${base(projectId)}/${id}/impact/report`, undefined, { accept: 'application/json' }),
   /** The same report as Markdown, as a CI job reads it. */
