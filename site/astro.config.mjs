@@ -56,6 +56,7 @@ export default defineConfig({
                 'how-to/compare-variants',
                 'how-to/work-in-a-draft',
                 'how-to/write-project-docs',
+                'how-to/export-a-diagram',
               ],
             },
             {
@@ -115,6 +116,7 @@ export default defineConfig({
             'reference/settings',
             'reference/bootstrap-environment',
             'reference/model-document-format',
+            'reference/diagram-export-formats',
             'reference/scenario-format',
             'reference/bundle-and-sdd-format',
             'reference/promises-and-evidence',
