@@ -65,7 +65,7 @@ A stale pass counts as stale. It does not count as passed.
 | Check | Cause | Fix |
 |---|---|---|
 | Scenario check | Each assertion holds and each is vacuous. The scenario does not exercise what the assertions assert. | Add a fault or an assertion that the claim needs. This needs a new revision. |
-| Source pattern check | The scan cannot establish absence. It is a comparison scan, or it did not look where the pattern would be. | Scan the tracked ref with all folders, then run the check again. |
+| Source pattern check | The scan cannot establish absence: a limit stopped it, or it did not look where the pattern would be. | Scan the ref with all folders, then run the check again. |
 | Source pattern check | No accepted import links the named service to a service of the repository. | Accept the import proposal for the service. |
 | Other kinds | Vellum cannot check this kind. | Use a test plan with evidence from the repository. |
 

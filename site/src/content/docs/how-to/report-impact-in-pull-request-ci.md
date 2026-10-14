@@ -3,7 +3,7 @@ title: Report impact in pull request CI
 description: Let a GitHub Actions job scan a pull request in Vellum, write the compact impact report to the job summary, and fail only when an opt-in gate says so.
 ---
 
-This guide shows you how to put the architecture impact report of a pull request into its CI run. A job of your workflow asks Vellum to scan the pull request, waits for the scan, reads the report and writes it to the job summary. The job fails only when the gate policy of the project is on and its verdict is `fail`.
+This guide shows you how to put the architecture impact report of a pull request into its CI run. A job of your workflow asks Vellum to scan the pull request, waits for the scan, runs the checks of the approved promises against it, reads the report and writes it to the job summary. The job fails only when the gate policy of the project is on and its verdict is `fail`.
 
 Vellum writes nothing to GitHub. It reads the pull request with the GitHub settings of the workspace. Your workflow reads the report and does what its own steps say.
 
@@ -21,7 +21,9 @@ The report holds no score. Each entry has the label `definite`, `possible` or `u
 
 An entry that is `at-risk`, `possible` or `unknown` never fails the gate. A draft promise never fails the gate.
 
-A pull request scan is a comparison scan. A source pattern check cannot fail against a comparison scan, because a comparison cannot show that a pattern is absent. With the checks of this version, the verdict of a pull request scan is therefore `pass` or `off`. A check can fail against a scan of the ref that the model follows.
+A source pattern check fails against a pull request scan only when the scan read every file where the pattern would be. When the scan did not look everywhere, the result is `unsupported`, and the report shows it as `unknown`. That never fails the gate. A check that did not run cannot fail the gate either, so the script runs the checks before it reads the report.
+
+A result against a pull request scan is for the head commit of the pull request only. The promise keeps its result against the ref that the model follows.
 
 ## Set the gate policy
 
@@ -39,7 +41,7 @@ The audit log of the workspace records the change with the old and the new polic
 
 | Scope | What the CI job does with it |
 |---|---|
-| `scan-pull-request` | Starts a scan of a pull request. A token with this scope cannot scan a branch, a tag or a commit. |
+| `scan-pull-request` | Starts a scan of a pull request, and runs the checks of the approved promises against a scan that it started. A token with this scope cannot scan a branch, a tag or a commit. |
 | `read` | Reads the state of the scan and its report. |
 
 The token acts for the person who created it. That person needs the editor role or higher to start a scan. To restrict the token to the project, create it with the API and a `projectId`. See [Connect a coding agent](/how-to/connect-a-coding-agent/).
@@ -89,6 +91,9 @@ for _ in $(seq 1 120); do
 done
 [ "$status" = completed ] || no_verdict "scan $scan did not complete in time."
 
+curl -fsS -X POST "$api/$scan/impact/checks" -H "$auth" | jq -r '.runs[] | "\(.requirementId) \(.key): \(.result)"' \
+  || no_verdict "the checks did not run against scan $scan."
+
 curl -fsS "$api/$scan/impact/report" -H "$auth" -H "Accept: text/markdown" -o vellum-impact.md \
   || no_verdict "the report of scan $scan is not readable."
 verdict=$(curl -fsS "$api/$scan/impact/report" -H "$auth" -H "Accept: application/json" | jq -r .gate.verdict) \
@@ -98,7 +103,7 @@ echo "Vellum gate verdict: $verdict"
 [ "$verdict" != fail ]
 ```
 
-The script reads the report two times: once as Markdown for the summary, and once as JSON for the verdict. The same scan, model, promises, check results and policy give the same report. Only a change of the policy or a new check run between the two reads makes them differ.
+The script runs the checks of the approved promises against the scan. Then it reads the report two times: once as Markdown for the summary, and once as JSON for the verdict. The same scan, model, promises, check results and policy give the same report. Only a change of the policy or a new check run between the two reads makes them differ.
 
 A scan that does not start, fails or does not complete gives no verdict. The script writes a warning and does not fail the job. To fail the job in that case, change `exit 0` in `no_verdict` to `exit 1`.
 
@@ -172,6 +177,12 @@ The report holds no time other than the time when the scan completed. The same i
 
 The project follows `main` of `acme/orders`. The approved promise ORD-014 requires the transactional outbox. Pull request #1 removes it. The GitHub stand-in of the [import tutorial](/tutorials/import-and-review/) serves this pull request on port 5299. The report names the repository with the host of the GitHub address of the workspace.
 
+The scan reads every file of the head commit. The source pattern check of ORD-014 fails against it, and the job log shows:
+
+```text
+ORD-014 O2: failed
+```
+
 With the policy `off`, the summary starts with these lines. The script exits with 0.
 
 ```text
@@ -182,13 +193,24 @@ With the policy `off`, the summary starts with these lines. The script exits wit
 - The gate policy of this project is off. The report never fails a build.
 ```
 
-With the policy `fail-on-broken`, the verdict of the pull request is `pass`. ORD-014 is `at-risk`, and its source pattern check cannot fail against a comparison scan. The script exits with 0.
+With the policy `fail-on-broken`, the summary starts with these lines. The script exits with 1, and the job fails.
+
+```text
+## Architecture impact of pull request \#1 on `127.0.0.1:5299/acme/orders`
+
+**Gate: fail** (policy `fail-on-broken`)
+
+- ORD-014 'An accepted order must survive a broker outage' (approved revision 1) is broken: the check 'O2' failed against this scan.
+```
+
+ORD-014 keeps its result against `main`. Only the report of this scan says that it is broken.
 
 ## Troubleshooting
 
 | Answer | Cause | What to do |
 |---|---|---|
 | `403` `agent_not_allowed` on the scan | The token has no `scan-pull-request` scope, or the request names a `ref`. | Create the token with the scope. Send `pullRequest` and no `ref`. |
+| `403` `agent_not_allowed` on the checks | The token did not start this scan, and it has no `propose` scope. | Let the same token start the scan and run the checks. |
 | `403` `agent_not_allowed` on the report | The token has no `read` scope, or it is restricted to another project. | Add the scope, or use a token of this project. |
 | `403` on the scan with a token that has the scope | The person who created the token has the viewer role. | Give that person the editor role, or create the token as an editor. |
 | `409` `scan_in_progress` | A scan of the repository is already queued or running for the project. | Run the job again when that scan ends. |

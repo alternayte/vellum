@@ -171,6 +171,20 @@ A promise has one more label.
 
 The report reads the source. It runs no check and it changes nothing. A promise that names nothing that changed is not in the report.
 
+### Run the checks against the scan
+
+Select **Run checks against this scan** in the **Gate** box. Vellum runs the source pattern check of each approved promise that names the repository, against the snapshot of this scan. You need the editor role. Each run records the scan and its commit.
+
+| Result | The check |
+|---|---|
+| **Passed** | found the pattern at this commit. |
+| **Failed** | did not find the pattern, and the scan read every file where the pattern would be: the project directory of the service, or the whole repository, and every file where the pattern was found before or where the snapshot that the model follows declares it. |
+| **Unknown** (`unsupported`) | did not find the pattern, and the scan did not look everywhere: a limit stopped it, or its folders left a place out. This never fails the gate. |
+
+A result against a comparison scan is for that commit only. The promise keeps its result against the ref that the model follows, and Build Ready does not change. The result shows in the impact report of this scan.
+
+The request is `POST /api/projects/{projectId}/imports/{importId}/impact/checks`. An agent token with `propose` can call it for any scan. A token with only `scan-pull-request` can call it for a scan that it started.
+
 The request is `GET /api/projects/{projectId}/imports/{importId}/impact`.
 
 ### Copy the compact report
@@ -190,7 +204,7 @@ The **Gate** box at the top of the dialog shows the policy of the project and it
 
 **At risk**, **Possibly affected** and **Unknown** never fail the gate. A draft promise never fails the gate.
 
-A source pattern check cannot fail against a comparison scan. The verdict of a pull request scan is therefore `pass` or `off`.
+A check that did not run cannot fail the gate. Run the checks against the scan before you read the verdict.
 
 The requests are `GET` and `PUT /api/projects/{projectId}/impact-gate`, with the body `{"policy":"fail-on-broken"}`.
 
@@ -211,7 +225,8 @@ Pull request #1 merges the branch `remove-outbox` into `main`. The branch delete
    ![The canvas inside the system orders. Orders.Api and Billing have a solid ring and a solid line labelled 3. OrderCreated Definite. postgres has a dashed ring and a dashed line labelled 2. postgres orders Possible. The panel at the top lists the three steps with their labels.](../../../assets/screenshots/impact-steps-canvas.png)
 
 5. Read **Affected promises**. A promise that requires the pattern has the label **At risk**.
-6. Select **Run against this scan** on its source pattern check. The result is **Unsupported**: a comparison scan cannot establish that a pattern is absent. The check can fail when the model follows the branch.
+6. Select **Run checks against this scan**. The source pattern check of the promise is **Failed**: the scan read every file of the commit, and the outbox registration is gone. The promise is now **Broken** in this report. With the policy **Fail on a broken approved promise**, the gate is **Fail**.
+7. Open the promise. Its result against `main` is the same as before.
 
 The comparison shows that the registration is gone from the source. It does not show that an order is lost when the broker is down. Only a test in the repository can show that.
 
