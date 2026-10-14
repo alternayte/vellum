@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using Vellum.Modules.Identity.AgentTokens;
 using Vellum.Modules.Import.Proposals;
+using Vellum.Modules.Import.Sources;
 using Vellum.Modules.Settings;
 using Vellum.Modules.Workspaces;
 using Vellum.Shared;
@@ -66,13 +67,14 @@ public sealed record ScanCoverageDto(int FilesListed, int FilesExtracted, Linked
 /// <param name="PullRequestNumber">The pull request the caller asked for, or null for a scan of a ref.</param>
 /// <param name="PullRequest">The pull request as GitHub described it when the scan pinned the head commit. Null until then.</param>
 /// <param name="CanResume">True for a failed or cancelled scan that a resume can carry on. False when the failure is one that a resume meets again: start a new scan.</param>
+/// <param name="SourceId">The Source the scan reads.</param>
 public sealed record ScanDto(
     Guid Id, string Repository, string? RepositoryName, string? Ref, string? ResolvedRef, string? CommitSha, string Status, bool IsComplete,
     string Kind, string? TrackedRef, bool CanDecide, string? CanDecideReason,
     ScanCoverageDto Coverage, int Relinked, int NeedsReview,
     ScanProgressDto Progress, ProposalCountsDto ProposalCounts, ScanError? Error,
     DateTimeOffset? RetryAt, string RequestedBy, DateTimeOffset CreatedAt, DateTimeOffset? CompletedAt,
-    int? PullRequestNumber, ScanPullRequest? PullRequest, bool CanResume);
+    int? PullRequestNumber, ScanPullRequest? PullRequest, bool CanResume, Guid SourceId);
 
 public sealed record ScanDetailDto(
     Guid Id, string Repository, string? RepositoryName, string? Ref, string? ResolvedRef, string? CommitSha, string Status, bool IsComplete,
@@ -82,7 +84,7 @@ public sealed record ScanDetailDto(
     DateTimeOffset? RetryAt, string RequestedBy, DateTimeOffset CreatedAt, DateTimeOffset? CompletedAt,
     int? PullRequestNumber, ScanPullRequest? PullRequest, bool CanResume,
     IReadOnlyList<ScanNote> Notes, IReadOnlyList<RuleVersion> RuleVersions,
-    string? TrackedBy, DateTimeOffset? TrackedAt);
+    string? TrackedBy, DateTimeOffset? TrackedAt, Guid SourceId, string? SnapshotId);
 
 public static partial class ScanRequests
 {
@@ -133,6 +135,23 @@ public static partial class ScanRequests
                 "An agent token scans only a repository that the project follows. A person imports the repository first."),
                 statusCode: StatusCodes.Status403Forbidden);
         }
+        var now = time.GetUtcNow();
+        // A scan of a repository is a scan of the project's github Source for it, which the
+        // first scan creates.
+        var source = await SourceRequests.EnsureGitHubSourceAsync(db, projectId, workspaceId, host, repository, AgentPrincipal.IsAgent(user) ? AgentPrincipal.Actor(user)! : userId, now, ct);
+        return await QueueAsync(projectId, source, new ScanOptions(request.Ref, request.IncludePaths, request.ExcludePaths, request.PullRequest),
+            user, workspace, db, signal, now, ct);
+    }
+
+    /// <summary>What a scan of a Source reads: a ref or a pull request, and the paths in scope.</summary>
+    public sealed record ScanOptions(string? Ref, string[]? IncludePaths, string[]? ExcludePaths, int? PullRequest);
+
+    /// <summary>Checks the options, takes one unit of the day's scans and queues a scan of <paramref name="source"/>.</summary>
+    internal static async Task<IResult> QueueAsync(
+        Guid projectId, SourceEntity source, ScanOptions request, ClaimsPrincipal user, WorkspaceSettings workspace,
+        AppDbContext db, ScanSignal signal, DateTimeOffset now, CancellationToken ct)
+    {
+        var userId = user.UserId();
         var reference = string.IsNullOrWhiteSpace(request.Ref) ? null : request.Ref;
         if (reference is not null && (TextRule.Line("ref", reference, 255) is not null || !IsRef(reference)))
             return Invalid("ref", "A ref is a branch, a tag or a commit SHA of at most 255 characters, with no white space.");
@@ -148,12 +167,12 @@ public static partial class ScanRequests
         if (!TryReadPaths(request.ExcludePaths, out var exclude, out pathError))
             return Invalid("excludePaths", pathError);
 
-        var now = time.GetUtcNow();
+        var workspaceId = source.WorkspaceId;
         var import = workspace.Effective.Import;
         var scan = new ScanEntity
         {
-            Id = Guid.NewGuid(), ProjectId = projectId, WorkspaceId = workspaceId,
-            Host = host, Repository = repository, RequestedRef = reference, PullRequestNumber = request.PullRequest,
+            Id = Guid.NewGuid(), ProjectId = projectId, WorkspaceId = workspaceId, SourceId = source.Id,
+            Host = source.Host, Repository = source.Locator, RequestedRef = reference, PullRequestNumber = request.PullRequest,
             IncludePaths = include, ExcludePaths = exclude,
             Limits = new ScanLimits(import.MaxFiles, import.MaxFileBytes, import.MaxTotalBytes, [.. import.ExcludeGlobs]).ToJson(),
             // A token's scan names the token, so a person can tell it from their own.
@@ -248,7 +267,9 @@ public static partial class ScanRequests
     private static async Task<ScanDetailDto> DetailAsync(AppDbContext db, ScanEntity scan, CancellationToken ct)
     {
         var counts = await CountsAsync(db, [scan.Id], ct);
-        var rules = await db.ImportSnapshots.AsNoTracking().Where(s => s.ScanId == scan.Id).Select(s => s.RuleVersions).FirstOrDefaultAsync(ct);
+        var snapshot = await db.ImportSnapshots.AsNoTracking().Where(s => s.ScanId == scan.Id)
+            .Select(s => new { s.RuleVersions, s.SnapshotId }).FirstOrDefaultAsync(ct);
+        var rules = snapshot?.RuleVersions;
         var tracked = await db.TrackedRefs.AsNoTracking()
             .FirstOrDefaultAsync(t => t.ProjectId == scan.ProjectId && t.Host == scan.Host && t.Repository == scan.Repository, ct);
         var dto = ToDto(scan, counts.GetValueOrDefault(scan.Id), tracked);
@@ -259,7 +280,7 @@ public static partial class ScanRequests
             dto.PullRequestNumber, dto.PullRequest, dto.CanResume,
             ScanNotes.Read(scan.Notes),
             rules is null ? [] : System.Text.Json.JsonSerializer.Deserialize<List<RuleVersion>>(rules, System.Text.Json.JsonSerializerOptions.Web) ?? [],
-            scan.TrackedBy, scan.TrackedAt);
+            scan.TrackedBy, scan.TrackedAt, scan.SourceId, snapshot?.SnapshotId);
     }
 
     /// <summary>
@@ -433,13 +454,6 @@ public static partial class ScanRequests
         if (newer)
             return Results.Conflict(new ErrorResponse("newer_scan_exists", "A newer scan of this ref is completed. Track that scan."));
 
-        var files = await db.ScanFiles.AsNoTracking().Where(f => f.ScanId == scan.Id)
-            .Select(f => new { f.Path, f.State, f.Reason }).ToListAsync(ct);
-        var coverageFiles = files.ToDictionary(
-            f => f.Path, f => f.State == ScanFileState.Read ? null : f.Reason ?? CoverageGap.ParseFailure, StringComparer.Ordinal);
-        var absent = ScanScope.AbsentGap(ScanLimits.FromJson(scan.Limits), scan.IncludePaths, scan.ExcludePaths);
-        var facts = await SnapshotWriter.StoredFactsAsync(db, scan.Id, ct);
-
         // The marks that follow are conclusions of the scan. The scan row says who asked.
         http.RequestServices.GetRequiredService<DeedboxContext>().Metadata = new EventMetadata
         {
@@ -448,10 +462,7 @@ public static partial class ScanRequests
         };
         var now = time.GetUtcNow();
         var outcome = await SnapshotWriter.WriteAsync(
-            http.RequestServices, scan, WriteMode.Track(userId),
-            new SnapshotInput(facts, scan.IsComplete, scan.ExtractionGapText(), scan.Notes,
-                () => new ScanCoverage(coverageFiles, absent, scan.ExtractionGapText()), scan.FilesExtracted),
-            now, ct);
+            http.RequestServices, scan, WriteMode.Track(userId), await StoredInputAsync(db, scan, ct), now, ct);
         switch (outcome)
         {
             case SnapshotOutcome.ProjectGone:
@@ -465,6 +476,19 @@ public static partial class ScanRequests
 
         var after = await db.Scans.AsNoTracking().FirstAsync(s => s.Id == importId, ct);
         return Results.Ok(await DetailAsync(db, after, ct));
+    }
+
+    /// <summary>A completed scan as a plan reads it again: its stored facts, and where it looked, from its file rows.</summary>
+    internal static async Task<SnapshotInput> StoredInputAsync(AppDbContext db, ScanEntity scan, CancellationToken ct)
+    {
+        var files = await db.ScanFiles.AsNoTracking().Where(f => f.ScanId == scan.Id)
+            .Select(f => new { f.Path, f.State, f.Reason }).ToListAsync(ct);
+        var coverageFiles = files.ToDictionary(
+            f => f.Path, f => f.State == ScanFileState.Read ? null : f.Reason ?? CoverageGap.ParseFailure, StringComparer.Ordinal);
+        var absent = ScanScope.AbsentGap(ScanLimits.FromJson(scan.Limits), scan.IncludePaths, scan.ExcludePaths);
+        var facts = await SnapshotWriter.StoredFactsAsync(db, scan.Id, ct);
+        return new SnapshotInput(facts, scan.IsComplete, scan.ExtractionGapText(), scan.Notes,
+            () => new ScanCoverage(coverageFiles, absent, scan.ExtractionGapText()), scan.FilesExtracted);
     }
 
     /// <summary>The index <c>ix_scans_one_active_per_repository</c> refused a second active scan.</summary>
@@ -571,7 +595,7 @@ public static partial class ScanRequests
         return true;
     }
 
-    private static async Task<Dictionary<Guid, ProposalCountsDto>> CountsAsync(AppDbContext db, Guid[] scanIds, CancellationToken ct)
+    internal static async Task<Dictionary<Guid, ProposalCountsDto>> CountsAsync(AppDbContext db, Guid[] scanIds, CancellationToken ct)
     {
         var rows = await db.ImportProposals.AsNoTracking()
             .Where(p => scanIds.Contains(p.ScanId))
@@ -587,7 +611,7 @@ public static partial class ScanRequests
     private static TrackedRefEntity? TrackedOf(List<TrackedRefEntity> tracked, ScanEntity scan) =>
         tracked.FirstOrDefault(t => t.Host == scan.Host && t.Repository == scan.Repository);
 
-    private static ScanDto ToDto(ScanEntity scan, ProposalCountsDto? counts, TrackedRefEntity? tracked)
+    internal static ScanDto ToDto(ScanEntity scan, ProposalCountsDto? counts, TrackedRefEntity? tracked)
     {
         var kind = ScanKindInfo.Of(scan, tracked);
         var completed = scan.Status == ScanStatus.Completed;
@@ -600,7 +624,7 @@ public static partial class ScanRequests
             counts ?? new ProposalCountsDto(0, 0, 0),
             scan.ErrorCode is null ? null : new ScanError(scan.ErrorCode, scan.ErrorMessage ?? ""),
             scan.RetryAt, scan.RequestedBy, scan.CreatedAt, scan.CompletedAt,
-            scan.PullRequestNumber, ScanPullRequest.FromJson(scan.PullRequest), ScanFailures.CanResume(scan.Status, scan.ErrorCode));
+            scan.PullRequestNumber, ScanPullRequest.FromJson(scan.PullRequest), ScanFailures.CanResume(scan.Status, scan.ErrorCode), scan.SourceId);
     }
 
 }

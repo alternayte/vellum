@@ -40,7 +40,8 @@ public sealed record Provenance(
 /// commit SHA of the first complete scan that did not find the evidence;
 /// <paramref name="Reason"/> is a fixed code such as <c>evidence-not-found</c>.
 /// </summary>
-public sealed record StaleMark(string SinceRevision, string Reason);
+/// <param name="SourceId">The Source whose scan set the mark. Only a scan of that Source clears it. Null for a mark set before Sources, or by a person or an import of a model document.</param>
+public sealed record StaleMark(string SinceRevision, string Reason, Guid? SourceId = null);
 
 /// <summary>A stale mark as returned by the API.</summary>
 public sealed record StaleDto(string SinceRevision, string Reason)

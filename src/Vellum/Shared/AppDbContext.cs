@@ -29,6 +29,7 @@ using ImportSnapshotEntity = Vellum.Modules.Import.SnapshotEntity;
 using ImportSnapshotFactEntity = Vellum.Modules.Import.SnapshotFactEntity;
 using FactLinkEntity = Vellum.Modules.Import.FactLinkEntity;
 using RejectionEntity = Vellum.Modules.Import.RejectionEntity;
+using ImportSourceEntity = Vellum.Modules.Import.SourceEntity;
 using ReviewSnapshotEntity = Vellum.Modules.Review.SnapshotEntity;
 
 namespace Vellum.Shared;
@@ -95,6 +96,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : IdentityDbCo
     public DbSet<DesignProposalEntity> DesignProposals => Set<DesignProposalEntity>();
 
     // import
+    public DbSet<ImportSourceEntity> Sources => Set<ImportSourceEntity>();
     public DbSet<ScanEntity> Scans => Set<ScanEntity>();
     public DbSet<ScanFileEntity> ScanFiles => Set<ScanFileEntity>();
     public DbSet<BlobEntity> Blobs => Set<BlobEntity>();

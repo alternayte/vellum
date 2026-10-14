@@ -263,6 +263,7 @@ public static class ModelInvariants
         ModelEvent.ElementRetagged e => Present(state.Elements.ContainsKey(e.ElementId), "element", e.ElementId.Value),
         ModelEvent.ElementIconChanged e => Present(state.Elements.ContainsKey(e.ElementId), "element", e.ElementId.Value),
         ModelEvent.ElementProvenanceRecorded e => Present(state.Elements.ContainsKey(e.ElementId), "element", e.ElementId.Value),
+        ModelEvent.ElementSourceBound e => Present(state.Elements.ContainsKey(e.ElementId), "element", e.ElementId.Value),
         ModelEvent.ElementRemoved e => Present(state.Elements.ContainsKey(e.ElementId), "element", e.ElementId.Value),
 
         ModelEvent.RelationshipAdded e => Unused(state, "relationship", e.Id.Value),

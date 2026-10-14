@@ -16,14 +16,19 @@ namespace Vellum.Modules.Import.Proposals;
 /// <param name="FactKey">The fact key of one of its candidates, or null to say that none of them is the accepted fact.</param>
 public sealed record RelinkChoice(Guid Id, string? FactKey);
 
+/// <param name="Id">A proposal of action <c>bind</c>: "same as this element?".</param>
+/// <param name="Same">True binds the element to the key of the scan's Source. False says it is another thing: the next plan proposes a new element.</param>
+public sealed record BindAnswer(Guid Id, bool Same);
+
 /// <param name="Accept">Proposals to apply to the model.</param>
 /// <param name="Reject">Proposals to refuse. A refused proposal is not made again while it says the same thing.</param>
 /// <param name="Relink">Decisions on <c>relink</c> proposals. They change links only, never the model.</param>
+/// <param name="Bind">Answers to <c>bind</c> questions. After them the pending proposals of the scan are planned again.</param>
 /// <param name="AcknowledgeImpact">
 /// Must be true to accept a removal that breaks a stored scenario, or leaves an entity
 /// pointing at what is removed. Without it such a decision fails and names what would break.
 /// </param>
-public sealed record DecideProposalsRequest(Guid[]? Accept, Guid[]? Reject, RelinkChoice[]? Relink = null, bool AcknowledgeImpact = false);
+public sealed record DecideProposalsRequest(Guid[]? Accept, Guid[]? Reject, RelinkChoice[]? Relink = null, bool AcknowledgeImpact = false, BindAnswer[]? Bind = null);
 
 public sealed record DecisionFailure(Guid Id, string Reason);
 
@@ -31,7 +36,12 @@ public sealed record DecisionFailure(Guid Id, string Reason);
 /// When <paramref name="Failed"/> holds anything, nothing was applied and the other lists
 /// are empty: a decision is applied whole or not at all.
 /// </summary>
-public sealed record DecideProposalsResponse(Guid[] Accepted, Guid[] Rejected, DecisionFailure[] Failed, Guid[] Relinked);
+/// <param name="Answered">The <c>bind</c> questions answered.</param>
+/// <param name="Replanned">
+/// True when answers were given and the pending proposals of the scan were planned again.
+/// False when the model changed each time the plan was tried: scan the Source again.
+/// </param>
+public sealed record DecideProposalsResponse(Guid[] Accepted, Guid[] Rejected, DecisionFailure[] Failed, Guid[] Relinked, Guid[] Answered, bool Replanned);
 
 /// <summary>
 /// The one place where something a scan found reaches the model: a person with the Editor
@@ -67,9 +77,10 @@ public static class DecideProposals
         var accept = (request.Accept ?? []).Distinct().ToArray();
         var reject = (request.Reject ?? []).Distinct().ToArray();
         var relink = (request.Relink ?? []).Where(r => r is not null).ToArray();
-        if (accept.Length == 0 && reject.Length == 0 && relink.Length == 0)
-            return Invalid("accept", "Name at least one proposal to accept, to reject or to relink.");
-        if (accept.Length + reject.Length + relink.Length > MaxProposals)
+        var bind = (request.Bind ?? []).Where(b => b is not null).ToArray();
+        if (accept.Length == 0 && reject.Length == 0 && relink.Length == 0 && bind.Length == 0)
+            return Invalid("accept", "Name at least one proposal to accept, to reject, to relink or to answer.");
+        if (accept.Length + reject.Length + relink.Length + bind.Length > MaxProposals)
             return Invalid("accept", $"One decision names at most {MaxProposals} proposals.");
         if (accept.Intersect(reject).Any())
             return Invalid("reject", "A proposal cannot be accepted and rejected in one decision.");
@@ -77,17 +88,36 @@ public static class DecideProposals
             || relink.Any(r => accept.Contains(r.Id) || reject.Contains(r.Id))
             || relink.Any(r => r.FactKey is { } key && (key.Length == 0 || TextRule.Line("factKey", key, FactMapping.MaxFactKey) is not null)))
             return Invalid("relink", "A relink names a relink proposal once, with the fact key of one of its candidates or with null.");
+        if (bind.Select(b => b.Id).Distinct().Count() != bind.Length
+            || bind.Any(b => accept.Contains(b.Id) || reject.Contains(b.Id) || relink.Any(r => r.Id == b.Id)))
+            return Invalid("bind", "An answer names a bind proposal once, and in no other list.");
 
         var scan = await db.Scans.AsNoTracking().FirstOrDefaultAsync(s => s.Id == importId && s.ProjectId == projectId, ct);
         if (scan is null)
             return Results.NotFound(new ErrorResponse("not_found", "Import not found"));
+        return await DecideAsync(http, db, scan, new DecisionInput(accept, reject, relink, bind, request.AcknowledgeImpact), userId, time, ct);
+    }
+
+    /// <summary>What one decision names. Each list holds distinct IDs, and no ID is in two lists.</summary>
+    internal sealed record DecisionInput(Guid[] Accept, Guid[] Reject, RelinkChoice[] Relink, BindAnswer[] Bind, bool AcknowledgeImpact);
+
+    /// <summary>
+    /// Applies a decision on the proposals of a completed scan, all or nothing. When it answered
+    /// a <c>bind</c> question, the pending proposals of the scan are planned again after the
+    /// commit, so a "yes" targets the bound element and a "no" proposes a new one.
+    /// </summary>
+    internal static async Task<IResult> DecideAsync(
+        HttpContext http, AppDbContext db, ScanEntity scan, DecisionInput decision, string userId, TimeProvider time, CancellationToken ct)
+    {
+        var (accept, reject, relink, bind) = (decision.Accept, decision.Reject, decision.Relink, decision.Bind);
+        var projectId = scan.ProjectId;
         if (scan.Status != ScanStatus.Completed || scan.CommitSha is null)
             return Results.Conflict(new ErrorResponse("import_not_completed", "The scan has no proposals to decide: it did not complete."));
 
         // The schema streams must be locked before the first append, so they are read first.
         // A proposal keeps its entity for life, so this list cannot change under the decision.
         var schemaIds = await db.ImportProposals.AsNoTracking()
-            .Where(p => p.ScanId == importId && accept.Contains(p.Id) && p.EntityKind == StoredEntityKind.Schema)
+            .Where(p => p.ScanId == scan.Id && accept.Contains(p.Id) && p.EntityKind == StoredEntityKind.Schema)
             .Select(p => p.EntityId)
             .Distinct().ToListAsync(ct);
         if (schemaIds.Count > ImportModel.MaxSchemas)
@@ -97,13 +127,27 @@ public static class DecideProposals
         if (schemaIds.Contains(project.StreamId))
             return Invalid("accept", "A schema proposal names the ID of the project's model stream.");
 
-        return await SharedTransaction.RunAsync(http.RequestServices, services =>
-            ApplyAsync(services, scan, project.StreamId, schemaIds, accept, reject, relink, request.AcknowledgeImpact, userId, time.GetUtcNow(), ct), ct);
+        var now = time.GetUtcNow();
+        var result = await SharedTransaction.RunAsync(http.RequestServices, services =>
+            ApplyAsync(services, scan, project.StreamId, schemaIds, accept, reject, relink, bind, decision.AcknowledgeImpact, userId, now, ct), ct);
+        if (bind.Length == 0 || result is not Microsoft.AspNetCore.Http.HttpResults.Ok<DecideProposalsResponse> { Value: { Failed.Length: 0 } done })
+            return result;
+
+        // The answers change what the scan's facts point at. Its pending proposals are
+        // planned again from its stored Snapshot; the decided ones stay as they are.
+        http.RequestServices.GetRequiredService<DeedboxContext>().Metadata = new EventMetadata
+        {
+            Actor = "system:import-scan",
+            CorrelationId = scan.Id.ToString(),
+        };
+        var input = await ScanRequests.StoredInputAsync(db, scan, ct);
+        var outcome = await SnapshotWriter.WriteAsync(http.RequestServices, scan, WriteMode.PlanAgain(), input, time.GetUtcNow(), ct);
+        return Results.Ok(done with { Replanned = outcome == SnapshotOutcome.Written });
     }
 
     private static async Task<IResult> ApplyAsync(
         IServiceProvider services, ScanEntity scan, Guid modelStreamId, List<Guid> schemaIds,
-        Guid[] accept, Guid[] reject, RelinkChoice[] relink, bool acknowledgeImpact, string userId, DateTimeOffset now, CancellationToken ct)
+        Guid[] accept, Guid[] reject, RelinkChoice[] relink, BindAnswer[] bind, bool acknowledgeImpact, string userId, DateTimeOffset now, CancellationToken ct)
     {
         var db = services.GetRequiredService<AppDbContext>();
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
@@ -136,7 +180,7 @@ public static class DecideProposals
         if (!kind.Tracking)
             return Results.Conflict(new ErrorResponse("comparison_scan", ScanKindInfo.Describe(kind, tracked)!));
 
-        var named = accept.Concat(reject).Concat(relink.Select(r => r.Id)).ToArray();
+        var named = accept.Concat(reject).Concat(relink.Select(r => r.Id)).Concat(bind.Select(b => b.Id)).ToArray();
         var proposals = await db.ImportProposals.Where(p => p.ScanId == scan.Id && named.Contains(p.Id)).ToDictionaryAsync(p => p.Id, ct);
         var failures = new List<DecisionFailure>();
         foreach (var id in named)
@@ -149,6 +193,10 @@ public static class DecideProposals
                 failures.Add(new DecisionFailure(id, "A relink proposal is decided under 'relink', with the fact key of one of its candidates or with null."));
             else if (proposal.Action != ProposalAction.Relink && relink.Any(r => r.Id == id))
                 failures.Add(new DecisionFailure(id, "This is not a relink proposal."));
+            else if (proposal.Action == ProposalAction.Bind && !bind.Any(b => b.Id == id))
+                failures.Add(new DecisionFailure(id, "A bind proposal is answered under 'bind', with same: true or false."));
+            else if (proposal.Action != ProposalAction.Bind && bind.Any(b => b.Id == id))
+                failures.Add(new DecisionFailure(id, "This is not a bind proposal."));
         }
         if (failures.Count > 0)
             return Failed(failures);
@@ -195,7 +243,7 @@ public static class DecideProposals
             var impact = await ProposalImpact.LoadAsync(services, store, scan.ProjectId, model, ct);
             // An entity that this decision removes or changes is dealt with by the decision.
             var handled = accepted.Select(p => p.EntityId).ToHashSet();
-            foreach (var proposal in accepted)
+            foreach (var proposal in accepted.Where(p => !UnlinksOnly(p)))
             {
                 var fields = ProposalJson.ReadChanges(proposal.Changes).Select(c => c.Field).ToList();
                 var found = impact.Of(proposal.Action, EnumText.Of(proposal.EntityKind), proposal.EntityId, fields);
@@ -214,11 +262,17 @@ public static class DecideProposals
         }
 
         var repository = $"{scan.Host}/{scan.Repository}";
-        var applier = new ProposalApplier(model, schemas, scan.ProjectId, repository, scan.CommitSha!, Guid.Parse(userId), now);
-        foreach (var proposal in InDependencyOrder(accepted))
+        var applier = new ProposalApplier(model, schemas, scan.ProjectId, repository, scan.CommitSha!, Guid.Parse(userId), now, scan.SourceId);
+        foreach (var proposal in InDependencyOrder(accepted).Where(p => !UnlinksOnly(p)))
         {
             if (applier.Apply(proposal) is { } reason)
                 failures.Add(new DecisionFailure(proposal.Id, reason));
+        }
+        // A "yes" binds the element to the key. It is the only write of an answer to the model.
+        foreach (var answer in bind.Where(b => b.Same))
+        {
+            if (applier.Bind(proposals[answer.Id]) is { } reason)
+                failures.Add(new DecisionFailure(answer.Id, reason));
         }
         if (failures.Count > 0)
             return Failed(failures);
@@ -344,12 +398,24 @@ public static class DecideProposals
         if (failures.Count > 0)
             return Failed(failures);
 
-        foreach (var id in reject)
+        // A "no" is remembered like a rejection: this key of this Source is not that element.
+        foreach (var answer in bind)
         {
-            var proposal = proposals[id];
-            proposal.Status = ProposalStatus.Rejected;
+            var proposal = proposals[answer.Id];
+            proposal.Status = answer.Same ? ProposalStatus.Accepted : ProposalStatus.Rejected;
             proposal.DecidedBy = userId;
             proposal.DecidedAt = now;
+        }
+
+        foreach (var id in reject.Concat(bind.Where(b => !b.Same).Select(b => b.Id)))
+        {
+            var proposal = proposals[id];
+            if (proposal.Action != ProposalAction.Bind)
+            {
+                proposal.Status = ProposalStatus.Rejected;
+                proposal.DecidedBy = userId;
+                proposal.DecidedAt = now;
+            }
 
             // Remembered by what the proposal says, so the next scan does not make it again.
             var hash = KeyHash.Of(proposal.FactKey);
@@ -382,8 +448,15 @@ public static class DecideProposals
 
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
-        return Results.Ok(new DecideProposalsResponse(accept, reject, [], [.. relink.Select(r => r.Id)]));
+        return Results.Ok(new DecideProposalsResponse(accept, reject, [], [.. relink.Select(r => r.Id)], [.. bind.Select(b => b.Id)], false));
     }
+
+    /// <summary>
+    /// A removal of an entity that other Sources still held when the scan was planned. It
+    /// removes the fact of this Source only: the link goes, and the entity stays in the model.
+    /// </summary>
+    internal static bool UnlinksOnly(ProposalEntity proposal) =>
+        proposal.Action == ProposalAction.Remove && proposal.OtherSources != "[]";
 
     private static Task<FactLinkEntity?> FindLinkAsync(AppDbContext db, ScanEntity scan, Subject subject, string factKey, CancellationToken ct)
     {
@@ -423,6 +496,6 @@ public static class DecideProposals
     }
 
     private static IResult Failed(List<DecisionFailure> failures) =>
-        Results.Ok(new DecideProposalsResponse([], [], [.. failures.DistinctBy(f => f.Id)], []));
+        Results.Ok(new DecideProposalsResponse([], [], [.. failures.DistinctBy(f => f.Id)], [], [], false));
 
 }

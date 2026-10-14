@@ -23,6 +23,9 @@ internal static class ProposalJson
     public static Dictionary<string, string> ReadAttributes(string json) =>
         JsonSerializer.Deserialize<Dictionary<string, string>>(json, Options) ?? [];
 
+    public static List<OtherSourceFact> ReadOtherSources(string json) =>
+        JsonSerializer.Deserialize<List<OtherSourceFact>>(json, Options) ?? [];
+
     public static List<string> ReadKeys(string json) =>
         JsonSerializer.Deserialize<List<string>>(json, Options) ?? [];
 

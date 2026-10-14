@@ -98,6 +98,7 @@ export default defineConfig({
           items: [
             'concepts/model-is-the-source-of-truth',
             'concepts/evidence-and-truth-labels',
+            'concepts/sources-and-snapshots',
             'concepts/promises-and-evidence',
             'concepts/traces-are-declared',
             'concepts/findings-are-not-proof',

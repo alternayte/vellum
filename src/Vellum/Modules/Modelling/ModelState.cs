@@ -5,18 +5,28 @@ using Vellum.Shared;
 
 namespace Vellum.Modules.Modelling;
 
+/// <summary>One source binding: the element is the thing <paramref name="ExternalKey"/> names in the Source <paramref name="SourceId"/>.</summary>
+public sealed record SourceBinding(Guid SourceId, string ExternalKey);
+
 public sealed record ElementState(
     ElementId Id, ElementKind Kind, string Name, string? Description,
     string? Technology, Guid? OwnerId, ElementStatus Status,
     ElementId? ParentId, string[] Tags, string? Icon,
     FactStatus FactStatus = FactStatus.Declared,
     Provenance? Provenance = null,
-    StaleMark? Stale = null)
+    StaleMark? Stale = null,
+    SourceBinding[]? SourceBindings = null)
 {
+    /// <summary>The (Source, external key) pairs of the element. Empty when no Source is bound to it.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public IReadOnlyList<SourceBinding> Bindings => SourceBindings ?? [];
+
     // The generated equality compares an array by reference. Two copies of one element that
     // were each read from stored JSON would then differ, and a merge would call that a change.
     // The stale mark is left out on purpose, here and on the other five states: it is a note
     // a scan leaves on a branch, not part of the fact, so a merge never sees it as an edit.
+    // The source bindings are left out too: only an import decision on main writes them, and
+    // they say where the element is found, not what it is.
     public bool Equals(ElementState? other) =>
         other is not null
         && Id == other.Id && Kind == other.Kind && Name == other.Name && Description == other.Description
@@ -194,6 +204,9 @@ public sealed record ModelState(
         ModelEvent.ElementRemoved e => state with { Elements = state.Elements.Remove(e.ElementId) },
         ModelEvent.ElementProvenanceRecorded e => state.WithElement(e.ElementId,
             el => el with { FactStatus = e.Status, Provenance = e.Provenance, Stale = e.Stale }),
+        ModelEvent.ElementSourceBound e => state.WithElement(e.ElementId, el => el.Bindings.Contains(new SourceBinding(e.SourceId, e.ExternalKey))
+            ? el
+            : el with { SourceBindings = [.. el.Bindings, new SourceBinding(e.SourceId, e.ExternalKey)] }),
 
         ModelEvent.RelationshipAdded e => state with
         {

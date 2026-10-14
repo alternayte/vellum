@@ -96,11 +96,18 @@ public class ImportDecisionTests(ImportHost import) : IClassFixture<ImportHost>
         await TestHost.Created(s.Owner.PostAsJsonAsync(s.Model("channels"), new { id = channel, name = "order-events", kind = "topic" }));
 
         var scan = await s.ScanAsync();
-        var proposals = await s.ProposalsAsync(scan.Id());
+
+        // An element is never taken by its name: the scan asks "same as?". Until a person
+        // answers, nothing that depends on it is proposed.
+        var question = (await s.ProposalsAsync(scan.Id())).Proposal("element", "orders");
+        Assert.Equal(("bind", system.ToString()), (question.Text("action"), question.Text("entityId")));
+        var answered = await s.Owner.PostAsJsonAsync(s.Url($"/{scan.Id()}/proposals/decide"), new { bind = new[] { new { id = question.Id(), same = true } } });
+        Assert.True((await answered.Content.ReadFromJsonAsync<JsonObject>())!["replanned"]!.GetValue<bool>());
+        var proposals = (await s.ProposalsAsync(scan.Id())).Where(p => p.Text("status") == "pending").ToList();
         Assert.Equal(21, proposals.Count);
 
-        // A match is a proposal to link, never a silent link, and only for the same kind:
-        // the hand-made system "Billing" is not the app "Billing".
+        // The bound element gets a proposal to link, never a silent link. Other matches are
+        // only for the same kind: the hand-made system "Billing" is not the app "Billing".
         var repository = proposals.Proposal("element", "orders");
         Assert.Equal(("conflict", system.ToString()), (repository.Text("action"), repository.Text("entityId")));
         Assert.Equal(["factStatus", "name"], Fields(repository));

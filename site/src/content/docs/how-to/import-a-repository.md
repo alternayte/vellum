@@ -7,6 +7,8 @@ This guide shows you how to import a GitHub repository into a project. You need 
 
 An import proposes. It changes nothing in the model until you accept a proposal.
 
+A repository is a **Source** of the project, and each completed scan is a **Snapshot** of it. See [Sources, Snapshots and bindings](/concepts/sources-and-snapshots/).
+
 ## Start a scan
 
 1. Open the project and select **Import from GitHub** in the left toolbar.
@@ -18,6 +20,8 @@ An import proposes. It changes nothing in the model until you accept a proposal.
 Vellum finds the commit that the ref points to and reads the files at that commit. It does not run the code. It does not read a file that looks like a secret store or a binary.
 
 A private repository needs a token. See [Connect GitHub](/how-to/connect-github/).
+
+The first scan of a repository adds it to **Sources**. To scan a Source again at its default ref, select **Scan again** on the Source.
 
 A project runs one scan of a repository at a time. Vellum refuses a second scan of the same repository until the first scan ends.
 
@@ -52,12 +56,24 @@ Vellum lists one proposal for each thing it found. The list has one group for ea
 | Conflict | The source differs from a value that a person set. The review shows both values. Neither wins until you decide. |
 | Remove | A scan that looked at the source of an accepted fact no longer finds it. |
 | Match | The extraction rules changed and Vellum cannot tell which found fact is the one in the model. You choose. |
+| Same as? | An element of this scan has the name of an element in the model. Vellum asks if they are the same element. |
 
 Select a proposal to see its fields and the source lines that support it. The **GitHub** link opens the same lines on GitHub at the scanned commit.
 
 A proposal states only what the source shows. A route in the code shows that the route is declared. It does not show that the route works.
 
 The [extraction rules](/reference/extraction-rules/) list what Vellum reads and what each rule proposes.
+
+## Review by Source
+
+**Proposals by Source** in the **Sources** section lists the pending proposals of every Source, one group for each Source. A group starts with its "same as?" questions and its conflicts.
+
+- Select **Same** when the element of this Source is the element that the other Source holds. Vellum binds the element to this Source and plans the proposals of the scan again. The values of this Source then come back as a change or a conflict.
+- Select **Not the same** when it is another thing. Vellum proposes it as a new element and does not ask again.
+- Select a conflict to see the value in the model, the value of this scan and the value of each other Source side by side.
+- Select **Accept all from this Source** to accept every addition, change and removal of the Source in one decision. It does not accept a conflict, a question, a match, a proposal about an entity that another Source holds, a change of a truth label, or anything that depends on one of them or on a rejected proposal. If an accepted item breaks something, the group names it. Select **I accept what this breaks. Accept all** to accept anyway.
+
+Select **Open full review** to decide the proposals of one Source one by one.
 
 ## Accept or reject
 
@@ -80,7 +96,13 @@ To decide a match:
 
 A match changes only the link between the fact and the model. It does not change the model.
 
-Vellum labels each accepted fact **Observed in source**. It records the repository, the commit, the file and lines, your account and the time. See [Evidence and truth labels](/concepts/evidence-and-truth-labels/).
+To answer a "same as?" question in the full review:
+
+1. Select the question.
+2. Select **Yes, the same element** or **No, another thing**.
+3. Select **Apply answers**.
+
+Vellum labels each accepted fact **Observed in source**. It records the repository, the commit, the file and lines, your account and the time. An accepted element is bound to its key in the Source. See [Evidence and truth labels](/concepts/evidence-and-truth-labels/).
 
 Vellum remembers a rejection. It proposes the same thing again when the source changes. It can also propose it again when a change to the extraction rules gives the fact a new key.
 
@@ -97,7 +119,7 @@ To see what a change in the code does to the model before you accept it, see [Ch
 
 ## Stale facts
 
-When a scan looks at the source of an accepted fact and no longer finds it, Vellum marks the fact **stale** and proposes its removal. The canvas shows the mark. The fact stays in the model until you accept the removal.
+When a scan looks at the source of an accepted fact and no longer finds it, Vellum marks the fact **stale** and proposes its removal. Only a scan of the same Source can do this. A fact that another Source still holds gets no mark. The canvas shows the mark. The fact stays in the model until you accept the removal.
 
 Vellum sets the mark only on a fact with the label **Observed in source**. A fact that a person declared gets a removal proposal and no mark.
 
@@ -128,6 +150,7 @@ The review shows a value that is not text as unformatted JSON.
 
 ## See also
 
+- [Sources, Snapshots and bindings](/concepts/sources-and-snapshots/)
 - [Import and review](/tutorials/import-and-review/)
 - [Connect GitHub](/how-to/connect-github/)
 - [Check change impact](/how-to/check-change-impact/)

@@ -500,9 +500,15 @@ public class ReviewFixTests(SharedOutboundHost shared) : IClassFixture<SharedOut
             Assert.IsType<CommandResult.Success>(recorded);
 
             var import = services.GetRequiredService<AppDbContext>();
+            var importSource = new SourceEntity
+            {
+                Id = Guid.NewGuid(), ProjectId = projectId, WorkspaceId = ai.WorkspaceId, Kind = SourceKind.Github, Name = repository,
+                Host = "github.com", Locator = repository, CreatedBy = "user:test", CreatedAt = DateTimeOffset.UtcNow,
+            };
+            import.Sources.Add(importSource);
             var scan = new ScanEntity
             {
-                Id = Guid.NewGuid(), ProjectId = projectId, WorkspaceId = ai.WorkspaceId, Host = "github.com", Repository = repository,
+                Id = Guid.NewGuid(), ProjectId = projectId, WorkspaceId = ai.WorkspaceId, SourceId = importSource.Id, Host = "github.com", Repository = repository,
                 CommitSha = "4f9a1c7", RepositoryIsPrivate = isPrivate, Limits = new ScanLimits(10, 10, 10, []).ToJson(),
                 Status = ScanStatus.Completed, RequestedBy = "user:test", CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow,
             };

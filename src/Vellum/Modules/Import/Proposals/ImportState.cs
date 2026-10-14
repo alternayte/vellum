@@ -47,18 +47,22 @@ internal sealed record ScanKindInfo(string Kind, string? Reason)
 /// read without a lock; <see cref="Stamp"/> lets the writer see, under the lock, whether it
 /// still holds.
 /// </summary>
+/// <param name="TakenEntityIds">Entities that a fact of this Source is linked to. A fact never matches one of them by name.</param>
+/// <param name="OtherSources">What the other Sources of the project accepted, by entity.</param>
 internal sealed record ImportState(
     IReadOnlyList<LinkInfo> Links,
     IReadOnlySet<Guid> TakenEntityIds,
     IReadOnlySet<(string FactKey, string Fingerprint)> Rejections,
     TrackedRefEntity? Tracked,
-    string Stamp)
+    string Stamp,
+    IReadOnlyDictionary<(string Kind, Guid Id), IReadOnlyList<OtherSourceFact>> OtherSources)
 {
     public static async Task<ImportState> LoadAsync(AppDbContext db, ScanEntity scan, CancellationToken ct)
     {
         var projectLinks = await db.FactLinks.AsNoTracking().Where(l => l.ProjectId == scan.ProjectId).ToListAsync(ct);
-        var links = projectLinks
-            .Where(l => l.Host == scan.Host && l.Repository == scan.Repository)
+        var sources = await db.Sources.AsNoTracking().Where(s => s.ProjectId == scan.ProjectId).ToListAsync(ct);
+        var mine = projectLinks.Where(l => l.Host == scan.Host && l.Repository == scan.Repository).ToList();
+        var links = mine
             .OrderBy(l => l.Id)
             .Select(l => new LinkInfo(
                 l.Id, FactMapping.KeyOf(l.Subject, l.FactKey), EnumText.Of(l.EntityKind), l.EntityId, l.CommitSha, l.RuleFingerprint,
@@ -82,11 +86,33 @@ internal sealed record ImportState(
             stamp.Append(rejection.Id).Append('\n');
         stamp.Append(tracked?.RefName).Append('|').Append(tracked?.SetAt.UtcTicks);
 
+        // Facts stay per Source: each other Source's accepted fact of an entity, as it was accepted.
+        var bySource = sources.ToDictionary(s => (s.Host, s.Locator));
+        var others = projectLinks
+            .Where(l => !(l.Host == scan.Host && l.Repository == scan.Repository))
+            .OrderBy(l => l.Host, StringComparer.Ordinal).ThenBy(l => l.Repository, StringComparer.Ordinal).ThenBy(l => l.Id)
+            .GroupBy(l => (EnumText.Of(l.EntityKind), l.EntityId))
+            .ToDictionary(g => g.Key, g => (IReadOnlyList<OtherSourceFact>)[.. g.Select(l => OtherOf(l, bySource.GetValueOrDefault((l.Host, l.Repository))))]);
+
         return new ImportState(
             links,
-            projectLinks.Select(l => l.EntityId).ToHashSet(),
+            mine.Select(l => l.EntityId).ToHashSet(),
             rejections.Select(r => (FactMapping.KeyOf(r.Subject, r.FactKey), r.Fingerprint)).ToHashSet(),
             tracked,
-            Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(stamp.ToString()))));
+            Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(stamp.ToString()))),
+            others);
+    }
+
+    private static OtherSourceFact OtherOf(FactLinkEntity link, SourceEntity? source)
+    {
+        var citationName = $"{link.Host}/{link.Repository}";
+        var first = ProposalJson.ReadEvidence(link.Evidence).FirstOrDefault();
+        return new OtherSourceFact(
+            source?.Id ?? Guid.Empty, citationName, source?.Name ?? link.Repository,
+            // Every link is a fact a scan read from the Source's files.
+            ProposalPlanner.ObservedInSource,
+            ProposalJson.ReadValues(link.Accepted), ProposalJson.ReadAttributes(link.Attributes),
+            first is null ? null : EvidenceLinks.Pointer(citationName, link.CommitSha, first),
+            link.AcceptedBy, link.AcceptedAt);
     }
 }

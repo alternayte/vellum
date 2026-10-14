@@ -18,7 +18,7 @@ namespace Vellum.Modules.Import.Proposals;
 /// </summary>
 internal sealed class ProposalApplier(
     ModelState state, Dictionary<Guid, (SchemaState State, long Version)> schemas,
-    Guid projectId, string repository, string commitSha, Guid acceptedBy, DateTimeOffset acceptedAt)
+    Guid projectId, string repository, string commitSha, Guid acceptedBy, DateTimeOffset acceptedAt, Guid sourceId)
 {
     public const string ChangedSinceScan =
         "The model changed after this scan completed, so the proposal no longer describes it. Scan the repository again.";
@@ -68,7 +68,8 @@ internal sealed class ProposalApplier(
             return Run(p, ModelDecider.AddElement(State, new AddElementCommand(
                     id, kind, Text(proposed, Field.Name) ?? "", null, Text(proposed, Field.Technology), null,
                     ElementStatus.Current, Id(proposed, Field.ParentId) is { } parent ? new ElementId(parent) : null, []))
-                .Then(State, after => ModelDecider.RecordElementProvenance(after, id, FactStatus.ObservedInSource, provenance)));
+                .Then(State, after => ModelDecider.RecordElementProvenance(after, id, FactStatus.ObservedInSource, provenance))
+                .Then(State, after => ModelDecider.BindElementSource(after, id, sourceId, ExternalKeyOf(p))));
         }
 
         if (!State.Elements.TryGetValue(id, out var element) || Differs(ModelIndex.Of(element), current))
@@ -94,8 +95,30 @@ internal sealed class ProposalApplier(
         return Run(p, ModelDecider.UpdateElement(State, new UpdateElementCommand(
                 id, Name: Text(proposed, Field.Name), SetName: true,
                 Technology: Text(proposed, Field.Technology), SetTechnology: true))
-            .Then(State, after => ModelDecider.RecordElementProvenance(after, id, FactStatus.ObservedInSource, provenance)));
+            .Then(State, after => ModelDecider.RecordElementProvenance(after, id, FactStatus.ObservedInSource, provenance))
+            .Then(State, after => ModelDecider.BindElementSource(after, id, sourceId, ExternalKeyOf(p))));
     }
+
+    /// <summary>
+    /// A "yes" to "same as X?": the element is bound to the key of this Source, and nothing
+    /// else changes. The values of the Source are proposed by the next plan of the scan.
+    /// </summary>
+    public string? Bind(ProposalEntity p)
+    {
+        if (p.Action != ProposalAction.Bind || p.EntityKind != StoredEntityKind.Element)
+            return "This proposal is no question of the form 'same as this element?'.";
+        if (!State.Elements.TryGetValue(p.EntityId, out var element)
+            || Differs(ModelIndex.Of(element), p.Current is null ? null : JsonNode.Parse(p.Current)!.AsObject()))
+            return ChangedSinceScan;
+        var decision = ModelDecider.BindElementSource(State, p.EntityId, sourceId, ExternalKeyOf(p));
+        if (decision is not Decision.Success success)
+            return Describe(decision);
+        ModelEvents.AddRange(success.Value);
+        State = success.Value.Aggregate(State, ModelState.Evolve);
+        return null;
+    }
+
+    private static string ExternalKeyOf(ProposalEntity p) => FactMapping.ExternalKey(FactMapping.KeyOf(p.Subject, p.FactKey));
 
     private string? Operation(ProposalEntity p, JsonObject? proposed, JsonObject? current, Provenance? provenance)
     {
