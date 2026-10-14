@@ -1,11 +1,11 @@
-using Deedbox;
 using Microsoft.EntityFrameworkCore;
 using Vellum.Modules.Modelling.Model;
+using Vellum.Shared;
 using Decision = Vellum.Shared.CommandResult<System.Collections.Generic.IReadOnlyList<object>>;
 
 namespace Vellum.Modules.Costs;
 
-/// <param name="Events">The events that make the sheet of main hold the merged sheet. Empty when the draft changed nothing.</param>
+/// <param name="Events">The changes that make the sheet of main hold the merged sheet. Empty when the draft changed nothing.</param>
 /// <param name="Conflicts">Why the two sheets do not merge, one sentence part for each cause. The merge is refused while this is not empty.</param>
 public sealed record SheetMergePlan(IReadOnlyList<object> Events, IReadOnlyList<string> Conflicts);
 
@@ -38,11 +38,11 @@ public static class SheetMerge
         var conflicts = new List<string>();
 
         Merge(ancestor?.Assumptions ?? [], main.Assumptions, draft.Assumptions, a => a.Id, a => a.Name, "assumption",
-            a => new CostEvent.AssumptionAdded(a, userId, now), a => new CostEvent.AssumptionChanged(a, userId, now),
-            id => new CostEvent.AssumptionRemoved(id, userId, now), events, conflicts);
+            a => new CostChange.AssumptionAdded(a, userId, now), a => new CostChange.AssumptionChanged(a, userId, now),
+            id => new CostChange.AssumptionRemoved(id, userId, now), events, conflicts);
         Merge(ancestor?.Resources ?? [], main.Resources, draft.Resources, r => r.Id, r => r.Name, "resource",
-            r => new CostEvent.ResourceAdded(r, userId, now), r => new CostEvent.ResourceChanged(r, userId, now),
-            id => new CostEvent.ResourceRemoved(id, userId, now), events, conflicts);
+            r => new CostChange.ResourceAdded(r, userId, now), r => new CostChange.ResourceChanged(r, userId, now),
+            id => new CostChange.ResourceRemoved(id, userId, now), events, conflicts);
 
         // The rules of a sheet that a decider checks for one change hold for the merged sheet too.
         var merged = events.Aggregate(main, CostSheetState.Evolve);
@@ -62,12 +62,12 @@ public static class SheetMerge
         if (conflicts.Count > 0)
             return new SheetMergePlan([], conflicts);
         if (events.Count > 0 && main.ProjectId is null)
-            events.Insert(0, new CostEvent.SheetOpened(projectId, mainBranch, userId, now));
+            events.Insert(0, new CostChange.SheetOpened(projectId, mainBranch, userId, now));
         return new SheetMergePlan(events, []);
     }
 
     public static SheetMergePreview Preview(SheetMergePlan plan) =>
-        new(plan.Events.Count(e => e is not CostEvent.SheetOpened), plan.Conflicts);
+        new(plan.Events.Count(e => e is not CostChange.SheetOpened), plan.Conflicts);
 
     /// <summary>The refusal of a merge as one text, or null when the sheets merge.</summary>
     public static string? Refusal(SheetMergePlan plan)
@@ -114,38 +114,49 @@ public static class SheetMerge
 
 /// <summary>
 /// What the cost module does when a model branch is forked, merged or closed. Each method
-/// runs on the store and in the transaction of its caller, so the sheet changes commit with
-/// the change of the branch or not at all.
+/// runs in the transaction of its caller, so the sheet changes commit with the change of the
+/// branch or not at all.
 /// </summary>
 public static class CostBranches
 {
+    // Any constant works; it keeps this lock apart from other advisory locks in the database.
+    private const int LockSpace = 0x434F5354;
+
     /// <summary>
-    /// Locks the sheet of a branch until the commit and returns it. A unit that also writes
-    /// model streams asks for this lock with its other stream locks, in stream-ID order,
-    /// before its first append (see <see cref="Vellum.Shared.SharedTransaction"/>).
+    /// Locks the sheets of the branches until the commit, in ascending branch-ID order, and
+    /// returns them. The lock is an advisory lock on the branch, so a branch with no sheet
+    /// yet is locked too. A unit that also writes model streams takes it after its stream
+    /// locks and before its first append (see <see cref="Vellum.Shared.SharedTransaction"/>).
+    /// A writer of one sheet takes no other lock while it holds this one.
     /// </summary>
-    public static async Task<(CostSheetState State, long Version)> LockSheetAsync(IEventStore store, Guid sheetStreamId, CancellationToken ct)
+    public static async Task<Dictionary<Guid, (CostSheetState State, long Version)>> LockSheetsAsync(
+        AppDbContext db, IEnumerable<Guid> branches, CancellationToken ct)
     {
-        try
+        var sheets = new Dictionary<Guid, (CostSheetState State, long Version)>();
+        foreach (var branch in branches.Distinct().Order())
         {
-            var locked = await store.Execute<CostSheetState>(StreamId.From(sheetStreamId), _ => [], ct);
-            return (locked.State, locked.Version);
+            await db.Database.ExecuteSqlAsync($"SELECT pg_advisory_xact_lock({LockSpace}, hashtext({branch.ToString()}))", ct);
+            sheets[branch] = await CostAccess.LoadSheetAsync(db, branch, ct);
         }
-        catch (DeedboxException ex) when (ex.Code == DeedboxError.StreamDeleted)
-        {
-            // The branch was closed by a writer that held the lock first. Its sheet is gone.
-            return (CostSheetState.Initial, 0);
-        }
+
+        return sheets;
     }
+
+    /// <summary>
+    /// True when the branch is a draft that was merged or abandoned. Its sheet is gone, and a
+    /// writer that waited for the lock of the sheet while the branch closed writes nothing.
+    /// </summary>
+    public static Task<bool> IsClosedAsync(AppDbContext db, Guid branch, CancellationToken ct) =>
+        db.Drafts.AnyAsync(d => d.StreamId == branch && d.Status != "open", ct);
 
     /// <summary>
     /// Gives a new branch a copy of <paramref name="source"/>, the sheet of
     /// <paramref name="fromBranch"/>. A resource whose element is not in
     /// <paramref name="model"/>, the model of the new branch, is left out. A source with no
-    /// sheet gives no sheet.
+    /// sheet gives no sheet. The branch is new and no other writer knows it, so no lock is taken.
     /// </summary>
     public static async Task ForkAsync(
-        IEventStore store, Guid projectId, Guid branch, ModelState model,
+        AppDbContext db, Guid projectId, Guid branch, ModelState model,
         CostSheetState source, Guid fromBranch, long fromVersion, string userId, DateTimeOffset now, CancellationToken ct)
     {
         if (fromVersion == 0)
@@ -153,28 +164,28 @@ public static class CostBranches
         var copy = (Decision.Success)CostDecider.Copy(
             CostSheetState.Initial, projectId, branch, source, fromBranch, fromVersion,
             CostAccess.World(model, new HashSet<Guid>()), userId, now);
-        await store.Append(StreamId.From(CostAccess.SheetStreamId(branch)), ExpectedVersion.NoStream, copy.Value, ct);
-    }
-
-    /// <summary>Appends the events of a merge plan to the sheet of main, which the caller locked at <paramref name="version"/>.</summary>
-    public static async Task ApplyAsync(IEventStore store, Guid mainBranch, long version, SheetMergePlan plan, CancellationToken ct)
-    {
-        if (plan.Events.Count == 0)
-            return;
-        await store.Append(
-            StreamId.From(CostAccess.SheetStreamId(mainBranch)),
-            version == 0 ? ExpectedVersion.NoStream : ExpectedVersion.Exact(version), plan.Events, ct);
+        await CostAccess.SaveSheetAsync(db, projectId, branch, CostSheetState.Initial, 0, copy.Value, now, ct);
     }
 
     /// <summary>
-    /// Deletes what the cost module holds for a branch that is closed: the sheet stream, its
-    /// index row and the saved estimates. A closed branch resolves for no request, so nothing
-    /// could read them again. <paramref name="db"/> is the context whose transaction the
-    /// caller opened; the rows go on its connection.
+    /// Applies a merge plan to <paramref name="main"/>, the sheet of main that the caller
+    /// locked at <paramref name="version"/>.
     /// </summary>
-    public static async Task CloseAsync(DbContext db, IEventStore store, Guid projectId, Guid branch, CancellationToken ct)
+    public static async Task ApplyAsync(
+        AppDbContext db, Guid projectId, Guid mainBranch, CostSheetState main, long version, SheetMergePlan plan, DateTimeOffset now, CancellationToken ct)
     {
-        await store.DeleteStream(StreamId.From(CostAccess.SheetStreamId(branch)), ct);
+        if (plan.Events.Count == 0)
+            return;
+        await CostAccess.SaveSheetAsync(db, projectId, mainBranch, main, version, plan.Events, now, ct);
+    }
+
+    /// <summary>
+    /// Deletes what the cost module holds for a branch that is closed: the sheet and the
+    /// saved estimates. A closed branch resolves for no request, so nothing could read them
+    /// again. <paramref name="db"/> is the context whose transaction the caller opened.
+    /// </summary>
+    public static async Task CloseAsync(DbContext db, Guid projectId, Guid branch, CancellationToken ct)
+    {
         await db.Database.ExecuteSqlAsync($"DELETE FROM costs.sheets WHERE project_id = {projectId} AND branch_id = {branch}", ct);
         await db.Database.ExecuteSqlAsync($"DELETE FROM costs.estimates WHERE project_id = {projectId} AND branch_id = {branch}", ct);
     }

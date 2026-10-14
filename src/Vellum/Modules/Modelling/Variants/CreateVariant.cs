@@ -128,17 +128,17 @@ public static class CreateVariant
 
             // Read before the first append, like every other stream this unit reads.
             var sheetBranch = sheetFrom ?? baseStreamId;
-            var (sheet, sheetVersion) = await CostAccess.LoadSheetAsync(branches, sheetBranch, ct);
+            var (sheet, sheetVersion) = await CostAccess.LoadSheetAsync(db, sheetBranch, ct);
 
             // One append. Deedbox saves the variant row in the transaction, and the inline
             // projection writes the branch rows in it.
             await branches.Append(
                 StreamId.From(variant.StreamId), ExpectedVersion.NoStream,
                 [ModelStore.Fork(sourceState, baseStreamId, forkVersion)], ct);
-            // The variant starts with a copy of the cost sheet. The stream of that copy is new
-            // and no other writer knows it, so this append waits for no lock.
+            // The variant starts with a copy of the cost sheet. The branch is new and no other
+            // writer knows it, so this write waits for no lock.
             await CostBranches.ForkAsync(
-                branches, projectId, variant.StreamId, sourceState, sheet, sheetBranch, sheetVersion, userId, variant.CreatedAt, ct);
+                db, projectId, variant.StreamId, sourceState, sheet, sheetBranch, sheetVersion, userId, variant.CreatedAt, ct);
             await transaction.CommitAsync(ct);
 
             return Results.Created(

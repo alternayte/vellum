@@ -97,9 +97,7 @@ builder.Services.AddDeedbox(deedbox => deedbox
     .AddSchemaStreams()
     .AddScenarioStreams()
     .AddPromiseStreams()
-    .AddCostStreams()
-    .AddDecisionStreams()
-    .AddLoadTestStreams());
+    .AddDecisionStreams());
 
 // Build-time OpenAPI generation starts the host with no database. Deedbox checks its
 // schema when the host starts, so its hosted services do not run in that process.

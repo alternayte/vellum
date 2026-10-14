@@ -1,20 +1,21 @@
-using Deedbox;
 using Microsoft.EntityFrameworkCore;
 using Vellum.Shared;
 
 namespace Vellum.Modules.Costs;
 
 /// <summary>
-/// The index of the cost sheets: which stream holds the sheet of which branch of which
-/// project. The sheet itself is read from its stream. Project deletion finds the streams here.
+/// The cost sheet of one model branch of one project. A branch has at most one sheet; a
+/// branch with no row has an empty sheet at version 0.
 /// </summary>
 public class SheetEntity
 {
-    /// <summary>The ID of the sheet stream.</summary>
-    public Guid Id { get; set; }
-    public Guid ProjectId { get; set; }
     /// <summary>The ID of the model stream of the branch: the main stream, a draft or a variant.</summary>
     public Guid BranchId { get; set; }
+    public Guid ProjectId { get; set; }
+    /// <summary>The number of changes that made the sheet. Each write adds the number of its changes.</summary>
+    public long Version { get; set; }
+    /// <summary>A JSON <see cref="CostSheetState"/>.</summary>
+    public string Document { get; set; } = null!;
     public DateTimeOffset OpenedAt { get; set; }
 }
 
@@ -89,8 +90,10 @@ public static class CostsTables
         modelBuilder.Entity<SheetEntity>(b =>
         {
             b.ToTable("sheets", Schema);
-            b.HasKey(s => s.Id);
-            b.HasIndex(s => new { s.ProjectId, s.BranchId }).IsUnique();
+            b.HasKey(s => s.BranchId);
+            b.Property(s => s.BranchId).ValueGeneratedNever();
+            b.Property(s => s.Document).HasColumnType("jsonb");
+            b.HasIndex(s => s.ProjectId);
         });
 
         modelBuilder.Entity<PriceEntryEntity>(b =>
@@ -118,21 +121,4 @@ public static class CostsTables
             b.HasIndex(e => new { e.ProjectId, e.BranchId, e.SavedAt });
         });
     }
-}
-
-/// <summary>Keeps the sheet index. It runs inline, so the row commits with the first event of the sheet.</summary>
-public sealed class CostSheetProjection : Projection<AppDbContext>
-{
-    public CostSheetProjection()
-    {
-        On<CostEvent.SheetOpened>(async (opened, ctx) =>
-        {
-            var id = Guid.Parse(ctx.StreamId);
-            if (await ctx.Db.Sheets.FindAsync([id], ctx.CancellationToken) is null)
-                ctx.Db.Sheets.Add(new SheetEntity { Id = id, ProjectId = opened.ProjectId, BranchId = opened.BranchId, OpenedAt = opened.At });
-        });
-    }
-
-    protected override async Task ResetAsync(WriteContext<AppDbContext> context) =>
-        await context.Db.Sheets.ExecuteDeleteAsync(context.CancellationToken);
 }

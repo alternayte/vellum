@@ -164,7 +164,7 @@ public static class MeasuredResults
 
         // A result is attributed to a target only while the authorisation that the script was generated under is in
         // force. A later authorisation, by any person, is another one: it does not admit the scripts of an earlier one.
-        var target = await Targets.LoadAsync(store, projectId, script.TargetId, ct);
+        var target = await Targets.LoadAsync(db, projectId, script.TargetId, ct);
         if (target?.State.AuthorisationInForce is not { } authorisation || authorisation.BaseUrl != script.BaseUrl || authorisation.Environment != script.Environment
             || authorisation.By != script.AuthorisedBy || (authorisation.At - script.AuthorisedAt).Duration() >= StoredTimePrecision)
         {

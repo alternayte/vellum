@@ -1,4 +1,3 @@
-using Deedbox;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Vellum.Modules.Identity.AgentTokens;
@@ -21,11 +20,6 @@ public static class LoadTestsModule
         services.AddScoped<IProjectRetention, LoadTestRetention>();
         return services;
     }
-
-    /// <summary>One stream per target, keyed by the target ID.</summary>
-    public static DeedboxBuilder AddLoadTestStreams(this DeedboxBuilder deedbox) => deedbox
-        .Stream<TargetState>("load_test_target", stream => stream.EventsNestedIn(typeof(TargetEvent)))
-        .Projection<TargetProjection>("load_test_target_read_model", Run.Inline);
 
     public static WebApplication MapLoadTestEndpoints(this WebApplication app)
     {
@@ -83,12 +77,12 @@ public static class LoadTestsModule
 }
 
 /// <summary>Load-test data does not outlive its project.</summary>
-public sealed class LoadTestRetention(AppDbContext db, IEventStore store) : IProjectRetention
+public sealed class LoadTestRetention(AppDbContext db) : IProjectRetention
 {
     /// <summary>
-    /// Deletes the results, the scripts and the targets of a project. The row of a target goes
-    /// with its stream. A delete that is cut short leaves rows and streams that no request
-    /// reaches: every load-test endpoint resolves the project first.
+    /// Deletes the results, the scripts and the targets of a project. A delete that is cut
+    /// short leaves rows that no request reaches: every load-test endpoint resolves the
+    /// project first.
     /// </summary>
     public async Task DeleteProjectAsync(DeletedProject project, CancellationToken ct)
     {
@@ -103,8 +97,6 @@ public sealed class LoadTestRetention(AppDbContext db, IEventStore store) : IPro
             await transaction.CommitAsync(ct);
         }
 
-        foreach (var targetId in await db.Targets.AsNoTracking().Where(t => t.ProjectId == projectId).Select(t => t.Id).ToListAsync(ct))
-            await store.DeleteStream(StreamId.From(targetId), ct);
         await db.Targets.Where(t => t.ProjectId == projectId).ExecuteDeleteAsync(ct);
     }
 }

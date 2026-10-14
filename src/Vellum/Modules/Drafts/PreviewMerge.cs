@@ -49,8 +49,8 @@ public static class PreviewMerge
 
         var result = ThreeWayMerge.Compute(baseState, oursState, theirsState);
 
-        var (oursSheet, _) = await CostAccess.LoadSheetAsync(store, draft.BaseStreamId, ct);
-        var (theirsSheet, _) = await CostAccess.LoadSheetAsync(store, draft.StreamId, ct);
+        var (oursSheet, _) = await CostAccess.LoadSheetAsync(db, draft.BaseStreamId, ct);
+        var (theirsSheet, _) = await CostAccess.LoadSheetAsync(db, draft.StreamId, ct);
         var sheet = SheetMerge.Preview(SheetMerge.Plan(oursSheet, theirsSheet, projectId, draft.BaseStreamId, userId, DateTimeOffset.UtcNow));
 
         return Results.Ok(new MergePreviewResponse(result.AutoResolved, result.Conflicts, checked((int)mainVersion), sheet));

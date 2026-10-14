@@ -1,6 +1,4 @@
 using Deedbox.Testing;
-using Vellum.Modules.Costs;
-using Vellum.Modules.LoadTests;
 using Vellum.Modules.Modelling;
 using Vellum.Modules.Promises;
 using Vellum.Modules.Review;
@@ -17,5 +15,5 @@ public class EventContractTests
     /// </summary>
     [Fact]
     public void Event_contracts_are_stable() =>
-        EventContracts.Verify(deedbox => deedbox.AddModelStreams().AddSchemaStreams().AddScenarioStreams().AddPromiseStreams().AddCostStreams().AddDecisionStreams().AddLoadTestStreams(), "events.lock");
+        EventContracts.Verify(deedbox => deedbox.AddModelStreams().AddSchemaStreams().AddScenarioStreams().AddPromiseStreams().AddDecisionStreams(), "events.lock");
 }

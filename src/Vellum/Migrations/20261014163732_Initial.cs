@@ -890,14 +890,15 @@ namespace Vellum.Migrations
                 schema: "costs",
                 columns: table => new
                 {
-                    id = table.Column<Guid>(type: "uuid", nullable: false),
-                    project_id = table.Column<Guid>(type: "uuid", nullable: false),
                     branch_id = table.Column<Guid>(type: "uuid", nullable: false),
+                    project_id = table.Column<Guid>(type: "uuid", nullable: false),
+                    version = table.Column<long>(type: "bigint", nullable: false),
+                    document = table.Column<string>(type: "jsonb", nullable: false),
                     opened_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false)
                 },
                 constraints: table =>
                 {
-                    table.PrimaryKey("pk_sheets", x => x.id);
+                    table.PrimaryKey("pk_sheets", x => x.branch_id);
                 });
 
             migrationBuilder.CreateTable(
@@ -1875,11 +1876,10 @@ namespace Vellum.Migrations
                 unique: true);
 
             migrationBuilder.CreateIndex(
-                name: "ix_sheets_project_id_branch_id",
+                name: "ix_sheets_project_id",
                 schema: "costs",
                 table: "sheets",
-                columns: new[] { "project_id", "branch_id" },
-                unique: true);
+                column: "project_id");
 
             migrationBuilder.CreateIndex(
                 name: "ix_snapshot_facts_scan_id_disposition_seq",

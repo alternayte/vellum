@@ -33,7 +33,7 @@ public static class AbandonDraft
                 .FirstOrDefaultAsync(ct);
             if (found is null)
                 return Results.NotFound(new ErrorResponse("not_found", "Draft not found"));
-            // A closed draft has no cost sheet stream to lock. The status is read again under the lock.
+            // The status is read again under the lock.
             if (found.Status != "open")
                 return Results.Conflict(new ErrorResponse("conflict", $"Draft is already {found.Status}"));
 
@@ -41,17 +41,11 @@ public static class AbandonDraft
             await using var transaction = await db.Database.BeginTransactionAsync(ct);
             var store = services.GetRequiredService<IEventStore>().ForProject(projectId).UseDbContext(db);
 
-            // The draft's model stream and its cost sheet stream stay locked until the commit,
-            // in ID order, so a merge of this draft and this abandon take turns. The status is
-            // read under that lock.
-            var sheetId = CostAccess.SheetStreamId(found.StreamId);
-            foreach (var streamId in new[] { found.StreamId, sheetId }.Order())
-            {
-                if (streamId == sheetId)
-                    await CostBranches.LockSheetAsync(store, streamId, ct);
-                else
-                    await store.Execute<ModelState>(StreamId.From(streamId), _ => [], ct);
-            }
+            // The draft's model stream and then its cost sheet stay locked until the commit, so
+            // a merge of this draft and this abandon take turns, and a write of the sheet that
+            // waits for the lock finds the draft closed. The status is read under that lock.
+            await store.Execute<ModelState>(StreamId.From(found.StreamId), _ => [], ct);
+            await CostBranches.LockSheetsAsync(db, [found.StreamId], ct);
 
             var draft = await db.Drafts.FirstAsync(d => d.Id == draftId, ct);
             if (draft.Status != "open")
@@ -64,7 +58,7 @@ public static class AbandonDraft
             // drops the draft's rows.
             await store.Append(
                 StreamId.From(draft.StreamId), ExpectedVersion.Any, [new ModelEvent.BranchClosed(draft.StreamId)], ct);
-            await CostBranches.CloseAsync(db, store, projectId, draft.StreamId, ct);
+            await CostBranches.CloseAsync(db, projectId, draft.StreamId, ct);
 
             await transaction.CommitAsync(ct);
             return Results.Ok(CreateDraft.ToDto(draft));

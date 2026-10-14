@@ -1,7 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json.Nodes;
-using Deedbox;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Vellum.Modules.Costs;
@@ -274,20 +273,14 @@ public class CostEndpointTests(IntegrationFixture fixture) : IClassFixture<Integ
             $"/api/projects/{projectId}/drafts/{draft.Id}/merge/execute",
             new { resolutions = Array.Empty<object>(), expectedMainVersion = (await PreviewAsync(draft))["mainVersion"]!.GetValue<int>() });
 
-        async Task<(bool Sheet, bool Estimates, bool Stream)> CostDataAsync(DraftDto draft)
+        // Sheet: the row of the draft's sheet. Readable: the sheet that the app reads for the draft holds anything.
+        async Task<(bool Sheet, bool Estimates, bool Readable)> CostDataAsync(DraftDto draft)
         {
             using var scope = factory.Services.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-            var stream = true;
-            try
-            {
-                await scope.ServiceProvider.GetRequiredService<IEventStore>().Load<CostSheetState>(StreamId.From(CostAccess.SheetStreamId(draft.StreamId)));
-            }
-            catch (DeedboxException)
-            {
-                stream = false;
-            }
-            return (await db.Sheets.AnyAsync(s => s.BranchId == draft.StreamId), await db.Estimates.AnyAsync(e => e.BranchId == draft.StreamId), stream);
+            var (read, version) = await CostAccess.LoadSheetAsync(db, draft.StreamId, default);
+            return (await db.Sheets.AnyAsync(s => s.BranchId == draft.StreamId), await db.Estimates.AnyAsync(e => e.BranchId == draft.StreamId),
+                version > 0 || read.Resources.Count > 0 || read.Assumptions.Count > 0);
         }
 
         // The draft adds an element with a resource and changes the API. Main changes the worker.
@@ -477,7 +470,7 @@ public class CostEndpointTests(IntegrationFixture fixture) : IClassFixture<Integ
 
         using var scope = factory.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        var sheets = await db.Sheets.AsNoTracking().Where(s => s.ProjectId == projectId).Select(s => s.Id).ToListAsync();
+        var sheets = await db.Sheets.AsNoTracking().Where(s => s.ProjectId == projectId).Select(s => s.BranchId).ToListAsync();
         Assert.Equal(2, sheets.Count);
 
         await Status(HttpStatusCode.NoContent, owner.DeleteAsync($"/api/projects/{projectId}"), "delete project");
@@ -485,9 +478,11 @@ public class CostEndpointTests(IntegrationFixture fixture) : IClassFixture<Integ
         Assert.False(await db.Sheets.AnyAsync(s => s.ProjectId == projectId));
         Assert.False(await db.Estimates.AnyAsync(e => e.ProjectId == projectId));
         Assert.False(await db.Pins.AnyAsync(p => p.ProjectId == projectId));
-        var store = scope.ServiceProvider.GetRequiredService<IEventStore>();
         foreach (var sheet in sheets)
-            await Assert.ThrowsAsync<DeedboxException>(() => store.Load<CostSheetState>(StreamId.From(sheet)));
+        {
+            var (read, version) = await CostAccess.LoadSheetAsync(db, sheet, default);
+            Assert.Equal((0L, 0, 0), (version, read.Resources.Count, read.Assumptions.Count));
+        }
 
         // The pin is gone with the project, so the entry can be deleted; until then it is in the book.
         Assert.Single((await Ok(owner.GetAsync(Prices(workspaceId))))["items"]!.AsArray());

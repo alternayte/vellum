@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using Deedbox;
 using Vellum.Modules.Modelling.Model;
 
 namespace Vellum.Modules.Costs;
@@ -79,10 +78,13 @@ public sealed record CostAssumption(
     Guid Id, string Name, string Kind, Guid? SubjectId, decimal Value, string Unit,
     string Label, string? Source, DateOnly EffectiveDate);
 
-/// <summary>The events of a cost sheet stream. Plain records; the stream registers every nested type.</summary>
-public static class CostEvent
+/// <summary>
+/// The changes that a decision about a cost sheet makes. They are not stored: the row of the
+/// sheet holds the state after them, and its version counts them.
+/// </summary>
+public static class CostChange
 {
-    /// <summary>The first event of a sheet. It names the project and the model branch the sheet belongs to.</summary>
+    /// <summary>The first change of a sheet. It names the project and the model branch the sheet belongs to.</summary>
     public sealed record SheetOpened(Guid ProjectId, Guid BranchId, string By, DateTimeOffset At);
 
     public sealed record ResourceAdded(CostResource Resource, string By, DateTimeOffset At);
@@ -121,32 +123,31 @@ public sealed record CostSheetState(
     ImmutableList<CostAssumption> Assumptions,
     DateTimeOffset? UpdatedAt,
     SheetBase? Base)
-    : IState<CostSheetState>
 {
     public static CostSheetState Initial => new(null, null, [], [], null, null);
 
-    public static CostSheetState Evolve(CostSheetState state, object @event) => @event switch
+    public static CostSheetState Evolve(CostSheetState state, object change) => change switch
     {
-        CostEvent.SheetOpened e => state with { ProjectId = e.ProjectId, BranchId = e.BranchId, UpdatedAt = e.At },
-        CostEvent.ResourceAdded e => state with { Resources = state.Resources.Add(e.Resource), UpdatedAt = e.At },
-        CostEvent.ResourceChanged e => state with
+        CostChange.SheetOpened e => state with { ProjectId = e.ProjectId, BranchId = e.BranchId, UpdatedAt = e.At },
+        CostChange.ResourceAdded e => state with { Resources = state.Resources.Add(e.Resource), UpdatedAt = e.At },
+        CostChange.ResourceChanged e => state with
         {
             Resources = state.Resources.FindIndex(r => r.Id == e.Resource.Id) is >= 0 and var index
                 ? state.Resources.SetItem(index, e.Resource)
                 : state.Resources,
             UpdatedAt = e.At,
         },
-        CostEvent.ResourceRemoved e => state with { Resources = state.Resources.RemoveAll(r => r.Id == e.ResourceId), UpdatedAt = e.At },
-        CostEvent.AssumptionAdded e => state with { Assumptions = state.Assumptions.Add(e.Assumption), UpdatedAt = e.At },
-        CostEvent.AssumptionChanged e => state with
+        CostChange.ResourceRemoved e => state with { Resources = state.Resources.RemoveAll(r => r.Id == e.ResourceId), UpdatedAt = e.At },
+        CostChange.AssumptionAdded e => state with { Assumptions = state.Assumptions.Add(e.Assumption), UpdatedAt = e.At },
+        CostChange.AssumptionChanged e => state with
         {
             Assumptions = state.Assumptions.FindIndex(a => a.Id == e.Assumption.Id) is >= 0 and var index
                 ? state.Assumptions.SetItem(index, e.Assumption)
                 : state.Assumptions,
             UpdatedAt = e.At,
         },
-        CostEvent.AssumptionRemoved e => state with { Assumptions = state.Assumptions.RemoveAll(a => a.Id == e.AssumptionId), UpdatedAt = e.At },
-        CostEvent.SheetCopied e => state with
+        CostChange.AssumptionRemoved e => state with { Assumptions = state.Assumptions.RemoveAll(a => a.Id == e.AssumptionId), UpdatedAt = e.At },
+        CostChange.SheetCopied e => state with
         {
             Resources = e.Resources,
             Assumptions = e.Assumptions,

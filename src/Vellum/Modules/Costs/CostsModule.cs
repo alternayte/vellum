@@ -1,5 +1,4 @@
 using System.Threading.RateLimiting;
-using Deedbox;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -40,14 +39,6 @@ public static class CostsModule
                 _ => new FixedWindowRateLimiterOptions { PermitLimit = PriceFetchPermits, Window = PriceFetchWindow, QueueLimit = 0 })));
         return services;
     }
-
-    /// <summary>One stream per cost sheet: the sheet of one model branch of one project.</summary>
-    public static DeedboxBuilder AddCostStreams(this DeedboxBuilder deedbox) => deedbox
-        .Stream<CostSheetState>("cost_sheet", stream => stream
-            .EventsNestedIn(typeof(CostEvent))
-            // Version 2 of the state added what a sheet held right after its last copy.
-            .StateVersion(2))
-        .Projection<CostSheetProjection>("cost_sheet_index", Run.Inline);
 
     public static WebApplication MapCostEndpoints(this WebApplication app)
     {
@@ -101,25 +92,19 @@ public static class CostsModule
 }
 
 /// <summary>Cost data does not outlive its project.</summary>
-public sealed class CostRetention(AppDbContext db, IEventStore store) : IProjectRetention
+public sealed class CostRetention(AppDbContext db) : IProjectRetention
 {
     /// <summary>
     /// Deletes the saved estimates, the pins and the cost sheets of a project. The sheet and
     /// the saved estimates of a draft go earlier, when the draft is merged or abandoned (see
-    /// <see cref="CostBranches.CloseAsync"/>). The index row
-    /// of a sheet goes after its stream. A delete that is cut short leaves rows and streams
-    /// that no request reaches: every cost endpoint resolves the project first.
+    /// <see cref="CostBranches.CloseAsync"/>). A delete that is cut short leaves rows that no
+    /// request reaches: every cost endpoint resolves the project first.
     /// </summary>
     public async Task DeleteProjectAsync(DeletedProject project, CancellationToken ct)
     {
         var projectId = project.Id;
         await db.Estimates.Where(e => e.ProjectId == projectId).ExecuteDeleteAsync(ct);
         await db.Pins.Where(p => p.ProjectId == projectId).ExecuteDeleteAsync(ct);
-
-        foreach (var sheetId in await db.Sheets.AsNoTracking().Where(s => s.ProjectId == projectId).Select(s => s.Id).ToListAsync(ct))
-        {
-            await store.DeleteStream(StreamId.From(sheetId), ct);
-            await db.Sheets.Where(s => s.Id == sheetId).ExecuteDeleteAsync(ct);
-        }
+        await db.Sheets.Where(s => s.ProjectId == projectId).ExecuteDeleteAsync(ct);
     }
 }

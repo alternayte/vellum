@@ -52,7 +52,7 @@ public static class Scripts
             var profileRow = await db.Profiles.AsNoTracking().FirstOrDefaultAsync(p => p.Id == request.ProfileId && p.ProjectId == projectId, ct);
             if (profileRow is null)
                 return Targets.NotFound("Stress profile");
-            if (await Targets.LoadAsync(store, projectId, request.TargetId, ct) is not (var target, _))
+            if (await Targets.LoadAsync(db, projectId, request.TargetId, ct) is not (var target, _))
                 return Targets.NotFound("Load-test target");
 
             var profile = StressProfiles.Read(profileRow.Document);

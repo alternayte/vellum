@@ -610,14 +610,14 @@ namespace Vellum.Migrations
 
             modelBuilder.Entity("Vellum.Modules.Costs.SheetEntity", b =>
                 {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid")
-                        .HasColumnName("id");
-
                     b.Property<Guid>("BranchId")
                         .HasColumnType("uuid")
                         .HasColumnName("branch_id");
+
+                    b.Property<string>("Document")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("document");
 
                     b.Property<DateTimeOffset>("OpenedAt")
                         .HasColumnType("timestamp with time zone")
@@ -627,12 +627,15 @@ namespace Vellum.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("project_id");
 
-                    b.HasKey("Id")
+                    b.Property<long>("Version")
+                        .HasColumnType("bigint")
+                        .HasColumnName("version");
+
+                    b.HasKey("BranchId")
                         .HasName("pk_sheets");
 
-                    b.HasIndex("ProjectId", "BranchId")
-                        .IsUnique()
-                        .HasDatabaseName("ix_sheets_project_id_branch_id");
+                    b.HasIndex("ProjectId")
+                        .HasDatabaseName("ix_sheets_project_id");
 
                     b.ToTable("sheets", "costs");
                 });

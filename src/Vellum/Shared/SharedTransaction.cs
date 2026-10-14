@@ -22,6 +22,13 @@ namespace Vellum.Shared;
 /// unit with more.
 /// </para>
 /// <para>
+/// A cost sheet is a row, not a stream. Its lock is an advisory lock on its branch
+/// (<c>CostBranches.LockSheetsAsync</c>). A unit that writes model streams takes the sheet
+/// locks after its stream locks and before its first append, in ascending branch-ID order.
+/// A write of one sheet takes no other lock while it holds that one, so it never waits for
+/// a writer that waits for it.
+/// </para>
+/// <para>
 /// A deadlock stays possible in three rare cases, which is why the rerun stays: a second
 /// append takes the gate of another projection while a Deedbox cut-over or join holds that
 /// gate and waits for the counter; two writers record a new event type for the first time;

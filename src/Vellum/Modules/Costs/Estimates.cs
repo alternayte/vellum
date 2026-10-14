@@ -56,7 +56,7 @@ public sealed class EstimateReader(IEventStore store, AppDbContext db, SettingsR
 
     internal async Task<Built> BuildAsync(Guid projectId, Guid branch, DateOnly asOf, CancellationToken ct)
     {
-        var (sheet, sheetVersion) = await CostAccess.LoadSheetAsync(store, branch, ct);
+        var (sheet, sheetVersion) = await CostAccess.LoadSheetAsync(db, branch, ct);
         var (model, modelVersion) = await CostAccess.LoadModelAsync(store, branch, ct);
         var elements = CostAccess.ElementIds(model);
 

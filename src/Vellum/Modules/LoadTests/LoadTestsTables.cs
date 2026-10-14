@@ -1,12 +1,11 @@
-using Deedbox;
 using Microsoft.EntityFrameworkCore;
 using Vellum.Shared;
 
 namespace Vellum.Modules.LoadTests;
 
 /// <summary>
-/// The read model of one load-test target. The target is the stream with this ID;
-/// <see cref="Document"/> is its <see cref="TargetState"/> after <see cref="Version"/> events.
+/// One load-test target. <see cref="Document"/> is its <see cref="TargetState"/>;
+/// <see cref="Version"/> counts the changes that made it.
 /// </summary>
 public class TargetEntity
 {
@@ -14,7 +13,7 @@ public class TargetEntity
     public Guid ProjectId { get; set; }
     public string Name { get; set; } = null!;
     public long Version { get; set; }
-    /// <summary>A removed target keeps its row, so the delete of its project finds its stream.</summary>
+    /// <summary>A removed target keeps its row; no read finds it.</summary>
     public bool Removed { get; set; }
     /// <summary>A JSON <see cref="TargetState"/>.</summary>
     public string Document { get; set; } = null!;
@@ -125,58 +124,4 @@ public static class LoadTestsTables
             b.HasOne<ScriptEntity>().WithMany().HasForeignKey(r => r.ScriptId).OnDelete(DeleteBehavior.Restrict);
         });
     }
-}
-
-/// <summary>Keeps the target read model. It runs inline, so a row commits with its event.</summary>
-public sealed class TargetProjection : Projection<AppDbContext>
-{
-    public TargetProjection()
-    {
-        On<TargetEvent.TargetAdded>(async (added, ctx) =>
-        {
-            var id = Guid.Parse(ctx.StreamId);
-            var row = await ctx.Db.Targets.FindAsync([id], ctx.CancellationToken);
-            if (row is null)
-            {
-                row = new TargetEntity { Id = id, ProjectId = added.ProjectId };
-                ctx.Db.Targets.Add(row);
-            }
-            Write(row, TargetState.Evolve(TargetState.Initial, added), ctx.Version);
-        });
-
-        Fold<TargetEvent.TargetChanged>();
-        Fold<TargetEvent.TargetAuthorised>();
-        Fold<TargetEvent.AuthorisationVoided>();
-        Fold<TargetEvent.OverrideSet>();
-        Fold<TargetEvent.OverrideCleared>();
-        Fold<TargetEvent.TargetRemoved>();
-
-        // The target streams of a deleted project are deleted with it. The tombstone of any
-        // stream comes here; an ID that is no target matches no row.
-        On<StreamDeleted>(async (_, ctx) => await RemoveAsync(ctx));
-    }
-
-    private void Fold<TEvent>() where TEvent : class =>
-        On<TEvent>(async (@event, ctx) =>
-        {
-            if (await ctx.Db.Targets.FindAsync([Guid.Parse(ctx.StreamId)], ctx.CancellationToken) is { } row)
-                Write(row, TargetState.Evolve(TargetJson.Read(row.Document), @event), ctx.Version);
-        });
-
-    private static async Task RemoveAsync(ProjectionContext<AppDbContext> ctx)
-    {
-        if (Guid.TryParse(ctx.StreamId, out var id) && await ctx.Db.Targets.FindAsync([id], ctx.CancellationToken) is { } row)
-            ctx.Db.Targets.Remove(row);
-    }
-
-    private static void Write(TargetEntity row, TargetState state, long version)
-    {
-        row.Name = state.Name!;
-        row.Version = version;
-        row.Removed = state.Removed;
-        row.Document = TargetJson.Write(state);
-    }
-
-    protected override async Task ResetAsync(WriteContext<AppDbContext> context) =>
-        await context.Db.Targets.ExecuteDeleteAsync(context.CancellationToken);
 }
