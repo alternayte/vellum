@@ -27,6 +27,57 @@ public static class ScanKind
 }
 
 /// <summary>
+/// The kinds of <see cref="SourceEntity"/>: a closed set. A kind that this build cannot fetch
+/// yet is refused when a Source of it is created, so a later fetcher adds no column and no
+/// label. The API text is kebab case: <c>azure-devops</c>, <c>agent-push</c>, <c>model-file</c>.
+/// </summary>
+public enum SourceKind
+{
+    Github,
+    Gitlab,
+    Bitbucket,
+    AzureDevops,
+    Directory,
+    Archive,
+    AgentPush,
+    ModelFile,
+    Traces,
+    Newrelic,
+}
+
+/// <summary>
+/// A configured origin of architecture evidence for one project. Each completed scan of it is
+/// one Snapshot. <see cref="Host"/> and <see cref="Locator"/> are the key the per-Source rows
+/// (accepted facts, rejections, the tracked ref) are filed under: for a <c>github</c> Source
+/// they are the web host and <c>owner/name</c> in lower case, so a citation reads
+/// <c>github.com/acme/orders@&lt;sha&gt;:path:start-end</c>.
+/// </summary>
+public class SourceEntity
+{
+    public const int MaxName = 200;
+
+    public Guid Id { get; set; }
+    public Guid ProjectId { get; set; }
+    public Guid WorkspaceId { get; set; }
+    public SourceKind Kind { get; set; }
+    /// <summary>What people call the Source. For display only; it can change.</summary>
+    public string Name { get; set; } = null!;
+    public string Host { get; set; } = null!;
+    /// <summary>Where in <see cref="Host"/> the Source is: <c>owner/name</c> for a git host. It follows a rename of the repository.</summary>
+    public string Locator { get; set; } = null!;
+    /// <summary>A JSON object of the kind's connection details that are not part of the key. No credential is ever held here.</summary>
+    public string Connection { get; set; } = "{}";
+    public string CreatedBy { get; set; } = null!;
+    public DateTimeOffset CreatedAt { get; set; }
+
+    /// <summary>The <c>&lt;source&gt;</c> part of a citation <c>&lt;source&gt;@&lt;revision&gt;:path:start-end</c>.</summary>
+    public string CitationName => $"{Host}/{Locator}";
+
+    /// <summary>True for a kind whose Snapshots are commits: their revision is the commit SHA, else the Snapshot ID.</summary>
+    public static bool IsGit(SourceKind kind) => kind is SourceKind.Github or SourceKind.Gitlab or SourceKind.Bitbucket or SourceKind.AzureDevops;
+}
+
+/// <summary>
 /// One scan of one repository for one project. The row is the job, its checkpoint and its
 /// report: a worker that takes it over reads the commit SHA and the file list from here and
 /// goes on where the last one stopped.
@@ -35,6 +86,8 @@ public class ScanEntity
 {
     public Guid Id { get; set; }
     public Guid ProjectId { get; set; }
+    /// <summary>The Source the scan reads. <see cref="Host"/> and <see cref="Repository"/> are its key.</summary>
+    public Guid SourceId { get; set; }
     public Guid WorkspaceId { get; set; }
     /// <summary>The host of the repository's web pages, for example <c>github.com</c>.</summary>
     public string Host { get; set; } = null!;
@@ -236,9 +289,18 @@ public class SnapshotEntity
 {
     public Guid ScanId { get; set; }
     public Guid ProjectId { get; set; }
+    public Guid SourceId { get; set; }
     public string Host { get; set; } = null!;
     public string Repository { get; set; } = null!;
     public string CommitSha { get; set; } = null!;
+    /// <summary>
+    /// The Snapshot ID: SHA-256 of the sorted manifest of (path, size, git blob SHA) of the
+    /// files the scan read (<see cref="Sources.SnapshotManifest"/>). Two Snapshots with the same
+    /// files have the same ID, whatever the kind of their Source.
+    /// </summary>
+    public string SnapshotId { get; set; } = null!;
+    /// <summary>The number of files in the manifest.</summary>
+    public int ManifestFiles { get; set; }
     /// <summary>False when a bound or a failure cut the scan or the extraction short.</summary>
     public bool IsComplete { get; set; }
     /// <summary>A JSON list of <c>{ rule, version }</c>: the extraction rules this snapshot was made with.</summary>
@@ -302,6 +364,12 @@ public enum ProposalAction
     /// fact is. A person names the fact, or says that none is. It changes the link only.
     /// </summary>
     Relink,
+    /// <summary>
+    /// "Same as X?": an element fact whose key no element is bound to has the normalised name
+    /// of an element that another Source holds. A person answers. Yes binds the element to
+    /// the key of this Source; no makes the fact a new element. Nothing is bound by name alone.
+    /// </summary>
+    Bind,
 }
 
 /// <summary>What a link or a proposal is about: a fact of an extractor, or the repository itself.</summary>
@@ -358,6 +426,12 @@ public class ProposalEntity
     /// <summary>For a message: a JSON list of the fact keys of the services whose subscriptions name it.</summary>
     public string ConsumerKeys { get; set; } = "[]";
     public Guid[] DependsOn { get; set; } = [];
+    /// <summary>
+    /// A JSON list of <see cref="Proposals.OtherSourceFact"/>: what other Sources of the project
+    /// accepted for the same entity. A proposal that disagrees with them is a conflict, and
+    /// the review shows every side. No Source wins by itself.
+    /// </summary>
+    public string OtherSources { get; set; } = "[]";
     public ProposalStatus Status { get; set; } = ProposalStatus.Pending;
     /// <summary>True when a limit or a failure cut the scan short.</summary>
     public bool Partial { get; set; }

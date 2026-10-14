@@ -86,10 +86,11 @@ namespace Vellum.Migrations
                 .Annotation("Npgsql:Enum:import.entity_kind", "binding,channel,element,message,operation,schema,subscription")
                 .Annotation("Npgsql:Enum:import.fact_disposition", "blocked,evidence_only,folded,mapped")
                 .Annotation("Npgsql:Enum:import.fact_kind", "channel,data_access,data_store,dependency,deployment,message,operation,pattern,publication,schema,service,subscription")
-                .Annotation("Npgsql:Enum:import.proposal_action", "add,change,conflict,relink,remove")
+                .Annotation("Npgsql:Enum:import.proposal_action", "add,bind,change,conflict,relink,remove")
                 .Annotation("Npgsql:Enum:import.proposal_status", "accepted,pending,rejected,superseded")
                 .Annotation("Npgsql:Enum:import.scan_file_state", "pending,read,skipped")
                 .Annotation("Npgsql:Enum:import.scan_status", "cancelled,completed,failed,queued,running,waiting")
+                .Annotation("Npgsql:Enum:import.source_kind", "agent_push,archive,azure_devops,bitbucket,directory,github,gitlab,model_file,newrelic,traces")
                 .Annotation("Npgsql:Enum:import.subject", "fact,repository")
                 .Annotation("Npgsql:Enum:loadtests.target_environment", "development,production,staging,test")
                 .Annotation("Npgsql:Enum:modelling.element_kind", "actor,app,component,store,system")
@@ -773,66 +774,6 @@ namespace Vellum.Migrations
                 });
 
             migrationBuilder.CreateTable(
-                name: "scans",
-                schema: "import",
-                columns: table => new
-                {
-                    id = table.Column<Guid>(type: "uuid", nullable: false),
-                    project_id = table.Column<Guid>(type: "uuid", nullable: false),
-                    workspace_id = table.Column<Guid>(type: "uuid", nullable: false),
-                    host = table.Column<string>(type: "text", nullable: false),
-                    repository = table.Column<string>(type: "text", nullable: false),
-                    repository_id = table.Column<long>(type: "bigint", nullable: true),
-                    repository_name = table.Column<string>(type: "text", nullable: true),
-                    requested_ref = table.Column<string>(type: "text", nullable: true),
-                    resolved_ref = table.Column<string>(type: "text", nullable: true),
-                    commit_sha = table.Column<string>(type: "text", nullable: true),
-                    pull_request_number = table.Column<int>(type: "integer", nullable: true),
-                    pull_request = table.Column<string>(type: "jsonb", nullable: true),
-                    repository_is_private = table.Column<bool>(type: "boolean", nullable: true),
-                    include_paths = table.Column<string[]>(type: "text[]", nullable: false),
-                    exclude_paths = table.Column<string[]>(type: "text[]", nullable: false),
-                    limits = table.Column<string>(type: "jsonb", nullable: false),
-                    status = table.Column<ScanStatus>(type: "import.scan_status", nullable: false),
-                    tree_listed = table.Column<bool>(type: "boolean", nullable: false),
-                    files_listed = table.Column<int>(type: "integer", nullable: false),
-                    files_read = table.Column<int>(type: "integer", nullable: false),
-                    files_skipped = table.Column<int>(type: "integer", nullable: false),
-                    files_extracted = table.Column<int>(type: "integer", nullable: false),
-                    bytes_read = table.Column<long>(type: "bigint", nullable: false),
-                    partial = table.Column<bool>(type: "boolean", nullable: false),
-                    is_complete = table.Column<bool>(type: "boolean", nullable: false),
-                    extraction_gap = table.Column<StoredCoverageGap>(type: "import.coverage_gap", nullable: true),
-                    coverage = table.Column<string>(type: "jsonb", nullable: true),
-                    relinked = table.Column<int>(type: "integer", nullable: false),
-                    needs_review = table.Column<int>(type: "integer", nullable: false),
-                    notes = table.Column<string>(type: "jsonb", nullable: false),
-                    error_code = table.Column<string>(type: "text", nullable: true),
-                    error_message = table.Column<string>(type: "text", nullable: true),
-                    retry_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
-                    requested_by = table.Column<string>(type: "text", nullable: false),
-                    created_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
-                    updated_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
-                    started_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
-                    completed_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
-                    attempts = table.Column<int>(type: "integer", nullable: false),
-                    internal_failures = table.Column<int>(type: "integer", nullable: false),
-                    crashes = table.Column<int>(type: "integer", nullable: false),
-                    manual_resumes = table.Column<int>(type: "integer", nullable: false),
-                    claimed_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
-                    lease_owner = table.Column<string>(type: "text", nullable: true),
-                    lease_expires_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
-                    lease_token = table.Column<long>(type: "bigint", nullable: false),
-                    cancel_requested = table.Column<bool>(type: "boolean", nullable: false),
-                    tracked_by = table.Column<string>(type: "text", nullable: true),
-                    tracked_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("pk_scans", x => x.id);
-                });
-
-            migrationBuilder.CreateTable(
                 name: "scenarios",
                 schema: "trace",
                 columns: table => new
@@ -952,6 +893,27 @@ namespace Vellum.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("pk_snapshots", x => x.id);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "sources",
+                schema: "import",
+                columns: table => new
+                {
+                    id = table.Column<Guid>(type: "uuid", nullable: false),
+                    project_id = table.Column<Guid>(type: "uuid", nullable: false),
+                    workspace_id = table.Column<Guid>(type: "uuid", nullable: false),
+                    kind = table.Column<SourceKind>(type: "import.source_kind", nullable: false),
+                    name = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: false),
+                    host = table.Column<string>(type: "character varying(255)", maxLength: 255, nullable: false),
+                    locator = table.Column<string>(type: "character varying(400)", maxLength: 400, nullable: false),
+                    connection = table.Column<string>(type: "jsonb", nullable: false),
+                    created_by = table.Column<string>(type: "text", nullable: false),
+                    created_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("pk_sources", x => x.id);
                 });
 
             migrationBuilder.CreateTable(
@@ -1221,100 +1183,6 @@ namespace Vellum.Migrations
                 });
 
             migrationBuilder.CreateTable(
-                name: "proposals",
-                schema: "import",
-                columns: table => new
-                {
-                    id = table.Column<Guid>(type: "uuid", nullable: false),
-                    scan_id = table.Column<Guid>(type: "uuid", nullable: false),
-                    project_id = table.Column<Guid>(type: "uuid", nullable: false),
-                    seq = table.Column<int>(type: "integer", nullable: false),
-                    action = table.Column<ProposalAction>(type: "import.proposal_action", nullable: false),
-                    entity_kind = table.Column<StoredEntityKind>(type: "import.entity_kind", nullable: false),
-                    entity_id = table.Column<Guid>(type: "uuid", nullable: false),
-                    subject = table.Column<Subject>(type: "import.subject", nullable: false, defaultValue: Subject.Fact),
-                    fact_key = table.Column<string>(type: "character varying(1000)", maxLength: 1000, nullable: false),
-                    name = table.Column<string>(type: "text", nullable: false),
-                    proposed = table.Column<string>(type: "jsonb", nullable: true),
-                    current = table.Column<string>(type: "jsonb", nullable: true),
-                    changes = table.Column<string>(type: "jsonb", nullable: false),
-                    evidence = table.Column<string>(type: "jsonb", nullable: false),
-                    attributes = table.Column<string>(type: "jsonb", nullable: false),
-                    consumer_keys = table.Column<string>(type: "jsonb", nullable: false, defaultValueSql: "'[]'::jsonb"),
-                    depends_on = table.Column<Guid[]>(type: "uuid[]", nullable: false),
-                    status = table.Column<ProposalStatus>(type: "import.proposal_status", nullable: false),
-                    partial = table.Column<bool>(type: "boolean", nullable: false),
-                    fingerprint = table.Column<string>(type: "text", nullable: false),
-                    decided_by = table.Column<string>(type: "text", nullable: true),
-                    decided_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("pk_proposals", x => x.id);
-                    table.ForeignKey(
-                        name: "fk_proposals_scans_scan_id",
-                        column: x => x.scan_id,
-                        principalSchema: "import",
-                        principalTable: "scans",
-                        principalColumn: "id",
-                        onDelete: ReferentialAction.Cascade);
-                });
-
-            migrationBuilder.CreateTable(
-                name: "scan_files",
-                schema: "import",
-                columns: table => new
-                {
-                    scan_id = table.Column<Guid>(type: "uuid", nullable: false),
-                    path_hash = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: false),
-                    path = table.Column<string>(type: "character varying(1024)", maxLength: 1024, nullable: false),
-                    blob_sha = table.Column<string>(type: "text", nullable: false),
-                    size = table.Column<long>(type: "bigint", nullable: false),
-                    state = table.Column<ScanFileState>(type: "import.scan_file_state", nullable: false),
-                    reason = table.Column<string>(type: "text", nullable: true)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("pk_scan_files", x => new { x.scan_id, x.path_hash });
-                    table.ForeignKey(
-                        name: "fk_scan_files_scans_scan_id",
-                        column: x => x.scan_id,
-                        principalSchema: "import",
-                        principalTable: "scans",
-                        principalColumn: "id",
-                        onDelete: ReferentialAction.Cascade);
-                });
-
-            migrationBuilder.CreateTable(
-                name: "snapshots",
-                schema: "import",
-                columns: table => new
-                {
-                    scan_id = table.Column<Guid>(type: "uuid", nullable: false),
-                    project_id = table.Column<Guid>(type: "uuid", nullable: false),
-                    host = table.Column<string>(type: "text", nullable: false),
-                    repository = table.Column<string>(type: "text", nullable: false),
-                    commit_sha = table.Column<string>(type: "text", nullable: false),
-                    is_complete = table.Column<bool>(type: "boolean", nullable: false),
-                    rule_versions = table.Column<string>(type: "jsonb", nullable: false),
-                    rule_fingerprint = table.Column<string>(type: "text", nullable: true),
-                    limits = table.Column<string>(type: "jsonb", nullable: false),
-                    fact_count = table.Column<int>(type: "integer", nullable: false),
-                    created_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("pk_snapshots", x => x.scan_id);
-                    table.ForeignKey(
-                        name: "fk_snapshots_scans_scan_id",
-                        column: x => x.scan_id,
-                        principalSchema: "import",
-                        principalTable: "scans",
-                        principalColumn: "id",
-                        onDelete: ReferentialAction.Cascade);
-                });
-
-            migrationBuilder.CreateTable(
                 name: "results",
                 schema: "loadtests",
                 columns: table => new
@@ -1349,6 +1217,74 @@ namespace Vellum.Migrations
                         principalTable: "scripts",
                         principalColumn: "id",
                         onDelete: ReferentialAction.Restrict);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "scans",
+                schema: "import",
+                columns: table => new
+                {
+                    id = table.Column<Guid>(type: "uuid", nullable: false),
+                    project_id = table.Column<Guid>(type: "uuid", nullable: false),
+                    source_id = table.Column<Guid>(type: "uuid", nullable: false),
+                    workspace_id = table.Column<Guid>(type: "uuid", nullable: false),
+                    host = table.Column<string>(type: "text", nullable: false),
+                    repository = table.Column<string>(type: "text", nullable: false),
+                    repository_id = table.Column<long>(type: "bigint", nullable: true),
+                    repository_name = table.Column<string>(type: "text", nullable: true),
+                    requested_ref = table.Column<string>(type: "text", nullable: true),
+                    resolved_ref = table.Column<string>(type: "text", nullable: true),
+                    commit_sha = table.Column<string>(type: "text", nullable: true),
+                    pull_request_number = table.Column<int>(type: "integer", nullable: true),
+                    pull_request = table.Column<string>(type: "jsonb", nullable: true),
+                    repository_is_private = table.Column<bool>(type: "boolean", nullable: true),
+                    include_paths = table.Column<string[]>(type: "text[]", nullable: false),
+                    exclude_paths = table.Column<string[]>(type: "text[]", nullable: false),
+                    limits = table.Column<string>(type: "jsonb", nullable: false),
+                    status = table.Column<ScanStatus>(type: "import.scan_status", nullable: false),
+                    tree_listed = table.Column<bool>(type: "boolean", nullable: false),
+                    files_listed = table.Column<int>(type: "integer", nullable: false),
+                    files_read = table.Column<int>(type: "integer", nullable: false),
+                    files_skipped = table.Column<int>(type: "integer", nullable: false),
+                    files_extracted = table.Column<int>(type: "integer", nullable: false),
+                    bytes_read = table.Column<long>(type: "bigint", nullable: false),
+                    partial = table.Column<bool>(type: "boolean", nullable: false),
+                    is_complete = table.Column<bool>(type: "boolean", nullable: false),
+                    extraction_gap = table.Column<StoredCoverageGap>(type: "import.coverage_gap", nullable: true),
+                    coverage = table.Column<string>(type: "jsonb", nullable: true),
+                    relinked = table.Column<int>(type: "integer", nullable: false),
+                    needs_review = table.Column<int>(type: "integer", nullable: false),
+                    notes = table.Column<string>(type: "jsonb", nullable: false),
+                    error_code = table.Column<string>(type: "text", nullable: true),
+                    error_message = table.Column<string>(type: "text", nullable: true),
+                    retry_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
+                    requested_by = table.Column<string>(type: "text", nullable: false),
+                    created_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
+                    updated_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
+                    started_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
+                    completed_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
+                    attempts = table.Column<int>(type: "integer", nullable: false),
+                    internal_failures = table.Column<int>(type: "integer", nullable: false),
+                    crashes = table.Column<int>(type: "integer", nullable: false),
+                    manual_resumes = table.Column<int>(type: "integer", nullable: false),
+                    claimed_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
+                    lease_owner = table.Column<string>(type: "text", nullable: true),
+                    lease_expires_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
+                    lease_token = table.Column<long>(type: "bigint", nullable: false),
+                    cancel_requested = table.Column<bool>(type: "boolean", nullable: false),
+                    tracked_by = table.Column<string>(type: "text", nullable: true),
+                    tracked_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("pk_scans", x => x.id);
+                    table.ForeignKey(
+                        name: "fk_scans_sources_source_id",
+                        column: x => x.source_id,
+                        principalSchema: "import",
+                        principalTable: "sources",
+                        principalColumn: "id",
+                        onDelete: ReferentialAction.Cascade);
                 });
 
             migrationBuilder.CreateTable(
@@ -1517,6 +1453,104 @@ namespace Vellum.Migrations
                         column: x => x.view_id,
                         principalSchema: "views",
                         principalTable: "views",
+                        principalColumn: "id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "proposals",
+                schema: "import",
+                columns: table => new
+                {
+                    id = table.Column<Guid>(type: "uuid", nullable: false),
+                    scan_id = table.Column<Guid>(type: "uuid", nullable: false),
+                    project_id = table.Column<Guid>(type: "uuid", nullable: false),
+                    seq = table.Column<int>(type: "integer", nullable: false),
+                    action = table.Column<ProposalAction>(type: "import.proposal_action", nullable: false),
+                    entity_kind = table.Column<StoredEntityKind>(type: "import.entity_kind", nullable: false),
+                    entity_id = table.Column<Guid>(type: "uuid", nullable: false),
+                    subject = table.Column<Subject>(type: "import.subject", nullable: false, defaultValue: Subject.Fact),
+                    fact_key = table.Column<string>(type: "character varying(1000)", maxLength: 1000, nullable: false),
+                    name = table.Column<string>(type: "text", nullable: false),
+                    proposed = table.Column<string>(type: "jsonb", nullable: true),
+                    current = table.Column<string>(type: "jsonb", nullable: true),
+                    changes = table.Column<string>(type: "jsonb", nullable: false),
+                    evidence = table.Column<string>(type: "jsonb", nullable: false),
+                    attributes = table.Column<string>(type: "jsonb", nullable: false),
+                    consumer_keys = table.Column<string>(type: "jsonb", nullable: false, defaultValueSql: "'[]'::jsonb"),
+                    depends_on = table.Column<Guid[]>(type: "uuid[]", nullable: false),
+                    other_sources = table.Column<string>(type: "jsonb", nullable: false, defaultValueSql: "'[]'::jsonb"),
+                    status = table.Column<ProposalStatus>(type: "import.proposal_status", nullable: false),
+                    partial = table.Column<bool>(type: "boolean", nullable: false),
+                    fingerprint = table.Column<string>(type: "text", nullable: false),
+                    decided_by = table.Column<string>(type: "text", nullable: true),
+                    decided_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("pk_proposals", x => x.id);
+                    table.ForeignKey(
+                        name: "fk_proposals_scans_scan_id",
+                        column: x => x.scan_id,
+                        principalSchema: "import",
+                        principalTable: "scans",
+                        principalColumn: "id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "scan_files",
+                schema: "import",
+                columns: table => new
+                {
+                    scan_id = table.Column<Guid>(type: "uuid", nullable: false),
+                    path_hash = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: false),
+                    path = table.Column<string>(type: "character varying(1024)", maxLength: 1024, nullable: false),
+                    blob_sha = table.Column<string>(type: "text", nullable: false),
+                    size = table.Column<long>(type: "bigint", nullable: false),
+                    state = table.Column<ScanFileState>(type: "import.scan_file_state", nullable: false),
+                    reason = table.Column<string>(type: "text", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("pk_scan_files", x => new { x.scan_id, x.path_hash });
+                    table.ForeignKey(
+                        name: "fk_scan_files_scans_scan_id",
+                        column: x => x.scan_id,
+                        principalSchema: "import",
+                        principalTable: "scans",
+                        principalColumn: "id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "snapshots",
+                schema: "import",
+                columns: table => new
+                {
+                    scan_id = table.Column<Guid>(type: "uuid", nullable: false),
+                    project_id = table.Column<Guid>(type: "uuid", nullable: false),
+                    source_id = table.Column<Guid>(type: "uuid", nullable: false),
+                    host = table.Column<string>(type: "text", nullable: false),
+                    repository = table.Column<string>(type: "text", nullable: false),
+                    commit_sha = table.Column<string>(type: "text", nullable: false),
+                    snapshot_id = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: false),
+                    manifest_files = table.Column<int>(type: "integer", nullable: false),
+                    is_complete = table.Column<bool>(type: "boolean", nullable: false),
+                    rule_versions = table.Column<string>(type: "jsonb", nullable: false),
+                    rule_fingerprint = table.Column<string>(type: "text", nullable: true),
+                    limits = table.Column<string>(type: "jsonb", nullable: false),
+                    fact_count = table.Column<int>(type: "integer", nullable: false),
+                    created_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("pk_snapshots", x => x.scan_id);
+                    table.ForeignKey(
+                        name: "fk_snapshots_scans_scan_id",
+                        column: x => x.scan_id,
+                        principalSchema: "import",
+                        principalTable: "scans",
                         principalColumn: "id",
                         onDelete: ReferentialAction.Cascade);
                 });
@@ -1857,6 +1891,12 @@ namespace Vellum.Migrations
                 columns: new[] { "project_id", "created_at", "id" });
 
             migrationBuilder.CreateIndex(
+                name: "ix_scans_source_id_created_at",
+                schema: "import",
+                table: "scans",
+                columns: new[] { "source_id", "created_at" });
+
+            migrationBuilder.CreateIndex(
                 name: "ix_scans_status_created_at",
                 schema: "import",
                 table: "scans",
@@ -1918,10 +1958,23 @@ namespace Vellum.Migrations
                 columns: new[] { "project_id", "host", "repository", "created_at" });
 
             migrationBuilder.CreateIndex(
+                name: "ix_snapshots_source_id_created_at",
+                schema: "import",
+                table: "snapshots",
+                columns: new[] { "source_id", "created_at" });
+
+            migrationBuilder.CreateIndex(
                 name: "ix_snapshots_project_id_created_at_id",
                 schema: "review",
                 table: "snapshots",
                 columns: new[] { "project_id", "created_at", "id" });
+
+            migrationBuilder.CreateIndex(
+                name: "ix_sources_project_id_host_locator",
+                schema: "import",
+                table: "sources",
+                columns: new[] { "project_id", "host", "locator" },
+                unique: true);
 
             migrationBuilder.CreateIndex(
                 name: "ix_spaces_project_id",
@@ -2252,6 +2305,10 @@ namespace Vellum.Migrations
 
             migrationBuilder.DropTable(
                 name: "scans",
+                schema: "import");
+
+            migrationBuilder.DropTable(
+                name: "sources",
                 schema: "import");
         }
     }

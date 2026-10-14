@@ -120,6 +120,12 @@ internal static class FactMapping
     public static string KeyOf(Subject subject, string factKey) => subject == Subject.Repository ? RepositoryKey : factKey;
 
     /// <summary>
+    /// The external key of a source binding for an in-memory key. The repository itself has
+    /// <c>@repository</c>: no extractor makes a key that starts with <c>@</c>.
+    /// </summary>
+    public static string ExternalKey(string key) => key == RepositoryKey ? "@repository" : key;
+
+    /// <summary>
     /// Why a fact is not kept, or null. Text from a repository reaches <c>jsonb</c> columns,
     /// index keys and model names, so <see cref="TextRule"/> applies to it as to any other
     /// input: no NUL and no other control character in a key, a name, an attribute name or a

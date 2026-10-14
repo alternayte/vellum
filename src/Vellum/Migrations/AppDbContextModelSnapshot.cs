@@ -45,10 +45,11 @@ namespace Vellum.Migrations
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "import", "entity_kind", new[] { "binding", "channel", "element", "message", "operation", "schema", "subscription" });
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "import", "fact_disposition", new[] { "blocked", "evidence_only", "folded", "mapped" });
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "import", "fact_kind", new[] { "channel", "data_access", "data_store", "dependency", "deployment", "message", "operation", "pattern", "publication", "schema", "service", "subscription" });
-            NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "import", "proposal_action", new[] { "add", "change", "conflict", "relink", "remove" });
+            NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "import", "proposal_action", new[] { "add", "bind", "change", "conflict", "relink", "remove" });
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "import", "proposal_status", new[] { "accepted", "pending", "rejected", "superseded" });
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "import", "scan_file_state", new[] { "pending", "read", "skipped" });
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "import", "scan_status", new[] { "cancelled", "completed", "failed", "queued", "running", "waiting" });
+            NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "import", "source_kind", new[] { "agent_push", "archive", "azure_devops", "bitbucket", "directory", "github", "gitlab", "model_file", "newrelic", "traces" });
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "import", "subject", new[] { "fact", "repository" });
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "loadtests", "target_environment", new[] { "development", "production", "staging", "test" });
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "modelling", "element_kind", new[] { "actor", "app", "component", "store", "system" });
@@ -1245,6 +1246,13 @@ namespace Vellum.Migrations
                         .HasColumnType("text")
                         .HasColumnName("name");
 
+                    b.Property<string>("OtherSources")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("other_sources")
+                        .HasDefaultValueSql("'[]'::jsonb");
+
                     b.Property<bool>("Partial")
                         .HasColumnType("boolean")
                         .HasColumnName("partial");
@@ -1566,6 +1574,10 @@ namespace Vellum.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("retry_at");
 
+                    b.Property<Guid>("SourceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("source_id");
+
                     b.Property<DateTimeOffset?>("StartedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("started_at");
@@ -1596,6 +1608,9 @@ namespace Vellum.Migrations
 
                     b.HasKey("Id")
                         .HasName("pk_scans");
+
+                    b.HasIndex("SourceId", "CreatedAt")
+                        .HasDatabaseName("ix_scans_source_id_created_at");
 
                     b.HasIndex("Status", "CreatedAt")
                         .HasDatabaseName("ix_scans_status_created_at");
@@ -1696,6 +1711,10 @@ namespace Vellum.Migrations
                         .HasColumnType("jsonb")
                         .HasColumnName("limits");
 
+                    b.Property<int>("ManifestFiles")
+                        .HasColumnType("integer")
+                        .HasColumnName("manifest_files");
+
                     b.Property<Guid>("ProjectId")
                         .HasColumnType("uuid")
                         .HasColumnName("project_id");
@@ -1714,8 +1733,21 @@ namespace Vellum.Migrations
                         .HasColumnType("jsonb")
                         .HasColumnName("rule_versions");
 
+                    b.Property<string>("SnapshotId")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("snapshot_id");
+
+                    b.Property<Guid>("SourceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("source_id");
+
                     b.HasKey("ScanId")
                         .HasName("pk_snapshots");
+
+                    b.HasIndex("SourceId", "CreatedAt")
+                        .HasDatabaseName("ix_snapshots_source_id_created_at");
 
                     b.HasIndex("ProjectId", "Host", "Repository", "CreatedAt")
                         .HasDatabaseName("ix_snapshots_project_id_host_repository_created_at");
@@ -1773,6 +1805,67 @@ namespace Vellum.Migrations
                         .HasDatabaseName("ix_snapshot_facts_scan_id_disposition_seq");
 
                     b.ToTable("snapshot_facts", "import");
+                });
+
+            modelBuilder.Entity("Vellum.Modules.Import.SourceEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Connection")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("connection");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("created_by");
+
+                    b.Property<string>("Host")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)")
+                        .HasColumnName("host");
+
+                    b.Property<SourceKind>("Kind")
+                        .HasColumnType("import.source_kind")
+                        .HasColumnName("kind");
+
+                    b.Property<string>("Locator")
+                        .IsRequired()
+                        .HasMaxLength(400)
+                        .HasColumnType("character varying(400)")
+                        .HasColumnName("locator");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)")
+                        .HasColumnName("name");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("project_id");
+
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("workspace_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_sources");
+
+                    b.HasIndex("ProjectId", "Host", "Locator")
+                        .IsUnique()
+                        .HasDatabaseName("ix_sources_project_id_host_locator");
+
+                    b.ToTable("sources", "import");
                 });
 
             modelBuilder.Entity("Vellum.Modules.Import.TrackedRefEntity", b =>
@@ -3726,6 +3819,16 @@ namespace Vellum.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_proposals_scans_scan_id");
+                });
+
+            modelBuilder.Entity("Vellum.Modules.Import.ScanEntity", b =>
+                {
+                    b.HasOne("Vellum.Modules.Import.SourceEntity", null)
+                        .WithMany()
+                        .HasForeignKey("SourceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_scans_sources_source_id");
                 });
 
             modelBuilder.Entity("Vellum.Modules.Import.ScanFileEntity", b =>

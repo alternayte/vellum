@@ -60,6 +60,14 @@ public static class ModelEvent
     public sealed record ElementRemoved(ElementId ElementId);
     public sealed record ElementProvenanceRecorded(ElementId ElementId, FactStatus Status, Provenance? Provenance, StaleMark? Stale = null);
 
+    /// <summary>
+    /// A person said that the element is the thing <paramref name="ExternalKey"/> names in the
+    /// Source <paramref name="SourceId"/>: they accepted an element fact of that Source, or
+    /// answered "same as this element?" with yes. A scan of that Source then targets this
+    /// element for the key. No name match ever writes it.
+    /// </summary>
+    public sealed record ElementSourceBound(ElementId ElementId, Guid SourceId, string ExternalKey);
+
     // Relationship events
     public sealed record RelationshipAdded(
         RelationshipId Id, ElementId FromId, ElementId ToId, string? Label,

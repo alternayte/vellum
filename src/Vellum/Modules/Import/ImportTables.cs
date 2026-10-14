@@ -30,14 +30,30 @@ public static class ImportTables
         PostgresEnum.Of<ProposalStatus>("proposal_status", Schema),
         PostgresEnum.Of<Subject>("subject", Schema),
         PostgresEnum.Of<StoredEntityKind>("entity_kind", Schema),
+        PostgresEnum.Of<SourceKind>("source_kind", Schema),
     ];
 
     public static void Configure(ModelBuilder modelBuilder)
     {
+        modelBuilder.Entity<SourceEntity>(b =>
+        {
+            b.ToTable("sources", Schema);
+            b.HasKey(s => s.Id);
+            b.Property(s => s.Name).HasMaxLength(SourceEntity.MaxName);
+            b.Property(s => s.Host).HasMaxLength(255);
+            b.Property(s => s.Locator).HasMaxLength(400);
+            b.Property(s => s.Connection).HasColumnType("jsonb");
+            b.Ignore(s => s.CitationName);
+            // The key of the per-Source rows: one Source per place per project.
+            b.HasIndex(s => new { s.ProjectId, s.Host, s.Locator }).IsUnique();
+        });
+
         modelBuilder.Entity<ScanEntity>(b =>
         {
             b.ToTable("scans", Schema);
             b.HasKey(s => s.Id);
+            b.HasIndex(s => new { s.SourceId, s.CreatedAt });
+            b.HasOne<SourceEntity>().WithMany().HasForeignKey(s => s.SourceId).OnDelete(DeleteBehavior.Cascade);
             b.Property(s => s.Limits).HasColumnType("jsonb");
             b.Property(s => s.Notes).HasColumnType("jsonb");
             b.Property(s => s.Coverage).HasColumnType("jsonb");
@@ -94,7 +110,9 @@ public static class ImportTables
             b.HasKey(s => s.ScanId).HasName("pk_snapshots");
             b.Property(s => s.RuleVersions).HasColumnType("jsonb");
             b.Property(s => s.Limits).HasColumnType("jsonb");
+            b.Property(s => s.SnapshotId).HasMaxLength(64);
             b.HasIndex(s => new { s.ProjectId, s.Host, s.Repository, s.CreatedAt });
+            b.HasIndex(s => new { s.SourceId, s.CreatedAt });
             b.HasOne<ScanEntity>().WithOne().HasForeignKey<SnapshotEntity>(s => s.ScanId).OnDelete(DeleteBehavior.Cascade);
         });
 
@@ -121,6 +139,7 @@ public static class ImportTables
             b.Property(p => p.Evidence).HasColumnType("jsonb");
             b.Property(p => p.Attributes).HasColumnType("jsonb");
             b.Property(p => p.ConsumerKeys).HasColumnType("jsonb").HasDefaultValueSql("'[]'::jsonb");
+            b.Property(p => p.OtherSources).HasColumnType("jsonb").HasDefaultValueSql("'[]'::jsonb");
             b.HasIndex(p => new { p.ScanId, p.Seq }).IsUnique();
             b.HasIndex(p => new { p.ScanId, p.Status });
             b.HasOne<ScanEntity>().WithMany().HasForeignKey(p => p.ScanId).OnDelete(DeleteBehavior.Cascade);

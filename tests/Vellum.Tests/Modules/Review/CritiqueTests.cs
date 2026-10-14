@@ -214,9 +214,15 @@ public class CritiqueTests(SharedOutboundHost shared) : IClassFixture<SharedOutb
                 CancellationToken.None);
             Assert.IsType<CommandResult.Success>(recorded);
             var import = services.GetRequiredService<AppDbContext>();
+            var source = new SourceEntity
+            {
+                Id = Guid.NewGuid(), ProjectId = projectId, WorkspaceId = ai.WorkspaceId, Kind = SourceKind.Github, Name = "acme/secret-billing",
+                Host = "github.com", Locator = "acme/secret-billing", CreatedBy = "user:test", CreatedAt = DateTimeOffset.UtcNow,
+            };
+            import.Sources.Add(source);
             var scan = new ScanEntity
             {
-                Id = Guid.NewGuid(), ProjectId = projectId, WorkspaceId = ai.WorkspaceId, Host = "github.com", Repository = "acme/secret-billing",
+                Id = Guid.NewGuid(), ProjectId = projectId, WorkspaceId = ai.WorkspaceId, SourceId = source.Id, Host = "github.com", Repository = "acme/secret-billing",
                 CommitSha = "4f9a1c7", RepositoryIsPrivate = true, Limits = new ScanLimits(10, 10, 10, []).ToJson(),
                 Status = ScanStatus.Completed, RequestedBy = "user:test", CreatedAt = DateTimeOffset.UtcNow, UpdatedAt = DateTimeOffset.UtcNow,
             };

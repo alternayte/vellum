@@ -1,4 +1,3 @@
-using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
 using Vellum.Modules.Import.Extraction;
@@ -27,13 +26,8 @@ internal static partial class ContentClearance
     private static partial Regex PrivateKey();
 
     /// <summary>True when the bytes are the git blob that <paramref name="blobSha"/> names: SHA-1 over <c>blob &lt;length&gt;\0</c> and the bytes.</summary>
-    public static bool IsBlob(byte[] content, string blobSha)
-    {
-        using var sha = IncrementalHash.CreateHash(HashAlgorithmName.SHA1);
-        sha.AppendData(Encoding.ASCII.GetBytes($"blob {content.Length}\0"));
-        sha.AppendData(content);
-        return string.Equals(Convert.ToHexStringLower(sha.GetHashAndReset()), blobSha, StringComparison.OrdinalIgnoreCase);
-    }
+    public static bool IsBlob(byte[] content, string blobSha) =>
+        string.Equals(Sources.GitBlob.Sha(content), blobSha, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// Null when the content may be stored. Else why not: <c>binary-content</c> for bytes

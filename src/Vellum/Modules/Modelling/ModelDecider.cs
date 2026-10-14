@@ -293,6 +293,31 @@ public static class ModelDecider
             [new ModelEvent.ElementProvenanceRecorded(elementId, status, provenance)]);
     }
 
+    /// <summary>The longest external key a source binding holds: the longest fact key an import keeps.</summary>
+    public const int MaxExternalKey = 1000;
+
+    /// <summary>
+    /// Binds the element to <paramref name="externalKey"/> of the Source <paramref name="sourceId"/>.
+    /// A pair that another element holds is refused: one key of one Source names one element.
+    /// A pair the element holds already writes nothing.
+    /// </summary>
+    public static CommandResult<IReadOnlyList<object>> BindElementSource(
+        ModelState state, ElementId elementId, Guid sourceId, string externalKey)
+    {
+        if (!state.Elements.TryGetValue(elementId, out var element))
+            return new CommandResult<IReadOnlyList<object>>.NotFound("Element not found");
+        if (sourceId == Guid.Empty || externalKey.Length is 0 or > MaxExternalKey || externalKey.Any(char.IsControl))
+            return new CommandResult<IReadOnlyList<object>>.Invalid([new ValidationError("externalKey", $"A source binding names a Source and a key of 1 to {MaxExternalKey} characters with no control character.")]);
+
+        var binding = new SourceBinding(sourceId, externalKey);
+        if (element.Bindings.Contains(binding))
+            return new CommandResult<IReadOnlyList<object>>.Success([]);
+        if (state.Elements.Values.FirstOrDefault(e => e.Id != elementId && e.Bindings.Contains(binding)) is { } holder)
+            return new CommandResult<IReadOnlyList<object>>.Conflict($"Element '{holder.Name}' is already bound to this key of the Source.");
+
+        return new CommandResult<IReadOnlyList<object>>.Success([new ModelEvent.ElementSourceBound(elementId, sourceId, externalKey)]);
+    }
+
     public static CommandResult<IReadOnlyList<object>> RecordRelationshipProvenance(
         ModelState state, RelationshipId relationshipId, FactStatus status, Provenance? provenance)
     {

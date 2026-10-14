@@ -3,6 +3,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 using Vellum.Modules.Identity.AgentTokens;
 using Vellum.Modules.Import.Proposals;
 using Vellum.Modules.Import.Scans;
+using Vellum.Modules.Import.Sources;
 using Vellum.Shared;
 
 namespace Vellum.Modules.Import;
@@ -97,6 +98,51 @@ public static class ImportModule
             .Produces<ErrorResponse>(StatusCodes.Status404NotFound)
             .Produces<ErrorResponse>(StatusCodes.Status409Conflict);
 
+        var sources = app.MapGroup("/api/projects/{projectId}/sources")
+            .RequireAuthorization()
+            .WithTags("Sources");
+
+        sources.MapGet("/", SourceRequests.List)
+            .Produces<List<SourceDto>>();
+
+        sources.MapPost("/", SourceRequests.Create)
+            .Produces<SourceDto>(StatusCodes.Status201Created)
+            .Produces<ErrorResponse>(StatusCodes.Status400BadRequest)
+            .Produces<ErrorResponse>(StatusCodes.Status409Conflict);
+
+        sources.MapGet("/{sourceId}", SourceRequests.Get)
+            .Produces<SourceDto>()
+            .Produces<ErrorResponse>(StatusCodes.Status404NotFound);
+
+        sources.MapPatch("/{sourceId}", SourceRequests.Update)
+            .Produces<SourceDto>()
+            .Produces<ErrorResponse>(StatusCodes.Status400BadRequest)
+            .Produces<ErrorResponse>(StatusCodes.Status404NotFound);
+
+        sources.MapPost("/{sourceId}/scans", SourceRequests.StartScan)
+            .Produces<StartScanResponse>(StatusCodes.Status202Accepted)
+            .Produces<ErrorResponse>(StatusCodes.Status400BadRequest)
+            .Produces<ErrorResponse>(StatusCodes.Status404NotFound)
+            .Produces<ErrorResponse>(StatusCodes.Status409Conflict)
+            .Produces<ErrorResponse>(StatusCodes.Status429TooManyRequests);
+
+        sources.MapGet("/{sourceId}/snapshots", SourceRequests.Snapshots)
+            .Produces<List<SourceSnapshotDto>>()
+            .Produces<ErrorResponse>(StatusCodes.Status404NotFound);
+
+        sources.MapGet("/{sourceId}/snapshots/compare", SourceRequests.Compare)
+            .Produces<SnapshotComparisonDto>()
+            .Produces<ErrorResponse>(StatusCodes.Status404NotFound);
+
+        sources.MapGet("/{sourceId}/bindings", SourceRequests.Bindings)
+            .Produces<List<SourceBindingDto>>()
+            .Produces<ErrorResponse>(StatusCodes.Status404NotFound);
+
+        sources.MapPost("/{sourceId}/accept", SourceRequests.AcceptAll).RequireHuman()
+            .Produces<DecideProposalsResponse>()
+            .Produces<ErrorResponse>(StatusCodes.Status404NotFound)
+            .Produces<ErrorResponse>(StatusCodes.Status409Conflict);
+
         return app;
     }
 }
@@ -106,7 +152,7 @@ public static class ImportModule
 /// something needs it. None of this asks GitHub for anything, so it works when the
 /// workspace's token is gone.
 /// <list type="bullet">
-/// <item>A project that is deleted takes its scans, snapshots, proposals, links, rejections
+/// <item>A project that is deleted takes its Sources, scans, snapshots, proposals, links, rejections
 /// and tracked refs with it, at once (<see cref="DeleteProjectAsync"/>) and again on the
 /// worker's timer for a project whose delete was cut short (<see cref="DeleteOrphansAsync"/>).</item>
 /// <item>A blob stays while a scan that needs it can still use it: a scan that is not
@@ -130,7 +176,8 @@ public static class ImportRetention
     /// <summary>Deletes everything the importer holds for one project, and the blobs that nothing else of its workspaces needs.</summary>
     public static async Task DeleteProjectAsync(AppDbContext db, Guid projectId, DateTimeOffset now, CancellationToken ct)
     {
-        var workspaces = await db.Scans.Where(s => s.ProjectId == projectId).Select(s => s.WorkspaceId).Distinct().ToListAsync(ct);
+        var workspaces = await db.Scans.Where(s => s.ProjectId == projectId).Select(s => s.WorkspaceId)
+            .Union(db.Sources.Where(s => s.ProjectId == projectId).Select(s => s.WorkspaceId)).Distinct().ToListAsync(ct);
 
         await db.FactLinks.Where(l => l.ProjectId == projectId).ExecuteDeleteAsync(ct);
         await db.Rejections.Where(r => r.ProjectId == projectId).ExecuteDeleteAsync(ct);
@@ -138,6 +185,7 @@ public static class ImportRetention
         // The files, the snapshot, its facts and the proposals of a scan go with its row.
         // A worker that runs one of these scans finds no row to write to and stops.
         await db.Scans.Where(s => s.ProjectId == projectId).ExecuteDeleteAsync(ct);
+        await db.Sources.Where(s => s.ProjectId == projectId).ExecuteDeleteAsync(ct);
 
         foreach (var workspaceId in workspaces)
             await DropUnusedBlobsAsync(db, workspaceId, now, ct);
@@ -149,6 +197,7 @@ public static class ImportRetention
         var gone = await db.Database.SqlQuery<Guid>($"""
             SELECT i.project_id AS "Value"
             FROM (SELECT project_id FROM import.scans
+                  UNION SELECT project_id FROM import.sources
                   UNION SELECT project_id FROM import.fact_links
                   UNION SELECT project_id FROM import.rejections
                   UNION SELECT project_id FROM import.tracked_refs) i

@@ -24,13 +24,33 @@ internal sealed record LinkInfo(
 /// <param name="TakenEntityIds">Entities that a fact of any repository is linked to. A fact never matches one of them by name.</param>
 /// <param name="Rejections">Fact key and fingerprint of every proposal a person rejected.</param>
 /// <param name="Coverage">Where the scan looked. A missing fact is judged only through it.</param>
+/// <param name="SourceId">The Source of the scan. Source bindings of the model are read for it.</param>
+/// <param name="OtherSources">What the other Sources of the project accepted, by the entity it is linked to.</param>
 internal sealed record PlanInput(
     string Repository, string CommitSha, string RuleFingerprint,
     IReadOnlyList<ExtractedFact> Facts, ModelIndex Model,
     IReadOnlyList<LinkInfo> Links,
     IReadOnlySet<Guid> TakenEntityIds,
     IReadOnlySet<(string FactKey, string Fingerprint)> Rejections,
-    ScanCoverage Coverage);
+    ScanCoverage Coverage,
+    Guid SourceId = default,
+    IReadOnlyDictionary<(string Kind, Guid Id), IReadOnlyList<OtherSourceFact>>? OtherSources = null)
+{
+    public IReadOnlyList<OtherSourceFact> OthersOf(string entityKind, Guid entityId) =>
+        OtherSources is not null && OtherSources.TryGetValue((entityKind, entityId), out var others) ? others : [];
+}
+
+/// <summary>
+/// What another Source of the project accepted for an entity: its values as accepted, the
+/// attributes it observed, its truth label and its first citation. Facts stay per Source; a
+/// proposal shows them next to its own values and none of them wins by itself.
+/// </summary>
+/// <param name="Source">The citation name of the Source, such as <c>github.com/acme/orders</c>.</param>
+/// <param name="Citation"><c>&lt;source&gt;@&lt;revision&gt;:path:start-end</c>, or null when the link has no evidence.</param>
+public sealed record OtherSourceFact(
+    Guid SourceId, string Source, string SourceName, string FactStatus,
+    IReadOnlyDictionary<string, string?> Values, IReadOnlyDictionary<string, string> Observed,
+    string? Citation, string AcceptedBy, DateTimeOffset AcceptedAt);
 
 internal sealed record FieldChange(string Field, string? From, string? To);
 
@@ -38,7 +58,8 @@ internal sealed record PlannedProposal(
     Guid Id, ProposalAction Action, string EntityKind, Guid EntityId, string FactKey, string Name,
     JsonObject? Proposed, JsonObject? Current, IReadOnlyList<FieldChange> Changes,
     IReadOnlyList<EvidenceRef> Evidence, IReadOnlyDictionary<string, string> Attributes,
-    IReadOnlyList<string> ConsumerKeys, IReadOnlyList<Guid> DependsOn, string Fingerprint);
+    IReadOnlyList<string> ConsumerKeys, IReadOnlyList<Guid> DependsOn, string Fingerprint,
+    IReadOnlyList<OtherSourceFact>? OtherSources = null);
 
 /// <param name="MarkStale">Entities whose evidence a scan that looked for it no longer finds.</param>
 /// <param name="ClearStale">Entities with a stale mark whose evidence this scan found.</param>
@@ -65,9 +86,15 @@ internal sealed record Plan(
 /// <item>A fact with no linked and no matching entity: <c>add</c>.</item>
 /// <item>A linked entity whose observed values differ: <c>change</c>, or <c>conflict</c> when
 /// the entity is not <c>observed-in-source</c> or a person edited it after it was accepted.</item>
-/// <item>An unlinked fact that matches exactly one hand-made entity by
+/// <item>An unlinked element fact whose key a person bound to an element of the model
+/// (<see cref="ModelIndex.BoundElement"/>): a <c>change</c> or <c>conflict</c> that would link
+/// them.</item>
+/// <item>An unlinked fact that matches exactly one entity that this Source does not hold, by
 /// <see cref="ModelIndex.MatchKey"/>: a <c>change</c> or <c>conflict</c> that would link them.
-/// Two or more matches are not a match.</item>
+/// For an element that another Source holds, a <c>bind</c> question instead: "same as X?".
+/// Two or more matches are not a match, and no match is ever linked without a person.</item>
+/// <item>A fact whose entity another Source holds with other values: a <c>conflict</c> that
+/// lists every Source's values. No Source wins by itself.</item>
 /// <item>A linked entity whose fact is missing, when the scan looked at every path of the
 /// evidence the link was accepted with (<see cref="ScanCoverage"/>): <c>remove</c>, and a
 /// stale mark when the entity is <c>observed-in-source</c>. When the scan did not look, the
@@ -82,6 +109,9 @@ internal static class ProposalPlanner
 
     /// <summary>The fact matches an entity whose accepted fact this scan did not look at. It may be that fact, seen with less of the repository.</summary>
     public const string AcceptedNotCovered = "accepted-not-covered";
+
+    /// <summary>The fact waits for a person to answer "same as X?".</summary>
+    public const string BindingQuestion = "binding-question";
     private const int MaxChangeText = 2000;
 
     private sealed record Resolution(Guid? EntityId, Guid? AddProposalId, string? Name, string? Blocked);
@@ -175,6 +205,13 @@ internal static class ProposalPlanner
                 ? input.Model.Find(candidate.EntityKind, link.EntityId)
                 : null;
             var linked = entity is not null;
+            var isElement = candidate.EntityKind == EntityKinds.Element;
+            ModelEntity? sameAs = null;
+            // A key that a person bound to an element targets that element.
+            if (entity is null && blocked is null && isElement
+                && input.Model.BoundElement(input.SourceId, FactMapping.ExternalKey(candidate.FactKey)) is { } boundId
+                && !claimed.Contains(boundId) && !input.TakenEntityIds.Contains(boundId))
+                entity = input.Model.Find(EntityKinds.Element, boundId);
             if (entity is null && blocked is null)
             {
                 // An operation is matched on its route, which its attributes state more exactly than its name.
@@ -189,12 +226,38 @@ internal static class ProposalPlanner
                         blocked ??= AcceptedNotCovered;
                     if (input.TakenEntityIds.Contains(match.Id) || claimed.Contains(match.Id))
                         continue;
+                    // An element bound to another key of this Source is another thing of it; one
+                    // a person said is not this fact is not offered again.
+                    if (isElement && (input.Model.IsBoundTo(match.Id, input.SourceId)
+                        || input.Rejections.Contains((candidate.FactKey, BindFingerprint(candidate.FactKey, match.Id)))))
+                        continue;
                     only = match;
                     if (++count == 2)
                         break;
                 }
                 if (count == 1)
-                    entity = only;
+                {
+                    // An element that another Source holds is never taken by its name: a person is asked.
+                    if (isElement && (input.Model.IsBoundToOther(only!.Id, input.SourceId) || input.OthersOf(EntityKinds.Element, only.Id).Count > 0))
+                        sameAs = only;
+                    else
+                        entity = only;
+                }
+            }
+
+            if (sameAs is not null && blocked is null)
+            {
+                resolved[candidate.FactKey] = new Resolution(null, null, null, BindingQuestion);
+                Reclassify(candidate.FactKey, FactDisposition.Blocked, BindingQuestion);
+                var sameAsJson = ToJson(sameAs.Values, ReferenceNames(input.Model, sameAs.Values), new Dictionary<string, string>());
+                if (sameAs.FactStatus is not null)
+                    sameAsJson["factStatus"] = sameAs.FactStatus;
+                proposals.Add(new PlannedProposal(
+                    newId(), ProposalAction.Bind, EntityKinds.Element, sameAs.Id, candidate.FactKey, candidate.Name,
+                    ToJson(values, names, candidate.Observed), sameAsJson, [], candidate.Evidence, candidate.Attributes,
+                    candidate.ConsumerKeys, [], BindFingerprint(candidate.FactKey, sameAs.Id),
+                    input.OthersOf(EntityKinds.Element, sameAs.Id)));
+                continue;
             }
 
             if (entity is null)
@@ -299,7 +362,10 @@ internal static class ProposalPlanner
             var editedSince = linked && compared.Any(field =>
                 link!.Accepted.TryGetValue(field, out var accepted)
                 && !string.Equals(accepted, entity.Values.GetValueOrDefault(field), StringComparison.Ordinal));
-            var action = modelChanges > 0 && (status != ObservedInSource || editedSince)
+            // Another Source holds the entity with other values: the Sources disagree, and the
+            // review lists every side. Accepting this one is a person's choice, never a default.
+            var others = input.OthersOf(candidate.EntityKind, entity.Id);
+            var action = modelChanges > 0 && (status != ObservedInSource || editedSince || others.Count > 0)
                 ? ProposalAction.Conflict
                 : ProposalAction.Change;
 
@@ -333,7 +399,7 @@ internal static class ProposalPlanner
                 changeId, action, candidate.EntityKind, entity.Id, candidate.FactKey, candidate.Name,
                 ToJson(after, afterNames, candidate.Observed), currentJson,
                 [.. changes.Select(Bounded)], candidate.Evidence, candidate.Attributes,
-                candidate.ConsumerKeys, [.. dependsOn.Distinct()], fingerprint));
+                candidate.ConsumerKeys, [.. dependsOn.Distinct()], fingerprint, others));
         }
 
         var coverage = PlanRemovals(input, mapping, links, proposals, releases, markStale, newId);
@@ -382,8 +448,10 @@ internal static class ProposalPlanner
                 continue;
 
             // A fact that a person declared, or took over by changing its label, rests on
-            // their word and not on the evidence. A scan leaves no mark on it.
-            if (entity.FactStatus == ObservedInSource && entity.Stale is null)
+            // their word and not on the evidence. A scan leaves no mark on it. Nor on a fact
+            // that another Source still holds: staleness compares Snapshots of one Source.
+            var others = input.OthersOf(link.EntityKind, entity.Id);
+            if (entity.FactStatus == ObservedInSource && entity.Stale is null && others.Count == 0)
                 markStale.Add(entity.Id);
 
             var fingerprint = Hash([EnumText.Of(ProposalAction.Remove), link.EntityKind, link.FactKey, Canonical(entity.Values)]);
@@ -399,7 +467,7 @@ internal static class ProposalPlanner
             var evidence = link.Evidence.Select(e => e with { CommitSha = e.CommitSha ?? link.CommitSha }).ToList();
             removals.Add((new PlannedProposal(
                 newId(), ProposalAction.Remove, link.EntityKind, entity.Id, link.FactKey, entity.Name,
-                null, current, [], evidence, link.Attributes, link.ConsumerKeys, [], fingerprint), entity));
+                null, current, [], evidence, link.Attributes, link.ConsumerKeys, [], fingerprint, others), entity));
         }
 
         // An entity is removed after the entities that point at it are removed, and after
@@ -554,6 +622,10 @@ internal static class ProposalPlanner
         Hash(candidate.Observed.Select(o => $"{o.Key}={o.Value}")),
         current is null ? "" : Canonical(current),
     ]);
+
+    /// <summary>What a "same as X?" question asks: this key of this Source and that element. A "no" is remembered by it.</summary>
+    public static string BindFingerprint(string factKey, Guid elementId) =>
+        Hash([EnumText.Of(ProposalAction.Bind), EntityKinds.Element, factKey, elementId.ToString()]);
 
     private static string Canonical(IReadOnlyDictionary<string, string?> values) =>
         Hash(values.OrderBy(v => v.Key, StringComparer.Ordinal).Select(v => $"{v.Key}={v.Value}"));

@@ -26,6 +26,8 @@ internal sealed class ModelIndex
     private readonly Dictionary<Guid, string> _names = [];
     private readonly Dictionary<(string Kind, string MatchKey), List<ModelEntity>> _byMatchKey = [];
     private readonly Dictionary<(string Kind, Guid Id), string> _matchKeys = [];
+    private readonly Dictionary<(Guid SourceId, string Key), Guid> _bound = [];
+    private readonly Dictionary<Guid, HashSet<Guid>> _sourcesOf = [];
 
     public int Count => _byId.Count;
 
@@ -33,7 +35,16 @@ internal sealed class ModelIndex
     {
         var index = new ModelIndex();
         foreach (var e in model.Elements.Values)
+        {
             index.Add(Of(e));
+            foreach (var binding in e.Bindings)
+            {
+                index._bound.TryAdd((binding.SourceId, binding.ExternalKey), e.Id);
+                if (!index._sourcesOf.TryGetValue(e.Id, out var sources))
+                    index._sourcesOf[e.Id] = sources = [];
+                sources.Add(binding.SourceId);
+            }
+        }
         foreach (var o in model.Operations.Values)
             index.Add(Of(o));
         foreach (var c in model.Channels.Values)
@@ -175,6 +186,15 @@ internal sealed class ModelIndex
     };
 
     public ModelEntity? Find(string entityKind, Guid id) => _byId.GetValueOrDefault((entityKind, id));
+
+    /// <summary>The element that a person bound to this key of this Source, or null.</summary>
+    public Guid? BoundElement(Guid sourceId, string key) => _bound.TryGetValue((sourceId, key), out var id) ? id : null;
+
+    /// <summary>True when the element has a binding to this Source, under any key.</summary>
+    public bool IsBoundTo(Guid elementId, Guid sourceId) => _sourcesOf.TryGetValue(elementId, out var sources) && sources.Contains(sourceId);
+
+    /// <summary>True when the element has a binding to a Source other than this one.</summary>
+    public bool IsBoundToOther(Guid elementId, Guid sourceId) => _sourcesOf.TryGetValue(elementId, out var sources) && sources.Any(s => s != sourceId);
 
     /// <summary>The entities of a kind with this match key. The list is empty when there is none.</summary>
     public IReadOnlyList<ModelEntity> Matching(string entityKind, string matchKey) =>

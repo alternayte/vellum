@@ -17,7 +17,7 @@ public sealed record EvidenceDto(string Path, int StartLine, int EndLine, string
 
 public sealed record ProposalChangeDto(string Field, string? From, string? To);
 
-/// <param name="Action"><c>add</c>, <c>change</c>, <c>remove</c>, <c>conflict</c> or <c>relink</c>.</param>
+/// <param name="Action"><c>add</c>, <c>change</c>, <c>remove</c>, <c>conflict</c>, <c>relink</c> or <c>bind</c>. A <c>bind</c> asks "same as this element?": <paramref name="Current"/> is the element and <paramref name="Proposed"/> what this Source says.</param>
 /// <param name="Subject"><c>fact</c>, or <c>repository</c> for the proposal about the repository itself, whose fact key is empty.</param>
 /// <param name="Proposed">The values the source establishes, by model field name. Null for <c>remove</c>. For <c>relink</c>: <c>{ candidates: [{ factKey, name, evidence }] }</c>.</param>
 /// <param name="Current">The values of the entity when the scan completed. Null for <c>add</c>.</param>
@@ -25,12 +25,14 @@ public sealed record ProposalChangeDto(string Field, string? From, string? To);
 /// <param name="CanDecide">False when the proposal is a preview: it is not pending, or its scan is a comparison scan.</param>
 /// <param name="CanDecideReason">Why a pending proposal cannot be decided.</param>
 /// <param name="Impact">What accepting would break, as the model and the scenarios are now. Null when nothing.</param>
+/// <param name="OtherSources">What other Sources of the project accepted for the same entity, each with its values and citation. A <c>conflict</c> shows them side by side; none wins by itself.</param>
 /// <param name="Truncated">True when long values of <paramref name="Proposed"/>, <paramref name="Current"/> or <paramref name="Changes"/> are cut in this list. The whole proposal is at <c>GET …/proposals/{id}</c>.</param>
 public sealed record ProposalDto(
     Guid Id, string Action, string EntityKind, Guid EntityId, string Subject, string FactKey, string Name,
     JsonObject? Proposed, JsonObject? Current, IReadOnlyList<ProposalChangeDto> Changes,
     IReadOnlyList<EvidenceDto> Evidence, Guid[] DependsOn, string Status, bool Partial,
-    bool CanDecide, string? CanDecideReason, ProposalImpactDto? Impact, bool Truncated);
+    bool CanDecide, string? CanDecideReason, ProposalImpactDto? Impact, bool Truncated,
+    IReadOnlyList<OtherSourceFact> OtherSources, Guid SourceId);
 
 /// <param name="NotCovered">
 /// The accepted facts of the repository that this scan could not judge, by reason. They are
@@ -119,7 +121,7 @@ public static class ProposalReads
         return Results.Ok(ToDto(row, context, cut: false, out _));
     }
 
-    private sealed record ReadContext(string Repository, string CommitSha, bool Decidable, string? Reason, ProposalImpact? Impact);
+    private sealed record ReadContext(string Repository, string CommitSha, bool Decidable, string? Reason, ProposalImpact? Impact, Guid SourceId);
 
     private static async Task<ReadContext> ContextAsync(
         IServiceProvider services, AppDbContext db, ScanEntity scan, IReadOnlyList<ProposalEntity> rows, CancellationToken ct)
@@ -141,7 +143,7 @@ public static class ProposalReads
         }
 
         return new ReadContext(
-            $"{scan.Host}/{scan.Repository}", scan.CommitSha ?? "", kind.Tracking, ScanKindInfo.Describe(kind, tracked), impact);
+            $"{scan.Host}/{scan.Repository}", scan.CommitSha ?? "", kind.Tracking, ScanKindInfo.Describe(kind, tracked), impact, scan.SourceId);
     }
 
     private static ProposalDto ToDto(ProposalEntity p, ReadContext context, bool cut, out int size)
@@ -172,7 +174,8 @@ public static class ProposalReads
             p.Id, EnumText.Of(p.Action), EnumText.Of(p.EntityKind), p.EntityId, EnumText.Of(p.Subject), p.FactKey, p.Name, proposed, current,
             [.. changes.Select(c => new ProposalChangeDto(c.Field, c.From, c.To))],
             Evidence(context.Repository, context.CommitSha, p.Evidence), p.DependsOn, EnumText.Of(p.Status), p.Partial,
-            pending && context.Decidable, pending ? context.Reason : null, impact, truncated);
+            pending && context.Decidable, pending ? context.Reason : null, impact, truncated,
+            ProposalJson.ReadOtherSources(p.OtherSources), context.SourceId);
     }
 
     private static string? Cut(string? value) =>

@@ -19,21 +19,31 @@ internal enum SnapshotOutcome
     ModelBusy,
 }
 
-/// <summary>How the plan of a scan is written: at the end of the scan's run, or when a person makes its ref the tracked ref.</summary>
-/// <param name="LeaseToken">The fencing token of the run that completes the scan. Null for <c>track</c>.</param>
-/// <param name="TrackedBy">The person who called <c>track</c>. Null at the end of a run.</param>
-internal sealed record WriteMode(long? LeaseToken, string? TrackedBy)
+/// <summary>
+/// How the plan of a scan is written: at the end of the scan's run, when a person makes its
+/// ref the tracked ref, or when a person answered a "same as X?" question and the scan's
+/// pending proposals are planned again.
+/// </summary>
+/// <param name="LeaseToken">The fencing token of the run that completes the scan. Null otherwise.</param>
+/// <param name="TrackedBy">The person who called <c>track</c>. Null otherwise.</param>
+/// <param name="Replan">True when only the pending proposals are planned again; decided ones stay as they are.</param>
+internal sealed record WriteMode(long? LeaseToken, string? TrackedBy, bool Replan = false)
 {
     public static WriteMode Complete(long leaseToken) => new(leaseToken, null);
 
     public static WriteMode Track(string userId) => new(null, userId);
+
+    public static WriteMode PlanAgain() => new(null, null, Replan: true);
 }
+
+/// <summary>The identity of the Snapshot that a completed run writes: its ID and the number of files in its manifest.</summary>
+internal sealed record ManifestSummary(string SnapshotId, int Files);
 
 /// <param name="Coverage">Makes the coverage of the scan. A plan may narrow the one it is given, so each plan gets its own.</param>
 /// <param name="ExtractionGap">See <see cref="ScanEntity.ExtractionGap"/>.</param>
 internal sealed record SnapshotInput(
     IReadOnlyList<ExtractedFact> Facts, bool IsComplete, string? ExtractionGap, string Notes,
-    Func<ScanCoverage> Coverage, int FilesExtracted);
+    Func<ScanCoverage> Coverage, int FilesExtracted, ManifestSummary? Manifest = null);
 
 /// <summary>
 /// The end of a scan: the snapshot, the proposals, the moved links, the stale marks and the
@@ -127,7 +137,7 @@ internal static class SnapshotWriter
         var plan = await Task.Run(() => ProposalPlanner.Compute(new PlanInput(
             $"{scan.Host}/{scan.Repository}", scan.CommitSha!, fingerprint, input.Facts,
             ModelIndex.From(model, schemas), state.Links, state.TakenEntityIds, state.Rejections,
-            input.Coverage()), Guid.NewGuid), ct);
+            input.Coverage(), scan.SourceId, state.OtherSources), Guid.NewGuid), ct);
         return new Prepared(project.StreamId, version, state, kind, plan, fingerprint);
     }
 
@@ -143,12 +153,14 @@ internal static class SnapshotWriter
         var tracking = prepared.Kind.Tracking;
 
         // 1. The rows that only this scan owns, before any lock that another writer waits for.
-        if (mode.TrackedBy is null)
+        var seq = 0;
+        if (mode.LeaseToken is not null)
         {
+            var manifest = input.Manifest ?? throw new InvalidOperationException("A completed run writes its Snapshot manifest.");
             db.ImportSnapshots.Add(new SnapshotEntity
             {
-                ScanId = scan.Id, ProjectId = scan.ProjectId, Host = scan.Host, Repository = scan.Repository,
-                CommitSha = commitSha, IsComplete = input.IsComplete,
+                ScanId = scan.Id, ProjectId = scan.ProjectId, SourceId = scan.SourceId, Host = scan.Host, Repository = scan.Repository,
+                CommitSha = commitSha, SnapshotId = manifest.SnapshotId, ManifestFiles = manifest.Files, IsComplete = input.IsComplete,
                 RuleVersions = ProposalJson.Write(RuleSet.Current), RuleFingerprint = RuleSet.CurrentFingerprint,
                 Limits = scan.Limits, FactCount = plan.Facts.Count, CreatedAt = now,
             });
@@ -169,10 +181,17 @@ internal static class SnapshotWriter
                 return SnapshotOutcome.LeaseLost;
             for (var i = 0; i < rows.Count; i++)
                 (rows[i].Disposition, rows[i].Reason) = (plan.Facts[i].Disposition, plan.Facts[i].Reason);
-            await db.ImportProposals.Where(p => p.ScanId == scan.Id).ExecuteDeleteAsync(ct);
+            if (mode.Replan)
+            {
+                // Decided proposals are history and stay. A pending one that the new plan makes
+                // again comes back with a new ID after them; the plan never repeats a decided one.
+                await db.ImportProposals.Where(p => p.ScanId == scan.Id && p.Status == ProposalStatus.Pending).ExecuteDeleteAsync(ct);
+                seq = await db.ImportProposals.Where(p => p.ScanId == scan.Id).Select(p => (int?)p.Seq).MaxAsync(ct) + 1 ?? 0;
+            }
+            else
+                await db.ImportProposals.Where(p => p.ScanId == scan.Id).ExecuteDeleteAsync(ct);
         }
 
-        var seq = 0;
         db.ImportProposals.AddRange(plan.Proposals.Select(p => new ProposalEntity
         {
             Id = p.Id, ScanId = scan.Id, ProjectId = scan.ProjectId, Seq = seq++,
@@ -181,7 +200,7 @@ internal static class SnapshotWriter
             Proposed = p.Proposed?.ToJsonString(), Current = p.Current?.ToJsonString(),
             Changes = ProposalJson.Write(p.Changes), Evidence = ProposalJson.Write(p.Evidence),
             Attributes = ProposalJson.Write(p.Attributes), ConsumerKeys = ProposalJson.Write(p.ConsumerKeys),
-            DependsOn = [.. p.DependsOn],
+            DependsOn = [.. p.DependsOn], OtherSources = ProposalJson.Write(p.OtherSources ?? []),
             Status = ProposalStatus.Pending, Partial = !input.IsComplete, Fingerprint = p.Fingerprint,
         }));
         await db.SaveChangesAsync(ct);
@@ -220,6 +239,17 @@ internal static class SnapshotWriter
                     .SetProperty(s => s.NeedsReview, plan.NeedsReview)
                     .SetProperty(s => s.UpdatedAt, now), ct);
             if (audited == 0)
+                return SnapshotOutcome.LeaseLost;
+        }
+        else if (mode.Replan)
+        {
+            var planned = await db.Scans
+                .Where(s => s.Id == scan.Id && s.Status == ScanStatus.Completed)
+                .ExecuteUpdateAsync(set => set
+                    .SetProperty(s => s.Coverage, plan.Coverage.ToJson())
+                    .SetProperty(s => s.NeedsReview, plan.NeedsReview)
+                    .SetProperty(s => s.UpdatedAt, now), ct);
+            if (planned == 0)
                 return SnapshotOutcome.LeaseLost;
         }
         else

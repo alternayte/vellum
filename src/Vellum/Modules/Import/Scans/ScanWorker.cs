@@ -3,10 +3,9 @@ using System.Text;
 using Deedbox;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
-using Vellum.Modules.GitHub;
 using Vellum.Modules.Import.Extraction;
 using Vellum.Modules.Import.Proposals;
-using Vellum.Modules.Settings;
+using Vellum.Modules.Import.Sources;
 using Vellum.Modules.Workspaces;
 using Vellum.Shared.Telemetry;
 using Vellum.Shared;
@@ -93,8 +92,6 @@ public sealed class ScanSignal
 public sealed class ScanWorker(
     IServiceScopeFactory scopes, TimeProvider time, ScanWorkerOptions options, ILogger<ScanWorker> logger)
 {
-    private static readonly TimeSpan DefaultRateLimitWait = TimeSpan.FromMinutes(1);
-    private static readonly TimeSpan MaxRateLimitWait = TimeSpan.FromMinutes(65);
     /// <summary>The wait after the first unexpected error. Each further one doubles it.</summary>
     public static readonly TimeSpan FirstBackoff = TimeSpan.FromSeconds(10);
     public static readonly TimeSpan MaxBackoff = TimeSpan.FromMinutes(15);
@@ -289,157 +286,15 @@ public sealed class ScanWorker(
         }
 
         var limits = ScanLimits.FromJson(scan.Limits);
+        var source = await db.Sources.FirstOrDefaultAsync(s => s.Id == scan.SourceId, ct);
+        if (source is null)
+            throw ScanStop.Failed(ScanFailures.ProjectGone);
 
-        var connected = await services.GetRequiredService<GitHubReader>().ConnectAsync(scan.WorkspaceId, ct);
-        if (connected.Failure is { } notConnected)
-            throw ScanStop.Failed(ScanFailures.NotConnected(notConnected));
-        var github = connected.Value!;
-
-        // Step 1: pin the commit. A resumed scan keeps the SHA it has, so a branch that
-        // moved in the meantime cannot give it files of two revisions.
-        if (scan.CommitSha is null)
-        {
-            var asked = scan.Repository.Split('/');
-            var repository = Read(await github.GetRepositoryAsync(asked[0], asked[1], ct), github, "repository", null);
-            if (scan.PullRequestNumber is { } number)
-            {
-                var pull = await PinPullRequestAsync(github, asked[0], asked[1], repository, number, ct);
-                scan.CommitSha = pull.HeadSha;
-                scan.ResolvedRef = null;
-                scan.PullRequest = pull.ToJson();
-                var pullNotes = ScanNotes.Read(scan.Notes);
-                if (pull.FromFork)
-                    pullNotes.Add(ScanNotes.Of("pull-request-fork", ""));
-                if (pull.Merged)
-                    pullNotes.Add(ScanNotes.Of("pull-request-merged", ""));
-                else if (pull.State == "closed")
-                    pullNotes.Add(ScanNotes.Of("pull-request-closed", ""));
-                scan.Notes = ScanNotes.Write(pullNotes);
-            }
-            else
-            {
-                var requested = scan.RequestedRef;
-                if (requested is null)
-                {
-                    var settings = await services.GetRequiredService<SettingsResolver>().GetWorkspaceAsync(scan.WorkspaceId, ct);
-                    requested = settings.Effective.Github.DefaultRef is { Length: > 0 } configured ? configured : null;
-                }
-                var reference = requested ?? repository.DefaultBranch;
-                scan.CommitSha = Read(await github.ResolveRefAsync(asked[0], asked[1], reference, ct), github, "ref", requested);
-                scan.ResolvedRef = scan.IsBareCommit() ? null : reference;
-            }
-            scan.RepositoryIsPrivate = repository.IsPrivate;
-            scan.RepositoryId = repository.Id;
-            scan.RepositoryName = repository.FullName;
-            await IdentifyRepositoryAsync(db, scan, repository, ct);
-            await SaveAsync(db, scan, ct);
-        }
-        var names = scan.Repository.Split('/');
-        var (owner, name) = (names[0], names[1]);
-
-        // Step 2: the file list of that commit. Every file gets a row; which of them the
-        // scan reads is decided from the list alone, before anything is fetched.
-        if (!scan.TreeListed)
-        {
-            var tree = await github.GetTreeAsync(owner, name, scan.CommitSha, ct);
-            if (tree.Failure is GitHubFailure.Truncated)
-            {
-                scan.Partial = true;
-                scan.Notes = ScanNotes.Write(ScanNotes.Read(scan.Notes).Append(ScanNotes.Of("tree-truncated", "")));
-                await SaveAsync(db, scan, ct);
-                throw ScanStop.Failed(ScanFailures.TreeTruncated);
-            }
-
-            var selection = ScanScope.Select(Read(tree, github, "tree", null).Entries, limits, scan.IncludePaths, scan.ExcludePaths);
-            var rows = selection.Files.Select(file => new ScanFileEntity
-            {
-                ScanId = scan.Id, Path = file.Entry.Path, PathHash = KeyHash.Of(file.Entry.Path),
-                BlobSha = file.Entry.Sha, Size = file.Entry.Size ?? 0,
-                State = file.Reason is null ? ScanFileState.Pending : ScanFileState.Skipped, Reason = file.Reason,
-            }).ToList();
-            db.ScanFiles.AddRange(rows);
-            scan.TreeListed = true;
-            scan.FilesListed = selection.Listed;
-            scan.FilesSkipped = selection.Skipped;
-            scan.Partial |= selection.Partial;
-            scan.Notes = ScanNotes.Write(ScanNotes.Read(scan.Notes).Concat(selection.Notes));
-            await SaveAsync(db, scan, ct);
-            foreach (var row in rows)
-                db.Entry(row).State = EntityState.Detached;
-        }
-
-        // Step 3: a file counts as read only while its content is stored. One whose blob
-        // is gone goes back to the list of files to fetch.
+        // Steps 1 to 4, per kind of Source: pin the revision, list the files with their blob
+        // SHAs, and store the cleared content of each file in scope. Everything after this
+        // reads the rows the fetch stage wrote and is the same for every kind.
+        await SourceFetch.RunAsync(new FetchContext(services, db, scan, source, limits, time), ct);
         var workspaceId = scan.WorkspaceId;
-        var lost = await db.ScanFiles
-            .Where(f => f.ScanId == scanId && f.State == ScanFileState.Read
-                && !db.Blobs.Any(b => b.WorkspaceId == workspaceId && b.BlobSha == f.BlobSha && b.Content != null))
-            .ToListAsync(ct);
-        if (lost.Count > 0)
-        {
-            foreach (var file in lost)
-            {
-                file.State = ScanFileState.Pending;
-                scan.FilesRead--;
-                scan.BytesRead -= file.Size;
-            }
-            await SaveAsync(db, scan, ct);
-        }
-
-        // Step 4: the blobs, in path order. One that is stored already is not asked for.
-        var pending = (await db.ScanFiles.Where(f => f.ScanId == scan.Id && f.State == ScanFileState.Pending).ToListAsync(ct))
-            .OrderBy(f => f.Path, StringComparer.Ordinal).ToList();
-        foreach (var file in pending)
-        {
-            ct.ThrowIfCancellationRequested();
-
-            var stored = await db.Blobs.AsNoTracking()
-                .Where(b => b.WorkspaceId == scan.WorkspaceId && b.BlobSha == file.BlobSha)
-                .Select(b => new { b.WithheldReason, HasContent = b.Content != null })
-                .FirstOrDefaultAsync(ct);
-            if (stored is null)
-            {
-                var blob = await github.GetBlobAsync(owner, name, file.BlobSha, limits.MaxFileBytes, ct);
-                switch (blob.Failure)
-                {
-                    case null:
-                    {
-                        var content = blob.Value!.Content;
-                        // The bytes must be the file of the pinned commit, and they must be
-                        // cleared before they are stored anywhere.
-                        if (!ContentClearance.IsBlob(content, file.BlobSha))
-                            Skip(scan, file, CoverageGap.ShaMismatch, partial: true);
-                        else if (ContentClearance.Withhold(content) is { } withheld)
-                        {
-                            await StoreBlobAsync(db, scan.WorkspaceId, file.BlobSha, null, content.LongLength, withheld, ct);
-                            Skip(scan, file, withheld, partial: false);
-                        }
-                        else
-                        {
-                            await StoreBlobAsync(db, scan.WorkspaceId, file.BlobSha, content, content.LongLength, null, ct);
-                            MarkRead(scan, file, content.LongLength);
-                        }
-                        break;
-                    }
-                    case GitHubFailure.RateLimited limited:
-                        throw ScanStop.Waiting(RetryAt(limited.ResetAt));
-                    case GitHubFailure.TooLarge:
-                        Skip(scan, file, "limit:file-bytes", partial: true);
-                        break;
-                    case GitHubFailure.NotFound:
-                        Skip(scan, file, "blob-missing", partial: true);
-                        break;
-                    default:
-                        throw ScanStop.Failed(ScanFailures.Describe(blob.Failure, github.HasToken, "blob", null));
-                }
-            }
-            else if (stored.HasContent)
-                MarkRead(scan, file, file.Size);
-            else
-                Skip(scan, file, stored.WithheldReason ?? "secret-file", partial: false);
-
-            await SaveAsync(db, scan, ct);
-        }
 
         // Step 5: extract. The extractors read text and nothing else; they run nothing.
         // They get exactly the files that count as read. One file less means stored
@@ -459,7 +314,7 @@ public sealed class ScanWorker(
             throw ScanStop.Failed(ScanFailures.StoredContentMissing);
 
         var repositoryName = $"{scan.Host}/{scan.Repository}";
-        var input = new ExtractionInput(repositoryName, scan.CommitSha,
+        var input = new ExtractionInput(repositoryName, scan.CommitSha ?? throw new InvalidOperationException("The fetch stage pins the revision of the scan."),
             [.. readFiles.Select(f => new SourceFile(f.Path, Encoding.UTF8.GetString(contents[f.BlobSha])))]);
         var result = await Task.Run(() => EvidenceExtractor.Extract(input, new ExtractionLimits(
             MaxFiles: limits.MaxFiles, MaxFileBytes: limits.MaxFileBytes, MaxTotalBytes: limits.MaxTotalBytes)), ct);
@@ -487,6 +342,10 @@ public sealed class ScanWorker(
             .ToList();
         var isComplete = !scan.Partial && result.IsComplete;
 
+        // The Snapshot: the files the extraction read whole, with their blob SHAs.
+        var manifest = readFiles.Where(f => f.State == ScanFileState.Read)
+            .Select(f => new ManifestEntry(f.Path, f.Size, f.BlobSha)).ToList();
+
         var coverageFiles = files.ToDictionary(f => f.Path, f => f.State == ScanFileState.Read ? null : f.Reason ?? CoverageGap.ParseFailure, StringComparer.Ordinal);
         var absent = ScanScope.AbsentGap(limits, scan.IncludePaths, scan.ExcludePaths);
 
@@ -501,7 +360,8 @@ public sealed class ScanWorker(
         var written = await SnapshotWriter.WriteAsync(
             services, scan, WriteMode.Complete(leaseToken),
             new SnapshotInput(result.Facts, isComplete, gap, ScanNotes.Write(notes),
-                () => new ScanCoverage(coverageFiles, absent, gap), coverageFiles.Count(f => f.Value is null)),
+                () => new ScanCoverage(coverageFiles, absent, gap), coverageFiles.Count(f => f.Value is null),
+                new ManifestSummary(SnapshotManifest.Id(manifest), manifest.Count)),
             time.GetUtcNow(), ct);
         switch (written)
         {
@@ -512,71 +372,6 @@ public sealed class ScanWorker(
             case SnapshotOutcome.Written:
                 await DropUnusedBlobsAsync(scan.WorkspaceId, CancellationToken.None);
                 break;
-        }
-    }
-
-    /// <summary>
-    /// GitHub's ID says which repository this is; its name can change. The scan and every
-    /// row of the repository in this project take the name GitHub gives now, so a renamed
-    /// repository keeps its accepted facts. Rows written before IDs were recorded are
-    /// claimed by the name they have.
-    /// </summary>
-    private static async Task IdentifyRepositoryAsync(AppDbContext db, ScanEntity scan, GitHubRepository repository, CancellationToken ct)
-    {
-        var canonical = repository.FullName.ToLowerInvariant();
-        // Without an ID nothing says that another name is the same repository.
-        if (repository.Id is null || !ScanRequests.IsRepositoryName(canonical))
-            canonical = scan.Repository;
-        var (projectId, host, asked) = (scan.ProjectId, scan.Host, scan.Repository);
-
-        if (repository.Id is { } id)
-        {
-            foreach (var known in new[] { asked, canonical }.Distinct())
-            {
-                await db.FactLinks.Where(l => l.ProjectId == projectId && l.Host == host && l.Repository == known && l.RepositoryId == null)
-                    .ExecuteUpdateAsync(set => set.SetProperty(l => l.RepositoryId, id), ct);
-                await db.Rejections.Where(r => r.ProjectId == projectId && r.Host == host && r.Repository == known && r.RepositoryId == null)
-                    .ExecuteUpdateAsync(set => set.SetProperty(r => r.RepositoryId, id), ct);
-                await db.TrackedRefs.Where(t => t.ProjectId == projectId && t.Host == host && t.Repository == known && t.RepositoryId == null)
-                    .ExecuteUpdateAsync(set => set.SetProperty(t => t.RepositoryId, id), ct);
-            }
-
-            // A row moves to the new name unless the new name already has that row.
-            await db.FactLinks
-                .Where(l => l.ProjectId == projectId && l.Host == host && l.RepositoryId == id && l.Repository != canonical
-                    && !db.FactLinks.Any(o => o.ProjectId == projectId && o.Host == host && o.Repository == canonical
-                        && o.Subject == l.Subject && o.FactKeyHash == l.FactKeyHash))
-                .ExecuteUpdateAsync(set => set.SetProperty(l => l.Repository, canonical), ct);
-            await db.Rejections
-                .Where(r => r.ProjectId == projectId && r.Host == host && r.RepositoryId == id && r.Repository != canonical
-                    && !db.Rejections.Any(o => o.ProjectId == projectId && o.Host == host && o.Repository == canonical
-                        && o.Subject == r.Subject && o.FactKeyHash == r.FactKeyHash && o.Fingerprint == r.Fingerprint))
-                .ExecuteUpdateAsync(set => set.SetProperty(r => r.Repository, canonical), ct);
-            await db.TrackedRefs
-                .Where(t => t.ProjectId == projectId && t.Host == host && t.RepositoryId == id && t.Repository != canonical
-                    && !db.TrackedRefs.Any(o => o.ProjectId == projectId && o.Host == host && o.Repository == canonical))
-                .ExecuteUpdateAsync(set => set.SetProperty(t => t.Repository, canonical), ct);
-        }
-
-        // Links accepted before refs were recorded follow the default ref. This scan names it.
-        if (scan.RequestedRef is null && scan.ResolvedRef is { } resolved)
-        {
-            await db.TrackedRefs
-                .Where(t => t.ProjectId == projectId && t.Host == host && t.Repository == canonical && t.RefName == "")
-                .ExecuteUpdateAsync(set => set.SetProperty(t => t.RefName, resolved), ct);
-        }
-
-        if (canonical == asked)
-            return;
-        scan.Repository = canonical;
-        try
-        {
-            await db.SaveChangesAsync(ct);
-        }
-        catch (DbUpdateException ex) when (ex.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation })
-        {
-            // The index that allows one active scan per repository refused the new name.
-            throw ScanStop.Failed(ScanFailures.RepositoryRenamed);
         }
     }
 
@@ -612,71 +407,6 @@ public sealed class ScanWorker(
     }
 
     /// <summary>
-    /// Reads the pull request and returns its provenance. The scan reads the head commit
-    /// through the repository of the scan, as every other read of it does. For a pull request
-    /// from another repository (a fork, or a fork that was deleted) that works only when
-    /// GitHub serves the head commit here, which it does for the pull request refs it keeps.
-    /// When it does not, the scan stops: Vellum reads no other repository.
-    /// </summary>
-    private static async Task<ScanPullRequest> PinPullRequestAsync(
-        GitHubConnection github, string owner, string name, GitHubRepository repository, int number, CancellationToken ct)
-    {
-        var read = await github.GetPullRequestAsync(owner, name, number, ct);
-        if (read.Failure is GitHubFailure.NotFound)
-            throw ScanStop.Failed(ScanFailures.PullRequestNotFound(number, github.HasToken));
-        var pull = Read(read, github, "pull-request", null);
-
-        var fromFork = pull.HeadRepository is null || !string.Equals(pull.HeadRepository, repository.FullName, StringComparison.OrdinalIgnoreCase);
-        if (fromFork)
-        {
-            var served = await github.ResolveRefAsync(owner, name, pull.HeadSha, ct);
-            if (served.Failure is GitHubFailure.RateLimited)
-                Read(served, github, "ref", null);
-            if (served.Failure is not null || served.Value != pull.HeadSha)
-                throw ScanStop.Failed(ScanFailures.PullRequestHeadUnreadable(number));
-        }
-
-        return new ScanPullRequest(
-            pull.Number, pull.Title, pull.State, pull.Merged, pull.BaseRef, pull.BaseSha, pull.HeadRef, pull.HeadSha,
-            pull.HeadRepository, fromFork);
-    }
-
-    private static T Read<T>(GitHubResult<T> result, GitHubConnection github, string stage, string? reference)
-    {
-        if (result.Failure is GitHubFailure.RateLimited limited)
-            throw ScanStop.Waiting(limited.ResetAt ?? DateTimeOffset.MinValue);
-        if (result.Failure is { } failure)
-            throw ScanStop.Failed(ScanFailures.Describe(failure, github.HasToken, stage, reference));
-        return result.Value!;
-    }
-
-    private DateTimeOffset RetryAt(DateTimeOffset? resetAt)
-    {
-        var now = time.GetUtcNow();
-        var at = resetAt is null || resetAt == DateTimeOffset.MinValue ? now + DefaultRateLimitWait : resetAt.Value;
-        // GitHub's clock and this one differ, and a reset time can be far away or in the past.
-        return at < now + TimeSpan.FromSeconds(1) ? now + TimeSpan.FromSeconds(1)
-            : at > now + MaxRateLimitWait ? now + MaxRateLimitWait
-            : at;
-    }
-
-    private static void MarkRead(ScanEntity scan, ScanFileEntity file, long bytes)
-    {
-        file.State = ScanFileState.Read;
-        scan.FilesRead++;
-        scan.BytesRead += bytes;
-    }
-
-    private static void Skip(ScanEntity scan, ScanFileEntity file, string reason, bool partial)
-    {
-        file.State = ScanFileState.Skipped;
-        file.Reason = reason;
-        scan.FilesSkipped++;
-        scan.Partial |= partial;
-        scan.Notes = ScanNotes.Write(ScanNotes.Read(scan.Notes).Append(ScanNotes.Of(reason, file.Path)));
-    }
-
-    /// <summary>
     /// The checkpoint. The scan row is written with every save, and its fencing token is a
     /// concurrency token: a run that lost the scan fails here, and its file rows with it.
     /// </summary>
@@ -684,19 +414,6 @@ public sealed class ScanWorker(
     {
         scan.UpdatedAt = time.GetUtcNow();
         await db.SaveChangesAsync(ct);
-    }
-
-    private async Task StoreBlobAsync(
-        AppDbContext db, Guid workspaceId, string blobSha, byte[]? content, long size, string? withheld, CancellationToken ct)
-    {
-        // Two scans of one workspace can fetch the same blob at once. The content is the
-        // same, and a row that says "withheld" is never given content.
-        var now = time.GetUtcNow();
-        await db.Database.ExecuteSqlAsync($"""
-            INSERT INTO import.blobs (workspace_id, blob_sha, content, size, withheld_reason, created_at)
-            VALUES ({workspaceId}, {blobSha}, {content}, {size}, {withheld}, {now})
-            ON CONFLICT (workspace_id, blob_sha) DO NOTHING
-            """, ct);
     }
 
     /// <summary>
@@ -721,7 +438,7 @@ public sealed class ScanWorker(
 
         var waiting = stop.Status == ScanStatus.Waiting;
         VellumMetrics.ImportScanEnded(EnumText.Of(stop.Status));
-        DateTimeOffset? retryAt = !waiting ? null : stop.Error is null ? RetryAt(stop.RetryAt) : stop.RetryAt;
+        DateTimeOffset? retryAt = !waiting ? null : stop.Error is null ? FetchContext.RetryAt(now, stop.RetryAt) : stop.RetryAt;
         DateTimeOffset? completedAt = waiting ? null : now;
 
         await db.Scans
