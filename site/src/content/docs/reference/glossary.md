@@ -29,6 +29,10 @@ Each entry gives the meaning of a term in Vellum and the page that defines it.
 
 **Channel**: A contract for messaging: a topic, a queue or an exchange. See [Model document format](/reference/model-document-format/#channel).
 
+**Comment thread**: A discussion of members about one target of a project, named by its stable ID. It is outside the model and is in no export. See [Comments are not facts](/concepts/comments-are-not-facts/).
+
+**Commenter**: The workspace role between Viewer and Editor. A commenter writes comment threads and cannot change the model. See [Manage members](/how-to/manage-members/#know-the-roles).
+
 **Comparison scan**: A repository scan of a ref that the model does not follow, of a bare commit, or of the head commit of a pull request. You can read its proposals and you cannot accept them. It writes nothing to the model and marks no fact stale. See [Check change impact](/how-to/check-change-impact/).
 
 **Component**: An element kind: a part inside an app. Its parent is an app. See [Model a system](/how-to/model-a-system/#know-the-element-kinds).
@@ -42,6 +46,8 @@ Each entry gives the meaning of a term in Vellum and the page that defines it.
 **Decision (ADR)**: A recorded architecture decision with a number such as `ADR-0007`. A person accepts or rejects it. An accepted decision can settle a review finding. See [Record a decision](/how-to/record-a-decision/).
 
 **Declared**: A truth label: a person states that this is so. See [Evidence and truth labels](/concepts/evidence-and-truth-labels/#the-five-labels).
+
+**Detached**: The status of a comment thread whose target was deleted. The thread keeps the last name of the target. See [Comments are not facts](/concepts/comments-are-not-facts/#the-status-of-a-thread).
 
 **Disposition**: The answer of a person to one review finding, for example "accepted by a decision" or "won't fix". See [Review rules](/reference/review-rules/).
 

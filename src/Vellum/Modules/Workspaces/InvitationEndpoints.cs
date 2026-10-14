@@ -165,7 +165,7 @@ public static class CreateInvitation
 
         if (MemberRoles.Parse(request.Role) is not { } role)
             return Results.BadRequest(new ErrorResponse("validation_error", "Invalid role",
-                Errors: [new FieldError("role", "Must be Owner, Editor, or Viewer")]));
+                Errors: [new FieldError("role", "Must be Owner, Editor, Commenter or Viewer")]));
 
         var email = request.Email?.Trim();
         if (string.IsNullOrEmpty(email) || email.Length > InvitationRules.MaxEmailLength

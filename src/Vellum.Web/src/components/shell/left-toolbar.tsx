@@ -1,6 +1,6 @@
 import { type ReactNode, useEffect, useRef } from 'react'
 import { useShellStore, type Flyout } from '@/stores/shell-store'
-import { FileText, Plus, LayoutGrid, Search, Cable, Route, GitPullRequestArrow, Sparkles, ShieldCheck, PackageOpen, Gauge, Coins, ClipboardCheck } from 'lucide-react'
+import { FileText, Plus, LayoutGrid, Search, Cable, Route, GitPullRequestArrow, Sparkles, ShieldCheck, PackageOpen, Gauge, Coins, ClipboardCheck, MessageSquare } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface LeftToolbarProps {
@@ -17,6 +17,7 @@ const toolbarItems: { flyout: Flyout; label: string; icon: typeof FileText }[] =
   { flyout: 'assistant', label: 'Assistant', icon: Sparkles },
   { flyout: 'promises', label: 'Promises', icon: ShieldCheck },
   { flyout: 'review', label: 'Review', icon: ClipboardCheck },
+  { flyout: 'comments', label: 'Comments', icon: MessageSquare },
   { flyout: 'build', label: 'Build', icon: PackageOpen },
   { flyout: 'stress', label: 'Stress', icon: Gauge },
   { flyout: 'costs', label: 'Costs', icon: Coins },
@@ -98,7 +99,7 @@ export function LeftToolbar({ children }: LeftToolbarProps) {
         <>
           {/* The assistant explains what is selected on the canvas or in the trace, and the review shows
               the cited parts on the canvas, so both stay open while the canvas is used. */}
-          {activeFlyout !== 'assistant' && activeFlyout !== 'review' && (
+          {activeFlyout !== 'assistant' && activeFlyout !== 'review' && activeFlyout !== 'comments' && (
             <div
               data-testid="flyout-backdrop"
               className="fixed inset-0 z-10"
@@ -111,7 +112,7 @@ export function LeftToolbar({ children }: LeftToolbarProps) {
             role="region"
             aria-label={activeLabel ? `${activeLabel} panel` : undefined}
             tabIndex={-1}
-            className={cn('absolute left-12 top-0 bottom-0 z-20 border-r border-border bg-card shadow-lg outline-none', activeFlyout === 'review' ? 'w-[420px]' : 'w-[280px]')}
+            className={cn('absolute left-12 top-0 bottom-0 z-20 border-r border-border bg-card shadow-lg outline-none', activeFlyout === 'review' ? 'w-[420px]' : activeFlyout === 'comments' ? 'w-[340px]' : 'w-[280px]')}
           >
             {children}
           </div>

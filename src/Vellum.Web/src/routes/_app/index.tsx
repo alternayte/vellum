@@ -22,6 +22,7 @@ import { MyInvitations } from '@/components/settings/my-invitations'
 import { pendingInvitation } from '@/lib/invitation-link'
 import { branchesApi } from '@/lib/branches-api'
 import { ProjectMenu } from '@/components/shell/project-menu'
+import { InboxButton } from '@/components/comments/inbox-button'
 
 interface Workspace {
   id: string
@@ -119,6 +120,8 @@ function WorkspacePicker() {
     <div className="flex min-h-screen flex-col bg-background">
       <header className="flex h-12 items-center justify-between border-b border-border bg-card px-4">
         <span className="font-display text-sm font-bold text-primary">Vellum</span>
+        <span className="flex items-center gap-1">
+        <InboxButton />
         <Button
           variant="ghost"
           size="sm"
@@ -130,6 +133,7 @@ function WorkspacePicker() {
         >
           Log out
         </Button>
+        </span>
       </header>
 
       <div className="flex flex-1 items-center justify-center">

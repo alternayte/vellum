@@ -6,6 +6,7 @@ import { api } from '@/lib/settings-api'
 import { shownInline } from '@/lib/mutation-errors'
 import { TextPromptDialog } from './text-prompt-dialog'
 import { TypedDeleteDialog } from './typed-delete-dialog'
+import { canEditModel } from '@/lib/branches-api'
 
 export interface ProjectSummary {
   id: string
@@ -16,7 +17,8 @@ export interface ProjectSummary {
 
 /** What a project delete removes, one line for each module (DeleteProject on the server). */
 const PROJECT_DATA = [
-  'The model of main, its revisions, variants and drafts, with their comments',
+  'The model of main, its revisions, variants and drafts',
+  'Comment threads, their replies and inbox entries',
   'Diagrams and their layouts',
   'Documents and spaces',
   'Schemas, contracts and scenarios',
@@ -66,7 +68,7 @@ export function ProjectMenu({ project, role, onDeleted, className }: ProjectMenu
     onError: shownInline,
   })
 
-  const canEdit = role === 'Owner' || role === 'Editor'
+  const canEdit = canEditModel(role)
   const items: ActionMenuItem[] = []
   if (canEdit) {
     items.push({ label: 'Rename', icon: <Pencil className="h-3.5 w-3.5" aria-hidden="true" />, onSelect: () => { update.reset(); setOpen('rename') } })

@@ -11,9 +11,10 @@ A workspace holds projects, settings, secrets and members. A member has one role
 
 | Role | Can do |
 |---|---|
-| `Viewer` | Read the projects, the models, the documents, the scans, the review and the estimates. Preview the merge of a draft. |
-| `Editor` | All that a viewer can do. Create and rename projects. Change the model, the scenarios, the documents, the drafts, the variants and the cost sheet. Start scans and decide proposals. Write the draft of a promise. |
-| `Owner` | All that an editor can do. Invite and remove members. Rename and delete the workspace. Delete a project. Change the settings and the secrets. Create agent tokens. Test the AI provider and the GitHub connection. Change the price book. Approve a promise. Accept or reject a decision. Authorise a load-test target. |
+| `Viewer` | Read the projects, the models, the documents, the scans, the review, the estimates and the comment threads. Preview the merge of a draft. |
+| `Commenter` | All that a viewer can do. Start comment threads and reply, mention members, resolve own threads, raise a thread as an open question. A commenter cannot change the model, the scenarios, the documents or the drafts. See [Comment on a design](/how-to/comment-on-a-design/). |
+| `Editor` | All that a commenter can do. Create and rename projects. Change the model, the scenarios, the documents, the drafts, the variants and the cost sheet. Start scans and decide proposals. Write the draft of a promise. Resolve any thread and raise a thread as a decision. |
+| `Owner` | All that an editor can do. Invite and remove members. Rename and delete the workspace. Delete a project. Change the settings and the secrets. Create agent tokens. Test the AI provider and the GitHub connection. Change the price book. Approve a promise. Accept or reject a decision. Authorise a load-test target. Delete the comment of another person. |
 
 A person who is not a member of the workspace gets `403` for each request on it. A member with a role that is too low gets `403` with the text `Requires at least <role> role`.
 
@@ -60,7 +61,7 @@ Know these limits first.
 
 1. Open the member list.
 2. Below **Invite a person**, enter the **Email address**.
-3. Select a **Role**: **Viewer**, **Editor** or **Owner**.
+3. Select a **Role**: **Viewer**, **Commenter**, **Editor** or **Owner**.
 4. Select **Invite**.
 5. Vellum shows the link of the invitation. Select **Copy**, then send the link to the person.
 6. Select **Done**.
@@ -151,7 +152,7 @@ Vellum has no function that lets an administrator create an account for another 
 
 `GET /api/workspaces/{workspaceId}/members` gives the list. Each member can call it. The answer has `yourRole` and `members`. Each member has `userId`, `email`, `displayName`, `role` and `createdAt`.
 
-To invite a person, send the `email` and the `role`. The `role` is `Owner`, `Editor` or `Viewer`. You need the owner role.
+To invite a person, send the `email` and the `role`. The `role` is `Owner`, `Editor`, `Commenter` or `Viewer`. You need the owner role.
 
 ```sh
 curl -X POST "http://localhost:8080/api/workspaces/<workspace-id>/invitations"   -b vellum.cookies   -H "Content-Type: application/json"   -d '{"email":"person@example.com","role":"Editor"}'
@@ -164,7 +165,7 @@ The answer has `id`, `workspaceId`, `email`, `role`, `status`, `createdAt`, `exp
 | `201` | | Vellum made the invitation. |
 | `200` | | An open invitation for this address exists. Vellum renewed it with the new role and a new expiry date. |
 | `400` | `An email address of at most 256 characters is required.` | The `email` is not an email address. |
-| `400` | `Must be Owner, Editor, or Viewer` | The role is not one of the three. |
+| `400` | `Must be Owner, Editor, Commenter or Viewer` | The role is not one of the four. |
 | `409` | `already_member` | A member has this address. |
 | `409` | `too_many_invitations` | The workspace has 100 open invitations. |
 | `429` | `rate_limited` | You made 10 invitations in the last minute. The `Retry-After` header gives the seconds to wait. |

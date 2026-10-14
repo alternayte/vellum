@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { createFileRoute, Link } from '@tanstack/react-router'
+import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { TopBar } from '@/components/shell/top-bar'
 import { DetailPanel } from '@/components/shell/detail-panel'
 import { LeftToolbar } from '@/components/shell/left-toolbar'
@@ -23,6 +23,8 @@ import { BuildFlyout } from '@/components/build/build-flyout'
 import { StressFlyout } from '@/components/stress/stress-flyout'
 import { CostsFlyout } from '@/components/costs/costs-flyout'
 import { ReviewFlyout } from '@/components/design-review/review-flyout'
+import { CommentsFlyout } from '@/components/comments/comments-flyout'
+import { openThreadMarkers, useThreads } from '@/hooks/use-threads'
 import { useRunScenario, useScenarios } from '@/hooks/use-scenarios'
 import { useTraceStore } from '@/stores/trace-store'
 import type { ScenarioReference } from '@/components/trace/scenario-editor'
@@ -48,9 +50,20 @@ import { isPlainShortcut } from '@/lib/shortcuts'
 import { buildDuplicateSet } from '@/lib/duplicate'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
+import { branchesApi, canEditModel } from '@/lib/branches-api'
+
+/** `thread` opens one comment thread, from the inbox or a webhook link; `draft` is the draft it is on. */
+interface ProjectSearch {
+  thread?: string
+  draft?: string
+}
 
 export const Route = createFileRoute('/_app/projects/$projectId')({
   component: ProjectPage,
+  validateSearch: (search: Record<string, unknown>): ProjectSearch => ({
+    thread: typeof search.thread === 'string' ? search.thread : undefined,
+    draft: typeof search.draft === 'string' ? search.draft : undefined,
+  }),
 })
 
 // The workbench opens only on a project that the person can read. Before that nothing of it
@@ -109,7 +122,7 @@ function ProjectWorkspace() {
   const openRevision = selection.kind === 'revision' ? { id: selection.id, name: selection.name } : null
   const { data: project } = useProject(projectId)
   // A named revision never changes, and a viewer changes nothing.
-  const readOnly = selection.kind === 'revision' || project?.yourRole === 'Viewer'
+  const readOnly = selection.kind === 'revision' || !canEditModel(project?.yourRole)
   // The selected model belongs to this project. Another project starts on its own main.
   useEffect(() => () => useDraftStore.getState().reset(), [projectId])
   const scenarioReferences = useMemo<ScenarioReference[]>(() => {
@@ -131,6 +144,11 @@ function ProjectWorkspace() {
     ...(messages ?? []).map((m) => [m.id, m.producerId]),
   ]), [operations, subscriptions, messages])
   const referenceLabels = useMemo(() => Object.fromEntries(scenarioReferences.map((r) => [r.id, r.label])), [scenarioReferences])
+  // Comment threads of the branch: main, or the selected draft. The canvas draws a badge per target with open threads.
+  const activeDraftId = useDraftStore((s) => s.activeDraftId)
+  const { data: threads, isSuccess: threadsLoaded } = useThreads(projectId, activeDraftId)
+  const commentMarkers = useMemo(() => openThreadMarkers(threads), [threads])
+  useOpenLinkedThread(projectId, threads, threadsLoaded, elements, relationships, messages)
   const runScenario = useRunScenario(projectId, contractBranchId)
   const { data: scenarioList } = useScenarios(projectId)
   const playingScenarioId = useTraceStore((s) => s.scenarioId)
@@ -657,8 +675,8 @@ function ProjectWorkspace() {
               docs={docs ?? []}
               spaces={spaces ?? []}
               elements={elements ?? []}
-              canEdit={!!project && project.yourRole !== 'Viewer'}
-              model={project && { projectId, projectName: project.name, canImport: project.yourRole !== 'Viewer' }}
+              canEdit={!!project && canEditModel(project.yourRole)}
+              model={project && { projectId, projectName: project.name, canImport: canEditModel(project.yourRole) }}
             />
           )}
           {activeFlyout === 'catalog' && (
@@ -697,6 +715,7 @@ function ProjectWorkspace() {
               onPlayScenario={(scenarioId) => runScenario.mutate(scenarioId, { onSuccess: (run) => useTraceStore.getState().load(run, scenarioId) })}
             />
           )}
+          {activeFlyout === 'comments' && <CommentsFlyout projectId={projectId} projectName={projectName} />}
           {activeFlyout === 'search' && null /* ⌘K handles search for now */}
           </div>
           </div>
@@ -751,6 +770,7 @@ function ProjectWorkspace() {
               }}
               searchOpen={searchOpen}
               onSearchClose={() => setSearchOpen(false)}
+              commentMarkers={commentMarkers}
             />
           )}
         </main>
@@ -798,4 +818,78 @@ function ProjectWorkspace() {
       )}
     </div>
   )
+}
+
+/**
+ * Opens the thread that the address names (`?thread=`, from the inbox or a webhook link). It
+ * selects the draft of the thread first. A thread on an element, a relationship or a message
+ * opens in the panel of its target; any other thread opens in the Comments flyout. A thread
+ * that a merge moved to main is looked for there. The address loses the parameters after.
+ */
+function useOpenLinkedThread(
+  projectId: string,
+  threads: { id: string; status: string; target: { kind: string; id: string } }[] | undefined,
+  threadsLoaded: boolean,
+  elements: { id: string }[] | undefined,
+  relationships: { id: string }[] | undefined,
+  messages: { id: string }[] | undefined,
+) {
+  const { thread: threadId, draft: draftId } = Route.useSearch()
+  const navigate = useNavigate()
+  const selection = useDraftStore((s) => s.selection)
+  const step = useRef<'draft' | 'find' | 'main' | null>(null)
+
+  useEffect(() => {
+    step.current = threadId ? (draftId ? 'draft' : 'find') : null
+  }, [threadId, draftId])
+
+  useEffect(() => {
+    if (!threadId || step.current === null) return
+    const done = () => {
+      step.current = null
+      navigate({ to: '/projects/$projectId', params: { projectId }, search: {}, replace: true })
+    }
+
+    if (step.current === 'draft' && selection.kind === 'draft' && selection.id === draftId) step.current = 'find'
+    if (step.current === 'draft') {
+      step.current = null
+      branchesApi.drafts(projectId).then((drafts) => {
+        const draft = drafts.find((d) => d.id === draftId)
+        // A merged draft is closed: its open threads are on main now.
+        useDraftStore.getState().select(draft ? { kind: 'draft', id: draft.id, streamId: draft.streamId, name: draft.name } : { kind: 'main' })
+        step.current = draft ? 'find' : 'main'
+      }, () => { step.current = 'main' })
+      return
+    }
+
+    if (!threadsLoaded) return
+    const found = threads?.find((t) => t.id === threadId)
+    if (!found) {
+      if (selection.kind !== 'main' && step.current === 'find') {
+        step.current = 'main'
+        useDraftStore.getState().select({ kind: 'main' })
+        return
+      }
+      if (step.current === 'main' && selection.kind !== 'main') return
+      toast.error('The comment thread is not on this project any more.')
+      done()
+      return
+    }
+
+    const shell = useShellStore.getState()
+    const { kind, id } = found.target
+    const onCanvas = found.status !== 'detached' && (
+      (kind === 'element' && elements?.some((e) => e.id === id))
+      || (kind === 'relationship' && relationships?.some((r) => r.id === id))
+      || (kind === 'message' && messages?.some((m) => m.id === id)))
+    if (onCanvas) {
+      if (kind === 'element') shell.selectElement(id)
+      else if (kind === 'relationship') shell.selectRelationship(id)
+      else shell.selectMessage(id)
+    } else {
+      shell.openFlyout('comments')
+    }
+    shell.focusThread(found.id)
+    done()
+  }, [threadId, draftId, threads, threadsLoaded, selection, elements, relationships, messages, navigate, projectId])
 }

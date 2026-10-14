@@ -3,11 +3,18 @@ using Vellum.Shared;
 
 namespace Vellum.Modules.Workspaces;
 
+/// <summary>
+/// The roles of a workspace member, in ascending order of what they may do. A role check
+/// compares the C# values with <c>&lt;</c>. The Postgres enum type lists its labels in
+/// alphabetical order, so a query never compares roles in SQL; it reads the role and compares here.
+/// A Commenter reads what a Viewer reads and writes comments; only an Editor changes the model.
+/// </summary>
 public enum WorkspaceRole
 {
     Viewer = 0,
-    Editor = 1,
-    Owner = 2
+    Commenter = 1,
+    Editor = 2,
+    Owner = 3
 }
 
 public sealed class WorkspaceAuthorizationService

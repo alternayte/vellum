@@ -4,6 +4,7 @@ using Npgsql;
 using Npgsql.NameTranslation;
 using Vellum.Modules.Ai.Design;
 using Vellum.Modules.Ai;
+using Vellum.Modules.Comments;
 using Vellum.Modules.Costs;
 using Vellum.Modules.Docs;
 using Vellum.Modules.Drafts;
@@ -66,7 +67,12 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : IdentityDbCo
 
     // drafts
     public DbSet<DraftEntity> Drafts => Set<DraftEntity>();
+
+    // comments
+    public DbSet<ThreadEntity> CommentThreads => Set<ThreadEntity>();
     public DbSet<CommentEntity> Comments => Set<CommentEntity>();
+    public DbSet<InboxItemEntity> InboxItems => Set<InboxItemEntity>();
+    public DbSet<DeliveryEntity> WebhookDeliveries => Set<DeliveryEntity>();
 
     // schemas
     public DbSet<SchemaEntity> Schemas => Set<SchemaEntity>();
@@ -136,6 +142,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : IdentityDbCo
         ViewsTables.Configure(modelBuilder);
         DocsTables.Configure(modelBuilder);
         DraftsTables.Configure(modelBuilder);
+        CommentsTables.Configure(modelBuilder);
         SchemasTables.Configure(modelBuilder);
         TraceTables.Configure(modelBuilder);
         SettingsTables.Configure(modelBuilder);
@@ -164,6 +171,7 @@ public static class AppDatabase
         .. WorkspacesTables.Enums,
         .. ModellingTables.Enums,
         .. DraftsTables.Enums,
+        .. CommentsTables.Enums,
         .. ImportTables.Enums,
         .. AiTables.Enums,
         .. CostsTables.Enums,

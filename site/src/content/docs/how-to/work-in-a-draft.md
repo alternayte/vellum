@@ -169,22 +169,18 @@ To give the draft the cost sheet of main, send `POST /api/projects/{projectId}/c
 
 ### Add a comment
 
+A comment on a draft is a thread with the `draftId` of the draft. The target must exist on the draft. You need the Commenter role.
+
 ```sh
-curl -X POST "http://localhost:8080/api/projects/<project-id>/drafts/<draft-id>/comments" \
+curl -X POST "http://localhost:8080/api/projects/<project-id>/threads" \
   -b vellum.cookies \
   -H "Content-Type: application/json" \
-  -d '{"id":"<new-uuid>","body":"Why a store and not a table in the orders database?","entityId":"<element-id>","entityType":"element"}'
+  -d '{"draftId":"<draft-id>","target":{"kind":"element","id":"<element-id>"},"body":"Why a store and not a table in the orders database?"}'
 ```
 
-`entityId` and `entityType` are optional. They attach the comment to one part of the model.
+`GET /api/projects/{projectId}/threads?draftId=<draft-id>` lists the threads of the draft. When the draft merges, its open threads move to main with their targets. See [Comment on a design](/how-to/comment-on-a-design/).
 
-- `GET /api/projects/{projectId}/drafts/{draftId}/comments` lists the comments.
-- `PATCH /api/projects/{projectId}/drafts/{draftId}/comments/{commentId}` changes the `body`.
-- `DELETE /api/projects/{projectId}/drafts/{draftId}/comments/{commentId}` deletes the comment.
-
-You change and delete only your own comments. For a comment of another person the answer is `403` with `You can only edit your own comments` or `You can only delete your own comments`.
-
-In the app, the detail panel shows the comments of an element while the diff is shown on the canvas.
+In the app, the detail panel shows the threads of an element while the draft is selected.
 
 ### Preview the merge
 

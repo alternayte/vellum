@@ -28,6 +28,8 @@ public static class AuditLog
     /// <summary>An accept by a person who is a member already: the role stays as it is.</summary>
     public const string InvitationAccepted = "member.invitation-accepted";
     public const string InvitationDeclined = "member.invitation-declined";
+    /// <summary>An Owner deleted the comment of another person. The target names the IDs, never the text.</summary>
+    public const string CommentDeletedByOwner = "comment.deleted-by-owner";
 
     private const int MaxFieldsInTarget = 40;
 

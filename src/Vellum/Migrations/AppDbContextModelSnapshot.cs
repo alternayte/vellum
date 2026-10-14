@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Vellum.Modules.Ai;
+using Vellum.Modules.Comments;
 using Vellum.Modules.Costs;
 using Vellum.Modules.Drafts;
 using Vellum.Modules.Identity.AgentTokens;
@@ -38,6 +39,10 @@ namespace Vellum.Migrations
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "ai", "ai_usage_task", new[] { "critique", "explain", "infer_architecture", "propose_flow", "test" });
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "ai", "design_proposal_kind", new[] { "architecture", "flow" });
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "ai", "design_proposal_status", new[] { "accepted", "decided", "draft", "rejected" });
+            NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "comments", "delivery_status", new[] { "delivered", "failed", "pending" });
+            NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "comments", "inbox_reason", new[] { "mention", "reply" });
+            NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "comments", "target_kind", new[] { "channel", "decision", "document", "element", "message", "operation", "project", "promise", "relationship", "step" });
+            NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "comments", "thread_status", new[] { "open", "resolved" });
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "costs", "price_source_kind", new[] { "custom", "fetched" });
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "drafts", "draft_status", new[] { "abandoned", "merged", "open" });
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "identity", "agent_scope", new[] { "export", "propose", "read", "scan_pull_request" });
@@ -65,7 +70,7 @@ namespace Vellum.Migrations
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "review", "question_origin", new[] { "agent_suggested", "ai_suggested", "human" });
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "review", "question_status", new[] { "answered", "dropped", "open" });
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "workspaces", "invitation_status", new[] { "accepted", "declined", "expired", "pending", "revoked" });
-            NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "workspaces", "workspace_role", new[] { "editor", "owner", "viewer" });
+            NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "workspaces", "workspace_role", new[] { "commenter", "editor", "owner", "viewer" });
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRole", b =>
@@ -459,6 +464,266 @@ namespace Vellum.Migrations
                     b.ToTable("usage_records", "ai");
                 });
 
+            modelBuilder.Entity("Vellum.Modules.Comments.CommentEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<string>("Author")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("author");
+
+                    b.Property<string>("Body")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("body");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("deleted_at");
+
+                    b.Property<string>("DeletedBy")
+                        .HasColumnType("text")
+                        .HasColumnName("deleted_by");
+
+                    b.Property<DateTimeOffset?>("EditedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("edited_at");
+
+                    b.PrimitiveCollection<string[]>("Mentions")
+                        .IsRequired()
+                        .HasColumnType("text[]")
+                        .HasColumnName("mentions");
+
+                    b.Property<Guid>("ThreadId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("thread_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_comments");
+
+                    b.HasIndex("ThreadId", "CreatedAt")
+                        .HasDatabaseName("ix_comments_thread_id_created_at");
+
+                    b.ToTable("comments", "comments");
+                });
+
+            modelBuilder.Entity("Vellum.Modules.Comments.DeliveryEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<int>("Attempts")
+                        .HasColumnType("integer")
+                        .HasColumnName("attempts");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("Event")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("event");
+
+                    b.Property<string>("LastResult")
+                        .HasColumnType("text")
+                        .HasColumnName("last_result");
+
+                    b.Property<DateTimeOffset>("NextAttemptAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("next_attempt_at");
+
+                    b.Property<string>("Payload")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("payload");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("project_id");
+
+                    b.Property<DateTimeOffset?>("SentAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("sent_at");
+
+                    b.Property<DeliveryStatus>("Status")
+                        .HasColumnType("comments.delivery_status")
+                        .HasColumnName("status");
+
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("workspace_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_webhook_deliveries");
+
+                    b.HasIndex("ProjectId")
+                        .HasDatabaseName("ix_webhook_deliveries_project_id");
+
+                    b.HasIndex("Status", "NextAttemptAt")
+                        .HasDatabaseName("ix_webhook_deliveries_status_next_attempt_at");
+
+                    b.ToTable("webhook_deliveries", "comments");
+                });
+
+            modelBuilder.Entity("Vellum.Modules.Comments.InboxItemEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("CommentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("comment_id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("project_id");
+
+                    b.Property<DateTimeOffset?>("ReadAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("read_at");
+
+                    b.Property<InboxReason>("Reason")
+                        .HasColumnType("comments.inbox_reason")
+                        .HasColumnName("reason");
+
+                    b.Property<Guid>("ThreadId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("thread_id");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("user_id");
+
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("workspace_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_inbox_items");
+
+                    b.HasIndex("CommentId")
+                        .HasDatabaseName("ix_inbox_items_comment_id");
+
+                    b.HasIndex("UserId", "CommentId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_inbox_items_user_id_comment_id");
+
+                    b.HasIndex("UserId", "CreatedAt")
+                        .HasDatabaseName("ix_inbox_items_user_id_created_at");
+
+                    b.ToTable("inbox_items", "comments");
+                });
+
+            modelBuilder.Entity("Vellum.Modules.Comments.ThreadEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasColumnType("text")
+                        .HasColumnName("created_by");
+
+                    b.Property<bool>("Detached")
+                        .HasColumnType("boolean")
+                        .HasColumnName("detached");
+
+                    b.Property<DateTimeOffset?>("DetachedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("detached_at");
+
+                    b.Property<Guid?>("DraftId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("draft_id");
+
+                    b.Property<Guid>("ModelStreamId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("model_stream_id");
+
+                    b.Property<long>("ModelVersion")
+                        .HasColumnType("bigint")
+                        .HasColumnName("model_version");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("project_id");
+
+                    b.Property<Guid?>("RaisedDecisionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("raised_decision_id");
+
+                    b.Property<Guid?>("RaisedQuestionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("raised_question_id");
+
+                    b.Property<DateTimeOffset?>("ResolvedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("resolved_at");
+
+                    b.Property<string>("ResolvedBy")
+                        .HasColumnType("text")
+                        .HasColumnName("resolved_by");
+
+                    b.Property<ThreadStatus>("Status")
+                        .HasColumnType("comments.thread_status")
+                        .HasColumnName("status");
+
+                    b.Property<string>("StepId")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("step_id");
+
+                    b.Property<Guid>("TargetId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("target_id");
+
+                    b.Property<TargetKind>("TargetKind")
+                        .HasColumnType("comments.target_kind")
+                        .HasColumnName("target_kind");
+
+                    b.Property<string>("TargetName")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("target_name");
+
+                    b.Property<Guid>("WorkspaceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("workspace_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_threads");
+
+                    b.HasIndex("ProjectId", "DraftId", "TargetId")
+                        .HasDatabaseName("ix_threads_project_id_draft_id_target_id");
+
+                    b.ToTable("threads", "comments");
+                });
+
             modelBuilder.Entity("Vellum.Modules.Costs.PriceEntryEntity", b =>
                 {
                     b.Property<Guid>("Id")
@@ -747,56 +1012,6 @@ namespace Vellum.Migrations
                         .HasDatabaseName("ix_spaces_project_id");
 
                     b.ToTable("spaces", "docs");
-                });
-
-            modelBuilder.Entity("Vellum.Modules.Drafts.CommentEntity", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid")
-                        .HasColumnName("id");
-
-                    b.Property<string>("Author")
-                        .IsRequired()
-                        .HasColumnType("text")
-                        .HasColumnName("author");
-
-                    b.Property<string>("Body")
-                        .IsRequired()
-                        .HasColumnType("text")
-                        .HasColumnName("body");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("created_at")
-                        .HasDefaultValueSql("now()");
-
-                    b.Property<Guid>("DraftId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("draft_id");
-
-                    b.Property<Guid?>("EntityId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("entity_id");
-
-                    b.Property<string>("EntityType")
-                        .HasColumnType("text")
-                        .HasColumnName("entity_type");
-
-                    b.Property<DateTimeOffset>("UpdatedAt")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("updated_at")
-                        .HasDefaultValueSql("now()");
-
-                    b.HasKey("Id")
-                        .HasName("pk_comments");
-
-                    b.HasIndex("DraftId")
-                        .HasDatabaseName("ix_comments_draft_id");
-
-                    b.ToTable("comments", "drafts");
                 });
 
             modelBuilder.Entity("Vellum.Modules.Drafts.DraftEntity", b =>
@@ -3699,6 +3914,26 @@ namespace Vellum.Migrations
                         .HasConstraintName("fk_user_tokens_users_user_id");
                 });
 
+            modelBuilder.Entity("Vellum.Modules.Comments.CommentEntity", b =>
+                {
+                    b.HasOne("Vellum.Modules.Comments.ThreadEntity", null)
+                        .WithMany()
+                        .HasForeignKey("ThreadId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_comments_threads_thread_id");
+                });
+
+            modelBuilder.Entity("Vellum.Modules.Comments.InboxItemEntity", b =>
+                {
+                    b.HasOne("Vellum.Modules.Comments.CommentEntity", null)
+                        .WithMany()
+                        .HasForeignKey("CommentId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_inbox_items_comments_comment_id");
+                });
+
             modelBuilder.Entity("Vellum.Modules.Docs.DocumentEntity", b =>
                 {
                     b.HasOne("Vellum.Modules.Docs.SpaceEntity", null)
@@ -3706,16 +3941,6 @@ namespace Vellum.Migrations
                         .HasForeignKey("SpaceId")
                         .OnDelete(DeleteBehavior.SetNull)
                         .HasConstraintName("fk_documents_spaces_space_id");
-                });
-
-            modelBuilder.Entity("Vellum.Modules.Drafts.CommentEntity", b =>
-                {
-                    b.HasOne("Vellum.Modules.Drafts.DraftEntity", null)
-                        .WithMany()
-                        .HasForeignKey("DraftId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired()
-                        .HasConstraintName("fk_comments_drafts_draft_id");
                 });
 
             modelBuilder.Entity("Vellum.Modules.Import.ProposalEntity", b =>

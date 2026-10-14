@@ -13,7 +13,7 @@ public static class DraftsModule
     }
 }
 
-/// <summary>What the draft tables keep of a deleted project: nothing. Each draft goes with its model stream and its comments.</summary>
+/// <summary>What the draft tables keep of a deleted project: nothing. Each draft goes with its model stream.</summary>
 public sealed class DraftsRetention(AppDbContext db, IEventStore store) : IProjectRetention
 {
     public async Task DeleteProjectAsync(DeletedProject project, CancellationToken ct)
@@ -23,7 +23,6 @@ public sealed class DraftsRetention(AppDbContext db, IEventStore store) : IProje
         foreach (var streamId in streams)
             await store.DeleteStream(StreamId.From(streamId), ct);
 
-        // The comments of a draft go with its row (ON DELETE CASCADE).
         await db.Drafts.Where(d => d.ProjectId == project.Id).ExecuteDeleteAsync(ct);
     }
 }

@@ -3,6 +3,7 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Vellum.Modules.Ai;
+using Vellum.Modules.Comments;
 using Vellum.Modules.Costs;
 using Vellum.Modules.Drafts;
 using Vellum.Modules.Identity.AgentTokens;
@@ -34,7 +35,7 @@ namespace Vellum.Migrations
                 name: "import");
 
             migrationBuilder.EnsureSchema(
-                name: "drafts");
+                name: "comments");
 
             migrationBuilder.EnsureSchema(
                 name: "review");
@@ -44,6 +45,9 @@ namespace Vellum.Migrations
 
             migrationBuilder.EnsureSchema(
                 name: "docs");
+
+            migrationBuilder.EnsureSchema(
+                name: "drafts");
 
             migrationBuilder.EnsureSchema(
                 name: "modelling");
@@ -79,6 +83,10 @@ namespace Vellum.Migrations
                 .Annotation("Npgsql:Enum:ai.ai_usage_task", "critique,explain,infer_architecture,propose_flow,test")
                 .Annotation("Npgsql:Enum:ai.design_proposal_kind", "architecture,flow")
                 .Annotation("Npgsql:Enum:ai.design_proposal_status", "accepted,decided,draft,rejected")
+                .Annotation("Npgsql:Enum:comments.delivery_status", "delivered,failed,pending")
+                .Annotation("Npgsql:Enum:comments.inbox_reason", "mention,reply")
+                .Annotation("Npgsql:Enum:comments.target_kind", "channel,decision,document,element,message,operation,project,promise,relationship,step")
+                .Annotation("Npgsql:Enum:comments.thread_status", "open,resolved")
                 .Annotation("Npgsql:Enum:costs.price_source_kind", "custom,fetched")
                 .Annotation("Npgsql:Enum:drafts.draft_status", "abandoned,merged,open")
                 .Annotation("Npgsql:Enum:identity.agent_scope", "export,propose,read,scan_pull_request")
@@ -106,7 +114,7 @@ namespace Vellum.Migrations
                 .Annotation("Npgsql:Enum:review.question_origin", "agent_suggested,ai_suggested,human")
                 .Annotation("Npgsql:Enum:review.question_status", "answered,dropped,open")
                 .Annotation("Npgsql:Enum:workspaces.invitation_status", "accepted,declined,expired,pending,revoked")
-                .Annotation("Npgsql:Enum:workspaces.workspace_role", "editor,owner,viewer");
+                .Annotation("Npgsql:Enum:workspaces.workspace_role", "commenter,editor,owner,viewer");
 
             migrationBuilder.CreateTable(
                 name: "agent_tokens",
@@ -988,6 +996,36 @@ namespace Vellum.Migrations
                 });
 
             migrationBuilder.CreateTable(
+                name: "threads",
+                schema: "comments",
+                columns: table => new
+                {
+                    id = table.Column<Guid>(type: "uuid", nullable: false),
+                    workspace_id = table.Column<Guid>(type: "uuid", nullable: false),
+                    project_id = table.Column<Guid>(type: "uuid", nullable: false),
+                    draft_id = table.Column<Guid>(type: "uuid", nullable: true),
+                    target_kind = table.Column<TargetKind>(type: "comments.target_kind", nullable: false),
+                    target_id = table.Column<Guid>(type: "uuid", nullable: false),
+                    step_id = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: true),
+                    target_name = table.Column<string>(type: "character varying(1000)", maxLength: 1000, nullable: false),
+                    model_version = table.Column<long>(type: "bigint", nullable: false),
+                    model_stream_id = table.Column<Guid>(type: "uuid", nullable: false),
+                    status = table.Column<ThreadStatus>(type: "comments.thread_status", nullable: false),
+                    detached = table.Column<bool>(type: "boolean", nullable: false),
+                    detached_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
+                    created_by = table.Column<string>(type: "text", nullable: false),
+                    created_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
+                    resolved_by = table.Column<string>(type: "text", nullable: true),
+                    resolved_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
+                    raised_question_id = table.Column<Guid>(type: "uuid", nullable: true),
+                    raised_decision_id = table.Column<Guid>(type: "uuid", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("pk_threads", x => x.id);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "tracked_refs",
                 schema: "import",
                 columns: table => new
@@ -1106,6 +1144,28 @@ namespace Vellum.Migrations
                 });
 
             migrationBuilder.CreateTable(
+                name: "webhook_deliveries",
+                schema: "comments",
+                columns: table => new
+                {
+                    id = table.Column<Guid>(type: "uuid", nullable: false),
+                    workspace_id = table.Column<Guid>(type: "uuid", nullable: false),
+                    project_id = table.Column<Guid>(type: "uuid", nullable: false),
+                    @event = table.Column<string>(name: "event", type: "text", nullable: false),
+                    payload = table.Column<string>(type: "jsonb", nullable: false),
+                    status = table.Column<DeliveryStatus>(type: "comments.delivery_status", nullable: false),
+                    attempts = table.Column<int>(type: "integer", nullable: false),
+                    created_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
+                    next_attempt_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
+                    sent_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
+                    last_result = table.Column<string>(type: "text", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("pk_webhook_deliveries", x => x.id);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "workspace_settings",
                 schema: "settings",
                 columns: table => new
@@ -1135,32 +1195,6 @@ namespace Vellum.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("pk_workspaces", x => x.id);
-                });
-
-            migrationBuilder.CreateTable(
-                name: "comments",
-                schema: "drafts",
-                columns: table => new
-                {
-                    id = table.Column<Guid>(type: "uuid", nullable: false),
-                    draft_id = table.Column<Guid>(type: "uuid", nullable: false),
-                    entity_id = table.Column<Guid>(type: "uuid", nullable: true),
-                    entity_type = table.Column<string>(type: "text", nullable: true),
-                    author = table.Column<string>(type: "text", nullable: false),
-                    body = table.Column<string>(type: "text", nullable: false),
-                    created_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false, defaultValueSql: "now()"),
-                    updated_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false, defaultValueSql: "now()")
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("pk_comments", x => x.id);
-                    table.ForeignKey(
-                        name: "fk_comments_drafts_draft_id",
-                        column: x => x.draft_id,
-                        principalSchema: "drafts",
-                        principalTable: "drafts",
-                        principalColumn: "id",
-                        onDelete: ReferentialAction.Cascade);
                 });
 
             migrationBuilder.CreateTable(
@@ -1381,6 +1415,33 @@ namespace Vellum.Migrations
                 });
 
             migrationBuilder.CreateTable(
+                name: "comments",
+                schema: "comments",
+                columns: table => new
+                {
+                    id = table.Column<Guid>(type: "uuid", nullable: false),
+                    thread_id = table.Column<Guid>(type: "uuid", nullable: false),
+                    author = table.Column<string>(type: "text", nullable: false),
+                    body = table.Column<string>(type: "text", nullable: false),
+                    mentions = table.Column<string[]>(type: "text[]", nullable: false),
+                    created_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
+                    edited_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
+                    deleted_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
+                    deleted_by = table.Column<string>(type: "text", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("pk_comments", x => x.id);
+                    table.ForeignKey(
+                        name: "fk_comments_threads_thread_id",
+                        column: x => x.thread_id,
+                        principalSchema: "comments",
+                        principalTable: "threads",
+                        principalColumn: "id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "user_claims",
                 schema: "identity",
                 columns: table => new
@@ -1548,6 +1609,33 @@ namespace Vellum.Migrations
                         onDelete: ReferentialAction.Cascade);
                 });
 
+            migrationBuilder.CreateTable(
+                name: "inbox_items",
+                schema: "comments",
+                columns: table => new
+                {
+                    id = table.Column<Guid>(type: "uuid", nullable: false),
+                    user_id = table.Column<string>(type: "text", nullable: false),
+                    workspace_id = table.Column<Guid>(type: "uuid", nullable: false),
+                    project_id = table.Column<Guid>(type: "uuid", nullable: false),
+                    thread_id = table.Column<Guid>(type: "uuid", nullable: false),
+                    comment_id = table.Column<Guid>(type: "uuid", nullable: false),
+                    reason = table.Column<InboxReason>(type: "comments.inbox_reason", nullable: false),
+                    created_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
+                    read_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("pk_inbox_items", x => x.id);
+                    table.ForeignKey(
+                        name: "fk_inbox_items_comments_comment_id",
+                        column: x => x.comment_id,
+                        principalSchema: "comments",
+                        principalTable: "comments",
+                        principalColumn: "id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
             migrationBuilder.CreateIndex(
                 name: "ix_agent_tokens_project_id",
                 schema: "identity",
@@ -1567,10 +1655,10 @@ namespace Vellum.Migrations
                 columns: new[] { "workspace_id", "id" });
 
             migrationBuilder.CreateIndex(
-                name: "ix_comments_draft_id",
-                schema: "drafts",
+                name: "ix_comments_thread_id_created_at",
+                schema: "comments",
                 table: "comments",
-                column: "draft_id");
+                columns: new[] { "thread_id", "created_at" });
 
             migrationBuilder.CreateIndex(
                 name: "ix_critiques_project_id_created_at_id",
@@ -1652,6 +1740,25 @@ namespace Vellum.Migrations
                 table: "fact_links",
                 columns: new[] { "project_id", "host", "repository", "subject", "fact_key_hash" },
                 unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "ix_inbox_items_comment_id",
+                schema: "comments",
+                table: "inbox_items",
+                column: "comment_id");
+
+            migrationBuilder.CreateIndex(
+                name: "ix_inbox_items_user_id_comment_id",
+                schema: "comments",
+                table: "inbox_items",
+                columns: new[] { "user_id", "comment_id" },
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "ix_inbox_items_user_id_created_at",
+                schema: "comments",
+                table: "inbox_items",
+                columns: new[] { "user_id", "created_at" });
 
             migrationBuilder.CreateIndex(
                 name: "ix_invitations_normalized_email_status",
@@ -1936,6 +2043,12 @@ namespace Vellum.Migrations
                 columns: new[] { "project_id", "name" });
 
             migrationBuilder.CreateIndex(
+                name: "ix_threads_project_id_draft_id_target_id",
+                schema: "comments",
+                table: "threads",
+                columns: new[] { "project_id", "draft_id", "target_id" });
+
+            migrationBuilder.CreateIndex(
                 name: "ix_usage_records_workspace_id_provider_id_started_at",
                 schema: "ai",
                 table: "usage_records",
@@ -1997,6 +2110,18 @@ namespace Vellum.Migrations
                 schema: "views",
                 table: "views",
                 column: "project_id");
+
+            migrationBuilder.CreateIndex(
+                name: "ix_webhook_deliveries_project_id",
+                schema: "comments",
+                table: "webhook_deliveries",
+                column: "project_id");
+
+            migrationBuilder.CreateIndex(
+                name: "ix_webhook_deliveries_status_next_attempt_at",
+                schema: "comments",
+                table: "webhook_deliveries",
+                columns: new[] { "status", "next_attempt_at" });
         }
 
         /// <inheritdoc />
@@ -2013,10 +2138,6 @@ namespace Vellum.Migrations
             migrationBuilder.DropTable(
                 name: "blobs",
                 schema: "import");
-
-            migrationBuilder.DropTable(
-                name: "comments",
-                schema: "drafts");
 
             migrationBuilder.DropTable(
                 name: "critiques",
@@ -2047,6 +2168,10 @@ namespace Vellum.Migrations
                 schema: "docs");
 
             migrationBuilder.DropTable(
+                name: "drafts",
+                schema: "drafts");
+
+            migrationBuilder.DropTable(
                 name: "elements",
                 schema: "modelling");
 
@@ -2061,6 +2186,10 @@ namespace Vellum.Migrations
             migrationBuilder.DropTable(
                 name: "impact_gates",
                 schema: "promises");
+
+            migrationBuilder.DropTable(
+                name: "inbox_items",
+                schema: "comments");
 
             migrationBuilder.DropTable(
                 name: "instance_admins",
@@ -2211,6 +2340,10 @@ namespace Vellum.Migrations
                 schema: "modelling");
 
             migrationBuilder.DropTable(
+                name: "webhook_deliveries",
+                schema: "comments");
+
+            migrationBuilder.DropTable(
                 name: "workspace_settings",
                 schema: "settings");
 
@@ -2219,12 +2352,12 @@ namespace Vellum.Migrations
                 schema: "workspaces");
 
             migrationBuilder.DropTable(
-                name: "drafts",
-                schema: "drafts");
-
-            migrationBuilder.DropTable(
                 name: "spaces",
                 schema: "docs");
+
+            migrationBuilder.DropTable(
+                name: "comments",
+                schema: "comments");
 
             migrationBuilder.DropTable(
                 name: "views",
@@ -2249,6 +2382,10 @@ namespace Vellum.Migrations
             migrationBuilder.DropTable(
                 name: "users",
                 schema: "identity");
+
+            migrationBuilder.DropTable(
+                name: "threads",
+                schema: "comments");
 
             migrationBuilder.DropTable(
                 name: "scans",

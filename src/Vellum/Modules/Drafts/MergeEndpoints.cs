@@ -3,6 +3,7 @@ using System.Security.Claims;
 using System.Text.Json;
 using Deedbox;
 using Microsoft.EntityFrameworkCore;
+using Vellum.Modules.Comments;
 using Vellum.Modules.Costs;
 using Vellum.Modules.Modelling;
 using Vellum.Modules.Workspaces;
@@ -199,6 +200,8 @@ public static class ExecuteMerge
             // the draft go: the branch is closed and no request reaches them again.
             await CostBranches.ApplyAsync(db, projectId, streams.BaseStreamId, oursSheet, mainSheetVersion, sheetPlan, now, ct);
             await CostBranches.CloseAsync(db, projectId, draft.StreamId, ct);
+            // The open comment threads of the draft move to main with their targets.
+            await DraftThreads.MoveToMainAsync(db, draftId, ct);
 
             await transaction.CommitAsync(ct);
             return Results.Ok(CreateDraft.ToDto(draft));

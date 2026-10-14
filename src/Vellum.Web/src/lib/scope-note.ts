@@ -30,5 +30,10 @@ export function scopeNote(flyout: Flyout | null, selection: ModelSelection): str
       ? `The catalog lists ${model}. A revision is read-only, so nothing can be added to it.`
       : `This panel shows main, not ${model}. A revision is read-only: the canvas and Compare show it.`
   }
+  if (flyout === 'comments') {
+    return selection.kind === 'draft'
+      ? `The threads are of ${model}. A merge moves its open threads to main.`
+      : `Threads belong to main and to drafts. This panel shows the threads of main and takes no new one on ${model}.`
+  }
   return BRANCHED[flyout]?.(model) ?? null
 }

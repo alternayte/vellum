@@ -8,6 +8,9 @@ vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => vi.fn(),
 }))
 
+// The inbox reads the server; this file tests the bar's own controls.
+vi.mock('../../../src/components/comments/inbox-button', () => ({ InboxButton: () => null }))
+
 vi.mock('../../../src/hooks/use-auth', () => ({
   useAuth: () => ({ logout: vi.fn(), user: null }),
 }))

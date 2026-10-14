@@ -14,6 +14,7 @@ import { useDocEditorStore } from '@/stores/doc-editor-store'
 import { MdxRenderer } from './mdx-renderer'
 import { DocToolbar } from './doc-toolbar'
 import { DocActions } from './doc-actions'
+import { canEditModel } from '@/lib/branches-api'
 
 interface DocEditorProps {
   projectId: string
@@ -33,7 +34,7 @@ export function DocEditor({ projectId, docId }: DocEditorProps) {
   const { autoSave } = useAutoSaveDoc(projectId, docId)
   const { data: spaces } = useSpaces(projectId)
   const { data: project } = useProject(projectId)
-  const canEdit = project !== undefined && project.yourRole !== 'Viewer'
+  const canEdit = project !== undefined && canEditModel(project.yourRole)
 
   const handleChange = useCallback(
     (content: string) => {

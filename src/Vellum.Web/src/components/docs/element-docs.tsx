@@ -6,6 +6,7 @@ import { useCreateDoc, useDocs } from '@/hooks/use-docs'
 import { useProject } from '@/hooks/use-model'
 import { useDraftStore } from '@/stores/draft-store'
 import { useShellStore } from '@/stores/shell-store'
+import { canEditModel } from '@/lib/branches-api'
 
 const HEADING = 'mb-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground'
 
@@ -15,7 +16,7 @@ export function ElementDocs({ projectId, element }: { projectId: string; element
   const { data: project } = useProject(projectId)
   const createDoc = useCreateDoc(projectId)
   const [naming, setNaming] = useState(false)
-  const canEdit = project !== undefined && project.yourRole !== 'Viewer'
+  const canEdit = project !== undefined && canEditModel(project.yourRole)
   const headingId = `element-docs-${element.id}`
 
   return (
