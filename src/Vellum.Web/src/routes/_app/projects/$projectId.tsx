@@ -64,7 +64,7 @@ function ProjectWorkspace() {
     const elementName = (id: string) => elements?.find((e) => e.id === id)?.name ?? 'Unknown element'
     const channelName = (id: string) => channels?.find((c) => c.id === id)?.name ?? 'Unknown channel'
     return [
-      ...(elements ?? []).map((e) => ({ group: 'Elements' as const, id: e.id, label: e.name })),
+      ...(elements ?? []).map((e) => ({ group: 'Elements' as const, id: e.id, label: e.name, kind: e.kind })),
       ...(operations ?? []).map((o) => ({ group: 'Operations' as const, id: o.id, label: `${o.name} · ${elementName(o.ownerId)}` })),
       ...(channels ?? []).map((c) => ({ group: 'Channels' as const, id: c.id, label: c.name })),
       ...(subscriptions ?? []).map((x) => ({ group: 'Subscriptions' as const, id: x.id, label: `${elementName(x.consumerId)} on ${channelName(x.channelId)}` })),

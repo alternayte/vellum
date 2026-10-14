@@ -86,7 +86,11 @@ export function ScenariosFlyout({ projectId, branchId, references }: ScenariosFl
           isNew={editing.isNew}
           references={references}
           onClose={() => setEditing(null)}
-          onPlay={(scenarioId) => { setEditing(null); play(scenarioId) }}
+          onPlayed={(scenarioId, result) => {
+            setEditing(null)
+            useTraceStore.getState().load(result, scenarioId)
+            closeFlyout()
+          }}
         />
       )}
     </div>
