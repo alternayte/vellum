@@ -25,6 +25,42 @@ describe('the scenario document of the step editor', () => {
     expect(unknown).toEqual(['step c of type "consume"', 'assertion l of type "latency"'])
   })
 
+  // The server's enum converter reads a member name in any letter case and reads a number from a
+  // string; the editor reads the same document the same way.
+  it('reads enum names in any letter case and numbers written as strings', () => {
+    const { body, unknown } = readBody({
+      steps: [{ type: 'branch', id: 'b', whenStep: 'x', is: 'failed' }],
+      faults: [{ target: 't', kind: 'timeout', failFirst: '2' }],
+      assertions: [
+        { type: 'outcome', id: 'o', step: 'b', expected: 'SKIPPED' },
+        { type: 'event-count', id: 'e', kind: 'deadLettered', expected: '3' },
+      ],
+    })
+    expect(unknown).toEqual([])
+    expect(body.steps[0]).toMatchObject({ is: 'Failed' })
+    expect(body.faults).toEqual([{ target: 't', kind: 'Timeout', failFirst: 2 }])
+    expect(body.assertions).toEqual([
+      { type: 'outcome', id: 'o', step: 'b', expected: 'Skipped' },
+      { type: 'event-count', id: 'e', kind: 'DeadLettered', target: null, expected: 3 },
+    ])
+  })
+
+  it('names a value it cannot read instead of replacing it with a default', () => {
+    const { unknown } = readBody({
+      steps: [{ type: 'branch', id: 'b', is: 'maybe' }],
+      faults: [{ target: 't', kind: 'Slow', failFirst: 'twice' }, 'all of them'],
+      assertions: [{ type: 'event-count', id: 'e', kind: 'Lost', expected: 1.5 }],
+    })
+    expect(unknown).toEqual([
+      'the outcome of branch b "maybe" (use Succeeded, Failed or Skipped)',
+      'the kind of fault 1 "Slow" (use Error, Timeout or Outage)',
+      'failFirst of fault 1 "twice" (use a whole number)',
+      'fault 2, which is not an object',
+      expect.stringContaining('the event kind of assertion e "Lost" (use one of RequestSent,'),
+      'the expected count of assertion e 1.5 (use a whole number)',
+    ])
+  })
+
   // The branch picker offers only these; the engine rejects any other with "unknown-step".
   it('offers a branch only the steps whose outcome is final, as the engine counts them', () => {
     const steps = readBody({

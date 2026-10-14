@@ -101,16 +101,57 @@ export interface ScenarioBody {
 const isObject = (value: unknown): value is Record<string, unknown> => !!value && typeof value === 'object' && !Array.isArray(value)
 const text = (value: unknown): string => (typeof value === 'string' ? value : '')
 const json = (value: unknown): unknown => (value === undefined ? null : value)
-const outcome = (value: unknown): Outcome => (OUTCOMES.includes(value as Outcome) ? (value as Outcome) : 'Succeeded')
+
+/**
+ * The member of `names` that `value` names in any letter case, as the server's enum converter
+ * reads it, written in the member's own case. Anything else is `undefined`.
+ */
+const member = <T extends string>(names: readonly T[], value: unknown): T | undefined =>
+  typeof value === 'string' ? names.find((name) => name.toLowerCase() === value.toLowerCase()) : undefined
+
+/** A whole number, or a string of one: the server reads a number from a string too. */
+const integer = (value: unknown): number | undefined => {
+  if (typeof value === 'number') return Number.isInteger(value) ? value : undefined
+  if (typeof value === 'string' && /^-?\d+$/.test(value.trim())) return Number(value.trim())
+  return undefined
+}
+
+const listed = (names: readonly string[]): string =>
+  names.length <= 3 ? `${names.slice(0, -1).join(', ')} or ${names[names.length - 1]}` : `one of ${names.join(', ')}`
 
 /**
  * Reads a document that may be partial or written by hand into the shape the editor shows.
  * A missing list or map becomes empty and a missing reference becomes "". A step or an
- * assertion of a type the engine does not know is returned in `unknown`, so the editor can
- * say so instead of dropping it silently.
+ * assertion of a type the engine does not know, an enum name the server does not read, a count
+ * that is not a whole number and a fault that is not an object are returned in `unknown`, so
+ * the editor can say so instead of changing or dropping them silently. An enum name in another
+ * letter case is read as the server reads it.
  */
 export function readBody(raw: { steps?: unknown; faults?: unknown; assertions?: unknown }): { body: ScenarioBody; unknown: string[] } {
   const unknown: string[] = []
+  // A value the editor cannot show as written is named in `unknown`, so the JSON tab keeps it
+  // and blocks the save. The default it gets here is never saved.
+  const enumValue = <T extends string>(names: readonly T[], value: unknown, fallback: T, what: string): T => {
+    if (value === undefined) return fallback
+    const found = member(names, value)
+    if (found) return found
+    unknown.push(`${what} ${JSON.stringify(value)} (use ${listed(names)})`)
+    return fallback
+  }
+  const outcome = (value: unknown, what: string): Outcome => enumValue(OUTCOMES, value, 'Succeeded', what)
+  const count = (value: unknown, fallback: number | null, what: string): number | null => {
+    if (value === undefined || value === null) return fallback
+    const found = integer(value)
+    if (found !== undefined) return found
+    unknown.push(`${what} ${JSON.stringify(value)} (use a whole number)`)
+    return fallback
+  }
+  const reference = (value: unknown, what: string): string | null => {
+    if (value === undefined || value === null || value === '') return null
+    if (typeof value === 'string') return value
+    unknown.push(`${what} ${JSON.stringify(value)} (use an ID)`)
+    return null
+  }
   const steps = (items: unknown): Step[] => {
     const out: Step[] = []
     for (const item of Array.isArray(items) ? items : []) {
@@ -140,28 +181,37 @@ export function readBody(raw: { steps?: unknown; faults?: unknown; assertions?: 
       case 'parallel':
         return { type: 'parallel', id, branches: (Array.isArray(item.branches) ? item.branches : []).map(steps) }
       case 'branch':
-        return { type: 'branch', id, whenStep: text(item.whenStep), is: outcome(item.is), then: steps(item.then), else: steps(item.else) }
+        return { type: 'branch', id, whenStep: text(item.whenStep), is: outcome(item.is, `the outcome of branch ${id || '(no ID)'}`), then: steps(item.then), else: steps(item.else) }
       default:
         return null
     }
   }
 
   const topSteps = steps(raw.steps)
-  const faults: Fault[] = (Array.isArray(raw.faults) ? raw.faults : []).filter(isObject).map((f) => ({
-    target: text(f.target),
-    kind: FAULT_KINDS.includes(f.kind as FaultKind) ? (f.kind as FaultKind) : 'Error',
-    failFirst: typeof f.failFirst === 'number' ? f.failFirst : null,
-  }))
+  const faults: Fault[] = []
+  for (const [i, f] of (Array.isArray(raw.faults) ? raw.faults : []).entries()) {
+    if (!isObject(f)) {
+      unknown.push(`fault ${i + 1}, which is not an object`)
+      continue
+    }
+    const what = `fault ${i + 1}`
+    faults.push({
+      target: reference(f.target, `the target of ${what}`) ?? '',
+      kind: enumValue(FAULT_KINDS, f.kind, 'Error', `the kind of ${what}`),
+      failFirst: count(f.failFirst, null, `failFirst of ${what}`),
+    })
+  }
 
   const assertions: Assertion[] = []
   for (const a of Array.isArray(raw.assertions) ? raw.assertions : []) {
-    if (isObject(a) && a.type === 'outcome') assertions.push({ type: 'outcome', id: text(a.id), step: text(a.step), expected: outcome(a.expected) })
+    const what = isObject(a) ? `assertion ${text(a.id) || '(no ID)'}` : ''
+    if (isObject(a) && a.type === 'outcome') assertions.push({ type: 'outcome', id: text(a.id), step: text(a.step), expected: outcome(a.expected, `the expected outcome of ${what}`) })
     else if (isObject(a) && a.type === 'event-count') {
       assertions.push({
         type: 'event-count', id: text(a.id),
-        kind: EVENT_KINDS.includes(a.kind as EventKind) ? (a.kind as EventKind) : 'DeadLettered',
-        target: typeof a.target === 'string' && a.target ? a.target : null,
-        expected: typeof a.expected === 'number' ? a.expected : 0,
+        kind: enumValue(EVENT_KINDS, a.kind, 'DeadLettered', `the event kind of ${what}`),
+        target: reference(a.target, `the target of ${what}`),
+        expected: count(a.expected, 0, `the expected count of ${what}`) ?? 0,
       })
     } else unknown.push(isObject(a) ? `assertion ${text(a.id) || '(no ID)'} of type "${text(a.type)}"` : 'an entry that is not an assertion')
   }

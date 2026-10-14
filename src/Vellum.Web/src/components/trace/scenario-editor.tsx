@@ -308,5 +308,5 @@ export function ScenarioEditor({ projectId, branchId, scenario, isNew, reference
 }
 
 function unknownText(unknown: string[]): string {
-  return `The editor does not know ${unknown.join(', ')}. Step types are call, publish, write, parallel and branch; expected results are outcome and event-count.`
+  return `The editor cannot read ${unknown.join('; ')}. Step types are call, publish, write, parallel and branch; expected results are outcome and event-count.`
 }
