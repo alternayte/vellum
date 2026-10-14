@@ -56,7 +56,7 @@ Vellum lists one proposal for each thing it found. The list has one group for ea
 | Conflict | The source differs from a value that a person set. The review shows both values. Neither wins until you decide. |
 | Remove | A scan that looked at the source of an accepted fact no longer finds it. |
 | Match | The extraction rules changed and Vellum cannot tell which found fact is the one in the model. You choose. |
-| Same as? | An element of this scan has the name of an element that another Source holds. Vellum asks if they are the same element. |
+| Same as? | An element of this scan has the name of an element in the model. Vellum asks if they are the same element. |
 
 Select a proposal to see its fields and the source lines that support it. The **GitHub** link opens the same lines on GitHub at the scanned commit.
 
@@ -71,7 +71,7 @@ The [extraction rules](/reference/extraction-rules/) list what Vellum reads and 
 - Select **Same** when the element of this Source is the element that the other Source holds. Vellum binds the element to this Source and plans the proposals of the scan again. The values of this Source then come back as a change or a conflict.
 - Select **Not the same** when it is another thing. Vellum proposes it as a new element and does not ask again.
 - Select a conflict to see the value in the model, the value of this scan and the value of each other Source side by side.
-- Select **Accept all from this Source** to accept every addition, change and removal of the Source in one decision. It does not accept a conflict, a question or a match, or anything that depends on one of them. If an accepted item breaks something, the group names it. Select **I accept what this breaks. Accept all** to accept anyway.
+- Select **Accept all from this Source** to accept every addition, change and removal of the Source in one decision. It does not accept a conflict, a question, a match, a proposal about an entity that another Source holds, a change of a truth label, or anything that depends on one of them or on a rejected proposal. If an accepted item breaks something, the group names it. Select **I accept what this breaks. Accept all** to accept anyway.
 
 Select **Open full review** to decide the proposals of one Source one by one.
 

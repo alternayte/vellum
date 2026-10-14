@@ -207,6 +207,7 @@ internal static class ProposalPlanner
             var linked = entity is not null;
             var isElement = candidate.EntityKind == EntityKinds.Element;
             ModelEntity? sameAs = null;
+            var matchedByName = false;
             // A key that a person bound to an element targets that element.
             if (entity is null && blocked is null && isElement
                 && input.Model.BoundElement(input.SourceId, FactMapping.ExternalKey(candidate.FactKey)) is { } boundId
@@ -237,11 +238,15 @@ internal static class ProposalPlanner
                 }
                 if (count == 1)
                 {
-                    // An element that another Source holds is never taken by its name: a person is asked.
-                    if (isElement && (input.Model.IsBoundToOther(only!.Id, input.SourceId) || input.OthersOf(EntityKinds.Element, only.Id).Count > 0))
+                    // An element is never taken by its name: a person is asked "same as?".
+                    // Any other entity is, as a proposal; across Sources it is a conflict.
+                    if (isElement)
                         sameAs = only;
                     else
+                    {
                         entity = only;
+                        matchedByName = true;
+                    }
                 }
             }
 
@@ -295,7 +300,9 @@ internal static class ProposalPlanner
             resolved[candidate.FactKey] = new Resolution(entity.Id, null, entity.Name, null);
             claimed.Add(entity.Id);
             // The scan read the files of this fact and found it: the evidence is there.
-            if (linked && entity.Stale is not null)
+            // A mark is cleared by a scan of the Source that set it, or of any Source when no
+            // Source is recorded on it.
+            if (linked && entity.Stale is { } stale && (stale.SourceId is null || stale.SourceId == input.SourceId))
                 clearStale.Add(entity.Id);
             if (blocked is not null)
                 continue;
@@ -365,7 +372,9 @@ internal static class ProposalPlanner
             // Another Source holds the entity with other values: the Sources disagree, and the
             // review lists every side. Accepting this one is a person's choice, never a default.
             var others = input.OthersOf(candidate.EntityKind, entity.Id);
-            var action = modelChanges > 0 && (status != ObservedInSource || editedSince || others.Count > 0)
+            // An entity that another Source holds and that this fact matches by name alone is
+            // a conflict even where the values agree: linking it is a person's choice.
+            var action = (matchedByName && others.Count > 0) || (modelChanges > 0 && (status != ObservedInSource || editedSince || others.Count > 0))
                 ? ProposalAction.Conflict
                 : ProposalAction.Change;
 

@@ -243,7 +243,7 @@ public static class DecideProposals
             var impact = await ProposalImpact.LoadAsync(services, store, scan.ProjectId, model, ct);
             // An entity that this decision removes or changes is dealt with by the decision.
             var handled = accepted.Select(p => p.EntityId).ToHashSet();
-            foreach (var proposal in accepted)
+            foreach (var proposal in accepted.Where(p => !UnlinksOnly(p)))
             {
                 var fields = ProposalJson.ReadChanges(proposal.Changes).Select(c => c.Field).ToList();
                 var found = impact.Of(proposal.Action, EnumText.Of(proposal.EntityKind), proposal.EntityId, fields);
@@ -263,7 +263,7 @@ public static class DecideProposals
 
         var repository = $"{scan.Host}/{scan.Repository}";
         var applier = new ProposalApplier(model, schemas, scan.ProjectId, repository, scan.CommitSha!, Guid.Parse(userId), now, scan.SourceId);
-        foreach (var proposal in InDependencyOrder(accepted))
+        foreach (var proposal in InDependencyOrder(accepted).Where(p => !UnlinksOnly(p)))
         {
             if (applier.Apply(proposal) is { } reason)
                 failures.Add(new DecisionFailure(proposal.Id, reason));
@@ -450,6 +450,13 @@ public static class DecideProposals
         await transaction.CommitAsync(ct);
         return Results.Ok(new DecideProposalsResponse(accept, reject, [], [.. relink.Select(r => r.Id)], [.. bind.Select(b => b.Id)], false));
     }
+
+    /// <summary>
+    /// A removal of an entity that other Sources still held when the scan was planned. It
+    /// removes the fact of this Source only: the link goes, and the entity stays in the model.
+    /// </summary>
+    internal static bool UnlinksOnly(ProposalEntity proposal) =>
+        proposal.Action == ProposalAction.Remove && proposal.OtherSources != "[]";
 
     private static Task<FactLinkEntity?> FindLinkAsync(AppDbContext db, ScanEntity scan, Subject subject, string factKey, CancellationToken ct)
     {

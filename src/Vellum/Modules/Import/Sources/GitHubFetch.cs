@@ -162,13 +162,28 @@ internal static class GitHubFetch
         if (canonical == asked)
             return;
         scan.Repository = canonical;
-        source.Locator = canonical;
+
+        // The project may hold the repository as another Source already: under the new name,
+        // or with scans of the same GitHub ID. The scan becomes a scan of that Source, and a
+        // Source that only this scan made for the old name goes.
+        var existing = repository.Id is { } githubId
+            ? await db.Sources.FirstOrDefaultAsync(s => s.ProjectId == projectId && s.Host == host && s.Id != source.Id
+                && (s.Locator == canonical || db.Scans.Any(x => x.SourceId == s.Id && x.RepositoryId == githubId)), ct)
+            : null;
+        var target = existing ?? source;
         // A name the person gave the Source stays; the default name follows the repository.
-        if (source.Name == asked)
-            source.Name = canonical;
+        if (target.Name == target.Locator)
+            target.Name = canonical;
+        target.Locator = canonical;
+        scan.SourceId = target.Id;
         try
         {
             await db.SaveChangesAsync(ct);
+            if (existing is not null)
+            {
+                var orphan = source.Id;
+                await db.Sources.Where(s => s.Id == orphan && !db.Scans.Any(x => x.SourceId == orphan)).ExecuteDeleteAsync(ct);
+            }
         }
         catch (DbUpdateException ex) when (ex.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation })
         {

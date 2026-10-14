@@ -170,18 +170,19 @@ public class SourceTests(ImportHost import) : IClassFixture<ImportHost>
         Assert.NotEqual(byName["Billing"], billing.Text("entityId"));
         Assert.Equal("bind", after.Single(p => p.Text("name") == "inventory-worker").Text("action"));
 
-        // Accept all from B takes neither the conflict nor the open question.
+        // Accept all from B takes neither the conflict nor the open question, nor a fact that
+        // another Source holds.
         var bulk = await s.Owner.PostAsJsonAsync($"/api/projects/{s.ProjectId}/sources/{b.Id()}/accept", new { acknowledgeImpact = true });
         var bulkResult = (await bulk.Content.ReadFromJsonAsync<JsonObject>())!;
         Assert.True(bulk.StatusCode == HttpStatusCode.OK, bulkResult.ToJsonString());
         Assert.Empty(bulkResult["failed"]!.AsArray());
         var accepted = bulkResult["accepted"]!.AsArray().Select(id => id!.GetValue<Guid>()).ToHashSet();
-        Assert.Contains(api.Id(), accepted);
+        Assert.DoesNotContain(api.Id(), accepted);
         Assert.Contains(billing.Id(), accepted);
         Assert.DoesNotContain(store.Id(), accepted);
         var pending = (await s.ProposalsAsync(scanB)).Where(p => p.Text("status") == "pending").ToList();
-        Assert.Equal(["conflict postgres", "bind inventory-worker"], pending.Where(p => p.Text("entityKind") == "element")
-            .Select(p => $"{p.Text("action")} {p.Text("name")}").OrderBy(x => x, StringComparer.Ordinal).Reverse());
+        Assert.Equal(["bind inventory-worker", "change Orders.Api", "conflict postgres"], pending.Where(p => p.Text("entityKind") == "element")
+            .Select(p => $"{p.Text("action")} {p.Text("name")}").Order(StringComparer.Ordinal));
         var elements = await s.ElementsAsync();
         Assert.Equal("postgres", elements.Single("id", byName["postgres"]).Text("technology"));
         Assert.Equal(2, elements.Count(e => e.Text("name") == "Billing"));

@@ -340,8 +340,10 @@ function ProposalDetail({ projectId, scanId, proposal: listed, sourceName, link,
         <div className="space-y-1.5">
           <p className="text-xs text-muted-foreground">
             {proposal.action === 'conflict'
-              ? 'The Sources disagree. Each keeps its own fact. Accept to give the model the value of this scan; reject to keep the model as it is.'
-              : 'Other Sources hold this too. Their facts stay with them.'}
+              ? 'Another Source holds this. Each Source keeps its own fact, and none wins by itself. Accept to give the model the value of this scan and link it; reject to keep the model as it is.'
+              : proposal.action === 'remove'
+                ? 'Other Sources still hold this. Accepting removes the fact of this Source only; the entity stays in the model.'
+                : 'Other Sources hold this too. Their facts stay with them.'}
           </p>
           <SourceSides proposal={proposal} sourceName={sourceName} />
         </div>

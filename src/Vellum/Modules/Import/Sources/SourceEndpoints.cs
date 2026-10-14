@@ -25,7 +25,7 @@ public sealed record SourceSnapshotDto(
 /// <param name="ScanId">The scan whose proposals these are. Null when the Source has no completed tracking scan.</param>
 /// <param name="CrossSourceConflicts">Conflicts where another Source of the project holds the entity with other values.</param>
 /// <param name="BindQuestions">"Same as X?" questions: an element of another Source has the name of an element fact of this one.</param>
-/// <param name="Acceptable">Pending proposals that "accept all from this Source" would accept: additions, changes and removals, with no conflict, question or relink, and nothing they depend on left out.</param>
+/// <param name="Acceptable">Pending proposals that "accept all from this Source" would accept: additions, changes and removals that no other Source holds and that change no truth label, with no conflict, question or relink, and every dependency accepted or in the set.</param>
 public sealed record SourceReviewDto(
     Guid? ScanId, int Pending, int Additions, int Changes, int Removals, int Conflicts, int CrossSourceConflicts,
     int BindQuestions, int Relinks, int Acceptable);
@@ -289,7 +289,7 @@ public static class SourceRequests
             return Results.Conflict(new ErrorResponse("nothing_to_accept", "This Source has no completed scan whose proposals can be decided."));
 
         var pending = await PendingAsync(db, scan.Id, ct);
-        var accept = Acceptable(pending).Take(DecideProposals.MaxProposals).ToArray();
+        var accept = (await AcceptableAsync(db, pending, ct)).ToArray();
         if (accept.Length == 0)
         {
             return Results.Conflict(new ErrorResponse("nothing_to_accept",
@@ -314,31 +314,40 @@ public static class SourceRequests
         return await db.Sources.AsNoTracking().FirstAsync(s => s.ProjectId == projectId && s.Host == host && s.Locator == repository, ct);
     }
 
-    private sealed record PendingRow(Guid Id, ProposalAction Action, Guid[] DependsOn, string OtherSources);
+    private sealed record PendingRow(Guid Id, ProposalAction Action, Guid[] DependsOn, string OtherSources, string Changes);
 
     private static Task<List<PendingRow>> PendingAsync(AppDbContext db, Guid scanId, CancellationToken ct) =>
         db.ImportProposals.AsNoTracking()
             .Where(p => p.ScanId == scanId && p.Status == ProposalStatus.Pending)
             .OrderBy(p => p.Seq)
-            .Select(p => new PendingRow(p.Id, p.Action, p.DependsOn, p.OtherSources))
+            .Select(p => new PendingRow(p.Id, p.Action, p.DependsOn, p.OtherSources, p.Changes))
             .ToListAsync(ct);
 
     /// <summary>
-    /// The pending additions, changes and removals, less every one that depends on a pending
-    /// proposal outside the set, until no more drop out. A dependency that is accepted already
-    /// is met; one that is rejected or superseded leaves its dependant out too.
+    /// What a bulk accept takes: pending additions, changes and removals that no other Source
+    /// holds and that do not change a truth label, at most <see cref="DecideProposals.MaxProposals"/>
+    /// in the order of the scan. Then every one whose dependency is neither accepted nor in the
+    /// set drops out, until no more do. A rejected or superseded dependency is not met.
     /// </summary>
-    private static List<Guid> Acceptable(List<PendingRow> pending)
+    private static async Task<List<Guid>> AcceptableAsync(AppDbContext db, List<PendingRow> pending, CancellationToken ct)
     {
-        var pendingIds = pending.Select(p => p.Id).ToHashSet();
-        var set = pending.Where(p => p.Action is ProposalAction.Add or ProposalAction.Change or ProposalAction.Remove).ToDictionary(p => p.Id);
+        var set = pending
+            .Where(p => p.Action is ProposalAction.Add or ProposalAction.Change or ProposalAction.Remove
+                && p.OtherSources == "[]"
+                && !ProposalJson.ReadChanges(p.Changes).Any(c => c.Field == "factStatus"))
+            .Take(DecideProposals.MaxProposals)
+            .ToDictionary(p => p.Id);
+        var outside = set.Values.SelectMany(p => p.DependsOn).Where(d => !set.ContainsKey(d)).Distinct().ToList();
+        var accepted = (await db.ImportProposals.AsNoTracking()
+            .Where(p => outside.Contains(p.Id) && p.Status == ProposalStatus.Accepted)
+            .Select(p => p.Id).ToListAsync(ct)).ToHashSet();
         bool changed;
         do
         {
             changed = false;
             foreach (var row in set.Values.ToList())
             {
-                if (row.DependsOn.Any(d => pendingIds.Contains(d) && !set.ContainsKey(d)))
+                if (row.DependsOn.Any(d => !set.ContainsKey(d) && !accepted.Contains(d)))
                 {
                     set.Remove(row.Id);
                     changed = true;
@@ -383,7 +392,7 @@ public static class SourceRequests
             review = new SourceReviewDto(
                 scan.Id, pending.Count, Count(ProposalAction.Add), Count(ProposalAction.Change), Count(ProposalAction.Remove),
                 Count(ProposalAction.Conflict), pending.Count(p => p.Action == ProposalAction.Conflict && p.OtherSources != "[]"),
-                Count(ProposalAction.Bind), Count(ProposalAction.Relink), Acceptable(pending).Count);
+                Count(ProposalAction.Bind), Count(ProposalAction.Relink), (await AcceptableAsync(db, pending, ct)).Count);
         }
 
         return new SourceDto(

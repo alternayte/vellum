@@ -152,11 +152,22 @@ internal static class SnapshotWriter
         var plan = prepared.Plan;
         var tracking = prepared.Kind.Tracking;
 
+        // A re-plan takes the stream lock first: two re-plans of one scan, or a re-plan and a
+        // decision, then take turns before any proposal row is touched.
+        StreamExecuteResult? early = null;
+        if (mode.Replan)
+        {
+            early = await LockAsync(store, prepared.StreamId, ct);
+            if (await SupersededAsync(db, scan, ct))
+                return SnapshotOutcome.LeaseLost;
+        }
+
         // 1. The rows that only this scan owns, before any lock that another writer waits for.
         var seq = 0;
         if (mode.LeaseToken is not null)
         {
-            var manifest = input.Manifest ?? throw new InvalidOperationException("A completed run writes its Snapshot manifest.");
+            // Without one from the run, the manifest is the files the scan rows say were read.
+            var manifest = input.Manifest ?? await ManifestOfAsync(db, scan.Id, ct);
             db.ImportSnapshots.Add(new SnapshotEntity
             {
                 ScanId = scan.Id, ProjectId = scan.ProjectId, SourceId = scan.SourceId, Host = scan.Host, Repository = scan.Repository,
@@ -208,12 +219,14 @@ internal static class SnapshotWriter
         // 2. The stream lock. Decisions take the same lock, so from here to the commit no
         // proposal is accepted and no link changes. The plan holds only when nothing did
         // since it was computed.
-        var locked = await store.Execute<ModelState>(StreamId.From(prepared.StreamId), _ => [], ct);
+        var locked = early ?? await LockAsync(store, prepared.StreamId, ct);
         if (locked.Version != prepared.ModelVersion
             || (await ImportState.LoadAsync(db, scan, ct)).Stamp != prepared.State.Stamp)
             return null;
 
-        if (tracking)
+        // A re-plan answers questions of this scan only: it supersedes nothing, moves no link
+        // and sets or clears no mark. The run that completed the scan did those.
+        if (tracking && !mode.Replan)
         {
             // Proposals of an earlier scan of this ref describe an older commit.
             var earlier = db.Scans.Where(s =>
@@ -291,9 +304,9 @@ internal static class SnapshotWriter
         }
 
         var events = new List<object>();
-        if (tracking)
+        if (tracking && !mode.Replan)
         {
-            var mark = new StaleMark(commitSha, StaleDecider.EvidenceNotFound);
+            var mark = new StaleMark(commitSha, StaleDecider.EvidenceNotFound, scan.SourceId);
             foreach (var id in plan.MarkStale)
                 events.AddRange(StaleDecider.Mark(locked.State, id, mark));
             foreach (var id in plan.ClearStale)
@@ -308,6 +321,31 @@ internal static class SnapshotWriter
         await transaction.CommitAsync(ct);
         return SnapshotOutcome.Written;
     }
+
+    private static async Task<ManifestSummary> ManifestOfAsync(AppDbContext db, Guid scanId, CancellationToken ct)
+    {
+        var files = await db.ScanFiles.AsNoTracking().Where(f => f.ScanId == scanId && f.State == ScanFileState.Read)
+            .Select(f => new { f.Path, f.Size, f.BlobSha }).ToListAsync(ct);
+        return new ManifestSummary(Sources.SnapshotManifest.Id(files.Select(f => new Sources.ManifestEntry(f.Path, f.Size, f.BlobSha))), files.Count);
+    }
+
+    private static async Task<StreamExecuteResult> LockAsync(IEventStore store, Guid streamId, CancellationToken ct)
+    {
+        var locked = await store.Execute<ModelState>(StreamId.From(streamId), _ => [], ct);
+        return new StreamExecuteResult(locked.State, locked.Version);
+    }
+
+    /// <summary>
+    /// True when a re-plan of the scan would describe an old commit: a proposal of it was
+    /// superseded, or a newer completed scan of the same ref of its Source exists.
+    /// </summary>
+    private static async Task<bool> SupersededAsync(AppDbContext db, ScanEntity scan, CancellationToken ct) =>
+        await db.ImportProposals.AnyAsync(p => p.ScanId == scan.Id && p.Status == ProposalStatus.Superseded, ct)
+        || await db.Scans.AnyAsync(s => s.SourceId == scan.SourceId && s.Id != scan.Id && s.Status == ScanStatus.Completed
+            && s.PullRequestNumber == null && s.ResolvedRef != null && s.ResolvedRef == scan.ResolvedRef
+            && s.CompletedAt > scan.CompletedAt, ct);
+
+    private sealed record StreamExecuteResult(ModelState State, long Version);
 
     /// <summary>
     /// Moves each link to the key its fact has under the current rules. The link keeps its

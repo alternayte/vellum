@@ -39,7 +39,7 @@ For a Source that is not git, the revision is the Snapshot ID.
 
 When a scan of a Source looks at the files of an accepted fact and no longer finds the fact, Vellum marks the fact stale. It compares only Snapshots of the same Source. A scan of another Source says nothing about the fact.
 
-Vellum does not mark a fact stale while another Source still holds it.
+Vellum does not mark a fact stale while another Source still holds it. Only a scan of the Source that set a mark can clear it.
 
 To see what changed between two Snapshots of one Source, use `GET /api/projects/{projectId}/sources/{sourceId}/snapshots/compare?base={scanId}&head={scanId}`. The answer lists the files that were added, removed or changed, and the facts that were added, removed or changed.
 
@@ -53,7 +53,7 @@ When a scan finds a key that is bound, the proposal targets the bound element.
 
 ## Vellum never binds by name
 
-Two Sources can describe the same service. A scan of the second Source finds an element fact whose name is the name of an element that the first Source holds. Vellum does not join them. It asks the question "same as?":
+Two Sources can describe the same service. A scan of the second Source finds an element fact whose name is the name of an element that the first Source holds. Vellum does not join them. It asks the question "same as?". It asks the same question when the element with that name was made by a person:
 
 - **Same** binds the element to the key of the second Source. The values of the second Source then come back as a proposal for that element.
 - **Not the same** makes the fact a new element. Vellum does not ask again for this key and this element.
@@ -62,7 +62,11 @@ Until you answer, Vellum proposes nothing for the fact and for the facts that de
 
 ## Conflicts between Sources
 
-When two Sources say different things about one entity, the proposal is a conflict. The review shows the value in the model, the value of this scan and the value of each other Source, with the truth label and the citation of each. No Source wins by itself. **Accept all from this Source** never accepts a conflict or a question.
+When a scan finds an entity that another Source holds, such as a channel or a message with the same name, the proposal is a conflict, also when the values agree. The review shows the value in the model, the value of this scan and the value of each other Source, with the truth label and the citation of each. No Source wins by itself.
+
+When a scan of one Source no longer finds an entity that another Source still holds, the removal it proposes removes the fact of that Source only. The entity stays in the model.
+
+**Accept all from this Source** never accepts a conflict, a question, a proposal that another Source holds, or a change of a truth label.
 
 ## See also
 
