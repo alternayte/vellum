@@ -53,7 +53,7 @@ public static class GetMessage
         return Results.Ok(new MessageDto(
             entity.Id, entity.Name, entity.Description,
             entity.ProducerId, entity.ConsumerIds, entity.SchemaId, entity.Tags,
-            entity.FactStatus,
+            entity.FactStatus.ToApiString(),
             ProvenanceMapper.ToDto(entity.ProvenanceSource, entity.ProvenanceRevision,
                 entity.ProvenanceConfidence, entity.ProvenanceAcceptedBy, entity.ProvenanceAcceptedAt, entity.ProvenanceAcceptedAtVersion, entity.ProvenanceAcceptedOnBranch),
             StaleDto.From(entity.StaleSinceRevision, entity.StaleReason)));
@@ -116,7 +116,7 @@ public static class ListMessages
         }
 
         var items = rows.Select(m => new MessageDto(
-            m.Id, m.Name, m.Description, m.ProducerId, m.ConsumerIds, m.SchemaId, m.Tags, m.FactStatus,
+            m.Id, m.Name, m.Description, m.ProducerId, m.ConsumerIds, m.SchemaId, m.Tags, m.FactStatus.ToApiString(),
             ProvenanceMapper.ToDto(m.ProvenanceSource, m.ProvenanceRevision, m.ProvenanceConfidence,
                 m.ProvenanceAcceptedBy, m.ProvenanceAcceptedAt, m.ProvenanceAcceptedAtVersion, m.ProvenanceAcceptedOnBranch),
             StaleDto.From(m.StaleSinceRevision, m.StaleReason))).ToList();

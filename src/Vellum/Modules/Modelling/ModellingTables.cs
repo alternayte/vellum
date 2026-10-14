@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Vellum.Shared;
 
 namespace Vellum.Modules.Modelling;
 
@@ -6,6 +7,15 @@ namespace Vellum.Modules.Modelling;
 public static class ModellingTables
 {
     public const string Schema = "modelling";
+
+    public static readonly IReadOnlyList<PostgresEnum> Enums =
+    [
+        PostgresEnum.Of<ElementKind>("element_kind", Schema),
+        PostgresEnum.Of<ElementStatus>("element_status", Schema),
+        PostgresEnum.Of<RelationshipKind>("relationship_kind", Schema),
+        PostgresEnum.Of<FactStatus>("fact_status", Schema),
+        PostgresEnum.Of<VariantStatus>("variant_status", Schema),
+    ];
 
     public static void Configure(ModelBuilder modelBuilder)
     {
@@ -56,16 +66,16 @@ public class ElementEntity
     public Guid Id { get; set; }
     public Guid ProjectId { get; set; }
     public Guid Branch { get; set; }
-    public string Kind { get; set; } = null!;
+    public ElementKind Kind { get; set; }
     public string Name { get; set; } = null!;
     public string? Description { get; set; }
     public string? Technology { get; set; }
     public Guid? OwnerId { get; set; }
-    public string Status { get; set; } = "current";
+    public ElementStatus Status { get; set; } = ElementStatus.Current;
     public Guid? ParentId { get; set; }
     public string[] Tags { get; set; } = [];
     public string? Icon { get; set; }
-    public string FactStatus { get; set; } = "declared";
+    public FactStatus FactStatus { get; set; } = FactStatus.Declared;
     public string? ProvenanceSource { get; set; }
     public string? ProvenanceRevision { get; set; }
     public double? ProvenanceConfidence { get; set; }
@@ -91,8 +101,8 @@ public class RelationshipEntity
     public string? Technology { get; set; }
     public Guid? MessageId { get; set; }
     public string? LineShape { get; set; }
-    public string Kind { get; set; } = "structural";
-    public string FactStatus { get; set; } = "declared";
+    public RelationshipKind Kind { get; set; } = RelationshipKind.Structural;
+    public FactStatus FactStatus { get; set; } = FactStatus.Declared;
     public string? ProvenanceSource { get; set; }
     public string? ProvenanceRevision { get; set; }
     public double? ProvenanceConfidence { get; set; }
@@ -118,7 +128,7 @@ public class MessageEntity
     public Guid[] ConsumerIds { get; set; } = [];
     public Guid? SchemaId { get; set; }
     public string[] Tags { get; set; } = [];
-    public string FactStatus { get; set; } = "declared";
+    public FactStatus FactStatus { get; set; } = FactStatus.Declared;
     public string? ProvenanceSource { get; set; }
     public string? ProvenanceRevision { get; set; }
     public double? ProvenanceConfidence { get; set; }
@@ -163,7 +173,13 @@ public class VariantEntity
     public Guid BaseStreamId { get; set; }
     public Guid? BaseRevisionId { get; set; }
     public int ForkVersion { get; set; }
-    public string Status { get; set; } = "open";
+    public VariantStatus Status { get; set; } = VariantStatus.Open;
     public string CreatedBy { get; set; } = null!;
     public DateTimeOffset CreatedAt { get; set; }
+}
+
+/// <summary>A variant is open while its row exists; deleting the variant deletes the row.</summary>
+public enum VariantStatus
+{
+    Open,
 }

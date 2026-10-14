@@ -31,8 +31,8 @@ public static class ExportModel
             .OrderBy(e => e.Id)
             .ToListAsync(ct);
         var elements = elementEntities.Select(e => new ElementExport(
-            e.Id, e.Kind, e.Name, e.Description, e.Technology, e.Status, e.ParentId, e.Tags,
-            e.Icon, e.FactStatus,
+            e.Id, EnumText.Of(e.Kind), e.Name, e.Description, e.Technology, EnumText.Of(e.Status), e.ParentId, e.Tags,
+            e.Icon, e.FactStatus.ToApiString(),
             ProvenanceExport.From(e.ProvenanceSource, e.ProvenanceRevision, e.ProvenanceConfidence,
                 e.ProvenanceAcceptedBy, e.ProvenanceAcceptedAt),
             StaleExport.From(e.StaleSinceRevision, e.StaleReason))).ToList();
@@ -42,7 +42,7 @@ public static class ExportModel
             .OrderBy(r => r.Id)
             .ToListAsync(ct);
         var relationships = relationshipEntities.Select(r => new RelationshipExport(
-            r.Id, r.FromId, r.ToId, r.Label, r.Technology, r.Kind, r.LineShape, r.FactStatus,
+            r.Id, r.FromId, r.ToId, r.Label, r.Technology, EnumText.Of(r.Kind), r.LineShape, r.FactStatus.ToApiString(),
             ProvenanceExport.From(r.ProvenanceSource, r.ProvenanceRevision, r.ProvenanceConfidence,
                 r.ProvenanceAcceptedBy, r.ProvenanceAcceptedAt),
             StaleExport.From(r.StaleSinceRevision, r.StaleReason))).ToList();
@@ -53,7 +53,7 @@ public static class ExportModel
             .ToListAsync(ct);
         var messages = messageEntities.Select(m => new MessageExport(
             m.Id, m.Name, m.Description, m.ProducerId, m.ConsumerIds, m.SchemaId, m.Tags,
-            m.FactStatus,
+            m.FactStatus.ToApiString(),
             ProvenanceExport.From(m.ProvenanceSource, m.ProvenanceRevision, m.ProvenanceConfidence,
                 m.ProvenanceAcceptedBy, m.ProvenanceAcceptedAt),
             StaleExport.From(m.StaleSinceRevision, m.StaleReason))).ToList();

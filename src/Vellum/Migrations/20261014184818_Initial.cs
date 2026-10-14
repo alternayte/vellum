@@ -2,6 +2,8 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
+using Vellum.Modules.Drafts;
+using Vellum.Modules.Modelling;
 using Vellum.Modules.Workspaces;
 
 #nullable disable
@@ -63,6 +65,12 @@ namespace Vellum.Migrations
                 name: "schemas");
 
             migrationBuilder.AlterDatabase()
+                .Annotation("Npgsql:Enum:drafts.draft_status", "abandoned,merged,open")
+                .Annotation("Npgsql:Enum:modelling.element_kind", "actor,app,component,store,system")
+                .Annotation("Npgsql:Enum:modelling.element_status", "current,deprecated,planned,removed")
+                .Annotation("Npgsql:Enum:modelling.fact_status", "declared,inferred,measured,observed_in_source,unknown")
+                .Annotation("Npgsql:Enum:modelling.relationship_kind", "behavioural,structural")
+                .Annotation("Npgsql:Enum:modelling.variant_status", "open")
                 .Annotation("Npgsql:Enum:workspaces.invitation_status", "accepted,declined,expired,pending,revoked")
                 .Annotation("Npgsql:Enum:workspaces.workspace_role", "editor,owner,viewer");
 
@@ -248,7 +256,7 @@ namespace Vellum.Migrations
                     stream_id = table.Column<Guid>(type: "uuid", nullable: false),
                     base_stream_id = table.Column<Guid>(type: "uuid", nullable: false),
                     fork_version = table.Column<int>(type: "integer", nullable: false),
-                    status = table.Column<string>(type: "text", nullable: false),
+                    status = table.Column<DraftStatus>(type: "drafts.draft_status", nullable: false),
                     created_by = table.Column<string>(type: "text", nullable: false),
                     created_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false, defaultValueSql: "now()"),
                     merged_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
@@ -269,16 +277,16 @@ namespace Vellum.Migrations
                     id = table.Column<Guid>(type: "uuid", nullable: false),
                     project_id = table.Column<Guid>(type: "uuid", nullable: false),
                     branch = table.Column<Guid>(type: "uuid", nullable: false),
-                    kind = table.Column<string>(type: "text", nullable: false),
+                    kind = table.Column<ElementKind>(type: "modelling.element_kind", nullable: false),
                     name = table.Column<string>(type: "text", nullable: false),
                     description = table.Column<string>(type: "text", nullable: true),
                     technology = table.Column<string>(type: "text", nullable: true),
                     owner_id = table.Column<Guid>(type: "uuid", nullable: true),
-                    status = table.Column<string>(type: "text", nullable: false),
+                    status = table.Column<ElementStatus>(type: "modelling.element_status", nullable: false),
                     parent_id = table.Column<Guid>(type: "uuid", nullable: true),
                     tags = table.Column<string[]>(type: "text[]", nullable: false),
                     icon = table.Column<string>(type: "text", nullable: true),
-                    fact_status = table.Column<string>(type: "text", nullable: false),
+                    fact_status = table.Column<FactStatus>(type: "modelling.fact_status", nullable: false),
                     provenance_source = table.Column<string>(type: "text", nullable: true),
                     provenance_revision = table.Column<string>(type: "text", nullable: true),
                     provenance_confidence = table.Column<double>(type: "double precision", nullable: true),
@@ -447,7 +455,7 @@ namespace Vellum.Migrations
                     consumer_ids = table.Column<Guid[]>(type: "uuid[]", nullable: false),
                     schema_id = table.Column<Guid>(type: "uuid", nullable: true),
                     tags = table.Column<string[]>(type: "text[]", nullable: false),
-                    fact_status = table.Column<string>(type: "text", nullable: false),
+                    fact_status = table.Column<FactStatus>(type: "modelling.fact_status", nullable: false),
                     provenance_source = table.Column<string>(type: "text", nullable: true),
                     provenance_revision = table.Column<string>(type: "text", nullable: true),
                     provenance_confidence = table.Column<double>(type: "double precision", nullable: true),
@@ -643,8 +651,8 @@ namespace Vellum.Migrations
                     technology = table.Column<string>(type: "text", nullable: true),
                     message_id = table.Column<Guid>(type: "uuid", nullable: true),
                     line_shape = table.Column<string>(type: "text", nullable: true),
-                    kind = table.Column<string>(type: "text", nullable: false),
-                    fact_status = table.Column<string>(type: "text", nullable: false),
+                    kind = table.Column<RelationshipKind>(type: "modelling.relationship_kind", nullable: false),
+                    fact_status = table.Column<FactStatus>(type: "modelling.fact_status", nullable: false),
                     provenance_source = table.Column<string>(type: "text", nullable: true),
                     provenance_revision = table.Column<string>(type: "text", nullable: true),
                     provenance_confidence = table.Column<double>(type: "double precision", nullable: true),
@@ -1034,7 +1042,7 @@ namespace Vellum.Migrations
                     base_stream_id = table.Column<Guid>(type: "uuid", nullable: false),
                     base_revision_id = table.Column<Guid>(type: "uuid", nullable: true),
                     fork_version = table.Column<int>(type: "integer", nullable: false),
-                    status = table.Column<string>(type: "text", nullable: false),
+                    status = table.Column<VariantStatus>(type: "modelling.variant_status", nullable: false),
                     created_by = table.Column<string>(type: "text", nullable: false),
                     created_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false)
                 },

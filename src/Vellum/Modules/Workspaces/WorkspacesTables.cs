@@ -1,5 +1,4 @@
 using Microsoft.EntityFrameworkCore;
-using Npgsql.EntityFrameworkCore.PostgreSQL.Infrastructure;
 using Vellum.Shared;
 
 namespace Vellum.Modules.Workspaces;
@@ -9,11 +8,11 @@ public static class WorkspacesTables
 {
     public const string Schema = "workspaces";
 
-    public static void MapEnums(NpgsqlDbContextOptionsBuilder npgsql)
-    {
-        npgsql.MapEnum<WorkspaceRole>("workspace_role", Schema, AppDatabase.EnumLabels);
-        npgsql.MapEnum<InvitationStatus>("invitation_status", Schema, AppDatabase.EnumLabels);
-    }
+    public static readonly IReadOnlyList<PostgresEnum> Enums =
+    [
+        PostgresEnum.Of<WorkspaceRole>("workspace_role", Schema),
+        PostgresEnum.Of<InvitationStatus>("invitation_status", Schema),
+    ];
 
     public static void Configure(ModelBuilder modelBuilder)
     {

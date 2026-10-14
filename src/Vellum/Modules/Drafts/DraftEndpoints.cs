@@ -119,7 +119,7 @@ public static class CreateDraft
 
     internal static DraftDto ToDto(DraftEntity d) =>
         new(d.Id, d.ProjectId, d.Name, d.StreamId, d.BaseStreamId,
-            d.ForkVersion, d.Status, d.CreatedBy, d.CreatedAt,
+            d.ForkVersion, EnumText.Of(d.Status), d.CreatedBy, d.CreatedAt,
             d.MergedAt, d.AbandonedAt);
 
 }
@@ -142,8 +142,13 @@ public static class ListDrafts
         var query = db.Drafts.AsNoTracking()
             .Where(d => d.ProjectId == projectId);
 
+        // A status that names no member matches no draft.
         if (!string.IsNullOrEmpty(status))
-            query = query.Where(d => d.Status == status);
+        {
+            query = EnumText.TryParse(status, out DraftStatus wanted)
+                ? query.Where(d => d.Status == wanted)
+                : query.Where(d => false);
+        }
 
         query = query.OrderByDescending(d => d.CreatedAt).ThenBy(d => d.Id);
 
@@ -159,7 +164,7 @@ public static class ListDrafts
         var items = await query
             .Take(pageSize + 1)
             .Select(d => new DraftDto(d.Id, d.ProjectId, d.Name, d.StreamId, d.BaseStreamId,
-                d.ForkVersion, d.Status, d.CreatedBy, d.CreatedAt, d.MergedAt, d.AbandonedAt))
+                d.ForkVersion, EnumText.Of(d.Status), d.CreatedBy, d.CreatedAt, d.MergedAt, d.AbandonedAt))
             .ToListAsync(ct);
 
         string? nextCursor = null;
@@ -221,8 +226,8 @@ public static class AbandonDraft
             if (found is null)
                 return Results.NotFound(new ErrorResponse("not_found", "Draft not found"));
             // The status is read again under the lock.
-            if (found.Status != "open")
-                return Results.Conflict(new ErrorResponse("conflict", $"Draft is already {found.Status}"));
+            if (found.Status != DraftStatus.Open)
+                return Results.Conflict(new ErrorResponse("conflict", $"Draft is already {EnumText.Of(found.Status)}"));
 
             // A return before the commit rolls everything back.
             await using var transaction = await db.Database.BeginTransactionAsync(ct);
@@ -235,10 +240,10 @@ public static class AbandonDraft
             await CostBranches.LockSheetsAsync(db, [found.StreamId], ct);
 
             var draft = await db.Drafts.FirstAsync(d => d.Id == draftId, ct);
-            if (draft.Status != "open")
-                return Results.Conflict(new ErrorResponse("conflict", $"Draft is already {draft.Status}"));
+            if (draft.Status != DraftStatus.Open)
+                return Results.Conflict(new ErrorResponse("conflict", $"Draft is already {EnumText.Of(draft.Status)}"));
 
-            draft.Status = "abandoned";
+            draft.Status = DraftStatus.Abandoned;
             draft.AbandonedAt = time.GetUtcNow();
 
             // One append. Deedbox saves the status in the transaction, and the inline projection

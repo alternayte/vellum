@@ -82,6 +82,9 @@ builder.Services.AddTelemetry(builder.Configuration, GetInstance.Version);
 
 // Event store. Each module registers its own streams and projections. The connection
 // string is read when the host starts, so configuration that a test host overrides applies.
+// The event store's data source reads and writes the module tables in its inline projections,
+// so it needs the Postgres enum types of the modules as much as EF Core does.
+AppDatabase.MapEnumTypes();
 var servicesBeforeDeedbox = builder.Services.Count;
 builder.Services.AddDeedbox(deedbox => deedbox
     .UsePostgres(services => services.GetRequiredService<IConfiguration>().GetConnectionString("DefaultConnection")!)

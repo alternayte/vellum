@@ -2,7 +2,6 @@ using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using Npgsql.NameTranslation;
-using Npgsql.EntityFrameworkCore.PostgreSQL.Infrastructure;
 using Vellum.Modules.Ai.Design;
 using Vellum.Modules.Ai;
 using Vellum.Modules.Costs;
@@ -159,16 +158,47 @@ public static class AppDatabase
     /// <summary>The labels of every Postgres enum type: the member names in snake_case.</summary>
     public static readonly INpgsqlNameTranslator EnumLabels = new NpgsqlSnakeCaseNameTranslator();
 
+    /// <summary>Each module maps the enums of its tables to enum types in its own schema.</summary>
+    private static readonly IReadOnlyList<PostgresEnum> Enums =
+    [
+        .. WorkspacesTables.Enums,
+        .. ModellingTables.Enums,
+        .. DraftsTables.Enums,
+    ];
+
+    private static readonly Lazy<bool> GlobalEnums = new(() =>
+    {
+        // Deedbox makes its data source from the connection string and offers no hook to map types
+        // on it, so the global mapper is the one place both data sources read the enum types from.
+#pragma warning disable CS0618
+        foreach (var type in Enums)
+            NpgsqlConnection.GlobalTypeMapper.MapEnum(type.ClrType, $"{type.Schema}.{type.Name}", EnumLabels);
+#pragma warning restore CS0618
+        return true;
+    });
+
     public static TBuilder UseAppDatabase<TBuilder>(this TBuilder options, string? connectionString)
         where TBuilder : DbContextOptionsBuilder
     {
-        options.UseNpgsql(connectionString, MapEnums).UseSnakeCaseNamingConvention();
+        MapEnumTypes();
+        options.UseNpgsql(connectionString, npgsql =>
+        {
+            foreach (var type in Enums)
+                npgsql.MapEnum(type.ClrType, type.Name, type.Schema, EnumLabels);
+        }).UseSnakeCaseNamingConvention();
         return options;
     }
 
-    /// <summary>Each module maps the enums of its tables to enum types in its own schema.</summary>
-    private static void MapEnums(NpgsqlDbContextOptionsBuilder npgsql)
-    {
-        WorkspacesTables.MapEnums(npgsql);
-    }
+    /// <summary>
+    /// Maps the enum types for every Npgsql data source made after this call, not only the one
+    /// EF Core makes. The event store has its own data source, and its inline projections write
+    /// the module tables through it. The app calls this before it registers the event store.
+    /// </summary>
+    public static void MapEnumTypes() => _ = GlobalEnums.Value;
+}
+
+/// <summary>A C# enum stored as the Postgres enum type <c>schema.name</c>.</summary>
+public sealed record PostgresEnum(Type ClrType, string Name, string Schema)
+{
+    public static PostgresEnum Of<T>(string name, string schema) where T : struct, Enum => new(typeof(T), name, schema);
 }

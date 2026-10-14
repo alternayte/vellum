@@ -47,15 +47,17 @@ public static class ModelBranches
         if (branchId is null)
             return (mainStreamId, null);
 
-        var status = await db.Drafts.AsNoTracking()
+        var draftStatus = await db.Drafts.AsNoTracking()
             .Where(d => d.StreamId == branchId.Value && d.ProjectId == projectId)
-            .Select(d => d.Status)
+            .Select(d => (DraftStatus?)d.Status)
             .FirstOrDefaultAsync(ct);
 
-        status ??= await db.Variants.AsNoTracking()
-            .Where(v => v.StreamId == branchId.Value && v.ProjectId == projectId)
-            .Select(v => v.Status)
-            .FirstOrDefaultAsync(ct);
+        var status = draftStatus is { } draft
+            ? EnumText.Of(draft)
+            : await db.Variants.AsNoTracking()
+                .Where(v => v.StreamId == branchId.Value && v.ProjectId == projectId)
+                .Select(v => (VariantStatus?)v.Status)
+                .FirstOrDefaultAsync(ct) is { } variant ? EnumText.Of(variant) : null;
 
         if (status == "open")
             return (branchId.Value, null);
@@ -85,13 +87,13 @@ public static class ModelBranches
             .FirstAsync(ct);
 
         var drafts = await db.Drafts.AsNoTracking()
-            .Where(d => d.ProjectId == projectId && d.Status == "open")
+            .Where(d => d.ProjectId == projectId && d.Status == DraftStatus.Open)
             .OrderBy(d => d.Name).ThenBy(d => d.Id)
             .Select(d => new { d.StreamId, d.Name })
             .ToListAsync(ct);
 
         var variants = await db.Variants.AsNoTracking()
-            .Where(v => v.ProjectId == projectId && v.Status == "open")
+            .Where(v => v.ProjectId == projectId && v.Status == VariantStatus.Open)
             .OrderBy(v => v.Name).ThenBy(v => v.Id)
             .Select(v => new { v.StreamId, v.Name })
             .ToListAsync(ct);

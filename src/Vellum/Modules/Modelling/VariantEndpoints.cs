@@ -44,7 +44,7 @@ public static class ListVariants
             .Select(v => new VariantDto(
                 v.Id, v.ProjectId, v.Name,
                 v.StreamId, v.BaseStreamId, v.BaseRevisionId,
-                v.ForkVersion, v.Status, v.CreatedBy, v.CreatedAt))
+                v.ForkVersion, EnumText.Of(v.Status), v.CreatedBy, v.CreatedAt))
             .ToListAsync(ct);
 
         return Results.Ok(variants);
@@ -184,7 +184,7 @@ public static class CreateVariant
                 BaseStreamId = baseStreamId,
                 BaseRevisionId = request.BaseRevisionId,
                 ForkVersion = checked((int)forkVersion),
-                Status = "open",
+                Status = VariantStatus.Open,
                 CreatedBy = userId,
                 CreatedAt = time.GetUtcNow(),
             };
@@ -214,7 +214,7 @@ public static class CreateVariant
     internal static VariantDto ToDto(VariantEntity variant) => new(
         variant.Id, variant.ProjectId, variant.Name,
         variant.StreamId, variant.BaseStreamId, variant.BaseRevisionId,
-        variant.ForkVersion, variant.Status, variant.CreatedBy, variant.CreatedAt);
+        variant.ForkVersion, EnumText.Of(variant.Status), variant.CreatedBy, variant.CreatedAt);
 
 }
 

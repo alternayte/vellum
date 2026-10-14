@@ -58,9 +58,9 @@ public static class GetElement
         if (entity is null) return Results.NotFound(new ErrorResponse("not_found", "Element not found"));
 
         return Results.Ok(new ElementDto(
-            entity.Id, entity.Kind, entity.Name, entity.Description,
-            entity.Technology, entity.OwnerId, entity.Status,
-            entity.ParentId, entity.Tags, entity.Icon, entity.FactStatus,
+            entity.Id, EnumText.Of(entity.Kind), entity.Name, entity.Description,
+            entity.Technology, entity.OwnerId, EnumText.Of(entity.Status),
+            entity.ParentId, entity.Tags, entity.Icon, entity.FactStatus.ToApiString(),
             ProvenanceMapper.ToDto(entity.ProvenanceSource, entity.ProvenanceRevision,
                 entity.ProvenanceConfidence, entity.ProvenanceAcceptedBy, entity.ProvenanceAcceptedAt, entity.ProvenanceAcceptedAtVersion, entity.ProvenanceAcceptedOnBranch),
             StaleDto.From(entity.StaleSinceRevision, entity.StaleReason)));
@@ -80,8 +80,19 @@ public static class ListElements
         var query = db.Elements.AsNoTracking()
             .Where(e => e.ProjectId == projectId && e.Branch == streamId);
 
-        if (kind is not null) query = query.Where(e => e.Kind == kind.ToLowerInvariant());
-        if (status is not null) query = query.Where(e => e.Status == status.ToLowerInvariant());
+        // A kind or status that names no member matches no element.
+        if (kind is not null)
+        {
+            query = EnumText.TryParse(kind.ToLowerInvariant(), out ElementKind wantedKind)
+                ? query.Where(e => e.Kind == wantedKind)
+                : query.Where(e => false);
+        }
+        if (status is not null)
+        {
+            query = EnumText.TryParse(status.ToLowerInvariant(), out ElementStatus wantedStatus)
+                ? query.Where(e => e.Status == wantedStatus)
+                : query.Where(e => false);
+        }
         if (parentId.HasValue) query = query.Where(e => e.ParentId == parentId);
 
         var decoded = CursorEncoder.Decode(cursor);
@@ -129,8 +140,8 @@ public static class ListElements
         }
 
         var items = rows.Select(e => new ElementDto(
-            e.Id, e.Kind, e.Name, e.Description, e.Technology, e.OwnerId, e.Status,
-            e.ParentId, e.Tags, e.Icon, e.FactStatus,
+            e.Id, EnumText.Of(e.Kind), e.Name, e.Description, e.Technology, e.OwnerId, EnumText.Of(e.Status),
+            e.ParentId, e.Tags, e.Icon, e.FactStatus.ToApiString(),
             ProvenanceMapper.ToDto(e.ProvenanceSource, e.ProvenanceRevision, e.ProvenanceConfidence,
                 e.ProvenanceAcceptedBy, e.ProvenanceAcceptedAt, e.ProvenanceAcceptedAtVersion, e.ProvenanceAcceptedOnBranch),
             StaleDto.From(e.StaleSinceRevision, e.StaleReason))).ToList();

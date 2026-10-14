@@ -49,8 +49,11 @@ internal static class ModelTools
         var (db, branch, ct) = (call.Service<AppDbContext>(), call.Project.StreamId, call.Aborted);
         var elements = db.Elements.AsNoTracking().Where(e => e.ProjectId == projectId && e.Branch == branch);
 
-        var byKind = await elements.GroupBy(e => e.Kind).Select(g => new { Kind = g.Key, Count = g.Count() }).OrderBy(g => g.Kind).ToListAsync(ct);
-        var byFactStatus = await elements.GroupBy(e => e.FactStatus).Select(g => new { FactStatus = g.Key, Count = g.Count() }).OrderBy(g => g.FactStatus).ToListAsync(ct);
+        // Ordered by the text the answer writes, as when the columns were text.
+        var byKind = (await elements.GroupBy(e => e.Kind).Select(g => new { Kind = g.Key, Count = g.Count() }).ToListAsync(ct))
+            .Select(g => new { Kind = EnumText.Of(g.Kind), g.Count }).OrderBy(g => g.Kind, StringComparer.Ordinal).ToList();
+        var byFactStatus = (await elements.GroupBy(e => e.FactStatus).Select(g => new { FactStatus = g.Key, Count = g.Count() }).ToListAsync(ct))
+            .Select(g => new { FactStatus = g.FactStatus.ToApiString(), g.Count }).OrderBy(g => g.FactStatus, StringComparer.Ordinal).ToList();
 
         return call.Ok(new JsonObject
         {
@@ -84,13 +87,16 @@ internal static class ModelTools
             query = query.Where(e => e.Name.ToLower().Contains(name.ToLower()));
         if (!string.IsNullOrWhiteSpace(kind))
         {
-            var wanted = kind.ToLowerInvariant();
-            query = query.Where(e => e.Kind == wanted);
+            // A kind that names no member matches no element.
+            query = EnumText.TryParse(kind.ToLowerInvariant(), out ElementKind wanted)
+                ? query.Where(e => e.Kind == wanted)
+                : query.Where(e => false);
         }
         if (!string.IsNullOrWhiteSpace(status))
         {
-            var wanted = status.ToLowerInvariant();
-            query = query.Where(e => e.Status == wanted);
+            query = EnumText.TryParse(status.ToLowerInvariant(), out ElementStatus wanted)
+                ? query.Where(e => e.Status == wanted)
+                : query.Where(e => false);
         }
         if (!string.IsNullOrWhiteSpace(tag))
             query = query.Where(e => e.Tags.Contains(tag));
@@ -180,7 +186,7 @@ internal static class ModelTools
 
         // An element that is gone keeps its ID, with no name.
         JsonObject Party(Guid id) => elements.TryGetValue(id, out var element)
-            ? new JsonObject { ["id"] = id, ["name"] = element.Name, ["kind"] = element.Kind }
+            ? new JsonObject { ["id"] = id, ["name"] = element.Name, ["kind"] = EnumText.Of(element.Kind) }
             : new JsonObject { ["id"] = id, ["name"] = null, ["kind"] = null };
 
         var items = new JsonArray([.. page.Select(m =>
@@ -304,12 +310,12 @@ internal static class ModelTools
     private sealed record SchemaRow(Guid Id, string Name, string? Description, int Version);
 
     private static ElementDto Element(ElementEntity e) => new(
-        e.Id, e.Kind, e.Name, e.Description, e.Technology, e.OwnerId, e.Status, e.ParentId, e.Tags, e.Icon, e.FactStatus,
+        e.Id, EnumText.Of(e.Kind), e.Name, e.Description, e.Technology, e.OwnerId, EnumText.Of(e.Status), e.ParentId, e.Tags, e.Icon, e.FactStatus.ToApiString(),
         ProvenanceMapper.ToDto(e.ProvenanceSource, e.ProvenanceRevision, e.ProvenanceConfidence, e.ProvenanceAcceptedBy, e.ProvenanceAcceptedAt, e.ProvenanceAcceptedAtVersion, e.ProvenanceAcceptedOnBranch),
         StaleDto.From(e.StaleSinceRevision, e.StaleReason));
 
     private static MessageDto Message(MessageEntity m) => new(
-        m.Id, m.Name, m.Description, m.ProducerId, m.ConsumerIds, m.SchemaId, m.Tags, m.FactStatus,
+        m.Id, m.Name, m.Description, m.ProducerId, m.ConsumerIds, m.SchemaId, m.Tags, m.FactStatus.ToApiString(),
         ProvenanceMapper.ToDto(m.ProvenanceSource, m.ProvenanceRevision, m.ProvenanceConfidence, m.ProvenanceAcceptedBy, m.ProvenanceAcceptedAt, m.ProvenanceAcceptedAtVersion, m.ProvenanceAcceptedOnBranch),
         StaleDto.From(m.StaleSinceRevision, m.StaleReason));
 
@@ -322,7 +328,7 @@ internal static class ModelTools
             .OrderBy(r => r.Id).Take(McpOutput.MaxListed + 1)
             .ToListAsync(call.Aborted);
         return new JsonArray([.. rows.Select(r => call.Node(new RelationshipDto(
-            r.Id, r.FromId, r.ToId, r.Label, r.Technology, r.MessageId, r.LineShape, r.Kind, r.FactStatus,
+            r.Id, r.FromId, r.ToId, r.Label, r.Technology, r.MessageId, r.LineShape, EnumText.Of(r.Kind), r.FactStatus.ToApiString(),
             ProvenanceMapper.ToDto(r.ProvenanceSource, r.ProvenanceRevision, r.ProvenanceConfidence, r.ProvenanceAcceptedBy, r.ProvenanceAcceptedAt, r.ProvenanceAcceptedAtVersion, r.ProvenanceAcceptedOnBranch),
             StaleDto.From(r.StaleSinceRevision, r.StaleReason))))]);
     }
