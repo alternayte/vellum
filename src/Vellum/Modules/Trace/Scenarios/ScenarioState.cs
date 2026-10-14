@@ -18,7 +18,10 @@ public sealed record ScenarioState(Guid? ProjectId, string? Name, Scenario? Docu
     {
         ScenarioEvent.ScenarioSaved e => state with
         {
-            ProjectId = e.ProjectId, Name = e.Name, Document = e.Document, Origin = e.Origin ?? state.Origin,
+            ProjectId = e.ProjectId,
+            Name = e.Name,
+            Document = e.Document,
+            Origin = e.Origin ?? state.Origin,
         },
         ScenarioEvent.ScenarioDeleted => state with { Document = null, Deleted = true },
         _ => state

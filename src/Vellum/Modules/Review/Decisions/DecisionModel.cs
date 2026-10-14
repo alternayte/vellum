@@ -80,14 +80,23 @@ public sealed record DecisionState(
     {
         DecisionEvent.DecisionProposed e => state with
         {
-            ProjectId = e.ProjectId, Number = e.Number, Origin = e.Origin, Status = DecisionStatus.Proposed, Content = e.Content,
-            CreatedBy = e.By, CreatedAt = e.At, UpdatedAt = e.At,
+            ProjectId = e.ProjectId,
+            Number = e.Number,
+            Origin = e.Origin,
+            Status = DecisionStatus.Proposed,
+            Content = e.Content,
+            CreatedBy = e.By,
+            CreatedAt = e.At,
+            UpdatedAt = e.At,
             History = [new DecisionHistoryEntry(e.At, e.By, "proposed", e.Origin)],
         },
         DecisionEvent.DecisionChanged e => state.Noted(e.At, e.By, "changed", null) with { Content = e.Content },
         DecisionEvent.DecisionAccepted e => state.Noted(e.At, e.By, "accepted", null) with
         {
-            Status = DecisionStatus.Accepted, AcceptedBy = e.By, AcceptedAt = e.At, Stamps = [.. e.Stamps],
+            Status = DecisionStatus.Accepted,
+            AcceptedBy = e.By,
+            AcceptedAt = e.At,
+            Stamps = [.. e.Stamps],
         },
         DecisionEvent.DecisionRejected e => state.Noted(e.At, e.By, "rejected", e.Reason) with { Status = DecisionStatus.Rejected },
         DecisionEvent.SettlementRecorded e when state.Content is { } content =>

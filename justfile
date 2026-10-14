@@ -93,6 +93,7 @@ check-backend:
     dotnet build Vellum.slnx
     diff -u src/Vellum.Web/openapi.json src/Vellum/obj/Vellum.json
     dotnet format style Vellum.slnx --verify-no-changes --no-restore
+    dotnet format whitespace Vellum.slnx --verify-no-changes
     DOCKER_CONFIG={{justfile_directory()}}/.docker-test dotnet test tests/Vellum.Tests --no-build --filter "FullyQualifiedName~OrdersExampleTests|FullyQualifiedName~ConventionTests"
 
 check-web:

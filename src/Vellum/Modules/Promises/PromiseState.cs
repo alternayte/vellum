@@ -154,8 +154,13 @@ public sealed record PromiseState(
     {
         PromiseEvent.PromiseCreated e => state with
         {
-            ProjectId = e.ProjectId, RequirementId = e.RequirementId, Number = e.Number, Origin = e.Origin,
-            CreatedBy = e.CreatedBy, CreatedAt = e.At, UpdatedAt = e.At,
+            ProjectId = e.ProjectId,
+            RequirementId = e.RequirementId,
+            Number = e.Number,
+            Origin = e.Origin,
+            CreatedBy = e.CreatedBy,
+            CreatedAt = e.At,
+            UpdatedAt = e.At,
             Revisions = [new PromiseRevisionState(1, RevisionStatus.Draft, false, e.Content, [], e.CreatedBy, e.At).ChangedBy(e.Actor, e.At)],
             AgentOnly = AgentPrincipal.IsAgentActor(e.Actor),
         },
@@ -170,15 +175,18 @@ public sealed record PromiseState(
             UpdatedAt = e.At,
             Revisions = state.Revisions.Add((e.Retires
                 ? new PromiseRevisionState(e.Revision, RevisionStatus.Draft, true, Retiring(inForce.Content), [], e.By, e.At)
-                    { RetiresRevision = inForce.Revision }
+                { RetiresRevision = inForce.Revision }
                 : new PromiseRevisionState(e.Revision, RevisionStatus.Draft, false, inForce.Content, inForce.Obligations, e.By, e.At))
                 .ChangedBy(e.Actor, e.At)),
         },
 
         PromiseEvent.PromiseApproved e => state.WithRevision(e.Revision, e.At, r => r with
         {
-            Status = RevisionStatus.Approved, ApprovedBy = e.ApprovedBy, ApprovedAt = e.At,
-            ApprovedModelVersion = e.ModelVersion, ApprovedLinks = e.Links.ToImmutableDictionary(),
+            Status = RevisionStatus.Approved,
+            ApprovedBy = e.ApprovedBy,
+            ApprovedAt = e.At,
+            ApprovedModelVersion = e.ModelVersion,
+            ApprovedLinks = e.Links.ToImmutableDictionary(),
             ApprovedContentHash = e.ContentHash,
             ApprovalIntact = e.ContentHash is null ? null : e.ContentHash == PromiseContentHash.Of(state.RequirementId, r),
         }) with
@@ -201,9 +209,9 @@ public sealed record PromiseState(
         // A change by an actor that is not named leaves no entry: nothing then says that an agent alone wrote the obligation.
         PromiseEvent.ObligationChanged e => state
             .WithRevision(e.Revision, e.At, r => (r with
-                {
-                    Obligations = r.Obligations.Select(o => o.Id == e.Obligation.Id ? e.Obligation : o).ToImmutableList(),
-                })
+            {
+                Obligations = r.Obligations.Select(o => o.Id == e.Obligation.Id ? e.Obligation : o).ToImmutableList(),
+            })
                 .WithActors(e.Obligation.Id, e.Actor is null ? null : new ObligationActors(r.ActorsOf(e.Obligation.Id)?.AddedBy, e.Actor))
                 .ChangedBy(e.Actor, e.At))
             .TouchedBy(e.Actor),

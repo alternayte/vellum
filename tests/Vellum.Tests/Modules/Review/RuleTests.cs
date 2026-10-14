@@ -425,7 +425,9 @@ public class RuleTests
         var first = RuleSet.Run(input);
         var reversed = RuleSet.Run(input with
         {
-            Scenarios = [.. input.Scenarios.Reverse()], Promises = [.. input.Promises.Reverse()], Schemas = [.. input.Schemas.Reverse()],
+            Scenarios = [.. input.Scenarios.Reverse()],
+            Promises = [.. input.Promises.Reverse()],
+            Schemas = [.. input.Schemas.Reverse()],
         });
 
         Assert.Equal(first.Hash, reversed.Hash);

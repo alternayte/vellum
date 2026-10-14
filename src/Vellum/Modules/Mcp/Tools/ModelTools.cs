@@ -89,12 +89,12 @@ internal static class ModelTools
         if (!string.IsNullOrWhiteSpace(name))
             query = query.Where(e => e.Name.ToLower().Contains(name.ToLower()));
         if (!string.IsNullOrWhiteSpace(kind))
-            {
+        {
             var wanted = kind.ToLowerInvariant();
             query = query.Where(e => e.Kind == wanted);
         }
         if (!string.IsNullOrWhiteSpace(status))
-            {
+        {
             var wanted = status.ToLowerInvariant();
             query = query.Where(e => e.Status == wanted);
         }

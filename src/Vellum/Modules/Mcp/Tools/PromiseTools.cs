@@ -171,18 +171,18 @@ internal static class PromiseTools
     private static JsonObject Content(
         string title, string claim, string? scope, string? preconditions, string? expectedOutcome, string? forbiddenOutcome,
         string? evidenceCriteria, JsonElement? forbiddenEvents, JsonElement? requiresPattern, JsonElement? links) => new()
-    {
-        ["title"] = title,
-        ["claim"] = claim,
-        ["scope"] = scope,
-        ["preconditions"] = preconditions,
-        ["expectedOutcome"] = expectedOutcome,
-        ["forbiddenOutcome"] = forbiddenOutcome,
-        ["evidenceCriteria"] = evidenceCriteria,
-        ["forbiddenEvents"] = Node(forbiddenEvents),
-        ["requiresPattern"] = Node(requiresPattern),
-        ["links"] = Node(links),
-    };
+        {
+            ["title"] = title,
+            ["claim"] = claim,
+            ["scope"] = scope,
+            ["preconditions"] = preconditions,
+            ["expectedOutcome"] = expectedOutcome,
+            ["forbiddenOutcome"] = forbiddenOutcome,
+            ["evidenceCriteria"] = evidenceCriteria,
+            ["forbiddenEvents"] = Node(forbiddenEvents),
+            ["requiresPattern"] = Node(requiresPattern),
+            ["links"] = Node(links),
+        };
 
     /// <summary>
     /// A promise as a tool shows it: the revision in force and the draft, each with its

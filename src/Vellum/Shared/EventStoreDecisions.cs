@@ -23,13 +23,13 @@ public static class EventStoreDecisions
 
     private static CommandResult<TResult> Map<TState, TResult>(
         CommandResult<IReadOnlyList<object>> outcome, TState state, Func<TState, TResult> read) => outcome switch
-    {
-        CommandResult<IReadOnlyList<object>>.Success => new CommandResult<TResult>.Success(read(state)),
-        CommandResult<IReadOnlyList<object>>.Invalid invalid => new CommandResult<TResult>.Invalid(invalid.Errors),
-        CommandResult<IReadOnlyList<object>>.NotFound notFound => new CommandResult<TResult>.NotFound(notFound.Message),
-        CommandResult<IReadOnlyList<object>>.Conflict conflict => new CommandResult<TResult>.Conflict(conflict.Message),
-        _ => throw new InvalidOperationException($"Unknown decision result {outcome.GetType().Name}"),
-    };
+        {
+            CommandResult<IReadOnlyList<object>>.Success => new CommandResult<TResult>.Success(read(state)),
+            CommandResult<IReadOnlyList<object>>.Invalid invalid => new CommandResult<TResult>.Invalid(invalid.Errors),
+            CommandResult<IReadOnlyList<object>>.NotFound notFound => new CommandResult<TResult>.NotFound(notFound.Message),
+            CommandResult<IReadOnlyList<object>>.Conflict conflict => new CommandResult<TResult>.Conflict(conflict.Message),
+            _ => throw new InvalidOperationException($"Unknown decision result {outcome.GetType().Name}"),
+        };
 
     /// <summary>
     /// The decision for a store from <c>UseDbContext</c> in a transaction the caller opened. It

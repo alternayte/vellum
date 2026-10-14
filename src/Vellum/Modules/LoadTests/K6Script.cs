@@ -318,7 +318,11 @@ public static partial class K6ScriptGenerator
 
     private static string Kind(Step step) => step switch
     {
-        CallStep => "call", PublishStep => "publish", WriteStep => "write", ParallelStep => "parallel", _ => "branch",
+        CallStep => "call",
+        PublishStep => "publish",
+        WriteStep => "write",
+        ParallelStep => "parallel",
+        _ => "branch",
     };
 
     private static string Canonical(JsonElement value)

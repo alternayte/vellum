@@ -57,10 +57,11 @@ jobs:
       - name: The committed OpenAPI document is current
         run: diff -u src/Vellum.Web/openapi.json src/Vellum/obj/Vellum.json
 
-      # Code style only. The whitespace rules are not a gate: the repository is not clean
-      # for them yet (run `dotnet format whitespace Vellum.slnx --verify-no-changes`).
+      # Code style and whitespace (.editorconfig).
       - name: Code style
-        run: dotnet format style Vellum.slnx --verify-no-changes --no-restore
+        run: |
+          dotnet format style Vellum.slnx --verify-no-changes --no-restore
+          dotnet format whitespace Vellum.slnx --verify-no-changes
 
       # The integration tests start Postgres with Testcontainers. Docker is on the runner.
       - name: Test

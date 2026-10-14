@@ -250,7 +250,7 @@ public class AiBudgetTests(SharedOutboundHost shared) : IClassFixture<SharedOutb
     public async Task The_price_endpoint_refuses_a_price_that_stores_as_zero_or_is_not_a_sane_number(string input, string output)
     {
         var admin = await AdminAsync();
-        var json =$$"""{"providerKind":"openai","model":"price-{{Guid.NewGuid():N}}","inputUsdPerMillionTokens":{{input}},"outputUsdPerMillionTokens":{{output}}}""";
+        var json = $$"""{"providerKind":"openai","model":"price-{{Guid.NewGuid():N}}","inputUsdPerMillionTokens":{{input}},"outputUsdPerMillionTokens":{{output}}}""";
 
         var response = await admin.PostAsync("/api/instance/ai/prices", new StringContent(json, Encoding.UTF8, "application/json"));
 

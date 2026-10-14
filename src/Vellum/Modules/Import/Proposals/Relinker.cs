@@ -76,65 +76,65 @@ internal static class Relinker
         // Rank by rank: a later rank's match key holds the entity of an earlier rank's link.
         foreach (var rank in candidates.Where(c => c.FactKey != FactMapping.RepositoryKey).GroupBy(c => c.Rank).OrderBy(g => g.Key))
         {
-          // Shared evidence first. The match key is asked only for a link that shares
-          // evidence with no fact: a name can fit several facts, a line of a file cannot.
-          var sharesEvidence = new HashSet<Guid>();
-          for (var phase = 1; phase <= 2; phase++)
-          {
-            var pairs = new Dictionary<string, HashSet<Guid>>(StringComparer.Ordinal);
-            var reverse = new Dictionary<Guid, List<Candidate>>();
-            var byId = new Dictionary<Guid, LinkInfo>();
-            foreach (var candidate in rank)
+            // Shared evidence first. The match key is asked only for a link that shares
+            // evidence with no fact: a name can fit several facts, a line of a file cannot.
+            var sharesEvidence = new HashSet<Guid>();
+            for (var phase = 1; phase <= 2; phase++)
             {
-                // A fact that a link with the current rules holds is not free to take.
-                if (effective.TryGetValue(candidate.FactKey, out var holder) && holder.EntityKind == candidate.EntityKind)
-                    continue;
-
-                var found = new HashSet<Guid>();
-                foreach (var evidence in phase == 1 ? candidate.Evidence : [])
+                var pairs = new Dictionary<string, HashSet<Guid>>(StringComparer.Ordinal);
+                var reverse = new Dictionary<Guid, List<Candidate>>();
+                var byId = new Dictionary<Guid, LinkInfo>();
+                foreach (var candidate in rank)
                 {
-                    if (!byEvidence.TryGetValue((candidate.EntityKind, evidence.Path, evidence.Rule), out var sharing))
+                    // A fact that a link with the current rules holds is not free to take.
+                    if (effective.TryGetValue(candidate.FactKey, out var holder) && holder.EntityKind == candidate.EntityKind)
                         continue;
-                    foreach (var link in sharing)
+
+                    var found = new HashSet<Guid>();
+                    foreach (var evidence in phase == 1 ? candidate.Evidence : [])
                     {
-                        if (!resolved.Contains(link.LinkId) && link.Evidence.Any(e =>
-                                e.Path == evidence.Path && e.Rule == evidence.Rule
-                                && e.StartLine <= evidence.EndLine && evidence.StartLine <= e.EndLine))
+                        if (!byEvidence.TryGetValue((candidate.EntityKind, evidence.Path, evidence.Rule), out var sharing))
+                            continue;
+                        foreach (var link in sharing)
+                        {
+                            if (!resolved.Contains(link.LinkId) && link.Evidence.Any(e =>
+                                    e.Path == evidence.Path && e.Rule == evidence.Rule
+                                    && e.StartLine <= evidence.EndLine && evidence.StartLine <= e.EndLine))
+                            {
+                                found.Add(link.LinkId);
+                                byId[link.LinkId] = link;
+                            }
+                        }
+                    }
+
+                    if (phase == 2 && byMatchKey.TryGetValue((candidate.EntityKind, MatchKey(candidate, effective)), out var sameKey))
+                    {
+                        foreach (var link in sameKey.Where(l => !resolved.Contains(l.LinkId) && !sharesEvidence.Contains(l.LinkId)))
                         {
                             found.Add(link.LinkId);
                             byId[link.LinkId] = link;
                         }
                     }
+
+                    if (found.Count == 0)
+                        continue;
+                    pairs[candidate.FactKey] = found;
+                    foreach (var linkId in found)
+                        Bucket(reverse, linkId).Add(candidate);
                 }
 
-                if (phase == 2 && byMatchKey.TryGetValue((candidate.EntityKind, MatchKey(candidate, effective)), out var sameKey))
+                foreach (var (linkId, matching) in reverse)
                 {
-                    foreach (var link in sameKey.Where(l => !resolved.Contains(l.LinkId) && !sharesEvidence.Contains(l.LinkId)))
+                    if (matching.Count == 1 && pairs[matching[0].FactKey].Count == 1)
                     {
-                        found.Add(link.LinkId);
-                        byId[link.LinkId] = link;
+                        Move(byId[linkId], matching[0].FactKey);
+                        resolved.Add(linkId);
                     }
+                    else
+                        Bucket(options, linkId).AddRange(matching);
                 }
-
-                if (found.Count == 0)
-                    continue;
-                pairs[candidate.FactKey] = found;
-                foreach (var linkId in found)
-                    Bucket(reverse, linkId).Add(candidate);
+                sharesEvidence.UnionWith(reverse.Keys);
             }
-
-            foreach (var (linkId, matching) in reverse)
-            {
-                if (matching.Count == 1 && pairs[matching[0].FactKey].Count == 1)
-                {
-                    Move(byId[linkId], matching[0].FactKey);
-                    resolved.Add(linkId);
-                }
-                else
-                    Bucket(options, linkId).AddRange(matching);
-            }
-            sharesEvidence.UnionWith(reverse.Keys);
-          }
         }
 
         var unresolved = new List<UnresolvedLink>();

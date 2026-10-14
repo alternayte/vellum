@@ -225,8 +225,10 @@ public sealed class ImportHost : IDisposable
             services.AddSingleton<TimeProvider>(Time);
             services.AddSingleton(ScanWorkerOptions.Default with
             {
-                Enabled = runWorker, PollInterval = TimeSpan.FromMilliseconds(100),
-                WatchInterval = TimeSpan.FromMilliseconds(50), LeaseDuration = TimeSpan.FromSeconds(60),
+                Enabled = runWorker,
+                PollInterval = TimeSpan.FromMilliseconds(100),
+                WatchInterval = TimeSpan.FromMilliseconds(50),
+                LeaseDuration = TimeSpan.FromSeconds(60),
             });
         });
     }

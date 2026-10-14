@@ -283,7 +283,8 @@ public sealed record BuildInput(
         {
             var key = PromiseWorld.RepositoryKey(s.Host, s.Repository);
             sources[key] = (sources.TryGetValue(key, out var known) ? known : new PinnedSource(key, null, null, null, null, null))
-                with { LatestCommit = s.CommitSha, LatestScan = s.ScanId };
+                with
+            { LatestCommit = s.CommitSha, LatestScan = s.ScanId };
         }
         return [.. sources.Values];
     }

@@ -636,17 +636,17 @@ public class PromiseEndpointTests(ImportHost import) : IClassFixture<ImportHost>
 
     private static JsonObject Evidence(
         string host, string result, long run = 42, string? sha = null, string system = "github-actions", string repository = "acme/orders", int? revision = null) => new()
-    {
-        ["result"] = result,
-        ["source"] = new JsonObject
         {
-            ["system"] = system,
-            ["runUrl"] = $"https://{host}/{repository}/actions/runs/{run}",
-            ["commitSha"] = sha,
-        },
-        ["artifactDigest"] = "sha256:" + new string('c', 64),
-        ["revision"] = revision,
-    };
+            ["result"] = result,
+            ["source"] = new JsonObject
+            {
+                ["system"] = system,
+                ["runUrl"] = $"https://{host}/{repository}/actions/runs/{run}",
+                ["commitSha"] = sha,
+            },
+            ["artifactDigest"] = "sha256:" + new string('c', 64),
+            ["revision"] = revision,
+        };
 
     [Fact]
     public async Task External_evidence_counts_only_for_the_obligation_it_is_bound_to()

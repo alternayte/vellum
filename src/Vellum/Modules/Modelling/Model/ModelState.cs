@@ -235,9 +235,13 @@ public sealed record ModelState(
         },
         ModelEvent.OperationChanged e => state.WithOperation(e.OperationId, o => o with
         {
-            OwnerId = e.OwnerId, Name = e.Name, Transport = e.Transport,
-            RequestSchemaId = e.RequestSchemaId, ResponseSchemaId = e.ResponseSchemaId,
-            TimeoutMs = e.TimeoutMs, Retry = e.Retry,
+            OwnerId = e.OwnerId,
+            Name = e.Name,
+            Transport = e.Transport,
+            RequestSchemaId = e.RequestSchemaId,
+            ResponseSchemaId = e.ResponseSchemaId,
+            TimeoutMs = e.TimeoutMs,
+            Retry = e.Retry,
         }),
         ModelEvent.OperationRemoved e => state with { Operations = state.Operations.Remove(e.OperationId) },
         ModelEvent.OperationProvenanceRecorded e => state.WithOperation(e.OperationId,
@@ -259,8 +263,10 @@ public sealed record ModelState(
         },
         ModelEvent.SubscriptionChanged e => state.WithSubscription(e.SubscriptionId, s => s with
         {
-            ChannelId = e.ChannelId, ConsumerId = e.ConsumerId,
-            Retry = e.Retry, DeadLetterChannelId = e.DeadLetterChannelId,
+            ChannelId = e.ChannelId,
+            ConsumerId = e.ConsumerId,
+            Retry = e.Retry,
+            DeadLetterChannelId = e.DeadLetterChannelId,
         }),
         ModelEvent.SubscriptionRemoved e => state with { Subscriptions = state.Subscriptions.Remove(e.SubscriptionId) },
         ModelEvent.SubscriptionProvenanceRecorded e => state.WithSubscription(e.SubscriptionId,
@@ -273,7 +279,9 @@ public sealed record ModelState(
         },
         ModelEvent.BindingChanged e => state.WithBinding(e.BindingId, b => b with
         {
-            SourceChannelId = e.SourceChannelId, TargetChannelId = e.TargetChannelId, RoutingKey = e.RoutingKey,
+            SourceChannelId = e.SourceChannelId,
+            TargetChannelId = e.TargetChannelId,
+            RoutingKey = e.RoutingKey,
         }),
         ModelEvent.BindingRemoved e => state with { Bindings = state.Bindings.Remove(e.BindingId) },
         ModelEvent.BindingProvenanceRecorded e => state.WithBinding(e.BindingId,
