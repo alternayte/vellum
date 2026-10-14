@@ -18,6 +18,8 @@ A scenario can reference only contracts that exist in the model. A contract name
 5. Select a **Dead-letter channel** for the subscription. Without one, a message that fails every attempt is lost. Select **Add subscription**.
 6. When a producer publishes to an exchange or a topic and a consumer reads a queue, select **Bind to a channel** below the exchange or the topic. The button reads **Add binding** when the channel has a binding. In **Route to**, select the queue or the exchange to route to. Give **Routing key (optional)** only when the broker uses one. Select **Add binding**.
 
+To change an operation, a channel or a subscription, select the pencil button on its row. Change the fields and select **Save operation**, **Save channel** or **Save subscription**. Select **Cancel** to keep the old values.
+
 **Attempts** is a number from 1 to 10. A binding starts at an exchange or a topic and ends at a queue or an exchange.
 
 A scenario then publishes to the exchange, as the code does. The trace shows each binding that the message follows and each binding that it does not follow.
@@ -87,13 +89,14 @@ When a draft is open, the scenario plays against the contracts of the draft.
 The dock at the bottom of the canvas controls playback.
 
 - **Play** moves through the events in order. **Pause** stops. Select a speed: 0.5×, 1×, 2× or 4×.
-- **Previous event** and **Next event** move one event. **Restart** goes back to the moment before the first event.
+- **Previous event** and **Next event** move one event. **Restart** goes back to the moment before the first event. Hover over a button to see its name.
+- The counter shows **Event** *n* **of** *total* and the virtual time.
 - Select a tick on the timeline to go to that event.
-- The line below the timeline states the event in words. The box on the right shows its payload.
+- Below the timeline, **Event** states the event in words. **Payload** shows its payload.
 - The canvas shows a ring on the elements that take part, and an edge between them.
 - **Close trace** closes the dock.
 
-Each colour has one meaning: teal is a request, violet is a message, cyan is a data write, amber is a retry, red is a failure. Grey is a branch, a skipped step or a binding that the message does not follow. A failure tick is also taller, and a retry tick is thinner. With reduced motion on, the moving dot is hidden and nothing else changes.
+Each colour has one meaning: teal is a request, violet is a message, cyan is a data write, amber is a retry, red is a failure. Grey is a branch, a skipped step or a binding that the message does not follow. On the timeline, only the event in focus, the failures and the retries have their colour. The other ticks are grey. A played tick is stronger than a tick still to come. A failure tick is also taller, and a retry tick is thinner. With reduced motion on, the moving dot is hidden and nothing else changes.
 
 The dock always shows the line "Declared behaviour, not a measurement".
 
@@ -109,7 +112,7 @@ Add the failure in **Failures to inject** of the scenario editor. See [Failures 
 
 ![The lower part of the scenario editor. Failures to inject has one failure: the target Billing on order-events, the kind Error, and Fails set to every attempt. Expected results has a step outcome (place ends Succeeded) and an event count (exactly 2 deliveries for any part).](../../../assets/screenshots/scenario-editor-failure.png)
 
-![The trace dock at event 3 of 12 of a scenario with an outage of the channel order-events. The event reads: Orders.Api cannot publish OrderCreated to order-events, the channel is unavailable. The payload of the message is at the right. The canvas rings Orders.Api in red.](../../../assets/screenshots/trace-dock-playback.png)
+![The trace dock at event 5 of 7 of a scenario with an error injected on Billing. The canvas is inside the system orders. Event reads: Billing fails to handle the message, the consumer did not acknowledge the message. Payload reads: None. The dock says 1 of 2 expectations fail. The canvas rings Orders.Api and Billing in red, with the edge message · not handled between them. On the timeline only the event in focus and the failures have colour.](../../../assets/screenshots/trace-dock-playback.png)
 
 ## Limits
 

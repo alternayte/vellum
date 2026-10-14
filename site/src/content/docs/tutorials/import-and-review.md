@@ -110,7 +110,7 @@ The link **GitHub** on a source line opens the file on the web address of the re
 2. Right-click `orders` and select **Drill into**. The canvas shows `Orders.Api`, `Billing`, `inventory-worker` and `postgres`.
 3. Select **Contracts** in the left toolbar. **Operations**, **Channels** and **Subscriptions** list what you accepted.
 
-![The canvas at the level Context, orders. It shows the apps Billing, inventory-worker and Orders.Api and the store postgres. No line connects them.](../../../assets/screenshots/canvas-orders-system.png)
+![The canvas at the level Context, orders. A frame with the name orders holds the apps Billing (dotnet), inventory-worker (go) and Orders.Api (dotnet) and the store postgres. Each card shows its kind and its technology. No line connects them.](../../../assets/screenshots/canvas-orders-system.png)
 
 Three things are true about this model:
 

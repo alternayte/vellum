@@ -4,8 +4,12 @@ Vellum is an architecture workbench that you host yourself. You draw a system, d
 its APIs and events, play a flow through it, and state promises that the design must keep.
 Vellum then gives a coding agent a specification to build from.
 
-**Status: work in progress, not released.** No version is tagged. The data format can
+**Status: work in progress, not released.** No version is published. The data format can
 change. Do not put it on a public address yet.
+
+![A scenario plays on the canvas. The trace dock at the bottom shows event 5 of 7: Billing fails to handle the message. The canvas rings Orders.Api and Billing in red inside the frame of the system orders.](site/src/assets/screenshots/trace-dock-playback.png)
+
+![The impact of pull request #1 on acme/orders. Each step of the flow Place an order has the label Definite or Possible and the source lines that give it.](site/src/assets/screenshots/impact-pull-request-steps.png)
 
 ## TL;DR
 
@@ -55,12 +59,14 @@ client for the agent interface.
 
 | Area | What you can do |
 |---|---|
-| Canvas | Add systems, apps, stores and actors. Connect them. Drill into a system. Search. Tidy the layout. |
+| Canvas | Add systems, apps, stores and actors. Connect them. Drill into a system: a frame shows the system around its children. Each card shows the kind, the technology and the description. Search. Tidy the layout. The detail panel has the tabs **Details** and **Connections**. |
 | Contracts | Declare operations, channels, subscriptions, bindings between channels, messages and JSON schemas. |
 | Trace | Write a scenario of calls, publishes and writes. Add faults. Play it step by step and read each payload. A trace shows the declared design. It does not run your code. |
 | Import | Scan a GitHub repository at one commit. Vellum reads .NET, Go, OpenAPI, AsyncAPI, Compose, Dockerfile and Kubernetes files, and proposes what it found with file and line. You accept or reject each proposal. |
 | Assistant | With an AI provider: ask for a flow or for model additions in words, review the proposal, then accept it. Additions get the label `inferred`. |
 | Promises | State a requirement with a stable ID such as `ORD-014`. An owner approves it. Checks give evidence for it, and a result goes stale when its inputs change. |
+| Impact | Scan a branch or a pull request and compare it with the ref that the model follows. Vellum labels each changed fact, flow step and promise `definite`, `possible` or `unknown`, and shows the steps on the canvas. A CI job can read a compact report and an opt-in gate. Vellum writes nothing to GitHub. |
+| Drafts and variants | Change the model in a draft, read the diff and merge it into main. Keep a variant next to main, save named revisions and compare two models. |
 | Review | 18 fixed rules report concerns about resilience, contracts, truth labels and needless complexity. Record a decision (ADR) to settle a finding. |
 | Build | Export a standalone `SDD.md` and a bundle with OpenAPI, AsyncAPI, scenarios and promises. The same model gives the same bytes. Vellum can check a bundle against its source. |
 | Agents | Create an agent token. A coding agent connects over MCP at `/mcp` and reads the model, proposes draft promises and exports the specification. A token cannot approve anything. |
@@ -72,16 +78,15 @@ client for the agent interface.
 
 - Imports and AI calls were tested against local stand-in servers only. No run against the
   real GitHub API or a real AI provider is recorded yet.
-- The newest parts (Review, Costs, Stress, the MCP tools) have automated tests. They have
-  not had an independent review yet.
 - Generated k6 load tests and measured results were run against a local stand-in service
   only, not against a deployed system.
-- The hosted, multi-tenant profile exists in the code. It is not ready for use.
-- Some features have no screen yet and work through the HTTP API only: drafts, revisions,
-  members, messages, schemas and the model export. The how-to guides say where.
-- The documentation site builds from `site/`. It is not published at a public address.
-- The CI workflows in `.github/workflows` are written and checked with `actionlint`. They
-  have not run on GitHub yet.
+- The hosted, multi-tenant profile ran behind a local TLS proxy with a self-signed
+  certificate only. No run used a real reverse proxy. Use the local profile for real work.
+- No run sent telemetry to a real OpenTelemetry collector.
+- Some actions have no control in the app and work through the HTTP API only: rename or
+  delete a project or a workspace, rename, move or delete a project document, manage
+  document spaces, set the kind of a relationship, and read the findings of a named
+  revision. The how-to guides say where.
 - There is no licence file yet.
 
 `PROGRESS.md` holds the exact state of each build step and the evidence for it.
@@ -112,14 +117,20 @@ cd src/Vellum.Web && npm install && npm run dev   # the web client, http://local
 Run the tests. The backend tests start Postgres in Docker.
 
 ```sh
-dotnet test Vellum.slnx
-cd src/Vellum.Web && npx vitest run
+just test          # the backend tests without Category=Slow
+just test-slow     # the backend tests that take long by design
+cd src/Vellum.Web && npx vitest run   # the web client tests
 ```
+
+CI (`.github/workflows/ci.yml`) runs on each push to `main` and on each pull request. The
+backend tests run in 6 shards at the same time, and the whole run takes about 3 minutes.
+The slow tests run each night, on a `v*` tag and on a manual start.
 
 `just check` is the gate before a commit: build, code style, lint, type checks, the docs
 build with its link check, and the docs snippet checks. It needs `just`, Node.js and Docker.
 
-Read the documentation as a site:
+The documentation is published at https://vellum-docs-5fy.pages.dev. Read it as a site on
+your machine:
 
 ```sh
 just docs          # live reload at http://localhost:4321

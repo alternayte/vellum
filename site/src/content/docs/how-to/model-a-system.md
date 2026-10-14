@@ -62,13 +62,15 @@ The import from GitHub and the assistant also add children when you accept their
 ## Edit an element
 
 1. Select the element. As an alternative, right-click it and select **Edit details**.
-2. In the detail panel, change **Name**, **Description**, **Technology**, **Status**, **Icon** or **Tags**.
+2. In the detail panel, on the tab **Details**, change **Name**, **Description**, **Technology**, **Status**, **Icon** or **Tags**.
+
+The tab **Connections** lists the relationships of the element, outgoing and incoming. Select a row to go to the other element. Select **Edit** on a row to open the relationship.
 
 **Status** is **Current**, **Planned** or **Deprecated**.
 
 To copy an element, right-click it and select **Duplicate**, or press `Ctrl+D` or `Cmd+D`.
 
-To delete an element, select **Delete element** in the detail panel, or right-click it and select **Delete**. Vellum refuses to delete an element when an operation, a channel, a message or a scenario names it or an element inside it. The answer is `409` and the message lists the references. Remove or reassign them first.
+To delete an element, select the **⋯** button in the header of the detail panel, then select **Delete element**. As an alternative, right-click the element and select **Delete**. Vellum refuses to delete an element when an operation, a channel, a message or a scenario names it or an element inside it. The answer is `409` and the message lists the references. Remove or reassign them first.
 
 To change more than one element, select two or more elements. The toolbar at the top shows the count as **selected**. Set the **Status**, enter a tag in **Add tag…** and press `Enter`, or select **Delete selected**.
 
@@ -81,7 +83,7 @@ To change more than one element, select two or more elements. The toolbar at the
 3. In the **Relationship** panel, enter a **Label** and a **Technology**.
 4. Set the **Line Style** to **Curved (Bezier)**, **Straight** or **Right-angle (Step)**.
 
-To delete it, select **Delete relationship** and confirm **Delete this relationship?**.
+To delete it, select the **⋯** button in the header of the panel, then select **Delete relationship**. Confirm **Delete this relationship?**.
 
 A relationship has a kind: `structural` or `behavioural`. A relationship that you draw is `structural`. The app has no control for the kind. To set it, send `kind` in `POST /api/projects/{projectId}/relationships`.
 

@@ -65,7 +65,7 @@ To run a saved profile again, select **Run** on the profile in the list. To open
 The result shows these parts:
 
 - Headline numbers: throughput, latency percentiles, completed and failed flows, and the time to drain.
-- The bottleneck: each saturated resource with the reason, the time window and the numbers. When the rule names no resource, the result says so and gives the deepest queue next to its noise bound.
+- The bottleneck: each saturated resource with the reason, the time window and the numbers. When the rule names no resource, the result says so and gives the deepest queue next to its noise bound. The rule shows in one sentence. Select **Show the full rule** to read all of it.
 - Whether the queue of a saturated resource grows at the end of the arrivals. This is a separate statement.
 - A latency table for the flow, each operation and each subscription.
 - Utilisation, queue depth and counts for each element and each subscription. **Completed** is work that ended with success. **Wasted** and **Failed inside** are calls that held a worker and are not completed work.
@@ -76,7 +76,7 @@ The result shows these parts:
 
 Vellum stores the run. A profile keeps its 20 newest runs.
 
-![The result of a stress run, with the label Estimated on each part. The first line gives the profile version, the model version, the seed 42 and the result hash. The headline numbers are throughput 9.62 for each second, latency p50 and p95 of 25.0 ms and 529 completed flows. The part Bottleneck says that no resource is saturated by the rule.](../../../assets/screenshots/stress-result.png)
+![The result of a stress run, with the label Estimated on each part. The first line gives the profile version, the model version, the seed 42 and the result hash. The headline numbers are throughput 9.62 for each second, latency p50 and p95 of 40.0 ms and 529 completed flows. The part Bottleneck gives the rule in one sentence with the link Show the full rule, and says that no resource is saturated by the rule.](../../../assets/screenshots/stress-result.png)
 
 ## Compare two runs
 
