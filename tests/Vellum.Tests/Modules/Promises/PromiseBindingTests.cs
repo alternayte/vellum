@@ -554,7 +554,7 @@ public class PromiseBindingTests(ImportHost import) : IClassFixture<ImportHost>
         Ok(s.Owner.PostAsJsonAsync(Url(s.ProjectId, $"/{id}/obligations/O1/run"), new { scanId }));
 
     [Fact]
-    public async Task Only_a_tracking_scan_that_covers_the_place_establishes_that_a_pattern_is_absent()
+    public async Task Only_a_scan_that_covers_the_place_establishes_that_a_pattern_is_absent_and_a_comparison_result_stays_with_its_scan()
     {
         var s = await WithGitHubAsync();
         // The accepted facts follow main at Commit1.
@@ -577,11 +577,19 @@ public class PromiseBindingTests(ImportHost import) : IClassFixture<ImportHost>
         s.GitHub.Branches["remove-outbox"] = ImportScenario.Commit2;
         var comparison = await s.ScanAsync(body: new { repository = "acme/orders", @ref = "remove-outbox" });
         Assert.Equal(("completed", ImportScenario.Commit2), (comparison.Text("status"), comparison.Text("commitSha")));
-        // It does not find the pattern, and it is complete. It still cannot say that the model's line of history lacks it.
-        var notJudged = await RunAsync(s, whole, comparison.Id());
-        Assert.Equal("unsupported", notJudged["result"]!.GetValue<string>());
-        Assert.Contains("it is a comparison scan (it read another ref than the tracked ref 'main')", notJudged["detail"]!.GetValue<string>());
-        Assert.Equal(("remove-outbox", "comparison"), (notJudged["inputs"]!["ref"]!.GetValue<string>(), notJudged["inputs"]!["scanKind"]!.GetValue<string>()));
+        // It does not find the pattern, and it read the whole commit: failed, for this commit only.
+        var onBranch = await RunAsync(s, whole, comparison.Id());
+        Assert.Equal(("failed", "covered"), (onBranch["result"]!.GetValue<string>(), onBranch["inputs"]!["coverage"]!.GetValue<string>()));
+        Assert.Contains("A comparison scan that covers the whole repository at this commit found no such fact.", onBranch["detail"]!.GetValue<string>());
+        Assert.Equal(("remove-outbox", "comparison", ImportScenario.Commit2, comparison.Id()), (
+            onBranch["inputs"]!["ref"]!.GetValue<string>(), onBranch["inputs"]!["scanKind"]!.GetValue<string>(),
+            onBranch["commitSha"]!.GetValue<string>(), onBranch["scanId"]!.GetValue<Guid>()));
+        Assert.Contains(onBranch["limitations"]!.AsArray(), l => l!.GetValue<string>().Contains("It does not change the result of the promise against the ref that the model follows."));
+        // The promise against the followed ref is as it was: the pass on main is its newest result.
+        var still = (await s.Owner.GetFromJsonAsync<JsonObject>(Url(s.ProjectId, $"/{whole}")))!;
+        var o1 = StatusOf(still, still["current"]!["evidenceStatus"]!["obligations"]![0]!["obligationId"]!.GetValue<string>());
+        Assert.Equal(("passed", accepted.Id()), (o1["result"]!.GetValue<string>(), o1["scanId"]!.GetValue<Guid>()));
+        Assert.Equal((1, 0), (Count(still, "passed"), Count(still, "failed")));
 
         // A tracking scan of main that reads only the billing directory does not cover the project of Orders.Api.
         s.GitHub.Head = ImportScenario.Commit2;

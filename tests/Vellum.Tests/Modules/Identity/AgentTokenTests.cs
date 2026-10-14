@@ -654,6 +654,7 @@ public class AgentTokenTests(IntegrationFixture fixture)
         ["POST /api/projects/{projectId}/imports/"] = "scan-pull-request",
         ["GET /api/projects/{projectId}/imports/{importId}"] = "read",
         ["GET /api/projects/{projectId}/imports/{importId:guid}/impact/report"] = "read",
+        ["POST /api/projects/{projectId}/imports/{importId:guid}/impact/checks"] = "propose or scan-pull-request",
         ["GET /api/projects/{projectId}/impact-gate/"] = "read",
         ["POST /api/projects/{projectId}/promises/"] = "propose",
         ["PUT /api/projects/{projectId}/promises/{promiseId:guid}"] = "propose",

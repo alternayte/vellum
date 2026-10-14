@@ -29,6 +29,14 @@ public sealed record GenerateObligationsResponse(
 /// </param>
 public sealed record RunObligationRequest(Guid? ModelRevisionId = null, Guid? BranchId = null, Guid? ScanId = null, int? Revision = null);
 
+/// <param name="RequirementId">The promise of the check.</param>
+/// <param name="Result">What the run showed against the scan: <c>passed</c>, <c>failed</c> or <c>unsupported</c>, or the refusal code when no run was recorded.</param>
+public sealed record ScanCheckRunDto(Guid PromiseId, string RequirementId, int Revision, string ObligationId, string Key, string Result, Guid? RunId, string? Detail);
+
+/// <param name="Runs">One entry for each source pattern check of an approved promise that names the repository of the scan, by requirement ID.</param>
+/// <param name="Skipped">Checks over <see cref="ObligationWrites.MaxScanChecks"/> that were not run.</param>
+public sealed record ScanChecksResponse(Guid ScanId, IReadOnlyList<ScanCheckRunDto> Runs, int Skipped);
+
 /// <summary>
 /// Obligations are edited only inside a draft revision; after approval they are fixed. A run
 /// or a piece of external evidence adds a <see cref="VerificationRun"/> and changes nothing
@@ -36,6 +44,61 @@ public sealed record RunObligationRequest(Guid? ModelRevisionId = null, Guid? Br
 /// </summary>
 public static class ObligationWrites
 {
+    /// <summary>The most checks one call of <see cref="RunForScan"/> runs.</summary>
+    public const int MaxScanChecks = 200;
+
+    /// <summary>
+    /// Runs every source pattern check of every approved promise that names the repository of
+    /// the scan, against the snapshot of that scan, and records each run with the scan and its
+    /// commit. A run against a comparison scan is for that scan only (see
+    /// <see cref="PromiseState.CountsAsLatest"/>). An agent token with <c>propose</c> runs them
+    /// for any scan; a token with only <c>scan-pull-request</c> runs them for a scan it started.
+    /// </summary>
+    public static async Task<IResult> RunForScan(
+        Guid projectId, Guid importId, HttpContext http,
+        WorkspaceAuthorizationService auth, IEventStore store, PromisesDbContext db, ImportDbContext importDb,
+        PromiseLimits limits, TimeProvider time, CancellationToken ct)
+    {
+        var userId = PromiseAccess.UserId(http.User);
+        await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
+        var scan = await importDb.Scans.AsNoTracking().FirstOrDefaultAsync(s => s.Id == importId && s.ProjectId == projectId, ct);
+        if (scan is null)
+            return Results.NotFound(new ErrorResponse("not_found", "Import not found"));
+        if (AgentPrincipal.IsAgent(http.User) && !AgentPrincipal.HasScope(http.User, AgentScope.Propose)
+            && scan.RequestedBy != AgentPrincipal.Actor(http.User))
+        {
+            return Results.Json(new ErrorResponse(AgentBoundary.AgentNotAllowedError, "This agent token cannot do this",
+                "A token with the scope scan-pull-request runs the checks only against a scan that it started."),
+                statusCode: StatusCodes.Status403Forbidden);
+        }
+        if (scan.Status != Import.Scans.ScanStatus.Completed)
+            return Results.Conflict(new ErrorResponse("import_not_completed", "Only a completed scan can be checked."));
+
+        var rows = await db.Promises.AsNoTracking()
+            .Where(p => p.ProjectId == projectId && p.Lifecycle == PromiseLifecycle.Approved)
+            .OrderBy(p => p.Number)
+            .Select(p => new { p.Id, p.RequirementId, p.Document })
+            .ToListAsync(ct);
+        var checks = rows
+            .Select(row => (row.Id, row.RequirementId, Revision: PromiseJson.Read<PromiseState>(row.Document).InForce))
+            .Where(p => p.Revision is not null)
+            .SelectMany(p => p.Revision!.Obligations
+                .Where(o => o.Kind == ObligationKind.SourcePatternCheck && o.Recipe.SourcePattern?.Repository == scan.Repository)
+                .Select(o => (p.Id, p.RequirementId, Revision: p.Revision!.Revision, Obligation: o)))
+            .ToList();
+
+        var runs = new List<ScanCheckRunDto>();
+        foreach (var (promiseId, requirementId, revision, obligation) in checks.Take(MaxScanChecks))
+        {
+            var hash = PromiseViews.ObligationHash(obligation);
+            var outcome = await SourcePatternCheck.RunAsync(importDb, db, projectId, promiseId, obligation.Id, hash, obligation.Recipe.SourcePattern!, scan, ct);
+            var (run, refusal) = await RecordRunAsync(store, projectId, promiseId, revision, obligation, hash, outcome, userId, limits, time, ct);
+            runs.Add(new ScanCheckRunDto(promiseId, requirementId, revision, obligation.Id, obligation.Key, run?.Result ?? "not-recorded", run?.Id,
+                run?.Detail ?? refusal));
+        }
+        return Results.Ok(new ScanChecksResponse(scan.Id, runs, Math.Max(0, checks.Count - MaxScanChecks)));
+    }
+
     public static async Task<IResult> Add(
         Guid projectId, Guid promiseId, HttpContext http,
         WorkspaceAuthorizationService auth, IEventStore store, PromiseReader reader, TimeProvider time, CancellationToken ct)
@@ -283,6 +346,23 @@ public static class ObligationWrites
         IEventStore store, Guid projectId, Guid promiseId, int revision, Obligation obligation, string obligationHash, CheckOutcome outcome,
         string userId, PromiseLimits limits, TimeProvider time, CancellationToken ct)
     {
+        var (recorded, _, refusal) = await RecordCoreAsync(store, projectId, promiseId, revision, obligation, obligationHash, outcome, userId, limits, time, ct);
+        return recorded is not null ? Results.Ok(recorded) : refusal!;
+    }
+
+    /// <summary>The recorded run, or a sentence that says why none was recorded.</summary>
+    private static async Task<(VerificationRun? Run, string? Refusal)> RecordRunAsync(
+        IEventStore store, Guid projectId, Guid promiseId, int revision, Obligation obligation, string obligationHash, CheckOutcome outcome,
+        string userId, PromiseLimits limits, TimeProvider time, CancellationToken ct)
+    {
+        var (recorded, why, _) = await RecordCoreAsync(store, projectId, promiseId, revision, obligation, obligationHash, outcome, userId, limits, time, ct);
+        return (recorded, recorded is null ? why ?? "The run was not recorded." : null);
+    }
+
+    private static async Task<(VerificationRun? Run, string? Why, IResult? Refusal)> RecordCoreAsync(
+        IEventStore store, Guid projectId, Guid promiseId, int revision, Obligation obligation, string obligationHash, CheckOutcome outcome,
+        string userId, PromiseLimits limits, TimeProvider time, CancellationToken ct)
+    {
         var run = new VerificationRun(
             Guid.NewGuid(), obligation.Id, revision, obligationHash, userId, time.GetUtcNow(),
             outcome.ModelRevision, outcome.CommitSha, outcome.ScanId, outcome.Environment, outcome.Result, outcome.Scope,
@@ -297,6 +377,8 @@ public static class ObligationWrites
             recorded = decision is CommandResult<IReadOnlyList<object>>.Success { Value: [PromiseEvent.VerificationRunRecorded stored] } ? stored.Run : null;
             return decision;
         }, ct);
-        return result.Succeeded ? Results.Ok(recorded) : result.Refusal();
+        return result.Succeeded && recorded is not null
+            ? (recorded, null, null)
+            : (null, result.Result is CommandResult<PromiseState>.Conflict conflict ? conflict.Message : null, result.Refusal());
     }
 }

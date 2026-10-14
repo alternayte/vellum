@@ -173,11 +173,13 @@ public static class ImpactReport
             reasons.Add(Count(draftBroken, "draft promise is", "draft promises are") + " broken. A draft is not a requirement, so it does not fail the gate.");
         if (open > 0)
             reasons.Add(Count(open, "promise is", "promises are") + " at risk, possibly affected or unknown. These never fail the gate.");
-        var notRun = impact.Promises.Where(p => p.State == PromiseLifecycle.Approved).SelectMany(p => p.Checks).Count(c => c.Result == RunResult.NotRun);
+        var approvedChecks = impact.Promises.Where(p => p.State == PromiseLifecycle.Approved).SelectMany(p => p.Checks).ToList();
+        var notRun = approvedChecks.Count(c => c.Result == RunResult.NotRun);
         if (notRun > 0)
-            reasons.Add(Count(notRun, "source pattern check of an approved promise was", "source pattern checks of approved promises were") + " not run against this scan.");
-        if (impact.Kind == ScanKind.Comparison)
-            reasons.Add("This scan is a comparison. A source pattern check cannot fail against it, so the gate cannot fail on it. Only a scan of the ref that the model follows can.");
+            reasons.Add(Count(notRun, "source pattern check of an approved promise was", "source pattern checks of approved promises were") + " not run against this scan. A check that did not run cannot fail the gate: run the checks against this scan before the gate is read.");
+        var undecided = approvedChecks.Count(c => c.Result == RunResult.Unsupported);
+        if (undecided > 0)
+            reasons.Add(Count(undecided, "source pattern check of an approved promise", "source pattern checks of approved promises") + " could not decide: the scan did not look everywhere the pattern would be. That never fails the gate.");
         return new ImpactGateDto(policy, ImpactGateVerdict.Pass, reasons);
     }
 

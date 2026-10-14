@@ -67,9 +67,13 @@ public sealed class PromiseProjection : Projection<PromisesDbContext>
                 Result = run.Result, At = run.At, Document = PromiseJson.Write(run),
             });
 
-            var latest = PromiseJson.Read<Dictionary<string, VerificationRun>>(row.LatestRuns);
-            latest[PromiseState.RunKey(run.PromiseRevision, run.ObligationId)] = run;
-            row.LatestRuns = PromiseJson.Write(latest);
+            // A run against a comparison scan is in the runs table only: it leaves the promise as it was against the followed ref.
+            if (PromiseState.CountsAsLatest(run))
+            {
+                var latest = PromiseJson.Read<Dictionary<string, VerificationRun>>(row.LatestRuns);
+                latest[PromiseState.RunKey(run.PromiseRevision, run.ObligationId)] = run;
+                row.LatestRuns = PromiseJson.Write(latest);
+            }
             Write(row, PromiseState.Evolve(PromiseJson.Read<PromiseState>(row.Document), recorded), ctx.Version);
         });
     }

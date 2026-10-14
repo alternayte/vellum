@@ -178,11 +178,11 @@ public class ChangeImpactTests(ImportHost import) : IClassFixture<ImportHost>
         Assert.Equal(("ORD-016", "draft", "possible", "possible"), (promises[1].Text("requirementId"), promises[1].Text("state"), promises[1].Text("standing"), promises[1].Text("certainty")));
         Assert.All(promises[1]["reasons"]!.AsArray(), r => Assert.Equal("possible", r!["certainty"]!.GetValue<string>()));
 
-        // The check against the comparison is unsupported, as the check defines. That is not a failure, so the promise is not broken.
+        // The comparison read the whole commit, so the check fails against it, and the promise is broken in this report.
         var run = await Ok(s.Owner.PostAsJsonAsync(s.Model($"promises/{ord014}/obligations/{sourceCheck}/run"), new { scanId = comparison.Id() }));
-        Assert.Equal("unsupported", run.Text("result"));
+        Assert.Equal("failed", run.Text("result"));
         var afterRun = (await Ok(s.Owner.GetAsync(s.Url($"/{comparison.Id()}/impact"))))["promises"]![0]!;
-        Assert.Equal(("at-risk", "unsupported"), (afterRun["standing"]!.GetValue<string>(), afterRun["checks"]![0]!["result"]!.GetValue<string>()));
+        Assert.Equal(("broken", "failed"), (afterRun["standing"]!.GetValue<string>(), afterRun["checks"]![0]!["result"]!.GetValue<string>()));
 
         // The brief of the change selects what the impact names and holds the report.
         var brief = await Ok(s.Owner.PostAsJsonAsync(s.Model("build/brief"), new { changeScanId = comparison.Id() }));
@@ -192,13 +192,13 @@ public class ChangeImpactTests(ImportHost import) : IClassFixture<ImportHost>
         var text = brief.Text("brief")!;
         Assert.Contains("## 8. Change under review", text);
         Assert.Contains("| remove | pattern | Transactional outbox | definite |", text);
-        Assert.Contains("| `ORD-014` | at-risk | definite |", text);
+        Assert.Contains("| `ORD-014` | broken | definite |", text);
         // A brief of a selection alone has no such section and names no scan.
         var plain = await Ok(s.Owner.PostAsJsonAsync(s.Model("build/brief"), new { promiseIds = new[] { ord014 } }));
         Assert.DoesNotContain("Change under review", plain.Text("brief"));
         Assert.Null(plain["manifest"]!["changeScanId"]);
 
-        // The model follows the ref: the source check fails against that scan, and only then the promise is broken.
+        // The model follows the ref: the check against the scan, now a tracking scan, fails as well.
         await Ok(s.Owner.PostAsync(s.Url($"/{comparison.Id()}/track"), null));
         var failed = await Ok(s.Owner.PostAsJsonAsync(s.Model($"promises/{ord014}/obligations/{sourceCheck}/run"), new { scanId = comparison.Id() }));
         Assert.Equal("failed", failed.Text("result"));

@@ -266,6 +266,13 @@ public sealed record PromiseState(
     public PromiseRevisionState Shown(PromiseRevisionState revision) =>
         revision.RetiresRevision is { } retired && Revision(retired) is { } source ? source : revision;
 
+    /// <summary>
+    /// True when the run can be the newest result of its obligation for the promise. A run
+    /// against a comparison scan (a pull request, another ref, a bare commit) is not: its
+    /// result is for that commit only, and the change impact of that scan reads it by its scan.
+    /// </summary>
+    public static bool CountsAsLatest(VerificationRun run) => run.Inputs?.ScanKind != Import.Scans.ScanKind.Comparison;
+
     public static string RunKey(int revision, string obligationId) =>
         string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{revision}:{obligationId}");
 

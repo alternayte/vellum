@@ -15,11 +15,17 @@ namespace Vellum.Modules.Promises.Checks;
 /// here, except that a service is matched by the key an accepted import linked to the element.
 /// <para>
 /// Finding the pattern is a statement about the commit of the scan. Not finding it is a
-/// statement only when the scan could have found it: the scan is a tracking scan (the import
-/// module's <see cref="ScanKind"/>), and its coverage (the import module's
+/// statement only when the scan could have found it: its coverage (the import module's
 /// <see cref="ScanCoverage"/>) includes every place the pattern was found before and every
 /// place it would be found: the project directory of the service, or the whole repository
 /// when the obligation names no service. Else the result is <c>unsupported</c> with the reason.
+/// </para>
+/// <para>
+/// A comparison scan (a pull request, another ref or a bare commit) is checked on its own
+/// snapshot the same way, with two more conditions: no limit cut it short, and it read every
+/// file where the snapshot that the model follows declares the pattern. Its result is for
+/// that commit only: the run records the scan and the commit, and it is never the newest
+/// result of the obligation for the promise (<see cref="PromiseState.CountsAsLatest"/>).
 /// </para>
 /// </summary>
 public static class SourcePatternCheck
@@ -153,10 +159,18 @@ public static class SourcePatternCheck
 
         if (!kind.Tracking)
         {
-            coverageText = "comparison";
-            return Outcome(RunResult.Unsupported,
-                $"{missing}, and this scan cannot establish absence: it is a comparison scan ({(kind.Reason == "bare-commit" ? "it read a commit and no ref" : $"it read another ref than the tracked ref '{tracked?.RefName}'")}). Only a tracking scan of the tracked ref can.{previousText}",
-                found == 0 ? [] : evidence);
+            limitations.Add($"This is a comparison scan ({(kind.Reason switch { "bare-commit" => "a commit and no ref", "pull-request" => "the head commit of a pull request", _ => $"another ref than the tracked ref '{tracked?.RefName}'" })}). The result is for this commit only. It does not change the result of the promise against the ref that the model follows.");
+            // Where the snapshot that the model follows declares the pattern: a scan that did
+            // not read those files cannot say the pattern is gone from them.
+            if (tracked?.ScanId is { } followed && followed != scan.Id)
+                previousPaths = [.. previousPaths.Concat(await FollowedPathsAsync(importDb, followed, recipe.Pattern, serviceKeys, ct)).Distinct(StringComparer.Ordinal)];
+            if (!scan.IsComplete)
+            {
+                coverageText = CoverageGap.Limit;
+                return Outcome(RunResult.Unsupported,
+                    $"{missing}, and this scan cannot establish absence: a limit stopped it before every file was read. The scan did not look everywhere the pattern would be.{previousText}",
+                    found == 0 ? [] : evidence);
+            }
         }
 
         var gap = await CoverageGapAsync(importDb, scan, serviceLinks, projects, previousPaths, ct);
@@ -171,10 +185,27 @@ public static class SourcePatternCheck
         limitations.Add("Absence is established for the files the scan read at this commit, under the extraction rules of this snapshot.");
         return Outcome(RunResult.Failed,
             (found == 0
-                ? $"A tracking scan that covers {(serviceKeys is null ? "the whole repository" : "the project directory of the service")} at this commit found no such fact."
-                : $"{missing}. A tracking scan that covers {(serviceKeys is null ? "the whole repository" : "the project directory of the service")} found no unconditional declaration.")
+                ? $"A {kind.Kind} scan that covers {(serviceKeys is null ? "the whole repository" : "the project directory of the service")} at this commit found no such fact."
+                : $"{missing}. A {kind.Kind} scan that covers {(serviceKeys is null ? "the whole repository" : "the project directory of the service")} found no unconditional declaration.")
             + previousText,
             found == 0 ? [] : evidence);
+    }
+
+    /// <summary>The files where the snapshot of <paramref name="scanId"/> declares <paramref name="pattern"/>, in the service when keys are given.</summary>
+    private static async Task<IReadOnlyList<string>> FollowedPathsAsync(
+        ImportDbContext importDb, Guid scanId, string pattern, HashSet<string>? serviceKeys, CancellationToken ct)
+    {
+        var paths = new SortedSet<string>(StringComparer.Ordinal);
+        foreach (var row in await ChangeImpact.PatternRows(importDb, scanId).ToListAsync(ct))
+        {
+            var attributes = Attributes(row.Attributes);
+            if (attributes.GetValueOrDefault(PatternAttribute) != pattern
+                || (serviceKeys is not null && !(attributes.TryGetValue(ServiceAttribute, out var owner) && serviceKeys.Contains(owner))))
+                continue;
+            foreach (var reference in JsonSerializer.Deserialize<List<EvidenceRef>>(row.Evidence, Json) ?? [])
+                paths.Add(reference.Path);
+        }
+        return [.. paths];
     }
 
     /// <summary>
