@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Vellum.Modules.Docs.Entities;
 using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Shared;
+using static Vellum.Shared.ResultExtensions;
 
 namespace Vellum.Modules.Docs;
 
@@ -142,7 +143,7 @@ public static class DocEndpoints
 
         var doc = await db.Documents.AsNoTracking()
             .FirstOrDefaultAsync(d => d.Id == docId && d.ProjectId == projectId, ct);
-        return doc is null ? NotFound() : Results.Ok(ToDto(doc));
+        return doc is null ? NotFound("Document") : Results.Ok(ToDto(doc));
     }
 
     private static async Task<IResult> Update(
@@ -166,7 +167,7 @@ public static class DocEndpoints
 
         var doc = await db.Documents.FindAsync([docId], ct);
         if (doc is null || doc.ProjectId != projectId)
-            return NotFound();
+            return NotFound("Document");
 
         if (request.Title is not null) doc.Title = request.Title;
         if (request.Content is not null) doc.Content = request.Content;
@@ -191,14 +192,13 @@ public static class DocEndpoints
 
         var doc = await db.Documents.FindAsync([docId], ct);
         if (doc is null || doc.ProjectId != projectId)
-            return NotFound();
+            return NotFound("Document");
 
         db.Documents.Remove(doc);
         await db.SaveChangesAsync(ct);
         return Results.NoContent();
     }
 
-    private static IResult NotFound() => Results.NotFound(new ErrorResponse("not_found", "Document not found"));
 
     private static DocDto ToDto(DocumentEntity d) =>
         new(d.Id, d.ProjectId, d.SpaceId, d.ElementId, d.Title, d.Content, d.CreatedBy, d.CreatedAt, d.UpdatedAt, d.DraftId, d.Type);

@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Vellum.Modules.Views.Entities;
 using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Shared;
+using static Vellum.Shared.ResultExtensions;
 
 namespace Vellum.Modules.Views;
 
@@ -120,7 +121,7 @@ public static class ViewEndpoints
 
         var view = await db.Views.AsNoTracking()
             .FirstOrDefaultAsync(v => v.Id == viewId && v.ProjectId == projectId, ct);
-        if (view is null) return NotFound();
+        if (view is null) return NotFound("View");
 
         var positions = await db.LayoutPositions.AsNoTracking()
             .Where(p => p.ViewId == viewId)
@@ -159,7 +160,7 @@ public static class ViewEndpoints
 
         var view = await db.Views.FindAsync([viewId], ct);
         if (view is null || view.ProjectId != projectId)
-            return NotFound();
+            return NotFound("View");
 
         // Optimistic concurrency: reject if client's updated_at doesn't match
         if (request.UpdatedAt.HasValue && request.UpdatedAt.Value != view.UpdatedAt)
@@ -186,7 +187,7 @@ public static class ViewEndpoints
 
         var view = await db.Views.FindAsync([viewId], ct);
         if (view is null || view.ProjectId != projectId)
-            return NotFound();
+            return NotFound("View");
 
         db.Views.Remove(view);
         await db.SaveChangesAsync(ct);
@@ -207,7 +208,7 @@ public static class ViewEndpoints
 
         var view = await db.Views.FindAsync([viewId], ct);
         if (view is null || view.ProjectId != projectId)
-            return NotFound();
+            return NotFound("View");
 
         var existingPositions = await db.LayoutPositions
             .Where(p => p.ViewId == viewId).ToListAsync(ct);
@@ -244,7 +245,6 @@ public static class ViewEndpoints
         return Results.Ok();
     }
 
-    private static IResult NotFound() => Results.NotFound(new ErrorResponse("not_found", "View not found"));
 
     private static ViewDto ToDto(ViewEntity v) =>
         new(v.Id, v.ProjectId, v.Name, v.RootElementId, v.VisibleElementIds,

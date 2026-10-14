@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Vellum.Modules.Docs.Entities;
 using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Shared;
+using static Vellum.Shared.ResultExtensions;
 
 namespace Vellum.Modules.Docs;
 
@@ -98,7 +99,7 @@ public static class SpaceEndpoints
 
         var space = await db.Spaces.FindAsync([spaceId], ct);
         if (space is null || space.ProjectId != projectId)
-            return NotFound();
+            return NotFound("Space");
 
         if (request.Name is not null) space.Name = request.Name;
         space.UpdatedAt = time.GetUtcNow();
@@ -118,14 +119,13 @@ public static class SpaceEndpoints
 
         var space = await db.Spaces.FindAsync([spaceId], ct);
         if (space is null || space.ProjectId != projectId)
-            return NotFound();
+            return NotFound("Space");
 
         db.Spaces.Remove(space);
         await db.SaveChangesAsync(ct);
         return Results.NoContent();
     }
 
-    private static IResult NotFound() => Results.NotFound(new ErrorResponse("not_found", "Space not found"));
 
     private static SpaceDto ToDto(SpaceEntity s) =>
         new(s.Id, s.ProjectId, s.Name, s.CreatedAt, s.UpdatedAt);
