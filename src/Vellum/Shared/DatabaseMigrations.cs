@@ -1,4 +1,6 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Npgsql;
 using Vellum.Modules.Ai.Design;
 using Vellum.Modules.Ai.Usage;
@@ -80,7 +82,14 @@ public static class DatabaseMigrations
             using var scope = services.CreateScope();
             var provider = scope.ServiceProvider;
             foreach (var (_, context) in Modules)
-                await ((DbContext)provider.GetRequiredService(context)).Database.MigrateAsync(ct);
+            {
+                var db = (DbContext)provider.GetRequiredService(context);
+                // A migration first reads the history table. On an empty database that read
+                // fails and logs an error, although the migration then creates the table. So
+                // the table is created first.
+                await db.GetService<IHistoryRepository>().CreateIfNotExistsAsync(ct);
+                await db.Database.MigrateAsync(ct);
+            }
         }
         finally
         {

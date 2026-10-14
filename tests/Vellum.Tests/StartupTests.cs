@@ -1,7 +1,9 @@
 using System.Net;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.Logging;
 using Npgsql;
+using Vellum.Tests.Shared.Outbound;
 
 namespace Vellum.Tests;
 
@@ -24,15 +26,22 @@ public class StartupTests
         }
         var connectionString = new NpgsqlConnectionStringBuilder(_fixture.ConnectionString) { Database = database }.ToString();
 
+        var logs = new LogCapture();
         using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Production");
             builder.UseSetting("ConnectionStrings:DefaultConnection", connectionString);
+            builder.ConfigureLogging(logging => logging.AddProvider(logs));
         });
         using var client = factory.CreateClient();
 
         // An anonymous call reaches the app and is refused by it, not by a start-up failure.
         Assert.Equal(HttpStatusCode.Unauthorized, (await client.GetAsync("/api/auth/me")).StatusCode);
+
+        // The log of a clean install holds no error, and no line for each SQL command.
+        Assert.Contains(logs.Lines, l => l.Contains("Applying migration", StringComparison.Ordinal));
+        Assert.DoesNotContain(logs.Lines, l => l.StartsWith("Error", StringComparison.Ordinal) || l.StartsWith("Critical", StringComparison.Ordinal));
+        Assert.DoesNotContain(logs.Lines, l => l.Contains("Executed DbCommand", StringComparison.Ordinal));
 
         await using var check = new NpgsqlConnection(connectionString);
         await check.OpenAsync();
