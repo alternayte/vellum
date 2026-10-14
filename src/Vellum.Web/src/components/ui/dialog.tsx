@@ -47,12 +47,57 @@ function DialogOverlay({
   )
 }
 
+/**
+ * The open dialogs, the lowest first. Only the last one is in the accessibility tree and takes
+ * input: every dialog under it is `inert` and `aria-hidden`. The primitive hides the rest of
+ * the page only when a dialog opens, so a dialog that opened later or rendered again could
+ * leave the one under it readable.
+ */
+const openDialogs: HTMLElement[] = []
+
+function layerDialogs() {
+  openDialogs.forEach((dialog, index) => {
+    // The primitive renders each dialog into its own element at the end of the body.
+    const layer = dialog.parentElement && dialog.parentElement !== document.body ? dialog.parentElement : dialog
+    const below = index < openDialogs.length - 1
+    dialog.inert = below
+    if (below) {
+      layer.setAttribute("aria-hidden", "true")
+      layer.dataset.dialogBelow = ""
+    } else {
+      if (layer.dataset.dialogBelow !== undefined || layer.getAttribute("aria-hidden") === "true") layer.removeAttribute("aria-hidden")
+      delete layer.dataset.dialogBelow
+    }
+  })
+}
+
+function useDialogLayer() {
+  const [dialog, setDialog] = React.useState<HTMLElement | null>(null)
+  React.useLayoutEffect(() => {
+    if (!dialog) return
+    openDialogs.push(dialog)
+    layerDialogs()
+    return () => {
+      openDialogs.splice(openDialogs.indexOf(dialog), 1)
+      dialog.inert = false
+      const layer = dialog.parentElement && dialog.parentElement !== document.body ? dialog.parentElement : dialog
+      if (layer.dataset.dialogBelow !== undefined) {
+        layer.removeAttribute("aria-hidden")
+        delete layer.dataset.dialogBelow
+      }
+      layerDialogs()
+    }
+  }, [dialog])
+  return setDialog
+}
+
 function DialogContent({
   className,
   children,
   showCloseButton = true,
   onOpenAutoFocus,
   onCloseAutoFocus,
+  ref,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content> & {
   showCloseButton?: boolean
@@ -61,10 +106,17 @@ function DialogContent({
   // back only to a DialogTrigger; most dialogs here are opened from state (a menu item, a
   // key, a row), and they give it back to this control.
   const opener = React.useRef<HTMLElement | null>(null)
+  const setLayer = useDialogLayer()
+  const contentRef = React.useCallback((node: HTMLDivElement | null) => {
+    setLayer(node)
+    if (typeof ref === "function") ref(node)
+    else if (ref) ref.current = node
+  }, [ref, setLayer])
   return (
     <DialogPortal>
       <DialogOverlay />
       <DialogPrimitive.Content
+        ref={contentRef}
         data-slot="dialog-content"
         // The field that takes the focus first is marked with data-autofocus, not with
         // autoFocus: React focuses an autoFocus field before the dialog has noted which
