@@ -156,6 +156,7 @@ if (app.Environment.IsDevelopment())
 app.UseTrustedProxies();
 app.UseExceptionHandler();
 app.UseSecurityHeaders();
+app.UseNoPageOutsideTheApp();
 app.UseSameOriginWrites();
 app.UseAuthentication();
 // After authentication, so a caller with a valid credential is known; before authorization
@@ -314,7 +315,7 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseStaticFiles();
-app.MapFallbackToFile("index.html");
+app.MapAppPages();
 
 await app.RunAsync();
 return 0;
