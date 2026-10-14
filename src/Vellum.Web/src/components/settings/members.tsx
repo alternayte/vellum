@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { SectionHeading, selectClass } from '@/components/settings/fields'
 import { useAuth } from '@/hooks/use-auth'
-import { branchesApi, type Member, type Role } from '@/lib/branches-api'
+import { branchesApi, type Invitation, type Member, type Role } from '@/lib/branches-api'
 import { ApiError } from '@/lib/settings-api'
 import { cn } from '@/lib/utils'
 import { shownInline } from '@/lib/mutation-errors'
@@ -14,7 +14,7 @@ import { shownInline } from '@/lib/mutation-errors'
 const ROLES: { id: Role; can: string }[] = [
   { id: 'Viewer', can: 'Reads the projects, the models, the documents, the review and the estimates.' },
   { id: 'Editor', can: 'Does what a viewer does. Changes the models, the scenarios, the documents, the drafts, the variants and the cost sheets.' },
-  { id: 'Owner', can: 'Does what an editor does. Adds and removes members, changes the settings and the secrets, approves promises and accepts decisions.' },
+  { id: 'Owner', can: 'Does what an editor does. Invites and removes members, changes the settings and the secrets, approves promises and accepts decisions.' },
 ]
 
 /** The reason the server gave: the message of the refused field when it names one, else its title and detail. */
@@ -23,10 +23,13 @@ const describeError = (error: unknown) =>
 
 const nameOf = (member: Member) => member.displayName || member.email || `user ${member.userId.slice(0, 8)}`
 
+const dateOf = (iso: string) => new Date(iso).toLocaleDateString()
+
 /**
- * The members of the workspace and their roles. Every member reads the list. An owner adds
- * a person by the email address of an account on this instance, changes a role and removes
- * a member. The server keeps one owner at least; its refusal is shown on the row.
+ * The members of the workspace and their roles. Every member reads the list. An owner
+ * invites a person by email address, sees the open invitations and revokes one, changes a
+ * role and removes a member. The person accepts the invitation after sign-in, on the
+ * workspace list. The server keeps one owner at least; its refusal is shown on the row.
  */
 export function Members({ workspaceId, registrationOpen }: { workspaceId: string; registrationOpen: boolean | undefined }) {
   const queryClient = useQueryClient()
@@ -35,17 +38,27 @@ export function Members({ workspaceId, registrationOpen }: { workspaceId: string
   const id = useId()
   const key = ['workspaces', workspaceId, 'members']
   const members = useQuery({ queryKey: key, queryFn: () => branchesApi.members(workspaceId) })
+  const isOwner = members.data?.yourRole === 'Owner'
+  const invitationsKey = ['workspaces', workspaceId, 'invitations']
+  const invitations = useQuery({ queryKey: invitationsKey, queryFn: () => branchesApi.invitations(workspaceId), enabled: isOwner })
   const [email, setEmail] = useState('')
   const [role, setRole] = useState<Role>('Editor')
   const [removing, setRemoving] = useState<Member | null>(null)
   const refresh = () => {
     queryClient.invalidateQueries({ queryKey: key })
+    queryClient.invalidateQueries({ queryKey: invitationsKey })
     queryClient.invalidateQueries({ queryKey: ['workspaces', workspaceId, 'audit'] })
   }
 
-  const add = useMutation({
-    mutationFn: () => branchesApi.addMember(workspaceId, email.trim(), role),
-    onSuccess: () => { setEmail(''); refresh() },
+  const [invited, setInvited] = useState<Invitation | null>(null)
+  const invite = useMutation({
+    mutationFn: () => branchesApi.invite(workspaceId, email.trim(), role),
+    onSuccess: (invitation) => { setEmail(''); setInvited(invitation); refresh() },
+    onError: shownInline,
+  })
+  const revoke = useMutation({
+    mutationFn: (invitation: Invitation) => branchesApi.revokeInvitation(workspaceId, invitation.id),
+    onSuccess: refresh,
     onError: shownInline,
   })
   const change = useMutation({
@@ -64,8 +77,8 @@ export function Members({ workspaceId, registrationOpen }: { workspaceId: string
     onError: shownInline,
   })
 
-  const isOwner = members.data?.yourRole === 'Owner'
   const list = members.data?.members ?? []
+  const open = invitations.data ?? []
 
   return (
     <>
@@ -126,23 +139,70 @@ export function Members({ workspaceId, registrationOpen }: { workspaceId: string
       )}
 
       {members.data && !isOwner && (
-        <p className="mt-3 text-xs text-muted-foreground">Your role is {members.data.yourRole}. Only an owner adds members, changes a role and removes a member.</p>
+        <p className="mt-3 text-xs text-muted-foreground">Your role is {members.data.yourRole}. Only an owner invites people, changes a role and removes a member.</p>
       )}
 
       {isOwner && (
-        <form className="mt-6" onSubmit={(e) => { e.preventDefault(); if (email.trim()) add.mutate() }}>
-          <h3 className="text-sm font-medium text-foreground">Add a member</h3>
+        <section className="mt-6" aria-labelledby={`${id}-open-heading`}>
+          <h3 id={`${id}-open-heading`} className="text-sm font-medium text-foreground">Open invitations</h3>
+          {invitations.isError && <p role="alert" className="mt-2 text-xs text-destructive">{describeError(invitations.error)}</p>}
+          {invitations.data && open.length === 0 && <p className="mt-1 text-xs text-muted-foreground">No invitation is open.</p>}
+          {open.length > 0 && (
+            <div className="mt-2 overflow-x-auto rounded-lg border border-border">
+              <table className="w-full text-left text-sm">
+                <thead className="border-b border-border text-xs text-muted-foreground">
+                  <tr>
+                    <th className="px-3 py-2 font-medium">Email address</th>
+                    <th className="px-3 py-2 font-medium">Role</th>
+                    <th className="px-3 py-2 font-medium max-sm:hidden">Expires</th>
+                    <th className="px-3 py-2 font-medium"><span className="sr-only">Revoke</span></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {open.map((invitation) => {
+                    const failed = revoke.isError && revoke.variables?.id === invitation.id
+                    return (
+                      <tr key={invitation.id} className="border-b border-border align-top last:border-b-0">
+                        <td className="min-w-28 px-3 py-2 text-foreground [overflow-wrap:anywhere]">
+                          {invitation.email}
+                          {failed && <p role="alert" className="mt-1 text-xs text-destructive">The invitation was not revoked. {describeError(revoke.error)}</p>}
+                        </td>
+                        <td className="px-3 py-2">{invitation.role}</td>
+                        <td className="whitespace-nowrap px-3 py-2 text-muted-foreground max-sm:hidden">{dateOf(invitation.expiresAt)}</td>
+                        <td className="px-1 py-2 text-right sm:px-3">
+                          <Button
+                            variant="ghost" size="sm" aria-label={`Revoke the invitation of ${invitation.email}`}
+                            disabled={revoke.isPending && revoke.variables?.id === invitation.id}
+                            onClick={() => revoke.mutate(invitation)}
+                          >
+                            Revoke
+                          </Button>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      )}
+
+      {isOwner && (
+        <form className="mt-6" onSubmit={(e) => { e.preventDefault(); if (email.trim()) { setInvited(null); invite.mutate() } }}>
+          <h3 className="text-sm font-medium text-foreground">Invite a person</h3>
           <p id={`${id}-add-hint`} className="mt-1 max-w-prose text-xs leading-relaxed text-muted-foreground">
-            The person must have an account on this instance. Vellum sends no invitation: the person has access as soon as you add them.
-            {registrationOpen === false && ' Registration is closed, so a new person cannot create an account now. The instance administrator opens it in Instance.'}
+            The person signs in with an account that has this email address, then accepts the invitation on the workspace list.
+            Vellum sends no email: tell the person yourself. An invitation expires after 14 days.
+            {registrationOpen === false && ' Registration is closed, so a person with no account cannot create one now. The instance administrator opens it in Instance.'}
           </p>
           <div className="mt-3 flex flex-wrap items-end gap-2">
             <div className="min-w-0 flex-1 basis-56">
-              <label htmlFor={`${id}-email`} className="mb-1 block text-xs font-medium text-muted-foreground">Email address of the account</label>
+              <label htmlFor={`${id}-email`} className="mb-1 block text-xs font-medium text-muted-foreground">Email address</label>
               <Input
                 id={`${id}-email`} type="email" value={email} required maxLength={256}
-                aria-invalid={add.isError ? true : undefined}
-                aria-describedby={add.isError ? `${id}-add-hint ${id}-add-error` : `${id}-add-hint`}
+                aria-invalid={invite.isError ? true : undefined}
+                aria-describedby={invite.isError ? `${id}-add-hint ${id}-add-error` : `${id}-add-hint`}
                 onChange={(e) => setEmail(e.target.value)}
               />
             </div>
@@ -152,9 +212,14 @@ export function Members({ workspaceId, registrationOpen }: { workspaceId: string
                 {ROLES.map((r) => <option key={r.id} value={r.id}>{r.id}</option>)}
               </select>
             </div>
-            <Button type="submit" disabled={!email.trim() || add.isPending}>{add.isPending ? 'Adding…' : 'Add member'}</Button>
+            <Button type="submit" disabled={!email.trim() || invite.isPending}>{invite.isPending ? 'Inviting…' : 'Invite'}</Button>
           </div>
-          {add.isError && <p id={`${id}-add-error`} role="alert" className="mt-2 text-xs text-destructive">No member was added. {describeError(add.error)}</p>}
+          {invite.isError && <p id={`${id}-add-error`} role="alert" className="mt-2 text-xs text-destructive">No invitation was made. {describeError(invite.error)}</p>}
+          {invited && !invite.isError && (
+            <p role="status" className="mt-2 text-xs text-muted-foreground">
+              {invited.email} is invited as {invited.role} until {dateOf(invited.expiresAt)}.
+            </p>
+          )}
         </form>
       )}
 
@@ -175,8 +240,8 @@ export function Members({ workspaceId, registrationOpen }: { workspaceId: string
               <DialogTitle>Remove {nameOf(removing)}?</DialogTitle>
               <DialogDescription>
                 {removing.userId === user?.id
-                  ? 'You lose access to each project of this workspace at once. An owner must add you again.'
-                  : 'The person loses access to each project of this workspace at once. The account stays.'}
+                  ? 'You lose access to each project of this workspace at once. An owner must invite you again.'
+                  : 'The person loses access to each project of this workspace at once. The account stays. To come back, the person needs a new invitation.'}
               </DialogDescription>
             </DialogHeader>
             {remove.isError && <p role="alert" className="text-xs text-destructive">The member was not removed. {describeError(remove.error)}</p>}

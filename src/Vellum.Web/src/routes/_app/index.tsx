@@ -18,6 +18,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { useAuth } from '@/hooks/use-auth'
+import { MyInvitations } from '@/components/settings/my-invitations'
 
 interface Workspace {
   id: string
@@ -117,6 +118,7 @@ function WorkspacePicker() {
 
       <div className="flex flex-1 items-center justify-center">
         <div className="w-full max-w-md rounded-lg border border-border bg-card p-8">
+          <MyInvitations onAccepted={setSelectedWorkspaceId} />
           <h1 className="mb-6 font-display text-2xl font-bold">Workspaces</h1>
 
           {workspacesLoading ? (
