@@ -3,6 +3,7 @@ import { ChevronLeft, ChevronRight, CircleCheck, CircleX, Pause, Play, RotateCcw
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { describeEvent, formatVirtualTime, notRoutedReason, traceColor, traceFamily } from '@/lib/trace'
+import { CERTAINTY, type StepImpact } from '@/lib/impact'
 import { TRACE_SPEEDS, currentTraceEvent, useTraceStore } from '@/stores/trace-store'
 
 const STEP_INTERVAL_MS = 900
@@ -14,6 +15,7 @@ const STEP_INTERVAL_MS = 900
 export function TraceDock() {
   const { run, cursor, playing, speed, play, pause, seek, step, setSpeed, close } = useTraceStore()
   const event = useTraceStore(currentTraceEvent)
+  const impact = useTraceStore((s) => s.impact)
 
   useEffect(() => {
     if (!playing) return
@@ -139,19 +141,25 @@ export function TraceDock() {
         </Button>
       </div>
 
+      {impact && <AffectedSteps impact={impact.steps} change={impact.change} onSeek={(stepId) => {
+        const index = run.events.findIndex((e) => e.stepId === stepId)
+        if (index >= 0) seek(index)
+      }} />}
+
       <div className="px-4 pb-1 pt-2">
-        <ol aria-label="Trace events" className="flex h-7 items-center gap-px overflow-x-auto">
+        <ol aria-label="Trace events" className={cn('flex items-center gap-px overflow-x-auto', impact ? 'h-9' : 'h-7')}>
           {run.events.map((e, i) => {
             const family = traceFamily(e.kind)
+            const affected = impact?.steps[e.stepId]
             return (
               <li key={e.sequence} className="flex h-full min-w-2.5 flex-1">
                 <button
                   type="button"
                   onClick={() => seek(i)}
                   aria-current={i === cursor ? 'step' : undefined}
-                  aria-label={`${e.sequence}. ${describeEvent(e, run.labels)}`}
-                  title={describeEvent(e, run.labels)}
-                  className="group flex h-full w-full items-center focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary"
+                  aria-label={`${e.sequence}. ${describeEvent(e, run.labels)}${affected ? `. Impact: ${CERTAINTY[affected.certainty].label}` : ''}`}
+                  title={`${describeEvent(e, run.labels)}${affected ? ` · impact ${CERTAINTY[affected.certainty].label.toLowerCase()}` : ''}`}
+                  className="group flex h-full w-full flex-col items-stretch justify-center gap-1 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary"
                 >
                   <span
                     className={cn(
@@ -163,6 +171,14 @@ export function TraceDock() {
                     )}
                     style={{ backgroundColor: traceColor(e.kind) }}
                   />
+                  {impact && (
+                    // The step of this event is affected by the change: the line has the certainty's colour and style.
+                    <span
+                      aria-hidden="true"
+                      className={cn('block h-0 w-full border-t-2', !affected && 'border-transparent')}
+                      style={affected ? { borderColor: CERTAINTY[affected.certainty].color, borderTopStyle: CERTAINTY[affected.certainty].line } : undefined}
+                    />
+                  )}
                 </button>
               </li>
             )
@@ -184,6 +200,7 @@ export function TraceDock() {
                   ? ` · ${notRoutedReason(event.detail)}`
                   : event.detail && event.kind !== 'DataWritten' && event.kind !== 'BranchTaken' ? ` · ${event.detail}` : ''}
               </p>
+              {impact?.steps[event.stepId] && <EventImpact step={impact.steps[event.stepId]} />}
               {event.headers && (
                 <dl className="mt-1.5 flex flex-wrap gap-1.5 pl-4" aria-label="Headers">
                   {Object.entries(event.headers).map(([header, value]) => (
@@ -216,5 +233,72 @@ export function TraceDock() {
         </div>
       </div>
     </section>
+  )
+}
+
+/**
+ * The steps of the flow that the change reaches, in the order the scenario writes them.
+ * Each says how sure the impact is; a click moves the playback to the step's first event.
+ */
+function AffectedSteps({ impact, change, onSeek }: { impact: Record<string, StepImpact>; change: string; onSeek: (stepId: string) => void }) {
+  const steps = Object.values(impact)
+  return (
+    <div className="flex flex-wrap items-center gap-x-2 gap-y-1 px-4 pt-2 text-xs">
+      <span className="text-muted-foreground">Impact of {change}:</span>
+      {steps.length === 0 && <span className="text-muted-foreground">no step of this flow is affected.</span>}
+      <ol aria-label="Affected steps" className="contents">
+        {steps.map((step) => {
+          const look = CERTAINTY[step.certainty]
+          return (
+            <li key={step.stepId}>
+              <button
+                type="button"
+                onClick={() => onSeek(step.stepId)}
+                title={look.meaning}
+                className="rounded-full border px-2 py-0.5 text-[11px] hover:bg-muted focus-visible:outline-2 focus-visible:outline-primary"
+                style={{ borderColor: look.color, borderStyle: look.line }}
+              >
+                <span className="font-mono text-foreground">{step.stepId}</span>
+                {step.label && <span className="text-muted-foreground"> · {step.label}</span>}
+                <span style={{ color: look.color }}> · {look.label}</span>
+              </button>
+            </li>
+          )
+        })}
+      </ol>
+    </div>
+  )
+}
+
+/** What the change does to the step of the current event, with a link to the source lines of each change it stands on. */
+function EventImpact({ step }: { step: StepImpact }) {
+  const look = CERTAINTY[step.certainty]
+  return (
+    <div className="mt-1.5 pl-4 text-xs">
+      <p>
+        <span className="rounded-full border px-1.5 text-[11px]" style={{ borderColor: look.color, borderStyle: look.line, color: look.color }}>
+          Impact: {look.label}
+        </span>
+      </p>
+      <ul className="mt-1 space-y-0.5 text-muted-foreground">
+        {step.reasons.map((reason, i) => {
+          const evidence = reason.change?.evidence[0]
+          return (
+            <li key={i} className="truncate" title={reason.text}>
+              <span style={{ color: CERTAINTY[reason.certainty].color }}>{CERTAINTY[reason.certainty].label}</span>
+              {' through '}<span className="text-foreground">{reason.change?.name ?? 'a change'}</span>
+              {evidence && (
+                <>
+                  {' · '}
+                  <a href={evidence.url} target="_blank" rel="noreferrer noopener" title={evidence.pointer} className="font-mono underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-primary">
+                    {evidence.path}:{evidence.startLine}
+                  </a>
+                </>
+              )}
+            </li>
+          )
+        })}
+      </ul>
+    </div>
   )
 }

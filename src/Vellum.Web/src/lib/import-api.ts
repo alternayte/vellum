@@ -12,6 +12,21 @@ export interface LinkedFactCoverage {
   failed: number
 }
 
+/** A pull request as GitHub described it when the scan pinned its head commit. The title is repository text: show it as text. */
+export interface ScanPullRequest {
+  number: number
+  title: string | null
+  state: string
+  merged: boolean
+  baseRef: string
+  baseSha: string
+  headRef: string
+  headSha: string
+  headRepository: string | null
+  /** The head is in another repository. The scan read the head commit through this one. */
+  fromFork: boolean
+}
+
 export interface ScanSummary {
   id: string
   repository: string
@@ -34,6 +49,10 @@ export interface ScanSummary {
   requestedBy: string
   createdAt: string
   completedAt: string | null
+  /** The pull request the scan was asked for. Null for a scan of a ref or a commit. */
+  pullRequestNumber: number | null
+  /** Null until the scan read the pull request. */
+  pullRequest: ScanPullRequest | null
 }
 
 export interface ScanNote {
@@ -127,12 +146,24 @@ export interface ImpactReason {
   text: string
 }
 
+/** One affected step of a flow, in the order the scenario writes it. */
+export interface ImpactStep {
+  stepId: string
+  kind: 'call' | 'publish' | 'write' | 'parallel' | 'branch' | 'assertion' | 'fault' | 'step'
+  /** What the step calls, publishes or writes to. */
+  label: string | null
+  /** `definite` only when a reason stands on a contract diff of what the step names. */
+  certainty: ImpactCertainty
+  reasons: ImpactReason[]
+}
+
 export interface ImpactFlow {
   scenarioId: string
   name: string
   stepIds: string[]
   certainty: ImpactCertainty
   reasons: ImpactReason[]
+  steps: ImpactStep[]
 }
 
 export interface ImpactPromise {
@@ -160,6 +191,7 @@ export interface ChangeImpact {
   flows: ImpactFlow[]
   promises: ImpactPromise[]
   promisesNotAffected: number
+  pullRequest: ScanPullRequest | null
 }
 
 interface Page<T> {
@@ -184,7 +216,7 @@ const base = (projectId: string) => `/api/projects/${projectId}/imports`
 export const importApi = {
   list: (projectId: string) => allPages<ScanSummary>(base(projectId)),
   get: (projectId: string, id: string) => api<ScanDetail>('GET', `${base(projectId)}/${id}`),
-  start: (projectId: string, body: { repository: string; ref?: string; includePaths?: string[]; excludePaths?: string[] }) =>
+  start: (projectId: string, body: { repository: string; ref?: string; pullRequest?: number; includePaths?: string[]; excludePaths?: string[] }) =>
     api<{ id: string }>('POST', base(projectId), body),
   cancel: (projectId: string, id: string) => api<void>('POST', `${base(projectId)}/${id}/cancel`),
   resume: (projectId: string, id: string) => api<void>('POST', `${base(projectId)}/${id}/resume`),
@@ -199,6 +231,17 @@ export const importApi = {
       'GET',
       `${base(projectId)}/${id}/source?path=${encodeURIComponent(evidence.path)}&startLine=${evidence.startLine}&endLine=${evidence.endLine}`,
     ),
+}
+
+/** What a scan read, in words: the pull request, the ref, or the commit. */
+export function scanSubject(scan: Pick<ScanSummary, 'pullRequestNumber' | 'pullRequest' | 'ref' | 'trackedRef' | 'commitSha'>): string {
+  if (scan.pullRequestNumber !== null) return `pull request #${scan.pullRequestNumber}`
+  return scan.ref ?? scan.trackedRef ?? (scan.commitSha ? scan.commitSha.slice(0, 10) : 'default branch')
+}
+
+/** The state of a pull request in one word. A merged one is closed and says merged. */
+export function pullRequestState(pull: ScanPullRequest): string {
+  return pull.merged ? 'merged' : pull.state
 }
 
 export function isActive(status: ScanStatus): boolean {

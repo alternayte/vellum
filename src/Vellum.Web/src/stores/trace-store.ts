@@ -1,18 +1,28 @@
 import { create } from 'zustand'
 import type { TraceEvent, TraceRun } from '@/lib/trace'
+import type { StepImpact } from '@/lib/impact'
 
 export const TRACE_SPEEDS = [0.5, 1, 2, 4] as const
+
+/** The affected steps of a flow by step ID, and what the report compared. */
+export interface TraceImpact {
+  /** For example "pull request #1 on acme/orders". */
+  change: string
+  steps: Record<string, StepImpact>
+}
 
 interface TraceState {
   run: TraceRun | null
   /** The stored scenario this run came from, when it came from one. */
   scenarioId: string | null
+  /** The impact of a change on the steps of this run, when it was played from an impact report. */
+  impact: TraceImpact | null
   /** Index of the current event; -1 is the moment before the first one. */
   cursor: number
   playing: boolean
   speed: number
 
-  load: (run: TraceRun, scenarioId?: string) => void
+  load: (run: TraceRun, scenarioId?: string, impact?: TraceImpact) => void
   close: () => void
   play: () => void
   pause: () => void
@@ -24,12 +34,13 @@ interface TraceState {
 export const useTraceStore = create<TraceState>((set, get) => ({
   run: null,
   scenarioId: null,
+  impact: null,
   cursor: -1,
   playing: false,
   speed: 1,
 
-  load: (run, scenarioId) => set({ run, scenarioId: scenarioId ?? null, cursor: -1, playing: false }),
-  close: () => set({ run: null, scenarioId: null, cursor: -1, playing: false }),
+  load: (run, scenarioId, impact) => set({ run, scenarioId: scenarioId ?? null, impact: impact ?? null, cursor: -1, playing: false }),
+  close: () => set({ run: null, scenarioId: null, impact: null, cursor: -1, playing: false }),
 
   play: () => {
     const { run, cursor } = get()

@@ -1,11 +1,11 @@
 import { useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { GitBranch, RotateCw, Square } from 'lucide-react'
+import { GitBranch, GitPullRequest, RotateCw, Square } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import { shownInline } from '@/lib/mutation-errors'
-import { describeScan, importApi, isActive, type ScanSummary } from '@/lib/import-api'
+import { describeScan, importApi, isActive, pullRequestState, scanSubject, type ScanSummary } from '@/lib/import-api'
 import { ProposalReview } from './proposal-review'
 import { ImpactDialog } from './impact-dialog'
 
@@ -18,6 +18,15 @@ const STATUS_COLOR: Record<ScanSummary['status'], string> = {
   cancelled: 'var(--muted-foreground)',
 }
 
+/** What a scan reads: a branch or a tag, one commit, or the head commit of a pull request. */
+type Target = 'ref' | 'commit' | 'pull'
+
+const TARGETS: { value: Target; label: string; field: string; placeholder: string }[] = [
+  { value: 'ref', label: 'Branch', field: 'Branch or tag', placeholder: 'The default branch' },
+  { value: 'commit', label: 'Commit SHA', field: 'Commit SHA', placeholder: '40 hexadecimal characters' },
+  { value: 'pull', label: 'Pull request #', field: 'Pull request number', placeholder: 'For example 12' },
+]
+
 /**
  * Imports read a GitHub repository at one commit and propose what they found. Nothing
  * reaches the model until a person accepts it in the review.
@@ -29,6 +38,7 @@ export function ImportFlyout({ projectId, owners }: {
 }) {
   const queryClient = useQueryClient()
   const [repository, setRepository] = useState('')
+  const [target, setTarget] = useState<Target>('ref')
   const [ref, setRef] = useState('')
   const [folders, setFolders] = useState('')
   const [reviewing, setReviewing] = useState<ScanSummary | null>(null)
@@ -44,7 +54,13 @@ export function ImportFlyout({ projectId, owners }: {
   const start = useMutation({
     mutationFn: () => {
       const includePaths = folders.split(/[,\n]/).map((f) => f.trim()).filter(Boolean)
-      return importApi.start(projectId, { repository: repository.trim(), ref: ref.trim() || undefined, includePaths: includePaths.length > 0 ? includePaths : undefined })
+      const value = ref.trim()
+      return importApi.start(projectId, {
+        repository: repository.trim(),
+        ref: target !== 'pull' && value ? value : undefined,
+        pullRequest: target === 'pull' ? Number(value.replace(/^#/, '')) : undefined,
+        includePaths: includePaths.length > 0 ? includePaths : undefined,
+      })
     },
     onSuccess: () => { setRepository(''); setRef(''); setFolders(''); return refresh() },
     onError: shownInline,
@@ -70,10 +86,42 @@ export function ImportFlyout({ projectId, owners }: {
           Repository
           <Input className="mt-1" value={repository} onChange={(e) => setRepository(e.target.value)} placeholder="owner/name or a GitHub URL" required spellCheck={false} />
         </label>
+        <fieldset>
+          <legend className="text-[11px] font-medium text-muted-foreground">Read</legend>
+          <div role="radiogroup" aria-label="What to read" className="mt-1 grid grid-cols-3 rounded-md border border-border p-0.5">
+            {TARGETS.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                role="radio"
+                aria-checked={target === option.value}
+                onClick={() => { setTarget(option.value); setRef('') }}
+                className={cn(
+                  'rounded px-1 py-1 text-[11px] text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-primary',
+                  target === option.value && 'bg-muted text-foreground',
+                )}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
+        </fieldset>
         <label className="block text-[11px] font-medium text-muted-foreground">
-          Branch, tag or commit
-          <Input className="mt-1" value={ref} onChange={(e) => setRef(e.target.value)} placeholder="The default branch" spellCheck={false} />
+          {TARGETS.find((t) => t.value === target)!.field}
+          <Input
+            className="mt-1" value={ref} onChange={(e) => setRef(e.target.value)}
+            placeholder={TARGETS.find((t) => t.value === target)!.placeholder} spellCheck={false}
+            required={target !== 'ref'}
+            inputMode={target === 'pull' ? 'numeric' : undefined}
+            pattern={target === 'pull' ? '#?[1-9][0-9]*' : target === 'commit' ? '[0-9a-fA-F]{40}' : undefined}
+            title={target === 'pull' ? 'A pull request number, such as 12' : target === 'commit' ? 'A full commit SHA of 40 hexadecimal characters' : undefined}
+          />
         </label>
+        {target === 'pull' && (
+          <p className="text-[11px] leading-relaxed text-muted-foreground">
+            Vellum reads the head commit of the pull request and compares it with the model. It writes nothing to GitHub.
+          </p>
+        )}
         <label className="block text-[11px] font-medium text-muted-foreground">
           Only these folders
           <Input className="mt-1" value={folders} onChange={(e) => setFolders(e.target.value)} placeholder="All folders. Separate with commas." spellCheck={false} />
@@ -93,13 +141,25 @@ export function ImportFlyout({ projectId, owners }: {
           {scans.data?.map((scan) => (
             <li key={scan.id} className="rounded-md border border-border p-2">
               <div className="flex items-start gap-2">
-                <GitBranch className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                {scan.pullRequestNumber !== null
+                  ? <GitPullRequest className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                  : <GitBranch className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm text-foreground">{scan.repository}</p>
                   <p className="break-words font-mono text-[10px] text-muted-foreground">
-                    {scan.ref ?? scan.trackedRef ?? 'default branch'}{scan.commitSha ? ` · ${scan.commitSha.slice(0, 10)}` : ''}
+                    {scanSubject(scan)}{scan.commitSha ? ` · ${scan.commitSha.slice(0, 10)}` : ''}
                     {scan.kind === 'comparison' && ' · comparison'}
                   </p>
+                  {scan.pullRequest && (
+                    // The title is repository text, shown as text.
+                    <p className="mt-0.5 break-words text-xs text-foreground">
+                      {scan.pullRequest.title ?? 'No title'}
+                      <span className="ml-1.5 text-[10px] text-muted-foreground">
+                        {pullRequestState(scan.pullRequest)} · {scan.pullRequest.headRef} → {scan.pullRequest.baseRef}
+                        {scan.pullRequest.fromFork && ' · from a fork'}
+                      </span>
+                    </p>
+                  )}
                 </div>
               </div>
               <p className="mt-1.5 flex items-start gap-1.5 text-xs" style={{ color: STATUS_COLOR[scan.status] }}>

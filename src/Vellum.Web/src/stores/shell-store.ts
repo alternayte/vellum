@@ -1,4 +1,27 @@
 import { create } from 'zustand'
+import type { ImpactCertainty } from '@/lib/import-api'
+
+/** One step of an affected flow, drawn on the canvas from where it starts to what it reaches. */
+export interface HighlightStep {
+  stepId: string
+  /** The step's place in the flow, from 1. */
+  order: number
+  label: string | null
+  certainty: ImpactCertainty
+  fromId: string | null
+  toIds: string[]
+  /** The message of a publish step: the canvas draws it to the message's consumers when the step names no handler. */
+  messageId: string | null
+}
+
+export interface CanvasHighlight {
+  title: string
+  elementIds: string[]
+  /** How sure the impact is of each element, for an affected flow. Without it every ring is the same. */
+  marks?: Record<string, ImpactCertainty>
+  /** The affected steps of a flow, in order. */
+  steps?: HighlightStep[]
+}
 
 export type Flyout = 'files' | 'create' | 'catalog' | 'contracts' | 'scenarios' | 'import' | 'assistant' | 'promises' | 'review' | 'build' | 'stress' | 'costs' | 'search'
 
@@ -13,7 +36,7 @@ interface ShellState {
   commandPaletteOpen: boolean
   focusElementId: string | null
   /** Elements to show on the canvas for a promise or an affected flow. The canvas rings them and dims the rest. */
-  canvasHighlight: { title: string; elementIds: string[] } | null
+  canvasHighlight: CanvasHighlight | null
 
   openFlyout: (flyout: Flyout) => void
   closeFlyout: () => void
@@ -28,7 +51,7 @@ interface ShellState {
   closeCommandPalette: () => void
   focusElement: (id: string) => void
   clearFocusElement: () => void
-  showOnCanvas: (highlight: { title: string; elementIds: string[] }) => void
+  showOnCanvas: (highlight: CanvasHighlight) => void
   clearCanvasHighlight: () => void
   reset: () => void
 }

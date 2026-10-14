@@ -254,7 +254,8 @@
 /* Trace playback: the nodes taking part in the current event. The dock states the event in
    words, so the ring adds position, not meaning. */
 .react-flow__node.vellum-trace-node {
-  outline: 2px solid var(--vellum-trace);
+  /* An affected flow sets the style by certainty: solid definite, dashed possible, dotted unknown. */
+  outline: 2px var(--vellum-ring-style, solid) var(--vellum-trace);
   outline-offset: 3px;
   border-radius: 0.6rem;
   box-shadow: 0 0 0 6px color-mix(in srgb, var(--vellum-trace) 16%, transparent);
