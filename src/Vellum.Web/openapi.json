@@ -2786,6 +2786,85 @@
         }
       }
     },
+    "/api/projects/{projectId}/imports/{importId}/impact/checks": {
+      "post": {
+        "tags": [
+          "Imports"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "importId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScanChecksResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/projects/{projectId}/variants": {
       "post": {
         "tags": [
@@ -25445,6 +25524,86 @@
               "null",
               "string"
             ]
+          }
+        }
+      },
+      "ScanCheckRunDto": {
+        "required": [
+          "promiseId",
+          "requirementId",
+          "revision",
+          "obligationId",
+          "key",
+          "result",
+          "runId",
+          "detail"
+        ],
+        "type": "object",
+        "properties": {
+          "promiseId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "requirementId": {
+            "type": "string"
+          },
+          "revision": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "obligationId": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "result": {
+            "type": "string"
+          },
+          "runId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "detail": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "ScanChecksResponse": {
+        "required": [
+          "scanId",
+          "runs",
+          "skipped"
+        ],
+        "type": "object",
+        "properties": {
+          "scanId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "runs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ScanCheckRunDto"
+            }
+          },
+          "skipped": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
           }
         }
       },

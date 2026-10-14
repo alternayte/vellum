@@ -260,6 +260,9 @@ export const importApi = {
     }
     return response.text()
   },
+  /** Runs the source pattern checks of the approved promises against the snapshot of this scan. Each result is for this scan only. */
+  runChecks: (projectId: string, id: string) =>
+    api<{ scanId: string; runs: { requirementId: string; key: string; result: string; detail: string | null }[]; skipped: number }>('POST', `${base(projectId)}/${id}/impact/checks`),
   gate: (projectId: string) => api<ImpactGateSetting>('GET', `/api/projects/${projectId}/impact-gate`),
   setGate: (projectId: string, policy: ImpactGatePolicy) => api<ImpactGateSetting>('PUT', `/api/projects/${projectId}/impact-gate`, { policy }),
   track: (projectId: string, id: string) => api<ScanDetail>('POST', `${base(projectId)}/${id}/track`),

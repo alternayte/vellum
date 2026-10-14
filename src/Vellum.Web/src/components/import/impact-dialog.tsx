@@ -49,7 +49,7 @@ const POLICIES: { id: ImpactGatePolicy; label: string }[] = [
  * that a deterministic check broke against this scan fails it; nothing else does. Only an
  * owner changes the policy. Vellum sends the verdict nowhere: a CI job reads the report.
  */
-function GateSection({ projectId, reportKey, scanId }: { projectId: string; reportKey: unknown[]; scanId: string }) {
+function GateSection({ projectId, impactKey, reportKey, scanId }: { projectId: string; impactKey: unknown[]; reportKey: unknown[]; scanId: string }) {
   const queryClient = useQueryClient()
   const settingKey = ['projects', projectId, 'impact-gate']
   const setting = useQuery({ queryKey: settingKey, queryFn: () => importApi.gate(projectId) })
@@ -62,6 +62,15 @@ function GateSection({ projectId, reportKey, scanId }: { projectId: string; repo
     },
     onError: shownInline,
   })
+  // Each result is for this scan only. It leaves the promise as it is against the ref the model follows.
+  const runChecks = useMutation({
+    mutationFn: () => importApi.runChecks(projectId, scanId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: impactKey })
+      void queryClient.invalidateQueries({ queryKey: ['projects', projectId, 'promises'] })
+    },
+    onError: shownInline,
+  })
   const gate = report.data?.gate
   const policy = setting.data?.policy ?? gate?.policy ?? 'off'
   return (
@@ -71,7 +80,13 @@ function GateSection({ projectId, reportKey, scanId }: { projectId: string; repo
         {gate
           ? <span className="rounded-full border px-1.5 text-[11px]" style={{ borderColor: VERDICT[gate.verdict].color, color: VERDICT[gate.verdict].color }}>{VERDICT[gate.verdict].label}</span>
           : <span className="text-xs text-muted-foreground">{report.isError ? report.error.message : 'Reading…'}</span>}
-        <label className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">
+        <Button
+          variant="secondary" size="sm" className="ml-auto h-7 gap-1 text-xs" disabled={runChecks.isPending} onClick={() => runChecks.mutate()}
+          title="Run the source pattern checks of the approved promises against this scan. The results count for this scan only."
+        >
+          <Play className="h-3 w-3" /> {runChecks.isPending ? 'Running checks…' : 'Run checks against this scan'}
+        </Button>
+        <label className="flex items-center gap-2 text-xs text-muted-foreground">
           Policy
           <select
             className={cn(selectClass, 'w-auto')} value={policy} disabled={!setting.data?.canChange || change.isPending}
@@ -92,7 +107,15 @@ function GateSection({ projectId, reportKey, scanId }: { projectId: string; repo
           ? 'Possible, unknown and at-risk entries never fail the gate. A CI job reads the verdict from the report; Vellum writes nothing to GitHub.'
           : 'Only an owner changes the policy. A CI job reads the verdict from the report; Vellum writes nothing to GitHub.'}
       </p>
+      {runChecks.data && (
+        <p role="status" className="mt-1 text-xs text-muted-foreground">
+          {runChecks.data.runs.length === 0
+            ? 'No approved promise has a source pattern check of this repository.'
+            : `Ran ${runChecks.data.runs.length} ${runChecks.data.runs.length === 1 ? 'check' : 'checks'}: ${runChecks.data.runs.map((r) => `${r.requirementId} ${r.key} ${r.result === 'unsupported' ? 'unknown' : r.result}`).join(', ')}.`}
+        </p>
+      )}
       {change.isError && <p role="alert" className="mt-1 text-xs text-destructive">{change.error.message}</p>}
+      {runChecks.isError && <p role="alert" className="mt-1 text-xs text-destructive">{runChecks.error.message}</p>}
     </section>
   )
 }
@@ -236,7 +259,7 @@ export function ImpactDialog({ projectId, scan, owners, onClose }: {
 
         {impact && (
           <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
-            <GateSection projectId={projectId} reportKey={reportKey} scanId={scan.id} />
+            <GateSection projectId={projectId} impactKey={key} reportKey={reportKey} scanId={scan.id} />
             <div className="rounded-md border border-border px-3 py-2 text-xs">
               <dl className="grid gap-x-3 gap-y-1 sm:grid-cols-[auto_minmax(0,1fr)]">
                 {(Object.keys(CERTAINTY) as ImpactCertainty[]).map((value) => (
