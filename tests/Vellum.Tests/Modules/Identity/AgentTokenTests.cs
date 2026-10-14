@@ -561,6 +561,9 @@ public class AgentTokenTests(IntegrationFixture fixture) : IClassFixture<Integra
         "GET /llms.txt",
         "GET /llms-full.txt",
         "GET /skills/vellum/SKILL.md",
+        // A share link: the token is the credential, and the page holds only what the link allows.
+        "GET /api/share/{token}",
+        "POST /api/share/{token}/unlock",
         // The app shell, for a path that is no file and no endpoint.
         "GET {*path:nonfile}",
         "HEAD {*path:nonfile}",
@@ -569,6 +572,10 @@ public class AgentTokenTests(IntegrationFixture fixture) : IClassFixture<Integra
     /// <summary>Only a person signed in to Vellum.</summary>
     private static readonly string[] ForAPerson =
     [
+        // A share link gives the model to people without an account; only a person makes or changes one.
+        "POST /api/projects/{projectId}/share-links/",
+        "PATCH /api/projects/{projectId}/share-links/{linkId:guid}",
+        "POST /api/projects/{projectId}/share-links/{linkId:guid}/revoke",
         "POST /api/projects/{projectId}/promises/{promiseId:guid}/approve",
         // A truth label changes only by a person's decision (guarantee 2).
         "POST /api/projects/{projectId}/facts/{entityType}/{entityId:guid}/accept",
@@ -625,6 +632,9 @@ public class AgentTokenTests(IntegrationFixture fixture) : IClassFixture<Integra
     {
         ["GET /api/workspaces/{workspaceId}/projects/"] = "read",
         ["GET /api/projects/{projectId}/elements/"] = "read",
+        ["GET /api/projects/{projectId}/views/{viewId}/export/svg"] = "read",
+        ["GET /api/projects/{projectId}/views/{viewId}/export/mermaid"] = "read",
+        ["GET /api/projects/{projectId}/export/structurizr"] = "read",
         ["GET /api/projects/{projectId}/elements/{elementId}"] = "read",
         ["GET /api/projects/{projectId}/relationships/"] = "read",
         ["GET /api/projects/{projectId}/relationships/{relationshipId}"] = "read",

@@ -89,8 +89,10 @@ public class ShareLinkTests(IntegrationFixture fixture) : IClassFixture<Integrat
         await TestHost.Created(owner.PostAsJsonAsync($"/api/projects/{projectId}/drafts", new { id = draft, name = "Unmerged idea" }));
         await TestHost.Created(owner.PostAsJsonAsync($"/api/projects/{projectId}/docs",
             new { id = Guid.NewGuid(), title = "Draft-only page", draftId = draft, content = "draft secret" }));
-        await TestHost.Created(owner.PostAsJsonAsync($"/api/projects/{projectId}/drafts/{draft}/comments",
-            new { id = Guid.NewGuid(), body = "internal comment text" }));
+        await TestHost.Created(owner.PostAsJsonAsync($"/api/projects/{projectId}/threads",
+            new { target = new { kind = "project", id = projectId }, body = "internal comment text" }));
+        await TestHost.Created(owner.PostAsJsonAsync($"/api/projects/{projectId}/threads",
+            new { target = new { kind = "project", id = projectId }, body = "draft comment text", draftId = draft }));
 
         var settings = await owner.PutSettingsAsync($"/api/workspaces/{workspaceId}/settings",
             new StringContent("""{"github":{"defaultRef":"settings-marker"}}""", Encoding.UTF8, "application/json"));
@@ -113,7 +115,7 @@ public class ShareLinkTests(IntegrationFixture fixture) : IClassFixture<Integrat
                  {
                      "acme-secret", "deadbeefcafe", "github.com", "ai:openai", "flow-proposal",
                      "Guessed Cache", "Child of a guess", guess.ToString(), guessChild.ToString(),
-                     "internal comment text", "Draft-only page", "draft secret", "Unmerged idea",
+                     "internal comment text", "draft comment text", "Draft-only page", "draft secret", "Unmerged idea",
                      "settings-marker", me.Email, me.Id, memberInfo.Email, memberInfo.Id, memberInfo.DisplayName!,
                      workspaceId.ToString(),
                  })
