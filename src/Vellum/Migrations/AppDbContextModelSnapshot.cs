@@ -1686,6 +1686,10 @@ namespace Vellum.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("files_skipped");
 
+                    b.Property<string>("HeadCommitSha")
+                        .HasColumnType("text")
+                        .HasColumnName("head_commit_sha");
+
                     b.Property<string>("Host")
                         .IsRequired()
                         .HasColumnType("text")

@@ -46,6 +46,9 @@ public static class ListSecrets
         // Every credential the workspace's settings can use, set or not, then any other stored one.
         var names = workspace.Effective.Ai.Providers.Select(p => SecretNames.AiApiKey(p.Id))
             .Append(SecretNames.GithubToken)
+            .Append(SecretNames.GitlabToken)
+            .Append(SecretNames.BitbucketToken)
+            .Append(SecretNames.AzureDevopsToken)
             .Append(SecretNames.WebhookSecret)
             .Append(SecretNames.GcpApiKey)
             .Concat(stored.Keys.Order(StringComparer.Ordinal))
@@ -174,7 +177,7 @@ public static class DeleteSecret
 internal static class SecretErrors
 {
     public static IResult UnknownName() =>
-        Name($"Must be '{SecretNames.GithubToken}', '{SecretNames.WebhookSecret}', '{SecretNames.GcpApiKey}' or 'ai:<provider id>:apiKey'.");
+        Name($"Must be '{SecretNames.GithubToken}', '{SecretNames.GitlabToken}', '{SecretNames.BitbucketToken}', '{SecretNames.AzureDevopsToken}', '{SecretNames.WebhookSecret}', '{SecretNames.GcpApiKey}' or 'ai:<provider id>:apiKey'.");
 
     public static IResult Name(string message) => Results.BadRequest(
         new ErrorResponse("validation_error", "Validation failed", Errors: [new FieldError("name", message)]));

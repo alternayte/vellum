@@ -108,8 +108,16 @@ public class ScanEntity
     /// scan made before refs were recorded that asked for no ref.
     /// </summary>
     public string? ResolvedRef { get; set; }
-    /// <summary>Set once, when the ref is resolved. Every later read of the scan uses it.</summary>
+    /// <summary>
+    /// Set once, when the ref is resolved. Every later read of the scan uses it. For a Source
+    /// without commits (a directory, an archive) it is the Snapshot ID, which a citation names.
+    /// </summary>
     public string? CommitSha { get; set; }
+    /// <summary>
+    /// For a <c>directory</c> Source: the commit SHA that the folder's <c>.git/HEAD</c> names, read
+    /// as text. Metadata only: nothing checks that the files on disk are that commit.
+    /// </summary>
+    public string? HeadCommitSha { get; set; }
     /// <summary>The number of the pull request the caller asked for. Such a scan reads the head commit of the pull request and names no ref.</summary>
     public int? PullRequestNumber { get; set; }
     /// <summary>A JSON <see cref="ScanPullRequest"/>: what GitHub said of the pull request when the scan pinned its head commit. Null until then.</summary>

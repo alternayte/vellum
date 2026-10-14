@@ -18,6 +18,7 @@ public static class ImportModule
         services.TryAddSingleton(TimeProvider.System);
         services.AddSingleton<ScanSignal>();
         services.AddSingleton<ScanWorker>();
+        services.AddSingleton<SourcesRoot>();
         services.AddScoped<IProjectRetention, ImportProjectRetention>();
 
         // Import:Worker:Enabled=false turns the worker of this instance off; scans then wait
@@ -33,6 +34,7 @@ public static class ImportModule
                 PollInterval = TimeSpan.FromSeconds(Math.Clamp(section.GetValue("PollSeconds", defaults.PollInterval.TotalSeconds), 0.05, 3600)),
                 LeaseDuration = TimeSpan.FromSeconds(Math.Clamp(section.GetValue("LeaseSeconds", defaults.LeaseDuration.TotalSeconds), 5, 3600)),
                 Parallelism = Math.Clamp(section.GetValue("Parallelism", defaults.Parallelism), 1, 32),
+                MaxRunningPerHost = Math.Clamp(section.GetValue("MaxRunningPerHost", defaults.MaxRunningPerHost), 1, 64),
                 RetentionInterval = TimeSpan.FromSeconds(Math.Clamp(section.GetValue("RetentionSeconds", defaults.Retention.TotalSeconds), 1, 86400)),
             };
         });
@@ -118,6 +120,34 @@ public static class ImportModule
             .Produces<SourceDto>()
             .Produces<ErrorResponse>(StatusCodes.Status400BadRequest)
             .Produces<ErrorResponse>(StatusCodes.Status404NotFound);
+
+        sources.MapDelete("/{sourceId}", SourceRequests.Delete).RequireHuman()
+            .Produces(StatusCodes.Status204NoContent)
+            .Produces<ErrorResponse>(StatusCodes.Status404NotFound);
+
+        // The body is the archive itself, streamed to a temporary file. The workspace's
+        // import.maxArchiveBytes bounds it further inside the handler.
+        sources.MapPost("/{sourceId}/archive", ArchiveUpload.Handle).RequireHuman()
+            .WithBodyLimit(ArchiveUpload.MaxBodyBytes)
+            .Accepts<Stream>("application/zip", "application/gzip", "application/octet-stream")
+            .Produces<StartScanResponse>(StatusCodes.Status202Accepted)
+            .Produces<ErrorResponse>(StatusCodes.Status400BadRequest)
+            .Produces<ErrorResponse>(StatusCodes.Status404NotFound)
+            .Produces<ErrorResponse>(StatusCodes.Status409Conflict)
+            .Produces<ErrorResponse>(StatusCodes.Status413PayloadTooLarge)
+            .Produces<ErrorResponse>(StatusCodes.Status429TooManyRequests);
+
+        sources.MapGet("/repositories", BulkAdd.Repositories)
+            .Produces<RepositoryListDto>()
+            .Produces<ErrorResponse>(StatusCodes.Status400BadRequest)
+            .Produces<ErrorResponse>(StatusCodes.Status404NotFound)
+            .Produces<ErrorResponse>(StatusCodes.Status409Conflict)
+            .Produces<ErrorResponse>(StatusCodes.Status429TooManyRequests)
+            .Produces<ErrorResponse>(StatusCodes.Status502BadGateway);
+
+        sources.MapPost("/bulk", BulkAdd.Handle).RequireHuman()
+            .Produces<BulkAddResponse>()
+            .Produces<ErrorResponse>(StatusCodes.Status400BadRequest);
 
         sources.MapPost("/{sourceId}/scans", SourceRequests.StartScan)
             .Produces<StartScanResponse>(StatusCodes.Status202Accepted)

@@ -19,9 +19,14 @@ namespace Vellum.Modules.Import.Scans;
 /// <param name="Parallelism">How many scans one instance runs at the same time.</param>
 /// <param name="MaxInternalFailures">How many runs in a row an unexpected error may stop before the scan fails with <c>internal_error</c>.</param>
 /// <param name="RetentionInterval">How often the worker applies <see cref="ImportRetention"/>.</param>
+/// <param name="MaxRunningPerHost">
+/// How many scans of Sources on one git host run at the same time, across all instances and
+/// workspaces. A bulk add queues many scans of one host; this keeps them from using up the
+/// host's rate limit together. Directory and archive scans read no host and are not counted.
+/// </param>
 public sealed record ScanWorkerOptions(
     bool Enabled, TimeSpan PollInterval, TimeSpan LeaseDuration, TimeSpan WatchInterval, int MaxAttempts = 50,
-    int Parallelism = 2, int MaxInternalFailures = 5, TimeSpan? RetentionInterval = null)
+    int Parallelism = 2, int MaxInternalFailures = 5, TimeSpan? RetentionInterval = null, int MaxRunningPerHost = 2)
 {
     public static readonly ScanWorkerOptions Default = new(true, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(60), TimeSpan.FromSeconds(2));
 
@@ -62,7 +67,8 @@ public sealed class ScanSignal
 /// several instances never take the same scan.
 /// <para>
 /// Fairness: the next scan is the oldest one of the workspace that was served least
-/// recently, so one workspace with many scans does not hold up the others.
+/// recently, so one workspace with many scans does not hold up the others. A scan of a git
+/// host waits while <see cref="ScanWorkerOptions.MaxRunningPerHost"/> scans of that host run.
 /// </para>
 /// <para>
 /// The lease. Its expiry is written and compared on the clock of the database
@@ -128,6 +134,7 @@ public sealed class ScanWorker(
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var now = time.GetUtcNow();
         var lease = options.LeaseDuration.TotalSeconds;
+        var perHost = options.MaxRunningPerHost;
 
         // A scan whose worker stopped renewing the lease twice in a row is not run a third time.
         await db.Database.ExecuteSqlAsync($"""
@@ -148,9 +155,12 @@ public sealed class ScanWorker(
                 FROM import.scans c
                 LEFT JOIN LATERAL (
                     SELECT max(w.claimed_at) AS last FROM import.scans w WHERE w.workspace_id = c.workspace_id) served ON true
-                WHERE c.status = 'queued'
-                   OR (c.status = 'waiting' AND c.retry_at <= {now})
-                   OR (c.status = 'running' AND c.lease_expires_at < now())
+                WHERE (c.status = 'queued'
+                       OR (c.status = 'waiting' AND c.retry_at <= {now})
+                       OR (c.status = 'running' AND c.lease_expires_at < now()))
+                  AND (EXISTS (SELECT 1 FROM import.sources k WHERE k.id = c.source_id AND k.kind IN ('directory', 'archive'))
+                       OR (SELECT count(*) FROM import.scans r
+                           WHERE r.host = c.host AND r.id <> c.id AND r.status = 'running' AND r.lease_expires_at >= now()) < {perHost})
                 ORDER BY served.last NULLS FIRST, c.created_at, c.id
                 FOR UPDATE OF c SKIP LOCKED
                 LIMIT 1)
@@ -345,6 +355,14 @@ public sealed class ScanWorker(
         // The Snapshot: the files the extraction read whole, with their blob SHAs.
         var manifest = readFiles.Where(f => f.State == ScanFileState.Read)
             .Select(f => new ManifestEntry(f.Path, f.Size, f.BlobSha)).ToList();
+        var snapshotId = SnapshotManifest.Id(manifest);
+        // A Source without commits is cited by its Snapshot: the revision of the scan becomes
+        // the Snapshot ID once the extraction has said which files it read whole.
+        if (!SourceEntity.IsGit(source.Kind) && scan.CommitSha != snapshotId)
+        {
+            scan.CommitSha = snapshotId;
+            await SaveAsync(db, scan, ct);
+        }
 
         var coverageFiles = files.ToDictionary(f => f.Path, f => f.State == ScanFileState.Read ? null : f.Reason ?? CoverageGap.ParseFailure, StringComparer.Ordinal);
         var absent = ScanScope.AbsentGap(limits, scan.IncludePaths, scan.ExcludePaths);
@@ -361,7 +379,7 @@ public sealed class ScanWorker(
             services, scan, WriteMode.Complete(leaseToken),
             new SnapshotInput(result.Facts, isComplete, gap, ScanNotes.Write(notes),
                 () => new ScanCoverage(coverageFiles, absent, gap), coverageFiles.Count(f => f.Value is null),
-                new ManifestSummary(SnapshotManifest.Id(manifest), manifest.Count)),
+                new ManifestSummary(snapshotId, manifest.Count)),
             time.GetUtcNow(), ct);
         switch (written)
         {

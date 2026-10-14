@@ -1331,6 +1331,7 @@ namespace Vellum.Migrations
                     requested_ref = table.Column<string>(type: "text", nullable: true),
                     resolved_ref = table.Column<string>(type: "text", nullable: true),
                     commit_sha = table.Column<string>(type: "text", nullable: true),
+                    head_commit_sha = table.Column<string>(type: "text", nullable: true),
                     pull_request_number = table.Column<int>(type: "integer", nullable: true),
                     pull_request = table.Column<string>(type: "jsonb", nullable: true),
                     repository_is_private = table.Column<bool>(type: "boolean", nullable: true),

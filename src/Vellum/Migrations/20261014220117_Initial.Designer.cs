@@ -25,7 +25,7 @@ using Vellum.Shared;
 namespace Vellum.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20261014213520_Initial")]
+    [Migration("20261014220117_Initial")]
     partial class Initial
     {
         /// <inheritdoc />
@@ -1688,6 +1688,10 @@ namespace Vellum.Migrations
                     b.Property<int>("FilesSkipped")
                         .HasColumnType("integer")
                         .HasColumnName("files_skipped");
+
+                    b.Property<string>("HeadCommitSha")
+                        .HasColumnType("text")
+                        .HasColumnName("head_commit_sha");
 
                     b.Property<string>("Host")
                         .IsRequired()

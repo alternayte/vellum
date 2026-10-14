@@ -11,6 +11,12 @@ namespace Vellum.Modules.Settings;
 public static class SecretNames
 {
     public const string GithubToken = "github:token";
+    /// <summary>A read-only GitLab token. It goes to the origin of <c>gitlab.apiBaseUrl</c> only.</summary>
+    public const string GitlabToken = "gitlab:token";
+    /// <summary>A read-only Bitbucket Cloud access token, or <c>user:token</c> for HTTP basic. It goes to the origin of <c>bitbucket.apiBaseUrl</c> only.</summary>
+    public const string BitbucketToken = "bitbucket:token";
+    /// <summary>An Azure DevOps personal access token with Code (read). It goes to the origin of <c>azureDevops.apiBaseUrl</c> only.</summary>
+    public const string AzureDevopsToken = "azure-devops:token";
     public const string WebhookSecret = "notifications:webhookSecret";
     /// <summary>The API key of the Google Cloud Billing Catalog API. It goes to <c>https://cloudbilling.googleapis.com</c> only.</summary>
     public const string GcpApiKey = "gcp:apiKey";
@@ -47,7 +53,7 @@ public static class SecretNames
 
     /// <summary>Returns the stored form of an allowed name, or null for any other name.</summary>
     public static string? Normalize(string? name) =>
-        name is GithubToken or WebhookSecret or GcpApiKey ? name
+        name is GithubToken or GitlabToken or BitbucketToken or AzureDevopsToken or WebhookSecret or GcpApiKey ? name
         : ProviderIdOf(name) is { } providerId ? AiApiKey(providerId)
         : null;
 }
