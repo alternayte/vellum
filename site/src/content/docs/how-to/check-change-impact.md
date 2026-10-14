@@ -1,27 +1,25 @@
 ---
 title: Check the impact of a change
-description: Scan another branch of a repository that the project follows, read what the change does to the model and decide whether to follow that branch.
+description: Scan another branch or a pull request of a repository that the project follows, read what the change does to the model and its flow steps, and decide whether to follow that branch.
 ---
 
 This guide shows you how to see what a change in the code does to the model before the model changes. You need the editor role. The project must already follow a ref of the repository: see [Import a repository](/how-to/import-a-repository/).
 
 ## Know what is available
 
-Vellum compares one ref of a repository with the model. The comparison is a list of proposals that you can read and cannot accept, and an impact report.
+Vellum compares one ref, one commit or the head commit of one pull request with the model. The comparison is a list of proposals that you can read and cannot accept, and an impact report.
 
 These parts of change impact are not available.
 
-- A scan does not accept a pull request number or a pull request address. Scan the head branch of the pull request.
-- A scan does not accept a base commit and a head commit. It reads one ref and compares it with the model, not with another commit.
-- Vellum posts no report to a pull request.
-- Vellum sets no commit status and blocks no merge in CI.
-- The canvas plays no animation of the change. **Show on canvas** in the impact report rings the parts of an affected flow or promise.
+- A scan does not accept a pull request address. Give the repository and the pull request number.
+- A scan does not accept a base commit and a head commit. It reads one commit and compares its contracts with the model. It compares its source patterns with the snapshot that the model follows, not with the base commit of a pull request.
+- Vellum writes nothing to GitHub. It posts no report to a pull request, sets no commit status and blocks no merge in CI.
 
 ## Scan the other ref
 
 1. Select **Import from GitHub** in the left toolbar.
 2. In **Repository**, enter the repository that the project follows, as `owner/name` or a GitHub URL.
-3. In **Branch, tag or commit**, enter the branch of the change, for example `remove-outbox`.
+3. In **Read**, select **Branch**. In **Branch or tag**, enter the branch of the change, for example `remove-outbox`. To read one commit, select **Commit SHA** and enter the full SHA.
 4. In **Only these folders**, enter the same folders as the scan that the project follows. Leave it empty for all folders.
 5. Select **Scan repository**.
 
@@ -40,9 +38,47 @@ curl -X POST "http://localhost:8080/api/projects/<project-id>/imports" \
 |---|---|
 | `repository` | `owner/name`, or the address of the repository page on the GitHub host of the workspace. |
 | `ref` | A branch, a tag or a commit SHA. At most 255 characters. No white space. With no `ref`, the scan reads the default ref. |
+| `pullRequest` | A pull request number, from 1. Give `ref` or `pullRequest`, not both. |
 | `includePaths` | Path prefixes to scan. With none, the scan reads the full repository. |
 | `excludePaths` | Path prefixes to leave out. |
 
+## Scan a pull request
+
+1. Select **Import from GitHub** in the left toolbar.
+2. In **Repository**, enter the repository of the pull request.
+3. In **Read**, select **Pull request #**. In **Pull request number**, enter the number, for example `1`.
+4. Select **Scan repository**.
+
+Vellum reads the pull request from GitHub. It reads the head commit of the pull request and nothing else. It writes nothing to GitHub.
+
+The scan list shows **pull request #1**, the head commit, the word **comparison**, and the title, the state and the branches of the pull request.
+
+```sh
+curl -X POST "http://localhost:8080/api/projects/<project-id>/imports" \
+  -b vellum.cookies \
+  -H "Content-Type: application/json" \
+  -d '{"repository":"acme/orders","pullRequest":1}'
+```
+
+`GET /api/projects/{projectId}/imports/{importId}` gives `pullRequestNumber` and `pullRequest`. Vellum records `pullRequest` when the scan reads the pull request.
+
+| Field of `pullRequest` | Meaning |
+|---|---|
+| `number`, `title` | The pull request. The title is text of the repository. |
+| `state`, `merged` | `open` or `closed`. A merged pull request is `closed` with `merged: true`. |
+| `baseRef`, `baseSha` | The base branch and its commit when the scan read the pull request. |
+| `headRef`, `headSha` | The head branch and its commit. The scan reads `headSha`. |
+| `headRepository`, `fromFork` | The repository of the head branch. `fromFork` is true when it is not the repository of the scan. |
+
+A closed or merged pull request is scanned. A note on the scan says that it is closed or merged. The head commit of a merged pull request is not the merge commit.
+
+| Error code | Cause | What to do |
+|---|---|---|
+| `pull_request_not_found` | GitHub has no pull request with this number that Vellum can see. | Check the number. |
+| `not_found` | GitHub has no repository with this name that Vellum can see. A private repository without a token gives this code. | Save a token in **Settings → GitHub**. See [Connect GitHub](/how-to/connect-github/). |
+| `pull_request_head_unreadable` | The pull request comes from a fork, and GitHub does not serve its head commit through the repository of the scan. Vellum reads no other repository. | Push the branch to the repository and scan the branch. |
+
+A pull request from a fork is scanned when GitHub serves its head commit through the repository of the scan. GitHub does this for the pull requests that it keeps. Vellum then cites the source lines in the repository of the scan.
 ## Know when a scan is a comparison
 
 `GET /api/projects/{projectId}/imports/{importId}` gives `kind`, `trackedRef`, `canDecide` and `canDecideReason`.
@@ -53,6 +89,7 @@ curl -X POST "http://localhost:8080/api/projects/<project-id>/imports" \
 | A ref, when the repository has no tracked ref yet | `tracking` | Yes. |
 | Another branch or tag | `comparison` | No. |
 | A commit SHA | `comparison` | No, and it cannot become the tracked ref. |
+| A pull request | `comparison` | No, and it cannot become the tracked ref. Scan the tracked branch after the merge. |
 
 A comparison scan writes nothing to the model. It marks no fact stale.
 
@@ -85,11 +122,36 @@ If the scan shows **The source matches the model. This scan proposes no change.*
 
 ## Read the impact
 
-1. On the completed scan, select **Impact**.
+1. On the completed scan, select **Impact**. For a pull request, the header gives its number, title, state, and its head and base commits.
 2. Read **Changed in the source**. It lists each proposal of the scan, and each source pattern that the scan and the base snapshot do not both have. The base is the scan that the model follows.
-3. Read **Affected flows** and **Affected promises**.
-4. On a source pattern check of a promise, select **Run against this scan**.
-5. Select **Brief for this change** to export a brief for an agent.
+3. Read **Affected flows**. Each flow lists its affected steps in the order of the scenario. Each step has a label, and one line for each change that reaches it, with the source lines of that change. Select the name of a change to go to its entry with the diff.
+4. Read **Affected promises**.
+5. On a source pattern check of a promise, select **Run against this scan**.
+6. Select **Brief for this change** to export a brief for an agent. The brief lists the affected steps.
+
+When the base commit of a pull request is not the commit that the model follows, the report adds a line to its notes. A change on the base branch after that commit then shows as a change of the pull request.
+
+### Labels of a step
+
+| Label | The step |
+|---|---|
+| **Definite** | names a contract that the change removes or changes: the operation it calls, or the message or the schema it publishes. The contract diff and its source lines are in the report. |
+| **Possible** | runs in or against an element that the change touches: the service of a changed source pattern, or the element that owns a changed contract. Nothing shows that the step uses what changed. |
+| **Unknown** | runs in the service of a source pattern that the scan did not look at. |
+
+### See the steps on the canvas
+
+1. On an affected flow, select **Show on canvas**. The dialog closes.
+2. The canvas draws each affected step from the element where it starts to the element it reaches. A publish step with no handler goes to the consumers of its message. The line and the ring of each element have the label of the step: solid for **Definite**, dashed for **Possible**, dotted for **Unknown**. The label of each line gives the step number and the label in words.
+3. The panel at the top lists the steps in order. A step whose two ends are one element on this level is not drawn. Open the element to see it.
+4. Select **Clear** to remove the marks.
+
+### Play the flow with the impact
+
+1. On an affected flow, select **Play**. The trace panel opens.
+2. The row **Impact of …** lists the affected steps. Select a step to go to its first event.
+3. In the bar of events, a line below an event marks a step that the change reaches. The line has the colour and the style of the label.
+4. Step to an event of an affected step. The panel gives **Impact:** with the label, and each change with a link to its source lines.
 
 Each entry has one label.
 
@@ -111,17 +173,24 @@ The report reads the source. It runs no check and it changes nothing. A promise 
 
 The request is `GET /api/projects/{projectId}/imports/{importId}/impact`.
 
-## Example: a branch that removes the outbox
+## Example: a pull request that removes the outbox
 
 The model follows `main` of `acme/orders`. On `main`, `orders-api` registers a transactional outbox. Vellum holds the accepted fact **Transactional outbox** from the rule `dotnet.masstransit-outbox`.
 
-The branch `remove-outbox` deletes the outbox registration and publishes `OrderCreated` directly to the broker.
+Pull request #1 merges the branch `remove-outbox` into `main`. The branch deletes the outbox registration, publishes `OrderCreated` directly to the broker and gives the field `total` of `OrderCreated` the name `totalAmount`. The GitHub stand-in of the [import tutorial](/tutorials/import-and-review/) serves this pull request.
 
-1. Scan `remove-outbox`. The scan is a comparison.
+1. Scan pull request `1`. The scan is a comparison.
 2. Select **Impact**. **Changed in the source** has the line **Removed Transactional outbox** with the label **Definite** and the source lines of `main` where the registration was.
-3. Read **Affected flows**. A flow that runs in `orders-api` has the label **Possible** for the outbox.
-4. Read **Affected promises**. A promise that requires the pattern has the label **At risk**.
-5. Select **Run against this scan** on its source pattern check. The result is **Unsupported**: a comparison scan cannot establish that a pattern is absent. The check can fail when the model follows the branch.
+3. Read **Affected flows**. In the flow **Place an order**, the step that publishes `OrderCreated` has the label **Definite**: it names the message whose schema changed. The steps that call `POST /orders` and write the order have the label **Possible**: they run in `orders-api`, the service of the outbox.
+
+   ![The dialog Impact of pull request #1 on acme/orders. The header gives #1 Remove the outbox, open, remove-outbox into main. Affected flows has Place an order with three steps: place and save-order with the label Possible, publish-order-created with the label Definite through the changed schema OrderCreated at asyncapi.yaml line 39.](../../../assets/screenshots/impact-pull-request-steps.png)
+
+4. Select **Show on canvas** and open the system `orders`. The line from `Orders.Api` to `Billing` is solid, with the label **3. OrderCreated · Definite**. The line from `Orders.Api` to `postgres` is dashed, with the label **2. postgres · orders · Possible**.
+
+   ![The canvas inside the system orders. Orders.Api and Billing have a solid ring and a solid line labelled 3. OrderCreated Definite. postgres has a dashed ring and a dashed line labelled 2. postgres orders Possible. The panel at the top lists the three steps with their labels.](../../../assets/screenshots/impact-steps-canvas.png)
+
+5. Read **Affected promises**. A promise that requires the pattern has the label **At risk**.
+6. Select **Run against this scan** on its source pattern check. The result is **Unsupported**: a comparison scan cannot establish that a pattern is absent. The check can fail when the model follows the branch.
 
 The comparison shows that the registration is gone from the source. It does not show that an order is lost when the broker is down. Only a test in the repository can show that.
 
@@ -159,7 +228,7 @@ Vellum makes the ref the tracked ref of the repository in this project. It plans
 | Status | Type | Cause |
 |---|---|---|
 | `409` | `import_not_completed` | The scan is not completed. |
-| `409` | `ref_not_trackable` | The scan read a commit SHA and no ref. Scan a branch or a tag. |
+| `409` | `ref_not_trackable` | The scan read a commit SHA or a pull request, and no ref. Scan a branch or a tag. |
 | `409` | `already_tracked` | The accepted facts already follow this ref. |
 | `409` | `newer_scan_exists` | A newer scan of the same ref is completed. Follow that scan. |
 | `409` | `model_busy` or `scan_changed` | Another write ran at the same moment. Nothing was written. Try again. |

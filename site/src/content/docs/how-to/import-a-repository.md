@@ -11,7 +11,7 @@ An import proposes. It changes nothing in the model until you accept a proposal.
 
 1. Open the project and select **Import from GitHub** in the left toolbar.
 2. In **Repository**, give the repository as `owner/name` or as its GitHub URL. The URL must be on the GitHub host of the workspace.
-3. In **Branch, tag or commit**, give a branch, a tag or a full commit SHA. Leave the field empty to use the **Default ref** of the workspace settings. If that setting is empty, Vellum uses the default branch of the repository.
+3. In **Read**, select **Branch** and give a branch or a tag in **Branch or tag**, or select **Commit SHA** and give a full commit SHA. Leave **Branch or tag** empty to use the **Default ref** of the workspace settings. If that setting is empty, Vellum uses the default branch of the repository. To read a pull request, see [Check the impact of a change](/how-to/check-change-impact/#scan-a-pull-request).
 4. To read only a part of the repository, give its folders in **Only these folders**. Separate the folders with commas. Leave the field empty to read all folders. One scan takes at most 50 paths.
 5. Select **Scan repository**.
 
@@ -87,7 +87,7 @@ Start a new scan of the same repository to compare the model with newer code.
 - The first decision in which you accept a proposal sets the **tracked ref**: the branch or tag that the model follows.
 - A scan of the tracked ref proposes changes and removals. It replaces the pending proposals of earlier scans of the same ref.
 - A scan of another branch or tag is a **comparison**. You can read its proposals and you cannot accept them. Select **Follow this ref** to make that ref the tracked ref. Only the newest completed scan of a ref has this effect.
-- A scan of a bare commit is always a comparison. It cannot become the tracked ref.
+- A scan of a bare commit or of a pull request is always a comparison. It cannot become the tracked ref.
 
 To see what a change in the code does to the model before you accept it, see [Check change impact](/how-to/check-change-impact/).
 
