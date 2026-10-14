@@ -5,6 +5,8 @@ import { Button } from '@/components/ui/button'
 export interface NamedElement {
   id: string
   name: string
+  /** actor, system, app, store or component. */
+  kind?: string
 }
 
 type SchemaChoice = { id: string; name: string; version: number }

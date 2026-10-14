@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Crosshair, Pencil, Plus, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -7,7 +7,10 @@ import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import { shownInline } from '@/lib/mutation-errors'
 import { importApi } from '@/lib/import-api'
+import { branchesApi } from '@/lib/branches-api'
+import { useProject } from '@/hooks/use-model'
 import { promiseElementIds } from '@/lib/scenario-parts'
+import { readableSegments } from '@/lib/readable-ids'
 import { useShellStore } from '@/stores/shell-store'
 import {
   describeResult, emptyPromise, isAgentActor, promisesApi, shortAgent,
@@ -66,6 +69,10 @@ export function PromiseDialog({ projectId, promiseId, references, scenarios, own
   })
   // A check of a source pattern reads one completed scan, so the dialog offers the scans there are.
   const scans = useQuery({ queryKey: ['projects', projectId, 'imports'], queryFn: () => importApi.list(projectId) })
+  // A check names the model stream it played on; these name the streams of this project.
+  const project = useProject(projectId)
+  const drafts = useQuery({ queryKey: ['projects', projectId, 'drafts', 'open'], queryFn: () => branchesApi.drafts(projectId) })
+  const variants = useQuery({ queryKey: ['projects', projectId, 'variants'], queryFn: () => branchesApi.variants(projectId) })
   const completed = (scans.data ?? []).filter((s) => s.status === 'completed')
   const repositories = [...new Set(completed.map((s) => s.repository.toLowerCase()))]
 
@@ -124,7 +131,18 @@ export function PromiseDialog({ projectId, promiseId, references, scenarios, own
   const options = (group: (typeof LINK_GROUPS)[number]['group']) =>
     group === 'Scenarios' ? scenarios.map((s) => ({ id: s.id, label: s.name })) : references.filter((r) => r.group === group)
   const statusOf = (obligationId: string): ObligationStatus | undefined => revision?.evidenceStatus.obligations.find((o) => o.obligationId === obligationId)
-  const nameOf = (partId: string) => references.find((r) => r.id === partId)?.label ?? scenarios.find((s) => s.id === partId)?.name ?? `${partId.slice(0, 8)} (not in the model)`
+  const nameOf = (partId: string) => references.find((r) => r.id === partId)?.label ?? scenarios.find((s) => s.id === partId)?.name ?? `id:${partId.slice(0, 8)} (not in the model)`
+  // The name of an ID in a server text: a part of the model, a scenario, or a scan of this project.
+  const knownName = (partId: string): string | undefined => {
+    const part = references.find((r) => r.id === partId)?.label ?? scenarios.find((s) => s.id === partId)?.name
+    if (part) return part
+    if (partId === project.data?.streamId) return 'main'
+    const branch = drafts.data?.find((d) => d.streamId === partId) ?? variants.data?.find((v) => v.streamId === partId)
+    if (branch) return branch.name
+    const scan = (scans.data ?? []).find((s) => s.id === partId)
+    return scan ? `${scan.ref ?? scan.trackedRef ?? 'default branch'} at ${scan.commitSha?.slice(0, 10) ?? 'an unknown commit'}` : undefined
+  }
+  const readable = (text: string) => <Readable text={text} nameOf={knownName} />
 
   const area = (field: TextField, label: string, wide = false) => (
     <Field label={label} field={field} error={save.error} className={wide ? 'md:col-span-2' : undefined}>
@@ -270,7 +288,7 @@ export function PromiseDialog({ projectId, promiseId, references, scenarios, own
                     <li key={obligation.id} className="rounded-md border border-border px-3 py-2">
                       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
                         <span className="font-mono text-[11px] text-muted-foreground">{obligation.id}</span>
-                        <span className="min-w-0 flex-1 basis-40 text-sm text-foreground">{obligation.title}</span>
+                        <span className="min-w-0 flex-1 basis-40 text-sm text-foreground">{readable(obligation.title)}</span>
                         <span className="rounded-full border px-1.5 text-[11px]" style={{ borderColor: shown.color, color: shown.color }}>{shown.label}</span>
                         {editable && edited === null && (
                           <span className="flex gap-0.5">
@@ -287,7 +305,7 @@ export function PromiseDialog({ projectId, promiseId, references, scenarios, own
                         )}
                         {obligation.kind}{obligation.execution === 'external-evidence' ? ' · a test plan: Vellum cannot run it; it needs a result from your CI' : obligation.execution === 'none' ? ' · Vellum cannot check this kind' : ''}
                       </p>
-                      <Recipe obligation={obligation} nameOf={nameOf} />
+                      <Recipe obligation={obligation} nameOf={nameOf} readable={readable} />
                       {obligation.execution === 'deterministic' && (
                         <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                           {source && (
@@ -316,10 +334,10 @@ export function PromiseDialog({ projectId, promiseId, references, scenarios, own
                           {stale && status.changed.length > 0 && (
                             <div className="break-words text-[var(--trace-retry)]">
                               <p>This result is stale. It was made before these changes:</p>
-                              <ul className="list-disc pl-4">{status.changed.map((change, i) => <li key={i}>{change}</li>)}</ul>
+                              <ul className="list-disc pl-4">{status.changed.map((change, i) => <li key={i}>{readable(change)}</li>)}</ul>
                             </div>
                           )}
-                          {status.scope && <p><span className="text-foreground">Checked:</span> {status.scope}</p>}
+                          {status.scope && <p><span className="text-foreground">Checked:</span> {readable(status.scope)}</p>}
                           {status.environment && <p><span className="text-foreground">Against:</span> <span className="break-all font-mono">{status.environment}</span>{status.at ? ` on ${new Date(status.at).toLocaleString()}` : ''}</p>}
                           {status.modelRevision && (
                             <p><span className="text-foreground">Model:</span> version {status.modelRevision.version}{status.modelRevision.revisionName ? `, revision “${status.modelRevision.revisionName}”` : ''}</p>
@@ -334,7 +352,7 @@ export function PromiseDialog({ projectId, promiseId, references, scenarios, own
                           {status.effectiveFaults && status.effectiveFaults.length > 0 && (
                             <p><span className="text-foreground">Faults played:</span> {status.effectiveFaults.map((f) => `${f.kind} of ${nameOf(f.target)}${f.failFirst ? `, first ${f.failFirst} ${f.failFirst === 1 ? 'attempt' : 'attempts'}` : ', every attempt'}`).join('; ')}</p>
                           )}
-                          {status.detail && <p>{status.detail}</p>}
+                          {status.detail && <p>{readable(status.detail)}</p>}
                           {status.evidence.map((e, i) => (
                             <p key={i} className="break-all font-mono text-[11px]">
                               {e.kind === 'trace' ? `trace ${e.hash?.slice(0, 12)}` : e.kind === 'source' ? e.pointer : `external · ${e.identity}`}
@@ -342,9 +360,9 @@ export function PromiseDialog({ projectId, promiseId, references, scenarios, own
                             </p>
                           ))}
                           {status.assertions?.filter((a) => a.vacuous).map((a) => (
-                            <p key={a.id}><span className="text-foreground">Checks nothing:</span> <span className="font-mono">{a.id}</span> · {a.vacuousReason}</p>
+                            <p key={a.id}><span className="text-foreground">Checks nothing:</span> <span className="font-mono">{a.id}</span> · {a.vacuousReason && readable(a.vacuousReason)}</p>
                           ))}
-                          {status.limitations.map((limitation, i) => <p key={i}><span className="text-foreground">Limit:</span> {limitation}</p>)}
+                          {status.limitations.map((limitation, i) => <p key={i}><span className="text-foreground">Limit:</span> {readable(limitation)}</p>)}
                         </div>
                       )}
                     </li>
@@ -354,7 +372,7 @@ export function PromiseDialog({ projectId, promiseId, references, scenarios, own
               {revision.evidenceStatus.gaps.length > 0 && (
                 <div className="mt-2 rounded-md border border-[var(--trace-retry)]/60 px-3 py-2 text-xs">
                   <p className="font-medium text-foreground">Evidence gaps</p>
-                  <ul className="mt-1 list-disc space-y-0.5 pl-4 text-muted-foreground">{revision.evidenceStatus.gaps.map((gap, i) => <li key={i}>{gap}</li>)}</ul>
+                  <ul className="mt-1 list-disc space-y-0.5 pl-4 text-muted-foreground">{revision.evidenceStatus.gaps.map((gap, i) => <li key={i}>{readable(gap)}</li>)}</ul>
                 </div>
               )}
               <p className="mt-2 text-[11px] text-muted-foreground">A passed check is evidence for what it checked, in the scope shown. It does not prove the promise in general.</p>
@@ -419,11 +437,11 @@ export function PromiseDialog({ projectId, promiseId, references, scenarios, own
 }
 
 /** What an obligation checks, in words: the scenario and its faults, the pattern, or the plan. */
-function Recipe({ obligation, nameOf }: { obligation: Obligation; nameOf: (id: string) => string }) {
+function Recipe({ obligation, nameOf, readable }: { obligation: Obligation; nameOf: (id: string) => string; readable: (text: string) => ReactNode }) {
   const { scenarioCheck, sourcePattern, plan, text } = obligation.recipe
   return (
     <div className="mt-1 space-y-0.5 text-xs text-muted-foreground">
-      <p>{text}</p>
+      <p>{readable(text)}</p>
       {scenarioCheck && (
         <p>
           <span className="text-foreground">Faults:</span>{' '}
@@ -445,10 +463,10 @@ function Recipe({ obligation, nameOf }: { obligation: Obligation; nameOf: (id: s
           <summary className="cursor-pointer rounded text-foreground focus-visible:outline-2 focus-visible:outline-primary">
             Plan: {plan.steps.length} {plan.steps.length === 1 ? 'step' : 'steps'}, {plan.expectedObservations.length} expected, {plan.forbiddenObservations.length} forbidden
           </summary>
-          <ol className="mt-1 list-decimal pl-5">{plan.steps.map((step, i) => <li key={i}>{step}</li>)}</ol>
+          <ol className="mt-1 list-decimal pl-5">{plan.steps.map((step, i) => <li key={i}>{readable(step)}</li>)}</ol>
           {plan.inputs.length > 0 && <p className="mt-1"><span className="text-foreground">Inputs:</span> {plan.inputs.join(' ')}</p>}
-          <p className="mt-1"><span className="text-foreground">Expected:</span> {plan.expectedObservations.join(' ')}</p>
-          {plan.forbiddenObservations.length > 0 && <p className="mt-1"><span className="text-foreground">Forbidden:</span> {plan.forbiddenObservations.join(' ')}</p>}
+          <p className="mt-1"><span className="text-foreground">Expected:</span> {readable(plan.expectedObservations.join(' '))}</p>
+          {plan.forbiddenObservations.length > 0 && <p className="mt-1"><span className="text-foreground">Forbidden:</span> {readable(plan.forbiddenObservations.join(' '))}</p>}
           {plan.contractIds.length > 0 && <p className="mt-1"><span className="text-foreground">Contracts:</span> {plan.contractIds.map(nameOf).join(', ')}</p>}
         </details>
       )}
@@ -517,5 +535,29 @@ function PlanEvidence({ projectId, promiseId, obligation, editable, revision, on
       )}
       {failure && <Failure error={failure} />}
     </div>
+  )
+}
+
+/**
+ * A server text with the IDs in it replaced by names. An ID whose part is gone shows its first
+ * eight characters, marked as an ID, with the full ID on hover.
+ */
+function Readable({ text, nameOf }: { text: string; nameOf: (id: string) => string | undefined }) {
+  return (
+    <>
+      {readableSegments(text, nameOf).map((segment, i) =>
+        segment.kind === 'id' ? (
+          <abbr
+            key={i}
+            title={`ID ${segment.id}. No part of this model has this ID now.`}
+            className="rounded bg-muted px-1 font-mono text-[0.92em] no-underline"
+          >
+            id:{segment.text}
+          </abbr>
+        ) : (
+          <span key={i}>{segment.text}</span>
+        ),
+      )}
+    </>
   )
 }

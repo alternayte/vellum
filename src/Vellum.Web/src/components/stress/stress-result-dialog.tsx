@@ -27,7 +27,7 @@ function Estimated() {
   return <span className="rounded-full border border-[var(--trace-retry)] px-1.5 py-px text-[10px] font-medium uppercase tracking-wider text-[var(--trace-retry)]">Estimated</span>
 }
 
-function Section({ id, title, estimated = true, note, children }: { id: string; title: string; estimated?: boolean; note?: string; children: ReactNode }) {
+function Section({ id, title, estimated = true, note, rule, children }: { id: string; title: string; estimated?: boolean; note?: string; rule?: string; children: ReactNode }) {
   return (
     <section aria-labelledby={id} className="space-y-1.5">
       <div className="flex flex-wrap items-center gap-2">
@@ -35,8 +35,39 @@ function Section({ id, title, estimated = true, note, children }: { id: string; 
         {estimated && <Estimated />}
       </div>
       {note && <p className="text-[11px] leading-relaxed text-muted-foreground">{note}</p>}
+      {rule && <RuleNote text={rule} />}
       {children}
     </section>
+  )
+}
+
+/**
+ * A long engine rule: the first sentence says what the rule decides; the full text, with its
+ * formulas, opens on request.
+ */
+function RuleNote({ text }: { text: string }) {
+  const [open, setOpen] = useState(false)
+  const [first, ...rest] = text.split(/(?<=\.)\s+(?=[A-Z])/)
+  return (
+    <div className="text-[11px] leading-relaxed text-muted-foreground">
+      <p>
+        {first}
+        {rest.length > 0 && (
+          <>
+            {' '}
+            <button
+              type="button"
+              aria-expanded={open}
+              onClick={() => setOpen(!open)}
+              className="rounded text-foreground underline underline-offset-2 hover:text-primary focus-visible:outline-2 focus-visible:outline-primary"
+            >
+              {open ? 'Hide the full rule' : 'Show the full rule'}
+            </button>
+          </>
+        )}
+      </p>
+      {open && <p className="mt-1 max-w-prose">{rest.join(' ')}</p>}
+    </div>
   )
 }
 
@@ -287,7 +318,7 @@ export function StressResultDialog({ projectId, profileName, run, runs, onClose 
             </p>
           )}
 
-          <Section id="stress-bottleneck" title="Bottleneck" note={[bottleneck.rule, bottleneck.growthRule].filter(Boolean).join(' ')}>
+          <Section id="stress-bottleneck" title="Bottleneck" rule={[bottleneck.rule, bottleneck.growthRule].filter(Boolean).join(' ')}>
             <BottleneckStatement result={result} resources={resources} />
           </Section>
 

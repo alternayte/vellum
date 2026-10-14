@@ -1,8 +1,9 @@
-import { useEffect } from 'react'
+import { useEffect, type ReactNode } from 'react'
 import { ChevronLeft, ChevronRight, CircleCheck, CircleX, Pause, Play, RotateCcw, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
-import { describeEvent, formatVirtualTime, notRoutedReason, traceColor, traceFamily } from '@/lib/trace'
+import { describeEvent, formatVirtualTime, notRoutedReason, traceColor, traceFamily, type TraceEventKind, type TraceFamily } from '@/lib/trace'
 import { CERTAINTY, type StepImpact } from '@/lib/impact'
 import { TRACE_SPEEDS, currentTraceEvent, useTraceStore } from '@/stores/trace-store'
 
@@ -46,7 +47,7 @@ export function TraceDock() {
               ))}
             </ul>
           </div>
-          <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={close} aria-label="Close trace">
+          <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={close} aria-label="Close trace" title="Close trace">
             <X className="h-4 w-4" />
           </Button>
         </div>
@@ -55,30 +56,41 @@ export function TraceDock() {
   }
 
   return (
+    <TooltipProvider delayDuration={300}>
     <section aria-label="Trace playback" className="border-t border-border bg-card">
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 pt-2.5">
         <div className="flex items-center gap-1">
-          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => seek(-1)} aria-label="Restart">
-            <RotateCcw className="h-3.5 w-3.5" />
-          </Button>
-          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { pause(); step(-1) }} disabled={cursor < 0} aria-label="Previous event">
-            <ChevronLeft className="h-4 w-4" />
-          </Button>
-          <Button
-            size="icon"
-            className="h-8 w-8 rounded-full"
-            onClick={playing ? pause : play}
-            disabled={total === 0}
-            aria-label={playing ? 'Pause' : 'Play'}
-          >
-            {playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4 translate-x-px" />}
-          </Button>
-          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { pause(); step(1) }} disabled={cursor >= total - 1} aria-label="Next event">
-            <ChevronRight className="h-4 w-4" />
-          </Button>
+          <DockControl label="Restart from the first event">
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => seek(-1)} aria-label="Restart">
+              <RotateCcw className="h-3.5 w-3.5" />
+            </Button>
+          </DockControl>
+          <DockControl label="Previous event">
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { pause(); step(-1) }} disabled={cursor < 0} aria-label="Previous event">
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+          </DockControl>
+          <DockControl label={playing ? 'Pause' : 'Play'}>
+            <Button
+              size="icon"
+              className="h-8 w-8 rounded-full"
+              onClick={playing ? pause : play}
+              disabled={total === 0}
+              aria-label={playing ? 'Pause' : 'Play'}
+            >
+              {playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4 translate-x-px" />}
+            </Button>
+          </DockControl>
+          <DockControl label="Next event">
+            <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => { pause(); step(1) }} disabled={cursor >= total - 1} aria-label="Next event">
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </DockControl>
         </div>
 
-        <div role="group" aria-label="Playback speed" className="flex items-center rounded-md border border-border p-0.5">
+        <div role="group" aria-label="Playback speed" className="flex items-center gap-1.5">
+          <span aria-hidden="true" className="text-[11px] text-muted-foreground">Speed</span>
+          <div className="flex items-center rounded-md border border-border p-0.5">
           {TRACE_SPEEDS.map((s) => (
             <button
               key={s}
@@ -93,12 +105,13 @@ export function TraceDock() {
               {s}×
             </button>
           ))}
+          </div>
         </div>
 
-        <p className="font-mono text-[11px] tabular-nums text-muted-foreground">
-          {Math.max(cursor + 1, 0)}/{total}
+        <p className="text-[11px] tabular-nums text-muted-foreground">
+          Event <span className="font-mono text-foreground">{Math.max(cursor + 1, 0)}</span> of <span className="font-mono">{total}</span>
           <span className="mx-1.5 text-border">|</span>
-          t = {formatVirtualTime(event?.atMs ?? 0)}
+          <span className="font-mono">t = {formatVirtualTime(event?.atMs ?? 0)}</span>
         </p>
 
         <div className="flex-1" />
@@ -136,9 +149,11 @@ export function TraceDock() {
             Declared behaviour, not a measurement
           </p>
         </div>
-        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={close} aria-label="Close trace">
-          <X className="h-4 w-4" />
-        </Button>
+        <DockControl label="Close trace">
+          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={close} aria-label="Close trace">
+            <X className="h-4 w-4" />
+          </Button>
+        </DockControl>
       </div>
 
       {impact && <AffectedSteps impact={impact.steps} change={impact.change} onSeek={(stepId) => {
@@ -167,9 +182,11 @@ export function TraceDock() {
                       // Failures are tall and square, retries are notched, the rest are bars:
                       // shape repeats what colour says.
                       family === 'failure' ? 'h-4 rounded-none' : family === 'retry' ? 'h-2 rounded-full' : 'h-3 rounded-sm',
-                      i === cursor ? 'opacity-100 ring-2 ring-foreground ring-offset-1 ring-offset-card' : i < cursor ? 'opacity-90' : 'opacity-35 group-hover:opacity-70',
+                      i === cursor
+                        ? 'opacity-100 ring-2 ring-foreground ring-offset-1 ring-offset-card'
+                        : cn(markerOpacity(family, i < cursor), 'group-hover:opacity-80'),
                     )}
-                    style={{ backgroundColor: traceColor(e.kind) }}
+                    style={{ backgroundColor: markerColor(e.kind, i === cursor) }}
                   />
                   {impact && (
                     // The step of this event is affected by the change: the line has the certainty's colour and style.
@@ -186,8 +203,9 @@ export function TraceDock() {
         </ol>
       </div>
 
-      <div className="grid gap-x-6 gap-y-2 border-t border-border px-4 py-2.5 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+      <div className="grid items-start gap-x-6 gap-y-3 border-t border-border px-4 py-2.5 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         <div className="min-w-0" aria-live="polite">
+          <h3 className={PANE_HEADING}>Event</h3>
           {event ? (
             <>
               <p className="flex items-center gap-2 text-sm text-foreground">
@@ -219,6 +237,7 @@ export function TraceDock() {
           )}
         </div>
         <div className="min-w-0">
+          <h3 className={PANE_HEADING}>Payload</h3>
           {event?.payload != null ? (
             <pre
               tabIndex={0}
@@ -228,11 +247,43 @@ export function TraceDock() {
               {JSON.stringify(event.payload, null, 2)}
             </pre>
           ) : (
-            event && <p className="text-xs text-muted-foreground">This event carries no payload.</p>
+            <p className="text-sm text-muted-foreground">{event ? 'None. This event carries no payload.' : 'Shown for the event in focus.'}</p>
           )}
         </div>
       </div>
     </section>
+    </TooltipProvider>
+  )
+}
+
+const PANE_HEADING = 'mb-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground'
+
+/** Failures and retries keep their colour on the timeline: they are what a reader looks for. */
+function meaningful(family: TraceFamily): boolean {
+  return family === 'failure' || family === 'retry'
+}
+
+/**
+ * One accent for the event in focus; the rest of the timeline is neutral, except failures and
+ * retries, whose colour carries meaning. Shape and the event sentence repeat what colour says.
+ */
+function markerColor(kind: TraceEventKind, current: boolean): string {
+  return current || meaningful(traceFamily(kind)) ? traceColor(kind) : 'var(--muted-foreground)'
+}
+
+/** Played events are stronger than the ones still to come. */
+function markerOpacity(family: TraceFamily, played: boolean): string {
+  if (meaningful(family)) return played ? 'opacity-90' : 'opacity-45'
+  return played ? 'opacity-50' : 'opacity-20'
+}
+
+/** An icon control with a text tooltip that names what it does. */
+function DockControl({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{children}</TooltipTrigger>
+      <TooltipContent side="top" sideOffset={6}>{label}</TooltipContent>
+    </Tooltip>
   )
 }
 

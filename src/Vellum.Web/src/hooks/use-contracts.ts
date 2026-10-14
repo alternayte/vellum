@@ -8,7 +8,9 @@ import {
   getApiProjectsByProjectIdChannels,
   getApiProjectsByProjectIdOperations,
   getApiProjectsByProjectIdSubscriptions,
+  patchApiProjectsByProjectIdChannelsByChannelId,
   patchApiProjectsByProjectIdOperationsByOperationId,
+  patchApiProjectsByProjectIdSubscriptionsBySubscriptionId,
   postApiProjectsByProjectIdBindings,
   postApiProjectsByProjectIdChannels,
   postApiProjectsByProjectIdOperations,
@@ -62,6 +64,13 @@ export interface Binding {
 /** The channel kinds a binding may start at and end at. The server holds the same rule. */
 export const canRouteFrom = (kind: string) => kind === 'exchange' || kind === 'topic'
 export const canRouteTo = (kind: string) => kind === 'queue' || kind === 'exchange'
+
+/**
+ * The element kinds that act as a service: they offer operations and consume subscriptions.
+ * An actor is a person or an outside party and a store holds data; the server's build slices
+ * leave both out of the services in the same way.
+ */
+export const isServiceKind = (kind: string | undefined) => kind !== 'actor' && kind !== 'store'
 
 interface Page<T> {
   items: T[]
@@ -241,6 +250,15 @@ export function useContractMutations(projectId: string, branchId?: string | null
       onSuccess: refresh('channels'),
       onError: shownInline,
     }),
+    updateChannel: useMutation({
+      mutationFn: async ({ id, ...channel }: NewChannel & { id: string }) =>
+        unwrap<Channel>(
+          await patchApiProjectsByProjectIdChannelsByChannelId({ path: { projectId, channelId: id }, query, body: channel }),
+          'The channel was not saved.',
+        ),
+      onSuccess: refresh('channels'),
+      onError: shownInline,
+    }),
     removeChannel: useMutation({
       mutationFn: async (channelId: string) =>
         unwrap<void>(
@@ -257,6 +275,20 @@ export function useContractMutations(projectId: string, branchId?: string | null
             path: { projectId },
             query,
             body: { id: crypto.randomUUID(), ...subscription },
+          }),
+          'The subscription was not saved.',
+        ),
+      onSuccess: refresh('subscriptions'),
+      onError: shownInline,
+    }),
+    updateSubscription: useMutation({
+      // A null dead-letter channel removes it: the request says so with setDeadLetterChannelId.
+      mutationFn: async ({ id, ...subscription }: NewSubscription & { id: string }) =>
+        unwrap<Subscription>(
+          await patchApiProjectsByProjectIdSubscriptionsBySubscriptionId({
+            path: { projectId, subscriptionId: id },
+            query,
+            body: { ...subscription, setDeadLetterChannelId: true },
           }),
           'The subscription was not saved.',
         ),
