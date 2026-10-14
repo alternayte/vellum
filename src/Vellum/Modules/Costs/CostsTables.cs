@@ -1,7 +1,17 @@
 using Microsoft.EntityFrameworkCore;
+using Npgsql.EntityFrameworkCore.PostgreSQL.Infrastructure;
 using Vellum.Shared;
 
 namespace Vellum.Modules.Costs;
+
+/// <summary>Where the number of a price entry came from.</summary>
+public enum PriceSourceKind
+{
+    /// <summary>A person entered the number, one at a time or in a CSV file.</summary>
+    Custom,
+    /// <summary>Vellum read the number from a provider's price API, and a person picked the row.</summary>
+    Fetched,
+}
 
 /// <summary>
 /// The cost sheet of one model branch of one project. A branch has at most one sheet; a
@@ -36,8 +46,7 @@ public class PriceEntryEntity
     public decimal UnitPrice { get; set; }
     public string Currency { get; set; } = null!;
     public DateOnly EffectiveDate { get; set; }
-    /// <summary><c>custom</c> (entered, one at a time or from a CSV file) or <c>fetched</c>.</summary>
-    public string Source { get; set; } = null!;
+    public PriceSourceKind Source { get; set; }
     /// <summary>The person who entered a custom price, or who picked the fetched row.</summary>
     public string AcceptedBy { get; set; } = null!;
     public DateTimeOffset AcceptedAt { get; set; }
@@ -75,6 +84,11 @@ public class SavedEstimateEntity
 public static class CostsTables
 {
     public const string Schema = "costs";
+
+    public static void MapEnums(NpgsqlDbContextOptionsBuilder npgsql)
+    {
+        npgsql.MapEnum<PriceSourceKind>("price_source_kind", Schema, AppDatabase.EnumLabels);
+    }
 
     public static void Configure(ModelBuilder modelBuilder)
     {

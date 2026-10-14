@@ -121,9 +121,9 @@ public class AiBudgetTests(SharedOutboundHost shared) : IClassFixture<SharedOutb
             var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             UsageRecordEntity Row(Guid id, DateTimeOffset startedAt, decimal reserved) => new()
             {
-                Id = id, WorkspaceId = ai.WorkspaceId, ProviderId = ai.ProviderId, ProviderKind = ai.Kind, Model = ai.Model,
-                Task = "proposeFlow", Purpose = "summarise", PromptTemplateVersion = "summarise/1",
-                ReservedUsd = reserved, Outcome = "started", StartedAt = startedAt,
+                Id = id, WorkspaceId = ai.WorkspaceId, ProviderId = ai.ProviderId, ProviderKind = AiUsageLedger.KindOf(ai.Kind), Model = ai.Model,
+                Task = AiUsageTask.ProposeFlow, Purpose = "summarise", PromptTemplateVersion = "summarise/1",
+                ReservedUsd = reserved, Outcome = AiCallOutcome.Started, StartedAt = startedAt,
             };
             // Older than any call can run. In the first hours of a month it lies in the month before, which the budget does not count.
             db.UsageRecords.Add(Row(crashed, now.AddHours(-3), 100m));
@@ -136,8 +136,8 @@ public class AiBudgetTests(SharedOutboundHost shared) : IClassFixture<SharedOutb
 
         var rows = await ai.RowsAsync();
         var reaped = rows.Single(r => r.Id == crashed);
-        Assert.Equal(("abandoned", null), (reaped.Outcome, reaped.ReservedUsd));
-        Assert.Equal(("started", 0.01m), (rows.Single(r => r.Id == recent).Outcome, rows.Single(r => r.Id == recent).ReservedUsd));
+        Assert.Equal(("abandoned", null), (AiUsageLedger.Label(reaped.Outcome), reaped.ReservedUsd));
+        Assert.Equal(("started", 0.01m), (AiUsageLedger.Label(rows.Single(r => r.Id == recent).Outcome), rows.Single(r => r.Id == recent).ReservedUsd));
         if (now.AddHours(-3) >= monthStart)
             Assert.IsType<AiResult<Summary>.Succeeded>(result);
     }
@@ -191,9 +191,9 @@ public class AiBudgetTests(SharedOutboundHost shared) : IClassFixture<SharedOutb
         // The provider generated text and may bill it. It reported no usable counts, so the
         // call costs the reservation's own figure: the input estimate and the whole output ceiling.
         var ceiling = kind == "anthropic" ? 256 + 8192 : 256;
-        Assert.Equal(("provider_error", "cost_estimated", null), (rows[0].Outcome, rows[0].UsageNote, rows[0].ReservedUsd));
+        Assert.Equal(("provider_error", "cost_estimated", null), (AiUsageLedger.Label(rows[0].Outcome), AiScenario.Note(rows[0].UsageNote), rows[0].ReservedUsd));
         Assert.InRange(rows[0].CostUsd!.Value, ceiling * 1000m / 1_000_000m, ceiling * 1000m / 1_000_000m + 0.01m);
-        Assert.Equal(("provider_error", "invalid_api_key", 0m, null, null), (rows[1].Outcome, rows[1].ErrorCode, rows[1].CostUsd, rows[1].UsageNote, rows[1].ReservedUsd));
+        Assert.Equal(("provider_error", "invalid_api_key", 0m, null, null), (AiUsageLedger.Label(rows[1].Outcome), rows[1].ErrorCode, rows[1].CostUsd, AiScenario.Note(rows[1].UsageNote), rows[1].ReservedUsd));
 
         var total = Assert.Single((await ai.Owner.GetFromJsonAsync<JsonObject>($"/api/workspaces/{ai.WorkspaceId}/ai/usage"))!["totals"]!.AsArray())!;
         Assert.True(total["costKnown"]!.GetValue<bool>());
@@ -217,7 +217,7 @@ public class AiBudgetTests(SharedOutboundHost shared) : IClassFixture<SharedOutb
         }
 
         var row = Assert.Single(await ai.RowsAsync());
-        Assert.Equal(("cancelled", "cost_estimated", null), (row.Outcome, row.UsageNote, row.ReservedUsd));
+        Assert.Equal(("cancelled", "cost_estimated", null), (AiUsageLedger.Label(row.Outcome), AiScenario.Note(row.UsageNote), row.ReservedUsd));
         Assert.True(row.CostUsd > 0.25m);
     }
 

@@ -217,6 +217,7 @@ internal sealed record BranchSnapshot(ModelState Model, long Version, IReadOnlyD
 public static class FlowProposals
 {
     public const string Kind = "flow";
+    internal const DesignProposalKind RowKind = DesignProposalKind.Flow;
     public const string Purpose = "propose-flow";
     public const int MaxRequestChars = 4_000;
     public const int MaxOutputTokens = 8_000;
@@ -287,11 +288,11 @@ public static class FlowProposals
         var row = new ProposalEntity
         {
             Id = Guid.NewGuid(),
-            Kind = Kind,
+            Kind = RowKind,
             WorkspaceId = caller.WorkspaceId,
             ProjectId = projectId,
             BranchId = body.BranchId,
-            Status = "draft",
+            Status = DesignProposalStatus.Draft,
             Name = output.Name,
             Request = body.Request!,
             Document = Write(document),
@@ -348,11 +349,11 @@ public static class FlowProposals
         var row = new ProposalEntity
         {
             Id = Guid.NewGuid(),
-            Kind = Kind,
+            Kind = RowKind,
             WorkspaceId = caller.WorkspaceId,
             ProjectId = projectId,
             BranchId = null,
-            Status = "draft",
+            Status = DesignProposalStatus.Draft,
             Name = output.Name,
             Request = body.Request!,
             Document = Write(document),
@@ -374,7 +375,7 @@ public static class FlowProposals
     {
         var (_, userId) = await DesignAccess.RequireAsync(http, projectId, WorkspaceRole.Viewer, ct);
         return ProposalStore.StatusFilter(status) ?? Results.Ok(await ProposalStore.ListAsync(
-            db, projectId, Kind, cursor, limit, new ProposalStore.ProposalFilter(status, submitted, mine == true ? userId : null, decided), ct));
+            db, projectId, RowKind, cursor, limit, new ProposalStore.ProposalFilter(status, submitted, mine == true ? userId : null, decided), ct));
     }
 
     /// <summary>
@@ -386,7 +387,7 @@ public static class FlowProposals
         IEventStore store, AppDbContext db, CancellationToken ct)
     {
         await DesignAccess.RequireAsync(http, projectId, WorkspaceRole.Viewer, ct);
-        var row = await db.DesignProposals.AsNoTracking().FirstOrDefaultAsync(p => p.Id == proposalId && p.ProjectId == projectId && p.Kind == Kind, ct);
+        var row = await db.DesignProposals.AsNoTracking().FirstOrDefaultAsync(p => p.Id == proposalId && p.ProjectId == projectId && p.Kind == RowKind, ct);
         if (row is null)
             return NotFound("Proposal");
 
@@ -397,7 +398,7 @@ public static class FlowProposals
         var streamId = await DesignAccess.StreamOfAsync(http, projectId, row.BranchId, ct);
         var snapshot = await BranchSnapshot.LoadAsync(store, db, projectId, streamId, ct);
         var view = Resolve(document, snapshot, await RevisedAsync(store, projectId, document, ct));
-        return Results.Ok(ToDto(row, document, view, stale: row.Status == "draft" && snapshot.Version != document.ModelVersion));
+        return Results.Ok(ToDto(row, document, view, stale: row.Status == DesignProposalStatus.Draft && snapshot.Version != document.ModelVersion));
     }
 
     /// <summary>
@@ -417,7 +418,7 @@ public static class FlowProposals
                 TextRule.Line("name", requested)?.Message ?? "A name must not be blank");
         }
 
-        var branch = await ProposalStore.BranchOfAsync(http, projectId, proposalId, Kind, ct);
+        var branch = await ProposalStore.BranchOfAsync(http, projectId, proposalId, RowKind, ct);
         if (branch is null)
             return NotFound("Proposal");
         var streamId = await DesignAccess.StreamOfAsync(http, projectId, branch.Value.BranchId, ct);
@@ -430,10 +431,10 @@ public static class FlowProposals
 
             // The stream lock comes before the row lock in every write of this feature.
             var snapshot = await BranchSnapshot.LockAsync(store, services.GetRequiredService<AppDbContext>(), projectId, streamId, ct);
-            if (await ProposalStore.LockAsync(db, projectId, proposalId, Kind, ct) is not { } row)
+            if (await ProposalStore.LockAsync(db, projectId, proposalId, RowKind, ct) is not { } row)
                 return NotFound("Proposal");
-            if (row.Status != "draft")
-                return Conflict($"The proposal is {row.Status}. A decided proposal does not change.");
+            if (row.Status != DesignProposalStatus.Draft)
+                return Conflict($"The proposal is {EnumText.Of(row.Status)}. A decided proposal does not change.");
 
             var document = Read(row);
             var revised = await RevisedAsync(store, projectId, document, ct);
@@ -489,7 +490,7 @@ public static class FlowProposals
             if (written is not CommandResult<Scenario>.Success)
                 return written is CommandResult<Scenario>.NotFound gone ? Conflict(gone.Message) : written.ToHttpResult();
 
-            row.Status = "accepted";
+            row.Status = DesignProposalStatus.Accepted;
             row.Name = scenario.Name;
             row.DecidedBy = userId;
             row.DecidedAt = time.GetUtcNow();
@@ -507,10 +508,10 @@ public static class FlowProposals
         var (_, userId) = await DesignAccess.RequireAsync(http, projectId, WorkspaceRole.Editor, ct);
 
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
-        if (await ProposalStore.LockAsync(db, projectId, proposalId, Kind, ct) is not { } row)
+        if (await ProposalStore.LockAsync(db, projectId, proposalId, RowKind, ct) is not { } row)
             return NotFound("Proposal");
-        if (row.Status != "draft")
-            return Conflict($"The proposal is {row.Status}. A decided proposal does not change.");
+        if (row.Status != DesignProposalStatus.Draft)
+            return Conflict($"The proposal is {EnumText.Of(row.Status)}. A decided proposal does not change.");
 
         // A rejection writes nothing to the model, so it reads the branch without a lock.
         var document = Read(row);
@@ -518,7 +519,7 @@ public static class FlowProposals
         var snapshot = await BranchSnapshot.LoadAsync(store, db, projectId, streamId, ct);
         var view = Resolve(document, snapshot, await RevisedAsync(store, projectId, document, ct));
 
-        row.Status = "rejected";
+        row.Status = DesignProposalStatus.Rejected;
         row.DecidedBy = userId;
         row.DecidedAt = time.GetUtcNow();
         document = Decide(document, view);
@@ -534,10 +535,10 @@ public static class FlowProposals
         await DesignAccess.RequireAsync(http, projectId, WorkspaceRole.Editor, ct);
 
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
-        if (await ProposalStore.LockAsync(db, projectId, proposalId, Kind, ct) is not { } row)
+        if (await ProposalStore.LockAsync(db, projectId, proposalId, RowKind, ct) is not { } row)
             return NotFound("Proposal");
-        if (row.Status != "draft")
-            return Conflict($"The proposal is {row.Status}. Only a draft can be deleted.");
+        if (row.Status != DesignProposalStatus.Draft)
+            return Conflict($"The proposal is {EnumText.Of(row.Status)}. Only a draft can be deleted.");
 
         db.DesignProposals.Remove(row);
         await db.SaveChangesAsync(ct);
@@ -555,7 +556,7 @@ public static class FlowProposals
         Guid projectId, Guid proposalId, string alias, HttpContext http, TimeProvider time, CancellationToken ct)
     {
         await DesignAccess.RequireAsync(http, projectId, WorkspaceRole.Editor, ct);
-        var branch = await ProposalStore.BranchOfAsync(http, projectId, proposalId, Kind, ct);
+        var branch = await ProposalStore.BranchOfAsync(http, projectId, proposalId, RowKind, ct);
         if (branch is null)
             return NotFound("Proposal");
         var (caller, refusal) = await DesignAccess.ResolveAsync(http, projectId, branch.Value.BranchId, WorkspaceRole.Editor, forWrite: true, ct);
@@ -569,10 +570,10 @@ public static class FlowProposals
             var store = services.GetRequiredService<IEventStore>().ForProject(projectId).UseDbContext(db);
 
             var snapshot = await BranchSnapshot.LockAsync(store, db, projectId, caller.StreamId, ct);
-            if (await ProposalStore.LockAsync(db, projectId, proposalId, Kind, ct) is not { } row)
+            if (await ProposalStore.LockAsync(db, projectId, proposalId, RowKind, ct) is not { } row)
                 return NotFound("Proposal");
-            if (row.Status != "draft")
-                return Conflict($"The proposal is {row.Status}. A decided proposal does not change.");
+            if (row.Status != DesignProposalStatus.Draft)
+                return Conflict($"The proposal is {EnumText.Of(row.Status)}. A decided proposal does not change.");
 
             var document = Read(row);
             var revised = await RevisedAsync(store, projectId, document, ct);
@@ -832,7 +833,7 @@ public static class FlowProposals
     private static string Write(FlowDocument document) => JsonSerializer.Serialize(document, DesignJson.Options);
 
     private static FlowProposalDto ToDto(ProposalEntity row, FlowDocument document, FlowView view, bool stale) => new(
-        row.Id, row.ProjectId, row.BranchId, row.Request, row.Status,
+        row.Id, row.ProjectId, row.BranchId, row.Request, EnumText.Of(row.Status),
         row.Name, document.Output.Summary, document.Output.ReasoningSummary, document.Output.OpenQuestions,
         view.Scenario with { Name = row.Name }, view.BlockedSteps, view.Missing, view.ResolvedToExisting, view.RejectedReferences, view.Issues,
         view.Preview, view.Diff, view.Evidence, document.ReviseScenarioId, document.ModelVersion, stale,
@@ -854,7 +855,7 @@ internal static class ProposalStore
     private const int DraftLockSpace = 0x41494450;
 
     public static async Task<bool> DraftsFullAsync(AppDbContext db, Guid projectId, CancellationToken ct) =>
-        await db.DesignProposals.CountAsync(p => p.ProjectId == projectId && p.Status == "draft", ct) >= MaxDraftsPerProject;
+        await db.DesignProposals.CountAsync(p => p.ProjectId == projectId && p.Status == DesignProposalStatus.Draft, ct) >= MaxDraftsPerProject;
 
     public static IResult TooManyDrafts() => Results.Conflict(new ErrorResponse(
         "too_many_drafts",
@@ -870,7 +871,7 @@ internal static class ProposalStore
     {
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         await db.Database.ExecuteSqlAsync($"SELECT pg_advisory_xact_lock({DraftLockSpace}, hashtext({row.ProjectId.ToString()}))", ct);
-        if (row.Status == "draft" && await DraftsFullAsync(db, row.ProjectId, ct))
+        if (row.Status == DesignProposalStatus.Draft && await DraftsFullAsync(db, row.ProjectId, ct))
             return false;
 
         db.DesignProposals.Add(row);
@@ -895,18 +896,19 @@ internal static class ProposalStore
 
     /// <summary>The newest first. The cursor is the creation time and the ID of the last item of a page.</summary>
     public static async Task<Page<ProposalSummary>> ListAsync(
-        AppDbContext db, Guid projectId, string kind, string? cursor, int? limit, ProposalFilter filter, CancellationToken ct)
+        AppDbContext db, Guid projectId, DesignProposalKind kind, string? cursor, int? limit, ProposalFilter filter, CancellationToken ct)
     {
         var pageSize = Math.Clamp(limit ?? 50, 1, 200);
         var query = db.DesignProposals.AsNoTracking().Where(p => p.ProjectId == projectId && p.Kind == kind);
-        if (filter.Status is { } status)
+        // StatusFilter refused any other text, so the status parses.
+        if (filter.Status is { } text && EnumText.TryParse<DesignProposalStatus>(text, out var status))
             query = query.Where(p => p.Status == status);
         if (filter.Submitted is { } wanted)
             query = query.Where(p => (p.Origin != null) == wanted);
         if (filter.CreatedBy is { } creator)
             query = query.Where(p => p.CreatedBy == creator);
         if (filter.Decided is { } decided)
-            query = query.Where(p => (p.Status != "draft") == decided);
+            query = query.Where(p => (p.Status != DesignProposalStatus.Draft) == decided);
 
         if (CursorEncoder.DecodeNumber(cursor) is { } decoded)
         {
@@ -923,9 +925,9 @@ internal static class ProposalStore
             .Select(p => new
             {
                 Summary = new ProposalSummary(
-                    p.Id, p.Status, p.Name, p.Request, p.BranchId, p.CreatedBy, p.CreatedAt, p.DecidedBy, p.DecidedAt, p.Origin ?? SubmittedProposal.AiOrigin),
+                    p.Id, EnumText.Of(p.Status), p.Name, p.Request, p.BranchId, p.CreatedBy, p.CreatedAt, p.DecidedBy, p.DecidedAt, p.Origin ?? SubmittedProposal.AiOrigin),
                 // Additions are decided item by item: the counts come from the document.
-                Document = kind == ArchitectureProposals.Kind ? p.Document : null,
+                Document = kind == DesignProposalKind.Architecture ? p.Document : null,
             })
             .ToListAsync(ct);
         var items = rows.Select(r => r.Document is null ? r.Summary : ArchitectureProposals.WithCounts(r.Summary, r.Document)).ToList();
@@ -947,7 +949,7 @@ internal static class ProposalStore
     /// no such proposal.
     /// </summary>
     public static async Task<(Guid? BranchId, bool Found)?> BranchOfAsync(
-        HttpContext http, Guid projectId, Guid proposalId, string kind, CancellationToken ct)
+        HttpContext http, Guid projectId, Guid proposalId, DesignProposalKind kind, CancellationToken ct)
     {
         var found = await http.RequestServices.GetRequiredService<AppDbContext>().DesignProposals.AsNoTracking()
             .Where(p => p.Id == proposalId && p.ProjectId == projectId && p.Kind == kind)
@@ -957,7 +959,7 @@ internal static class ProposalStore
     }
 
     /// <summary>The proposal row, locked until the caller's transaction ends. Null when the project has no such proposal.</summary>
-    public static async Task<ProposalEntity?> LockAsync(AppDbContext db, Guid projectId, Guid proposalId, string kind, CancellationToken ct) =>
+    public static async Task<ProposalEntity?> LockAsync(AppDbContext db, Guid projectId, Guid proposalId, DesignProposalKind kind, CancellationToken ct) =>
         // Read as a list: a further operator would wrap the statement, and the lock clause belongs to the outer query.
         (await db.DesignProposals
             .FromSql($"SELECT * FROM ai.design_proposals WHERE id = {proposalId} AND project_id = {projectId} AND kind = {kind} FOR UPDATE")

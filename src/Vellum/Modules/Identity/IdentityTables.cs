@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Npgsql.EntityFrameworkCore.PostgreSQL.Infrastructure;
+using Vellum.Shared;
 using Vellum.Modules.Identity.AgentTokens;
 using System.Buffers.Text;
 using System.Security.Cryptography;
@@ -19,6 +21,11 @@ public static class IdentityTables
     public const string Schema = "identity";
 
     /// <summary>Runs after the Identity base class has configured its own entity types.</summary>
+    public static void MapEnums(NpgsqlDbContextOptionsBuilder npgsql)
+    {
+        npgsql.MapEnum<AgentScope>("agent_scope", Schema, AppDatabase.EnumLabels);
+    }
+
     public static void Configure(ModelBuilder builder)
     {
         // Identity names its tables and indexes AspNetUsers, EmailIndex and so on. Here they
@@ -65,7 +72,7 @@ public class AgentTokenEntity
     /// <summary>The one project the token works on, or null for every project of the workspace.</summary>
     public Guid? ProjectId { get; set; }
     public string Name { get; set; } = null!;
-    public string[] Scopes { get; set; } = [];
+    public AgentScope[] Scopes { get; set; } = [];
     public byte[] TokenHash { get; set; } = null!;
     public string MasterKeyId { get; set; } = null!;
     /// <summary>The user the token acts for. The token has no more access than this user's role gives.</summary>

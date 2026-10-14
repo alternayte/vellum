@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json.Nodes;
+using Vellum.Modules.Ai;
 using Vellum.Modules.Ai.Design;
 using Vellum.Tests.Shared.Outbound;
 using static Vellum.Tests.Modules.Ai.Design.DesignKit;
@@ -140,7 +141,7 @@ public class ArchitectureAndExplainTests(SharedOutboundHost shared) : IClassFixt
         var listed = await GetAsync(ai.Owner, Url(projectId, "ai/architecture-proposals"));
         Assert.Equal(((Guid)proposal["id"]!, "decided"), ((Guid)listed["items"]![0]!["id"]!, (string)listed["items"]![0]!["status"]!));
         var row = Assert.Single(await ai.RowsAsync());
-        Assert.Equal(("inferArchitecture", "infer-architecture", DesignPrompts.InferArchitectureVersion), (row.Task, row.Purpose, row.PromptTemplateVersion));
+        Assert.Equal(("inferArchitecture", "infer-architecture", DesignPrompts.InferArchitectureVersion), (AiUsageLedger.TaskText(row.Task), row.Purpose, row.PromptTemplateVersion));
     }
 
     [Fact]
@@ -230,7 +231,7 @@ public class ArchitectureAndExplainTests(SharedOutboundHost shared) : IClassFixt
         Assert.DoesNotContain(model.All, id => sent.Contains(id.ToString(), StringComparison.OrdinalIgnoreCase));
 
         var row = Assert.Single(await ai.RowsAsync());
-        Assert.Equal(("explain", "explain", DesignPrompts.ExplainVersion, "succeeded"), (row.Task, row.Purpose, row.PromptTemplateVersion, row.Outcome));
+        Assert.Equal(("explain", "explain", DesignPrompts.ExplainVersion, "succeeded"), (AiUsageLedger.TaskText(row.Task), row.Purpose, row.PromptTemplateVersion, AiUsageLedger.Label(row.Outcome)));
         Assert.Equal(versionBefore, await ModelVersionAsync(_host, projectId));
         Assert.Empty((await GetAsync(ai.Owner, Url(projectId, "ai/flow-proposals")))["items"]!.AsArray());
     }
@@ -249,7 +250,7 @@ public class ArchitectureAndExplainTests(SharedOutboundHost shared) : IClassFixt
         Assert.Equal("provider_error", (string)events[^1]["error"]!["code"]!);
         Assert.False(string.IsNullOrWhiteSpace((string)events[^1]["error"]!["message"]!));
         Assert.DoesNotContain(events, e => e.ContainsKey("done"));
-        Assert.Equal(["provider_error"], (await ai.RowsAsync()).Select(r => r.Outcome));
+        Assert.Equal(["provider_error"], (await ai.RowsAsync()).Select(r => AiUsageLedger.Label(r.Outcome)));
     }
 
     [Fact]
@@ -286,9 +287,9 @@ public class ArchitectureAndExplainTests(SharedOutboundHost shared) : IClassFixt
         response.Dispose();
 
         // The server sees the reader leave, stops reading the provider and closes the usage row.
-        for (var i = 0; i < 100 && (await ai.RowsAsync()).SingleOrDefault()?.Outcome != "cancelled"; i++)
+        for (var i = 0; i < 100 && (await ai.RowsAsync()).SingleOrDefault()?.Outcome != AiCallOutcome.Cancelled; i++)
             await Task.Delay(100);
-        Assert.Equal(["cancelled"], (await ai.RowsAsync()).Select(r => r.Outcome));
+        Assert.Equal(["cancelled"], (await ai.RowsAsync()).Select(r => AiUsageLedger.Label(r.Outcome)));
         Assert.True(body.Disposed);
     }
 

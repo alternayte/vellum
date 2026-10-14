@@ -6,6 +6,10 @@ using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
+using Vellum.Modules.Ai;
+using Vellum.Modules.Costs;
+using Vellum.Modules.Identity.AgentTokens;
+using Vellum.Modules.LoadTests;
 using Vellum.Modules.Workspaces;
 using Vellum.Shared;
 
@@ -14,7 +18,7 @@ using Vellum.Shared;
 namespace Vellum.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20261014184239_Initial")]
+    [Migration("20261014185429_Initial")]
     partial class Initial
     {
         /// <inheritdoc />
@@ -25,6 +29,15 @@ namespace Vellum.Migrations
                 .HasAnnotation("ProductVersion", "10.0.9")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
+            NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "ai", "ai_call_outcome", new[] { "abandoned", "cancelled", "failed", "invalid_output", "provider_error", "rate_limited", "refused", "started", "succeeded", "timed_out", "truncated" });
+            NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "ai", "ai_provider_kind", new[] { "anthropic", "gemini", "openai", "openai_compatible" });
+            NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "ai", "ai_usage_note", new[] { "cost_estimated", "reaped", "schema_rejected_fallback", "usage_out_of_range" });
+            NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "ai", "ai_usage_task", new[] { "critique", "explain", "infer_architecture", "propose_flow", "test" });
+            NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "ai", "design_proposal_kind", new[] { "architecture", "flow" });
+            NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "ai", "design_proposal_status", new[] { "accepted", "decided", "draft", "rejected" });
+            NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "costs", "price_source_kind", new[] { "custom", "fetched" });
+            NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "identity", "agent_scope", new[] { "export", "propose", "read", "scan_pull_request" });
+            NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "loadtests", "target_environment", new[] { "development", "production", "staging", "test" });
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "workspaces", "invitation_status", new[] { "accepted", "declined", "expired", "pending", "revoked" });
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "workspaces", "workspace_role", new[] { "editor", "owner", "viewer" });
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
@@ -230,10 +243,8 @@ namespace Vellum.Migrations
                         .HasColumnType("numeric(18,8)")
                         .HasColumnName("output_usd_per_million_tokens");
 
-                    b.Property<string>("ProviderKind")
-                        .IsRequired()
-                        .HasMaxLength(40)
-                        .HasColumnType("character varying(40)")
+                    b.Property<AiProviderKind>("ProviderKind")
+                        .HasColumnType("ai.ai_provider_kind")
                         .HasColumnName("provider_kind");
 
                     b.HasKey("Id")
@@ -280,10 +291,8 @@ namespace Vellum.Migrations
                         .HasColumnType("text")
                         .HasColumnName("document");
 
-                    b.Property<string>("Kind")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)")
+                    b.Property<DesignProposalKind>("Kind")
+                        .HasColumnType("ai.design_proposal_kind")
                         .HasColumnName("kind");
 
                     b.Property<string>("Name")
@@ -307,10 +316,8 @@ namespace Vellum.Migrations
                         .HasColumnType("character varying(4000)")
                         .HasColumnName("request");
 
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)")
+                    b.Property<DesignProposalStatus>("Status")
+                        .HasColumnType("ai.design_proposal_status")
                         .HasColumnName("status");
 
                     b.Property<Guid>("WorkspaceId")
@@ -360,10 +367,8 @@ namespace Vellum.Migrations
                         .HasColumnType("character varying(200)")
                         .HasColumnName("model");
 
-                    b.Property<string>("Outcome")
-                        .IsRequired()
-                        .HasMaxLength(40)
-                        .HasColumnType("character varying(40)")
+                    b.Property<AiCallOutcome>("Outcome")
+                        .HasColumnType("ai.ai_call_outcome")
                         .HasColumnName("outcome");
 
                     b.Property<int?>("OutputTokens")
@@ -380,10 +385,8 @@ namespace Vellum.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("provider_id");
 
-                    b.Property<string>("ProviderKind")
-                        .IsRequired()
-                        .HasMaxLength(40)
-                        .HasColumnType("character varying(40)")
+                    b.Property<AiProviderKind>("ProviderKind")
+                        .HasColumnType("ai.ai_provider_kind")
                         .HasColumnName("provider_kind");
 
                     b.Property<string>("Purpose")
@@ -406,15 +409,12 @@ namespace Vellum.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("started_at");
 
-                    b.Property<string>("Task")
-                        .IsRequired()
-                        .HasMaxLength(40)
-                        .HasColumnType("character varying(40)")
+                    b.Property<AiUsageTask>("Task")
+                        .HasColumnType("ai.ai_usage_task")
                         .HasColumnName("task");
 
-                    b.Property<string>("UsageNote")
-                        .HasMaxLength(40)
-                        .HasColumnType("character varying(40)")
+                    b.Property<AiUsageNote?>("UsageNote")
+                        .HasColumnType("ai.ai_usage_note")
                         .HasColumnName("usage_note");
 
                     b.Property<Guid>("WorkspaceId")
@@ -489,9 +489,8 @@ namespace Vellum.Migrations
                         .HasColumnType("text")
                         .HasColumnName("sku");
 
-                    b.Property<string>("Source")
-                        .IsRequired()
-                        .HasColumnType("text")
+                    b.Property<PriceSourceKind>("Source")
+                        .HasColumnType("costs.price_source_kind")
                         .HasColumnName("source");
 
                     b.Property<string>("SourceUrl")
@@ -897,9 +896,9 @@ namespace Vellum.Migrations
                         .HasColumnType("character varying(450)")
                         .HasColumnName("revoked_by");
 
-                    b.PrimitiveCollection<string[]>("Scopes")
+                    b.PrimitiveCollection<AgentScope[]>("Scopes")
                         .IsRequired()
-                        .HasColumnType("text[]")
+                        .HasColumnType("identity.agent_scope[]")
                         .HasColumnName("scopes");
 
                     b.Property<byte[]>("TokenHash")
@@ -1837,9 +1836,8 @@ namespace Vellum.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("ended_at");
 
-                    b.Property<string>("Environment")
-                        .IsRequired()
-                        .HasColumnType("text")
+                    b.Property<StoredTargetEnvironment>("Environment")
+                        .HasColumnType("loadtests.target_environment")
                         .HasColumnName("environment");
 
                     b.Property<string>("Format")
@@ -1949,9 +1947,8 @@ namespace Vellum.Migrations
                         .HasColumnType("text")
                         .HasColumnName("created_by");
 
-                    b.Property<string>("Environment")
-                        .IsRequired()
-                        .HasColumnType("text")
+                    b.Property<StoredTargetEnvironment>("Environment")
+                        .HasColumnType("loadtests.target_environment")
                         .HasColumnName("environment");
 
                     b.Property<string>("Hash")

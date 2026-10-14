@@ -1,4 +1,8 @@
+using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
+using Npgsql.EntityFrameworkCore.PostgreSQL.Infrastructure;
+using NpgsqlTypes;
+using Vellum.Shared;
 
 namespace Vellum.Modules.Ai;
 
@@ -10,12 +14,12 @@ public class UsageRecordEntity
     public Guid Id { get; set; }
     public Guid WorkspaceId { get; set; }
     public Guid ProviderId { get; set; }
-    public string ProviderKind { get; set; } = null!;
+    public AiProviderKind ProviderKind { get; set; }
     /// <summary>The model name from settings.</summary>
     public string Model { get; set; } = null!;
     /// <summary>The model id or version the provider reported.</summary>
     public string? ReportedModel { get; set; }
-    public string Task { get; set; } = null!;
+    public AiUsageTask Task { get; set; }
     public string Purpose { get; set; } = null!;
     public string PromptTemplateVersion { get; set; } = null!;
     /// <summary>Null when the provider did not report it, or reported a number that is not a sane count.</summary>
@@ -39,14 +43,14 @@ public class UsageRecordEntity
     /// <c>cancelled</c>, <c>failed</c> (an exception inside Vellum), or <c>abandoned</c> (the
     /// process died during the call and a later admission released the row).
     /// </summary>
-    public string Outcome { get; set; } = null!;
+    public AiCallOutcome Outcome { get; set; }
     /// <summary>
     /// Null, or why the cost and the counts are not the provider's own: <c>cost_estimated</c>
     /// (a count was missing), <c>usage_out_of_range</c> (a count was negative or absurd and
     /// was dropped), <c>reaped</c> (the row was abandoned) or <c>schema_rejected_fallback</c>
     /// (the provider rejected its structured-output mode, and this call sent the schema in the prompt).
     /// </summary>
-    public string? UsageNote { get; set; }
+    public AiUsageNote? UsageNote { get; set; }
     public string? ErrorCode { get; set; }
     public DateTimeOffset StartedAt { get; set; }
     public string? ActorId { get; set; }
@@ -56,7 +60,7 @@ public class UsageRecordEntity
 public class ModelPriceEntity
 {
     public Guid Id { get; set; }
-    public string ProviderKind { get; set; } = null!;
+    public AiProviderKind ProviderKind { get; set; }
     public string Model { get; set; } = null!;
     public decimal InputUsdPerMillionTokens { get; set; }
     public decimal OutputUsdPerMillionTokens { get; set; }
@@ -75,13 +79,13 @@ public class ProposalEntity
 {
     public Guid Id { get; set; }
     /// <summary><c>flow</c> or <c>architecture</c>.</summary>
-    public string Kind { get; set; } = null!;
+    public DesignProposalKind Kind { get; set; }
     public Guid WorkspaceId { get; set; }
     public Guid ProjectId { get; set; }
     /// <summary>Null for the main model, else the draft or variant the proposal was made on.</summary>
     public Guid? BranchId { get; set; }
     /// <summary>A flow: <c>draft</c>, <c>accepted</c> or <c>rejected</c>. Additions: <c>draft</c> while an item is pending, then <c>decided</c>.</summary>
-    public string Status { get; set; } = null!;
+    public DesignProposalStatus Status { get; set; }
     public string Name { get; set; } = null!;
     /// <summary>The person's request text.</summary>
     public string Request { get; set; } = null!;
@@ -98,10 +102,93 @@ public class ProposalEntity
     public DateTimeOffset? DecidedAt { get; set; }
 }
 
+/// <summary>
+/// The kind of provider a call went to. The settings documents name a kind as text
+/// (<see cref="Settings.AiProviderKinds"/>); <see cref="EnumText"/> gives that text.
+/// </summary>
+public enum AiProviderKind
+{
+    Anthropic,
+    [JsonStringEnumMemberName("openai"), PgName("openai")]
+    OpenAi,
+    Gemini,
+    [JsonStringEnumMemberName("openai-compatible"), PgName("openai_compatible")]
+    OpenAiCompatible,
+}
+
+/// <summary>
+/// What a call was for: an <see cref="AiTask"/>, or <see cref="Test"/> for the connection
+/// test of a provider. The HTTP API writes it in camelCase (<see cref="AiUsageLedger.TaskText"/>).
+/// </summary>
+public enum AiUsageTask
+{
+    InferArchitecture,
+    ProposeFlow,
+    Critique,
+    Explain,
+    Test,
+}
+
+/// <summary>How a call ended. <see cref="Started"/> while it runs.</summary>
+public enum AiCallOutcome
+{
+    Started,
+    Succeeded,
+    InvalidOutput,
+    Truncated,
+    Refused,
+    ProviderError,
+    RateLimited,
+    TimedOut,
+    Cancelled,
+    /// <summary>An exception inside Vellum.</summary>
+    Failed,
+    /// <summary>The process died during the call, and a later admission released the row.</summary>
+    Abandoned,
+}
+
+/// <summary>Why the cost and the counts of a call are not the provider's own, or how the call was made.</summary>
+public enum AiUsageNote
+{
+    /// <summary>A count was missing.</summary>
+    CostEstimated,
+    /// <summary>A count was negative or absurd and was dropped.</summary>
+    UsageOutOfRange,
+    /// <summary>The row was abandoned.</summary>
+    Reaped,
+    /// <summary>The provider rejected its structured-output mode, and this call sent the schema in the prompt.</summary>
+    SchemaRejectedFallback,
+}
+
+public enum DesignProposalKind
+{
+    Flow,
+    Architecture,
+}
+
+/// <summary>A flow: draft, accepted or rejected. Additions: draft while an item is pending, then decided.</summary>
+public enum DesignProposalStatus
+{
+    Draft,
+    Accepted,
+    Rejected,
+    Decided,
+}
+
 /// <summary>The tables of the module, in the Postgres schema <c>ai</c>.</summary>
 public static class AiTables
 {
     public const string Schema = "ai";
+
+    public static void MapEnums(NpgsqlDbContextOptionsBuilder npgsql)
+    {
+        npgsql.MapEnum<AiProviderKind>("ai_provider_kind", Schema, AppDatabase.EnumLabels);
+        npgsql.MapEnum<AiUsageTask>("ai_usage_task", Schema, AppDatabase.EnumLabels);
+        npgsql.MapEnum<AiCallOutcome>("ai_call_outcome", Schema, AppDatabase.EnumLabels);
+        npgsql.MapEnum<AiUsageNote>("ai_usage_note", Schema, AppDatabase.EnumLabels);
+        npgsql.MapEnum<DesignProposalKind>("design_proposal_kind", Schema, AppDatabase.EnumLabels);
+        npgsql.MapEnum<DesignProposalStatus>("design_proposal_status", Schema, AppDatabase.EnumLabels);
+    }
 
     public static void Configure(ModelBuilder modelBuilder)
     {
@@ -110,17 +197,13 @@ public static class AiTables
             b.ToTable("usage_records", Schema);
             b.HasKey(r => r.Id);
             b.Property(r => r.Id).ValueGeneratedNever();
-            b.Property(r => r.ProviderKind).HasMaxLength(40);
             b.Property(r => r.Model).HasMaxLength(200);
             b.Property(r => r.ReportedModel).HasMaxLength(200);
-            b.Property(r => r.Task).HasMaxLength(40);
             b.Property(r => r.Purpose).HasMaxLength(100);
             b.Property(r => r.PromptTemplateVersion).HasMaxLength(100);
             b.Property(r => r.CostUsd).HasPrecision(18, 8);
             b.Property(r => r.ReservedUsd).HasPrecision(18, 8);
-            b.Property(r => r.Outcome).HasMaxLength(40);
             b.Property(r => r.ErrorCode).HasMaxLength(60);
-            b.Property(r => r.UsageNote).HasMaxLength(40);
             b.HasIndex(r => new { r.WorkspaceId, r.StartedAt });
             b.HasIndex(r => new { r.WorkspaceId, r.ProviderId, r.StartedAt });
         });
@@ -130,7 +213,6 @@ public static class AiTables
             b.ToTable("model_prices", Schema);
             b.HasKey(p => p.Id);
             b.Property(p => p.Id).ValueGeneratedNever();
-            b.Property(p => p.ProviderKind).HasMaxLength(40);
             b.Property(p => p.Model).HasMaxLength(200);
             b.Property(p => p.InputUsdPerMillionTokens).HasPrecision(18, 8);
             b.Property(p => p.OutputUsdPerMillionTokens).HasPrecision(18, 8);
@@ -143,8 +225,6 @@ public static class AiTables
             b.ToTable("design_proposals", Schema);
             b.HasKey(p => p.Id);
             b.Property(p => p.Id).ValueGeneratedNever();
-            b.Property(p => p.Kind).HasMaxLength(20);
-            b.Property(p => p.Status).HasMaxLength(20);
             b.Property(p => p.Name).HasMaxLength(200);
             b.Property(p => p.Request).HasMaxLength(4000);
             // Text, not jsonb: jsonb drops a duplicate key and rewrites a number, and a payload

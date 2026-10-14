@@ -52,7 +52,7 @@ public class AiVendorShapeTests(SharedOutboundHost shared) : IClassFixture<Share
         Assert.Null(failure);
         Assert.Equal(["Hello", " world"], chunks);
         var row = Assert.Single(await ai.RowsAsync());
-        Assert.Equal(("succeeded", 21, 9), (row.Outcome, row.InputTokens, row.OutputTokens));
+        Assert.Equal(("succeeded", 21, 9), (AiUsageLedger.Label(row.Outcome), row.InputTokens, row.OutputTokens));
     }
 
     [Theory]
@@ -92,7 +92,7 @@ public class AiVendorShapeTests(SharedOutboundHost shared) : IClassFixture<Share
         Assert.Null(failure);
         Assert.Equal(["Hello", " world"], chunks);
         var row = Assert.Single(await ai.RowsAsync());
-        Assert.Equal(("succeeded", 21, 9), (row.Outcome, row.InputTokens, row.OutputTokens));
+        Assert.Equal(("succeeded", 21, 9), (AiUsageLedger.Label(row.Outcome), row.InputTokens, row.OutputTokens));
     }
 
     [Theory]
@@ -114,7 +114,7 @@ public class AiVendorShapeTests(SharedOutboundHost shared) : IClassFixture<Share
         var failure = FailureOf(await ai.StructuredAsync());
 
         var row = Assert.Single(await ai.RowsAsync());
-        Assert.Equal(outcome, row.Outcome);
+        Assert.Equal(outcome, AiUsageLedger.Label(row.Outcome));
         switch (failure)
         {
             case AiFailure.Refused refused:

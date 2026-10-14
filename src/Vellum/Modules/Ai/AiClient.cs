@@ -125,7 +125,7 @@ public sealed class AiClient(
     /// request is sent once more with the schema in the prompt, the mode that a provider
     /// without structured output gets. The rejected call costs nothing and is metered as a
     /// provider error; every call after it carries the usage note
-    /// <see cref="AiUsageLedger.NoteSchemaFallback"/>.
+    /// <see cref="AiUsageNote.SchemaRejectedFallback"/>.
     /// </para>
     /// </summary>
     /// <exception cref="ArgumentException">The request has no schema, or the schema is not a JSON Schema.</exception>
@@ -143,17 +143,17 @@ public sealed class AiClient(
         var totals = new Totals(route);
         var messages = prompt.Messages;
         IReadOnlyList<string> issues = [];
-        string? note = null;
+        AiUsageNote? note = null;
 
         for (var attempt = 0; attempt <= MaxRepairs; attempt++)
         {
             T? value = default;
-            var (reply, failure) = await CallAsync(route, request, TaskName(request.Task), prompt, messages, native, totals, answer =>
+            var (reply, failure) = await CallAsync(route, request, AiUsageLedger.TaskOf(request.Task), prompt, messages, native, totals, answer =>
             {
                 if (Failure(answer, request.MaxOutputTokens) is not null)
                     return Outcome(answer);
                 issues = schema.Check(answer.Text, lenient: !native, out value);
-                return issues.Count == 0 ? "succeeded" : "invalid_output";
+                return issues.Count == 0 ? AiCallOutcome.Succeeded : AiCallOutcome.InvalidOutput;
             }, ct, note);
             if (reply is null)
                 return new AiResult<T>.Failed(failure!);
@@ -162,7 +162,7 @@ public sealed class AiClient(
             if (native && reply.Error is { Code: RejectedRequest })
             {
                 native = false;
-                note = AiUsageLedger.NoteSchemaFallback;
+                note = AiUsageNote.SchemaRejectedFallback;
                 prompt = PromptAssembler.Build(request, askForJsonInPrompt: true);
                 messages = prompt.Messages;
                 attempt--;
@@ -199,7 +199,7 @@ public sealed class AiClient(
 
         if (!route.Provider.SupportsStreaming)
         {
-            var (whole, refused) = await CallAsync(route, request, TaskName(request.Task), prompt, prompt.Messages, native: false, totals, Outcome, ct);
+            var (whole, refused) = await CallAsync(route, request, AiUsageLedger.TaskOf(request.Task), prompt, prompt.Messages, native: false, totals, Outcome, ct);
             if (whole is null)
                 throw new AiStreamFailedException(refused!);
             if (Failure(whole, request.MaxOutputTokens) is { } stopped)
@@ -210,7 +210,7 @@ public sealed class AiClient(
             yield break;
         }
 
-        var (ticket, admission) = await ledger.BeginAsync(Start(route, request, TaskName(request.Task), prompt, prompt.Messages, null), ct);
+        var (ticket, admission) = await ledger.BeginAsync(Start(route, request, AiUsageLedger.TaskOf(request.Task), prompt, prompt.Messages, null), ct);
         if (ticket is null)
             throw new AiStreamFailedException(admission!);
 
@@ -238,7 +238,7 @@ public sealed class AiClient(
             // Every way out of the stream ends the call's reservation: a complete answer, a
             // provider failure, a cancelled token, a reader that stopped, and an exception.
             // Without a terminal event the caller cancelled or stopped reading.
-            await CompleteAsync(route, request, ticket, end, end is null ? "cancelled" : Outcome(end), progress, totals);
+            await CompleteAsync(route, request, ticket, end, end is null ? AiCallOutcome.Cancelled : Outcome(end), progress, totals);
         }
 
         if (end is null)
@@ -299,12 +299,12 @@ public sealed class AiClient(
         {
             var prompt = PromptAssembler.Build(request, askForJsonInPrompt: !native);
             var valid = false;
-            var (reply, failure) = await CallAsync(route, request, "test", prompt, prompt.Messages, native, totals, answer =>
+            var (reply, failure) = await CallAsync(route, request, AiUsageTask.Test, prompt, prompt.Messages, native, totals, answer =>
             {
                 if (answer.Error is not null || answer.Stop != ProviderStop.Completed)
                     return Outcome(answer);
                 valid = schema.Check<JsonElement>(answer.Text, lenient: !native, out _).Count == 0;
-                return valid ? "succeeded" : "invalid_output";
+                return valid ? AiCallOutcome.Succeeded : AiCallOutcome.InvalidOutput;
             }, ct);
             if (reply is null)
                 return Refused(failure!);
@@ -434,8 +434,8 @@ public sealed class AiClient(
     }
 
     private static CallStart Start(
-        Route route, AiRequest request, string task, AssembledPrompt prompt, IReadOnlyList<ProviderMessage> messages, JsonElement? schema) =>
-        new(request.WorkspaceId, route.Provider.Id, route.Provider.Kind, route.Provider.Model, task, request.Purpose,
+        Route route, AiRequest request, AiUsageTask task, AssembledPrompt prompt, IReadOnlyList<ProviderMessage> messages, JsonElement? schema) =>
+        new(request.WorkspaceId, route.Provider.Id, AiUsageLedger.KindOf(route.Provider.Kind), route.Provider.Model, task, request.Purpose,
             request.PromptTemplateVersion, request.ActorId, route.Provider.MonthlyBudgetUsd, route.WorkspaceBudgetUsd,
             route.Provider.RequestsPerMinute, prompt.ByteCount(messages, schema), route.Adapter.OutputTokenCeiling(request.MaxOutputTokens));
 
@@ -446,8 +446,8 @@ public sealed class AiClient(
     /// <param name="outcomeOf">Names the outcome of an answer for the usage record. It can check the answer against a schema.</param>
     /// <returns>A null reply means that no call was made or that it was cancelled.</returns>
     private async Task<(ProviderReply? Reply, AiFailure? Failure)> CallAsync(
-        Route route, AiRequest request, string task, AssembledPrompt prompt, IReadOnlyList<ProviderMessage> messages, bool native,
-        Totals totals, Func<ProviderReply, string> outcomeOf, CancellationToken ct, string? note = null)
+        Route route, AiRequest request, AiUsageTask task, AssembledPrompt prompt, IReadOnlyList<ProviderMessage> messages, bool native,
+        Totals totals, Func<ProviderReply, AiCallOutcome> outcomeOf, CancellationToken ct, AiUsageNote? note = null)
     {
         var schema = native ? request.JsonSchema : null;
         CallTicket? ticket;
@@ -465,7 +465,7 @@ public sealed class AiClient(
         var progress = new CallProgress();
         ProviderReply? reply = null;
         // An exception inside Vellum leaves this word. Every other path replaces it.
-        var outcome = "failed";
+        var outcome = AiCallOutcome.Failed;
         try
         {
             reply = Cleaned(await route.Adapter.CompleteAsync(
@@ -476,7 +476,7 @@ public sealed class AiClient(
         catch (OperationCanceledException)
         {
             reply = null;
-            outcome = "cancelled";
+            outcome = AiCallOutcome.Cancelled;
             return (null, new AiFailure.Cancelled());
         }
         finally
@@ -486,8 +486,8 @@ public sealed class AiClient(
     }
 
     private async Task CompleteAsync(
-        Route route, AiRequest request, CallTicket ticket, ProviderReply? reply, string outcome, CallProgress progress, Totals totals,
-        string? note = null)
+        Route route, AiRequest request, CallTicket ticket, ProviderReply? reply, AiCallOutcome outcome, CallProgress progress, Totals totals,
+        AiUsageNote? note = null)
     {
         var errorCode = reply?.Error?.Code;
         var cost = await ledger.CompleteAsync(ticket, new CallEnd(
@@ -495,26 +495,26 @@ public sealed class AiClient(
         if (reply is not null)
             totals.Add(cost, reply.ReportedModel);
 
-        VellumMetrics.AiCallEnded(route.Provider.Kind, outcome, reply?.InputTokens, reply?.OutputTokens);
+        VellumMetrics.AiCallEnded(route.Provider.Kind, AiUsageLedger.Label(outcome), reply?.InputTokens, reply?.OutputTokens);
 
         // Labels and counts only. No prompt text, no answer text and no credential is logged.
-        logger.Log(outcome == "succeeded" ? LogLevel.Information : LogLevel.Warning,
+        logger.Log(outcome == AiCallOutcome.Succeeded ? LogLevel.Information : LogLevel.Warning,
             "AI call {ProviderKind} {Task} {Purpose} ended {Outcome} {ErrorCode}",
-            route.Provider.Kind, request.Task, request.Purpose, outcome, errorCode ?? "-");
+            route.Provider.Kind, request.Task, request.Purpose, AiUsageLedger.Label(outcome), errorCode ?? "-");
     }
 
     /// <summary>The model name that the provider reported is remote text: it is bounded and holds no control character.</summary>
     private static ProviderReply Cleaned(ProviderReply reply) =>
         reply.ReportedModel is { } model ? reply with { ReportedModel = OutboundText.Clean(model, MaxReportedModelChars) } : reply;
 
-    private static string Outcome(ProviderReply reply) => reply switch
+    private static AiCallOutcome Outcome(ProviderReply reply) => reply switch
     {
-        { Error.Code: "timeout" } => "timed_out",
-        { Error.Code: "rate_limited" } => "rate_limited",
-        { Error: not null } => "provider_error",
-        { Stop: ProviderStop.Refused } => "refused",
-        { Stop: ProviderStop.Truncated } => "truncated",
-        _ => "succeeded",
+        { Error.Code: "timeout" } => AiCallOutcome.TimedOut,
+        { Error.Code: "rate_limited" } => AiCallOutcome.RateLimited,
+        { Error: not null } => AiCallOutcome.ProviderError,
+        { Stop: ProviderStop.Refused } => AiCallOutcome.Refused,
+        { Stop: ProviderStop.Truncated } => AiCallOutcome.Truncated,
+        _ => AiCallOutcome.Succeeded,
     };
 
     /// <summary>The typed failure of a reply that is not a complete answer, or null for a complete one.</summary>
@@ -528,8 +528,6 @@ public sealed class AiClient(
         { Stop: ProviderStop.Truncated } => new AiFailure.InvalidOutput([$"The answer was cut at the output limit of {maxOutputTokens} tokens."]),
         _ => null,
     };
-
-    private static string TaskName(AiTask task) => JsonNamingPolicy.CamelCase.ConvertName(task.ToString());
 
     private static string SchemaName(string purpose)
     {

@@ -2,6 +2,10 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
+using Vellum.Modules.Ai;
+using Vellum.Modules.Costs;
+using Vellum.Modules.Identity.AgentTokens;
+using Vellum.Modules.LoadTests;
 using Vellum.Modules.Workspaces;
 
 #nullable disable
@@ -63,6 +67,15 @@ namespace Vellum.Migrations
                 name: "schemas");
 
             migrationBuilder.AlterDatabase()
+                .Annotation("Npgsql:Enum:ai.ai_call_outcome", "abandoned,cancelled,failed,invalid_output,provider_error,rate_limited,refused,started,succeeded,timed_out,truncated")
+                .Annotation("Npgsql:Enum:ai.ai_provider_kind", "anthropic,gemini,openai,openai_compatible")
+                .Annotation("Npgsql:Enum:ai.ai_usage_note", "cost_estimated,reaped,schema_rejected_fallback,usage_out_of_range")
+                .Annotation("Npgsql:Enum:ai.ai_usage_task", "critique,explain,infer_architecture,propose_flow,test")
+                .Annotation("Npgsql:Enum:ai.design_proposal_kind", "architecture,flow")
+                .Annotation("Npgsql:Enum:ai.design_proposal_status", "accepted,decided,draft,rejected")
+                .Annotation("Npgsql:Enum:costs.price_source_kind", "custom,fetched")
+                .Annotation("Npgsql:Enum:identity.agent_scope", "export,propose,read,scan_pull_request")
+                .Annotation("Npgsql:Enum:loadtests.target_environment", "development,production,staging,test")
                 .Annotation("Npgsql:Enum:workspaces.invitation_status", "accepted,declined,expired,pending,revoked")
                 .Annotation("Npgsql:Enum:workspaces.workspace_role", "editor,owner,viewer");
 
@@ -75,7 +88,7 @@ namespace Vellum.Migrations
                     workspace_id = table.Column<Guid>(type: "uuid", nullable: false),
                     project_id = table.Column<Guid>(type: "uuid", nullable: true),
                     name = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false),
-                    scopes = table.Column<string[]>(type: "text[]", nullable: false),
+                    scopes = table.Column<AgentScope[]>(type: "identity.agent_scope[]", nullable: false),
                     token_hash = table.Column<byte[]>(type: "bytea", nullable: false),
                     master_key_id = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: false),
                     created_by = table.Column<string>(type: "character varying(450)", maxLength: 450, nullable: false),
@@ -198,11 +211,11 @@ namespace Vellum.Migrations
                 columns: table => new
                 {
                     id = table.Column<Guid>(type: "uuid", nullable: false),
-                    kind = table.Column<string>(type: "character varying(20)", maxLength: 20, nullable: false),
+                    kind = table.Column<DesignProposalKind>(type: "ai.design_proposal_kind", nullable: false),
                     workspace_id = table.Column<Guid>(type: "uuid", nullable: false),
                     project_id = table.Column<Guid>(type: "uuid", nullable: false),
                     branch_id = table.Column<Guid>(type: "uuid", nullable: true),
-                    status = table.Column<string>(type: "character varying(20)", maxLength: 20, nullable: false),
+                    status = table.Column<DesignProposalStatus>(type: "ai.design_proposal_status", nullable: false),
                     name = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: false),
                     request = table.Column<string>(type: "character varying(4000)", maxLength: 4000, nullable: false),
                     document = table.Column<string>(type: "text", nullable: false),
@@ -469,7 +482,7 @@ namespace Vellum.Migrations
                 columns: table => new
                 {
                     id = table.Column<Guid>(type: "uuid", nullable: false),
-                    provider_kind = table.Column<string>(type: "character varying(40)", maxLength: 40, nullable: false),
+                    provider_kind = table.Column<AiProviderKind>(type: "ai.ai_provider_kind", nullable: false),
                     model = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: false),
                     input_usd_per_million_tokens = table.Column<decimal>(type: "numeric(18,8)", precision: 18, scale: 8, nullable: false),
                     output_usd_per_million_tokens = table.Column<decimal>(type: "numeric(18,8)", precision: 18, scale: 8, nullable: false),
@@ -511,7 +524,7 @@ namespace Vellum.Migrations
                     unit_price = table.Column<decimal>(type: "numeric", nullable: false),
                     currency = table.Column<string>(type: "text", nullable: false),
                     effective_date = table.Column<DateOnly>(type: "date", nullable: false),
-                    source = table.Column<string>(type: "text", nullable: false),
+                    source = table.Column<PriceSourceKind>(type: "costs.price_source_kind", nullable: false),
                     accepted_by = table.Column<string>(type: "text", nullable: false),
                     accepted_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
                     source_url = table.Column<string>(type: "text", nullable: true),
@@ -838,7 +851,7 @@ namespace Vellum.Migrations
                     target_id = table.Column<Guid>(type: "uuid", nullable: false),
                     target_name = table.Column<string>(type: "text", nullable: false),
                     base_url = table.Column<string>(type: "text", nullable: false),
-                    environment = table.Column<string>(type: "text", nullable: false),
+                    environment = table.Column<StoredTargetEnvironment>(type: "loadtests.target_environment", nullable: false),
                     authorised_by = table.Column<string>(type: "text", nullable: false),
                     authorised_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
                     content = table.Column<string>(type: "text", nullable: false),
@@ -973,10 +986,10 @@ namespace Vellum.Migrations
                     id = table.Column<Guid>(type: "uuid", nullable: false),
                     workspace_id = table.Column<Guid>(type: "uuid", nullable: false),
                     provider_id = table.Column<Guid>(type: "uuid", nullable: false),
-                    provider_kind = table.Column<string>(type: "character varying(40)", maxLength: 40, nullable: false),
+                    provider_kind = table.Column<AiProviderKind>(type: "ai.ai_provider_kind", nullable: false),
                     model = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: false),
                     reported_model = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: true),
-                    task = table.Column<string>(type: "character varying(40)", maxLength: 40, nullable: false),
+                    task = table.Column<AiUsageTask>(type: "ai.ai_usage_task", nullable: false),
                     purpose = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false),
                     prompt_template_version = table.Column<string>(type: "character varying(100)", maxLength: 100, nullable: false),
                     input_tokens = table.Column<int>(type: "integer", nullable: true),
@@ -984,8 +997,8 @@ namespace Vellum.Migrations
                     cost_usd = table.Column<decimal>(type: "numeric(18,8)", precision: 18, scale: 8, nullable: true),
                     reserved_usd = table.Column<decimal>(type: "numeric(18,8)", precision: 18, scale: 8, nullable: true),
                     duration_ms = table.Column<int>(type: "integer", nullable: true),
-                    outcome = table.Column<string>(type: "character varying(40)", maxLength: 40, nullable: false),
-                    usage_note = table.Column<string>(type: "character varying(40)", maxLength: 40, nullable: true),
+                    outcome = table.Column<AiCallOutcome>(type: "ai.ai_call_outcome", nullable: false),
+                    usage_note = table.Column<AiUsageNote>(type: "ai.ai_usage_note", nullable: true),
                     error_code = table.Column<string>(type: "character varying(60)", maxLength: 60, nullable: true),
                     started_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
                     actor_id = table.Column<string>(type: "text", nullable: true)
@@ -1286,7 +1299,7 @@ namespace Vellum.Migrations
                     model_stream_id = table.Column<Guid>(type: "uuid", nullable: false),
                     model_version = table.Column<long>(type: "bigint", nullable: false),
                     target_id = table.Column<Guid>(type: "uuid", nullable: false),
-                    environment = table.Column<string>(type: "text", nullable: false),
+                    environment = table.Column<StoredTargetEnvironment>(type: "loadtests.target_environment", nullable: false),
                     format = table.Column<string>(type: "text", nullable: false),
                     started_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),
                     ended_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false),

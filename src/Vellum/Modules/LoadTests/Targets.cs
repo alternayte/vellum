@@ -23,6 +23,12 @@ public static class TargetEnvironment
     public const string Production = "production";
 
     public static readonly string[] All = [Development, Test, Staging, Production];
+
+    /// <summary>The class as a row stores it. Every class a target holds is one of <see cref="All"/>.</summary>
+    public static StoredTargetEnvironment Stored(string environment) =>
+        EnumText.TryParse<StoredTargetEnvironment>(environment, out var stored)
+            ? stored
+            : throw new ArgumentOutOfRangeException(nameof(environment), environment, "Not a target class");
 }
 
 /// <summary>A person with the Owner role allowed load against <paramref name="BaseUrl"/> as a system of class <paramref name="Environment"/>.</summary>

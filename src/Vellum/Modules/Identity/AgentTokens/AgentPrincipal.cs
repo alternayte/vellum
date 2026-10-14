@@ -31,7 +31,7 @@ public static class AgentPrincipal
             new(TokenIdClaim, token.Id.ToString()),
             new(WorkspaceIdClaim, token.WorkspaceId.ToString()),
         };
-        claims.AddRange(token.Scopes.Select(scope => new Claim(ScopeClaim, scope)));
+        claims.AddRange(token.Scopes.Select(scope => new Claim(ScopeClaim, AgentScopes.Name(scope))));
         if (token.ProjectId is { } projectId)
             claims.Add(new Claim(ProjectIdClaim, projectId.ToString()));
         return new ClaimsPrincipal(new ClaimsIdentity(claims, Scheme));

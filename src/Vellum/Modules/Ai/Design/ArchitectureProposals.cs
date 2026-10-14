@@ -112,6 +112,7 @@ internal sealed record ArchitectureDocument(
 public static partial class ArchitectureProposals
 {
     public const string Kind = "architecture";
+    internal const DesignProposalKind RowKind = DesignProposalKind.Architecture;
     public const string Purpose = "infer-architecture";
     public const int MaxItems = 200;
     public const int MaxOutputTokens = 8_000;
@@ -164,12 +165,12 @@ public static partial class ArchitectureProposals
         var row = new ProposalEntity
         {
             Id = Guid.NewGuid(),
-            Kind = Kind,
+            Kind = RowKind,
             WorkspaceId = caller.WorkspaceId,
             ProjectId = projectId,
             BranchId = body.BranchId,
             // A proposal with no item has nothing to decide.
-            Status = items.Count > 0 ? "draft" : "decided",
+            Status = items.Count > 0 ? DesignProposalStatus.Draft : DesignProposalStatus.Decided,
             Name = name.Length > 0 ? name : "Proposed additions",
             Request = body.Request!,
             Document = JsonSerializer.Serialize(document, DesignJson.Options),
@@ -226,12 +227,12 @@ public static partial class ArchitectureProposals
         var row = new ProposalEntity
         {
             Id = Guid.NewGuid(),
-            Kind = Kind,
+            Kind = RowKind,
             WorkspaceId = caller.WorkspaceId,
             ProjectId = projectId,
             BranchId = null,
             // A proposal with no item has nothing to decide.
-            Status = items.Count > 0 ? "draft" : "decided",
+            Status = items.Count > 0 ? DesignProposalStatus.Draft : DesignProposalStatus.Decided,
             Name = name.Length > 0 ? name : "Proposed additions",
             Request = body.Request!,
             Document = JsonSerializer.Serialize(document, DesignJson.Options),
@@ -254,7 +255,7 @@ public static partial class ArchitectureProposals
     {
         var (_, userId) = await DesignAccess.RequireAsync(http, projectId, WorkspaceRole.Viewer, ct);
         return ProposalStore.StatusFilter(status) ?? Results.Ok(await ProposalStore.ListAsync(
-            db, projectId, Kind, cursor, limit, new ProposalStore.ProposalFilter(status, submitted, mine == true ? userId : null, decided), ct));
+            db, projectId, RowKind, cursor, limit, new ProposalStore.ProposalFilter(status, submitted, mine == true ? userId : null, decided), ct));
     }
 
     /// <summary>The summary with the item counts of the stored document.</summary>
@@ -278,10 +279,10 @@ public static partial class ArchitectureProposals
         IEventStore store, AppDbContext db, CancellationToken ct)
     {
         await DesignAccess.RequireAsync(http, projectId, WorkspaceRole.Viewer, ct);
-        var row = await db.DesignProposals.AsNoTracking().FirstOrDefaultAsync(p => p.Id == proposalId && p.ProjectId == projectId && p.Kind == Kind, ct);
+        var row = await db.DesignProposals.AsNoTracking().FirstOrDefaultAsync(p => p.Id == proposalId && p.ProjectId == projectId && p.Kind == RowKind, ct);
         if (row is null)
             return NotFound("Proposal");
-        if (row.Status != "draft")
+        if (row.Status != DesignProposalStatus.Draft)
             return Results.Ok(ToDto(row, Read(row), null));
 
         var streamId = await DesignAccess.StreamOfAsync(http, projectId, row.BranchId, ct);
@@ -294,10 +295,10 @@ public static partial class ArchitectureProposals
         await DesignAccess.RequireAsync(http, projectId, WorkspaceRole.Editor, ct);
 
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
-        if (await ProposalStore.LockAsync(db, projectId, proposalId, Kind, ct) is not { } row)
+        if (await ProposalStore.LockAsync(db, projectId, proposalId, RowKind, ct) is not { } row)
             return NotFound("Proposal");
-        if (row.Status != "draft")
-            return Conflict($"The proposal is {row.Status}. Only a draft can be deleted.");
+        if (row.Status != DesignProposalStatus.Draft)
+            return Conflict($"The proposal is {EnumText.Of(row.Status)}. Only a draft can be deleted.");
         if (Read(row).Items.Any(i => i.Status != "pending"))
             return Conflict("The proposal holds a decided item. Reject the pending items to close it; a decision is not deleted.");
 
@@ -332,7 +333,7 @@ public static partial class ArchitectureProposals
         if (accept.Intersect(reject).Any())
             return Invalid("reject", "An item cannot be accepted and rejected in one request");
 
-        var branch = await ProposalStore.BranchOfAsync(http, projectId, proposalId, Kind, ct);
+        var branch = await ProposalStore.BranchOfAsync(http, projectId, proposalId, RowKind, ct);
         if (branch is null)
             return NotFound("Proposal");
 
@@ -358,7 +359,7 @@ public static partial class ArchitectureProposals
 
             // The stream lock comes before the row lock in every write of this feature.
             var snapshot = await BranchSnapshot.LockAsync(store, services.GetRequiredService<AppDbContext>(), projectId, streamId, ct);
-            if (await ProposalStore.LockAsync(db, projectId, proposalId, Kind, ct) is not { } row)
+            if (await ProposalStore.LockAsync(db, projectId, proposalId, RowKind, ct) is not { } row)
                 return NotFound("Proposal");
 
             var document = Read(row);
@@ -416,7 +417,7 @@ public static partial class ArchitectureProposals
             row.Document = JsonSerializer.Serialize(document, DesignJson.Options);
             if (document.Items.All(i => i.Status != "pending"))
             {
-                row.Status = "decided";
+                row.Status = DesignProposalStatus.Decided;
                 row.DecidedBy = userId;
                 row.DecidedAt = now;
             }
@@ -822,12 +823,12 @@ public static partial class ArchitectureProposals
 
     /// <param name="current">The branch as it is now, for a draft that is read. Null for an answer to a write and for a decided proposal.</param>
     private static ArchitectureProposalDto ToDto(ProposalEntity row, ArchitectureDocument document, BranchSnapshot? current) => new(
-        row.Id, row.ProjectId, row.BranchId, row.Request, row.Status, "additions",
+        row.Id, row.ProjectId, row.BranchId, row.Request, EnumText.Of(row.Status), "additions",
         document.Summary, document.ReasoningSummary, document.OpenQuestions, document.Items,
         document.ResolvedToExisting ?? [], document.RejectedReferences,
         document.ModelVersion,
-        current is not null && row.Status == "draft" && current.Version != document.ModelVersion,
-        current is not null && row.Status == "draft" ? ItemIssues(document, current.Model) : [],
+        current is not null && row.Status == DesignProposalStatus.Draft && current.Version != document.ModelVersion,
+        current is not null && row.Status == DesignProposalStatus.Draft ? ItemIssues(document, current.Model) : [],
         document.Omitted ?? AliasOmitted.None, document.OmittedPrivate,
         document.Provider, document.PromptTemplateVersion, document.Usage,
         row.CreatedBy, row.CreatedAt, row.DecidedBy, row.DecidedAt, document.Origin ?? SubmittedProposal.AiOrigin);

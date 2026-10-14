@@ -121,6 +121,9 @@ internal sealed class AiScenario
         }
     }
 
+    /// <summary>The usage note as its label in the database, such as <c>cost_estimated</c>.</summary>
+    public static string? Note(AiUsageNote? note) => note is { } value ? AppDatabase.EnumLabels.TranslateMemberName(value.ToString()) : null;
+
     public async Task<List<UsageRecordEntity>> RowsAsync()
     {
         using var scope = _host.Factory.Services.CreateScope();
