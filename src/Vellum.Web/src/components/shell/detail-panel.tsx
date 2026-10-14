@@ -1,4 +1,4 @@
-import { useId } from 'react'
+import { createElement, useId, useState } from 'react'
 import { useShellStore } from '@/stores/shell-store'
 import { useDraftStore } from '@/stores/draft-store'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
@@ -6,9 +6,10 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Plus } from 'lucide-react'
+import { Plus, X } from 'lucide-react'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { kindColor } from '@/lib/kind-colors'
-import { ARCHITECTURE_ICONS, defaultIconForKind } from '@/lib/default-icons'
+import { ARCHITECTURE_ICONS, defaultIconForKind, getIconComponent } from '@/lib/default-icons'
 import { CONTAINMENT_RULES } from '@/lib/containment-rules'
 import { DiffDetail } from '@/components/review/diff-detail'
 import { ConflictResolver } from '@/components/review/conflict-resolver'
@@ -126,7 +127,14 @@ export function DetailPanel({
 
   return (
     <Sheet open={detailPanelOpen} modal={false} onOpenChange={(open) => !open && handleClose()}>
-      <SheetContent side="right" overlay={false} className="w-80 overflow-y-auto border-l border-border bg-card">
+      <SheetContent
+        side="right"
+        overlay={false}
+        // The panel sits beside the canvas and does not trap focus: focus stays on the node
+        // that opened it, so a field does not look active before anyone edits it.
+        onOpenAutoFocus={(event) => event.preventDefault()}
+        className="w-80 overflow-y-auto border-l border-border bg-card"
+      >
         {readOnly && <p role="note" className="mx-4 mt-10 rounded-md border border-dashed border-border px-2.5 py-1.5 text-[11px] text-muted-foreground">Read-only. The fields show the values and take no change.</p>}
         <fieldset disabled={readOnly} className="m-0 min-w-0 border-0 p-0">
         {selectedMessage && (
@@ -225,17 +233,14 @@ export function DetailPanel({
 
         {selectedElement && (
           <div key={selectedElement.id}>
-            <SheetHeader>
-              <SheetTitle className="flex items-center gap-2 font-display">
-                <span
-                  className="h-3 w-1 rounded-full"
-                  style={{ backgroundColor: kindColor(selectedElement.kind) }}
-                />
-                {selectedElement.name}
-              </SheetTitle>
-              <Badge variant="outline" className="w-fit font-mono text-xs">
-                {selectedElement.kind}
-              </Badge>
+            <SheetHeader className="flex-row items-center gap-3 pr-10">
+              <ElementIconTile icon={selectedElement.icon} kind={selectedElement.kind} />
+              <div className="min-w-0">
+                <SheetTitle className="truncate font-display text-base leading-tight">{selectedElement.name}</SheetTitle>
+                <p className="mt-0.5 font-mono text-[10px] uppercase tracking-wider" style={{ color: kindColor(selectedElement.kind) }}>
+                  {selectedElement.kind}
+                </p>
+              </div>
             </SheetHeader>
 
             {isReviewMode ? (
@@ -264,86 +269,62 @@ export function DetailPanel({
                 )}
               </>
             ) : (
-              <div className="mt-4 space-y-4 px-4 pb-4">
-                <div>
-                  <label htmlFor={idFor('element-name')} className="mb-1 block text-xs text-muted-foreground">Name</label>
-                  <Input
-                    id={idFor('element-name')}
-                    defaultValue={selectedElement.name}
-                    onBlur={(e) => onUpdateElement?.(selectedElement.id, { name: e.target.value })}
+              <div className="space-y-5 px-4 pb-4">
+                <Textarea
+                  aria-label="Description"
+                  placeholder="Add a description"
+                  defaultValue={selectedElement.description ?? ''}
+                  onBlur={(e) => onUpdateElement?.(selectedElement.id, { description: e.target.value || null })}
+                  rows={2}
+                  className={`${INLINE_FIELD} min-h-0 resize-none text-sm leading-relaxed`}
+                />
+                <dl className="grid grid-cols-[88px_1fr] items-center gap-x-3 gap-y-1.5 border-t border-border pt-4">
+                  <dt><label htmlFor={idFor('element-name')} className="text-xs text-muted-foreground">Name</label></dt>
+                  <dd>
+                    <Input
+                      id={idFor('element-name')}
+                      defaultValue={selectedElement.name}
+                      onBlur={(e) => onUpdateElement?.(selectedElement.id, { name: e.target.value })}
+                      className={INLINE_FIELD}
+                    />
+                  </dd>
+                  <dt><label htmlFor={idFor('element-technology')} className="text-xs text-muted-foreground">Technology</label></dt>
+                  <dd>
+                    <Input
+                      id={idFor('element-technology')}
+                      placeholder="None"
+                      defaultValue={selectedElement.technology ?? ''}
+                      onBlur={(e) => onUpdateElement?.(selectedElement.id, { technology: e.target.value || null })}
+                      className={INLINE_FIELD}
+                    />
+                  </dd>
+                  <dt><label htmlFor={idFor('element-status')} className="text-xs text-muted-foreground">Status</label></dt>
+                  <dd>
+                    <StatusSelect
+                      id={idFor('element-status')}
+                      value={selectedElement.status}
+                      onChange={(status) => onUpdateElement?.(selectedElement.id, { status })}
+                    />
+                  </dd>
+                  <dt><span id={idFor('element-icon')} className="text-xs text-muted-foreground">Icon</span></dt>
+                  <dd>
+                    <IconPicker
+                      labelledBy={idFor('element-icon')}
+                      current={selectedElement.icon ?? defaultIconForKind(selectedElement.kind)}
+                      onPick={(icon) => onUpdateElement?.(selectedElement.id, { icon })}
+                    />
+                  </dd>
+                </dl>
+                <section aria-labelledby={idFor('element-tags')}>
+                  <h3 id={idFor('element-tags')} className={SECTION_HEADING}>Tags</h3>
+                  <TagEditor
+                    tags={selectedElement.tags}
+                    onChange={(tags) => onUpdateElement?.(selectedElement.id, { tags })}
                   />
-                </div>
-                <div>
-                  <label htmlFor={idFor('element-description')} className="mb-1 block text-xs text-muted-foreground">Description</label>
-                  <Textarea
-                    id={idFor('element-description')}
-                    defaultValue={selectedElement.description ?? ''}
-                    onBlur={(e) =>
-                      onUpdateElement?.(selectedElement.id, { description: e.target.value || null })
-                    }
-                    rows={3}
-                  />
-                </div>
-                <div>
-                  <label htmlFor={idFor('element-technology')} className="mb-1 block text-xs text-muted-foreground">Technology</label>
-                  <Input
-                    id={idFor('element-technology')}
-                    defaultValue={selectedElement.technology ?? ''}
-                    onBlur={(e) =>
-                      onUpdateElement?.(selectedElement.id, { technology: e.target.value || null })
-                    }
-                  />
-                </div>
-                <div>
-                  <label htmlFor={idFor('element-status')} className="mb-1 block text-xs text-muted-foreground">Status</label>
-                  <select
-                    id={idFor('element-status')}
-                    defaultValue={selectedElement.status}
-                    onChange={(e) => onUpdateElement?.(selectedElement.id, { status: e.target.value })}
-                    className="w-full rounded border border-input bg-background px-3 py-2 text-sm"
-                  >
-                    <option value="current">Current</option>
-                    <option value="planned">Planned</option>
-                    <option value="deprecated">Deprecated</option>
-                  </select>
-                </div>
-                <div>
-                  <p id={idFor('element-icon')} className="mb-1 block text-xs text-muted-foreground">Icon</p>
-                  <div role="group" aria-labelledby={idFor('element-icon')} className="grid grid-cols-6 gap-1">
-                    {ARCHITECTURE_ICONS.map((entry) => {
-                      const Icon = entry.icon
-                      const isActive = (selectedElement.icon ?? defaultIconForKind(selectedElement.kind)) === entry.name
-                      return (
-                        <button
-                          key={entry.name}
-                          className={`flex h-8 w-8 items-center justify-center rounded border text-muted-foreground hover:bg-accent ${
-                            isActive ? 'border-primary bg-accent text-foreground' : 'border-transparent'
-                          }`}
-                          type="button"
-                          title={entry.name}
-                          aria-label={entry.name}
-                          aria-pressed={isActive}
-                          onClick={() => onUpdateElement?.(selectedElement.id, { icon: entry.name })}
-                        >
-                          <Icon className="h-4 w-4" />
-                        </button>
-                      )
-                    })}
-                  </div>
-                </div>
-                <div>
-                  <p className="mb-1 block text-xs text-muted-foreground">Tags</p>
-                  <div className="flex flex-wrap gap-1">
-                    {selectedElement.tags.map((tag) => (
-                      <Badge key={tag} variant="secondary" className="text-xs">
-                        {tag}
-                      </Badge>
-                    ))}
-                  </div>
-                </div>
+                </section>
                 {(CONTAINMENT_RULES[selectedElement.kind]?.length ?? 0) > 0 && (
-                  <div>
-                    <p className="mb-1 text-xs text-muted-foreground" id="detail-inside-label">Inside this {selectedElement.kind}</p>
+                  <section aria-labelledby="detail-inside-label">
+                    <h3 className={SECTION_HEADING} id="detail-inside-label">Inside this {selectedElement.kind}</h3>
                     {(() => {
                       const children = elements.filter((e) => e.parentId === selectedElement.id)
                       return children.length === 0 ? (
@@ -351,12 +332,12 @@ export function DetailPanel({
                           Nothing yet. A {selectedElement.kind} holds {CONTAINMENT_RULES[selectedElement.kind].map((k) => `${k}s`).join(' and ')}.
                         </p>
                       ) : (
-                        <ul aria-labelledby="detail-inside-label" className="flex flex-col gap-0.5">
+                        <ul aria-labelledby="detail-inside-label" className="divide-y divide-border overflow-hidden rounded-md border border-border">
                           {children.map((child) => (
                             <li key={child.id}>
                               <button
                                 type="button"
-                                className="flex w-full items-center gap-2 rounded px-1 py-1 text-left text-sm text-foreground hover:bg-muted focus-visible:outline-2 focus-visible:outline-primary"
+                                className="flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-sm text-foreground hover:bg-muted focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary"
                                 onClick={() => selectElement(child.id)}
                               >
                                 <span aria-hidden="true" className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: kindColor(child.kind) }} />
@@ -384,7 +365,7 @@ export function DetailPanel({
                         ))}
                       </div>
                     )}
-                  </div>
+                  </section>
                 )}
                 <div className="pt-2 border-t border-border">
                   <Button
@@ -501,5 +482,128 @@ export function DetailPanel({
         </fieldset>
       </SheetContent>
     </Sheet>
+  )
+}
+
+/** A field that reads as a value until it is hovered or edited. */
+const INLINE_FIELD =
+  'border-transparent bg-transparent px-1.5 shadow-none hover:border-input focus-visible:border-ring dark:bg-transparent'
+
+const SECTION_HEADING = 'mb-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground'
+
+const STATUS_COLOR: Record<string, string> = {
+  current: 'var(--trace-request)',
+  planned: 'var(--trace-retry)',
+  deprecated: 'var(--trace-failure)',
+}
+
+function ElementIconTile({ icon, kind }: { icon: string | null; kind: string }) {
+  const Icon = getIconComponent(icon ?? defaultIconForKind(kind))
+  const color = kindColor(kind)
+  return (
+    <span
+      aria-hidden="true"
+      className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border"
+      style={{ color, borderColor: `color-mix(in oklab, ${color} 35%, transparent)`, backgroundColor: `color-mix(in oklab, ${color} 12%, transparent)` }}
+    >
+      {Icon && createElement(Icon, { className: 'h-[18px] w-[18px]' })}
+    </span>
+  )
+}
+
+function StatusSelect({ id, value, onChange }: { id: string; value: string; onChange: (status: string) => void }) {
+  return (
+    <span className="relative ml-1.5 inline-flex items-center">
+      <span aria-hidden="true" className="pointer-events-none absolute left-2.5 h-1.5 w-1.5 rounded-full" style={{ backgroundColor: STATUS_COLOR[value] ?? 'currentColor' }} />
+      <select
+        id={id}
+        defaultValue={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="h-7 appearance-none rounded-full border border-border bg-muted/40 pl-6 pr-3 text-xs text-foreground hover:border-input focus-visible:border-ring focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+      >
+        <option value="current">Current</option>
+        <option value="planned">Planned</option>
+        <option value="deprecated">Deprecated</option>
+      </select>
+    </span>
+  )
+}
+
+function IconPicker({ labelledBy, current, onPick }: { labelledBy: string; current: string; onPick: (icon: string) => void }) {
+  const [open, setOpen] = useState(false)
+  const Current = getIconComponent(current)
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          aria-labelledby={labelledBy}
+          aria-describedby={`${labelledBy}-value`}
+          className="inline-flex h-7 items-center gap-2 rounded-md border border-transparent px-1.5 text-sm text-foreground hover:border-input focus-visible:border-ring focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+        >
+          {Current && createElement(Current, { className: 'h-4 w-4 text-muted-foreground', 'aria-hidden': true })}
+          <span id={`${labelledBy}-value`}>{current}</span>
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-auto">
+        <div role="group" aria-labelledby={labelledBy} className="grid grid-cols-6 gap-1">
+          {ARCHITECTURE_ICONS.map((entry) => {
+            const Icon = entry.icon
+            const isActive = current === entry.name
+            return (
+              <button
+                key={entry.name}
+                className={`flex h-8 w-8 items-center justify-center rounded border text-muted-foreground hover:bg-accent ${
+                  isActive ? 'border-primary bg-accent text-foreground' : 'border-transparent'
+                }`}
+                type="button"
+                title={entry.name}
+                aria-label={entry.name}
+                aria-pressed={isActive}
+                onClick={() => { onPick(entry.name); setOpen(false) }}
+              >
+                <Icon className="h-4 w-4" />
+              </button>
+            )
+          })}
+        </div>
+      </PopoverContent>
+    </Popover>
+  )
+}
+
+function TagEditor({ tags, onChange }: { tags: string[]; onChange: (tags: string[]) => void }) {
+  const add = (raw: string) => {
+    const tag = raw.trim()
+    if (tag && !tags.includes(tag)) onChange([...tags, tag])
+  }
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      {tags.map((tag) => (
+        <span key={tag} className="inline-flex h-6 items-center gap-1 rounded-md border border-border bg-muted/50 pl-2 pr-1 text-xs text-foreground">
+          {tag}
+          <button
+            type="button"
+            aria-label={`Remove tag ${tag}`}
+            className="rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-primary"
+            onClick={() => onChange(tags.filter((t) => t !== tag))}
+          >
+            <X className="h-3 w-3" aria-hidden="true" />
+          </button>
+        </span>
+      ))}
+      <input
+        aria-label="Add tag"
+        placeholder={tags.length === 0 ? 'Add a tag…' : 'Add…'}
+        className="h-6 min-w-16 flex-1 rounded-md border border-dashed border-border bg-transparent px-2 text-xs text-foreground placeholder:text-muted-foreground hover:border-input focus-visible:border-ring focus-visible:outline-none"
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault()
+            add(e.currentTarget.value)
+            e.currentTarget.value = ''
+          }
+        }}
+      />
+    </div>
   )
 }
