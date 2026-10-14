@@ -1,0 +1,11 @@
+{
+  "pagelen": 100,
+  "size": 230,
+  "page": 1,
+  "values": [
+    { "type": "repository", "full_name": "acme/billing", "is_private": false, "mainbranch": { "type": "branch", "name": "trunk" } },
+    { "type": "repository", "full_name": "acme/empty", "is_private": true, "mainbranch": null },
+    { "type": "repository", "full_name": "acme/orders", "is_private": true, "mainbranch": { "type": "branch", "name": "main" } }
+  ],
+  "next": "https://api.bitbucket.org/2.0/repositories/acme?pagelen=100&sort=slug&page=2"
+}

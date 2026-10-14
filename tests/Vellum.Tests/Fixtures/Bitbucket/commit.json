@@ -1,0 +1,7 @@
+{
+  "type": "commit",
+  "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "date": "2025-12-01T10:00:00+00:00",
+  "message": "Add outbox\n",
+  "parents": [{ "type": "commit", "hash": "ffffffffffffffffffffffffffffffffffffffff" }]
+}
