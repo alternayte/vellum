@@ -127,6 +127,12 @@ internal sealed class GatedStream : Stream
 /// header, plain http on an instance that needs https, a pooled connection to an address the
 /// request was not checked for, a slow reader, a stream that never ends and retry timing.
 /// </summary>
+// The TLS test does a real handshake under a 10 s connect limit. In the parallel suite on a
+// small CI runner, thread-pool pressure pushed it past that limit once, so this class runs alone.
+[CollectionDefinition(nameof(OutboundHardeningTests), DisableParallelization = true)]
+public class OutboundHardeningCollection;
+
+[Collection(nameof(OutboundHardeningTests))]
 public class OutboundHardeningTests
 {
     private const string AddressA = "93.184.216.34";
