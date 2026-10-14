@@ -18,6 +18,7 @@ import {
 } from '@/lib/promises-api'
 import type { ScenarioReference } from '@/components/trace/scenario-editor'
 import { ObligationDialog } from './obligation-dialog'
+import { RunHistory } from './run-history'
 import { Failure, Field, ForbiddenEvents, PatternFields, areaClass, smallSelect } from './promise-fields'
 
 interface Props {
@@ -121,8 +122,18 @@ export function PromiseDialog({ projectId, promiseId, references, scenarios, own
     },
     onError: shownInline,
   })
+  // Only a promise that was never approved is deleted. An approved one is retired by a revision.
+  const remove = useMutation({
+    mutationFn: () => promisesApi.remove(projectId, id!),
+    onSuccess: async () => {
+      queryClient.removeQueries({ queryKey: ['projects', projectId, 'promises', id] })
+      await queryClient.invalidateQueries({ queryKey: ['projects', projectId, 'promises'] })
+      onClose()
+    },
+    onError: shownInline,
+  })
   // The save error stays next to its fields. The other errors have no field on this screen.
-  const failure = generate.error ?? approve.error ?? revise.error ?? removeObligation.error ?? run.error ?? show.error
+  const failure = generate.error ?? approve.error ?? revise.error ?? removeObligation.error ?? run.error ?? show.error ?? remove.error
 
   const toggleLink = (field: keyof PromiseLinks, linkId: string) => {
     const current = form.links[field]
@@ -365,6 +376,7 @@ export function PromiseDialog({ projectId, promiseId, references, scenarios, own
                           {status.limitations.map((limitation, i) => <p key={i}><span className="text-foreground">Limit:</span> {readable(limitation)}</p>)}
                         </div>
                       )}
+                      <RunHistory projectId={projectId} promiseId={promise.id} obligationId={obligation.id} nameOf={knownName} />
                     </li>
                   )
                 })}
@@ -400,6 +412,15 @@ export function PromiseDialog({ projectId, promiseId, references, scenarios, own
           {promise && revision && (
             <Button variant="ghost" size="sm" className="gap-1.5" disabled={show.isPending} onClick={() => show.mutate()}>
               <Crosshair className="h-3.5 w-3.5" /> Show on canvas
+            </Button>
+          )}
+          {promise && promise.state === 'draft' && promise.inForceRevision === null && (
+            <Button
+              variant="ghost" size="sm" className="gap-1.5 text-destructive hover:text-destructive" disabled={remove.isPending}
+              title="Delete this draft. It was never approved, so it binds nothing."
+              onClick={() => { if (window.confirm(`Delete the draft promise ${promise.requirementId}? Its runs go with it. This cannot be undone.`)) remove.mutate() }}
+            >
+              <Trash2 className="h-3.5 w-3.5" /> Delete draft
             </Button>
           )}
           <div className="flex-1" />

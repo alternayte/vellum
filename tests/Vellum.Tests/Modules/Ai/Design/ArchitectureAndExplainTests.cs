@@ -144,6 +144,42 @@ public class ArchitectureAndExplainTests(SharedOutboundHost shared) : IClassFixt
     }
 
     [Fact]
+    public async Task A_proposal_decided_in_parts_keeps_who_decided_each_item_and_when()
+    {
+        var (ai, projectId, _) = await OrdersAsync(_host, AiScenario.Kinds[0]);
+        ai.Stub.Json(ai.Completion(Reply("architecture-payments")));
+        var proposal = await BodyAsync(await ProposeArchitectureAsync(ai.Owner, projectId, OrdersRequest), HttpStatusCode.Created);
+        Guid Id(string alias) => (Guid)proposal["items"]!.AsArray().Single(i => (string)i!["alias"]! == alias)!["id"]!;
+        var editor = await TestHost.SignInMemberAsync(_host.Factory, ai.Owner, ai.WorkspaceId, "Editor");
+        var ownerId = (string)(await ai.Owner.GetFromJsonAsync<JsonObject>("/api/auth/me"))!["id"]!;
+        var editorId = (string)(await editor.GetFromJsonAsync<JsonObject>("/api/auth/me"))!["id"]!;
+
+        // The undecided proposal is the owner's own, and nobody else's.
+        var mine = await GetAsync(ai.Owner, Url(projectId, "ai/architecture-proposals?mine=true&decided=false"));
+        Assert.Equal((Guid)proposal["id"]!, (Guid)Assert.Single(mine["items"]!.AsArray())!["id"]!);
+        Assert.Empty((await GetAsync(editor, Url(projectId, "ai/architecture-proposals?mine=true")))["items"]!.AsArray());
+
+        // An editor accepts one item; later the owner rejects the rest.
+        await BodyAsync(await DecideAsync(editor, projectId, proposal, [Id("N1")]), HttpStatusCode.OK);
+        var rest = proposal["items"]!.AsArray().Select(i => (Guid)i!["id"]!).Where(id => id != Id("N1")).ToArray();
+        var closed = await BodyAsync(await DecideAsync(ai.Owner, projectId, proposal, [], rest), HttpStatusCode.OK);
+
+        var items = closed["items"]!.AsArray().ToDictionary(i => (string)i!["alias"]!, i => i!);
+        Assert.Equal(("accepted", editorId), ((string)items["N1"]["status"]!, (string)items["N1"]["decidedBy"]!));
+        Assert.Equal(("rejected", ownerId), ((string)items["N4"]["status"]!, (string)items["N4"]["decidedBy"]!));
+        Assert.All(items.Values, item => Assert.NotNull(item["decidedAt"]));
+        Assert.True((DateTimeOffset)items["N1"]["decidedAt"]! <= (DateTimeOffset)items["N4"]["decidedAt"]!);
+        Assert.Equal(("decided", ownerId), ((string)closed["status"]!, (string)closed["decidedBy"]!));
+
+        // The history lists it with the decision in numbers, and it reads the same later.
+        var history = Assert.Single((await GetAsync(ai.Owner, Url(projectId, "ai/architecture-proposals?decided=true")))["items"]!.AsArray())!;
+        Assert.Equal((6, 1, 5, ownerId), ((int)history["items"]!, (int)history["acceptedItems"]!, (int)history["rejectedItems"]!, (string)history["decidedBy"]!));
+        Assert.Empty((await GetAsync(ai.Owner, Url(projectId, "ai/architecture-proposals?decided=false")))["items"]!.AsArray());
+        var read = await GetAsync(editor, Url(projectId, $"ai/architecture-proposals/{proposal["id"]}"));
+        Assert.Equal(editorId, (string)read["items"]!.AsArray().Single(i => (string)i!["alias"]! == "N1")!["decidedBy"]!);
+    }
+
+    [Fact]
     public async Task An_addition_that_the_model_refuses_fails_the_whole_request()
     {
         var (ai, projectId, model) = await OrdersAsync(_host, "openai");

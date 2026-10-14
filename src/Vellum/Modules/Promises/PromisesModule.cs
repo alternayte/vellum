@@ -77,7 +77,7 @@ public static class PromisesModule
             .Produces<RevisionChangedResponse>(StatusCodes.Status409Conflict)
             .Produces<ErrorResponse>(StatusCodes.Status403Forbidden);
 
-        promises.MapGet("/{promiseId:guid}/runs", PromiseReads.Runs).AllowAgent(AgentScope.Read).Produces<Page<VerificationRun>>();
+        promises.MapGet("/{promiseId:guid}/runs", PromiseReads.Runs).AllowAgent(AgentScope.Read).Produces<RunsPage>();
 
         var obligations = promises.MapGroup("/{promiseId:guid}/obligations");
         obligations.MapPost("/", ObligationWrites.Add).AllowAgent(AgentScope.Propose)

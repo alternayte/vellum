@@ -58,9 +58,14 @@ public sealed record ProposalStale(string Type, string Title, IReadOnlyList<Scen
 
 /// <summary>What a list of proposals shows for one proposal.</summary>
 /// <param name="Origin"><c>ai</c> for a proposal the in-app assistant generated. For a submitted proposal: <c>agent-token:&lt;id&gt;</c> or <c>user:&lt;id&gt;</c>.</param>
+/// <param name="DecidedBy">The user who made the last decision: the accept or the reject of a flow, the decision of the last pending item of additions.</param>
+/// <param name="AcceptedItems">For additions: how many items are accepted. Null for a flow.</param>
+/// <param name="RejectedItems">For additions: how many items are rejected. Null for a flow.</param>
+/// <param name="Items">For additions: how many items the proposal holds. Null for a flow.</param>
 public sealed record ProposalSummary(
     Guid Id, string Status, string Name, string Request, Guid? BranchId,
-    string CreatedBy, DateTimeOffset CreatedAt, string? DecidedBy, DateTimeOffset? DecidedAt, string Origin);
+    string CreatedBy, DateTimeOffset CreatedAt, string? DecidedBy, DateTimeOffset? DecidedAt, string Origin,
+    int? Items = null, int? AcceptedItems = null, int? RejectedItems = null);
 
 /// <summary>
 /// A playback of the proposed scenario on the branch. It is declared behaviour replayed over
@@ -361,11 +366,15 @@ public static class FlowProposals
         return Results.Created($"/api/projects/{projectId}/ai/flow-proposals/{row.Id}", ToDto(row, document, view, stale: false));
     }
 
+    /// <param name="mine">True: only the proposals the caller made or submitted.</param>
+    /// <param name="decided">True: only decided proposals. False: only drafts.</param>
     public static async Task<IResult> List(
-        Guid projectId, string? cursor, int? limit, string? status, bool? submitted, HttpContext http, AppDbContext db, CancellationToken ct)
+        Guid projectId, string? cursor, int? limit, string? status, bool? submitted, bool? mine, bool? decided,
+        HttpContext http, AppDbContext db, CancellationToken ct)
     {
-        await DesignAccess.RequireAsync(http, projectId, WorkspaceRole.Viewer, ct);
-        return ProposalStore.StatusFilter(status) ?? Results.Ok(await ProposalStore.ListAsync(db, projectId, Kind, cursor, limit, status, submitted, ct));
+        var (_, userId) = await DesignAccess.RequireAsync(http, projectId, WorkspaceRole.Viewer, ct);
+        return ProposalStore.StatusFilter(status) ?? Results.Ok(await ProposalStore.ListAsync(
+            db, projectId, Kind, cursor, limit, new ProposalStore.ProposalFilter(status, submitted, mine == true ? userId : null, decided), ct));
     }
 
     /// <summary>
@@ -872,6 +881,12 @@ internal static class ProposalStore
 
     private static readonly string[] Statuses = ["draft", "accepted", "rejected", "decided"];
 
+    /// <param name="Status">Only the proposals with this status.</param>
+    /// <param name="Submitted">True: only the proposals that a caller submitted. False: only those the assistant generated.</param>
+    /// <param name="CreatedBy">Only the proposals of this user.</param>
+    /// <param name="Decided">True: only decided proposals. False: only drafts.</param>
+    public sealed record ProposalFilter(string? Status, bool? Submitted, string? CreatedBy, bool? Decided);
+
     /// <summary>Null when <paramref name="status"/> is absent or is a status a proposal can have, else the 400.</summary>
     public static IResult? StatusFilter(string? status) =>
         status is null || Statuses.Contains(status, StringComparer.Ordinal)
@@ -879,17 +894,19 @@ internal static class ProposalStore
             : Invalid("status", $"A status is one of: {string.Join(", ", Statuses)}");
 
     /// <summary>The newest first. The cursor is the creation time and the ID of the last item of a page.</summary>
-    /// <param name="status">Only the proposals with this status.</param>
-    /// <param name="submitted">True: only the proposals that a caller submitted. False: only those the assistant generated.</param>
     public static async Task<Page<ProposalSummary>> ListAsync(
-        AppDbContext db, Guid projectId, string kind, string? cursor, int? limit, string? status, bool? submitted, CancellationToken ct)
+        AppDbContext db, Guid projectId, string kind, string? cursor, int? limit, ProposalFilter filter, CancellationToken ct)
     {
         var pageSize = Math.Clamp(limit ?? 50, 1, 200);
         var query = db.DesignProposals.AsNoTracking().Where(p => p.ProjectId == projectId && p.Kind == kind);
-        if (status is not null)
+        if (filter.Status is { } status)
             query = query.Where(p => p.Status == status);
-        if (submitted is { } wanted)
+        if (filter.Submitted is { } wanted)
             query = query.Where(p => (p.Origin != null) == wanted);
+        if (filter.CreatedBy is { } creator)
+            query = query.Where(p => p.CreatedBy == creator);
+        if (filter.Decided is { } decided)
+            query = query.Where(p => (p.Status != "draft") == decided);
 
         if (CursorEncoder.DecodeNumber(cursor) is { } decoded)
         {
@@ -900,12 +917,18 @@ internal static class ProposalStore
             query = query.Where(p => p.CreatedAt < before || (p.CreatedAt == before && p.Id.CompareTo(afterId) > 0));
         }
 
-        var items = await query
+        var rows = await query
             .OrderByDescending(p => p.CreatedAt).ThenBy(p => p.Id)
             .Take(pageSize + 1)
-            .Select(p => new ProposalSummary(
-                p.Id, p.Status, p.Name, p.Request, p.BranchId, p.CreatedBy, p.CreatedAt, p.DecidedBy, p.DecidedAt, p.Origin ?? SubmittedProposal.AiOrigin))
+            .Select(p => new
+            {
+                Summary = new ProposalSummary(
+                    p.Id, p.Status, p.Name, p.Request, p.BranchId, p.CreatedBy, p.CreatedAt, p.DecidedBy, p.DecidedAt, p.Origin ?? SubmittedProposal.AiOrigin),
+                // Additions are decided item by item: the counts come from the document.
+                Document = kind == ArchitectureProposals.Kind ? p.Document : null,
+            })
             .ToListAsync(ct);
+        var items = rows.Select(r => r.Document is null ? r.Summary : ArchitectureProposals.WithCounts(r.Summary, r.Document)).ToList();
 
         string? next = null;
         if (items.Count > pageSize)

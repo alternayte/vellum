@@ -50,12 +50,48 @@ export interface ProposalSummary {
   name: string
   request: string
   origin: ProposalOrigin
+  createdBy: string
   createdAt: string
+  /** The user who made the last decision. */
+  decidedBy: string | null
+  decidedAt: string | null
+  /** For additions: the number of items, and how many are accepted and rejected. Null for a flow. */
+  items: number | null
+  acceptedItems: number | null
+  rejectedItems: number | null
 }
 
-/** A submitted proposal that waits for a person, with its kind. */
+export type ProposalKind = 'flow' | 'architecture'
+
+/** A proposal of a list, with its kind. */
 export interface PendingProposal extends ProposalSummary {
-  kind: 'flow' | 'architecture'
+  kind: ProposalKind
+}
+
+/** One page of the proposals of both kinds, the newest first, and where each kind goes on. */
+export interface ProposalPages {
+  items: PendingProposal[]
+  /** The cursor of the next page of each kind. Null when that kind has no more. */
+  cursors: Record<ProposalKind, string | null>
+}
+
+const KINDS: ProposalKind[] = ['flow', 'architecture']
+
+/**
+ * Merges the pages of the two kinds. A kind with more pages hides the items that are older than
+ * its last loaded item: an older item of that kind may still come, so the order stays true.
+ */
+export function mergeProposalPages(pages: Record<ProposalKind, { items: ProposalSummary[]; cursor: string | null }>): ProposalPages {
+  const all = KINDS.flatMap((kind) => pages[kind].items.map((item) => ({ ...item, kind })))
+  const frontier = KINDS
+    .filter((kind) => pages[kind].cursor && pages[kind].items.length > 0)
+    .map((kind) => pages[kind].items[pages[kind].items.length - 1].createdAt)
+    .sort()
+    .at(-1)
+  return {
+    items: all.filter((item) => !frontier || item.createdAt >= frontier).sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
+    cursors: { flow: pages.flow.cursor, architecture: pages.architecture.cursor },
+  }
 }
 
 /** Who a proposal is from, for the sentence under its title. */
@@ -71,6 +107,8 @@ export interface FlowProposal {
   status: 'draft' | 'accepted' | 'rejected'
   request: string
   name: string
+  decidedBy: string | null
+  decidedAt: string | null
   summary: string
   reasoningSummary: string
   openQuestions: string[]
@@ -102,6 +140,9 @@ export interface ArchitectureItem {
   confidence: number
   rationale: string
   status: 'pending' | 'accepted' | 'rejected'
+  /** Who accepted or rejected the item, and when. Null while it is pending. */
+  decidedBy?: string | null
+  decidedAt?: string | null
 }
 
 export interface ArchitectureProposal {
@@ -109,6 +150,8 @@ export interface ArchitectureProposal {
   origin: ProposalOrigin
   status: 'draft' | 'decided'
   request: string
+  decidedBy: string | null
+  decidedAt: string | null
   summary: string
   reasoningSummary: string
   openQuestions: string[]
@@ -142,6 +185,23 @@ export const designApi = {
     const [flows, additions] = await Promise.all([list('flow'), list('architecture')])
     return [...flows, ...additions].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
   },
+  /**
+   * Proposals of both kinds. `query` filters them (`mine`, `decided`, `submitted`, `status`).
+   * `loaded` holds what earlier pages returned; the call adds the next page of each kind that has one.
+   */
+  proposals: async (projectId: string, query: string, loaded?: Record<ProposalKind, { items: ProposalSummary[]; cursor: string | null }>) => {
+    const next = async (kind: ProposalKind) => {
+      const before = loaded?.[kind]
+      if (before && !before.cursor) return before
+      const cursor = before?.cursor ? `&cursor=${encodeURIComponent(before.cursor)}` : ''
+      const page = await api<{ items: ProposalSummary[]; cursor: string | null }>('GET', `${base(projectId)}/${kind}-proposals?${query}&limit=20${cursor}`)
+      return { items: [...(before?.items ?? []), ...page.items], cursor: page.cursor }
+    }
+    const [flow, architecture] = await Promise.all([next('flow'), next('architecture')])
+    return { flow, architecture }
+  },
+  /** Deletes a proposal nobody decided. A decided proposal, or additions with a decided item, stays as a record. */
+  discard: (projectId: string, kind: ProposalKind, id: string) => api<void>('DELETE', `${base(projectId)}/${kind}-proposals/${id}`),
   rejectFlow: (projectId: string, id: string) => api<FlowProposal>('POST', `${base(projectId)}/flow-proposals/${id}/reject`),
   createMissing: (projectId: string, id: string, alias: string) =>
     api<FlowProposal>('POST', `${base(projectId)}/flow-proposals/${id}/missing/${encodeURIComponent(alias)}/create`),

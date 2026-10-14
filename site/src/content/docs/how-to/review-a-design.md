@@ -121,7 +121,9 @@ The assistant sees the parts of your model as a numbered table, without their re
 
 When the model changes after the answer, the answer is stale. Vellum then does not keep a proposed decision of that answer: the button is not available, and the HTTP call gives the status 409 and the type `critique_stale`. Ask again, then keep the proposal of the new answer.
 
-The project keeps the newest 50 answers. They are below **Stored answers**. Select one to read it again. Each line shows the date, the question, and whether the answer is about the main model or about a draft or a variant.
+The project keeps the newest 50 answers. They are below **Stored answers**. Select one to read it again. Each line shows the date, the question, and whether the answer is about the main model or about a draft or a variant. To delete an answer, select the bin on its line. Open questions and proposed decisions that you kept from it stay.
+
+Below the stored answers, **Your proposals** and **History** list the flow and model proposals of the assistant. See [Find a proposal again](/how-to/design-with-the-assistant/#find-a-proposal-again).
 
 While the setting `privacy.sendPrivateCodeToAi` is off, the assistant gets no part that came from a private repository. It also gets no scenario, no promise and no finding whose text holds the name of such a part. The last line of the answer shows how many private parts were withheld and how many findings were not sent.
 

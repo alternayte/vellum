@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Security.Claims;
 using Microsoft.EntityFrameworkCore;
+using Vellum.Modules.Identity.AgentTokens;
 using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Shared;
 using static Vellum.Shared.ResultExtensions;
@@ -45,6 +46,23 @@ public sealed class PromiseReader(IServiceProvider services, AppDbContext db)
     internal static Dictionary<string, VerificationRun> Runs(PromiseEntity row) =>
         PromiseJson.Read<Dictionary<string, VerificationRun>>(row.LatestRuns);
 }
+
+/// <summary>Who or what started runs.</summary>
+/// <param name="Kind">
+/// <c>person</c>; <c>ci-token</c> for an agent token with the scope <c>scan-pull-request</c>,
+/// which a CI job uses; <c>agent-token</c> for any other agent token.
+/// </param>
+/// <param name="Name">The display name or the email address of the person, or the name of the token. Null when the account or the token no longer exists.</param>
+public sealed record RunStarter(string Kind, string? Name)
+{
+    public const string Person = "person";
+    public const string AgentToken = "agent-token";
+    public const string CiToken = "ci-token";
+}
+
+/// <summary>A page of runs, newest first.</summary>
+/// <param name="StartedBy">For each actor of the page (<c>user:&lt;id&gt;</c> or <c>agent-token:&lt;id&gt;</c>), who or what it is. A run recorded before the actor was kept is under <c>user:&lt;startedBy&gt;</c>.</param>
+public sealed record RunsPage(IReadOnlyList<VerificationRun> Items, string? Cursor, IReadOnlyDictionary<string, RunStarter> StartedBy);
 
 public static class PromiseReads
 {
@@ -116,8 +134,48 @@ public static class PromiseReads
             next = CursorEncoder.Encode(rows[^1].Version.ToString(CultureInfo.InvariantCulture), rows[^1].Id);
         }
 
-        return Results.Ok(new Page<VerificationRun>(rows.Select(r => PromiseJson.Read<VerificationRun>(r.Document)).ToList(), next));
+        var runs = rows.Select(r => PromiseJson.Read<VerificationRun>(r.Document)).ToList();
+        return Results.Ok(new RunsPage(runs, next, await StartersAsync(db, runs, ct)));
     }
+
+    /// <summary>The actor of a run: the one it names, or the user of the call for a run recorded before the actor was kept.</summary>
+    public static string ActorOf(VerificationRun run) => run.Actor ?? $"user:{run.StartedBy}";
+
+    /// <summary>Who or what each actor of the runs is, by <see cref="ActorOf"/>.</summary>
+    private static async Task<Dictionary<string, RunStarter>> StartersAsync(AppDbContext db, IReadOnlyList<VerificationRun> runs, CancellationToken ct)
+    {
+        var actors = runs.Select(ActorOf).Distinct(StringComparer.Ordinal).ToList();
+        var userIds = actors.Where(a => a.StartsWith(UserActorPrefix, StringComparison.Ordinal)).Select(a => a[UserActorPrefix.Length..]).ToList();
+        var tokenIds = actors
+            .Where(AgentPrincipal.IsAgentActor)
+            .Select(a => Guid.TryParse(a[AgentPrincipal.AgentActorPrefix.Length..], out var id) ? id : Guid.Empty)
+            .Where(id => id != Guid.Empty)
+            .ToList();
+
+        var users = await db.Users.AsNoTracking().Where(u => userIds.Contains(u.Id))
+            .Select(u => new { u.Id, u.DisplayName, u.Email }).ToListAsync(ct);
+        var tokens = await db.AgentTokens.AsNoTracking().Where(t => tokenIds.Contains(t.Id))
+            .Select(t => new { t.Id, t.Name, t.Scopes }).ToListAsync(ct);
+
+        var starters = new Dictionary<string, RunStarter>(StringComparer.Ordinal);
+        foreach (var actor in actors)
+        {
+            if (AgentPrincipal.IsAgentActor(actor))
+            {
+                var token = tokens.FirstOrDefault(t => AgentPrincipal.AgentActorPrefix + t.Id == actor);
+                var ci = token?.Scopes.Contains(AgentScopes.Name(AgentScope.ScanPullRequest)) == true;
+                starters[actor] = new RunStarter(ci ? RunStarter.CiToken : RunStarter.AgentToken, token?.Name);
+            }
+            else
+            {
+                var user = users.FirstOrDefault(u => UserActorPrefix + u.Id == actor);
+                starters[actor] = new RunStarter(RunStarter.Person, user is null ? null : string.IsNullOrWhiteSpace(user.DisplayName) ? user.Email : user.DisplayName);
+            }
+        }
+        return starters;
+    }
+
+    private const string UserActorPrefix = "user:";
 
     public static async Task<IResult> Prefix(
         Guid projectId, ClaimsPrincipal user, WorkspaceAuthorizationService auth, AppDbContext db, CancellationToken ct)

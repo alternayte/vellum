@@ -136,6 +136,46 @@ export interface ObligationStatus {
   detail: string
 }
 
+/** One stored run of an obligation. Runs are appended and never changed. */
+export interface VerificationRun {
+  id: string
+  obligationId: string
+  promiseRevision: number
+  result: ObligationResult
+  at: string
+  environment: string
+  modelRevision: ObligationStatus['modelRevision']
+  commitSha: string | null
+  scanId: string | null
+  inputs: { ref?: string | null; scanKind?: string | null } | null
+  scope: string
+  detail: string
+  /** True when the revision was a draft at the run. Such a run does not count after approval. */
+  draft?: boolean | null
+  /** The user of the call. For an agent token, the user who created the token. */
+  startedBy: string
+  /** `user:<id>` or `agent-token:<id>`. Null in a run recorded before the actor was kept. */
+  actor?: string | null
+}
+
+/** Who or what started runs: a person, an agent token, or a CI token (scope `scan-pull-request`). Name null: the account or token is gone. */
+export interface RunStarter {
+  kind: 'person' | 'agent-token' | 'ci-token'
+  name: string | null
+}
+
+export interface RunsPage {
+  items: VerificationRun[]
+  cursor: string | null
+  /** By actor. A run without an actor is under `user:<startedBy>`. */
+  startedBy: Record<string, RunStarter>
+}
+
+/** The key of a run in `RunsPage.startedBy`. */
+export function runActor(run: VerificationRun): string {
+  return run.actor ?? `user:${run.startedBy}`
+}
+
 export interface PromiseCounts {
   /** Results that are current. A stale result is counted in `stale` only. */
   passed: number
@@ -295,6 +335,9 @@ export const promisesApi = {
       result: 'passed', source: { system: 'github-actions', runUrl, commitSha, conclusion: null }, artifactDigest: null, revision,
     }),
   remove: (projectId: string, id: string) => api<void>('DELETE', `${base(projectId)}/promises/${id}`),
+  /** The runs of one obligation, newest first, 20 at a time. */
+  runs: (projectId: string, id: string, obligationId: string, cursor: string | null) =>
+    api<RunsPage>('GET', `${base(projectId)}/promises/${id}/runs?obligation=${encodeURIComponent(obligationId)}&limit=20${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`),
   generate: (projectId: string, id: string) =>
     api<{ promise: PromiseDetail; added: string[]; skipped: { key: string; reason: string }[] }>('POST', `${base(projectId)}/promises/${id}/obligations/generate`),
   /** `revision` null runs the approved revision in force. A draft is run only by its number, and that run never counts after approval. */

@@ -1,11 +1,11 @@
 import { useMemo, useState } from 'react'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ExternalLink } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 import { shownInline } from '@/lib/mutation-errors'
-import { describeNotCovered, importApi, withDependencies, type Proposal, type ProposalAction, type ProposalEvidence, type ScanSummary } from '@/lib/import-api'
+import { describeFactReason, describeNotCovered, importApi, withDependencies, type Proposal, type ProposalAction, type ProposalEvidence, type ScanSummary } from '@/lib/import-api'
 import { prettyJson } from '@/lib/pretty-json'
 
 const ACTION: Record<ProposalAction, { label: string; color: string; sign: string }> = {
@@ -189,6 +189,7 @@ export function ProposalReview({ projectId, scan, onClose }: { projectId: string
               </ul>
             </section>
           ))}
+          <FactsWithoutProposal projectId={projectId} scanId={scan.id} />
         </div>
 
         {decide.isError && <p role="alert" className="text-xs text-destructive">{decide.error.message}</p>}
@@ -372,5 +373,65 @@ function RelinkChoice({ proposal, link, onLink }: { proposal: Proposal; link: st
         <span className="text-foreground">None of these. The source no longer has it.</span>
       </label>
     </fieldset>
+  )
+}
+
+/**
+ * The facts the scan found that are no proposal: the model has no place for them, or they need
+ * something the source does not state. They are evidence to read, not choices to make.
+ */
+function FactsWithoutProposal({ projectId, scanId }: { projectId: string; scanId: string }) {
+  const [open, setOpen] = useState(false)
+  const facts = useInfiniteQuery({
+    queryKey: ['projects', projectId, 'imports', scanId, 'evidence'],
+    queryFn: ({ pageParam }) => importApi.evidence(projectId, scanId, pageParam),
+    initialPageParam: null as string | null,
+    getNextPageParam: (last) => last.cursor,
+    enabled: open,
+    staleTime: Infinity,
+  })
+  const items = facts.data?.pages.flatMap((page) => page.items) ?? []
+  return (
+    <details className="border-t border-border" onToggle={(e) => setOpen(e.currentTarget.open)}>
+      <summary className="cursor-pointer px-3 py-1.5 text-[11px] font-medium uppercase tracking-wider text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-primary">
+        Facts with no proposal
+      </summary>
+      <div className="space-y-2 px-3 pb-3">
+        <p className="text-xs text-muted-foreground">The scan found these in the source. They are not proposals and change nothing. Each says why.</p>
+        {facts.isPending && open && <p className="text-xs text-muted-foreground">Loading…</p>}
+        {facts.isError && <p role="alert" className="text-xs text-destructive">{facts.error.message}</p>}
+        {facts.isSuccess && items.length === 0 && <p className="text-xs text-muted-foreground">Every fact of this scan is a proposal or matches the model.</p>}
+        <ul className="space-y-1.5">
+          {items.map((fact) => (
+            <li key={fact.factKey} className="rounded-md border border-border px-2.5 py-1.5 text-xs">
+              <p className="flex items-baseline gap-2">
+                <span className="shrink-0 font-mono text-[10px] uppercase tracking-wider text-muted-foreground">{fact.kind}</span>
+                {/* Repository text is shown as text. */}
+                <span className="min-w-0 flex-1 truncate text-foreground">{fact.name}</span>
+                <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
+                  {fact.evidence[0] ? `${fact.evidence[0].path}:${fact.evidence[0].startLine}` : 'no source line'}
+                </span>
+              </p>
+              <p className="mt-0.5 text-muted-foreground">{describeFactReason(fact.reason)}</p>
+              {Object.keys(fact.attributes).length > 0 && (
+                <p className="mt-0.5 break-words font-mono text-[10px] text-muted-foreground">
+                  {Object.entries(fact.attributes).map(([key, value]) => `${key}: ${value}`).join(' · ')}
+                </p>
+              )}
+              {fact.evidence[0] && (
+                <a href={fact.evidence[0].url} target="_blank" rel="noreferrer noopener" className="mt-0.5 inline-flex items-center gap-1 text-[11px] text-foreground hover:underline focus-visible:outline-2 focus-visible:outline-primary">
+                  Open on GitHub <ExternalLink className="h-3 w-3" />
+                </a>
+              )}
+            </li>
+          ))}
+        </ul>
+        {facts.hasNextPage && (
+          <Button variant="ghost" size="sm" className="h-6 text-xs" disabled={facts.isFetchingNextPage} onClick={() => facts.fetchNextPage()}>
+            {facts.isFetchingNextPage ? 'Loading…' : 'Show more'}
+          </Button>
+        )}
+      </div>
+    </details>
   )
 }

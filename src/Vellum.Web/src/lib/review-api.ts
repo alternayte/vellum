@@ -260,6 +260,7 @@ export const reviewApi = {
     api<Critique | Unavailable>('POST', `${base(projectId)}/review/critiques`, { question, focus, branchId: branchId ?? null }),
   critiques: async (projectId: string) => (await api<{ items: CritiqueSummary[] }>('GET', `${base(projectId)}/review/critiques`)).items,
   storedCritique: (projectId: string, id: string) => api<Critique>('GET', `${base(projectId)}/review/critiques/${id}`),
+  deleteCritique: (projectId: string, id: string) => api<void>('DELETE', `${base(projectId)}/review/critiques/${id}`),
   keepCritiqueQuestion: (projectId: string, critiqueId: string, index: number) =>
     api<Question>('POST', `${base(projectId)}/review/critiques/${critiqueId}/questions/${index}/keep`),
   keepCritiqueDecision: (projectId: string, critiqueId: string, index: number) =>

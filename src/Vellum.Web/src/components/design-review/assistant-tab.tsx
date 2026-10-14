@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Sparkles } from 'lucide-react'
+import { Sparkles, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { UnavailableNote } from '@/components/assistant/unavailable-note'
 import { isUnavailable, type Unavailable } from '@/lib/design-api'
@@ -10,10 +10,13 @@ import { cn } from '@/lib/utils'
 import { RESULT_LABEL, critiqueSections, reviewApi, type Cited, type Critique } from '@/lib/review-api'
 import { CitedPart } from './findings-tab'
 import { areaClass } from './styles'
+import { ProposalLists } from './proposal-lists'
 
 interface Props {
   projectId: string
   branchId?: string | null
+  /** Names of the parts of the model, by ID, for the proposals. */
+  labels: Record<string, string>
   focusTarget: (cited: Cited) => string | null
   onFocus: (elementId: string) => void
 }
@@ -160,7 +163,7 @@ export function CritiquePanel({ critique, onKeepQuestion, onKeepDecision, keepin
 }
 
 /** Asks the assistant to review the design. The deterministic findings do not need it. */
-export function AssistantTab({ projectId, branchId, focusTarget, onFocus }: Props) {
+export function AssistantTab({ projectId, branchId, labels, focusTarget, onFocus }: Props) {
   const queryClient = useQueryClient()
   const [question, setQuestion] = useState('')
   const selectedElementId = useShellStore((s) => s.selectedElementId)
@@ -200,7 +203,16 @@ export function AssistantTab({ projectId, branchId, focusTarget, onFocus }: Prop
     // The model moved: the server refused. Show that the answer is stale.
     onError: (error) => { shownInline(); if (/changed/i.test(error.message)) mark((c) => ({ ...c, stale: true })) },
   })
-  const failure = ask.error ?? open.error ?? keepQuestion.error ?? keepDecision.error
+  // A stored answer is a set of suggestions. Deleting one changes nothing that was kept from it.
+  const remove = useMutation({
+    mutationFn: (id: string) => reviewApi.deleteCritique(projectId, id),
+    onSuccess: (_, id) => {
+      setCritique((c) => (c?.id === id ? null : c))
+      return queryClient.invalidateQueries({ queryKey: ['projects', projectId, 'review', 'critiques'] })
+    },
+    onError: shownInline,
+  })
+  const failure = ask.error ?? open.error ?? keepQuestion.error ?? keepDecision.error ?? remove.error
 
   return (
     <div className="space-y-3 p-3">
@@ -240,11 +252,11 @@ export function AssistantTab({ projectId, branchId, focusTarget, onFocus }: Prop
         {stored.isSuccess && stored.data.length === 0 && <p className="mt-1.5 text-[11px] text-muted-foreground">No answer is stored.</p>}
         <ul className="mt-1.5 space-y-1">
           {stored.data?.map((item) => (
-            <li key={item.id}>
+            <li key={item.id} className="flex items-center gap-1">
               <button
                 type="button" onClick={() => open.mutate(item.id)} disabled={open.isPending} aria-current={critique?.id === item.id ? 'true' : undefined}
                 className={cn(
-                  'flex w-full items-baseline gap-2 rounded-md border px-2 py-1 text-left text-[11px] hover:bg-muted focus-visible:outline-2 focus-visible:outline-primary',
+                  'flex min-w-0 flex-1 items-baseline gap-2 rounded-md border px-2 py-1 text-left text-[11px] hover:bg-muted focus-visible:outline-2 focus-visible:outline-primary',
                   critique?.id === item.id ? 'border-primary' : 'border-border',
                 )}
               >
@@ -252,10 +264,20 @@ export function AssistantTab({ projectId, branchId, focusTarget, onFocus }: Prop
                 <span className="min-w-0 flex-1 truncate text-foreground">{item.question || 'General review'}</span>
                 <span className="shrink-0 text-muted-foreground">{item.branchId ? 'draft or variant' : 'main model'}</span>
               </button>
+              <Button
+                variant="ghost" size="sm" className="h-6 w-6 shrink-0 p-0 text-muted-foreground" aria-label={`Delete the answer of ${new Date(item.createdAt).toLocaleString()}`}
+                title="Delete this answer. Questions and decisions kept from it stay."
+                disabled={remove.isPending}
+                onClick={() => { if (window.confirm('Delete this stored answer? Questions and decisions you kept from it stay.')) remove.mutate(item.id) }}
+              >
+                <Trash2 className="h-3 w-3" />
+              </Button>
             </li>
           ))}
         </ul>
       </section>
+
+      <ProposalLists projectId={projectId} branchId={branchId} labels={labels} />
     </div>
   )
 }

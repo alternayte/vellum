@@ -66,6 +66,7 @@ public static class ObligationWrites
         PromiseLimits limits, PromiseRunRate rate, TimeProvider time, CancellationToken ct)
     {
         var userId = http.User.UserId();
+        var actor = PromiseAccess.Actor(http.User);
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
         var scan = await db.Scans.AsNoTracking().FirstOrDefaultAsync(s => s.Id == importId && s.ProjectId == projectId, ct);
         if (scan is null)
@@ -111,7 +112,7 @@ public static class ObligationWrites
                     $"{runs.Count} of {batch.Count} checks ran before the run rate of this caller was used up. Call again in {seconds} seconds: the checks that ran against this scan are not run again."));
             }
             var outcome = await SourcePatternCheck.RunAsync(db, projectId, promiseId, obligation.Id, hash, obligation.Recipe.SourcePattern!, inputs, ct);
-            var (run, refusal) = await RecordRunAsync(store, projectId, promiseId, revision, obligation, hash, outcome, userId, limits, time, ct);
+            var (run, refusal) = await RecordRunAsync(store, projectId, promiseId, revision, obligation, hash, outcome, userId, actor, limits, time, ct);
             runs.Add(new ScanCheckRunDto(promiseId, requirementId, revision, obligation.Id, obligation.Key, run?.Result ?? "not-recorded", run?.Id,
                 run?.Detail ?? refusal));
         }
@@ -269,6 +270,7 @@ public static class ObligationWrites
         PromiseLimits limits, TimeProvider time, CancellationToken ct)
     {
         var userId = http.User.UserId();
+        var actor = PromiseAccess.Actor(http.User);
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
         var (body, error) = await PromiseAccess.ReadAsync<RunObligationRequest>(http, allowEmpty: true);
         if (error is not null)
@@ -315,7 +317,7 @@ public static class ObligationWrites
                         : $"Vellum cannot check an obligation of kind '{obligation.Kind}'. It is unsupported."));
         }
 
-        return await RecordAsync(store, projectId, promiseId, revision, obligation, obligationHash, outcome, userId, limits, time, ct);
+        return await RecordAsync(store, projectId, promiseId, revision, obligation, obligationHash, outcome, userId, actor, limits, time, ct);
     }
 
     /// <summary>
@@ -329,6 +331,7 @@ public static class ObligationWrites
         GitHubReader gitHub, SettingsResolver settings, PromiseLimits limits, TimeProvider time, CancellationToken ct)
     {
         var userId = http.User.UserId();
+        var actor = PromiseAccess.Actor(http.User);
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
         var (request, error) = await PromiseAccess.ReadAsync<RecordEvidenceRequest>(http);
         if (request is null)
@@ -355,7 +358,7 @@ public static class ObligationWrites
         var obligationHash = PromiseViews.ObligationHash(obligation);
         var outcome = await ExternalEvidence.AssessAsync(
             request, obligation.Recipe.Plan?.EvidenceSource, workspaceId, projectId, obligationHash, gitHub, settings, db, ct);
-        return await RecordAsync(store, projectId, promiseId, revision, obligation, obligationHash, outcome, userId, limits, time, ct);
+        return await RecordAsync(store, projectId, promiseId, revision, obligation, obligationHash, outcome, userId, actor, limits, time, ct);
     }
 
     private static async Task<((int Revision, Obligation Obligation, bool IsDraft)? Found, IResult? Refusal)> FindAsync(
@@ -384,30 +387,30 @@ public static class ObligationWrites
 
     private static async Task<IResult> RecordAsync(
         IEventStore store, Guid projectId, Guid promiseId, int revision, Obligation obligation, string obligationHash, CheckOutcome outcome,
-        string userId, PromiseLimits limits, TimeProvider time, CancellationToken ct)
+        string userId, string actor, PromiseLimits limits, TimeProvider time, CancellationToken ct)
     {
-        var (recorded, _, refusal) = await RecordCoreAsync(store, projectId, promiseId, revision, obligation, obligationHash, outcome, userId, limits, time, ct);
+        var (recorded, _, refusal) = await RecordCoreAsync(store, projectId, promiseId, revision, obligation, obligationHash, outcome, userId, actor, limits, time, ct);
         return recorded is not null ? Results.Ok(recorded) : refusal!;
     }
 
     /// <summary>The recorded run, or a sentence that says why none was recorded.</summary>
     private static async Task<(VerificationRun? Run, string? Refusal)> RecordRunAsync(
         IEventStore store, Guid projectId, Guid promiseId, int revision, Obligation obligation, string obligationHash, CheckOutcome outcome,
-        string userId, PromiseLimits limits, TimeProvider time, CancellationToken ct)
+        string userId, string actor, PromiseLimits limits, TimeProvider time, CancellationToken ct)
     {
-        var (recorded, why, _) = await RecordCoreAsync(store, projectId, promiseId, revision, obligation, obligationHash, outcome, userId, limits, time, ct);
+        var (recorded, why, _) = await RecordCoreAsync(store, projectId, promiseId, revision, obligation, obligationHash, outcome, userId, actor, limits, time, ct);
         return (recorded, recorded is null ? why ?? "The run was not recorded." : null);
     }
 
     private static async Task<(VerificationRun? Run, string? Why, IResult? Refusal)> RecordCoreAsync(
         IEventStore store, Guid projectId, Guid promiseId, int revision, Obligation obligation, string obligationHash, CheckOutcome outcome,
-        string userId, PromiseLimits limits, TimeProvider time, CancellationToken ct)
+        string userId, string actor, PromiseLimits limits, TimeProvider time, CancellationToken ct)
     {
         var run = new VerificationRun(
             Guid.NewGuid(), obligation.Id, revision, obligationHash, userId, time.GetUtcNow(),
             outcome.ModelRevision, outcome.CommitSha, outcome.ScanId, outcome.Environment, outcome.Result, outcome.Scope,
             outcome.Evidence, outcome.Limitations, outcome.Detail,
-            outcome.Inputs ?? new RunInputs(obligationHash), outcome.Assertions, outcome.EffectiveFaults);
+            outcome.Inputs ?? new RunInputs(obligationHash), outcome.Assertions, outcome.EffectiveFaults, Actor: actor);
 
         // The decision sets the draft label from the stream, so the stored run is read back from the state.
         VerificationRun? recorded = null;

@@ -57,9 +57,12 @@ public sealed record ProposedEntity(
 /// <param name="Action">Always <c>add</c>.</param>
 /// <param name="DependsOn">The items that must be accepted before, or with, this one.</param>
 /// <param name="Status"><c>pending</c>, <c>accepted</c> or <c>rejected</c>.</param>
+/// <param name="DecidedBy">The user who accepted or rejected the item. Null while it is pending, and in an item decided before this was kept.</param>
+/// <param name="DecidedAt">When the item was accepted or rejected.</param>
 public sealed record ArchitectureItemDto(
     Guid Id, string Alias, string Action, string EntityKind, string Name, ProposedEntity Proposed,
-    IReadOnlyList<Guid> DependsOn, double Confidence, string Rationale, string Status);
+    IReadOnlyList<Guid> DependsOn, double Confidence, string Rationale, string Status,
+    string? DecidedBy = null, DateTimeOffset? DecidedAt = null);
 
 /// <param name="Status"><c>draft</c> while an item is pending, then <c>decided</c>.</param>
 /// <param name="Scope">Always <c>additions</c>: this version proposes no change to and no removal of an existing fact.</param>
@@ -243,11 +246,27 @@ public static partial class ArchitectureProposals
             $"/api/projects/{projectId}/ai/architecture-proposals/{row.Id}", ToDto(row, document, snapshot));
     }
 
+    /// <param name="mine">True: only the proposals the caller made or submitted.</param>
+    /// <param name="decided">True: only decided proposals. False: only drafts, also those with some items decided.</param>
     public static async Task<IResult> List(
-        Guid projectId, string? cursor, int? limit, string? status, bool? submitted, HttpContext http, AppDbContext db, CancellationToken ct)
+        Guid projectId, string? cursor, int? limit, string? status, bool? submitted, bool? mine, bool? decided,
+        HttpContext http, AppDbContext db, CancellationToken ct)
     {
-        await DesignAccess.RequireAsync(http, projectId, WorkspaceRole.Viewer, ct);
-        return ProposalStore.StatusFilter(status) ?? Results.Ok(await ProposalStore.ListAsync(db, projectId, Kind, cursor, limit, status, submitted, ct));
+        var (_, userId) = await DesignAccess.RequireAsync(http, projectId, WorkspaceRole.Viewer, ct);
+        return ProposalStore.StatusFilter(status) ?? Results.Ok(await ProposalStore.ListAsync(
+            db, projectId, Kind, cursor, limit, new ProposalStore.ProposalFilter(status, submitted, mine == true ? userId : null, decided), ct));
+    }
+
+    /// <summary>The summary with the item counts of the stored document.</summary>
+    internal static ProposalSummary WithCounts(ProposalSummary summary, string document)
+    {
+        var items = JsonSerializer.Deserialize<ArchitectureDocument>(document, DesignJson.Options)!.Items;
+        return summary with
+        {
+            Items = items.Count,
+            AcceptedItems = items.Count(i => i.Status == "accepted"),
+            RejectedItems = items.Count(i => i.Status == "rejected"),
+        };
     }
 
     /// <summary>
@@ -369,6 +388,7 @@ public static partial class ArchitectureProposals
             if (failures.Count > 0)
                 return Refused(failures);
 
+            var now = time.GetUtcNow();
             if (accept.Count > 0)
             {
                 var additions = new List<(Addition Addition, double Confidence)>();
@@ -380,22 +400,25 @@ public static partial class ArchitectureProposals
                 }
 
                 var refused = await InferredWrites.ApplyAsync(
-                    store, streamId, additions, InferredWrites.Source(document.Provider, document.Origin, Kind, row.Id), userId, time.GetUtcNow(), ct);
+                    store, streamId, additions, InferredWrites.Source(document.Provider, document.Origin, Kind, row.Id), userId, now, ct);
                 if (refused is not null)
                     return Refused([new(refused.Id, refused.Reason)]);
             }
 
+            // Each item keeps who decided it and when: one proposal can be decided in parts, by different people.
             document = document with
             {
                 Items = [.. document.Items.Select(i =>
-                    accept.Contains(i.Id) ? i with { Status = "accepted" } : reject.Contains(i.Id) ? i with { Status = "rejected" } : i)],
+                    accept.Contains(i.Id) ? i with { Status = "accepted", DecidedBy = userId, DecidedAt = now }
+                    : reject.Contains(i.Id) ? i with { Status = "rejected", DecidedBy = userId, DecidedAt = now }
+                    : i)],
             };
             row.Document = JsonSerializer.Serialize(document, DesignJson.Options);
             if (document.Items.All(i => i.Status != "pending"))
             {
                 row.Status = "decided";
                 row.DecidedBy = userId;
-                row.DecidedAt = time.GetUtcNow();
+                row.DecidedAt = now;
             }
             await db.SaveChangesAsync(ct);
             await transaction.CommitAsync(ct);

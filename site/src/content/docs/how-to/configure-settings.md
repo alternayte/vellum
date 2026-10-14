@@ -122,4 +122,4 @@ An entry for a settings change names each field that changed. It holds no value,
 
 An entry for a price names the price entry and holds its unit price. A price is not a secret.
 
-An entry for a master key rotation shows only that a rotation took place. The instance administrator reads who did it, and with which key, in the instance audit log (`GET /api/instance/audit`).
+An entry for a master key rotation shows only that a rotation took place. The instance administrator reads who did it, and with which key, in the instance audit log: **Settings → Instance → Instance audit log**, or `GET /api/instance/audit`.

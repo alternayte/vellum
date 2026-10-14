@@ -49,7 +49,8 @@ export function AssistantFlyout({ projectId, branchId, labels, playingScenarioId
 
   // What agents submitted and nobody decided yet. A person opens each one here and decides.
   const pending = useQuery({ queryKey: ['projects', projectId, 'proposals', 'pending'], queryFn: () => designApi.pending(projectId) })
-  const refreshPending = () => queryClient.invalidateQueries({ queryKey: ['projects', projectId, 'proposals', 'pending'] })
+  // Every list of proposals: what waits for you here, and "Your proposals" and "History" in Review.
+  const refreshPending = () => queryClient.invalidateQueries({ queryKey: ['projects', projectId, 'proposals'] })
   const open = useMutation({
     mutationFn: (item: PendingProposal): Promise<FlowProposal | ArchitectureProposal> =>
       item.kind === 'flow' ? designApi.getFlow(projectId, item.id) : designApi.getArchitecture(projectId, item.id),
@@ -119,6 +120,7 @@ export function AssistantFlyout({ projectId, branchId, labels, playingScenarioId
               {mode === 'flow'
                 ? 'The answer is a proposal that uses only parts of your model. You review it before anything is saved.'
                 : 'The answer lists additions. You select which ones to add. Each is labelled inferred.'}
+              {' '}A proposal you close without a decision stays under Review, Assistant, Your proposals.
             </p>
           </form>
         )}
@@ -166,7 +168,7 @@ export function AssistantFlyout({ projectId, branchId, labels, playingScenarioId
           proposal={flow}
           labels={labels}
           onClose={() => { setFlow(null); void refreshPending() }}
-          onAccepted={(scenarioId) => { setFlow(null); closeFlyout(); onPlayScenario(scenarioId) }}
+          onAccepted={(scenarioId) => { setFlow(null); void refreshPending(); closeFlyout(); onPlayScenario(scenarioId) }}
         />
       )}
       {architecture && (

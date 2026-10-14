@@ -146,7 +146,7 @@ public static class AgentTools
             new("GET", "/api/projects/{projectId}/promises/{promiseId:guid}"), PromiseTools.GetPromise),
         new("list_promise_runs", AgentScope.Read,
             "Lists the verification runs of a promise, the newest first. A run is appended and never changed.",
-            "items[] { id, obligationId, promiseRevision, result, scope, environment, modelRevision, commitSha, evidence[], limitations[], detail, inputs, assertions[], draft, startedBy, at }",
+            "items[] { id, obligationId, promiseRevision, result, scope, environment, modelRevision, commitSha, evidence[], limitations[], detail, inputs, assertions[], draft, startedBy, actor, at }",
             Page, "declared",
             "A run is passed, failed, not-run or unsupported, for exactly the inputs it names. A scenario-check is the playback of declared behaviour: it is not a measurement. A source-pattern-check is observed-in-source at the commit the run names. evidence[].identity claimed means only the caller says so. draft true means the revision was a draft at the run: such a run does not count after approval. The list says nothing about whether a result is still current: get_promise does.",
             new("GET", "/api/projects/{projectId}/promises/{promiseId:guid}/runs"), PromiseTools.ListPromiseRuns),

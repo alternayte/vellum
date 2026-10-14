@@ -80,7 +80,30 @@ Each obligation shows one label: **Passed**, **Failed**, **Not run**, **Unsuppor
 
 The promise also shows a list of **Evidence gaps**. Vellum never shows a promise as verified. Read the counts and the gaps.
 
+## Read the run history
+
+Each obligation has a **History** expander. Open it to see every run of the obligation, the newest first, 20 at a time. Select **Show more** for older runs.
+
+Each run shows:
+
+- the result and the promise revision, and **draft** when the revision was a draft at the run;
+- the model version and named revision, or the commit and the scan, that the check read;
+- the environment and the time;
+- who or what started it: a person by name, an agent token or a CI token by the token name. A CI token is a token with the `scan-pull-request` scope.
+
+A failed run that follows a passed run has the mark **Passed → Failed**.
+
+![The open History of the obligation ORD-001/O1. It lists four runs, the newest first. The newest run is Failed, with the marks Passed → Failed and draft, revision 1, commit d51a8709d3 of remove-outbox, a tracking scan, started by Dev User. The run below it is Passed, on commit 54f955480d of main. The two older runs repeat the pair.](../../../assets/screenshots/promise-run-history.png)
+
+Runs are never changed. A deleted draft promise takes its runs with it.
+
 To see the promise on the canvas, select **Show on canvas**. The canvas rings the elements that the promise links and the elements of its flows. Select **Clear** on the canvas to remove the rings.
+
+## Delete a draft
+
+A promise that was never approved can be deleted. Open it and select **Delete draft**. Its requirement ID is not issued again.
+
+An approved promise is not deleted. To end it, select **Retire**. Retirement is a revision that an owner approves.
 
 ## Change an approved promise
 

@@ -5244,6 +5244,20 @@
             "schema": {
               "type": "boolean"
             }
+          },
+          {
+            "name": "mine",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "decided",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            }
           }
         ],
         "responses": {
@@ -5781,6 +5795,20 @@
           },
           {
             "name": "submitted",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "mine",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "decided",
             "in": "query",
             "schema": {
               "type": "boolean"
@@ -7335,7 +7363,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/PageOfVerificationRun"
+                  "$ref": "#/components/schemas/RunsPage"
                 }
               }
             }
@@ -13101,6 +13129,19 @@
           },
           "status": {
             "type": "string"
+          },
+          "decidedBy": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "decidedAt": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "date-time"
           }
         }
       },
@@ -22641,27 +22682,6 @@
           }
         }
       },
-      "PageOfVerificationRun": {
-        "required": [
-          "items",
-          "cursor"
-        ],
-        "type": "object",
-        "properties": {
-          "items": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/VerificationRun"
-            }
-          },
-          "cursor": {
-            "type": [
-              "null",
-              "string"
-            ]
-          }
-        }
-      },
       "PinnedRun": {
         "required": [
           "promiseId",
@@ -24123,6 +24143,33 @@
           },
           "origin": {
             "type": "string"
+          },
+          "items": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "acceptedItems": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "rejectedItems": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
           }
         }
       },
@@ -26061,6 +26108,52 @@
             "additionalProperties": {
               "type": "string"
             }
+          }
+        }
+      },
+      "RunsPage": {
+        "required": [
+          "items",
+          "cursor",
+          "startedBy"
+        ],
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/VerificationRun"
+            }
+          },
+          "cursor": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "startedBy": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/RunStarter"
+            }
+          }
+        }
+      },
+      "RunStarter": {
+        "required": [
+          "kind",
+          "name"
+        ],
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "name": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -30792,6 +30885,12 @@
             "type": [
               "null",
               "boolean"
+            ]
+          },
+          "actor": {
+            "type": [
+              "null",
+              "string"
             ]
           }
         }
