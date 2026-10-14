@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { useAuth } from '@/hooks/use-auth'
 import { branchesApi } from '@/lib/branches-api'
-import { clearPendingInvitation, forgetInvitation, invitationSecret } from '@/lib/invitation-link'
+import { captureInvitationLink, clearPendingInvitation, forgetInvitation, invitationSecret } from '@/lib/invitation-link'
 import { shownInline } from '@/lib/mutation-errors'
 
 export const Route = createFileRoute('/_app/invitations/$invitationId')({
@@ -23,13 +23,29 @@ function InvitationPage() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const { user } = useAuth()
-  const [secret] = useState(() => invitationSecret(invitationId))
+  const [secret, setSecret] = useState(() => invitationSecret(invitationId))
+  // Each link the tab opens is read again, even with the same secret: a link that differs
+  // from the last one only in its fragment does not load the page again.
+  const [opened, setOpened] = useState(0)
   const [declined, setDeclined] = useState(false)
 
   useEffect(() => clearPendingInvitation(), [])
 
+  useEffect(() => {
+    // The router may have kept the new secret and cleared the fragment before this runs.
+    const reopen = () => {
+      captureInvitationLink()
+      clearPendingInvitation()
+      setSecret(invitationSecret(invitationId))
+      setDeclined(false)
+      setOpened((n) => n + 1)
+    }
+    window.addEventListener('hashchange', reopen)
+    return () => window.removeEventListener('hashchange', reopen)
+  }, [invitationId])
+
   const invitation = useQuery({
-    queryKey: ['invitations', invitationId, 'open'],
+    queryKey: ['invitations', invitationId, 'open', opened],
     queryFn: () => branchesApi.openInvitation(invitationId, secret!),
     enabled: !!secret,
     retry: false,

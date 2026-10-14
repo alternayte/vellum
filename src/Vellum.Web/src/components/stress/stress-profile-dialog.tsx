@@ -50,9 +50,13 @@ const MEASURED_FROM: Record<DistributionKind, string> = {
   uniform: 'the minimum and the maximum',
 }
 
-/** A number input that gives null when it is empty. */
-function NumberField({ label, value, onChange, min = 0, step = 'any', placeholder, className, disabled }: {
-  label: string; value: number | null | undefined; onChange: (value: number | null) => void
+/**
+ * A number input that gives null when it is empty. A field that repeats for each element,
+ * subscription or window names what it is for in `context`: its accessible name is then
+ * "<label>, <context>", so no two inputs of the form share one name.
+ */
+function NumberField({ label, context, value, onChange, min = 0, step = 'any', placeholder, className, disabled }: {
+  label: string; context?: string; value: number | null | undefined; onChange: (value: number | null) => void
   min?: number; step?: number | 'any'; placeholder?: string; className?: string; disabled?: boolean
 }) {
   return (
@@ -60,6 +64,7 @@ function NumberField({ label, value, onChange, min = 0, step = 'any', placeholde
       {label}
       <Input
         type="number" inputMode="decimal" min={min} step={step} placeholder={placeholder} disabled={disabled}
+        aria-label={context ? `${label}, ${context}` : undefined}
         className="mt-1 font-mono"
         value={value ?? ''}
         onChange={(e) => onChange(e.target.value === '' || Number.isNaN(e.target.valueAsNumber) ? null : e.target.valueAsNumber)}
@@ -236,9 +241,9 @@ export function StressProfileDialog({ projectId, branchId, scenarios, existing, 
               <div className="space-y-1.5">
                 {bursts.map((window, i) => (
                   <div key={i} className="grid grid-cols-[1fr_1fr_1fr_auto] items-end gap-2">
-                    <NumberField label="From, s" value={window.fromSeconds} onChange={(v) => setArrivals({ bursts: bursts.map((w, j) => (j === i ? { ...w, fromSeconds: v ?? 0 } : w)) })} />
-                    <NumberField label="To, s" value={window.toSeconds} onChange={(v) => setArrivals({ bursts: bursts.map((w, j) => (j === i ? { ...w, toSeconds: v ?? 0 } : w)) })} />
-                    <NumberField label="Rate, per second" value={window.ratePerSecond} onChange={(v) => setArrivals({ bursts: bursts.map((w, j) => (j === i ? { ...w, ratePerSecond: v ?? 0 } : w)) })} />
+                    <NumberField label="From, s" context={`burst window ${i + 1}`} value={window.fromSeconds} onChange={(v) => setArrivals({ bursts: bursts.map((w, j) => (j === i ? { ...w, fromSeconds: v ?? 0 } : w)) })} />
+                    <NumberField label="To, s" context={`burst window ${i + 1}`} value={window.toSeconds} onChange={(v) => setArrivals({ bursts: bursts.map((w, j) => (j === i ? { ...w, toSeconds: v ?? 0 } : w)) })} />
+                    <NumberField label="Rate, per second" context={`burst window ${i + 1}`} value={window.ratePerSecond} onChange={(v) => setArrivals({ bursts: bursts.map((w, j) => (j === i ? { ...w, ratePerSecond: v ?? 0 } : w)) })} />
                     <Button variant="ghost" size="sm" className="h-8 w-8 p-0" aria-label={`Remove burst window ${i + 1}`} onClick={() => setArrivals({ bursts: bursts.filter((_, j) => j !== i) })}><X className="h-3.5 w-3.5" /></Button>
                   </div>
                 ))}
@@ -270,8 +275,8 @@ export function StressProfileDialog({ projectId, branchId, scenarios, existing, 
                   return (
                     <li key={resource.elementId} className="grid items-end gap-2 rounded-md border border-border p-2.5 sm:grid-cols-[1fr_9rem_11rem]">
                       <p className="self-center text-sm text-foreground">{resource.name}</p>
-                      <NumberField label="Workers" min={1} step={1} value={entry.concurrency} onChange={(v) => change({ concurrency: v })} />
-                      <NumberField label="Queue capacity" step={1} placeholder="no bound" value={entry.queueCapacity} onChange={(v) => change({ queueCapacity: v })} />
+                      <NumberField label="Workers" context={`worker pool of ${resource.name}`} min={1} step={1} value={entry.concurrency} onChange={(v) => change({ concurrency: v })} />
+                      <NumberField label="Queue capacity" context={`worker queue of ${resource.name}`} step={1} placeholder="no bound" value={entry.queueCapacity} onChange={(v) => change({ queueCapacity: v })} />
                     </li>
                   )
                 })}
@@ -298,13 +303,13 @@ export function StressProfileDialog({ projectId, branchId, scenarios, existing, 
                         <p className="self-center text-sm text-foreground">{need.name}</p>
                         <label className="block text-[11px] font-medium text-muted-foreground">
                           Distribution
-                          <select className={`${selectClass} mt-1`} value={current.kind} onChange={(e) => setTime(need.target, { kind: e.target.value as DistributionKind })}>
+                          <select className={`${selectClass} mt-1`} aria-label={`Distribution, service time of ${need.name}`} value={current.kind} onChange={(e) => setTime(need.target, { kind: e.target.value as DistributionKind })}>
                             {DISTRIBUTIONS.map((d) => <option key={d.kind} value={d.kind}>{d.label}</option>)}
                           </select>
                         </label>
                         {shape.fields.map((field) => (
                           <NumberField
-                            key={field.key} label={field.label} disabled={source !== undefined} placeholder={source !== undefined ? 'from the result' : undefined}
+                            key={field.key} label={field.label} context={`service time of ${need.name}`} disabled={source !== undefined} placeholder={source !== undefined ? 'from the result' : undefined}
                             value={current[field.key] as number | null | undefined} onChange={(v) => setTime(need.target, { [field.key]: v })}
                           />
                         ))}
@@ -313,7 +318,7 @@ export function StressProfileDialog({ projectId, branchId, scenarios, existing, 
                         <label className="block text-[11px] font-medium text-muted-foreground">
                           Source of this value
                           <select
-                            className={`${selectClass} mt-1`} value={source ?? ''}
+                            className={`${selectClass} mt-1`} aria-label={`Source of this value, service time of ${need.name}`} value={source ?? ''}
                             onChange={(e) => {
                               const picked = e.target.value
                               setDraft((d) => {
@@ -362,10 +367,10 @@ export function StressProfileDialog({ projectId, branchId, scenarios, existing, 
                               {declared?.maxAttempts ?? 1} {declared?.maxAttempts === 1 ? 'attempt' : 'attempts'}, backoff {declared?.backoffMs ?? 0} ms
                             </p>
                             {need.kind === 'operation'
-                              ? <NumberField label="Override timeout, ms" step={1} placeholder="model" value={overrides.timeoutMs} onChange={(v) => setPolicy(need.target, { timeoutMs: v })} />
+                              ? <NumberField label="Override timeout, ms" context={need.name} step={1} placeholder="model" value={overrides.timeoutMs} onChange={(v) => setPolicy(need.target, { timeoutMs: v })} />
                               : <span />}
-                            <NumberField label="Override attempts" min={1} step={1} placeholder="model" value={overrides.maxAttempts} onChange={(v) => setPolicy(need.target, { maxAttempts: v })} />
-                            <NumberField label="Override backoff, ms" step={1} placeholder="model" value={overrides.backoffMs} onChange={(v) => setPolicy(need.target, { backoffMs: v })} />
+                            <NumberField label="Override attempts" context={need.name} min={1} step={1} placeholder="model" value={overrides.maxAttempts} onChange={(v) => setPolicy(need.target, { maxAttempts: v })} />
+                            <NumberField label="Override backoff, ms" context={need.name} step={1} placeholder="model" value={overrides.backoffMs} onChange={(v) => setPolicy(need.target, { backoffMs: v })} />
                           </div>
                         )
                       })()}
@@ -388,8 +393,8 @@ export function StressProfileDialog({ projectId, branchId, scenarios, existing, 
                         {subscription.name}
                         <span className="block text-[11px] text-muted-foreground">{subscription.deadLetters ? 'has a dead-letter channel' : 'no dead-letter channel'}</span>
                       </p>
-                      <NumberField label="Consumers" min={1} step={1} value={entry.consumers} onChange={(v) => change({ consumers: v })} />
-                      <NumberField label="Queue capacity" step={1} placeholder="no bound" value={entry.queueCapacity} onChange={(v) => change({ queueCapacity: v })} />
+                      <NumberField label="Consumers" context={`subscription ${subscription.name}`} min={1} step={1} value={entry.consumers} onChange={(v) => change({ consumers: v })} />
+                      <NumberField label="Queue capacity" context={`subscription ${subscription.name}`} step={1} placeholder="no bound" value={entry.queueCapacity} onChange={(v) => change({ queueCapacity: v })} />
                     </li>
                   )
                 })}
@@ -415,12 +420,12 @@ export function StressProfileDialog({ projectId, branchId, scenarios, existing, 
                   <div key={i} className="grid grid-cols-[1fr_7rem_7rem_auto] items-end gap-2">
                     <label className="block text-[11px] font-medium text-muted-foreground">
                       Target
-                      <select className={`${selectClass} mt-1`} value={outage.target} onChange={(e) => change({ target: e.target.value })}>
+                      <select className={`${selectClass} mt-1`} aria-label={`Target, outage ${i + 1}`} value={outage.target} onChange={(e) => change({ target: e.target.value })}>
                         {requirements.outageTargets.map((t) => <option key={`${t.kind}:${t.id}`} value={t.id}>{t.name} ({t.kind})</option>)}
                       </select>
                     </label>
-                    <NumberField label="From, s" value={outage.fromSeconds} onChange={(v) => change({ fromSeconds: v ?? 0 })} />
-                    <NumberField label="To, s" value={outage.toSeconds} onChange={(v) => change({ toSeconds: v ?? 0 })} />
+                    <NumberField label="From, s" context={`outage ${i + 1}`} value={outage.fromSeconds} onChange={(v) => change({ fromSeconds: v ?? 0 })} />
+                    <NumberField label="To, s" context={`outage ${i + 1}`} value={outage.toSeconds} onChange={(v) => change({ toSeconds: v ?? 0 })} />
                     <Button variant="ghost" size="sm" className="h-8 w-8 p-0" aria-label={`Remove outage ${i + 1}`} onClick={() => set('outages', draft.outages.filter((_, j) => j !== i))}><X className="h-3.5 w-3.5" /></Button>
                   </div>
                 )

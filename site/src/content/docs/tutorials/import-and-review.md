@@ -65,13 +65,12 @@ When you complete the tutorials, put the value `https://api.github.com` back.
 
 ## Scan the repository
 
-1. On the home screen, select your workspace, then select **+ New Project**. In **Project name**, give `Orders import`. Select **Create**.
-2. Open the project.
-3. Select **Import from GitHub** in the left toolbar.
-4. In **Repository**, give `acme/orders`.
-5. In **Read**, select **Branch**. In **Branch or tag**, give `main`.
-6. Leave **Only these folders** empty.
-7. Select **Scan repository**.
+1. On the home screen, select your workspace, then select **+ New Project**. In **Project name**, give `Orders import`. Select **Create**. The project opens.
+2. Select **Import from GitHub** in the left toolbar.
+3. In **Repository**, give `acme/orders`.
+4. In **Read**, select **Branch**. In **Branch or tag**, give `main`.
+5. Leave **Only these folders** empty.
+6. Select **Scan repository**.
 
 The scan shows "Listing files", then "Reading files", then "Scan complete". The button on the scan reads **Review 21 proposals**.
 

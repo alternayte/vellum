@@ -137,10 +137,18 @@ function minimapNodeColor(node: Node): string {
 
 // A fit never enlarges nodes past their designed size: a model with two nodes would
 // otherwise fill the screen at the highest zoom.
-const FIT_INITIAL = { maxZoom: 1, padding: 0.2 }
+// On a narrow screen a fit of the whole model shrinks the labels until no one can read them.
+// There the fit stops at a zoom where labels stay legible, centred on the model, and the person
+// pans to the rest.
+const SMALL_SCREEN = '(max-width: 639px)'
+const SMALL_SCREEN_MIN_FIT_ZOOM = 0.6
+const fitInitial = () => ({
+  maxZoom: 1, padding: 0.2,
+  ...(typeof window !== 'undefined' && window.matchMedia?.(SMALL_SCREEN).matches ? { minZoom: SMALL_SCREEN_MIN_FIT_ZOOM } : {}),
+})
 // The move of the viewport is an animation of position only. With reduced motion the viewport jumps.
 const fitMs = () => (prefersReducedMotion() ? 0 : 300)
-const fitAll = () => ({ ...FIT_INITIAL, duration: fitMs() })
+const fitAll = () => ({ ...fitInitial(), duration: fitMs() })
 const fitOne = () => ({ maxZoom: 1.25, padding: 0.5, duration: fitMs() })
 export function CanvasView(props: CanvasViewProps) {
   // A read-only canvas keeps the callbacks that look and gets none of the ones that write.
@@ -201,6 +209,8 @@ function CanvasViewInner({
 }: CanvasViewProps) {
   const { currentRootId, zoomLevel, setZoom, activeLens, setLens, expandedNodeIds, toggleExpand } = useCanvasStore()
   const { fitView, screenToFlowPosition } = useReactFlow()
+  // Read once: the first fit is made at mount.
+  const [initialFit] = useState(fitInitial)
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([])
   const [contextMenu, setContextMenu] = useState<ContextMenuState>(null)
   const [createPopover, setCreatePopover] = useState<{
@@ -861,7 +871,7 @@ function CanvasViewInner({
         multiSelectionKeyCode="Shift"
         panOnDrag
         fitView
-        fitViewOptions={FIT_INITIAL}
+        fitViewOptions={initialFit}
         colorMode="dark"
         onlyRenderVisibleElements
         snapToGrid

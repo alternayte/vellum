@@ -309,9 +309,9 @@ In the app:
 3. Read **Changed in the source**. It has the changed schema and the changed message `OrderCreated`, and the line **Removed Transactional outbox**. Each line has the label **Definite**. Open a line to read the diff and the source lines.
 4. Read **Affected flows**. **Place an order** has one **Definite** reason: a step names the changed schema. It has one **Possible** reason: its steps run in the service of the outbox.
 5. Read **Affected promises**. `ORD-014` has the label **At risk**.
-6. On `ORD-014/O3` in that list, select **Run against this scan**. The label becomes **Unsupported**. A comparison scan cannot establish that a pattern is absent.
+6. Under **Gate**, select **Run checks against this scan**. It runs the source pattern checks of the approved promises against this commit. `ORD-014/O3` has the label **Failed**, and `ORD-014` has the label **Broken**. The scan read every file of the commit, so the absence of the pattern is established. The result is for this commit only: `ORD-014` keeps its result against `main`.
 7. Close the dialog. On the scan, select **Follow this ref**. This is what happens when the change is merged.
-8. Select **Impact** again and select **Run against this scan** again. The check has the label **Failed**, and `ORD-014` has the label **Broken**.
+8. Select **Impact** again and select **Run checks against this scan** again. The check has the label **Failed**, and `ORD-014` has the label **Broken**. The result now counts for the ref that the model follows.
 
    ![The dialog Impact of remove-outbox on acme/orders. Changed in the source has three entries with the label Definite: the schema OrderCreated, the message OrderCreated and the removed pattern Transactional outbox. Affected flows has Place an order. Affected promises has ORD-014 with the label Broken, and ORD-014/O3 with the label Failed.](../../../assets/screenshots/impact-view.png)
 
@@ -346,7 +346,7 @@ With the HTTP API:
    api POST "promises/$PROMISE/obligations/O3/run" "$(jq -n --arg scan "$CHANGE_SCAN" '{scanId: $scan}')" | jq -r '.result, .detail'
    ```
 
-   The result is `unsupported`. The detail says that the snapshot has no such fact, that a comparison scan cannot establish absence, and where the pattern was found before. Vellum does not report a failure that it cannot establish.
+   The result is `failed`. The detail starts with `A comparison scan that covers the whole repository at this commit found no such fact.` and names the line where the pattern was found before. The scan read every file of the commit, so Vellum can establish the absence. The result is for this commit only: the promise keeps its result against `main`, and its counts do not change. A comparison scan that did not read every file where the pattern would be gives `unsupported`.
 
 3. Make the changed ref the one that the model follows. This is what happens when the change is merged.
 

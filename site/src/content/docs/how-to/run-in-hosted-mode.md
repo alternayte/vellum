@@ -38,11 +38,11 @@ Use the local profile for real work. [Local and hosted profiles](/concepts/local
    openssl rand -base64 32
    ```
 
-2. Make a setup token of 16 characters or more.
+2. Make a setup token. It must have 16 characters or more. This command gives 48.
 
    <!-- snippet: run -->
    ```sh
-   openssl rand -hex 16
+   openssl rand -hex 24
    ```
 
 3. Decide the public host name, for example `vellum.example.com`.

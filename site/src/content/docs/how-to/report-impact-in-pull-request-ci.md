@@ -193,7 +193,7 @@ The project follows `main` of `acme/orders`. The approved promise ORD-014 requir
 The scan reads every file of the head commit. The source pattern check of ORD-014 fails against it, and the job log shows:
 
 ```text
-ORD-014 O2: failed
+ORD-014 O3: failed
 ```
 
 With the policy `off`, the summary starts with these lines. The script exits with 0.
@@ -213,7 +213,7 @@ With the policy `fail-on-broken`, the summary starts with these lines. The scrip
 
 **Gate: fail** (policy `fail-on-broken`)
 
-- ORD-014 'An accepted order must survive a broker outage' (approved revision 1) is broken: the check 'O2' failed against this scan.
+- ORD-014 'An accepted order must survive a broker outage' (approved revision 1) is broken: the check 'O3' failed against this scan.
 ```
 
 ORD-014 keeps its result against `main`. Only the report of this scan says that it is broken.

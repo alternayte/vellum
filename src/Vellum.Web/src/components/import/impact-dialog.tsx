@@ -249,7 +249,7 @@ export function ImpactDialog({ projectId, scan, owners, onClose }: {
           )}
           <DialogDescription>
             {impact
-              ? <>Commit <span className="font-mono">{short(impact.head.commitSha)}</span> compared with {impact.base.scanId ? <><span className="font-mono">{impact.base.ref ?? 'a commit'}</span> at <span className="font-mono">{short(impact.base.commitSha)}</span></> : 'the model'}. The report reads the source. It runs no check and changes nothing.</>
+              ? <>Commit <span className="font-mono">{short(impact.head.commitSha)}</span> compared with {impact.base.scanId ? <><span className="font-mono">{impact.base.ref ?? 'a commit'}</span> at <span className="font-mono">{short(impact.base.commitSha)}</span></> : 'the model'}. The report reads the source and changes nothing in the model. Checks run only when you select Run checks against this scan, and their results count for this scan only.</>
               : 'What the source of this scan changes, and which flows and promises that reaches.'}
           </DialogDescription>
         </DialogHeader>

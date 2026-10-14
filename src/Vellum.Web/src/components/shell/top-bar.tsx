@@ -65,7 +65,7 @@ export function TopBar({ projectId, projectName, project, activeDoc }: TopBarPro
       <Button
         variant="outline"
         size="sm"
-        className="gap-2 text-xs text-muted-foreground"
+        className="gap-2 text-xs text-muted-foreground focus-visible:outline-2 focus-visible:outline-solid focus-visible:outline-primary"
         onClick={toggleCommandPalette}
       >
         <span>Search</span>
@@ -75,7 +75,7 @@ export function TopBar({ projectId, projectName, project, activeDoc }: TopBarPro
       </Button>
 
       <button
-        className="flex h-7 w-7 items-center justify-center rounded-full bg-primary text-[10px] font-medium text-primary-foreground"
+        className="flex h-7 w-7 items-center justify-center rounded-full bg-primary text-[10px] font-medium text-primary-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
         onClick={handleLogout}
         aria-label={`Log out (signed in as ${initials})`}
         title="Log out"
