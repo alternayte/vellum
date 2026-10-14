@@ -99,7 +99,7 @@ internal static class ReviewEngine
 
         var report = RuleSet.Run(input);
         var book = new DecisionBook(input.Decisions);
-        var wontFix = await services.GetRequiredService<ReviewDbContext>().Dispositions.AsNoTracking()
+        var wontFix = await services.GetRequiredService<AppDbContext>().Dispositions.AsNoTracking()
             .Where(d => d.ProjectId == projectId).ToDictionaryAsync(d => (d.RuleId, d.SubjectId), ct);
         return (new ReviewState(input, report, book, Evaluate(report, book, wontFix)), null);
     }
@@ -122,7 +122,7 @@ internal static class ReviewAccess
 public static class DecisionReads
 {
     /// <summary>Every decision of the project as its row holds it. A row commits with each event of its stream.</summary>
-    public static async Task<IReadOnlyList<PinnedDecision>> CurrentAsync(ReviewDbContext db, Guid projectId, CancellationToken ct) =>
+    public static async Task<IReadOnlyList<PinnedDecision>> CurrentAsync(AppDbContext db, Guid projectId, CancellationToken ct) =>
         [.. (await db.Decisions.AsNoTracking().Where(d => d.ProjectId == projectId)
                 .OrderBy(d => d.Number).ThenBy(d => d.Id)
                 .Select(d => new { d.Id, d.Document, d.Version }).ToListAsync(ct))

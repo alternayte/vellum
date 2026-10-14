@@ -34,7 +34,7 @@ public static class SchemaEndpoints
             string? cursor, int? limit,
             ClaimsPrincipal user,
             WorkspaceAuthorizationService auth,
-            SchemasDbContext db, CancellationToken ct) =>
+            AppDbContext db, CancellationToken ct) =>
         {
             var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
             await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Viewer, ct);
@@ -45,7 +45,7 @@ public static class SchemaEndpoints
             Guid projectId, Guid schemaId,
             ClaimsPrincipal user,
             WorkspaceAuthorizationService auth,
-            SchemasDbContext db, CancellationToken ct) =>
+            AppDbContext db, CancellationToken ct) =>
         {
             var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
             await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Viewer, ct);

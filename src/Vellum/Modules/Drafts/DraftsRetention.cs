@@ -5,7 +5,7 @@ using Vellum.Shared;
 namespace Vellum.Modules.Drafts;
 
 /// <summary>What the draft tables keep of a deleted project: nothing. Each draft goes with its model stream and its comments.</summary>
-public sealed class DraftsRetention(DraftsDbContext db, IEventStore store) : IProjectRetention
+public sealed class DraftsRetention(AppDbContext db, IEventStore store) : IProjectRetention
 {
     public async Task DeleteProjectAsync(DeletedProject project, CancellationToken ct)
     {

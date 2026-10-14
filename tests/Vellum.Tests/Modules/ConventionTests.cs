@@ -1,4 +1,7 @@
+using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Metadata;
 using Vellum.Shared;
 
 namespace Vellum.Tests.Modules;
@@ -6,16 +9,27 @@ namespace Vellum.Tests.Modules;
 public class ConventionTests
 {
     [Fact]
-    public void All_DbContexts_use_snake_case_naming()
+    public void Every_table_and_column_has_a_snake_case_name_in_a_module_schema()
     {
-        var assembly = typeof(Program).Assembly;
-        var dbContextTypes = assembly.GetTypes()
-            .Where(t => t.IsSubclassOf(typeof(DbContext)) && !t.IsAbstract)
-            .ToList();
+        using var db = new AppDbContextFactory().CreateDbContext([]);
+        var model = db.GetService<IDesignTimeModel>().Model;
+        var snakeCase = new Regex("^[a-z][a-z0-9]*(_[a-z0-9]+)*$");
 
-        Assert.NotEmpty(dbContextTypes);
-        // Each DbContext should be configurable with UseSnakeCaseNamingConvention
-        // This is a structural check — the actual naming is enforced by the NamingConventions package
+        var entities = model.GetEntityTypes().ToList();
+        Assert.NotEmpty(entities);
+        foreach (var entity in entities)
+        {
+            var table = entity.GetTableName();
+            Assert.NotNull(table);
+            Assert.Matches(snakeCase, table);
+            // Each module owns a schema of its own; nothing lands in public.
+            Assert.Matches(snakeCase, entity.GetSchema() ?? "public");
+            Assert.NotEqual("public", entity.GetSchema() ?? "public");
+
+            var store = StoreObjectIdentifier.Table(table, entity.GetSchema());
+            foreach (var property in entity.GetProperties())
+                Assert.Matches(snakeCase, property.GetColumnName(store)!);
+        }
     }
 
     [Fact]

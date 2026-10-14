@@ -84,10 +84,10 @@ public static partial class ExternalEvidence
 
     public static async Task<CheckOutcome> AssessAsync(
         RecordEvidenceRequest request, EvidenceSource? bound, Guid workspaceId, Guid projectId, string obligationHash,
-        GitHubReader gitHub, SettingsResolver settings, ImportDbContext importDb, CancellationToken ct)
+        GitHubReader gitHub, SettingsResolver settings, AppDbContext db, CancellationToken ct)
     {
         var source = request.Source;
-        var (reason, read, commit, repositoryKey) = await CheckAsync(request, bound, workspaceId, projectId, gitHub, settings, importDb, ct);
+        var (reason, read, commit, repositoryKey) = await CheckAsync(request, bound, workspaceId, projectId, gitHub, settings, db, ct);
 
         var shownCommit = read?.Commit ?? commit ?? source.CommitSha;
         var environment = shownCommit is null ? source.System : $"{source.System}@{shownCommit}";
@@ -137,7 +137,7 @@ public static partial class ExternalEvidence
     /// <summary>The run as Vellum read it, or a fixed code that says why the result is not evidence for this obligation.</summary>
     private static async Task<(string? Reason, Read? Read, string? Commit, string? RepositoryKey)> CheckAsync(
         RecordEvidenceRequest request, EvidenceSource? bound, Guid workspaceId, Guid projectId,
-        GitHubReader gitHub, SettingsResolver settings, ImportDbContext importDb, CancellationToken ct)
+        GitHubReader gitHub, SettingsResolver settings, AppDbContext db, CancellationToken ct)
     {
         var source = request.Source;
         if (bound is null)
@@ -163,9 +163,9 @@ public static partial class ExternalEvidence
 
         // The project must still follow the repository, and the commit must be one the result can be shown for.
         var repositoryKey = PromiseWorld.RepositoryKey(host, bound.Repository);
-        var tracked = await importDb.TrackedRefs.AsNoTracking()
+        var tracked = await db.TrackedRefs.AsNoTracking()
             .FirstOrDefaultAsync(t => t.ProjectId == projectId && t.Host == host && t.Repository == bound.Repository, ct);
-        if (tracked is null && !await importDb.FactLinks.AsNoTracking().AnyAsync(l => l.ProjectId == projectId && l.Host == host && l.Repository == bound.Repository, ct))
+        if (tracked is null && !await db.FactLinks.AsNoTracking().AnyAsync(l => l.ProjectId == projectId && l.Host == host && l.Repository == bound.Repository, ct))
             return ("repository-not-followed", null, null, repositoryKey);
         if ((source.CommitSha ?? tracked?.CommitSha) is not { } commit)
             return ("no-tracked-commit", null, null, repositoryKey);

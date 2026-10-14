@@ -2,6 +2,7 @@ using System.Text.Json.Serialization;
 using Deedbox;
 using Microsoft.EntityFrameworkCore;
 using Vellum.Modules.Trace.Engine;
+using Vellum.Shared;
 
 namespace Vellum.Modules.Trace.Scenarios;
 
@@ -11,9 +12,6 @@ public static class ScenariosModule
     {
         // The connection string is read when the context is first used, so configuration that
         // a test host overrides applies.
-        services.AddDbContext<ScenariosDbContext>((provider, options) =>
-            options.UseNpgsql(provider.GetRequiredService<IConfiguration>().GetConnectionString("DefaultConnection"))
-                   .UseSnakeCaseNamingConvention());
         services.AddScoped<Shared.IProjectRetention, ScenariosRetention>();
 
         // Scenario documents and trace results name their enum members (`Succeeded`,

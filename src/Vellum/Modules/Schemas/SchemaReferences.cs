@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Vellum.Shared;
 
 namespace Vellum.Modules.Schemas;
 
@@ -32,7 +33,7 @@ public static class SchemaReferences
         if (db.Database.CurrentTransaction is null)
             throw new InvalidOperationException("A schema row is held for a transaction; open one first.");
 
-        // The table of SchemasDbContext, named here because the lock must be taken on the
+        // The table of AppDbContext, named here because the lock must be taken on the
         // connection of the transaction that writes the reference.
         var held = await db.Database
             .SqlQuery<Guid>($"""

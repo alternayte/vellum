@@ -28,7 +28,7 @@ public static class PreviewMerge
     public static async Task<IResult> Handle(
         Guid projectId, Guid draftId,
         ClaimsPrincipal user,
-        DraftsDbContext draftsDb,
+        AppDbContext db,
         IEventStore store,
         WorkspaceAuthorizationService auth,
         CancellationToken ct)
@@ -36,7 +36,7 @@ public static class PreviewMerge
         var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Viewer, ct);
 
-        var draft = await draftsDb.Drafts.AsNoTracking()
+        var draft = await db.Drafts.AsNoTracking()
             .FirstOrDefaultAsync(d => d.Id == draftId && d.ProjectId == projectId, ct);
         if (draft is null)
             return Results.NotFound(new ErrorResponse("not_found", "Draft not found"));

@@ -19,7 +19,7 @@ public static class SaveLayout
         Guid projectId, Guid viewId,
         SaveLayoutRequest request,
         ClaimsPrincipal user,
-        ViewsDbContext db,
+        AppDbContext db,
         WorkspaceAuthorizationService auth,
         CancellationToken ct)
     {

@@ -49,7 +49,7 @@ public static class AgentTokenEndpoints
 
     private static async Task<IResult> Create(
         Guid workspaceId, CreateAgentTokenRequest request, ClaimsPrincipal user,
-        AppIdentityDbContext db, WorkspacesDbContext workspaces, WorkspaceAuthorizationService auth,
+        AppDbContext db, WorkspaceAuthorizationService auth,
         Bootstrap bootstrap, TimeProvider time, CancellationToken ct)
     {
         var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
@@ -79,7 +79,7 @@ public static class AgentTokenEndpoints
             return Invalid("expiresAt", $"A token lives at most {AgentTokenRules.MaxLifetime.Days} days");
 
         if (request.ProjectId is { } projectId
-            && !await workspaces.Projects.AnyAsync(p => p.Id == projectId && p.WorkspaceId == workspaceId, ct))
+            && !await db.Projects.AnyAsync(p => p.Id == projectId && p.WorkspaceId == workspaceId, ct))
             return Invalid("projectId", "Must be the ID of a project of this workspace");
 
         var id = Guid.NewGuid();
@@ -126,7 +126,7 @@ public static class AgentTokenEndpoints
             ct);
         await transaction.CommitAsync(ct);
 
-        return Results.Created($"/api/workspaces/{workspaceId}/agent-tokens/{id}",
+        return Results.Created($"/api/db/{workspaceId}/agent-tokens/{id}",
             new AgentTokenCreated(id, row.Name, token, row.Scopes, row.ProjectId, row.ExpiresAt));
     }
 
@@ -138,7 +138,7 @@ public static class AgentTokenEndpoints
     /// only a create adds a row. No field holds the token or its digest.
     /// </summary>
     private static async Task<IResult> List(
-        Guid workspaceId, ClaimsPrincipal user, AppIdentityDbContext db, WorkspaceAuthorizationService auth, CancellationToken ct)
+        Guid workspaceId, ClaimsPrincipal user, AppDbContext db, WorkspaceAuthorizationService auth, CancellationToken ct)
     {
         await auth.RequireRoleAsync(workspaceId, user.FindFirstValue(ClaimTypes.NameIdentifier)!, WorkspaceRole.Owner, ct);
 
@@ -159,7 +159,7 @@ public static class AgentTokenEndpoints
     /// </summary>
     private static async Task<IResult> Revoke(
         Guid workspaceId, Guid tokenId, ClaimsPrincipal user,
-        AppIdentityDbContext db, WorkspaceAuthorizationService auth, TimeProvider time, CancellationToken ct)
+        AppDbContext db, WorkspaceAuthorizationService auth, TimeProvider time, CancellationToken ct)
     {
         var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
         await auth.RequireRoleAsync(workspaceId, userId, WorkspaceRole.Owner, ct);

@@ -60,7 +60,7 @@ internal static class PromiseAccess
         if (AgentPrincipal.TokenId(http.User) is { } tokenId && AgentPrincipal.WorkspaceId(http.User) is { } workspaceId)
         {
             await AgentTokenAudit.RefusedAsync(
-                http.RequestServices.GetRequiredService<AppIdentityDbContext>(), tokenId, workspaceId, "human-authored",
+                http.RequestServices.GetRequiredService<AppDbContext>(), tokenId, workspaceId, "human-authored",
                 AgentTokenAudit.Describe(http), http.RequestServices.GetRequiredService<TimeProvider>().GetUtcNow(), http.RequestAborted);
         }
 

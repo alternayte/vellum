@@ -171,18 +171,11 @@ public class InstanceDefaultsTests : InstancePolicyTests
         Assert.Equal(16, ((string)diagnostics["masterKeyId"]!).Length);
         Assert.False((bool)diagnostics["previousMasterKeyLoaded"]!);
 
-        var modules = diagnostics["migrations"]!.AsArray().ToDictionary(m => (string)m!["module"]!, m => m!);
-        Assert.Equal(
-            ["ai", "ai-design", "costs", "docs", "drafts", "identity", "import", "load-tests", "modelling", "promises", "review", "scenarios", "schemas", "settings", "stress", "views", "workspaces"],
-            modules.Keys.Order());
-        Assert.All(modules.Values, m =>
-        {
-            Assert.NotEmpty(m["applied"]!.AsArray());
-            Assert.Empty(m["pending"]!.AsArray());
-        });
-        Assert.Contains(modules["settings"]["applied"]!.AsArray(), id => ((string)id!).EndsWith("_InitialSettings"));
-        // Each module lists its own migrations only.
-        Assert.DoesNotContain(modules["identity"]["applied"]!.AsArray(), id => ((string)id!).EndsWith("_InitialSettings"));
+        // One context holds the tables of every module, so one history lists every migration.
+        var migrations = Assert.Single(diagnostics["migrations"]!.AsArray())!;
+        Assert.Equal("vellum", (string)migrations["module"]!);
+        Assert.Contains(migrations["applied"]!.AsArray(), id => ((string)id!).EndsWith("_Initial"));
+        Assert.Empty(migrations["pending"]!.AsArray());
 
         Assert.DoesNotContain(InstanceMasterKey, body);
         Assert.DoesNotContain(Convert.ToHexStringLower(Convert.FromBase64String(InstanceMasterKey)), body, StringComparison.OrdinalIgnoreCase);
@@ -262,7 +255,7 @@ public class InstancePolicyLimitTests : InstancePolicyTests
         var profileId = Guid.NewGuid();
         await using (var scope = Factory.Services.CreateAsyncScope())
         {
-            var db = scope.ServiceProvider.GetRequiredService<Vellum.Modules.Stress.StressDbContext>();
+            var db = scope.ServiceProvider.GetRequiredService<Vellum.Shared.AppDbContext>();
             db.Profiles.Add(new Vellum.Modules.Stress.StressProfileEntity
             {
                 Id = profileId, ProjectId = projectId, ScenarioId = Guid.NewGuid(), Name = "P", Version = 1,

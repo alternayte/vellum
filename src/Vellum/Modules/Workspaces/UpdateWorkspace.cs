@@ -12,7 +12,7 @@ public static class UpdateWorkspace
         Guid id,
         UpdateWorkspaceRequest request,
         ClaimsPrincipal user,
-        WorkspacesDbContext db,
+        AppDbContext db,
         WorkspaceAuthorizationService auth,
         CancellationToken ct)
     {

@@ -1,17 +1,13 @@
 using Deedbox;
 using Microsoft.EntityFrameworkCore;
+using Vellum.Shared;
 
 namespace Vellum.Modules.Schemas;
 
 public static class SchemasModule
 {
-    public static IServiceCollection AddSchemasModule(this IServiceCollection services, IConfiguration config)
+    public static IServiceCollection AddSchemasModule(this IServiceCollection services)
     {
-        var connectionString = config.GetConnectionString("DefaultConnection")!;
-
-        services.AddDbContext<SchemasDbContext>(options =>
-            options.UseNpgsql(connectionString)
-                   .UseSnakeCaseNamingConvention());
         services.AddScoped<Shared.IProjectRetention, SchemasRetention>();
 
         return services;

@@ -50,7 +50,7 @@ public sealed record SavedEstimateDto(
 public sealed record ComparisonDto(EstimateDto Left, EstimateDto Right, Comparison Comparison);
 
 /// <summary>Builds the estimate of a branch from what is stored now.</summary>
-public sealed class EstimateReader(IEventStore store, CostsDbContext db, SettingsResolver settings, WorkspaceAuthorizationService auth)
+public sealed class EstimateReader(IEventStore store, AppDbContext db, SettingsResolver settings, WorkspaceAuthorizationService auth)
 {
     internal sealed record Built(EstimateDto Dto, EstimateInputsIndex Inputs);
 
@@ -160,7 +160,7 @@ public static class Estimates
     /// <summary>Stores the estimate of the branch as it is now. A stored estimate never changes.</summary>
     public static Task<IResult> Save(
         Guid projectId, Guid? branchId, SaveEstimateRequest request,
-        HttpContext http, EstimateReader reader, CostsDbContext db, TimeProvider time, CancellationToken ct) =>
+        HttpContext http, EstimateReader reader, AppDbContext db, TimeProvider time, CancellationToken ct) =>
         ModelBranches.RunAsync(http, projectId, branchId, WorkspaceRole.Editor, async (branch, userId) =>
         {
             var asOf = request.AsOf ?? Today(time);
@@ -198,7 +198,7 @@ public static class Estimates
 
     /// <summary>The saved estimates of the branch, newest first, each with what changed since it was saved.</summary>
     public static Task<IResult> List(
-        Guid projectId, Guid? branchId, HttpContext http, EstimateReader reader, CostsDbContext db, TimeProvider time, CancellationToken ct) =>
+        Guid projectId, Guid? branchId, HttpContext http, EstimateReader reader, AppDbContext db, TimeProvider time, CancellationToken ct) =>
         ModelBranches.RunAsync(http, projectId, branchId, WorkspaceRole.Viewer, async (branch, _) =>
         {
             var rows = await db.Estimates.AsNoTracking()
@@ -213,7 +213,7 @@ public static class Estimates
         }, ct);
 
     public static Task<IResult> Get(
-        Guid projectId, Guid estimateId, Guid? branchId, HttpContext http, EstimateReader reader, CostsDbContext db, TimeProvider time, CancellationToken ct) =>
+        Guid projectId, Guid estimateId, Guid? branchId, HttpContext http, EstimateReader reader, AppDbContext db, TimeProvider time, CancellationToken ct) =>
         ModelBranches.RunAsync(http, projectId, branchId, WorkspaceRole.Viewer, async (branch, _) =>
         {
             var row = await db.Estimates.AsNoTracking()
@@ -225,7 +225,7 @@ public static class Estimates
         }, ct);
 
     public static Task<IResult> Delete(
-        Guid projectId, Guid estimateId, Guid? branchId, HttpContext http, CostsDbContext db, CancellationToken ct) =>
+        Guid projectId, Guid estimateId, Guid? branchId, HttpContext http, AppDbContext db, CancellationToken ct) =>
         ModelBranches.RunAsync(http, projectId, branchId, WorkspaceRole.Editor, async (branch, _) =>
             await db.Estimates.Where(e => e.Id == estimateId && e.ProjectId == projectId && e.BranchId == branch).ExecuteDeleteAsync(ct) == 1
                 ? Results.NoContent()
@@ -254,7 +254,7 @@ public static class Pins
     /// the entries the project pinned. A book holds at most <see cref="PriceRules.MaxPerWorkspace"/> entries.
     /// </summary>
     public static async Task<IResult> Prices(
-        Guid projectId, ClaimsPrincipal user, WorkspaceAuthorizationService auth, CostsDbContext db, CancellationToken ct)
+        Guid projectId, ClaimsPrincipal user, WorkspaceAuthorizationService auth, AppDbContext db, CancellationToken ct)
     {
         await auth.RequireProjectRoleAsync(projectId, PriceBook.UserId(user), WorkspaceRole.Viewer, ct);
         var workspaceId = await auth.GetProjectWorkspaceIdAsync(projectId, ct);
@@ -269,7 +269,7 @@ public static class Pins
     }
 
     public static async Task<IResult> Pin(
-        Guid projectId, Guid priceId, ClaimsPrincipal user, WorkspaceAuthorizationService auth, CostsDbContext db, TimeProvider time, CancellationToken ct)
+        Guid projectId, Guid priceId, ClaimsPrincipal user, WorkspaceAuthorizationService auth, AppDbContext db, TimeProvider time, CancellationToken ct)
     {
         var userId = PriceBook.UserId(user);
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
@@ -293,7 +293,7 @@ public static class Pins
     }
 
     public static async Task<IResult> Unpin(
-        Guid projectId, Guid priceId, ClaimsPrincipal user, WorkspaceAuthorizationService auth, CostsDbContext db, CancellationToken ct)
+        Guid projectId, Guid priceId, ClaimsPrincipal user, WorkspaceAuthorizationService auth, AppDbContext db, CancellationToken ct)
     {
         await auth.RequireProjectRoleAsync(projectId, PriceBook.UserId(user), WorkspaceRole.Editor, ct);
         await db.Pins.Where(p => p.ProjectId == projectId && p.PriceEntryId == priceId).ExecuteDeleteAsync(ct);

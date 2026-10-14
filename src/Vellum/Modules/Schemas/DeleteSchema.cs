@@ -23,7 +23,7 @@ public sealed class DeleteSchemaHandler(IServiceProvider requestServices)
     {
         // An ID that is no schema of this project is not looked up in the event store: it can
         // name a stream of another kind.
-        var belongsToProject = await requestServices.GetRequiredService<SchemasDbContext>().Schemas.AsNoTracking()
+        var belongsToProject = await requestServices.GetRequiredService<AppDbContext>().Schemas.AsNoTracking()
             .AnyAsync(s => s.Id == cmd.SchemaId && s.ProjectId == cmd.ProjectId, ct);
         if (!belongsToProject)
             return new CommandResult.NotFound("Schema not found");
@@ -32,7 +32,7 @@ public sealed class DeleteSchemaHandler(IServiceProvider requestServices)
         // fails with DBX038 or a deadlock wrote nothing and runs again.
         return await SharedTransaction.RunAsync<CommandResult>(requestServices, async services =>
         {
-            var db = services.GetRequiredService<SchemasDbContext>();
+            var db = services.GetRequiredService<AppDbContext>();
             await using var transaction = await db.Database.BeginTransactionAsync(ct);
             var store = services.GetRequiredService<IEventStore>().UseDbContext(db);
 
@@ -67,15 +67,14 @@ public sealed class DeleteSchemaHandler(IServiceProvider requestServices)
     internal static async Task<string?> ReferrersAsync(
         IServiceProvider services, IEventStore store, DeleteSchemaCommandEnvelope cmd, CancellationToken ct)
     {
-        var modellingDb = services.GetRequiredService<ModellingDbContext>();
+        var db = services.GetRequiredService<AppDbContext>();
 
         // Operations and messages live in model streams, one per branch. The list of open
         // branches is read before their states: a merge moves a reference from a draft to main
         // in one commit, and the draft's stream keeps it, so one of the two reads finds it.
         var references = new List<string>();
         var branches = await ModelBranches.OpenAsync(
-            cmd.ProjectId, services.GetRequiredService<WorkspacesDbContext>(),
-            services.GetRequiredService<DraftsDbContext>(), modellingDb, ct);
+            cmd.ProjectId, db, ct);
         foreach (var (streamId, branch) in branches)
         {
             var (model, _) = await store.Load<ModelState>(StreamId.From(streamId), ct);
@@ -91,7 +90,7 @@ public sealed class DeleteSchemaHandler(IServiceProvider requestServices)
         // A revision stores its model as JSON text, in which a GUID has one spelling. The text
         // search selects the few revisions that can name the schema; each is then read as a model.
         var idText = cmd.SchemaId.ToString();
-        var candidates = modellingDb.Revisions.AsNoTracking()
+        var candidates = db.Revisions.AsNoTracking()
             .Where(r => r.ProjectId == cmd.ProjectId && r.State.Contains(idText))
             .OrderBy(r => r.CreatedAt).ThenBy(r => r.Id)
             .Select(r => new { r.Name, r.State })

@@ -45,18 +45,18 @@ public static class Scripts
     /// </summary>
     public static Task<IResult> Generate(
         Guid projectId, Guid? branchId, GenerateScriptRequest request,
-        HttpContext http, IEventStore store, SchemasDbContext schemasDb, StressDbContext stressDb, LoadTestsDbContext db, TimeProvider time,
+        HttpContext http, IEventStore store, AppDbContext db, TimeProvider time,
         CancellationToken ct) =>
         ModelBranches.RunAsync(http, projectId, branchId, WorkspaceRole.Editor, async (streamId, userId) =>
         {
-            var profileRow = await stressDb.Profiles.AsNoTracking().FirstOrDefaultAsync(p => p.Id == request.ProfileId && p.ProjectId == projectId, ct);
+            var profileRow = await db.Profiles.AsNoTracking().FirstOrDefaultAsync(p => p.Id == request.ProfileId && p.ProjectId == projectId, ct);
             if (profileRow is null)
                 return Targets.NotFound("Stress profile");
             if (await Targets.LoadAsync(store, projectId, request.TargetId, ct) is not (var target, _))
                 return Targets.NotFound("Load-test target");
 
             var profile = StressProfiles.Read(profileRow.Document);
-            var world = await StressAccess.LoadAsync(store, schemasDb, projectId, streamId, profile.ScenarioId, ct);
+            var world = await StressAccess.LoadAsync(store, db, projectId, streamId, profile.ScenarioId, ct);
             if (world.Scenario is null)
                 return Refused(new K6Refusal("scenario-not-valid", "The scenario of this profile does not exist any more. Choose another scenario in the profile.", []));
 
@@ -130,7 +130,7 @@ public static class Scripts
         Results.Json(new ScriptRefusedResponse(refusal.Code, refusal.Message, refusal.Reasons), statusCode: StatusCodes.Status422UnprocessableEntity);
 
     public static async Task<IResult> List(
-        Guid projectId, ClaimsPrincipal user, WorkspaceAuthorizationService auth, LoadTestsDbContext db, CancellationToken ct)
+        Guid projectId, ClaimsPrincipal user, WorkspaceAuthorizationService auth, AppDbContext db, CancellationToken ct)
     {
         await auth.RequireProjectRoleAsync(projectId, Targets.UserId(user), WorkspaceRole.Viewer, ct);
 
@@ -149,7 +149,7 @@ public static class Scripts
     }
 
     public static async Task<IResult> Get(
-        Guid projectId, Guid scriptId, ClaimsPrincipal user, WorkspaceAuthorizationService auth, LoadTestsDbContext db, CancellationToken ct)
+        Guid projectId, Guid scriptId, ClaimsPrincipal user, WorkspaceAuthorizationService auth, AppDbContext db, CancellationToken ct)
     {
         await auth.RequireProjectRoleAsync(projectId, Targets.UserId(user), WorkspaceRole.Viewer, ct);
 

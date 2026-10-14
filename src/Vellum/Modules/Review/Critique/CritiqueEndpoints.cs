@@ -80,7 +80,7 @@ public static class CritiqueEndpoints
     public const int MaxFindingsChars = 96 * 1024;
 
     public static async Task<IResult> Create(
-        Guid projectId, CritiqueRequest body, HttpContext http, AiClient ai, ReviewDbContext db, PrivateSources privateSources, TimeProvider time, CancellationToken ct)
+        Guid projectId, CritiqueRequest body, HttpContext http, AiClient ai, AppDbContext db, PrivateSources privateSources, TimeProvider time, CancellationToken ct)
     {
         var (caller, refusal) = await DesignAccess.ResolveAsync(http, projectId, body.BranchId, WorkspaceRole.Editor, forWrite: false, ct);
         if (caller is null)
@@ -235,7 +235,7 @@ public static class CritiqueEndpoints
         return Results.Created($"/api/projects/{projectId}/review/critiques/{row.Id}", ToDto(row, document, review.Input.Pin.Version));
     }
 
-    public static async Task<IResult> List(Guid projectId, HttpContext http, ReviewDbContext db, CancellationToken ct)
+    public static async Task<IResult> List(Guid projectId, HttpContext http, AppDbContext db, CancellationToken ct)
     {
         await DesignAccess.RequireAsync(http, projectId, WorkspaceRole.Viewer, ct);
         var rows = await db.Critiques.AsNoTracking().Where(c => c.ProjectId == projectId)
@@ -244,7 +244,7 @@ public static class CritiqueEndpoints
         return Results.Ok(new Page<CritiqueSummary>(rows, null));
     }
 
-    public static async Task<IResult> Get(Guid projectId, Guid critiqueId, HttpContext http, ReviewDbContext db, IEventStore store, CancellationToken ct)
+    public static async Task<IResult> Get(Guid projectId, Guid critiqueId, HttpContext http, AppDbContext db, IEventStore store, CancellationToken ct)
     {
         await DesignAccess.RequireAsync(http, projectId, WorkspaceRole.Viewer, ct);
         if (await db.Critiques.AsNoTracking().FirstOrDefaultAsync(c => c.Id == critiqueId && c.ProjectId == projectId, ct) is not { } row)
@@ -252,7 +252,7 @@ public static class CritiqueEndpoints
         return Results.Ok(ToDto(row, Read(row), await VersionAsync(http, store, projectId, row.BranchId, ct)));
     }
 
-    public static async Task<IResult> Delete(Guid projectId, Guid critiqueId, HttpContext http, ReviewDbContext db, CancellationToken ct)
+    public static async Task<IResult> Delete(Guid projectId, Guid critiqueId, HttpContext http, AppDbContext db, CancellationToken ct)
     {
         await DesignAccess.RequireAsync(http, projectId, WorkspaceRole.Editor, ct);
         return await db.Critiques.Where(c => c.Id == critiqueId && c.ProjectId == projectId).ExecuteDeleteAsync(ct) == 1
@@ -267,7 +267,7 @@ public static class CritiqueEndpoints
     /// <c>critique_stale</c>: its proposals were made for another model.
     /// </summary>
     public static async Task<IResult> KeepDecision(
-        Guid projectId, Guid critiqueId, int index, HttpContext http, ReviewDbContext db, IEventStore store, TimeProvider time, CancellationToken ct)
+        Guid projectId, Guid critiqueId, int index, HttpContext http, AppDbContext db, IEventStore store, TimeProvider time, CancellationToken ct)
     {
         var (_, userId) = await DesignAccess.RequireAsync(http, projectId, WorkspaceRole.Editor, ct);
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
@@ -304,7 +304,7 @@ public static class CritiqueEndpoints
 
     /// <summary>A person keeps a question of the critique as an open question of the project, with the origin <c>ai-suggested</c>.</summary>
     public static async Task<IResult> KeepQuestion(
-        Guid projectId, Guid critiqueId, int index, HttpContext http, ReviewDbContext db, TimeProvider time, CancellationToken ct)
+        Guid projectId, Guid critiqueId, int index, HttpContext http, AppDbContext db, TimeProvider time, CancellationToken ct)
     {
         var (_, userId) = await DesignAccess.RequireAsync(http, projectId, WorkspaceRole.Editor, ct);
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
@@ -331,7 +331,7 @@ public static class CritiqueEndpoints
     }
 
     /// <summary>The critique row, locked until the transaction ends, so one item is kept once.</summary>
-    private static async Task<CritiqueEntity?> LockAsync(ReviewDbContext db, Guid projectId, Guid critiqueId, CancellationToken ct) =>
+    private static async Task<CritiqueEntity?> LockAsync(AppDbContext db, Guid projectId, Guid critiqueId, CancellationToken ct) =>
         (await db.Critiques.FromSql($"SELECT * FROM review.critiques WHERE id = {critiqueId} AND project_id = {projectId} FOR UPDATE").ToListAsync(ct)).FirstOrDefault();
 
     private static async Task<long> VersionAsync(HttpContext http, IEventStore store, Guid projectId, Guid? branchId, CancellationToken ct) =>

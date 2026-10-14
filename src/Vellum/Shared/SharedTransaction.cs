@@ -4,8 +4,8 @@ using Npgsql;
 namespace Vellum.Shared;
 
 /// <summary>
-/// Runs a unit of work that appends events in a transaction shared with the app's own
-/// DbContexts (<c>UseDbContext</c>). Deedbox cannot replay such a transaction, so the app
+/// Runs a unit of work that appends events in a transaction shared with the app's
+/// DbContext (<c>UseDbContext</c>). Deedbox cannot replay such a transaction, so the app
 /// runs the whole unit again in two cases:
 /// <list type="bullet">
 /// <item>DBX038: Deedbox did not count this instance as live and wrote nothing.</item>
@@ -28,7 +28,7 @@ namespace Vellum.Shared;
 /// two stream IDs share one 32-bit lock key.
 /// </para>
 /// Each attempt gets a new service scope. A DbContext counts its changes as saved after a
-/// failed attempt, so an attempt must not reuse the DbContexts of the one before it.
+/// failed attempt, so an attempt must not reuse the DbContext of the one before it.
 /// </summary>
 public static class SharedTransaction
 {

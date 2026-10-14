@@ -206,13 +206,13 @@ public class CritiqueTests(SharedOutboundHost shared) : IClassFixture<SharedOutb
         using (var scope = _host.Factory.Services.CreateScope())
         {
             var services = scope.ServiceProvider;
-            var streamId = await services.GetRequiredService<WorkspacesDbContext>().Projects.AsNoTracking().Where(p => p.Id == projectId).Select(p => p.StreamId).FirstAsync();
+            var streamId = await services.GetRequiredService<AppDbContext>().Projects.AsNoTracking().Where(p => p.Id == projectId).Select(p => p.StreamId).FirstAsync();
             var recorded = await services.GetRequiredService<IEventStore>().ForProject(projectId).Decide<ModelState>(
                 streamId,
                 state => ModelDecider.RecordElementProvenance(state, model.Billing, FactStatus.ObservedInSource, new Provenance("github.com/acme/secret-billing@4f9a1c7:src/Service.cs:1-9", "4f9a1c7")),
                 CancellationToken.None);
             Assert.IsType<CommandResult.Success>(recorded);
-            var import = services.GetRequiredService<ImportDbContext>();
+            var import = services.GetRequiredService<AppDbContext>();
             var scan = new ScanEntity
             {
                 Id = Guid.NewGuid(), ProjectId = projectId, WorkspaceId = ai.WorkspaceId, Host = "github.com", Repository = "acme/secret-billing",

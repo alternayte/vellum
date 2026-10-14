@@ -16,7 +16,7 @@ public static class DeleteProject
     public static async Task<IResult> Handle(
         Guid projectId,
         ClaimsPrincipal user,
-        WorkspacesDbContext db,
+        AppDbContext db,
         [FromServices] IEnumerable<IProjectRetention> retentions,
         ILoggerFactory loggers,
         WorkspaceAuthorizationService auth,

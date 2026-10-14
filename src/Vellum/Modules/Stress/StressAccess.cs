@@ -168,17 +168,17 @@ internal static class StressAccess
     /// the same instant, as a trace run reads them. The transaction only reads and is rolled back.
     /// </summary>
     public static async Task<StressWorld> LoadAsync(
-        IEventStore store, SchemasDbContext schemasDb, Guid projectId, Guid streamId, Guid scenarioId, CancellationToken ct)
+        IEventStore store, AppDbContext db, Guid projectId, Guid streamId, Guid scenarioId, CancellationToken ct)
     {
-        await using var snapshot = await schemasDb.Database.BeginTransactionAsync(IsolationLevel.RepeatableRead, ct);
-        var pinned = store.UseDbContext(schemasDb);
+        await using var snapshot = await db.Database.BeginTransactionAsync(IsolationLevel.RepeatableRead, ct);
+        var pinned = store.UseDbContext(db);
 
         var (scenario, scenarioVersion) = await ScenarioAsync(pinned, projectId, scenarioId, ct);
         var (model, modelVersion) = await pinned.Load<ModelState>(StreamId.From(streamId), ct);
 
         // Only the project's own schemas count, as in a trace run.
         var referenced = ContractDecider.ReferencedSchemaIds(model);
-        var schemas = await schemasDb.Schemas.AsNoTracking()
+        var schemas = await db.Schemas.AsNoTracking()
             .Where(s => s.ProjectId == projectId && referenced.Contains(s.Id))
             .Select(s => new { s.Id, s.Content })
             .ToListAsync(ct);

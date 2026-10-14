@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Vellum.Modules.Drafts;
 using Vellum.Modules.Modelling;
+using Vellum.Shared;
 
 namespace Vellum.Tests.Modules.Modelling;
 
@@ -153,7 +154,7 @@ public class ProjectionRebuildTests : IClassFixture<IntegrationFixture>
         async Task<int> ClosedBranchRowsAsync()
         {
             using var scope = factory.Services.CreateScope();
-            var db = scope.ServiceProvider.GetRequiredService<ModellingDbContext>();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             return await db.Elements.CountAsync(e => e.Branch == merged.StreamId || e.Branch == abandoned.StreamId);
         }
         Assert.Equal(0, await ClosedBranchRowsAsync());

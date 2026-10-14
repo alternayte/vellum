@@ -29,17 +29,15 @@ public static class ModellingEndpoints
             Guid? branchId,
             AddElementRequest request,
             ClaimsPrincipal user,
-            WorkspacesDbContext workspacesDb,
-            DraftsDbContext draftsDb,
-            ModellingDbContext modellingDb,
+            AppDbContext db,
             WorkspaceAuthorizationService auth,
             ICommandHandler<AddElementCommandEnvelope, CommandResult<ElementDto>> handler,
             CancellationToken ct) =>
         {
             var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
             await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
-            var proj = await workspacesDb.Projects.AsNoTracking().FirstAsync(p => p.Id == projectId, ct);
-            var (streamId, refusal) = await ModelBranches.ResolveAsync(branchId, projectId, proj.StreamId, draftsDb, modellingDb, forWrite: true, ct);
+            var proj = await db.Projects.AsNoTracking().FirstAsync(p => p.Id == projectId, ct);
+            var (streamId, refusal) = await ModelBranches.ResolveAsync(branchId, projectId, proj.StreamId, db, forWrite: true, ct);
             if (refusal is not null)
                 return refusal;
             return (await handler.HandleAsync(
@@ -51,15 +49,13 @@ public static class ModellingEndpoints
             Guid projectId,
             Guid? branchId,
             string? kind, string? status, Guid? parentId, string? cursor, int? limit,
-            ClaimsPrincipal user, WorkspacesDbContext workspacesDb,
-            DraftsDbContext draftsDb,
-            WorkspaceAuthorizationService auth,
-            ModellingDbContext db, CancellationToken ct) =>
+            ClaimsPrincipal user, AppDbContext db,
+            WorkspaceAuthorizationService auth, CancellationToken ct) =>
         {
             var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
             await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Viewer, ct);
-            var proj = await workspacesDb.Projects.AsNoTracking().FirstAsync(p => p.Id == projectId, ct);
-            var (streamId, refusal) = await ModelBranches.ResolveAsync(branchId, projectId, proj.StreamId, draftsDb, db, forWrite: false, ct);
+            var proj = await db.Projects.AsNoTracking().FirstAsync(p => p.Id == projectId, ct);
+            var (streamId, refusal) = await ModelBranches.ResolveAsync(branchId, projectId, proj.StreamId, db, forWrite: false, ct);
             if (refusal is not null)
                 return refusal;
             return await ListElements.Handle(projectId, streamId, kind, status, parentId, cursor, limit, db, ct);
@@ -67,15 +63,13 @@ public static class ModellingEndpoints
 
         elements.MapGet("/{elementId}", async (
             Guid projectId, Guid elementId, Guid? branchId,
-            ClaimsPrincipal user, WorkspacesDbContext workspacesDb,
-            DraftsDbContext draftsDb,
-            WorkspaceAuthorizationService auth,
-            ModellingDbContext db, CancellationToken ct) =>
+            ClaimsPrincipal user, AppDbContext db,
+            WorkspaceAuthorizationService auth, CancellationToken ct) =>
         {
             var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
             await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Viewer, ct);
-            var proj = await workspacesDb.Projects.AsNoTracking().FirstAsync(p => p.Id == projectId, ct);
-            var (streamId, refusal) = await ModelBranches.ResolveAsync(branchId, projectId, proj.StreamId, draftsDb, db, forWrite: false, ct);
+            var proj = await db.Projects.AsNoTracking().FirstAsync(p => p.Id == projectId, ct);
+            var (streamId, refusal) = await ModelBranches.ResolveAsync(branchId, projectId, proj.StreamId, db, forWrite: false, ct);
             if (refusal is not null)
                 return refusal;
             return await GetElement.Handle(projectId, streamId, elementId, db, ct);
@@ -85,17 +79,15 @@ public static class ModellingEndpoints
             Guid projectId, Guid elementId,
             Guid? branchId,
             UpdateElementRequest request,
-            ClaimsPrincipal user, WorkspacesDbContext workspacesDb,
-            DraftsDbContext draftsDb,
-            ModellingDbContext modellingDb,
+            ClaimsPrincipal user, AppDbContext db,
             WorkspaceAuthorizationService auth,
             ICommandHandler<UpdateElementCommandEnvelope, CommandResult<ElementDto>> handler,
             CancellationToken ct) =>
         {
             var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
             await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
-            var proj = await workspacesDb.Projects.AsNoTracking().FirstAsync(p => p.Id == projectId, ct);
-            var (streamId, refusal) = await ModelBranches.ResolveAsync(branchId, projectId, proj.StreamId, draftsDb, modellingDb, forWrite: true, ct);
+            var proj = await db.Projects.AsNoTracking().FirstAsync(p => p.Id == projectId, ct);
+            var (streamId, refusal) = await ModelBranches.ResolveAsync(branchId, projectId, proj.StreamId, db, forWrite: true, ct);
             if (refusal is not null)
                 return refusal;
             return (await handler.HandleAsync(
@@ -106,17 +98,15 @@ public static class ModellingEndpoints
         elements.MapDelete("/{elementId}", async (
             Guid projectId, Guid elementId,
             Guid? branchId,
-            ClaimsPrincipal user, WorkspacesDbContext workspacesDb,
-            DraftsDbContext draftsDb,
-            ModellingDbContext modellingDb,
+            ClaimsPrincipal user, AppDbContext db,
             WorkspaceAuthorizationService auth,
             ICommandHandler<RemoveElementCommandEnvelope, CommandResult> handler,
             CancellationToken ct) =>
         {
             var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
             await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
-            var proj = await workspacesDb.Projects.AsNoTracking().FirstAsync(p => p.Id == projectId, ct);
-            var (streamId, refusal) = await ModelBranches.ResolveAsync(branchId, projectId, proj.StreamId, draftsDb, modellingDb, forWrite: true, ct);
+            var proj = await db.Projects.AsNoTracking().FirstAsync(p => p.Id == projectId, ct);
+            var (streamId, refusal) = await ModelBranches.ResolveAsync(branchId, projectId, proj.StreamId, db, forWrite: true, ct);
             if (refusal is not null)
                 return refusal;
             return (await handler.HandleAsync(
@@ -130,17 +120,15 @@ public static class ModellingEndpoints
             Guid projectId,
             Guid? branchId,
             AddRelationshipRequest request,
-            ClaimsPrincipal user, WorkspacesDbContext workspacesDb,
-            DraftsDbContext draftsDb,
-            ModellingDbContext modellingDb,
+            ClaimsPrincipal user, AppDbContext db,
             WorkspaceAuthorizationService auth,
             ICommandHandler<AddRelationshipCommandEnvelope, CommandResult<RelationshipDto>> handler,
             CancellationToken ct) =>
         {
             var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
             await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
-            var proj = await workspacesDb.Projects.AsNoTracking().FirstAsync(p => p.Id == projectId, ct);
-            var (streamId, refusal) = await ModelBranches.ResolveAsync(branchId, projectId, proj.StreamId, draftsDb, modellingDb, forWrite: true, ct);
+            var proj = await db.Projects.AsNoTracking().FirstAsync(p => p.Id == projectId, ct);
+            var (streamId, refusal) = await ModelBranches.ResolveAsync(branchId, projectId, proj.StreamId, db, forWrite: true, ct);
             if (refusal is not null)
                 return refusal;
             return (await handler.HandleAsync(
@@ -152,15 +140,13 @@ public static class ModellingEndpoints
             Guid projectId,
             Guid? branchId,
             Guid? fromId, Guid? toId, string? cursor, int? limit,
-            ClaimsPrincipal user, WorkspacesDbContext workspacesDb,
-            DraftsDbContext draftsDb,
-            WorkspaceAuthorizationService auth,
-            ModellingDbContext db, CancellationToken ct) =>
+            ClaimsPrincipal user, AppDbContext db,
+            WorkspaceAuthorizationService auth, CancellationToken ct) =>
         {
             var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
             await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Viewer, ct);
-            var proj = await workspacesDb.Projects.AsNoTracking().FirstAsync(p => p.Id == projectId, ct);
-            var (streamId, refusal) = await ModelBranches.ResolveAsync(branchId, projectId, proj.StreamId, draftsDb, db, forWrite: false, ct);
+            var proj = await db.Projects.AsNoTracking().FirstAsync(p => p.Id == projectId, ct);
+            var (streamId, refusal) = await ModelBranches.ResolveAsync(branchId, projectId, proj.StreamId, db, forWrite: false, ct);
             if (refusal is not null)
                 return refusal;
             return await ListRelationships.Handle(projectId, streamId, fromId, toId, cursor, limit, db, ct);
@@ -168,15 +154,13 @@ public static class ModellingEndpoints
 
         relationships.MapGet("/{relationshipId}", async (
             Guid projectId, Guid relationshipId, Guid? branchId,
-            ClaimsPrincipal user, WorkspacesDbContext workspacesDb,
-            DraftsDbContext draftsDb,
-            WorkspaceAuthorizationService auth,
-            ModellingDbContext db, CancellationToken ct) =>
+            ClaimsPrincipal user, AppDbContext db,
+            WorkspaceAuthorizationService auth, CancellationToken ct) =>
         {
             var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
             await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Viewer, ct);
-            var proj = await workspacesDb.Projects.AsNoTracking().FirstAsync(p => p.Id == projectId, ct);
-            var (streamId, refusal) = await ModelBranches.ResolveAsync(branchId, projectId, proj.StreamId, draftsDb, db, forWrite: false, ct);
+            var proj = await db.Projects.AsNoTracking().FirstAsync(p => p.Id == projectId, ct);
+            var (streamId, refusal) = await ModelBranches.ResolveAsync(branchId, projectId, proj.StreamId, db, forWrite: false, ct);
             if (refusal is not null)
                 return refusal;
             return await GetRelationship.Handle(projectId, streamId, relationshipId, db, ct);
@@ -186,17 +170,15 @@ public static class ModellingEndpoints
             Guid projectId, Guid relationshipId,
             Guid? branchId,
             UpdateRelationshipRequest request,
-            ClaimsPrincipal user, WorkspacesDbContext workspacesDb,
-            DraftsDbContext draftsDb,
-            ModellingDbContext modellingDb,
+            ClaimsPrincipal user, AppDbContext db,
             WorkspaceAuthorizationService auth,
             ICommandHandler<UpdateRelationshipCommandEnvelope, CommandResult<RelationshipDto>> handler,
             CancellationToken ct) =>
         {
             var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
             await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
-            var proj = await workspacesDb.Projects.AsNoTracking().FirstAsync(p => p.Id == projectId, ct);
-            var (streamId, refusal) = await ModelBranches.ResolveAsync(branchId, projectId, proj.StreamId, draftsDb, modellingDb, forWrite: true, ct);
+            var proj = await db.Projects.AsNoTracking().FirstAsync(p => p.Id == projectId, ct);
+            var (streamId, refusal) = await ModelBranches.ResolveAsync(branchId, projectId, proj.StreamId, db, forWrite: true, ct);
             if (refusal is not null)
                 return refusal;
             return (await handler.HandleAsync(
@@ -207,17 +189,15 @@ public static class ModellingEndpoints
         relationships.MapDelete("/{relationshipId}", async (
             Guid projectId, Guid relationshipId,
             Guid? branchId,
-            ClaimsPrincipal user, WorkspacesDbContext workspacesDb,
-            DraftsDbContext draftsDb,
-            ModellingDbContext modellingDb,
+            ClaimsPrincipal user, AppDbContext db,
             WorkspaceAuthorizationService auth,
             ICommandHandler<RemoveRelationshipCommandEnvelope, CommandResult> handler,
             CancellationToken ct) =>
         {
             var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
             await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
-            var proj = await workspacesDb.Projects.AsNoTracking().FirstAsync(p => p.Id == projectId, ct);
-            var (streamId, refusal) = await ModelBranches.ResolveAsync(branchId, projectId, proj.StreamId, draftsDb, modellingDb, forWrite: true, ct);
+            var proj = await db.Projects.AsNoTracking().FirstAsync(p => p.Id == projectId, ct);
+            var (streamId, refusal) = await ModelBranches.ResolveAsync(branchId, projectId, proj.StreamId, db, forWrite: true, ct);
             if (refusal is not null)
                 return refusal;
             return (await handler.HandleAsync(
@@ -230,15 +210,14 @@ public static class ModellingEndpoints
         messages.MapPost("/", async (
             Guid projectId, Guid? branchId,
             AddMessageRequest request,
-            ClaimsPrincipal user, WorkspacesDbContext workspacesDb,
-            DraftsDbContext draftsDb, ModellingDbContext modellingDb, WorkspaceAuthorizationService auth,
+            ClaimsPrincipal user, AppDbContext db, WorkspaceAuthorizationService auth,
             ICommandHandler<AddMessageCommandEnvelope, CommandResult<MessageDto>> handler,
             CancellationToken ct) =>
         {
             var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
             await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
-            var proj = await workspacesDb.Projects.AsNoTracking().FirstAsync(p => p.Id == projectId, ct);
-            var (streamId, refusal) = await ModelBranches.ResolveAsync(branchId, projectId, proj.StreamId, draftsDb, modellingDb, forWrite: true, ct);
+            var proj = await db.Projects.AsNoTracking().FirstAsync(p => p.Id == projectId, ct);
+            var (streamId, refusal) = await ModelBranches.ResolveAsync(branchId, projectId, proj.StreamId, db, forWrite: true, ct);
             if (refusal is not null)
                 return refusal;
             return (await handler.HandleAsync(
@@ -249,14 +228,12 @@ public static class ModellingEndpoints
         messages.MapGet("/", async (
             Guid projectId, Guid? branchId,
             Guid? producerId, string? cursor, int? limit,
-            ClaimsPrincipal user, WorkspacesDbContext workspacesDb,
-            DraftsDbContext draftsDb, WorkspaceAuthorizationService auth,
-            ModellingDbContext db, CancellationToken ct) =>
+            ClaimsPrincipal user, AppDbContext db, WorkspaceAuthorizationService auth, CancellationToken ct) =>
         {
             var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
             await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Viewer, ct);
-            var proj = await workspacesDb.Projects.AsNoTracking().FirstAsync(p => p.Id == projectId, ct);
-            var (streamId, refusal) = await ModelBranches.ResolveAsync(branchId, projectId, proj.StreamId, draftsDb, db, forWrite: false, ct);
+            var proj = await db.Projects.AsNoTracking().FirstAsync(p => p.Id == projectId, ct);
+            var (streamId, refusal) = await ModelBranches.ResolveAsync(branchId, projectId, proj.StreamId, db, forWrite: false, ct);
             if (refusal is not null)
                 return refusal;
             return await ListMessages.Handle(projectId, streamId, producerId, cursor, limit, db, ct);
@@ -264,14 +241,12 @@ public static class ModellingEndpoints
 
         messages.MapGet("/{messageId}", async (
             Guid projectId, Guid messageId, Guid? branchId,
-            ClaimsPrincipal user, WorkspacesDbContext workspacesDb,
-            DraftsDbContext draftsDb, WorkspaceAuthorizationService auth,
-            ModellingDbContext db, CancellationToken ct) =>
+            ClaimsPrincipal user, AppDbContext db, WorkspaceAuthorizationService auth, CancellationToken ct) =>
         {
             var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
             await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Viewer, ct);
-            var proj = await workspacesDb.Projects.AsNoTracking().FirstAsync(p => p.Id == projectId, ct);
-            var (streamId, refusal) = await ModelBranches.ResolveAsync(branchId, projectId, proj.StreamId, draftsDb, db, forWrite: false, ct);
+            var proj = await db.Projects.AsNoTracking().FirstAsync(p => p.Id == projectId, ct);
+            var (streamId, refusal) = await ModelBranches.ResolveAsync(branchId, projectId, proj.StreamId, db, forWrite: false, ct);
             if (refusal is not null)
                 return refusal;
             return await GetMessage.Handle(projectId, streamId, messageId, db, ct);
@@ -280,15 +255,14 @@ public static class ModellingEndpoints
         messages.MapPatch("/{messageId}", async (
             Guid projectId, Guid messageId, Guid? branchId,
             UpdateMessageRequest request,
-            ClaimsPrincipal user, WorkspacesDbContext workspacesDb,
-            DraftsDbContext draftsDb, ModellingDbContext modellingDb, WorkspaceAuthorizationService auth,
+            ClaimsPrincipal user, AppDbContext db, WorkspaceAuthorizationService auth,
             ICommandHandler<UpdateMessageCommandEnvelope, CommandResult<MessageDto>> handler,
             CancellationToken ct) =>
         {
             var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
             await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
-            var proj = await workspacesDb.Projects.AsNoTracking().FirstAsync(p => p.Id == projectId, ct);
-            var (streamId, refusal) = await ModelBranches.ResolveAsync(branchId, projectId, proj.StreamId, draftsDb, modellingDb, forWrite: true, ct);
+            var proj = await db.Projects.AsNoTracking().FirstAsync(p => p.Id == projectId, ct);
+            var (streamId, refusal) = await ModelBranches.ResolveAsync(branchId, projectId, proj.StreamId, db, forWrite: true, ct);
             if (refusal is not null)
                 return refusal;
             return (await handler.HandleAsync(
@@ -298,15 +272,14 @@ public static class ModellingEndpoints
 
         messages.MapDelete("/{messageId}", async (
             Guid projectId, Guid messageId, Guid? branchId,
-            ClaimsPrincipal user, WorkspacesDbContext workspacesDb,
-            DraftsDbContext draftsDb, ModellingDbContext modellingDb, WorkspaceAuthorizationService auth,
+            ClaimsPrincipal user, AppDbContext db, WorkspaceAuthorizationService auth,
             ICommandHandler<RemoveMessageCommandEnvelope, CommandResult> handler,
             CancellationToken ct) =>
         {
             var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
             await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
-            var proj = await workspacesDb.Projects.AsNoTracking().FirstAsync(p => p.Id == projectId, ct);
-            var (streamId, refusal) = await ModelBranches.ResolveAsync(branchId, projectId, proj.StreamId, draftsDb, modellingDb, forWrite: true, ct);
+            var proj = await db.Projects.AsNoTracking().FirstAsync(p => p.Id == projectId, ct);
+            var (streamId, refusal) = await ModelBranches.ResolveAsync(branchId, projectId, proj.StreamId, db, forWrite: true, ct);
             if (refusal is not null)
                 return refusal;
             return (await handler.HandleAsync(
@@ -319,15 +292,13 @@ public static class ModellingEndpoints
             string? format,
             ClaimsPrincipal user,
             WorkspaceAuthorizationService auth,
-            ModellingDbContext modellingDb,
-            SchemasDbContext schemasDb,
-            WorkspacesDbContext workspacesDb,
+            AppDbContext db,
             IEventStore store,
             CancellationToken ct) =>
         {
             var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
             await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Viewer, ct);
-            return await ExportModel.Handle(projectId, format ?? "json", modellingDb, schemasDb, workspacesDb, store, ct);
+            return await ExportModel.Handle(projectId, format ?? "json", db, store, ct);
         }).WithTags("Export");
 
         project.MapPost("/import", async (
@@ -337,12 +308,12 @@ public static class ModellingEndpoints
             HttpRequest request,
             ClaimsPrincipal user,
             WorkspaceAuthorizationService auth,
-            WorkspacesDbContext workspacesDb,
+            AppDbContext db,
             CancellationToken ct) =>
         {
             var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
             await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
-            return await ImportModel.Handle(projectId, userId, request, dryRun == true, expectedVersion, workspacesDb, ct);
+            return await ImportModel.Handle(projectId, userId, request, dryRun == true, expectedVersion, db, ct);
         })
         .Produces<ImportResult>()
         .WithMetadata(new RequestBodyLimit(

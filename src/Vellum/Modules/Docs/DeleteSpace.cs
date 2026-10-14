@@ -10,7 +10,7 @@ public static class DeleteSpace
     public static async Task<IResult> Handle(
         Guid projectId, Guid spaceId,
         ClaimsPrincipal user,
-        DocsDbContext db,
+        AppDbContext db,
         WorkspaceAuthorizationService auth,
         CancellationToken ct)
     {

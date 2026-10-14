@@ -8,7 +8,7 @@ public static class ListSchemas
     public static async Task<IResult> Handle(
         Guid projectId,
         string? cursor, int? limit,
-        SchemasDbContext db, CancellationToken ct)
+        AppDbContext db, CancellationToken ct)
     {
         var pageSize = Math.Clamp(limit ?? 50, 1, 200);
 

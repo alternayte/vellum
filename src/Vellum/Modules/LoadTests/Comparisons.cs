@@ -87,13 +87,13 @@ public static class Comparisons
     /// <summary><c>GET compare/estimate?resultId=&amp;runId=</c>.</summary>
     public static async Task<IResult> Estimate(
         Guid projectId, Guid resultId, Guid runId, ClaimsPrincipal user, WorkspaceAuthorizationService auth,
-        LoadTestsDbContext db, StressDbContext stressDb, IEventStore store, CancellationToken ct)
+        AppDbContext db, IEventStore store, CancellationToken ct)
     {
         await auth.RequireProjectRoleAsync(projectId, Targets.UserId(user), WorkspaceRole.Viewer, ct);
 
         if (await MeasuredResults.ReadWithPlanAsync(db, store, projectId, resultId, ct) is not var (measured, plan))
             return Targets.NotFound("Measured result");
-        if (await StressRuns.ReadAsync(stressDb, store, projectId, runId, ct) is not { } run)
+        if (await StressRuns.ReadAsync(db, store, projectId, runId, ct) is not { } run)
             return Targets.NotFound("Stress run");
         if (run.Run.ScenarioId != measured.Result.ScenarioId)
             return Invalid("runId", "The stress run and the measured result are of different scenarios.");
@@ -202,7 +202,7 @@ public static class Comparisons
     /// <summary><c>GET compare/results?baseline=&amp;candidate=</c>.</summary>
     public static async Task<IResult> Regression(
         Guid projectId, Guid baseline, Guid candidate, ClaimsPrincipal user, WorkspaceAuthorizationService auth,
-        LoadTestsDbContext db, IEventStore store, CancellationToken ct)
+        AppDbContext db, IEventStore store, CancellationToken ct)
     {
         await auth.RequireProjectRoleAsync(projectId, Targets.UserId(user), WorkspaceRole.Viewer, ct);
 

@@ -34,7 +34,7 @@ public static class ListSecrets
         Guid workspaceId,
         ClaimsPrincipal user,
         WorkspaceAuthorizationService auth,
-        SettingsDbContext db,
+        AppDbContext db,
         SettingsResolver settings,
         Bootstrap bootstrap,
         CancellationToken ct)
@@ -80,7 +80,7 @@ public static class SetSecret
         SetSecretRequest request,
         ClaimsPrincipal user,
         WorkspaceAuthorizationService auth,
-        SettingsDbContext db,
+        AppDbContext db,
         SettingsResolver settings,
         Bootstrap bootstrap,
         CancellationToken ct)
@@ -151,7 +151,7 @@ public static class DeleteSecret
         string name,
         ClaimsPrincipal user,
         WorkspaceAuthorizationService auth,
-        SettingsDbContext db,
+        AppDbContext db,
         CancellationToken ct)
     {
         var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;

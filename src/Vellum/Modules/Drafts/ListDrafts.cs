@@ -12,7 +12,7 @@ public static class ListDrafts
         Guid projectId,
         string? status, string? cursor, int? limit,
         ClaimsPrincipal user,
-        DraftsDbContext db,
+        AppDbContext db,
         WorkspaceAuthorizationService auth,
         CancellationToken ct)
     {

@@ -34,38 +34,9 @@ test:
 test-slow:
     DOCKER_CONFIG={{justfile_directory()}}/.docker-test dotnet test Vellum.slnx --filter "Category=Slow"
 
-migrate-identity name:
-    dotnet ef migrations add {{name}} --project src/Vellum --context AppIdentityDbContext --output-dir Modules/Identity/Migrations
-
-migrate-workspaces name:
-    dotnet ef migrations add {{name}} --project src/Vellum --context WorkspacesDbContext --output-dir Modules/Workspaces/Migrations
-
-migrate-modelling name:
-    dotnet ef migrations add {{name}} --project src/Vellum --context ModellingDbContext --output-dir Modules/Modelling/Migrations
-
-migrate-views name:
-    dotnet ef migrations add {{name}} --project src/Vellum --context ViewsDbContext --output-dir Modules/Views/Migrations
-
-migrate-docs name:
-    dotnet ef migrations add {{name}} --project src/Vellum --context DocsDbContext --output-dir Modules/Docs/Migrations
-
-migrate-drafts name:
-    dotnet ef migrations add {{name}} --project src/Vellum --context DraftsDbContext --output-dir Modules/Drafts/Migrations
-
-migrate-schemas name:
-    dotnet ef migrations add {{name}} --project src/Vellum --context SchemasDbContext --output-dir Modules/Schemas/Migrations
-
-migrate-scenarios name:
-    dotnet ef migrations add {{name}} --project src/Vellum --context ScenariosDbContext --output-dir Modules/Trace/Scenarios/Migrations
-
-migrate-settings name:
-    dotnet ef migrations add {{name}} --project src/Vellum --context SettingsDbContext --output-dir Modules/Settings/Migrations
-
-migrate-ai name:
-    dotnet ef migrations add {{name}} --project src/Vellum --context AiUsageDbContext --output-dir Modules/Ai/Usage/Migrations
-
-migrate-ai-design name:
-    dotnet ef migrations add {{name}} --project src/Vellum --context AiDesignDbContext --output-dir Modules/Ai/Design/Migrations
+# A new migration of the one DbContext. Every module's tables are in it, each in its own schema.
+migration name:
+    dotnet ef migrations add {{name}} --project src/Vellum --context AppDbContext --output-dir Migrations
 
 seed:
     dotnet run --project src/Vellum -- seed

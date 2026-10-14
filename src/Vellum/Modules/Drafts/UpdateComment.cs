@@ -14,7 +14,7 @@ public static class UpdateComment
         Guid projectId, Guid draftId, Guid commentId,
         UpdateCommentRequest request,
         ClaimsPrincipal user,
-        DraftsDbContext db,
+        AppDbContext db,
         WorkspaceAuthorizationService auth,
         CancellationToken ct)
     {

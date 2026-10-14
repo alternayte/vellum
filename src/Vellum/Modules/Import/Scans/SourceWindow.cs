@@ -43,7 +43,7 @@ public static class SourceWindow
 
     public static async Task<IResult> Handle(
         Guid projectId, Guid importId, string? path, int? startLine, int? endLine, ClaimsPrincipal user,
-        WorkspaceAuthorizationService auth, ImportDbContext db, CancellationToken ct)
+        WorkspaceAuthorizationService auth, AppDbContext db, CancellationToken ct)
     {
         var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Viewer, ct);
@@ -102,7 +102,7 @@ public static class SourceWindow
 
     /// <summary>True when one evidence item of a fact or a proposal of the scan, at the scan's commit, holds all the lines.</summary>
     private static async Task<bool> IsEvidenceAsync(
-        ImportDbContext db, ScanEntity scan, string path, int start, int end, CancellationToken ct)
+        AppDbContext db, ScanEntity scan, string path, int start, int end, CancellationToken ct)
     {
         var filter = ProposalJson.Write(new[] { new { path } });
         var rows = await db.Database.SqlQuery<string>($"""

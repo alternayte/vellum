@@ -13,7 +13,7 @@ public static class UpdateProject
         Guid projectId,
         UpdateProjectRequest request,
         ClaimsPrincipal user,
-        WorkspacesDbContext db,
+        AppDbContext db,
         WorkspaceAuthorizationService auth,
         CancellationToken ct)
     {

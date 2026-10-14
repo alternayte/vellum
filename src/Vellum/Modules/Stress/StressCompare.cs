@@ -3,6 +3,7 @@ using System.Security.Claims;
 using Deedbox;
 using Vellum.Modules.Stress.Engine;
 using Vellum.Modules.Workspaces.Authorization;
+using Vellum.Shared;
 
 namespace Vellum.Modules.Stress;
 
@@ -30,7 +31,7 @@ public static class StressCompare
 
     public static async Task<IResult> Handle(
         Guid projectId, Guid left, Guid right, ClaimsPrincipal user, WorkspaceAuthorizationService auth,
-        StressDbContext db, IEventStore store, CancellationToken ct)
+        AppDbContext db, IEventStore store, CancellationToken ct)
     {
         await auth.RequireProjectRoleAsync(projectId, StressAccess.UserId(user), WorkspaceRole.Viewer, ct);
 

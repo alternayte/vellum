@@ -13,9 +13,9 @@ public sealed record UpdateSchemaCommandEnvelope(Guid ProjectId, Guid SchemaId, 
 public sealed class UpdateSchemaHandler : ICommandHandler<UpdateSchemaCommandEnvelope, CommandResult<SchemaDto>>
 {
     private readonly IEventStore _store;
-    private readonly SchemasDbContext _db;
+    private readonly AppDbContext _db;
 
-    public UpdateSchemaHandler(IEventStore store, SchemasDbContext db)
+    public UpdateSchemaHandler(IEventStore store, AppDbContext db)
     {
         _store = store;
         _db = db;

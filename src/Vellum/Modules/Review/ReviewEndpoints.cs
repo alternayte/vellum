@@ -77,7 +77,7 @@ public static class ReviewEndpoints
     }
 
     public static async Task<IResult> SaveSnapshot(
-        Guid projectId, HttpContext http, WorkspaceAuthorizationService auth, ReviewDbContext db, TimeProvider time, CancellationToken ct)
+        Guid projectId, HttpContext http, WorkspaceAuthorizationService auth, AppDbContext db, TimeProvider time, CancellationToken ct)
     {
         var userId = ReviewAccess.UserId(http.User);
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
@@ -86,7 +86,7 @@ public static class ReviewEndpoints
             return error;
         if (TextRule.Lines("note", request?.Note) is { } invalid)
             return ReviewAccess.Invalid(invalid.Field, invalid.Message);
-        if (await db.Snapshots.CountAsync(s => s.ProjectId == projectId, ct) >= MaxSnapshotsPerProject)
+        if (await db.ReviewSnapshots.CountAsync(s => s.ProjectId == projectId, ct) >= MaxSnapshotsPerProject)
             return ReviewAccess.Conflict($"A project holds at most {MaxSnapshotsPerProject} review snapshots. Delete one first.");
 
         var (state, refusal) = await ReviewEngine.LoadAsync(http.RequestServices, projectId, request?.RevisionId, request?.BranchId, ct);
@@ -101,16 +101,16 @@ public static class ReviewEndpoints
             Note = string.IsNullOrWhiteSpace(request?.Note) ? null : request.Note.Trim(),
             Findings = PromiseJson.Write(state.Findings), CreatedBy = userId, CreatedAt = time.GetUtcNow(),
         };
-        db.Snapshots.Add(row);
+        db.ReviewSnapshots.Add(row);
         await db.SaveChangesAsync(ct);
         return Results.Created($"/api/projects/{projectId}/review/snapshots/{row.Id}", ToDto(row));
     }
 
     public static async Task<IResult> ListSnapshots(
-        Guid projectId, HttpContext http, WorkspaceAuthorizationService auth, ReviewDbContext db, CancellationToken ct)
+        Guid projectId, HttpContext http, WorkspaceAuthorizationService auth, AppDbContext db, CancellationToken ct)
     {
         await auth.RequireProjectRoleAsync(projectId, ReviewAccess.UserId(http.User), WorkspaceRole.Viewer, ct);
-        var rows = await db.Snapshots.AsNoTracking().Where(s => s.ProjectId == projectId)
+        var rows = await db.ReviewSnapshots.AsNoTracking().Where(s => s.ProjectId == projectId)
             .OrderByDescending(s => s.CreatedAt).ThenBy(s => s.Id)
             .Select(s => new SnapshotSummary(s.Id, s.Branch, s.ModelVersion, s.RevisionId, s.InputsFingerprint, s.RuleSetVersion, s.Hash, s.Note, s.CreatedBy, s.CreatedAt))
             .ToListAsync(ct);
@@ -118,19 +118,19 @@ public static class ReviewEndpoints
     }
 
     public static async Task<IResult> GetSnapshot(
-        Guid projectId, Guid snapshotId, HttpContext http, WorkspaceAuthorizationService auth, ReviewDbContext db, CancellationToken ct)
+        Guid projectId, Guid snapshotId, HttpContext http, WorkspaceAuthorizationService auth, AppDbContext db, CancellationToken ct)
     {
         await auth.RequireProjectRoleAsync(projectId, ReviewAccess.UserId(http.User), WorkspaceRole.Viewer, ct);
-        return await db.Snapshots.AsNoTracking().FirstOrDefaultAsync(s => s.Id == snapshotId && s.ProjectId == projectId, ct) is { } row
+        return await db.ReviewSnapshots.AsNoTracking().FirstOrDefaultAsync(s => s.Id == snapshotId && s.ProjectId == projectId, ct) is { } row
             ? Results.Ok(ToDto(row))
             : ReviewAccess.NotFound("Snapshot");
     }
 
     public static async Task<IResult> DeleteSnapshot(
-        Guid projectId, Guid snapshotId, HttpContext http, WorkspaceAuthorizationService auth, ReviewDbContext db, CancellationToken ct)
+        Guid projectId, Guid snapshotId, HttpContext http, WorkspaceAuthorizationService auth, AppDbContext db, CancellationToken ct)
     {
         await auth.RequireProjectRoleAsync(projectId, ReviewAccess.UserId(http.User), WorkspaceRole.Editor, ct);
-        return await db.Snapshots.Where(s => s.Id == snapshotId && s.ProjectId == projectId).ExecuteDeleteAsync(ct) == 1
+        return await db.ReviewSnapshots.Where(s => s.Id == snapshotId && s.ProjectId == projectId).ExecuteDeleteAsync(ct) == 1
             ? Results.NoContent()
             : ReviewAccess.NotFound("Snapshot");
     }
@@ -153,7 +153,7 @@ public static class ReviewEndpoints
     /// the rule or the facts of the subject change, it shows as <c>needsReReview</c> and settles nothing.
     /// </summary>
     public static async Task<IResult> SetDisposition(
-        Guid projectId, HttpContext http, WorkspaceAuthorizationService auth, IEventStore store, ReviewDbContext db, TimeProvider time, CancellationToken ct)
+        Guid projectId, HttpContext http, WorkspaceAuthorizationService auth, IEventStore store, AppDbContext db, TimeProvider time, CancellationToken ct)
     {
         var userId = ReviewAccess.UserId(http.User);
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);

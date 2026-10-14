@@ -12,7 +12,7 @@ public static class RemoveMember
         Guid workspaceId,
         string memberUserId,
         ClaimsPrincipal user,
-        WorkspacesDbContext db,
+        AppDbContext db,
         WorkspaceAuthorizationService auth,
         TimeProvider time,
         CancellationToken ct)

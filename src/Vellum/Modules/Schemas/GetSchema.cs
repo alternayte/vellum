@@ -7,7 +7,7 @@ public static class GetSchema
 {
     public static async Task<IResult> Handle(
         Guid projectId, Guid schemaId,
-        SchemasDbContext db, CancellationToken ct)
+        AppDbContext db, CancellationToken ct)
     {
         var entity = await db.Schemas.AsNoTracking()
             .FirstOrDefaultAsync(s => s.Id == schemaId && s.ProjectId == projectId, ct);

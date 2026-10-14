@@ -58,7 +58,7 @@ public static class Explain
 
     public static async Task<IResult> Handle(
         Guid projectId, ExplainRequest body, HttpContext http,
-        AiClient ai, IEventStore store, SchemasDbContext schemasDb, PrivateSources privateSources, ExplainStreams streams,
+        AiClient ai, IEventStore store, AppDbContext db, PrivateSources privateSources, ExplainStreams streams,
         CancellationToken ct)
     {
         // An explanation is made for one reader at one moment. No cache keeps it, whatever the answer is.
@@ -79,7 +79,7 @@ public static class Explain
         if (body.Question is not null && TextRule.Lines("question", body.Question, MaxQuestionChars) is { } questionError)
             return DesignAccess.Invalid(questionError.Field, questionError.Message);
 
-        var snapshot = await BranchSnapshot.LoadAsync(store, schemasDb, projectId, caller.StreamId, ct);
+        var snapshot = await BranchSnapshot.LoadAsync(store, db, projectId, caller.StreamId, ct);
         var gate = await privateSources.LoadAsync(caller.WorkspaceId, projectId, snapshot.Model, ct);
         if (kind is not ("scenario" or "trace-event") && gate.Hides(target.Id!.Value))
             return Results.Ok(AiUnavailable.From(new AiFailure.Disabled(PrivateGate.Setting)));

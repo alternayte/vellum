@@ -12,14 +12,14 @@ public static class ListRevisions
     public static async Task<IResult> Handle(
         Guid projectId,
         ClaimsPrincipal user,
-        ModellingDbContext modellingDb,
+        AppDbContext db,
         WorkspaceAuthorizationService auth,
         CancellationToken ct)
     {
         var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Viewer, ct);
 
-        var revisions = await modellingDb.Revisions.AsNoTracking()
+        var revisions = await db.Revisions.AsNoTracking()
             .Where(r => r.ProjectId == projectId)
             .OrderByDescending(r => r.CreatedAt).ThenBy(r => r.Id)
             .Select(r => new RevisionDto(
@@ -37,14 +37,14 @@ public static class GetRevision
         Guid projectId,
         Guid revisionId,
         ClaimsPrincipal user,
-        ModellingDbContext modellingDb,
+        AppDbContext db,
         WorkspaceAuthorizationService auth,
         CancellationToken ct)
     {
         var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Viewer, ct);
 
-        var revision = await modellingDb.Revisions.AsNoTracking()
+        var revision = await db.Revisions.AsNoTracking()
             .FirstOrDefaultAsync(r => r.Id == revisionId && r.ProjectId == projectId, ct);
         if (revision is null) return Results.NotFound(new ErrorResponse("not_found", "Revision not found"));
 

@@ -177,7 +177,7 @@ internal static class SecretEnvelope
 /// that URL. Callers pass the value to that destination and nowhere else: not to a log, a
 /// response, an error or a prompt.
 /// </summary>
-public sealed class SecretReader(SettingsDbContext db, Bootstrap bootstrap)
+public sealed class SecretReader(AppDbContext db, Bootstrap bootstrap)
 {
     /// <param name="destination">The absolute URL of the request that carries the credential.</param>
     /// <exception cref="SecretUnavailableException">The row exists and does not decrypt.</exception>

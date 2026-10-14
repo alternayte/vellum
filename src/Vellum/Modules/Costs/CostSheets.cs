@@ -85,7 +85,7 @@ internal static class CostAccess
         {
             // A price entry of another workspace does not exist for this project.
             var workspaceId = await services.GetRequiredService<WorkspaceAuthorizationService>().GetProjectWorkspaceIdAsync(projectId, ct);
-            prices = (await services.GetRequiredService<CostsDbContext>().PriceEntries.AsNoTracking()
+            prices = (await services.GetRequiredService<AppDbContext>().PriceEntries.AsNoTracking()
                 .Where(p => p.WorkspaceId == workspaceId && refs.Contains(p.Id))
                 .Select(p => p.Id)
                 .ToListAsync(ct)).ToHashSet();
@@ -214,11 +214,11 @@ public static class CostSheets
             branchId = parsed;
         }
 
-        var mainStreamId = await services.GetRequiredService<WorkspacesDbContext>().Projects.AsNoTracking()
+        var mainStreamId = await services.GetRequiredService<AppDbContext>().Projects.AsNoTracking()
             .Where(p => p.Id == projectId).Select(p => p.StreamId).FirstAsync(ct);
         return await ModelBranches.ResolveAsync(
             branchId, projectId, mainStreamId,
-            services.GetRequiredService<Drafts.DraftsDbContext>(), services.GetRequiredService<ModellingDbContext>(),
+            services.GetRequiredService<AppDbContext>(),
             forWrite: false, ct);
     }
 

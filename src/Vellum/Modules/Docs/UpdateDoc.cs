@@ -20,7 +20,7 @@ public static class UpdateDoc
         Guid projectId, Guid docId,
         UpdateDocRequest request,
         ClaimsPrincipal user,
-        DocsDbContext db,
+        AppDbContext db,
         WorkspaceAuthorizationService auth,
         CancellationToken ct)
     {

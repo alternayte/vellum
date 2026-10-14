@@ -29,7 +29,7 @@ public static class ReadScenarios
         string? cursor, int? limit,
         ClaimsPrincipal user,
         WorkspaceAuthorizationService auth,
-        ScenariosDbContext db,
+        AppDbContext db,
         CancellationToken ct)
     {
         var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;

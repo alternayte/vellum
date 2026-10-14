@@ -26,9 +26,6 @@ public static class CostsModule
     {
         // The connection string is read when the context is first used, so configuration that
         // a test host overrides applies.
-        services.AddDbContext<CostsDbContext>((provider, options) =>
-            options.UseNpgsql(provider.GetRequiredService<IConfiguration>().GetConnectionString("DefaultConnection"))
-                   .UseSnakeCaseNamingConvention());
         services.AddOutboundClient<IAzureRetailPricesApi>();
         services.AddScoped<AzureRetailPrices>();
         services.AddScoped<EstimateReader>();
@@ -104,7 +101,7 @@ public static class CostsModule
 }
 
 /// <summary>Cost data does not outlive its project.</summary>
-public sealed class CostRetention(CostsDbContext db, IEventStore store) : IProjectRetention
+public sealed class CostRetention(AppDbContext db, IEventStore store) : IProjectRetention
 {
     /// <summary>
     /// Deletes the saved estimates, the pins and the cost sheets of a project. The sheet and

@@ -9,7 +9,7 @@ public static class ListElements
         Guid projectId, Guid streamId,
         string? kind, string? status, Guid? parentId,
         string? cursor, int? limit,
-        ModellingDbContext db, CancellationToken ct)
+        AppDbContext db, CancellationToken ct)
     {
         var pageSize = Math.Clamp(limit ?? 50, 1, 200);
 

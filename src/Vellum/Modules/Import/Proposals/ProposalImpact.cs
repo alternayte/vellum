@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Vellum.Modules.Modelling.Model;
 using Vellum.Modules.Trace.Engine;
 using Vellum.Modules.Trace.Scenarios;
+using Vellum.Shared;
 
 namespace Vellum.Modules.Import.Proposals;
 
@@ -46,7 +47,7 @@ internal sealed class ProposalImpact
     public static async Task<ProposalImpact> LoadAsync(
         IServiceProvider services, IEventStore store, Guid projectId, ModelState model, CancellationToken ct)
     {
-        var rows = await services.GetRequiredService<ScenariosDbContext>().Scenarios.AsNoTracking()
+        var rows = await services.GetRequiredService<AppDbContext>().Scenarios.AsNoTracking()
             .Where(s => s.ProjectId == projectId)
             .OrderBy(s => s.Name).ThenBy(s => s.Id)
             .Take(MaxScenarios)

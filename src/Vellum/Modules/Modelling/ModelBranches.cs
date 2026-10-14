@@ -23,13 +23,12 @@ public static class ModelBranches
         await services.GetRequiredService<WorkspaceAuthorizationService>()
             .RequireProjectRoleAsync(projectId, userId, role, ct);
 
-        var project = await services.GetRequiredService<WorkspacesDbContext>().Projects.AsNoTracking()
+        var project = await services.GetRequiredService<AppDbContext>().Projects.AsNoTracking()
             .FirstAsync(p => p.Id == projectId, ct);
 
         var (streamId, refusal) = await ResolveAsync(
             branchId, projectId, project.StreamId,
-            services.GetRequiredService<DraftsDbContext>(),
-            services.GetRequiredService<ModellingDbContext>(),
+            services.GetRequiredService<AppDbContext>(),
             forWrite: role >= WorkspaceRole.Editor, ct);
 
         return refusal ?? await run(streamId, userId);
@@ -43,18 +42,18 @@ public static class ModelBranches
     /// </summary>
     public static async Task<(Guid StreamId, IResult? Refusal)> ResolveAsync(
         Guid? branchId, Guid projectId, Guid mainStreamId,
-        DraftsDbContext draftsDb, ModellingDbContext modellingDb,
+        AppDbContext db,
         bool forWrite, CancellationToken ct)
     {
         if (branchId is null)
             return (mainStreamId, null);
 
-        var status = await draftsDb.Drafts.AsNoTracking()
+        var status = await db.Drafts.AsNoTracking()
             .Where(d => d.StreamId == branchId.Value && d.ProjectId == projectId)
             .Select(d => d.Status)
             .FirstOrDefaultAsync(ct);
 
-        status ??= await modellingDb.Variants.AsNoTracking()
+        status ??= await db.Variants.AsNoTracking()
             .Where(v => v.StreamId == branchId.Value && v.ProjectId == projectId)
             .Select(v => v.Status)
             .FirstOrDefaultAsync(ct);
@@ -78,21 +77,21 @@ public static class ModelBranches
     /// or abandoned draft is history; main carries what it contributed.
     /// </summary>
     public static async Task<IReadOnlyList<(Guid StreamId, string Name)>> OpenAsync(
-        Guid projectId, WorkspacesDbContext workspacesDb, DraftsDbContext draftsDb, ModellingDbContext modellingDb,
+        Guid projectId, AppDbContext db,
         CancellationToken ct)
     {
-        var mainStreamId = await workspacesDb.Projects.AsNoTracking()
+        var mainStreamId = await db.Projects.AsNoTracking()
             .Where(p => p.Id == projectId)
             .Select(p => p.StreamId)
             .FirstAsync(ct);
 
-        var drafts = await draftsDb.Drafts.AsNoTracking()
+        var drafts = await db.Drafts.AsNoTracking()
             .Where(d => d.ProjectId == projectId && d.Status == "open")
             .OrderBy(d => d.Name).ThenBy(d => d.Id)
             .Select(d => new { d.StreamId, d.Name })
             .ToListAsync(ct);
 
-        var variants = await modellingDb.Variants.AsNoTracking()
+        var variants = await db.Variants.AsNoTracking()
             .Where(v => v.ProjectId == projectId && v.Status == "open")
             .OrderBy(v => v.Name).ThenBy(v => v.Id)
             .Select(v => new { v.StreamId, v.Name })

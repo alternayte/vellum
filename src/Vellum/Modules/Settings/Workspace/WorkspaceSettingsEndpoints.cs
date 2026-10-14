@@ -58,7 +58,7 @@ public static class UpdateWorkspaceSettings
         HttpContext http,
         ClaimsPrincipal user,
         WorkspaceAuthorizationService auth,
-        SettingsDbContext db,
+        AppDbContext db,
         SettingsResolver settings,
         SettingsValidator validator,
         CancellationToken ct)

@@ -14,7 +14,7 @@ public static class CreateDoc
         Guid projectId,
         CreateDocRequest request,
         ClaimsPrincipal user,
-        DocsDbContext db,
+        AppDbContext db,
         WorkspaceAuthorizationService auth,
         CancellationToken ct)
     {

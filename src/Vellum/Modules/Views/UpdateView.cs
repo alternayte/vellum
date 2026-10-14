@@ -15,7 +15,7 @@ public static class UpdateView
         Guid projectId, Guid viewId,
         UpdateViewRequest request,
         ClaimsPrincipal user,
-        ViewsDbContext db,
+        AppDbContext db,
         WorkspaceAuthorizationService auth,
         CancellationToken ct)
     {

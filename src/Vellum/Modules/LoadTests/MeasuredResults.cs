@@ -101,7 +101,7 @@ public static class MeasuredResults
     /// </para>
     /// </summary>
     public static async Task<IResult> Import(
-        Guid projectId, HttpContext http, WorkspaceAuthorizationService auth, LoadTestsDbContext db, IEventStore store, TimeProvider time, CancellationToken ct)
+        Guid projectId, HttpContext http, WorkspaceAuthorizationService auth, AppDbContext db, IEventStore store, TimeProvider time, CancellationToken ct)
     {
         var userId = Targets.UserId(http.User);
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
@@ -270,7 +270,7 @@ public static class MeasuredResults
     }
 
     public static async Task<IResult> List(
-        Guid projectId, ClaimsPrincipal user, WorkspaceAuthorizationService auth, LoadTestsDbContext db, IEventStore store, CancellationToken ct)
+        Guid projectId, ClaimsPrincipal user, WorkspaceAuthorizationService auth, AppDbContext db, IEventStore store, CancellationToken ct)
     {
         await auth.RequireProjectRoleAsync(projectId, Targets.UserId(user), WorkspaceRole.Viewer, ct);
 
@@ -285,7 +285,7 @@ public static class MeasuredResults
     }
 
     public static async Task<IResult> Get(
-        Guid projectId, Guid resultId, ClaimsPrincipal user, WorkspaceAuthorizationService auth, LoadTestsDbContext db, IEventStore store, CancellationToken ct)
+        Guid projectId, Guid resultId, ClaimsPrincipal user, WorkspaceAuthorizationService auth, AppDbContext db, IEventStore store, CancellationToken ct)
     {
         await auth.RequireProjectRoleAsync(projectId, Targets.UserId(user), WorkspaceRole.Viewer, ct);
         return await ReadAsync(db, store, projectId, resultId, ct) is { } result ? Results.Ok(result) : Targets.NotFound("Measured result");
@@ -296,7 +296,7 @@ public static class MeasuredResults
     /// value stays: the value would then name a measurement that does not exist.
     /// </summary>
     public static async Task<IResult> Delete(
-        Guid projectId, Guid resultId, ClaimsPrincipal user, WorkspaceAuthorizationService auth, LoadTestsDbContext db, StressDbContext stressDb, CancellationToken ct)
+        Guid projectId, Guid resultId, ClaimsPrincipal user, WorkspaceAuthorizationService auth, AppDbContext db, CancellationToken ct)
     {
         await auth.RequireProjectRoleAsync(projectId, Targets.UserId(user), WorkspaceRole.Editor, ct);
 
@@ -306,7 +306,7 @@ public static class MeasuredResults
         await Targets.LockProjectAsync(db.Database, projectId, ct);
 
         var reference = MeasurementRefs.For(resultId);
-        var users = await stressDb.Profiles.AsNoTracking().Where(p => p.ProjectId == projectId && p.Document.Contains(reference)).Select(p => p.Name).ToListAsync(ct);
+        var users = await db.Profiles.AsNoTracking().Where(p => p.ProjectId == projectId && p.Document.Contains(reference)).Select(p => p.Name).ToListAsync(ct);
         if (users.Count > 0)
         {
             return Results.Conflict(new ErrorResponse("conflict", "A stress profile names this result as the source of a measured value",
@@ -319,12 +319,12 @@ public static class MeasuredResults
     }
 
     /// <summary>A result of the project with its script, or null. A result of another project reads as not found.</summary>
-    internal static async Task<MeasuredResultDto?> ReadAsync(LoadTestsDbContext db, IEventStore store, Guid projectId, Guid resultId, CancellationToken ct) =>
+    internal static async Task<MeasuredResultDto?> ReadAsync(AppDbContext db, IEventStore store, Guid projectId, Guid resultId, CancellationToken ct) =>
         (await ReadWithPlanAsync(db, store, projectId, resultId, ct))?.Result;
 
     /// <summary>A result of the project with the plan of its script, or null.</summary>
     internal static async Task<(MeasuredResultDto Result, K6Plan Plan)?> ReadWithPlanAsync(
-        LoadTestsDbContext db, IEventStore store, Guid projectId, Guid resultId, CancellationToken ct)
+        AppDbContext db, IEventStore store, Guid projectId, Guid resultId, CancellationToken ct)
     {
         var row = await Rows(db, db.Results.Where(r => r.ProjectId == projectId && r.Id == resultId)).FirstOrDefaultAsync(ct);
         return row is null
@@ -334,7 +334,7 @@ public static class MeasuredResults
 
     private sealed record Row(ResultEntity Result, ScriptEntity Script);
 
-    private static IQueryable<Row> Rows(LoadTestsDbContext db, IQueryable<ResultEntity> results) =>
+    private static IQueryable<Row> Rows(AppDbContext db, IQueryable<ResultEntity> results) =>
         from result in results.AsNoTracking()
         join script in db.Scripts.AsNoTracking() on result.ScriptId equals script.Id
         select new Row(result, new ScriptEntity

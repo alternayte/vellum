@@ -7,7 +7,7 @@ public static class GetMessage
 {
     public static async Task<IResult> Handle(
         Guid projectId, Guid streamId, Guid messageId,
-        ModellingDbContext db, CancellationToken ct)
+        AppDbContext db, CancellationToken ct)
     {
         var entity = await db.Messages.AsNoTracking()
             .FirstOrDefaultAsync(m => m.Id == messageId && m.ProjectId == projectId && m.Branch == streamId, ct);

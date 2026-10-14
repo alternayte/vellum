@@ -145,7 +145,7 @@ public static class AgentBoundary
         if (AgentPrincipal.TokenId(http.User) is { } tokenId && AgentPrincipal.WorkspaceId(http.User) is { } workspaceId)
         {
             await AgentTokenAudit.RefusedAsync(
-                http.RequestServices.GetRequiredService<AppIdentityDbContext>(), tokenId, workspaceId, reason,
+                http.RequestServices.GetRequiredService<AppDbContext>(), tokenId, workspaceId, reason,
                 AgentTokenAudit.Describe(http), http.RequestServices.GetRequiredService<TimeProvider>().GetUtcNow(), http.RequestAborted);
         }
 
@@ -158,7 +158,7 @@ public static class AgentBoundary
 /// restriction, and the role its user has in the workspace today. The HTTP boundary and the
 /// MCP tools both ask here.
 /// </summary>
-public sealed class AgentAccess(WorkspacesDbContext workspaces, WorkspaceAuthorizationService roles)
+public sealed class AgentAccess(AppDbContext workspaces, WorkspaceAuthorizationService roles)
 {
     public const string MissingScope = "scope";
     public const string OutsideWorkspace = "workspace";

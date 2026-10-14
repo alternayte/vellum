@@ -50,7 +50,7 @@ public static class AzurePriceEndpoints
     /// </summary>
     public static async Task<IResult> Import(
         Guid workspaceId, AzureImportRequest request,
-        ClaimsPrincipal user, WorkspaceAuthorizationService auth, AzureRetailPrices azure, CostsDbContext db, TimeProvider time, CancellationToken ct)
+        ClaimsPrincipal user, WorkspaceAuthorizationService auth, AzureRetailPrices azure, AppDbContext db, TimeProvider time, CancellationToken ct)
     {
         var userId = PriceBook.UserId(user);
         await auth.RequireRoleAsync(workspaceId, userId, WorkspaceRole.Owner, ct);

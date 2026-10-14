@@ -11,7 +11,7 @@ public static class DeleteComment
     public static async Task<IResult> Handle(
         Guid projectId, Guid draftId, Guid commentId,
         ClaimsPrincipal user,
-        DraftsDbContext db,
+        AppDbContext db,
         WorkspaceAuthorizationService auth,
         CancellationToken ct)
     {

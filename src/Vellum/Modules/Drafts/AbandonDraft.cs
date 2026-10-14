@@ -25,7 +25,7 @@ public static class AbandonDraft
         // the removal of its cost sheet and saved estimates commit together.
         return await SharedTransaction.RunAsync(http.RequestServices, async services =>
         {
-            var db = services.GetRequiredService<DraftsDbContext>();
+            var db = services.GetRequiredService<AppDbContext>();
 
             var found = await db.Drafts.AsNoTracking()
                 .Where(d => d.Id == draftId && d.ProjectId == projectId)

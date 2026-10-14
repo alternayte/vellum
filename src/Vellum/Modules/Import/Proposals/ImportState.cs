@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Microsoft.EntityFrameworkCore;
 using Vellum.Modules.Import.Scans;
+using Vellum.Shared;
 
 namespace Vellum.Modules.Import.Proposals;
 
@@ -53,7 +54,7 @@ internal sealed record ImportState(
     TrackedRefEntity? Tracked,
     string Stamp)
 {
-    public static async Task<ImportState> LoadAsync(ImportDbContext db, ScanEntity scan, CancellationToken ct)
+    public static async Task<ImportState> LoadAsync(AppDbContext db, ScanEntity scan, CancellationToken ct)
     {
         var projectLinks = await db.FactLinks.AsNoTracking().Where(l => l.ProjectId == scan.ProjectId).ToListAsync(ct);
         var links = projectLinks

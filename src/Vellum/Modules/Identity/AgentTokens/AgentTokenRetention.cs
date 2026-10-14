@@ -8,7 +8,7 @@ namespace Vellum.Modules.Identity.AgentTokens;
 /// for one project must not stay behind as a row that names a project that is gone. Each
 /// deleted token gets an audit entry in its workspace. It is safe to repeat.
 /// </summary>
-public sealed class AgentTokenRetention(AppIdentityDbContext db) : IProjectRetention
+public sealed class AgentTokenRetention(AppDbContext db) : IProjectRetention
 {
     public Task DeleteProjectAsync(DeletedProject project, CancellationToken ct)
     {

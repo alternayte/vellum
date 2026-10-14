@@ -4,6 +4,7 @@ using Vellum.Modules.Identity;
 using Vellum.Modules.Identity.AgentTokens;
 using Vellum.Modules.Workspaces;
 using Vellum.Modules.Workspaces.Entities;
+using Vellum.Shared;
 
 namespace Vellum.Modules.Mcp;
 
@@ -11,7 +12,7 @@ namespace Vellum.Modules.Mcp;
 /// The one way an MCP tool reaches a project. A tool names the project in its arguments, so
 /// the HTTP boundary cannot check it; every tool call passes here before its tool runs.
 /// </summary>
-public sealed class McpProjects(AgentAccess access, AppIdentityDbContext identity, WorkspacesDbContext workspaces, TimeProvider time)
+public sealed class McpProjects(AgentAccess access, AppDbContext db, TimeProvider time)
 {
     public const string AgentRequired = "An agent token is required.";
     public const string NotFound = "Project not found.";
@@ -32,7 +33,7 @@ public sealed class McpProjects(AgentAccess access, AppIdentityDbContext identit
         if (refusal is null)
             return (project, null);
 
-        await AgentTokenAudit.RefusedAsync(identity, tokenId, workspaceId, refusal, "mcp tools/call", time.GetUtcNow(), ct);
+        await AgentTokenAudit.RefusedAsync(db, tokenId, workspaceId, refusal, "mcp tools/call", time.GetUtcNow(), ct);
         return (null, refusal == AgentAccess.OutsideWorkspace ? NotFound : AgentAccess.Explain(refusal));
     }
 
@@ -51,11 +52,11 @@ public sealed class McpProjects(AgentAccess access, AppIdentityDbContext identit
         var (refusal, _) = await access.CheckAsync(user, scope, restriction is null ? workspaceId : null, restriction, ct);
         if (refusal is not null)
         {
-            await AgentTokenAudit.RefusedAsync(identity, tokenId, workspaceId, refusal, "mcp tools/call", time.GetUtcNow(), ct);
+            await AgentTokenAudit.RefusedAsync(db, tokenId, workspaceId, refusal, "mcp tools/call", time.GetUtcNow(), ct);
             return (null, AgentAccess.Explain(refusal));
         }
 
-        var query = workspaces.Projects.AsNoTracking().Where(p => p.WorkspaceId == workspaceId);
+        var query = db.Projects.AsNoTracking().Where(p => p.WorkspaceId == workspaceId);
         if (restriction is { } only)
             query = query.Where(p => p.Id == only);
         if (after is var (name, id))

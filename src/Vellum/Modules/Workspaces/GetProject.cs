@@ -14,7 +14,7 @@ public static class GetProject
     public static async Task<IResult> Handle(
         Guid projectId,
         ClaimsPrincipal user,
-        WorkspacesDbContext db,
+        AppDbContext db,
         WorkspaceAuthorizationService auth,
         CancellationToken ct)
     {

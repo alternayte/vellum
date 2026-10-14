@@ -277,7 +277,7 @@ public class ScenarioLimitsTests(IntegrationFixture fixture) : IClassFixture<Int
         // requests would test nothing more.
         using (var scope = factory.Services.CreateScope())
         {
-            var db = scope.ServiceProvider.GetRequiredService<ScenariosDbContext>();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             db.Scenarios.AddRange(Enumerable.Range(0, ScenarioDecider.MaxPerProject - 1)
                 .Select(i => new ScenarioEntity { Id = Guid.NewGuid(), ProjectId = projectId, Name = $"Scenario {i}" }));
             await db.SaveChangesAsync();

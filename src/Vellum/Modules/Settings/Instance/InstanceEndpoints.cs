@@ -14,7 +14,7 @@ namespace Vellum.Modules.Settings.Instance;
 /// The instance admin manages the instance: policy, defaults, keys and diagnostics. The role
 /// gives no access to a workspace; that comes from a workspace membership only.
 /// </summary>
-public sealed class InstanceAuthorization(SettingsDbContext db)
+public sealed class InstanceAuthorization(AppDbContext db)
 {
     public Task<bool> IsAdminAsync(string userId, CancellationToken ct = default) =>
         db.InstanceAdmins.AsNoTracking().AnyAsync(a => a.UserId == userId, ct);
@@ -93,7 +93,7 @@ public static class UpdateInstanceSettings
         HttpContext http,
         ClaimsPrincipal user,
         InstanceAuthorization auth,
-        SettingsDbContext db,
+        AppDbContext db,
         SettingsResolver settings,
         SettingsValidator validator,
         CancellationToken ct)

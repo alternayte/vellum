@@ -51,12 +51,12 @@ public static class PinnedModelRead
 
     public static async Task<IResult> RevisionModel(
         Guid projectId, Guid revisionId, ClaimsPrincipal user, HttpContext http,
-        ModellingDbContext modellingDb, WorkspaceAuthorizationService auth, CancellationToken ct)
+        AppDbContext db, WorkspaceAuthorizationService auth, CancellationToken ct)
     {
         var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Viewer, ct);
 
-        var revision = await modellingDb.Revisions.FindAsync([revisionId], ct);
+        var revision = await db.Revisions.FindAsync([revisionId], ct);
         if (revision is null || revision.ProjectId != projectId)
             return Results.NotFound(new ErrorResponse("not_found", "Revision not found"));
 
@@ -161,12 +161,11 @@ public static class PinnedModelRead
 
         // The refusals of the resolver name its own parameters, so a side is checked here and
         // a refusal names the side.
-        if (revisionId is { } revision && !await services.GetRequiredService<ModellingDbContext>().Revisions
+        if (revisionId is { } revision && !await services.GetRequiredService<AppDbContext>().Revisions
                 .AnyAsync(r => r.Id == revision && r.ProjectId == projectId, ct))
             return (null, Invalid(field, "No revision with this ID exists in the project"));
         if (branchId is { } branch && !(await ModelBranches.OpenAsync(projectId,
-                services.GetRequiredService<WorkspacesDbContext>(), services.GetRequiredService<DraftsDbContext>(),
-                services.GetRequiredService<ModellingDbContext>(), ct)).Any(b => b.StreamId == branch))
+                services.GetRequiredService<AppDbContext>(), ct)).Any(b => b.StreamId == branch))
             return (null, Invalid(field, "No open draft or variant with this stream ID exists in the project"));
 
         return await PinnedModel.ResolveAsync(services, projectId, revisionId, branchId, ct);

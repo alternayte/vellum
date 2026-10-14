@@ -56,15 +56,14 @@ public static class CreateVariant
         // sheet commit together.
         return await SharedTransaction.RunAsync(http.RequestServices, async services =>
         {
-            var workspacesDb = services.GetRequiredService<WorkspacesDbContext>();
-            var modellingDb = services.GetRequiredService<ModellingDbContext>();
+            var db = services.GetRequiredService<AppDbContext>();
             var store = services.GetRequiredService<IEventStore>();
 
-            var project = await workspacesDb.Projects.AsNoTracking()
+            var project = await db.Projects.AsNoTracking()
                 .FirstOrDefaultAsync(p => p.Id == projectId, ct);
             if (project is null) return Results.NotFound(new ErrorResponse("not_found", "Project not found"));
 
-            var existingById = await modellingDb.Variants.AsNoTracking()
+            var existingById = await db.Variants.AsNoTracking()
                 .FirstOrDefaultAsync(v => v.Id == request.Id, ct);
             if (existingById is not null)
             {
@@ -73,7 +72,7 @@ public static class CreateVariant
                     : Results.Conflict(new ErrorResponse("conflict", "Variant id is already in use"));
             }
 
-            if (await modellingDb.Variants.AnyAsync(
+            if (await db.Variants.AnyAsync(
                     v => v.ProjectId == projectId && v.Name == request.Name, ct))
             {
                 return Results.Conflict(new ErrorResponse("conflict", "A variant with this name already exists"));
@@ -81,8 +80,8 @@ public static class CreateVariant
 
             // One transaction: the variant row, the fork event, the branch read-model rows and
             // the hold on the schemas the fork names (see SchemaReferences).
-            await using var transaction = await modellingDb.Database.BeginTransactionAsync(ct);
-            var branches = store.ForProject(projectId).UseDbContext(modellingDb);
+            await using var transaction = await db.Database.BeginTransactionAsync(ct);
+            var branches = store.ForProject(projectId).UseDbContext(db);
 
             ModelState sourceState;
             Guid baseStreamId;
@@ -90,7 +89,7 @@ public static class CreateVariant
 
             if (request.BaseRevisionId is { } revisionId)
             {
-                var revision = await modellingDb.Revisions.AsNoTracking()
+                var revision = await db.Revisions.AsNoTracking()
                     .FirstOrDefaultAsync(r => r.Id == revisionId && r.ProjectId == projectId, ct);
                 if (revision is null)
                     return Results.NotFound(new ErrorResponse("not_found", "Base revision not found"));
@@ -109,7 +108,7 @@ public static class CreateVariant
             }
 
             await SchemaReferences.HoldAsync(
-                modellingDb, projectId, ContractDecider.ReferencedSchemaIds(sourceState), ct);
+                db, projectId, ContractDecider.ReferencedSchemaIds(sourceState), ct);
 
             var variant = new VariantEntity
             {
@@ -124,7 +123,7 @@ public static class CreateVariant
                 CreatedBy = userId,
                 CreatedAt = DateTimeOffset.UtcNow,
             };
-            modellingDb.Variants.Add(variant);
+            db.Variants.Add(variant);
 
             // Read before the first append, like every other stream this unit reads.
             var sheetBranch = sheetFrom ?? baseStreamId;

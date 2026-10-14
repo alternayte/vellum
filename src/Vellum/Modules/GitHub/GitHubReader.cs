@@ -6,6 +6,7 @@ using Vellum.Modules.Settings.Document;
 using Vellum.Modules.Settings.Secrets;
 using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Shared.Outbound;
+using Vellum.Shared;
 
 namespace Vellum.Modules.GitHub;
 
@@ -166,7 +167,7 @@ public sealed class GitHubReader(
 
     private async Task<bool> InstanceAdminOwnsAsync(Guid workspaceId, CancellationToken ct)
     {
-        var admins = await services.GetRequiredService<SettingsDbContext>().InstanceAdmins
+        var admins = await services.GetRequiredService<AppDbContext>().InstanceAdmins
             .AsNoTracking().Select(a => a.UserId).ToListAsync(ct);
         var auth = services.GetRequiredService<WorkspaceAuthorizationService>();
         foreach (var admin in admins)

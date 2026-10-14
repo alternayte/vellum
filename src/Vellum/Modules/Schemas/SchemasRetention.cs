@@ -5,7 +5,7 @@ using Vellum.Shared;
 namespace Vellum.Modules.Schemas;
 
 /// <summary>What the schema table and the schema streams keep of a deleted project: nothing.</summary>
-public sealed class SchemasRetention(SchemasDbContext db, IEventStore store) : IProjectRetention
+public sealed class SchemasRetention(AppDbContext db, IEventStore store) : IProjectRetention
 {
     public async Task DeleteProjectAsync(DeletedProject project, CancellationToken ct)
     {

@@ -571,9 +571,9 @@ public static partial class BuildModule
     }
 
     private static async Task<bool> IsBranchAsync(IServiceProvider services, Guid projectId, Guid streamId, CancellationToken ct) =>
-        await services.GetRequiredService<WorkspacesDbContext>().Projects.AsNoTracking().AnyAsync(p => p.Id == projectId && p.StreamId == streamId, ct)
-        || await services.GetRequiredService<DraftsDbContext>().Drafts.AsNoTracking().AnyAsync(d => d.ProjectId == projectId && d.StreamId == streamId, ct)
-        || await services.GetRequiredService<ModellingDbContext>().Variants.AsNoTracking().AnyAsync(v => v.ProjectId == projectId && v.StreamId == streamId, ct);
+        await services.GetRequiredService<AppDbContext>().Projects.AsNoTracking().AnyAsync(p => p.Id == projectId && p.StreamId == streamId, ct)
+        || await services.GetRequiredService<AppDbContext>().Drafts.AsNoTracking().AnyAsync(d => d.ProjectId == projectId && d.StreamId == streamId, ct)
+        || await services.GetRequiredService<AppDbContext>().Variants.AsNoTracking().AnyAsync(v => v.ProjectId == projectId && v.StreamId == streamId, ct);
 
     /// <summary>The bundle of a pinned state, made from exactly the versions it names.</summary>
     private static async Task<(Bundle? Bundle, IResult? Refusal)> BuildPinnedAsync(

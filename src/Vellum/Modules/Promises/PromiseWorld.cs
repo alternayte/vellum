@@ -8,6 +8,7 @@ using Vellum.Modules.Settings.Document;
 using Vellum.Modules.Trace.Engine;
 using Vellum.Modules.Trace.Scenarios;
 using Vellum.Modules.Workspaces;
+using Vellum.Shared;
 
 namespace Vellum.Modules.Promises;
 
@@ -109,7 +110,7 @@ public sealed class PromiseWorld
         PinnedModel? pinned = null, bool withGitHubHost = false)
     {
         var store = services.GetRequiredService<IEventStore>();
-        var workspaces = services.GetRequiredService<WorkspacesDbContext>();
+        var workspaces = services.GetRequiredService<AppDbContext>();
         Guid mainStreamId;
         ModelState model;
         long version;
@@ -122,7 +123,7 @@ public sealed class PromiseWorld
             (model, version) = await store.Load<ModelState>(StreamId.From(mainStreamId), ct);
         }
 
-        var names = await services.GetRequiredService<ScenariosDbContext>().Scenarios.AsNoTracking()
+        var names = await services.GetRequiredService<AppDbContext>().Scenarios.AsNoTracking()
             .Where(s => s.ProjectId == projectId)
             .ToDictionaryAsync(s => s.Id, s => s.Name, ct);
 
@@ -134,11 +135,11 @@ public sealed class PromiseWorld
                 scenarios[id] = ScenarioSnapshot.Of(document, scenarioVersion);
         }
 
-        var schemaVersions = await services.GetRequiredService<SchemasDbContext>().Schemas.AsNoTracking()
+        var schemaVersions = await services.GetRequiredService<AppDbContext>().Schemas.AsNoTracking()
             .Where(s => s.ProjectId == projectId)
             .ToDictionaryAsync(s => s.Id, s => s.Version, ct);
 
-        var (tracked, latest, repositories) = await SourcesAsync(services.GetRequiredService<ImportDbContext>(), projectId, ct);
+        var (tracked, latest, repositories) = await SourcesAsync(services.GetRequiredService<AppDbContext>(), projectId, ct);
 
         string? gitHubHost = null;
         if (withGitHubHost)
@@ -152,9 +153,9 @@ public sealed class PromiseWorld
 
     /// <summary>What the import tables say about the repositories of a project: the tracked refs, the newest snapshots and the followed repositories.</summary>
     public static async Task<(Dictionary<string, TrackedCommit> Tracked, Dictionary<string, string> Latest, HashSet<string> Repositories)> SourcesAsync(
-        ImportDbContext importDb, Guid projectId, CancellationToken ct)
+        AppDbContext db, Guid projectId, CancellationToken ct)
     {
-        var trackedRows = await importDb.TrackedRefs.AsNoTracking()
+        var trackedRows = await db.TrackedRefs.AsNoTracking()
             .Where(t => t.ProjectId == projectId)
             .Select(t => new { t.Host, t.Repository, t.RefName, t.CommitSha })
             .ToListAsync(ct);
@@ -162,7 +163,7 @@ public sealed class PromiseWorld
             t => RepositoryKey(t.Host, t.Repository), t => new TrackedCommit(t.RefName, t.CommitSha), StringComparer.Ordinal);
 
         // A pull request or a bare commit is never the newest state of a repository.
-        var snapshots = await ScanSnapshots.OfRefs(importDb, projectId).AsNoTracking()
+        var snapshots = await ScanSnapshots.OfRefs(db, projectId).AsNoTracking()
             .OrderBy(s => s.CreatedAt).ThenBy(s => s.ScanId)
             .Select(s => new { s.Host, s.Repository, s.CommitSha })
             .ToListAsync(ct);
@@ -170,7 +171,7 @@ public sealed class PromiseWorld
         foreach (var snapshot in snapshots)
             latest[RepositoryKey(snapshot.Host, snapshot.Repository)] = snapshot.CommitSha;
 
-        var linked = await importDb.FactLinks.AsNoTracking()
+        var linked = await db.FactLinks.AsNoTracking()
             .Where(l => l.ProjectId == projectId)
             .Select(l => new { l.Host, l.Repository })
             .Distinct()

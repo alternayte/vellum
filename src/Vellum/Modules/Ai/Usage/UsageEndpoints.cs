@@ -32,7 +32,7 @@ public static class GetAiUsage
         DateTimeOffset? to,
         ClaimsPrincipal user,
         WorkspaceAuthorizationService auth,
-        AiUsageDbContext db,
+        AppDbContext db,
         CancellationToken ct)
     {
         var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
@@ -113,7 +113,7 @@ public static class ModelPrices
             ? stored
             : null;
 
-    public static async Task<IResult> List(ClaimsPrincipal user, InstanceAuthorization admins, AiUsageDbContext db, CancellationToken ct)
+    public static async Task<IResult> List(ClaimsPrincipal user, InstanceAuthorization admins, AppDbContext db, CancellationToken ct)
     {
         await admins.RequireAdminAsync(user, ct);
         var prices = await db.ModelPrices.AsNoTracking()
@@ -124,7 +124,7 @@ public static class ModelPrices
     }
 
     public static async Task<IResult> Set(
-        SetModelPriceRequest request, ClaimsPrincipal user, InstanceAuthorization admins, AiUsageDbContext db, CancellationToken ct)
+        SetModelPriceRequest request, ClaimsPrincipal user, InstanceAuthorization admins, AppDbContext db, CancellationToken ct)
     {
         var adminId = await admins.RequireAdminAsync(user, ct);
 

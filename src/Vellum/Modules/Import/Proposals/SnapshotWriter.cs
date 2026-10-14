@@ -84,7 +84,7 @@ internal static class SnapshotWriter
     }
 
     /// <summary>The facts of a stored snapshot, for planning it again. A fact of a kind this build does not know is left as it is stored.</summary>
-    public static async Task<IReadOnlyList<ExtractedFact>> StoredFactsAsync(ImportDbContext db, Guid scanId, CancellationToken ct)
+    public static async Task<IReadOnlyList<ExtractedFact>> StoredFactsAsync(AppDbContext db, Guid scanId, CancellationToken ct)
     {
         var rows = await db.SnapshotFacts.AsNoTracking().Where(f => f.ScanId == scanId).OrderBy(f => f.Seq).ToListAsync(ct);
         var facts = new List<ExtractedFact>(rows.Count);
@@ -107,15 +107,15 @@ internal static class SnapshotWriter
         var ambient = scanServices.GetRequiredService<DeedboxContext>();
         services.GetRequiredService<DeedboxContext>().TenantId = ambient.TenantId;
 
-        var project = await services.GetRequiredService<WorkspacesDbContext>().Projects.AsNoTracking()
+        var project = await services.GetRequiredService<AppDbContext>().Projects.AsNoTracking()
             .FirstOrDefaultAsync(p => p.Id == scan.ProjectId, ct);
         if (project is null)
             return null;
 
-        var db = services.GetRequiredService<ImportDbContext>();
+        var db = services.GetRequiredService<AppDbContext>();
         var store = services.GetRequiredService<IEventStore>().ForProject(scan.ProjectId);
         var (model, version) = await store.Load<ModelState>(StreamId.From(project.StreamId), ct);
-        var schemas = await services.GetRequiredService<SchemasDbContext>().Schemas.AsNoTracking()
+        var schemas = await services.GetRequiredService<AppDbContext>().Schemas.AsNoTracking()
             .Where(s => s.ProjectId == scan.ProjectId)
             .Select(s => new SchemaRow(s.Id, s.Name, s.Content))
             .ToListAsync(ct);
@@ -123,7 +123,7 @@ internal static class SnapshotWriter
 
         // A scan that a person makes the tracked one is planned as a tracking scan.
         var kind = mode.TrackedBy is not null ? new ScanKindInfo(ScanKind.Tracking, null) : ScanKindInfo.Of(scan, state.Tracked);
-        var fingerprint = await db.Snapshots.AsNoTracking().Where(s => s.ScanId == scan.Id).Select(s => s.RuleFingerprint).FirstOrDefaultAsync(ct)
+        var fingerprint = await db.ImportSnapshots.AsNoTracking().Where(s => s.ScanId == scan.Id).Select(s => s.RuleFingerprint).FirstOrDefaultAsync(ct)
             ?? RuleSet.CurrentFingerprint;
 
         var plan = await Task.Run(() => ProposalPlanner.Compute(new PlanInput(
@@ -137,7 +137,7 @@ internal static class SnapshotWriter
     private static async Task<SnapshotOutcome?> CommitAsync(
         IServiceProvider services, ScanEntity scan, WriteMode mode, SnapshotInput input, Prepared prepared, DateTimeOffset now, CancellationToken ct)
     {
-        var db = services.GetRequiredService<ImportDbContext>();
+        var db = services.GetRequiredService<AppDbContext>();
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         var store = services.GetRequiredService<IEventStore>().ForProject(scan.ProjectId).UseDbContext(db);
         var commitSha = scan.CommitSha!;
@@ -147,7 +147,7 @@ internal static class SnapshotWriter
         // 1. The rows that only this scan owns, before any lock that another writer waits for.
         if (mode.TrackedBy is null)
         {
-            db.Snapshots.Add(new SnapshotEntity
+            db.ImportSnapshots.Add(new SnapshotEntity
             {
                 ScanId = scan.Id, ProjectId = scan.ProjectId, Host = scan.Host, Repository = scan.Repository,
                 CommitSha = commitSha, IsComplete = input.IsComplete,
@@ -172,11 +172,11 @@ internal static class SnapshotWriter
                 return SnapshotOutcome.LeaseLost;
             for (var i = 0; i < rows.Count; i++)
                 (rows[i].Disposition, rows[i].Reason) = (plan.Facts[i].Disposition, plan.Facts[i].Reason);
-            await db.Proposals.Where(p => p.ScanId == scan.Id).ExecuteDeleteAsync(ct);
+            await db.ImportProposals.Where(p => p.ScanId == scan.Id).ExecuteDeleteAsync(ct);
         }
 
         var seq = 0;
-        db.Proposals.AddRange(plan.Proposals.Select(p => new ProposalEntity
+        db.ImportProposals.AddRange(plan.Proposals.Select(p => new ProposalEntity
         {
             Id = p.Id, ScanId = scan.Id, ProjectId = scan.ProjectId, Seq = seq++,
             Action = p.Action, EntityKind = p.EntityKind, EntityId = p.EntityId,
@@ -203,7 +203,7 @@ internal static class SnapshotWriter
             var earlier = db.Scans.Where(s =>
                 s.ProjectId == scan.ProjectId && s.Host == scan.Host && s.Repository == scan.Repository && s.Id != scan.Id
                 && (s.ResolvedRef == scan.ResolvedRef || (s.ResolvedRef == null && s.RequestedRef == null && scan.RequestedRef == null)));
-            await db.Proposals
+            await db.ImportProposals
                 .Where(p => p.Status == ProposalStatus.Pending && earlier.Any(s => s.Id == p.ScanId))
                 .ExecuteUpdateAsync(set => set.SetProperty(p => p.Status, ProposalStatus.Superseded), ct);
 
@@ -287,7 +287,7 @@ internal static class SnapshotWriter
     /// nothing a person accepted changes. A message's consumer keys move with the links of
     /// its consumers.
     /// </summary>
-    private static async Task MoveLinksAsync(ImportDbContext db, IReadOnlyList<Relink> relinked, string ruleFingerprint, CancellationToken ct)
+    private static async Task MoveLinksAsync(AppDbContext db, IReadOnlyList<Relink> relinked, string ruleFingerprint, CancellationToken ct)
     {
         if (relinked.Count == 0)
             return;
@@ -307,7 +307,7 @@ internal static class SnapshotWriter
     }
 
     /// <summary>Makes the ref of <paramref name="scan"/> the tracked ref of its repository in its project.</summary>
-    public static async Task SetTrackedRefAsync(ImportDbContext db, ScanEntity scan, string userId, DateTimeOffset now, CancellationToken ct)
+    public static async Task SetTrackedRefAsync(AppDbContext db, ScanEntity scan, string userId, DateTimeOffset now, CancellationToken ct)
     {
         var tracked = await db.TrackedRefs.FirstOrDefaultAsync(
             t => t.ProjectId == scan.ProjectId && t.Host == scan.Host && t.Repository == scan.Repository, ct);

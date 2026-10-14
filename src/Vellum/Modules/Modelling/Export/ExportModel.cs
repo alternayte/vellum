@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Vellum.Modules.Modelling.Model;
 using Vellum.Modules.Schemas;
 using Vellum.Modules.Workspaces;
+using Vellum.Shared;
 
 namespace Vellum.Modules.Modelling.Export;
 
@@ -17,17 +18,15 @@ public static class ExportModel
 
     public static async Task<IResult> Handle(
         Guid projectId, string format,
-        ModellingDbContext modellingDb,
-        SchemasDbContext schemasDb,
-        WorkspacesDbContext workspacesDb,
+        AppDbContext db,
         IEventStore store,
         CancellationToken ct)
     {
-        var project = await workspacesDb.Projects.AsNoTracking()
+        var project = await db.Projects.AsNoTracking()
             .FirstOrDefaultAsync(p => p.Id == projectId, ct);
         if (project is null) return Results.NotFound();
 
-        var elementEntities = await modellingDb.Elements.AsNoTracking()
+        var elementEntities = await db.Elements.AsNoTracking()
             .Where(e => e.ProjectId == projectId && e.Branch == project.StreamId)
             .OrderBy(e => e.Id)
             .ToListAsync(ct);
@@ -38,7 +37,7 @@ public static class ExportModel
                 e.ProvenanceAcceptedBy, e.ProvenanceAcceptedAt),
             StaleExport.From(e.StaleSinceRevision, e.StaleReason))).ToList();
 
-        var relationshipEntities = await modellingDb.Relationships.AsNoTracking()
+        var relationshipEntities = await db.Relationships.AsNoTracking()
             .Where(r => r.ProjectId == projectId && r.Branch == project.StreamId)
             .OrderBy(r => r.Id)
             .ToListAsync(ct);
@@ -48,7 +47,7 @@ public static class ExportModel
                 r.ProvenanceAcceptedBy, r.ProvenanceAcceptedAt),
             StaleExport.From(r.StaleSinceRevision, r.StaleReason))).ToList();
 
-        var messageEntities = await modellingDb.Messages.AsNoTracking()
+        var messageEntities = await db.Messages.AsNoTracking()
             .Where(m => m.ProjectId == projectId && m.Branch == project.StreamId)
             .OrderBy(m => m.Id)
             .ToListAsync(ct);
@@ -59,7 +58,7 @@ public static class ExportModel
                 m.ProvenanceAcceptedBy, m.ProvenanceAcceptedAt),
             StaleExport.From(m.StaleSinceRevision, m.StaleReason))).ToList();
 
-        var schemas = await schemasDb.Schemas.AsNoTracking()
+        var schemas = await db.Schemas.AsNoTracking()
             .Where(s => s.ProjectId == projectId)
             .OrderBy(s => s.Id)
             .Select(s => new SchemaExport(s.Id, s.Name, s.Description, s.Content, s.Version))

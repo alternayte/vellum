@@ -98,7 +98,7 @@ public sealed record WorkspaceSettings(
 /// with no restart. Built-in defaults lie under the instance defaults, which lie under a
 /// workspace's overrides. The instance policy is applied on every read.
 /// </summary>
-public sealed class SettingsResolver(SettingsDbContext db, Bootstrap bootstrap)
+public sealed class SettingsResolver(AppDbContext db, Bootstrap bootstrap)
 {
     // Stored by this class only, so a field that a later version adds is absent, not wrong.
     private sealed record StoredPolicy(

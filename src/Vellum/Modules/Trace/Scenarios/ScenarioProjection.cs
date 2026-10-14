@@ -1,6 +1,7 @@
 using Deedbox;
 using Microsoft.EntityFrameworkCore;
 using Vellum.Modules.Trace.Scenarios.Entities;
+using Vellum.Shared;
 
 namespace Vellum.Modules.Trace.Scenarios;
 
@@ -8,7 +9,7 @@ namespace Vellum.Modules.Trace.Scenarios;
 /// The scenario list read model: one row per live scenario. It runs inline, so the row
 /// commits in the same transaction as the event. The scenario ID is the stream ID.
 /// </summary>
-public sealed class ScenarioProjection : Projection<ScenariosDbContext>
+public sealed class ScenarioProjection : Projection<AppDbContext>
 {
     public ScenarioProjection()
     {
@@ -32,6 +33,6 @@ public sealed class ScenarioProjection : Projection<ScenariosDbContext>
         });
     }
 
-    protected override Task ResetAsync(WriteContext<ScenariosDbContext> context) =>
+    protected override Task ResetAsync(WriteContext<AppDbContext> context) =>
         context.Db.Scenarios.ExecuteDeleteAsync(context.CancellationToken);
 }

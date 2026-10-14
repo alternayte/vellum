@@ -11,6 +11,7 @@ using Vellum.Modules.Settings;
 using Vellum.Modules.Settings.Entities;
 using Vellum.Modules.Settings.Secrets;
 using Vellum.Tests.Shared.Outbound;
+using Vellum.Shared;
 
 namespace Vellum.Tests.Modules.Ai;
 
@@ -123,7 +124,7 @@ public class AiSafetyTests(SharedOutboundHost shared) : IClassFixture<SharedOutb
     private async Task StoreUncheckedAsync(Guid workspaceId, string name, string origin, string value)
     {
         using var scope = _host.Factory.Services.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<SettingsDbContext>();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var keys = scope.ServiceProvider.GetRequiredService<Bootstrap>().Keys;
         var row = new SecretEntity { WorkspaceId = workspaceId, Name = name, UpdatedAt = DateTimeOffset.UtcNow, UpdatedBy = "test" };
         var bytes = Encoding.UTF8.GetBytes(value);

@@ -12,7 +12,7 @@ public static class ListDocs
         Guid projectId,
         Guid? spaceId, Guid? elementId, Guid? draftId, string? type, string? cursor, int? limit,
         ClaimsPrincipal user,
-        DocsDbContext db,
+        AppDbContext db,
         WorkspaceAuthorizationService auth,
         CancellationToken ct)
     {

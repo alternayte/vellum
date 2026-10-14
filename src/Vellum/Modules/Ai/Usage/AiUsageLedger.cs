@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using Microsoft.EntityFrameworkCore;
 using Vellum.Shared.Outbound;
+using Vellum.Shared;
 
 namespace Vellum.Modules.Ai.Usage;
 
@@ -62,7 +63,7 @@ public sealed record CallCost(decimal? CostUsd, int? InputTokens, int? OutputTok
 /// <c>abandoned</c>. No background job is needed.
 /// </para>
 /// </summary>
-public sealed class AiUsageLedger(AiUsageDbContext db)
+public sealed class AiUsageLedger(AppDbContext db)
 {
     public const string Started = "started";
     public const string Abandoned = "abandoned";

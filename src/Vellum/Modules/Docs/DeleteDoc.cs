@@ -10,7 +10,7 @@ public static class DeleteDoc
     public static async Task<IResult> Handle(
         Guid projectId, Guid docId,
         ClaimsPrincipal user,
-        DocsDbContext db,
+        AppDbContext db,
         WorkspaceAuthorizationService auth,
         CancellationToken ct)
     {

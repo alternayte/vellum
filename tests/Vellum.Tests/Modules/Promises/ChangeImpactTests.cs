@@ -5,6 +5,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Vellum.Tests.Modules.Import;
 using Vellum.Tests.Shared.Outbound;
+using Vellum.Shared;
 
 namespace Vellum.Tests.Modules.Promises;
 
@@ -381,7 +382,7 @@ public class ChangeImpactTests(ImportHost import) : IClassFixture<ImportHost>
     public void The_impact_reads_only_the_pattern_facts_of_a_snapshot_from_the_database()
     {
         using var scope = import.Host.Factory.Services.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<Vellum.Modules.Import.ImportDbContext>();
+        var db = scope.ServiceProvider.GetRequiredService<Vellum.Shared.AppDbContext>();
         var sql = Vellum.Modules.Promises.ChangeImpact.PatternRows(db, Guid.NewGuid()).ToQueryString();
         Assert.Contains("attributes ? 'pattern'", sql);
     }

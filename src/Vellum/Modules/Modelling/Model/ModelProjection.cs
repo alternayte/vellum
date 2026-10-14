@@ -1,6 +1,7 @@
 using Deedbox;
 using Microsoft.EntityFrameworkCore;
 using Vellum.Modules.Modelling.Entities;
+using Vellum.Shared;
 
 namespace Vellum.Modules.Modelling.Model;
 
@@ -13,7 +14,7 @@ namespace Vellum.Modules.Modelling.Model;
 /// Deedbox stores with the event, so a rebuild reads it back.
 /// </para>
 /// </summary>
-public sealed class ModelProjection : Projection<ModellingDbContext>
+public sealed class ModelProjection : Projection<AppDbContext>
 {
     public ModelProjection()
     {
@@ -175,7 +176,7 @@ public sealed class ModelProjection : Projection<ModellingDbContext>
     }
 
     /// <summary>Revisions and variants are not projected from events, so a rebuild keeps them.</summary>
-    protected override async Task ResetAsync(WriteContext<ModellingDbContext> context)
+    protected override async Task ResetAsync(WriteContext<AppDbContext> context)
     {
         await context.Db.Elements.ExecuteDeleteAsync(context.CancellationToken);
         await context.Db.Relationships.ExecuteDeleteAsync(context.CancellationToken);
@@ -218,21 +219,21 @@ public sealed class ModelProjection : Projection<ModellingDbContext>
     /// append, so rows added by an earlier event of the same append are found through the
     /// change tracker before the database.
     /// </summary>
-    private static async Task<ElementEntity?> FindElementAsync(ProjectionContext<ModellingDbContext> ctx, ElementId id)
+    private static async Task<ElementEntity?> FindElementAsync(ProjectionContext<AppDbContext> ctx, ElementId id)
     {
         var branch = BranchOf(ctx);
         return ctx.Db.Elements.Local.FirstOrDefault(e => e.Id == id.Value && e.Branch == branch)
             ?? await ctx.Db.Elements.FirstOrDefaultAsync(e => e.Id == id.Value && e.Branch == branch, ctx.CancellationToken);
     }
 
-    private static async Task<RelationshipEntity?> FindRelationshipAsync(ProjectionContext<ModellingDbContext> ctx, RelationshipId id)
+    private static async Task<RelationshipEntity?> FindRelationshipAsync(ProjectionContext<AppDbContext> ctx, RelationshipId id)
     {
         var branch = BranchOf(ctx);
         return ctx.Db.Relationships.Local.FirstOrDefault(r => r.Id == id.Value && r.Branch == branch)
             ?? await ctx.Db.Relationships.FirstOrDefaultAsync(r => r.Id == id.Value && r.Branch == branch, ctx.CancellationToken);
     }
 
-    private static async Task<MessageEntity?> FindMessageAsync(ProjectionContext<ModellingDbContext> ctx, MessageId id)
+    private static async Task<MessageEntity?> FindMessageAsync(ProjectionContext<AppDbContext> ctx, MessageId id)
     {
         var branch = BranchOf(ctx);
         return ctx.Db.Messages.Local.FirstOrDefault(m => m.Id == id.Value && m.Branch == branch)
@@ -243,7 +244,7 @@ public sealed class ModelProjection : Projection<ModellingDbContext>
     /// Writes complete rows for a forked branch so a draft or variant reads as a full model,
     /// not just the changes made on it. The synthetic row ID is assigned automatically.
     /// </summary>
-    private static void WriteBranch(Guid projectId, Guid branch, ModelEvent.BranchForked forked, ModellingDbContext db)
+    private static void WriteBranch(Guid projectId, Guid branch, ModelEvent.BranchForked forked, AppDbContext db)
     {
         foreach (var element in forked.Elements)
         {

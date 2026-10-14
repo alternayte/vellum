@@ -36,9 +36,6 @@ public static class DesignModule
     {
         // The connection string is read when the context is first used, so configuration that
         // a test host overrides applies.
-        services.AddDbContext<AiDesignDbContext>((provider, options) =>
-            options.UseNpgsql(provider.GetRequiredService<IConfiguration>().GetConnectionString("DefaultConnection"))
-                   .UseSnakeCaseNamingConvention());
         services.AddScoped<PrivateSources>();
         services.AddScoped<Shared.IProjectRetention, DesignRetention>();
         services.AddSingleton<ExplainStreams>();

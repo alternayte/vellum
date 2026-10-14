@@ -62,7 +62,7 @@ Because no migration goes back, the backup that you make before the upgrade is t
    docker compose logs vellum | grep "Vellum did not start" || true
    ```
 
-3. Sign in as the instance administrator. Open **Settings**, then **Instance**, then **Diagnostics**. No module lists a pending migration, and the database and the event store are reachable. `GET /api/instance/diagnostics` gives the same data.
+3. Sign in as the instance administrator. Open **Settings**, then **Instance**, then **Diagnostics**. No pending migration is listed, and the database and the event store are reachable. `GET /api/instance/diagnostics` gives the same data.
 4. Open a project and play one scenario.
 
 ## If the upgrade fails
@@ -93,7 +93,7 @@ Set `Database__MigrateOnStartup=false` when a deployment step applies the migrat
 
 Vellum then starts only on a database that is up to date. On a database that is behind, the event store stops the start with the error `DBX001`. [Vellum does not start](/troubleshooting/start-up-refusals/) describes it.
 
-The `justfile` has one recipe for each module to create a migration. The repository has no command that only applies migrations: a start with `Database__MigrateOnStartup=true` applies them.
+The `justfile` has one recipe to create a migration (`just migration <name>`). The repository has no command that only applies migrations: a start with `Database__MigrateOnStartup=true` applies them.
 
 ## See also
 

@@ -53,7 +53,7 @@ The instance administrator reads the diagnostics in the app: **Settings**, then 
 | `profile` | `local` or `hosted`. |
 | `version` | The version of the program. |
 | `database.reachable` | `false` when the app cannot open a connection. |
-| `migrations` | For each module: the migrations that are applied and the migrations that are pending. After a start, `pending` is empty for every module. |
+| `migrations` | One entry, `vellum`: the migrations that are applied and the migrations that are pending. After a start, `pending` is empty. |
 | `eventStore` | Whether the event store is reachable, the position of its newest event, and its consumers. |
 | `masterKeyId` | The ID of the master key that encrypts new data. The ID is not the key. |
 | `previousMasterKeyLoaded` | `true` during a key rotation. |

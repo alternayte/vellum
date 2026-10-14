@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Vellum.Modules.Import;
 using Vellum.Modules.Import.Proposals;
 using Vellum.Tests.Shared.Outbound;
+using Vellum.Shared;
 
 namespace Vellum.Tests.Modules.Import;
 
@@ -44,10 +45,10 @@ public class ImportCoverageTests(ImportHost import) : IClassFixture<ImportHost>
         return string.Join("\n", parts);
     }
 
-    private async Task<T> DbAsync<T>(Func<ImportDbContext, Task<T>> read)
+    private async Task<T> DbAsync<T>(Func<AppDbContext, Task<T>> read)
     {
         using var scope = import.Host.Factory.Services.CreateScope();
-        return await read(scope.ServiceProvider.GetRequiredService<ImportDbContext>());
+        return await read(scope.ServiceProvider.GetRequiredService<AppDbContext>());
     }
 
     private static int Linked(JsonObject scan, string field) => scan["coverage"]!["linkedFacts"]![field]!.GetValue<int>();

@@ -113,14 +113,21 @@ if (generatingOpenApi)
     }
 }
 
+// The one DbContext. Each module configures its own tables in its own Postgres schema. The
+// connection string is read when the context is made, so configuration that a test host
+// overrides applies.
+builder.Services.AddDbContext<AppDbContext>((services, options) => options
+    .UseNpgsql(services.GetRequiredService<IConfiguration>().GetConnectionString("DefaultConnection"))
+    .UseSnakeCaseNamingConvention());
+
 // Modules
 builder.Services.AddIdentityModule(builder.Configuration);
-builder.Services.AddWorkspacesModule(builder.Configuration);
-builder.Services.AddModellingModule(builder.Configuration);
-builder.Services.AddViewsModule(builder.Configuration);
-builder.Services.AddDocsModule(builder.Configuration);
-builder.Services.AddDraftsModule(builder.Configuration);
-builder.Services.AddSchemasModule(builder.Configuration);
+builder.Services.AddWorkspacesModule();
+builder.Services.AddModellingModule();
+builder.Services.AddViewsModule();
+builder.Services.AddDocsModule();
+builder.Services.AddDraftsModule();
+builder.Services.AddSchemasModule();
 builder.Services.AddScenariosModule();
 builder.Services.AddMcpModule();
 builder.Services.AddSettingsModule(generatingOpenApi);
@@ -241,8 +248,7 @@ if (app.Environment.IsDevelopment())
     if (args.Contains("seed"))
     {
         var userManager = services.GetRequiredService<UserManager<ApplicationUser>>();
-        var workspacesDb = services.GetRequiredService<WorkspacesDbContext>();
-        var settingsDb = services.GetRequiredService<SettingsDbContext>();
+        var db = services.GetRequiredService<AppDbContext>();
         var store = services.GetRequiredService<IEventStore>();
 
         // Create dev user
@@ -262,22 +268,22 @@ if (app.Environment.IsDevelopment())
         }
 
         // The seeded user stands in for first-run setup, so it is the instance admin.
-        if (await settingsDb.InstanceAdmins.FindAsync(devUser.Id) is null)
+        if (await db.InstanceAdmins.FindAsync(devUser.Id) is null)
         {
-            settingsDb.InstanceAdmins.Add(new InstanceAdminEntity { UserId = devUser.Id });
-            await settingsDb.SaveChangesAsync();
+            db.InstanceAdmins.Add(new InstanceAdminEntity { UserId = devUser.Id });
+            await db.SaveChangesAsync();
         }
 
         // Create workspace + project
         var workspaceId = Guid.Parse("00000000-0000-0000-0000-000000000001");
-        if (await workspacesDb.Workspaces.FindAsync(workspaceId) is null)
+        if (await db.Workspaces.FindAsync(workspaceId) is null)
         {
             var streamId = Guid.Parse("00000000-0000-0000-0000-000000000010");
             var projectId = Guid.Parse("00000000-0000-0000-0000-000000000002");
 
-            workspacesDb.Workspaces.Add(new WorkspaceEntity { Id = workspaceId, Name = "Dev Workspace", CreatedBy = devUser.Id });
-            workspacesDb.Memberships.Add(new MembershipEntity { Id = Guid.NewGuid(), WorkspaceId = workspaceId, UserId = devUser.Id, Role = "Owner" });
-            workspacesDb.Projects.Add(new ProjectEntity { Id = projectId, WorkspaceId = workspaceId, Name = "Sample Architecture", StreamId = streamId });
+            db.Workspaces.Add(new WorkspaceEntity { Id = workspaceId, Name = "Dev Workspace", CreatedBy = devUser.Id });
+            db.Memberships.Add(new MembershipEntity { Id = Guid.NewGuid(), WorkspaceId = workspaceId, UserId = devUser.Id, Role = "Owner" });
+            db.Projects.Add(new ProjectEntity { Id = projectId, WorkspaceId = workspaceId, Name = "Sample Architecture", StreamId = streamId });
 
             var userId = Guid.NewGuid();
             var webAppId = Guid.NewGuid();
@@ -310,7 +316,7 @@ if (app.Environment.IsDevelopment())
             await store
                 .ForProject(projectId)
                 .WithMetadata(metadata => metadata with { Actor = $"user:{devUser.Id}" })
-                .UseDbContext(workspacesDb)
+                .UseDbContext(db)
                 .Append(StreamId.From(streamId), ExpectedVersion.NoStream, seedEvents);
         }
 

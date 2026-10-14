@@ -101,7 +101,7 @@ public static class PriceBook
 {
     public static async Task<IResult> List(
         Guid workspaceId, string? cursor, int? limit,
-        ClaimsPrincipal user, WorkspaceAuthorizationService auth, CostsDbContext db, CancellationToken ct)
+        ClaimsPrincipal user, WorkspaceAuthorizationService auth, AppDbContext db, CancellationToken ct)
     {
         await auth.RequireRoleAsync(workspaceId, UserId(user), WorkspaceRole.Viewer, ct);
 
@@ -123,7 +123,7 @@ public static class PriceBook
 
     public static async Task<IResult> AddCustom(
         Guid workspaceId, CustomPriceRequest request,
-        ClaimsPrincipal user, WorkspaceAuthorizationService auth, CostsDbContext db, TimeProvider time, CancellationToken ct)
+        ClaimsPrincipal user, WorkspaceAuthorizationService auth, AppDbContext db, TimeProvider time, CancellationToken ct)
     {
         var userId = UserId(user);
         await auth.RequireRoleAsync(workspaceId, userId, WorkspaceRole.Owner, ct);
@@ -151,7 +151,7 @@ public static class PriceBook
     /// <summary>A pinned entry stays: a project said that it depends on it.</summary>
     public static async Task<IResult> Delete(
         Guid workspaceId, Guid priceId,
-        ClaimsPrincipal user, WorkspaceAuthorizationService auth, CostsDbContext db, CancellationToken ct)
+        ClaimsPrincipal user, WorkspaceAuthorizationService auth, AppDbContext db, CancellationToken ct)
     {
         var userId = UserId(user);
         await auth.RequireRoleAsync(workspaceId, userId, WorkspaceRole.Owner, ct);
@@ -182,7 +182,7 @@ public static class PriceBook
     /// commits with the price entry.
     /// </summary>
     /// <param name="action"><see cref="PriceAudit.Added"/> or <see cref="PriceAudit.Imported"/>.</param>
-    internal static async Task<IResult> AddAsync(CostsDbContext db, PriceEntryEntity entry, string action, CancellationToken ct)
+    internal static async Task<IResult> AddAsync(AppDbContext db, PriceEntryEntity entry, string action, CancellationToken ct)
     {
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         // One writer of a workspace's book at a time, so the count is the count at the insert.

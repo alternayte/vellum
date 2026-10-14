@@ -1,6 +1,7 @@
 using Deedbox;
 using Microsoft.EntityFrameworkCore;
 using Vellum.Modules.Schemas.Entities;
+using Vellum.Shared;
 
 namespace Vellum.Modules.Schemas;
 
@@ -8,7 +9,7 @@ namespace Vellum.Modules.Schemas;
 /// The schema read model. It runs inline: the rows commit in the same transaction as the
 /// events, so a read after a command sees the command's effect.
 /// </summary>
-public sealed class SchemaProjection : Projection<SchemasDbContext>
+public sealed class SchemaProjection : Projection<AppDbContext>
 {
     public SchemaProjection()
     {
@@ -44,6 +45,6 @@ public sealed class SchemaProjection : Projection<SchemasDbContext>
         });
     }
 
-    protected override Task ResetAsync(WriteContext<SchemasDbContext> context) =>
+    protected override Task ResetAsync(WriteContext<AppDbContext> context) =>
         context.Db.Schemas.ExecuteDeleteAsync(context.CancellationToken);
 }

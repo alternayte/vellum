@@ -10,7 +10,7 @@ namespace Vellum.Modules.Promises;
 /// The promises of a project as other modules and the HTTP reads see them: each with its
 /// revisions and the evidence status computed against the project as it is now.
 /// </summary>
-public sealed class PromiseReader(IServiceProvider services, PromisesDbContext db)
+public sealed class PromiseReader(IServiceProvider services, AppDbContext db)
 {
     /// <summary>One promise, or null when the project has none with this ID.</summary>
     public async Task<PromiseDto?> GetAsync(Guid projectId, Guid promiseId, CancellationToken ct)
@@ -51,7 +51,7 @@ public static class PromiseReads
 
     public static async Task<IResult> List(
         Guid projectId, string? cursor, int? limit,
-        ClaimsPrincipal user, WorkspaceAuthorizationService auth, PromisesDbContext db, IServiceProvider services, CancellationToken ct)
+        ClaimsPrincipal user, WorkspaceAuthorizationService auth, AppDbContext db, IServiceProvider services, CancellationToken ct)
     {
         await auth.RequireProjectRoleAsync(projectId, PromiseAccess.UserId(user), WorkspaceRole.Viewer, ct);
 
@@ -89,7 +89,7 @@ public static class PromiseReads
     /// <summary>The runs of a promise, newest first. Runs are appended and never changed.</summary>
     public static async Task<IResult> Runs(
         Guid projectId, Guid promiseId, string? cursor, int? limit, string? obligation,
-        ClaimsPrincipal user, WorkspaceAuthorizationService auth, PromisesDbContext db, CancellationToken ct)
+        ClaimsPrincipal user, WorkspaceAuthorizationService auth, AppDbContext db, CancellationToken ct)
     {
         await auth.RequireProjectRoleAsync(projectId, PromiseAccess.UserId(user), WorkspaceRole.Viewer, ct);
         if (!await db.Promises.AsNoTracking().AnyAsync(p => p.Id == promiseId && p.ProjectId == projectId, ct))
@@ -99,7 +99,7 @@ public static class PromiseReads
             return PromiseAccess.Invalid("obligation", $"An obligation is named by its ID or its key, at most {MaxObligationFilterChars} characters");
 
         var pageSize = Math.Clamp(limit ?? 50, 1, 200);
-        var query = db.Runs.AsNoTracking().Where(r => r.PromiseId == promiseId);
+        var query = db.PromiseRuns.AsNoTracking().Where(r => r.PromiseId == promiseId);
         if (!string.IsNullOrEmpty(obligation))
             query = query.Where(r => r.ObligationId == obligation || r.ObligationId.EndsWith("/" + obligation));
         if (CursorEncoder.DecodeNumber(cursor) is { } before)
@@ -119,7 +119,7 @@ public static class PromiseReads
     }
 
     public static async Task<IResult> Prefix(
-        Guid projectId, ClaimsPrincipal user, WorkspaceAuthorizationService auth, PromisesDbContext db, CancellationToken ct)
+        Guid projectId, ClaimsPrincipal user, WorkspaceAuthorizationService auth, AppDbContext db, CancellationToken ct)
     {
         await auth.RequireProjectRoleAsync(projectId, PromiseAccess.UserId(user), WorkspaceRole.Viewer, ct);
         var numbering = await db.Numbering.AsNoTracking().FirstOrDefaultAsync(n => n.ProjectId == projectId, ct);

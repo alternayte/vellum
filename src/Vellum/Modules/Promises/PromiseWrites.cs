@@ -42,7 +42,7 @@ public static class PromiseWrites
     /// change, so there is no second set.
     /// </summary>
     public static async Task<IResult> SetPrefix(
-        Guid projectId, HttpContext http, WorkspaceAuthorizationService auth, PromisesDbContext db, CancellationToken ct)
+        Guid projectId, HttpContext http, WorkspaceAuthorizationService auth, AppDbContext db, CancellationToken ct)
     {
         await auth.RequireProjectRoleAsync(projectId, PromiseAccess.UserId(http.User), WorkspaceRole.Owner, ct);
         var (request, error) = await PromiseAccess.ReadAsync<SetPrefixRequest>(http);
@@ -86,7 +86,7 @@ public static class PromiseWrites
         var tooLarge = false;
         var result = await SharedTransaction.RunAsync(http.RequestServices, async services =>
         {
-            var db = services.GetRequiredService<PromisesDbContext>();
+            var db = services.GetRequiredService<AppDbContext>();
             await using var transaction = await db.Database.BeginTransactionAsync(ct);
 
             var allocated = await db.Database
@@ -169,7 +169,7 @@ public static class PromiseWrites
     /// </summary>
     public static async Task<IResult> Approve(
         Guid projectId, Guid promiseId, HttpContext http,
-        WorkspaceAuthorizationService auth, IEventStore store, PromisesDbContext db, PromiseReader reader, TimeProvider time, CancellationToken ct)
+        WorkspaceAuthorizationService auth, IEventStore store, AppDbContext db, PromiseReader reader, TimeProvider time, CancellationToken ct)
     {
         var userId = PromiseAccess.UserId(http.User);
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Owner, ct);

@@ -10,6 +10,7 @@ using Vellum.Modules.Import.Extraction;
 using Vellum.Modules.Import.Proposals;
 using Vellum.Modules.Import.Scans;
 using Vellum.Tests.Shared.Outbound;
+using Vellum.Shared;
 
 namespace Vellum.Tests.Modules.Import;
 
@@ -28,10 +29,10 @@ public class ImportSafetyTests(ImportHost import) : IClassFixture<ImportHost>
         return OutboundHost.PutSettingsAsync(s.Owner, s.WorkspaceId, overrides);
     }
 
-    private async Task<T> DbAsync<T>(Func<ImportDbContext, Task<T>> read)
+    private async Task<T> DbAsync<T>(Func<AppDbContext, Task<T>> read)
     {
         using var scope = import.Host.Factory.Services.CreateScope();
-        return await read(scope.ServiceProvider.GetRequiredService<ImportDbContext>());
+        return await read(scope.ServiceProvider.GetRequiredService<AppDbContext>());
     }
 
     private static async Task<string?> ErrorAsync(HttpResponseMessage response) =>
@@ -171,8 +172,8 @@ public class ImportSafetyTests(ImportHost import) : IClassFixture<ImportHost>
 
         Assert.Equal((0, 0, 0, 0, 0, 0), await DbAsync(async db => (
             await db.Scans.CountAsync(x => x.ProjectId == s.ProjectId),
-            await db.Proposals.CountAsync(x => x.ProjectId == s.ProjectId),
-            await db.Snapshots.CountAsync(x => x.ProjectId == s.ProjectId),
+            await db.ImportProposals.CountAsync(x => x.ProjectId == s.ProjectId),
+            await db.ImportSnapshots.CountAsync(x => x.ProjectId == s.ProjectId),
             await db.FactLinks.CountAsync(x => x.ProjectId == s.ProjectId),
             await db.TrackedRefs.CountAsync(x => x.ProjectId == s.ProjectId),
             await db.Blobs.CountAsync(x => x.WorkspaceId == s.WorkspaceId))));
@@ -502,7 +503,7 @@ public class ImportSafetyTests(ImportHost import) : IClassFixture<ImportHost>
             [new SourceEvidence("big.yaml", i + 1, i + 1, rule.Id, rule.Version)])).ToList();
 
         using var scope = import.Host.Factory.Services.CreateScope();
-        var scan = await scope.ServiceProvider.GetRequiredService<ImportDbContext>().Scans.AsNoTracking().SingleAsync(x => x.Id == id);
+        var scan = await scope.ServiceProvider.GetRequiredService<AppDbContext>().Scans.AsNoTracking().SingleAsync(x => x.Id == id);
         scope.ServiceProvider.GetRequiredService<Deedbox.DeedboxContext>().Metadata = new Deedbox.EventMetadata { Actor = "system:import-scan" };
         var input = new SnapshotInput(facts, true, null, "[]", () => ScanCoverage.Everything, 1);
 

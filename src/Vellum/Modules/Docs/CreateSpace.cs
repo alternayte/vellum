@@ -14,7 +14,7 @@ public static class CreateSpace
         Guid projectId,
         CreateSpaceRequest request,
         ClaimsPrincipal user,
-        DocsDbContext db,
+        AppDbContext db,
         WorkspaceAuthorizationService auth,
         CancellationToken ct)
     {

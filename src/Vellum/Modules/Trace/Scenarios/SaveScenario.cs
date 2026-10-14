@@ -57,7 +57,7 @@ public static class SaveScenario
         IServiceProvider requestServices, Guid projectId, Scenario document, CancellationToken ct) =>
         SharedTransaction.RunAsync(requestServices, async services =>
         {
-            var db = services.GetRequiredService<ScenariosDbContext>();
+            var db = services.GetRequiredService<AppDbContext>();
             await using var transaction = await db.Database.BeginTransactionAsync(ct);
             var created = await CreateInTransactionAsync(
                 db, services.GetRequiredService<IEventStore>().UseDbContext(db), projectId, document, null, ct);

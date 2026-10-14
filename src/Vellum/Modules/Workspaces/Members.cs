@@ -25,9 +25,8 @@ public static class ListMembers
     public static async Task<IResult> Handle(
         Guid workspaceId,
         ClaimsPrincipal user,
-        WorkspacesDbContext db,
+        AppDbContext db,
         WorkspaceAuthorizationService auth,
-        AppIdentityDbContext identity,
         CancellationToken ct)
     {
         var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
@@ -38,7 +37,7 @@ public static class ListMembers
             .OrderBy(m => m.CreatedAt).ThenBy(m => m.UserId)
             .ToListAsync(ct);
         var ids = memberships.Select(m => m.UserId).ToList();
-        var accounts = await identity.Users.AsNoTracking()
+        var accounts = await db.Users.AsNoTracking()
             .Where(u => ids.Contains(u.Id))
             .Select(u => new { u.Id, u.Email, u.DisplayName })
             .ToDictionaryAsync(u => u.Id, ct);
@@ -59,7 +58,7 @@ public static class ChangeMemberRole
         string memberUserId,
         ChangeMemberRoleRequest request,
         ClaimsPrincipal user,
-        WorkspacesDbContext db,
+        AppDbContext db,
         WorkspaceAuthorizationService auth,
         TimeProvider time,
         CancellationToken ct)
@@ -121,7 +120,7 @@ internal static class MemberRoles
     public static string Canonical(string role) => Enum.Parse<WorkspaceRole>(role, ignoreCase: true).ToString();
 
     /// <summary>Locks the owner rows of the workspace for the open transaction and returns how many there are.</summary>
-    public static async Task<int> LockOwnersAsync(WorkspacesDbContext db, Guid workspaceId, CancellationToken ct)
+    public static async Task<int> LockOwnersAsync(AppDbContext db, Guid workspaceId, CancellationToken ct)
     {
         var owners = await db.Database
             .SqlQuery<Guid>($"""

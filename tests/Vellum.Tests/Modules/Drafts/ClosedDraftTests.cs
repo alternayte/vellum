@@ -7,6 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Vellum.Modules.Drafts;
 using Vellum.Modules.Modelling;
 using Vellum.Modules.Modelling.Variants;
+using Vellum.Shared;
 
 namespace Vellum.Tests.Modules.Drafts;
 
@@ -97,7 +98,7 @@ public class ClosedDraftTests(IntegrationFixture fixture) : IClassFixture<Integr
     private static async Task<int> RowsAsync(WebApplicationFactory<Program> factory, Guid branch)
     {
         using var scope = factory.Services.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<ModellingDbContext>();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         return await db.Elements.CountAsync(e => e.Branch == branch)
             + await db.Relationships.CountAsync(r => r.Branch == branch)
             + await db.Messages.CountAsync(m => m.Branch == branch);

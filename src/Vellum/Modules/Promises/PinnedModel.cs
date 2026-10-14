@@ -70,13 +70,13 @@ public sealed record PinnedModel(ModelPin Pin, ModelState State)
     public static async Task<(PinnedModel? Model, IResult? Refusal)> ResolveAsync(
         IServiceProvider services, Guid projectId, Guid? revisionId, Guid? branchId, CancellationToken ct)
     {
-        var modellingDb = services.GetRequiredService<ModellingDbContext>();
+        var db = services.GetRequiredService<AppDbContext>();
         if (revisionId is not null && branchId is not null)
             return (null, Invalid("revisionId", "Give a revision or a branch, not both"));
 
         if (revisionId is { } id)
         {
-            var revision = await modellingDb.Revisions.AsNoTracking()
+            var revision = await db.Revisions.AsNoTracking()
                 .FirstOrDefaultAsync(r => r.Id == id && r.ProjectId == projectId, ct);
             return revision is null
                 ? (null, Invalid("revisionId", "No revision with this ID exists in the project"))
@@ -85,10 +85,10 @@ public sealed record PinnedModel(ModelPin Pin, ModelState State)
                     CreateRevision.ReadState(revision.State)), null);
         }
 
-        var mainStreamId = await services.GetRequiredService<WorkspacesDbContext>().Projects.AsNoTracking()
+        var mainStreamId = await services.GetRequiredService<AppDbContext>().Projects.AsNoTracking()
             .Where(p => p.Id == projectId).Select(p => p.StreamId).FirstAsync(ct);
         var (streamId, refusal) = await ModelBranches.ResolveAsync(
-            branchId, projectId, mainStreamId, services.GetRequiredService<DraftsDbContext>(), modellingDb, forWrite: false, ct);
+            branchId, projectId, mainStreamId, db, forWrite: false, ct);
         if (refusal is not null)
             return (null, refusal);
 

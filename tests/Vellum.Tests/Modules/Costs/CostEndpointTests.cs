@@ -6,6 +6,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Vellum.Modules.Costs;
 using Vellum.Modules.Drafts;
+using Vellum.Shared;
 
 namespace Vellum.Tests.Modules.Costs;
 
@@ -276,7 +277,7 @@ public class CostEndpointTests(IntegrationFixture fixture) : IClassFixture<Integ
         async Task<(bool Sheet, bool Estimates, bool Stream)> CostDataAsync(DraftDto draft)
         {
             using var scope = factory.Services.CreateScope();
-            var db = scope.ServiceProvider.GetRequiredService<CostsDbContext>();
+            var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             var stream = true;
             try
             {
@@ -475,7 +476,7 @@ public class CostEndpointTests(IntegrationFixture fixture) : IClassFixture<Integ
         await Ok(owner.PostAsJsonAsync(Costs(keptProject, "/resources"), Resource(keptElement, "Kept resource", 1, price)), HttpStatusCode.Created);
 
         using var scope = factory.Services.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<CostsDbContext>();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var sheets = await db.Sheets.AsNoTracking().Where(s => s.ProjectId == projectId).Select(s => s.Id).ToListAsync();
         Assert.Equal(2, sheets.Count);
 

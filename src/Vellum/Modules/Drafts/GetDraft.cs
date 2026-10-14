@@ -11,7 +11,7 @@ public static class GetDraft
     public static async Task<IResult> Handle(
         Guid projectId, Guid draftId,
         ClaimsPrincipal user,
-        DraftsDbContext db,
+        AppDbContext db,
         WorkspaceAuthorizationService auth,
         CancellationToken ct)
     {

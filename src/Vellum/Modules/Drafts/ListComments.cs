@@ -12,7 +12,7 @@ public static class ListComments
         Guid projectId, Guid draftId,
         Guid? entityId, string? cursor, int? limit,
         ClaimsPrincipal user,
-        DraftsDbContext db,
+        AppDbContext db,
         WorkspaceAuthorizationService auth,
         CancellationToken ct)
     {

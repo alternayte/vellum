@@ -19,10 +19,6 @@ public static class AiModule
     {
         // The connection string is read when the context is first used, so configuration that
         // a test host overrides applies.
-        services.AddDbContext<AiUsageDbContext>((provider, options) =>
-            options.UseNpgsql(provider.GetRequiredService<IConfiguration>().GetConnectionString("DefaultConnection"))
-                   .UseSnakeCaseNamingConvention());
-
         services.AddOutboundClient<IAnthropicApi>();
         services.AddOutboundClient<IOpenAiApi>();
         services.AddOutboundClient<IGeminiApi>();

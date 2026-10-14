@@ -18,9 +18,6 @@ public static class PromisesModule
     {
         // The connection string is read when the context is first used, so configuration that
         // a test host overrides applies.
-        services.AddDbContext<PromisesDbContext>((provider, options) =>
-            options.UseNpgsql(provider.GetRequiredService<IConfiguration>().GetConnectionString("DefaultConnection"))
-                   .UseSnakeCaseNamingConvention());
         services.AddScoped<PromiseReader>();
         services.AddScoped<IProjectRetention, PromiseRetention>();
         services.TryAddSingleton(TimeProvider.System);

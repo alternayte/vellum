@@ -13,7 +13,7 @@ public static class UpdateSpace
         Guid projectId, Guid spaceId,
         UpdateSpaceRequest request,
         ClaimsPrincipal user,
-        DocsDbContext db,
+        AppDbContext db,
         WorkspaceAuthorizationService auth,
         CancellationToken ct)
     {

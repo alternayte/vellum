@@ -13,14 +13,14 @@ public static class ListVariants
     public static async Task<IResult> Handle(
         Guid projectId,
         ClaimsPrincipal user,
-        ModellingDbContext modellingDb,
+        AppDbContext db,
         WorkspaceAuthorizationService auth,
         CancellationToken ct)
     {
         var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Viewer, ct);
 
-        var variants = await modellingDb.Variants.AsNoTracking()
+        var variants = await db.Variants.AsNoTracking()
             .Where(v => v.ProjectId == projectId)
             .OrderByDescending(v => v.CreatedAt).ThenBy(v => v.Id)
             .Select(v => new VariantDto(
@@ -39,14 +39,14 @@ public static class GetVariant
         Guid projectId,
         Guid variantId,
         ClaimsPrincipal user,
-        ModellingDbContext modellingDb,
+        AppDbContext db,
         WorkspaceAuthorizationService auth,
         CancellationToken ct)
     {
         var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Viewer, ct);
 
-        var variant = await modellingDb.Variants.AsNoTracking()
+        var variant = await db.Variants.AsNoTracking()
             .FirstOrDefaultAsync(v => v.Id == variantId && v.ProjectId == projectId, ct);
         if (variant is null) return Results.NotFound(new ErrorResponse("not_found", "Variant not found"));
 

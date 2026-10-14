@@ -55,14 +55,14 @@ public static class ProposalReads
     public static async Task<IResult> List(
         Guid projectId, Guid importId, string? status, string? action, string? entityKind,
         string? cursor, int? limit, ClaimsPrincipal user, HttpContext http,
-        WorkspaceAuthorizationService auth, ImportDbContext db, CancellationToken ct)
+        WorkspaceAuthorizationService auth, AppDbContext db, CancellationToken ct)
     {
         await auth.RequireProjectRoleAsync(projectId, user.FindFirstValue(ClaimTypes.NameIdentifier)!, WorkspaceRole.Viewer, ct);
         var scan = await db.Scans.AsNoTracking().FirstOrDefaultAsync(s => s.Id == importId && s.ProjectId == projectId, ct);
         if (scan is null)
             return ScanRequests.NotFound();
 
-        var query = db.Proposals.AsNoTracking().Where(p => p.ScanId == importId);
+        var query = db.ImportProposals.AsNoTracking().Where(p => p.ScanId == importId);
         if (status is not null) query = query.Where(p => p.Status == status);
         if (action is not null) query = query.Where(p => p.Action == action);
         if (entityKind is not null) query = query.Where(p => p.EntityKind == entityKind);
@@ -101,13 +101,13 @@ public static class ProposalReads
     /// <summary>One proposal, whole.</summary>
     public static async Task<IResult> Get(
         Guid projectId, Guid importId, Guid proposalId, ClaimsPrincipal user, HttpContext http,
-        WorkspaceAuthorizationService auth, ImportDbContext db, CancellationToken ct)
+        WorkspaceAuthorizationService auth, AppDbContext db, CancellationToken ct)
     {
         await auth.RequireProjectRoleAsync(projectId, user.FindFirstValue(ClaimTypes.NameIdentifier)!, WorkspaceRole.Viewer, ct);
         var scan = await db.Scans.AsNoTracking().FirstOrDefaultAsync(s => s.Id == importId && s.ProjectId == projectId, ct);
         if (scan is null)
             return ScanRequests.NotFound();
-        var row = await db.Proposals.AsNoTracking().FirstOrDefaultAsync(p => p.Id == proposalId && p.ScanId == importId, ct);
+        var row = await db.ImportProposals.AsNoTracking().FirstOrDefaultAsync(p => p.Id == proposalId && p.ScanId == importId, ct);
         if (row is null)
             return Results.NotFound(new ErrorResponse("not_found", "Proposal not found"));
 
@@ -118,7 +118,7 @@ public static class ProposalReads
     private sealed record ReadContext(string Repository, string CommitSha, bool Decidable, string? Reason, ProposalImpact? Impact);
 
     private static async Task<ReadContext> ContextAsync(
-        IServiceProvider services, ImportDbContext db, ScanEntity scan, IReadOnlyList<ProposalEntity> rows, CancellationToken ct)
+        IServiceProvider services, AppDbContext db, ScanEntity scan, IReadOnlyList<ProposalEntity> rows, CancellationToken ct)
     {
         var tracked = await db.TrackedRefs.AsNoTracking()
             .FirstOrDefaultAsync(t => t.ProjectId == scan.ProjectId && t.Host == scan.Host && t.Repository == scan.Repository, ct);
@@ -128,7 +128,7 @@ public static class ProposalReads
         // when the page holds a pending proposal that can have one.
         ProposalImpact? impact = null;
         if (rows.Any(r => r.Status == ProposalStatus.Pending && r.Action is ProposalAction.Remove or ProposalAction.Change or ProposalAction.Conflict)
-            && await services.GetRequiredService<WorkspacesDbContext>().Projects.AsNoTracking()
+            && await services.GetRequiredService<AppDbContext>().Projects.AsNoTracking()
                 .Where(p => p.Id == scan.ProjectId).Select(p => (Guid?)p.StreamId).FirstOrDefaultAsync(ct) is { } streamId)
         {
             var store = services.GetRequiredService<IEventStore>().ForProject(scan.ProjectId);
@@ -213,7 +213,7 @@ public static class ProposalReads
     /// </summary>
     public static async Task<IResult> Evidence(
         Guid projectId, Guid importId, string? factKey, string? cursor, int? limit, ClaimsPrincipal user,
-        WorkspaceAuthorizationService auth, ImportDbContext db, CancellationToken ct)
+        WorkspaceAuthorizationService auth, AppDbContext db, CancellationToken ct)
     {
         await auth.RequireProjectRoleAsync(projectId, user.FindFirstValue(ClaimTypes.NameIdentifier)!, WorkspaceRole.Viewer, ct);
         var scan = await db.Scans.AsNoTracking().FirstOrDefaultAsync(s => s.Id == importId && s.ProjectId == projectId, ct);

@@ -153,11 +153,11 @@ internal static class DesignAccess
     {
         var (workspaceId, userId) = await RequireAsync(http, projectId, role, ct);
         var services = http.RequestServices;
-        var mainStreamId = await services.GetRequiredService<WorkspacesDbContext>().Projects.AsNoTracking()
+        var mainStreamId = await services.GetRequiredService<AppDbContext>().Projects.AsNoTracking()
             .Where(p => p.Id == projectId).Select(p => p.StreamId).FirstAsync(ct);
         var (streamId, refusal) = await ModelBranches.ResolveAsync(
             branchId, projectId, mainStreamId,
-            services.GetRequiredService<DraftsDbContext>(), services.GetRequiredService<ModellingDbContext>(), forWrite, ct);
+            services.GetRequiredService<AppDbContext>(), forWrite, ct);
         return refusal is null ? (new DesignCaller(workspaceId, userId, streamId), null) : (null, refusal);
     }
 
@@ -168,7 +168,7 @@ internal static class DesignAccess
     /// ID from a proposal of the project, which checked it when the proposal was made.
     /// </summary>
     public static async Task<Guid> StreamOfAsync(HttpContext http, Guid projectId, Guid? branchId, CancellationToken ct) =>
-        branchId ?? await http.RequestServices.GetRequiredService<WorkspacesDbContext>().Projects.AsNoTracking()
+        branchId ?? await http.RequestServices.GetRequiredService<AppDbContext>().Projects.AsNoTracking()
             .Where(p => p.Id == projectId).Select(p => p.StreamId).FirstAsync(ct);
 
     public static IResult Invalid(string field, string message) =>

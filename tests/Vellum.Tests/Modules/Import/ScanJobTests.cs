@@ -6,6 +6,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Vellum.Modules.Import;
 using Vellum.Modules.Import.Extraction;
 using Vellum.Tests.Shared.Outbound;
+using Vellum.Shared;
 
 namespace Vellum.Tests.Modules.Import;
 
@@ -43,7 +44,7 @@ public class ScanJobTests(ImportHost import) : IClassFixture<ImportHost>
     private async Task<string> ImportRowsAsync()
     {
         using var scope = import.Host.Factory.Services.CreateScope();
-        var db = scope.ServiceProvider.GetRequiredService<ImportDbContext>();
+        var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var text = new List<string>();
         foreach (var table in new[] { "scans", "scan_files", "snapshots", "snapshot_facts", "proposals", "fact_links", "rejections" })
         {

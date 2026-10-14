@@ -10,6 +10,7 @@ using Vellum.Modules.Import.Extraction;
 using Vellum.Modules.Import.Proposals;
 using Vellum.Modules.Import.Scans;
 using Vellum.Tests.Shared.Outbound;
+using Vellum.Shared;
 
 namespace Vellum.Tests.Modules.Import;
 
@@ -314,7 +315,7 @@ internal sealed record ImportScenario(
     public async Task<int> SqlAsync(FormattableString sql)
     {
         using var scope = Import.Host.Factory.Services.CreateScope();
-        return await scope.ServiceProvider.GetRequiredService<Vellum.Modules.Import.ImportDbContext>().Database.ExecuteSqlAsync(sql);
+        return await scope.ServiceProvider.GetRequiredService<Vellum.Shared.AppDbContext>().Database.ExecuteSqlAsync(sql);
     }
 
     /// <summary>Makes the lease of a running scan run out, as it does when its worker stops renewing it. The lease is on the database clock.</summary>

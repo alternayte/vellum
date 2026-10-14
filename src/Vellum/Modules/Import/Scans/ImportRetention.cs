@@ -30,7 +30,7 @@ public static class ImportRetention
     public static bool IsExpired(ScanEntity scan, DateTimeOffset now) => scan.UpdatedAt <= now - ResumableFor;
 
     /// <summary>Deletes everything the importer holds for one project, and the blobs that nothing else of its workspaces needs.</summary>
-    public static async Task DeleteProjectAsync(ImportDbContext db, Guid projectId, DateTimeOffset now, CancellationToken ct)
+    public static async Task DeleteProjectAsync(AppDbContext db, Guid projectId, DateTimeOffset now, CancellationToken ct)
     {
         var workspaces = await db.Scans.Where(s => s.ProjectId == projectId).Select(s => s.WorkspaceId).Distinct().ToListAsync(ct);
 
@@ -46,7 +46,7 @@ public static class ImportRetention
     }
 
     /// <summary>Runs <see cref="DeleteProjectAsync"/> for every project that the import tables name and that no longer exists.</summary>
-    public static async Task<int> DeleteOrphansAsync(ImportDbContext db, DateTimeOffset now, CancellationToken ct)
+    public static async Task<int> DeleteOrphansAsync(AppDbContext db, DateTimeOffset now, CancellationToken ct)
     {
         var gone = await db.Database.SqlQuery<Guid>($"""
             SELECT i.project_id AS "Value"
@@ -62,7 +62,7 @@ public static class ImportRetention
     }
 
     /// <summary>Applies the blob rule to one workspace, or to all of them when <paramref name="workspaceId"/> is null.</summary>
-    public static async Task<int> DropUnusedBlobsAsync(ImportDbContext db, Guid? workspaceId, DateTimeOffset now, CancellationToken ct)
+    public static async Task<int> DropUnusedBlobsAsync(AppDbContext db, Guid? workspaceId, DateTimeOffset now, CancellationToken ct)
     {
         var resumableSince = now - ResumableFor;
         return await db.Database.ExecuteSqlAsync($"""
@@ -87,7 +87,7 @@ public static class ImportRetention
 }
 
 /// <summary>Runs <see cref="ImportRetention.DeleteProjectAsync"/> when a project is deleted.</summary>
-public sealed class ImportProjectRetention(ImportDbContext db, TimeProvider time) : IProjectRetention
+public sealed class ImportProjectRetention(AppDbContext db, TimeProvider time) : IProjectRetention
 {
     public Task DeleteProjectAsync(DeletedProject project, CancellationToken ct) =>
         ImportRetention.DeleteProjectAsync(db, project.Id, time.GetUtcNow(), ct);

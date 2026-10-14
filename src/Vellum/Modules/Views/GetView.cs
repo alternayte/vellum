@@ -11,7 +11,7 @@ public static class GetView
     public static async Task<IResult> Handle(
         Guid projectId, Guid viewId,
         ClaimsPrincipal user,
-        ViewsDbContext db,
+        AppDbContext db,
         WorkspaceAuthorizationService auth,
         CancellationToken ct)
     {

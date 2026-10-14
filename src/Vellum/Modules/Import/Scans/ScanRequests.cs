@@ -97,7 +97,7 @@ public static partial class ScanRequests
 
     public static async Task<IResult> Start(
         Guid projectId, StartScanRequest request, ClaimsPrincipal user,
-        WorkspaceAuthorizationService auth, SettingsResolver settings, ImportDbContext db,
+        WorkspaceAuthorizationService auth, SettingsResolver settings, AppDbContext db,
         ScanSignal signal, TimeProvider time, CancellationToken ct)
     {
         var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
@@ -187,7 +187,7 @@ public static partial class ScanRequests
     /// units are used up. A started scan is one unit; so is a resume that asks GitHub again.
     /// </summary>
     private static async Task<IResult?> ChargeAsync(
-        ImportDbContext db, Guid workspaceId, Guid scanId, int limit, DateTimeOffset now, CancellationToken ct)
+        AppDbContext db, Guid workspaceId, Guid scanId, int limit, DateTimeOffset now, CancellationToken ct)
     {
         await db.Database.ExecuteSqlAsync($"SELECT pg_advisory_xact_lock(hashtextextended({"import-scans:" + workspaceId}, 0))", ct);
 
@@ -207,7 +207,7 @@ public static partial class ScanRequests
 
     public static async Task<IResult> List(
         Guid projectId, string? cursor, int? limit, ClaimsPrincipal user,
-        WorkspaceAuthorizationService auth, ImportDbContext db, CancellationToken ct)
+        WorkspaceAuthorizationService auth, AppDbContext db, CancellationToken ct)
     {
         await auth.RequireProjectRoleAsync(projectId, user.FindFirstValue(ClaimTypes.NameIdentifier)!, WorkspaceRole.Viewer, ct);
         var pageSize = Math.Clamp(limit ?? 50, 1, 200);
@@ -237,17 +237,17 @@ public static partial class ScanRequests
 
     public static async Task<IResult> Get(
         Guid projectId, Guid importId, ClaimsPrincipal user,
-        WorkspaceAuthorizationService auth, ImportDbContext db, CancellationToken ct)
+        WorkspaceAuthorizationService auth, AppDbContext db, CancellationToken ct)
     {
         await auth.RequireProjectRoleAsync(projectId, user.FindFirstValue(ClaimTypes.NameIdentifier)!, WorkspaceRole.Viewer, ct);
         var scan = await db.Scans.AsNoTracking().FirstOrDefaultAsync(s => s.Id == importId && s.ProjectId == projectId, ct);
         return scan is null ? NotFound() : Results.Ok(await DetailAsync(db, scan, ct));
     }
 
-    private static async Task<ScanDetailDto> DetailAsync(ImportDbContext db, ScanEntity scan, CancellationToken ct)
+    private static async Task<ScanDetailDto> DetailAsync(AppDbContext db, ScanEntity scan, CancellationToken ct)
     {
         var counts = await CountsAsync(db, [scan.Id], ct);
-        var rules = await db.Snapshots.AsNoTracking().Where(s => s.ScanId == scan.Id).Select(s => s.RuleVersions).FirstOrDefaultAsync(ct);
+        var rules = await db.ImportSnapshots.AsNoTracking().Where(s => s.ScanId == scan.Id).Select(s => s.RuleVersions).FirstOrDefaultAsync(ct);
         var tracked = await db.TrackedRefs.AsNoTracking()
             .FirstOrDefaultAsync(t => t.ProjectId == scan.ProjectId && t.Host == scan.Host && t.Repository == scan.Repository, ct);
         var dto = ToDto(scan, counts.GetValueOrDefault(scan.Id), tracked);
@@ -267,7 +267,7 @@ public static partial class ScanRequests
     /// </summary>
     public static async Task<IResult> Cancel(
         Guid projectId, Guid importId, ClaimsPrincipal user,
-        WorkspaceAuthorizationService auth, ImportDbContext db, TimeProvider time, CancellationToken ct)
+        WorkspaceAuthorizationService auth, AppDbContext db, TimeProvider time, CancellationToken ct)
     {
         await auth.RequireProjectRoleAsync(projectId, user.FindFirstValue(ClaimTypes.NameIdentifier)!, WorkspaceRole.Editor, ct);
         var now = time.GetUtcNow();
@@ -309,7 +309,7 @@ public static partial class ScanRequests
     /// </summary>
     public static async Task<IResult> Resume(
         Guid projectId, Guid importId, ClaimsPrincipal user,
-        WorkspaceAuthorizationService auth, SettingsResolver settings, ImportDbContext db,
+        WorkspaceAuthorizationService auth, SettingsResolver settings, AppDbContext db,
         ScanSignal signal, TimeProvider time, CancellationToken ct)
     {
         await auth.RequireProjectRoleAsync(projectId, user.FindFirstValue(ClaimTypes.NameIdentifier)!, WorkspaceRole.Editor, ct);
@@ -382,7 +382,7 @@ public static partial class ScanRequests
     }
 
     /// <summary>True when the scan cannot finish from what is stored: no commit, no file list, a file not fetched yet, or a fetched file whose content is gone.</summary>
-    private static async Task<bool> HasToFetchAsync(ImportDbContext db, ScanEntity scan, CancellationToken ct)
+    private static async Task<bool> HasToFetchAsync(AppDbContext db, ScanEntity scan, CancellationToken ct)
     {
         if (scan.CommitSha is null || !scan.TreeListed)
             return true;
@@ -400,7 +400,7 @@ public static partial class ScanRequests
     /// </summary>
     public static async Task<IResult> Track(
         Guid projectId, Guid importId, ClaimsPrincipal user, HttpContext http,
-        WorkspaceAuthorizationService auth, ImportDbContext db, TimeProvider time, CancellationToken ct)
+        WorkspaceAuthorizationService auth, AppDbContext db, TimeProvider time, CancellationToken ct)
     {
         var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
@@ -572,9 +572,9 @@ public static partial class ScanRequests
         return true;
     }
 
-    private static async Task<Dictionary<Guid, ProposalCountsDto>> CountsAsync(ImportDbContext db, Guid[] scanIds, CancellationToken ct)
+    private static async Task<Dictionary<Guid, ProposalCountsDto>> CountsAsync(AppDbContext db, Guid[] scanIds, CancellationToken ct)
     {
-        var rows = await db.Proposals.AsNoTracking()
+        var rows = await db.ImportProposals.AsNoTracking()
             .Where(p => scanIds.Contains(p.ScanId))
             .GroupBy(p => new { p.ScanId, p.Status })
             .Select(g => new { g.Key.ScanId, g.Key.Status, Count = g.Count() })

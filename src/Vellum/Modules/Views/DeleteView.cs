@@ -9,7 +9,7 @@ public static class DeleteView
     public static async Task<IResult> Handle(
         Guid projectId, Guid viewId,
         ClaimsPrincipal user,
-        ViewsDbContext db,
+        AppDbContext db,
         WorkspaceAuthorizationService auth,
         CancellationToken ct)
     {

@@ -15,7 +15,7 @@ public static class CreateWorkspace
     public static async Task<IResult> Handle(
         CreateWorkspaceRequest request,
         ClaimsPrincipal user,
-        WorkspacesDbContext db,
+        AppDbContext db,
         CancellationToken ct)
     {
         var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;

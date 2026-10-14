@@ -36,7 +36,7 @@ public static class RotateKeys
     public static async Task<IResult> Handle(
         ClaimsPrincipal user,
         InstanceAuthorization auth,
-        SettingsDbContext db,
+        AppDbContext db,
         Bootstrap bootstrap,
         IConfiguration configuration,
         CancellationToken ct)
@@ -78,7 +78,7 @@ public static class RotateKeys
     /// secret that runs beside it happens wholly before or wholly after: the batch never
     /// combines its own wrapped key with another writer's ciphertext.
     /// </summary>
-    private static async Task<int> RotateSecretsAsync(SettingsDbContext db, MasterKeyRing keys, CancellationToken ct)
+    private static async Task<int> RotateSecretsAsync(AppDbContext db, MasterKeyRing keys, CancellationToken ct)
     {
         var moved = 0;
         var current = keys.Current.Id;
@@ -117,7 +117,7 @@ public static class RotateKeys
         }
     }
 
-    private static async Task<int> RotateDataProtectionKeysAsync(SettingsDbContext db, MasterKeyRing keys, CancellationToken ct)
+    private static async Task<int> RotateDataProtectionKeysAsync(AppDbContext db, MasterKeyRing keys, CancellationToken ct)
     {
         var moved = 0;
         var after = 0;
@@ -196,7 +196,7 @@ public static class GetDiagnostics
         InstanceAuthorization auth,
         Bootstrap bootstrap,
         IConfiguration configuration,
-        IServiceProvider services,
+        AppDbContext db,
         IEventStoreAdmin eventStore,
         TelemetryState telemetry,
         Vellum.Modules.GitHub.EnvironmentGitHubToken gitHubToken,
@@ -213,13 +213,9 @@ public static class GetDiagnostics
         var databaseReachable = true;
         try
         {
-            foreach (var (module, contextType) in DatabaseMigrations.Modules)
-            {
-                var context = (DbContext)services.GetRequiredService(contextType);
-                var known = context.Database.GetMigrations().ToList();
-                var applied = (await context.Database.GetAppliedMigrationsAsync(ct)).Intersect(known).ToList();
-                migrations.Add(new ModuleMigrations(module, applied, known.Except(applied).ToList()));
-            }
+            var known = db.Database.GetMigrations().ToList();
+            var applied = (await db.Database.GetAppliedMigrationsAsync(ct)).Intersect(known).ToList();
+            migrations.Add(new ModuleMigrations(DatabaseMigrations.HistoryName, applied, known.Except(applied).ToList()));
 
             foreach (var usage in await KeyInventory.ReadAsync(configuration.GetConnectionString("DefaultConnection")!, ct))
                 keysInUse.Add(new MasterKeyInUse(usage.MasterKeyId, usage.Secrets, usage.DataProtectionKeys,

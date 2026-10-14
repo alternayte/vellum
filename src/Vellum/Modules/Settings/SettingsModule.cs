@@ -31,10 +31,6 @@ public static class SettingsModule
             : LoadBootstrap(provider.GetRequiredService<IConfiguration>()));
         services.AddSingleton<SetupAccess>();
 
-        services.AddDbContext<SettingsDbContext>((provider, options) =>
-            options.UseNpgsql(provider.GetRequiredService<IConfiguration>().GetConnectionString("DefaultConnection"))
-                   .UseSnakeCaseNamingConvention());
-
         services.AddSingleton<HostResolver>(_ => (host, ct) => Dns.GetHostAddressesAsync(host, ct));
         services.AddSingleton<OutboundUrlPolicy>();
         services.AddScoped<SettingsValidator>();

@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Vellum.Modules.Ai;
 using Vellum.Modules.Ai.Usage;
 using Vellum.Tests.Shared.Outbound;
+using Vellum.Shared;
 
 namespace Vellum.Tests.Modules.Ai;
 
@@ -124,7 +125,7 @@ internal sealed class AiScenario
     public async Task<List<UsageRecordEntity>> RowsAsync()
     {
         using var scope = _host.Factory.Services.CreateScope();
-        return await scope.ServiceProvider.GetRequiredService<AiUsageDbContext>().UsageRecords.AsNoTracking()
+        return await scope.ServiceProvider.GetRequiredService<AppDbContext>().UsageRecords.AsNoTracking()
             .Where(r => r.WorkspaceId == WorkspaceId)
             .OrderBy(r => r.StartedAt)
             .ToListAsync();

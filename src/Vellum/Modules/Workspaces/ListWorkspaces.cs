@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using Microsoft.EntityFrameworkCore;
+using Vellum.Shared;
 
 namespace Vellum.Modules.Workspaces;
 
@@ -7,7 +8,7 @@ public static class ListWorkspaces
 {
     public static async Task<IResult> Handle(
         ClaimsPrincipal user,
-        WorkspacesDbContext db,
+        AppDbContext db,
         CancellationToken ct)
     {
         var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;

@@ -46,14 +46,13 @@ public static class CreateRevision
         // fails with a deadlock wrote nothing and runs again.
         return await SharedTransaction.RunAsync(http.RequestServices, async services =>
         {
-            var workspacesDb = services.GetRequiredService<WorkspacesDbContext>();
-            var modellingDb = services.GetRequiredService<ModellingDbContext>();
+            var db = services.GetRequiredService<AppDbContext>();
 
-            var project = await workspacesDb.Projects.AsNoTracking()
+            var project = await db.Projects.AsNoTracking()
                 .FirstOrDefaultAsync(p => p.Id == projectId, ct);
             if (project is null) return Results.NotFound(new ErrorResponse("not_found", "Project not found"));
 
-            var existingById = await modellingDb.Revisions.AsNoTracking()
+            var existingById = await db.Revisions.AsNoTracking()
                 .FirstOrDefaultAsync(r => r.Id == request.Id, ct);
             if (existingById is not null)
             {
@@ -62,7 +61,7 @@ public static class CreateRevision
                     : Results.Conflict(new ErrorResponse("conflict", "Revision id is already in use"));
             }
 
-            if (await modellingDb.Revisions.AnyAsync(
+            if (await db.Revisions.AnyAsync(
                     r => r.ProjectId == projectId && r.Name == request.Name, ct))
             {
                 return Results.Conflict(new ErrorResponse("conflict", "A revision with this name already exists"));
@@ -71,11 +70,11 @@ public static class CreateRevision
             // The stream lock gives the newest model, in which every schema reference points at
             // a schema that exists. Holding those schema rows until the commit keeps a delete
             // from running between this read and the stored snapshot (see SchemaReferences).
-            await using var transaction = await modellingDb.Database.BeginTransactionAsync(ct);
-            var store = services.GetRequiredService<IEventStore>().UseDbContext(modellingDb);
+            await using var transaction = await db.Database.BeginTransactionAsync(ct);
+            var store = services.GetRequiredService<IEventStore>().UseDbContext(db);
             var pinned = await store.Execute<ModelState>(StreamId.From(project.StreamId), _ => [], ct);
             await SchemaReferences.HoldAsync(
-                modellingDb, projectId, ContractDecider.ReferencedSchemaIds(pinned.State), ct);
+                db, projectId, ContractDecider.ReferencedSchemaIds(pinned.State), ct);
 
             var revision = new RevisionEntity
             {
@@ -90,8 +89,8 @@ public static class CreateRevision
                 CreatedAt = DateTimeOffset.UtcNow,
             };
 
-            modellingDb.Revisions.Add(revision);
-            await modellingDb.SaveChangesAsync(ct);
+            db.Revisions.Add(revision);
+            await db.SaveChangesAsync(ct);
             await transaction.CommitAsync(ct);
 
             return Results.Created(

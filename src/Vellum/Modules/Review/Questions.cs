@@ -40,7 +40,7 @@ public static class Questions
     public const int MaxAbout = 50;
 
     public static async Task<IResult> List(
-        Guid projectId, HttpContext http, WorkspaceAuthorizationService auth, ReviewDbContext db, CancellationToken ct)
+        Guid projectId, HttpContext http, WorkspaceAuthorizationService auth, AppDbContext db, CancellationToken ct)
     {
         await auth.RequireProjectRoleAsync(projectId, ReviewAccess.UserId(http.User), WorkspaceRole.Viewer, ct);
         var rows = await db.Questions.AsNoTracking().Where(q => q.ProjectId == projectId)
@@ -49,7 +49,7 @@ public static class Questions
     }
 
     public static async Task<IResult> Create(
-        Guid projectId, HttpContext http, WorkspaceAuthorizationService auth, ReviewDbContext db, TimeProvider time, CancellationToken ct)
+        Guid projectId, HttpContext http, WorkspaceAuthorizationService auth, AppDbContext db, TimeProvider time, CancellationToken ct)
     {
         var userId = ReviewAccess.UserId(http.User);
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
@@ -70,7 +70,7 @@ public static class Questions
     /// stored proposal, not from the request.
     /// </summary>
     public static async Task<IResult> Keep(
-        Guid projectId, HttpContext http, WorkspaceAuthorizationService auth, ReviewDbContext db, AiDesignDbContext proposals, TimeProvider time, CancellationToken ct)
+        Guid projectId, HttpContext http, WorkspaceAuthorizationService auth, AppDbContext db, TimeProvider time, CancellationToken ct)
     {
         var userId = ReviewAccess.UserId(http.User);
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
@@ -78,7 +78,7 @@ public static class Questions
         if (request is null)
             return error!;
 
-        var document = await proposals.Proposals.AsNoTracking()
+        var document = await db.DesignProposals.AsNoTracking()
             .Where(p => p.Id == request.ProposalId && p.ProjectId == projectId).Select(p => p.Document).FirstOrDefaultAsync(ct);
         if (document is null)
             return ReviewAccess.NotFound("Proposal");
@@ -98,7 +98,7 @@ public static class Questions
     }
 
     internal static async Task<(QuestionEntity? Row, IResult? Refusal)> AddAsync(
-        ReviewDbContext db, Guid projectId, string? text, IReadOnlyList<Guid> about, string origin, string userId, DateTimeOffset now, CancellationToken ct)
+        AppDbContext db, Guid projectId, string? text, IReadOnlyList<Guid> about, string origin, string userId, DateTimeOffset now, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(text))
             return (null, ReviewAccess.Invalid("text", "A question needs text"));
@@ -120,7 +120,7 @@ public static class Questions
     }
 
     public static async Task<IResult> Answer(
-        Guid projectId, Guid questionId, HttpContext http, WorkspaceAuthorizationService auth, ReviewDbContext db, TimeProvider time, CancellationToken ct)
+        Guid projectId, Guid questionId, HttpContext http, WorkspaceAuthorizationService auth, AppDbContext db, TimeProvider time, CancellationToken ct)
     {
         var userId = ReviewAccess.UserId(http.User);
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
@@ -136,7 +136,7 @@ public static class Questions
     }
 
     public static async Task<IResult> Drop(
-        Guid projectId, Guid questionId, HttpContext http, WorkspaceAuthorizationService auth, ReviewDbContext db, TimeProvider time, CancellationToken ct)
+        Guid projectId, Guid questionId, HttpContext http, WorkspaceAuthorizationService auth, AppDbContext db, TimeProvider time, CancellationToken ct)
     {
         var userId = ReviewAccess.UserId(http.User);
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
@@ -149,7 +149,7 @@ public static class Questions
     /// other gets a 409 and not the first answer overwritten.
     /// </summary>
     private static async Task<IResult> CloseAsync(
-        ReviewDbContext db, Guid projectId, Guid questionId, string status, string? answer, string userId, DateTimeOffset now, CancellationToken ct)
+        AppDbContext db, Guid projectId, Guid questionId, string status, string? answer, string userId, DateTimeOffset now, CancellationToken ct)
     {
         var closed = await db.Questions
             .Where(q => q.Id == questionId && q.ProjectId == projectId && q.Status == QuestionStatus.Open)
@@ -164,7 +164,7 @@ public static class Questions
     }
 
     public static async Task<IResult> Delete(
-        Guid projectId, Guid questionId, HttpContext http, WorkspaceAuthorizationService auth, ReviewDbContext db, CancellationToken ct)
+        Guid projectId, Guid questionId, HttpContext http, WorkspaceAuthorizationService auth, AppDbContext db, CancellationToken ct)
     {
         await auth.RequireProjectRoleAsync(projectId, ReviewAccess.UserId(http.User), WorkspaceRole.Editor, ct);
         return await db.Questions.Where(q => q.Id == questionId && q.ProjectId == projectId).ExecuteDeleteAsync(ct) == 1

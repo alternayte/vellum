@@ -293,7 +293,7 @@ public static class Targets
     }
 
     public static async Task<IResult> List(
-        Guid projectId, ClaimsPrincipal user, WorkspaceAuthorizationService auth, LoadTestsDbContext db, CancellationToken ct)
+        Guid projectId, ClaimsPrincipal user, WorkspaceAuthorizationService auth, AppDbContext db, CancellationToken ct)
     {
         await auth.RequireProjectRoleAsync(projectId, UserId(user), WorkspaceRole.Viewer, ct);
 
@@ -379,7 +379,7 @@ public static class Targets
 
         return await SharedTransaction.RunAsync<CommandResult<TargetDto>>(http.RequestServices, async services =>
         {
-            var db = services.GetRequiredService<LoadTestsDbContext>();
+            var db = services.GetRequiredService<AppDbContext>();
             await using var transaction = await db.Database.BeginTransactionAsync(ct);
 
             if (checkPlace)

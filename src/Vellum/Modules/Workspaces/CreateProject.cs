@@ -14,7 +14,7 @@ public static class CreateProject
         Guid workspaceId,
         CreateProjectRequest request,
         ClaimsPrincipal user,
-        WorkspacesDbContext db,
+        AppDbContext db,
         WorkspaceAuthorizationService auth,
         CancellationToken ct)
     {

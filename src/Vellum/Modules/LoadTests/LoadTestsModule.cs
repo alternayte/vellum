@@ -17,9 +17,6 @@ public static class LoadTestsModule
     {
         // The connection string is read when the context is first used, so configuration that
         // a test host overrides applies.
-        services.AddDbContext<LoadTestsDbContext>((provider, options) =>
-            options.UseNpgsql(provider.GetRequiredService<IConfiguration>().GetConnectionString("DefaultConnection"))
-                   .UseSnakeCaseNamingConvention());
         services.TryAddSingleton(TimeProvider.System);
         services.AddScoped<IProjectRetention, LoadTestRetention>();
         return services;
@@ -86,7 +83,7 @@ public static class LoadTestsModule
 }
 
 /// <summary>Load-test data does not outlive its project.</summary>
-public sealed class LoadTestRetention(LoadTestsDbContext db, IEventStore store) : IProjectRetention
+public sealed class LoadTestRetention(AppDbContext db, IEventStore store) : IProjectRetention
 {
     /// <summary>
     /// Deletes the results, the scripts and the targets of a project. The row of a target goes

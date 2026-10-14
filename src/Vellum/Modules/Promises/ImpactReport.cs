@@ -141,11 +141,11 @@ public static class ImpactReport
         var (impact, refusal) = await ChangeImpact.ComputeAsync(services, projectId, scanId, ct);
         if (impact is null)
             return (null, refusal);
-        var scan = await services.GetRequiredService<ImportDbContext>().Scans.AsNoTracking()
+        var scan = await services.GetRequiredService<AppDbContext>().Scans.AsNoTracking()
             .Where(s => s.Id == scanId && s.ProjectId == projectId)
             .Select(s => new { s.Host, s.CompletedAt })
             .FirstAsync(ct);
-        var policy = await ImpactGate.PolicyAsync(services.GetRequiredService<PromisesDbContext>(), projectId, ct);
+        var policy = await ImpactGate.PolicyAsync(services.GetRequiredService<AppDbContext>(), projectId, ct);
         return (Of(impact, $"{scan.Host}/{impact.Repository}", scan.CompletedAt, policy), null);
     }
 
@@ -402,12 +402,12 @@ public static class ImpactGate
 {
     public const string AuditAction = "project.impact-gate-changed";
 
-    public static async Task<string> PolicyAsync(PromisesDbContext db, Guid projectId, CancellationToken ct) =>
+    public static async Task<string> PolicyAsync(AppDbContext db, Guid projectId, CancellationToken ct) =>
         await db.ImpactGates.AsNoTracking().Where(g => g.ProjectId == projectId).Select(g => g.Policy).FirstOrDefaultAsync(ct)
         ?? ImpactGatePolicy.Off;
 
     public static async Task<IResult> Get(
-        Guid projectId, HttpContext http, WorkspaceAuthorizationService auth, PromisesDbContext db, CancellationToken ct)
+        Guid projectId, HttpContext http, WorkspaceAuthorizationService auth, AppDbContext db, CancellationToken ct)
     {
         var userId = PromiseAccess.UserId(http.User);
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Viewer, ct);
@@ -419,7 +419,7 @@ public static class ImpactGate
     }
 
     public static async Task<IResult> Set(
-        Guid projectId, HttpContext http, WorkspaceAuthorizationService auth, PromisesDbContext db, TimeProvider time, CancellationToken ct)
+        Guid projectId, HttpContext http, WorkspaceAuthorizationService auth, AppDbContext db, TimeProvider time, CancellationToken ct)
     {
         var userId = PromiseAccess.UserId(http.User);
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Owner, ct);

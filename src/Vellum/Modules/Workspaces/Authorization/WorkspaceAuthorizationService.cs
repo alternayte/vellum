@@ -1,12 +1,13 @@
 using Microsoft.EntityFrameworkCore;
+using Vellum.Shared;
 
 namespace Vellum.Modules.Workspaces.Authorization;
 
 public sealed class WorkspaceAuthorizationService
 {
-    private readonly WorkspacesDbContext _db;
+    private readonly AppDbContext _db;
 
-    public WorkspaceAuthorizationService(WorkspacesDbContext db) => _db = db;
+    public WorkspaceAuthorizationService(AppDbContext db) => _db = db;
 
     public async Task<WorkspaceRole?> GetRoleAsync(Guid workspaceId, string userId, CancellationToken ct = default)
     {

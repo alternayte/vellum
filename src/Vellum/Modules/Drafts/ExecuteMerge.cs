@@ -37,9 +37,9 @@ public static class ExecuteMerge
         // commit together. A unit that fails with DBX038 or a deadlock wrote nothing and runs again.
         return await SharedTransaction.RunAsync(http.RequestServices, async services =>
         {
-            var draftsDb = services.GetRequiredService<DraftsDbContext>();
+            var db = services.GetRequiredService<AppDbContext>();
 
-            var streams = await draftsDb.Drafts.AsNoTracking()
+            var streams = await db.Drafts.AsNoTracking()
                 .Where(d => d.Id == draftId && d.ProjectId == projectId)
                 .Select(d => new { d.StreamId, d.BaseStreamId, d.Status })
                 .FirstOrDefaultAsync(ct);
@@ -50,8 +50,8 @@ public static class ExecuteMerge
                 return Results.Conflict(new ErrorResponse("conflict", $"Draft is {streams.Status}"));
 
             // A return before the commit rolls everything back.
-            await using var transaction = await draftsDb.Database.BeginTransactionAsync(ct);
-            var store = services.GetRequiredService<IEventStore>().ForProject(projectId).UseDbContext(draftsDb);
+            await using var transaction = await db.Database.BeginTransactionAsync(ct);
+            var store = services.GetRequiredService<IEventStore>().ForProject(projectId).UseDbContext(db);
 
             // The two model streams and the two cost sheet streams stay locked until the
             // commit, so no model and no sheet moves under the merge, and a second merge or an
@@ -78,7 +78,7 @@ public static class ExecuteMerge
             }
 
             // Read under the draft's lock: the status is the one the last writer committed.
-            var draft = await draftsDb.Drafts.FirstAsync(d => d.Id == draftId, ct);
+            var draft = await db.Drafts.FirstAsync(d => d.Id == draftId, ct);
             if (draft.Status != "open")
                 return Results.Conflict(new ErrorResponse("conflict", $"Draft is {draft.Status}"));
 
@@ -141,7 +141,7 @@ public static class ExecuteMerge
             // The sheet of main gets the draft's changes. The sheet and the saved estimates of
             // the draft go: the branch is closed and no request reaches them again.
             await CostBranches.ApplyAsync(store, streams.BaseStreamId, mainSheetVersion, sheetPlan, ct);
-            await CostBranches.CloseAsync(draftsDb, store, projectId, draft.StreamId, ct);
+            await CostBranches.CloseAsync(db, store, projectId, draft.StreamId, ct);
 
             await transaction.CommitAsync(ct);
             return Results.Ok(CreateDraft.ToDto(draft));

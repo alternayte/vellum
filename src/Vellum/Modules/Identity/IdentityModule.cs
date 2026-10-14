@@ -3,6 +3,7 @@ using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Vellum.Modules.Identity.AgentTokens;
+using Vellum.Shared;
 
 namespace Vellum.Modules.Identity;
 
@@ -14,11 +15,6 @@ public static class IdentityModule
 
     public static IServiceCollection AddIdentityModule(this IServiceCollection services, IConfiguration config)
     {
-        var connectionString = config.GetConnectionString("DefaultConnection")!;
-
-        services.AddDbContext<AppIdentityDbContext>(options =>
-            options.UseNpgsql(connectionString)
-                   .UseSnakeCaseNamingConvention());
         services.AddScoped<Shared.IProjectRetention, AgentTokenRetention>();
 
         services.AddIdentity<ApplicationUser, IdentityRole>(options =>
@@ -35,7 +31,7 @@ public static class IdentityModule
                 options.Lockout.MaxFailedAccessAttempts = 5;
                 options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(5);
             })
-            .AddEntityFrameworkStores<AppIdentityDbContext>()
+            .AddEntityFrameworkStores<AppDbContext>()
             .AddDefaultTokenProviders();
 
         services.ConfigureApplicationCookie(options =>

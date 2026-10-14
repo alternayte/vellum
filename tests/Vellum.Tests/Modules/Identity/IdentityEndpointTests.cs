@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Vellum.Modules.Identity;
+using Vellum.Shared;
 
 namespace Vellum.Tests.Modules.Identity;
 
@@ -125,7 +126,7 @@ public class IdentityEndpointTests : IClassFixture<IntegrationFixture>
         Assert.Single(answers.Distinct());
 
         using var scope = factory.Services.CreateScope();
-        var user = await scope.ServiceProvider.GetRequiredService<AppIdentityDbContext>().Users.SingleAsync(u => u.Email == email);
+        var user = await scope.ServiceProvider.GetRequiredService<AppDbContext>().Users.SingleAsync(u => u.Email == email);
         Assert.True(user.LockoutEnd > DateTimeOffset.UtcNow);
         Assert.True(user.LockoutEnd < DateTimeOffset.UtcNow.AddMinutes(10));
     }
@@ -206,7 +207,7 @@ public class IdentityEndpointTests : IClassFixture<IntegrationFixture>
         Assert.Equal("account_exists", (await response.Content.ReadFromJsonAsync<Vellum.Shared.ErrorResponse>())!.Type);
         Assert.Equal(HttpStatusCode.Unauthorized, (await attacker.GetAsync("/api/auth/me")).StatusCode);
         using var scope = factory.Services.CreateScope();
-        Assert.False(await scope.ServiceProvider.GetRequiredService<AppIdentityDbContext>().UserLogins.AnyAsync(l => l.ProviderKey == "attacker-subject"));
+        Assert.False(await scope.ServiceProvider.GetRequiredService<AppDbContext>().UserLogins.AnyAsync(l => l.ProviderKey == "attacker-subject"));
 
         // A new address creates an account, and the same provider account signs in to it again.
         var newEmail = $"new-{Guid.NewGuid():N}@vellum.local";
@@ -230,7 +231,7 @@ public class IdentityEndpointTests : IClassFixture<IntegrationFixture>
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
         Assert.Equal("setup_required", (await response.Content.ReadFromJsonAsync<Vellum.Shared.ErrorResponse>())!.Type);
         using var scope = factory.Services.CreateScope();
-        Assert.False(await scope.ServiceProvider.GetRequiredService<AppIdentityDbContext>().Users.AnyAsync());
+        Assert.False(await scope.ServiceProvider.GetRequiredService<AppDbContext>().Users.AnyAsync());
     }
 
     [Fact]

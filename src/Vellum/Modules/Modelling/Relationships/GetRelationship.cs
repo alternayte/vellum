@@ -7,7 +7,7 @@ public static class GetRelationship
 {
     public static async Task<IResult> Handle(
         Guid projectId, Guid streamId, Guid relationshipId,
-        ModellingDbContext db, CancellationToken ct)
+        AppDbContext db, CancellationToken ct)
     {
         var entity = await db.Relationships.AsNoTracking()
             .FirstOrDefaultAsync(r => r.Id == relationshipId && r.ProjectId == projectId && r.Branch == streamId, ct);

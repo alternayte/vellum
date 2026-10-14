@@ -2,6 +2,7 @@
 using System.Security.Claims;
 using Microsoft.EntityFrameworkCore;
 using Vellum.Modules.Workspaces.Authorization;
+using Vellum.Shared;
 
 namespace Vellum.Modules.Docs;
 
@@ -10,7 +11,7 @@ public static class ListSpaces
     public static async Task<IResult> Handle(
         Guid projectId,
         ClaimsPrincipal user,
-        DocsDbContext db,
+        AppDbContext db,
         WorkspaceAuthorizationService auth,
         CancellationToken ct)
     {
