@@ -4,6 +4,10 @@ export interface Provenance {
   confidence: number | null
   acceptedBy: string | null
   acceptedAt: string | null
+  /** The version of the model stream that a person's acceptance read. Null when nothing recorded it. */
+  acceptedAtVersion?: number | null
+  /** The stream of that model: main, a draft or a variant. */
+  acceptedOnBranch?: string | null
 }
 
 /**

@@ -2131,9 +2131,17 @@ namespace Vellum.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("provenance_accepted_at");
 
+                    b.Property<long?>("ProvenanceAcceptedAtVersion")
+                        .HasColumnType("bigint")
+                        .HasColumnName("provenance_accepted_at_version");
+
                     b.Property<Guid?>("ProvenanceAcceptedBy")
                         .HasColumnType("uuid")
                         .HasColumnName("provenance_accepted_by");
+
+                    b.Property<Guid?>("ProvenanceAcceptedOnBranch")
+                        .HasColumnType("uuid")
+                        .HasColumnName("provenance_accepted_on_branch");
 
                     b.Property<double?>("ProvenanceConfidence")
                         .HasColumnType("double precision")
@@ -2228,9 +2236,17 @@ namespace Vellum.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("provenance_accepted_at");
 
+                    b.Property<long?>("ProvenanceAcceptedAtVersion")
+                        .HasColumnType("bigint")
+                        .HasColumnName("provenance_accepted_at_version");
+
                     b.Property<Guid?>("ProvenanceAcceptedBy")
                         .HasColumnType("uuid")
                         .HasColumnName("provenance_accepted_by");
+
+                    b.Property<Guid?>("ProvenanceAcceptedOnBranch")
+                        .HasColumnType("uuid")
+                        .HasColumnName("provenance_accepted_on_branch");
 
                     b.Property<double?>("ProvenanceConfidence")
                         .HasColumnType("double precision")
@@ -2323,9 +2339,17 @@ namespace Vellum.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("provenance_accepted_at");
 
+                    b.Property<long?>("ProvenanceAcceptedAtVersion")
+                        .HasColumnType("bigint")
+                        .HasColumnName("provenance_accepted_at_version");
+
                     b.Property<Guid?>("ProvenanceAcceptedBy")
                         .HasColumnType("uuid")
                         .HasColumnName("provenance_accepted_by");
+
+                    b.Property<Guid?>("ProvenanceAcceptedOnBranch")
+                        .HasColumnType("uuid")
+                        .HasColumnName("provenance_accepted_on_branch");
 
                     b.Property<double?>("ProvenanceConfidence")
                         .HasColumnType("double precision")

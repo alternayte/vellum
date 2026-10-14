@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { useProject } from '@/hooks/use-model'
-import { branchesApi, personName, type EntityType } from '@/lib/branches-api'
+import { branchesApi, personName, type EntityType, type Member } from '@/lib/branches-api'
 import { LABEL_ACTION_TEXT, labelAction, useFactLabel } from '@/lib/fact-labels'
 import { factStatusColor, factStatusLabel, type Provenance } from '@/lib/fact-status'
 import { useDraftStore } from '@/stores/draft-store'
@@ -78,8 +78,8 @@ export function FactTruth({ projectId, entityType, entityId, factStatus, provena
   if (provenance?.source) details.push(['Source', provenance.source])
   if (provenance?.revision) details.push(['Source revision', provenance.revision])
   if (provenance?.confidence != null) details.push(['Confidence', `${Math.round(provenance.confidence * 100)}%`])
-  if (provenance?.acceptedBy) details.push(['Accepted by', personName(members.data?.members, provenance.acceptedBy)])
-  if (provenance?.acceptedAt) details.push(['Accepted at', new Date(provenance.acceptedAt).toLocaleString()])
+  const accepted = acceptance(provenance, members.data?.members, branchId ?? project?.streamId ?? null)
+  if (accepted) details.push(['Accepted', accepted])
 
   return (
     <div className="space-y-1.5">
@@ -100,4 +100,21 @@ export function FactTruth({ projectId, entityType, entityId, factStatus, provena
       {change.isError && <p role="alert" className="text-[11px] leading-snug text-[var(--trace-failure)]">{change.error.message}</p>}
     </div>
   )
+}
+
+/**
+ * "by X on <date> at model version N": who accepted the fact, when, and on which model. A
+ * model of another branch than the one shown is named as such: a draft or a variant carries
+ * the facts it had when it was forked or merged.
+ */
+function acceptance(provenance: Provenance | null | undefined, members: Member[] | undefined, shownBranch: string | null): string | null {
+  if (!provenance?.acceptedBy && !provenance?.acceptedAt) return null
+  const parts: string[] = []
+  if (provenance.acceptedBy) parts.push(`by ${personName(members, provenance.acceptedBy)}`)
+  if (provenance.acceptedAt) parts.push(`on ${new Date(provenance.acceptedAt).toLocaleString()}`)
+  if (provenance.acceptedAtVersion != null) {
+    const elsewhere = provenance.acceptedOnBranch && shownBranch && provenance.acceptedOnBranch !== shownBranch ? ' of another branch' : ''
+    parts.push(`at model version ${provenance.acceptedAtVersion}${elsewhere}`)
+  }
+  return parts.join(' ')
 }

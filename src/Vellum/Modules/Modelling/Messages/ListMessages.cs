@@ -43,6 +43,8 @@ public static class ListMessages
                 m.ProvenanceConfidence,
                 m.ProvenanceAcceptedBy,
                 m.ProvenanceAcceptedAt,
+                m.ProvenanceAcceptedAtVersion,
+                m.ProvenanceAcceptedOnBranch,
                 m.StaleSinceRevision,
                 m.StaleReason,
             })
@@ -59,7 +61,7 @@ public static class ListMessages
         var items = rows.Select(m => new MessageDto(
             m.Id, m.Name, m.Description, m.ProducerId, m.ConsumerIds, m.SchemaId, m.Tags, m.FactStatus,
             Model.ProvenanceMapper.ToDto(m.ProvenanceSource, m.ProvenanceRevision, m.ProvenanceConfidence,
-                m.ProvenanceAcceptedBy, m.ProvenanceAcceptedAt),
+                m.ProvenanceAcceptedBy, m.ProvenanceAcceptedAt, m.ProvenanceAcceptedAtVersion, m.ProvenanceAcceptedOnBranch),
             Model.StaleDto.From(m.StaleSinceRevision, m.StaleReason))).ToList();
 
         return Results.Ok(new Page<MessageDto>(items, nextCursor));

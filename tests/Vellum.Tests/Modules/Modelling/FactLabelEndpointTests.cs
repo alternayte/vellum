@@ -28,6 +28,11 @@ public class FactLabelEndpointTests(IntegrationFixture fixture) : IClassFixture<
         });
         Assert.Equal(HttpStatusCode.OK, inferred.StatusCode);
 
+        // A revision names the version of main that the acceptance reads.
+        var before = await client.PostAsJsonAsync(url("revisions"), new { id = Guid.NewGuid(), name = "before acceptance" });
+        var modelVersion = (await before.Content.ReadFromJsonAsync<JsonObject>())!["version"]!.GetValue<long>();
+        var mainStream = (await client.GetFromJsonAsync<JsonObject>($"/api/projects/{projectId}"))!["streamId"]!.GetValue<Guid>();
+
         // The request has no body: a person cannot name the label it gets.
         var accepted = await client.PostAsync(url($"facts/element/{billing}/accept"), null);
         Assert.Equal(HttpStatusCode.OK, accepted.StatusCode);
@@ -42,6 +47,9 @@ public class FactLabelEndpointTests(IntegrationFixture fixture) : IClassFixture<
             (provenance["source"]!.GetValue<string>(), provenance["revision"]!.GetValue<string>(),
                 provenance["confidence"]!.GetValue<double>(), provenance["acceptedBy"]!.GetValue<string>()));
         Assert.NotNull(provenance["acceptedAt"]);
+        Assert.Equal((modelVersion, mainStream),
+            (provenance["acceptedAtVersion"]!.GetValue<long>(), provenance["acceptedOnBranch"]!.GetValue<Guid>()));
+        Assert.Equal(modelVersion, label["provenance"]!["acceptedAtVersion"]!.GetValue<long>());
 
         // A declared fact is not accepted again. It can be marked unknown, and back.
         Assert.Equal(HttpStatusCode.Conflict, (await client.PostAsync(url($"facts/element/{billing}/accept"), null)).StatusCode);

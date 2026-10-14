@@ -19,7 +19,7 @@ public static class GetElement
             entity.Technology, entity.OwnerId, entity.Status,
             entity.ParentId, entity.Tags, entity.Icon, entity.FactStatus,
             Model.ProvenanceMapper.ToDto(entity.ProvenanceSource, entity.ProvenanceRevision,
-                entity.ProvenanceConfidence, entity.ProvenanceAcceptedBy, entity.ProvenanceAcceptedAt),
+                entity.ProvenanceConfidence, entity.ProvenanceAcceptedBy, entity.ProvenanceAcceptedAt, entity.ProvenanceAcceptedAtVersion, entity.ProvenanceAcceptedOnBranch),
             Model.StaleDto.From(entity.StaleSinceRevision, entity.StaleReason)));
     }
 }

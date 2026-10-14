@@ -40,20 +40,20 @@ public static class FactLabels
         var facts = project.MapGroup("/facts").WithTags("Facts");
         facts.MapPost("/{entityType}/{entityId:guid}/accept", (
             Guid projectId, string entityType, Guid entityId, Guid? branchId,
-            HttpContext http, IEventStore store, TimeProvider time, CancellationToken ct) =>
-            HandleAsync(http, store, time, projectId, entityType, entityId, branchId, FactLabelAction.AcceptAsDeclared, ct))
+            HttpContext http, TimeProvider time, CancellationToken ct) =>
+            HandleAsync(http, time, projectId, entityType, entityId, branchId, FactLabelAction.AcceptAsDeclared, ct))
             .RequireHuman()
             .Produces<FactLabelDto>();
         facts.MapPost("/{entityType}/{entityId:guid}/mark-unknown", (
             Guid projectId, string entityType, Guid entityId, Guid? branchId,
-            HttpContext http, IEventStore store, TimeProvider time, CancellationToken ct) =>
-            HandleAsync(http, store, time, projectId, entityType, entityId, branchId, FactLabelAction.MarkUnknown, ct))
+            HttpContext http, TimeProvider time, CancellationToken ct) =>
+            HandleAsync(http, time, projectId, entityType, entityId, branchId, FactLabelAction.MarkUnknown, ct))
             .RequireHuman()
             .Produces<FactLabelDto>();
     }
 
     private static Task<IResult> HandleAsync(
-        HttpContext http, IEventStore store, TimeProvider time, Guid projectId, string entityType, Guid entityId, Guid? branchId,
+        HttpContext http, TimeProvider time, Guid projectId, string entityType, Guid entityId, Guid? branchId,
         FactLabelAction action, CancellationToken ct) =>
         ModelBranches.RunAsync(http, projectId, branchId, WorkspaceRole.Editor, async (streamId, userId) =>
         {
@@ -62,17 +62,34 @@ public static class FactLabels
 
             // The stamp is taken once, so the decision stays a pure function of the state.
             var (actor, at) = (Guid.Parse(userId), time.GetUtcNow());
-            var result = await store.ForProject(projectId).Decide<ModelState, FactLabelDto>(
-                streamId,
-                state => Decide(state, entityType, entityId, action, actor, at),
-                state => Read(state, entityType, entityId)!,
-                ct);
-            return result.ToHttpResult();
+
+            // The stream lock gives the version that the acceptance reads, and it is recorded on
+            // the fact. The lock, the decision and the append are one transaction.
+            return await SharedTransaction.RunAsync(http.RequestServices, async services =>
+            {
+                var db = services.GetRequiredService<AppDbContext>();
+                await using var transaction = await db.Database.BeginTransactionAsync(ct);
+                var branch = services.GetRequiredService<IEventStore>().ForProject(projectId).UseDbContext(db);
+                var locked = await branch.Execute<ModelState>(StreamId.From(streamId), _ => [], ct);
+
+                var decision = Decide(locked.State, entityType, entityId, action, actor, at, locked.Version, streamId);
+                if (decision is not Decision.Success { Value: var events })
+                    return decision.ToHttpResult();
+                if (events.Count > 0)
+                    await branch.Append(StreamId.From(streamId), ExpectedVersion.Exact(locked.Version), events, ct);
+                await transaction.CommitAsync(ct);
+
+                return Results.Ok(Read(events.Aggregate(locked.State, ModelState.Evolve), entityType, entityId));
+            }, ct);
         }, ct);
 
-    /// <summary>The events that change the label, or the refusal. The fact keeps its source, source revision and confidence.</summary>
+    /// <summary>
+    /// The events that change the label, or the refusal. The fact keeps its source, source
+    /// revision and confidence, and records who changed the label, when, and on which model:
+    /// <paramref name="version"/> of the stream <paramref name="branch"/>.
+    /// </summary>
     public static Decision Decide(
-        ModelState state, string entityType, Guid entityId, FactLabelAction action, Guid actor, DateTimeOffset at)
+        ModelState state, string entityType, Guid entityId, FactLabelAction action, Guid actor, DateTimeOffset at, long version, Guid branch)
     {
         if (Current(state, entityType, entityId) is not var (status, provenance))
             return new Decision.NotFound($"{char.ToUpperInvariant(entityType[0])}{entityType[1..]} not found");
@@ -97,7 +114,7 @@ public static class FactLabels
                 throw new ArgumentOutOfRangeException(nameof(action));
         }
 
-        var stamped = new Provenance(provenance?.Source, provenance?.Revision, provenance?.Confidence, actor, at);
+        var stamped = new Provenance(provenance?.Source, provenance?.Revision, provenance?.Confidence, actor, at, version, branch);
         return entityType switch
         {
             "element" => ModelDecider.RecordElementProvenance(state, new ElementId(entityId), next, stamped),

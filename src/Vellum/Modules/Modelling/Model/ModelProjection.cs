@@ -83,6 +83,8 @@ public sealed class ModelProjection : Projection<AppDbContext>
             row.ProvenanceConfidence = e.Provenance?.Confidence;
             row.ProvenanceAcceptedBy = e.Provenance?.AcceptedBy;
             row.ProvenanceAcceptedAt = e.Provenance?.AcceptedAt;
+            row.ProvenanceAcceptedAtVersion = e.Provenance?.AcceptedAtVersion;
+            row.ProvenanceAcceptedOnBranch = e.Provenance?.AcceptedOnBranch;
             row.StaleSinceRevision = e.Stale?.SinceRevision;
             row.StaleReason = e.Stale?.Reason;
         });
@@ -122,6 +124,8 @@ public sealed class ModelProjection : Projection<AppDbContext>
             row.ProvenanceConfidence = e.Provenance?.Confidence;
             row.ProvenanceAcceptedBy = e.Provenance?.AcceptedBy;
             row.ProvenanceAcceptedAt = e.Provenance?.AcceptedAt;
+            row.ProvenanceAcceptedAtVersion = e.Provenance?.AcceptedAtVersion;
+            row.ProvenanceAcceptedOnBranch = e.Provenance?.AcceptedOnBranch;
             row.StaleSinceRevision = e.Stale?.SinceRevision;
             row.StaleReason = e.Stale?.Reason;
         });
@@ -165,6 +169,8 @@ public sealed class ModelProjection : Projection<AppDbContext>
             row.ProvenanceConfidence = e.Provenance?.Confidence;
             row.ProvenanceAcceptedBy = e.Provenance?.AcceptedBy;
             row.ProvenanceAcceptedAt = e.Provenance?.AcceptedAt;
+            row.ProvenanceAcceptedAtVersion = e.Provenance?.AcceptedAtVersion;
+            row.ProvenanceAcceptedOnBranch = e.Provenance?.AcceptedOnBranch;
             row.StaleSinceRevision = e.Stale?.SinceRevision;
             row.StaleReason = e.Stale?.Reason;
         });
@@ -268,6 +274,8 @@ public sealed class ModelProjection : Projection<AppDbContext>
                 ProvenanceConfidence = element.Provenance?.Confidence,
                 ProvenanceAcceptedBy = element.Provenance?.AcceptedBy,
                 ProvenanceAcceptedAt = element.Provenance?.AcceptedAt,
+                ProvenanceAcceptedAtVersion = element.Provenance?.AcceptedAtVersion,
+                ProvenanceAcceptedOnBranch = element.Provenance?.AcceptedOnBranch,
                 StaleSinceRevision = element.Stale?.SinceRevision,
                 StaleReason = element.Stale?.Reason,
             });
@@ -293,6 +301,8 @@ public sealed class ModelProjection : Projection<AppDbContext>
                 ProvenanceConfidence = relationship.Provenance?.Confidence,
                 ProvenanceAcceptedBy = relationship.Provenance?.AcceptedBy,
                 ProvenanceAcceptedAt = relationship.Provenance?.AcceptedAt,
+                ProvenanceAcceptedAtVersion = relationship.Provenance?.AcceptedAtVersion,
+                ProvenanceAcceptedOnBranch = relationship.Provenance?.AcceptedOnBranch,
                 StaleSinceRevision = relationship.Stale?.SinceRevision,
                 StaleReason = relationship.Stale?.Reason,
             });
@@ -317,6 +327,8 @@ public sealed class ModelProjection : Projection<AppDbContext>
                 ProvenanceConfidence = message.Provenance?.Confidence,
                 ProvenanceAcceptedBy = message.Provenance?.AcceptedBy,
                 ProvenanceAcceptedAt = message.Provenance?.AcceptedAt,
+                ProvenanceAcceptedAtVersion = message.Provenance?.AcceptedAtVersion,
+                ProvenanceAcceptedOnBranch = message.Provenance?.AcceptedOnBranch,
                 StaleSinceRevision = message.Stale?.SinceRevision,
                 StaleReason = message.Stale?.Reason,
             });

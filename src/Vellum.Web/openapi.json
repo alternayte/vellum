@@ -23784,6 +23784,22 @@
               "string"
             ],
             "format": "date-time"
+          },
+          "acceptedAtVersion": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "acceptedOnBranch": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
           }
         }
       },

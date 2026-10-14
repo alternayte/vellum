@@ -136,7 +136,7 @@ Each element and relationship has a truth label.
 
 An element that you draw is **Declared**. An element from an import has the label of its evidence. See [Evidence and truth labels](/concepts/evidence-and-truth-labels/).
 
-The detail panel of an element, a relationship or a message shows the label below **Truth**, with the source, the source revision, the confidence and the person who accepted the fact and when.
+The detail panel of an element, a relationship or a message shows the label below **Truth**, with the source, the source revision, the confidence, and who accepted the fact, when and on which model version.
 
 ## Change a truth label
 
@@ -151,11 +151,11 @@ A person changes a label in two ways only. No control sets **Measured** or **Obs
 1. Select the element or the relationship. In the **Details** tab, find **Truth**.
 2. Select **Accept as declared** or **Mark as unknown**.
 
-![The detail panel of the system Payments System. Below Truth it shows the label Inferred and the button Accept as declared. Below the label are the source github.com/acme/shop@4f2a91c:payments/Client.cs:12-40, the source revision 4f2a91c, the confidence 70%, Accepted by Dev User and the time.](../../../assets/screenshots/detail-panel-truth.png)
+![The detail panel of the system Payments System after Accept as declared. Below Truth it shows the label Declared and the button Mark as unknown. Below the label are the source github.com/acme/shop@4f2a91c:payments/Client.cs:12-40, the source revision 4f2a91c, the confidence 70%, and Accepted by Dev User on 14/10/2026, 19:37:14 at model version 14.](../../../assets/screenshots/detail-panel-truth.png)
 
 You can also right-click the element or the relationship on the canvas and select the action. For an operation, a channel, a subscription or a binding, use the action on its row in **Contracts**.
 
-The fact keeps its source, its source revision and its confidence. Vellum records you as the person who accepted it, and the time. You need the editor role. A named revision is read-only, so it has no action.
+The fact keeps its source, its source revision and its confidence. Vellum records you as the person who accepted it, the time, and the model version and branch that you accepted it on. **Truth** shows this as, for example, **by Dev User on 14/10/2026, 19:37:14 at model version 14**. In the API the fields are `acceptedBy`, `acceptedAt`, `acceptedAtVersion` and `acceptedOnBranch` in `provenance`. You need the editor role. A named revision is read-only, so it has no action.
 
 The API endpoints are `POST /api/projects/{projectId}/facts/{entityType}/{entityId}/accept` and `POST /api/projects/{projectId}/facts/{entityType}/{entityId}/mark-unknown`. `entityType` is `element`, `relationship`, `message`, `operation`, `channel`, `subscription` or `binding`. Add `?branchId=<stream-id>` for a draft or a variant. The request has no body. An agent token gets `403`. A fact with another label gets `409` and the reason.
 
