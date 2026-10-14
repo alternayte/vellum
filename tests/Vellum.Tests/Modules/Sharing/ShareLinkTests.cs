@@ -302,6 +302,58 @@ public class ShareLinkTests(IntegrationFixture fixture) : IClassFixture<Integrat
     }
 
     [Fact]
+    public async Task A_view_link_shows_only_what_the_view_places_and_no_promise()
+    {
+        var owner = await TestHost.SignInAsync(fixture.Factory);
+        var (_, projectId) = await TestHost.CreateProjectAsync(owner);
+        var shop = await AddElementAsync(owner, projectId, "Shop");
+        var ledger = await AddElementAsync(owner, projectId, "Secret Ledger");
+        var view = Guid.NewGuid();
+        await TestHost.Created(owner.PostAsJsonAsync($"/api/projects/{projectId}/views", new { id = view, name = "Shop only" }));
+        var layout = await owner.PutAsJsonAsync($"/api/projects/{projectId}/views/{view}/layout",
+            new { positions = new[] { new { elementId = shop, x = 0.0, y = 0.0 } } });
+        Assert.True(layout.IsSuccessStatusCode, await layout.Content.ReadAsStringAsync());
+
+        foreach (var mode in new[] { "live", "pinned" })
+        {
+            Guid? revision = null;
+            if (mode == "pinned")
+            {
+                revision = Guid.NewGuid();
+                await TestHost.Created(owner.PostAsJsonAsync($"/api/projects/{projectId}/revisions", new { id = revision, name = "r1" }));
+            }
+            var (_, token) = await CreateLinkAsync(owner, projectId,
+                new { scope = "view", viewId = view, mode, revisionId = revision, showCosts = true, showPromises = true });
+            using var visitor = Anonymous();
+            var body = await visitor.GetStringAsync($"/api/share/{token}");
+            Assert.Contains("Shop", body);
+            Assert.DoesNotContain("Secret Ledger", body);
+            Assert.DoesNotContain(ledger.ToString(), body);
+            Assert.Null(JsonNode.Parse(body)!["promises"]);
+        }
+    }
+
+    [Fact]
+    public void A_flow_that_names_a_hidden_fact_is_not_shared_and_a_shared_flow_carries_no_payload()
+    {
+        var (caller, operation) = (Guid.NewGuid(), Guid.NewGuid());
+        var payload = System.Text.Json.JsonDocument.Parse("""{"Authorization":"Bearer sample-secret"}""").RootElement;
+        var scenario = new Vellum.Modules.Trace.Engine.Scenario(
+            new Vellum.Modules.Modelling.ScenarioId(Guid.NewGuid()), "Checkout",
+            [new Vellum.Modules.Trace.Engine.CallStep("s1", new Vellum.Modules.Modelling.ElementId(caller),
+                new Vellum.Modules.Modelling.OperationId(operation), payload, payload, [], [])],
+            [], []);
+
+        Assert.Null(SharedFlow.From(scenario, new HashSet<Guid> { caller }));
+
+        var shared = SharedFlow.From(scenario, new HashSet<Guid> { caller, operation });
+        Assert.NotNull(shared);
+        var json = System.Text.Json.JsonSerializer.Serialize(shared, System.Text.Json.JsonSerializerOptions.Web);
+        Assert.DoesNotContain("sample-secret", json);
+        Assert.Contains(operation.ToString(), json);
+    }
+
+    [Fact]
     public async Task A_hosted_workspace_refuses_a_public_link_by_default()
     {
         var database = await TestHost.CreateDatabaseAsync();

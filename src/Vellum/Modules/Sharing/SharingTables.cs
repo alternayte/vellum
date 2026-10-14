@@ -27,6 +27,9 @@ public static class SharingTables
             b.Property(l => l.Mode).HasMaxLength(16);
             b.Property(l => l.Label).HasMaxLength(200);
             b.Property(l => l.RevisionName).HasMaxLength(200);
+            // Two changes of the password at once must not both write the same version: the
+            // second one fails, so a grant of the first password cannot outlive it.
+            b.Property(l => l.PasswordVersion).IsConcurrencyToken();
             b.Property(l => l.CreatedAt).HasDefaultValueSql("now()");
             b.Property(l => l.UpdatedAt).HasDefaultValueSql("now()");
         });

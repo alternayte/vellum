@@ -59,7 +59,7 @@ function ShareDialog({ projectId, workspaceId, onClose }: { projectId: string; w
   const create = useMutation({
     mutationFn: () => shareLinksApi.create(projectId, {
       scope, viewId: scope === 'view' ? viewId || null : null, mode, revisionId: mode === 'pinned' ? revisionId || null : null,
-      label, showCosts, showPromises, password: password || null,
+      label, showCosts, showPromises: scope === 'project' && showPromises, password: password || null,
       expiresAt: expiresAt ? new Date(expiresAt).toISOString() : null,
     }),
     onSuccess: (result) => { setCreated(result); setPassword(''); refresh() },
@@ -131,10 +131,12 @@ function ShareDialog({ projectId, workspaceId, onClose }: { projectId: string; w
               <span>Show estimated costs</span>
               <Toggle checked={showCosts} onChange={setShowCosts} label="Show estimated costs" />
             </div>
-            <div className="flex items-center justify-between gap-3 text-sm sm:col-span-2">
-              <span>Show promises with their verification status</span>
-              <Toggle checked={showPromises} onChange={setShowPromises} label="Show promises with their verification status" />
-            </div>
+            {scope === 'project' && (
+              <div className="flex items-center justify-between gap-3 text-sm sm:col-span-2">
+                <span>Show promises with their verification status</span>
+                <Toggle checked={showPromises} onChange={setShowPromises} label="Show promises with their verification status" />
+              </div>
+            )}
             {formError && <p role="alert" className="text-xs text-destructive sm:col-span-2">{formError}</p>}
             <div className="flex justify-end sm:col-span-2">
               <Button type="submit" disabled={create.isPending || policy === 'off'}>{create.isPending ? 'Creating…' : 'Create link'}</Button>
@@ -219,7 +221,7 @@ function LinkRow({ projectId, link, createdBy, onChanged }: { projectId: string;
       {manage && (
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
           <span className="flex items-center gap-1.5">Costs <Toggle checked={link.showCosts} onChange={(v) => change.mutate({ showCosts: v })} label="Show estimated costs" /></span>
-          <span className="flex items-center gap-1.5">Promises <Toggle checked={link.showPromises} onChange={(v) => change.mutate({ showPromises: v })} label="Show promises" /></span>
+          {link.scope === 'project' && <span className="flex items-center gap-1.5">Promises <Toggle checked={link.showPromises} onChange={(v) => change.mutate({ showPromises: v })} label="Show promises" /></span>}
           {link.hasPassword && (
             <Button type="button" variant="ghost" size="sm" className="h-6 px-2 text-xs" onClick={() => change.mutate({ removePassword: true })}>Remove password</Button>
           )}

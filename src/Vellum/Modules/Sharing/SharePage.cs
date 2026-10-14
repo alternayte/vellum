@@ -63,8 +63,61 @@ public sealed record SharedView(Guid Id, string Name, IReadOnlyList<SharedPositi
 /// <summary>A payload schema: a JSON Schema document.</summary>
 public sealed record SharedSchema(Guid Id, string Name, string? Description, string Content, int Version);
 
-/// <summary>A flow (scenario): its steps over the IDs of the model, its faults and its assertions.</summary>
-public sealed record SharedFlow(Guid Id, string Name, Scenario Document);
+/// <summary>
+/// One step of a flow: what runs and over which IDs of the shared model. Payload fixtures,
+/// headers and write changes are not shared: they are sample data a member typed, and can
+/// hold a credential.
+/// </summary>
+/// <param name="Type"><c>call</c>, <c>publish</c>, <c>write</c>, <c>parallel</c> or <c>branch</c>.</param>
+/// <param name="FromId">The element that calls, publishes or writes.</param>
+/// <param name="TargetId">The operation called, the message published or the store written.</param>
+/// <param name="ChannelId">The channel of a publish.</param>
+/// <param name="Groups">The nested steps, each group with its name: <c>then</c>, <c>on-error</c>, <c>else</c>, <c>branch</c> or <c>handler</c>.</param>
+public sealed record SharedFlowStep(
+    string Id, string Type, Guid? FromId, Guid? TargetId, Guid? ChannelId, string? Dataset,
+    string? WhenStep, string? Is, IReadOnlyList<SharedStepGroup> Groups);
+
+public sealed record SharedStepGroup(string Name, IReadOnlyList<SharedFlowStep> Steps);
+
+/// <summary>A flow (scenario): its steps over the IDs of the shared model, and how many faults and assertions it declares.</summary>
+public sealed record SharedFlow(Guid Id, string Name, IReadOnlyList<SharedFlowStep> Steps, int Faults, int Assertions)
+{
+    /// <summary>
+    /// The flow as a visitor may see it, or null when a step names a fact that the page does
+    /// not share: the flow would show that the hidden fact exists and how it is used.
+    /// </summary>
+    public static SharedFlow? From(Scenario scenario, IReadOnlySet<Guid> shared)
+    {
+        var complete = true;
+        Guid? Known(Guid id)
+        {
+            if (!shared.Contains(id))
+                complete = false;
+            return id;
+        }
+
+        IReadOnlyList<SharedFlowStep> Steps(IEnumerable<Step> steps) => [.. steps.Select(Step)];
+        static IReadOnlyList<SharedStepGroup> Groups(params SharedStepGroup[] groups) => [.. groups.Where(g => g.Steps.Count > 0)];
+        SharedFlowStep Step(Step step) => step switch
+        {
+            CallStep c => new(c.Id, "call", Known(c.From.Value), Known(c.Operation.Value), null, null, null, null,
+                Groups(new("then", Steps(c.Then)), new("on-error", Steps(c.OnError)))),
+            PublishStep p => new(p.Id, "publish", Known(p.From.Value), Known(p.Message.Value), Known(p.Channel.Value), null, null, null,
+                [.. p.Handlers.OrderBy(h => h.Key.Value).Select(h => new SharedStepGroup("handler", Steps(h.Value)))]),
+            WriteStep w => new(w.Id, "write", Known(w.By.Value), Known(w.Store.Value), null, w.Dataset, null, null, []),
+            ParallelStep p => new(p.Id, "parallel", null, null, null, null, null, null,
+                [.. p.Branches.Select(b => new SharedStepGroup("branch", Steps(b)))]),
+            BranchStep b => new(b.Id, "branch", null, null, null, null, b.WhenStep, b.Is.ToString().ToLowerInvariant(),
+                Groups(new("then", Steps(b.Then)), new("else", Steps(b.Else)))),
+            _ => new(step.Id, "unknown", null, null, null, null, null, null, []),
+        };
+
+        var flow = new SharedFlow(scenario.Id.Value, scenario.Name, Steps(scenario.Steps), scenario.Faults.Count, scenario.Assertions.Count);
+        foreach (var fault in scenario.Faults)
+            Known(fault.Target);
+        return complete ? flow : null;
+    }
+}
 
 /// <param name="Type">The kind of page, such as <c>adr</c> or <c>prd</c>, or null.</param>
 public sealed record SharedDoc(Guid Id, string Title, string? Type, Guid? ElementId, string? Space, string Content, DateTimeOffset UpdatedAt);
@@ -85,7 +138,20 @@ public sealed record SharedCostLine(
     string Status, string? Reason, decimal? Amount, string? Currency);
 
 /// <summary>The estimated monthly spend, with the date it is for and the lines that have no known price.</summary>
-public sealed record SharedCosts(DateOnly AsOf, string Currency, IReadOnlyList<SharedMoney> Totals, IReadOnlyList<SharedCostLine> Lines, int UnknownLines);
+public sealed record SharedCosts(DateOnly AsOf, string Currency, IReadOnlyList<SharedMoney> Totals, IReadOnlyList<SharedCostLine> Lines, int UnknownLines)
+{
+    /// <summary>The lines of <paramref name="elements"/> only, with totals of those lines.</summary>
+    public static SharedCosts Of(SharedCosts costs, IReadOnlySet<Guid> elements) => Of(costs.AsOf, costs.Currency, [.. costs.Lines.Where(l => elements.Contains(l.ElementId))]);
+
+    public static SharedCosts Of(DateOnly asOf, string currency, IReadOnlyList<SharedCostLine> lines) => new(
+        asOf, currency,
+        [.. lines.Where(l => l.Amount is not null && l.Currency is not null)
+            .GroupBy(l => l.Currency!, StringComparer.Ordinal)
+            .OrderBy(g => g.Key, StringComparer.Ordinal)
+            .Select(g => new SharedMoney(g.Key, g.Sum(l => l.Amount!.Value)))],
+        lines,
+        lines.Count(l => l.Amount is null));
+}
 
 /// <param name="Result"><c>passed</c>, <c>failed</c>, <c>not-run</c> or <c>unsupported</c>, as the newest run says.</param>
 /// <param name="Current">For a pass or a fail: true when the run read the inputs that are current.</param>
@@ -126,7 +192,59 @@ public sealed record SharedPage(
             return page with { Scope = ShareScope.Project };
 
         var view = Views.FirstOrDefault(v => v.Id == link.ViewId);
-        return view is null ? null : page with { Scope = ShareScope.View, Views = [view], Flows = [], Docs = [], Decisions = [] };
+        return view is null ? null : page.OnlyView(view);
+    }
+
+    /// <summary>
+    /// One diagram and the details of what is on it: the elements the view places and their
+    /// parents, the facts between them, the schemas those facts name and their cost lines. A
+    /// view that places no element shows the whole model, as the canvas does. Flows, docs,
+    /// decisions and promises belong to a project link: a promise can name any fact.
+    /// </summary>
+    private SharedPage OnlyView(SharedView view)
+    {
+        var model = Model;
+        if (view.Positions.Count > 0)
+        {
+            var parents = Model.Elements.ToDictionary(e => e.Id, e => e.ParentId);
+            var kept = new HashSet<Guid>();
+            foreach (var position in view.Positions)
+            {
+                for (Guid? id = position.ElementId; id is { } at && kept.Add(at);)
+                    id = parents.GetValueOrDefault(at);
+            }
+
+            var messages = Model.Messages.Where(m => kept.Contains(m.ProducerId))
+                .Select(m => m with { ConsumerIds = [.. m.ConsumerIds.Where(kept.Contains)] }).ToList();
+            var messageIds = messages.Select(m => m.Id).ToHashSet();
+            var subscriptions = Model.Subscriptions.Where(s => kept.Contains(s.ConsumerId)).ToList();
+            var channelIds = subscriptions.Select(s => s.ChannelId).ToHashSet();
+            model = new SharedModel(
+                [.. Model.Elements.Where(e => kept.Contains(e.Id))],
+                [.. Model.Relationships.Where(r => kept.Contains(r.FromId) && kept.Contains(r.ToId))
+                    .Select(r => r.MessageId is { } m && !messageIds.Contains(m) ? r with { MessageId = null } : r)],
+                messages,
+                [.. Model.Operations.Where(o => kept.Contains(o.OwnerId))],
+                [.. Model.Channels.Where(c => channelIds.Contains(c.Id))],
+                [.. subscriptions.Select(s => s.DeadLetterChannelId is { } d && !channelIds.Contains(d) ? s with { DeadLetterChannelId = null } : s)],
+                [.. Model.Bindings.Where(b => channelIds.Contains(b.SourceChannelId) && channelIds.Contains(b.TargetChannelId))]);
+        }
+
+        var shownElements = model.Elements.Select(e => e.Id).ToHashSet();
+        var schemaIds = model.Operations.SelectMany(o => new[] { o.RequestSchemaId, o.ResponseSchemaId })
+            .Concat(model.Messages.Select(m => m.SchemaId)).OfType<Guid>().ToHashSet();
+        return this with
+        {
+            Scope = ShareScope.View,
+            Model = model,
+            Views = [view],
+            Schemas = [.. Schemas.Where(s => schemaIds.Contains(s.Id))],
+            Flows = [],
+            Docs = [],
+            Decisions = [],
+            Costs = Costs is null ? null : SharedCosts.Of(Costs, shownElements),
+            Promises = null,
+        };
     }
 }
 
@@ -183,10 +301,11 @@ public sealed partial class SharePageReader(IServiceProvider services, AppDbCont
         List<SharedDecision> decisions = [];
         if (request.WithProjectParts)
         {
+            var facts = SharedIds(model);
             flows = [.. input.Scenarios.OrderBy(s => s.Name, StringComparer.Ordinal).ThenBy(s => s.Id.Value)
-                .Select(s => new SharedFlow(s.Id.Value, s.Name, s))];
-            docs = await DocsAsync(projectId, ct);
-            decisions = Decisions(input.Decisions);
+                .Select(s => SharedFlow.From(s, facts)).OfType<SharedFlow>()];
+            docs = [.. (await DocsAsync(projectId, ct)).Select(d => d.ElementId is { } e && !shown.Contains(e) ? d with { ElementId = null } : d)];
+            decisions = [.. Decisions(input.Decisions).Select(d => d with { AffectedIds = [.. d.AffectedIds.Where(facts.Contains)] })];
         }
 
         SharedCosts? sharedCosts = null;
@@ -199,6 +318,14 @@ public sealed partial class SharePageReader(IServiceProvider services, AppDbCont
             input.ProjectName, request.ViewId is null ? ShareScope.Project : ShareScope.View, ShareMode.Live,
             request.Revision, request.AsOf, model, sharedViews, schemas, flows, docs, decisions, sharedCosts, promises);
     }
+
+    /// <summary>Every ID the shared model holds, of every kind.</summary>
+    private static HashSet<Guid> SharedIds(SharedModel model) =>
+    [
+        .. model.Elements.Select(e => e.Id), .. model.Relationships.Select(r => r.Id), .. model.Messages.Select(m => m.Id),
+        .. model.Operations.Select(o => o.Id), .. model.Channels.Select(c => c.Id), .. model.Subscriptions.Select(s => s.Id),
+        .. model.Bindings.Select(b => b.Id),
+    ];
 
     /// <summary>
     /// The model without the facts a visitor may not see: an inferred fact that no person
@@ -322,17 +449,9 @@ public sealed partial class SharePageReader(IServiceProvider services, AppDbCont
     {
         var main = await db.Projects.AsNoTracking().Where(p => p.Id == projectId).Select(p => p.StreamId).FirstAsync(ct);
         var estimate = (await costs.BuildAsync(projectId, main, asOf, ct)).Dto.Estimate;
-        var lines = estimate.Lines.Where(l => shown.Contains(l.ElementId)).ToList();
-        var totals = lines.Where(l => l.Amount is not null && l.Currency is not null)
-            .GroupBy(l => l.Currency!, StringComparer.Ordinal)
-            .OrderBy(g => g.Key, StringComparer.Ordinal)
-            .Select(g => new SharedMoney(g.Key, g.Sum(l => l.Amount!.Value)))
-            .ToList();
-        return new SharedCosts(
-            estimate.AsOf, estimate.Currency, totals,
-            [.. lines.Select(l => new SharedCostLine(
-                l.ElementId, l.ResourceName, l.Name, l.Category, l.Provider, l.Region, l.Status, l.Reason, l.Amount, l.Currency))],
-            lines.Count(l => l.Amount is null));
+        return SharedCosts.Of(estimate.AsOf, estimate.Currency,
+            [.. estimate.Lines.Where(l => shown.Contains(l.ElementId)).Select(l => new SharedCostLine(
+                l.ElementId, l.ResourceName, l.Name, l.Category, l.Provider, l.Region, l.Status, l.Reason, l.Amount, l.Currency))]);
     }
 
     /// <summary>The approved promises, each with the evidence of the revision in force.</summary>

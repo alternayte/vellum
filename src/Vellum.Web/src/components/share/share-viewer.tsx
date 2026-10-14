@@ -109,6 +109,7 @@ function ModeLabel({ page }: { page: SharedPage }) {
   return page.mode === 'pinned' && page.revision ? (
     <span className="rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground" title="This page shows one named revision. It does not change.">
       Pinned · revision <span className="text-foreground">{page.revision.name}</span> · {date(page.revision.createdAt)}
+      {page.scope === 'project' && <> · flows, docs and decisions as of {date(page.asOf)}</>}
     </span>
   ) : (
     <span className="rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground" title="This page follows the accepted model. Reload to see the latest.">
@@ -385,22 +386,24 @@ function Flows({ page }: { page: SharedPage }) {
       ...m.messages.map((x) => [x.id, x.name] as const),
     ])
   }, [page])
-  const n = (id?: string) => (id ? ids.get(id) ?? 'not shared' : '—')
+  const n = (id: string | null) => (id ? ids.get(id) ?? 'not shared' : '—')
 
+  const groupLabel: Record<string, string | null> = { then: null, 'on-error': 'On error:', else: 'Else:', branch: 'Branch:', handler: 'A consumer runs:' }
   const Steps = ({ steps }: { steps: SharedStep[] }): ReactNode => (
     <ol className="ml-4 list-decimal space-y-1 text-sm">
       {steps.map((s) => (
         <li key={s.id}>
-          {s.type === 'call' && <>{n(s.from)} calls <span className="font-mono text-xs">{n(s.operation)}</span></>}
-          {s.type === 'publish' && <>{n(s.from)} publishes {n(s.message)} to {n(s.channel)}</>}
-          {s.type === 'write' && <>{n(s.by)} writes {s.dataset} in {n(s.store)}</>}
+          {s.type === 'call' && <>{n(s.fromId)} calls <span className="font-mono text-xs">{n(s.targetId)}</span></>}
+          {s.type === 'publish' && <>{n(s.fromId)} publishes {n(s.targetId)} to {n(s.channelId)}</>}
+          {s.type === 'write' && <>{n(s.fromId)} writes {s.dataset} in {n(s.targetId)}</>}
           {s.type === 'parallel' && <>In parallel:</>}
           {s.type === 'branch' && <>If step {s.whenStep} {s.is}:</>}
-          {s.then && s.then.length > 0 && <Steps steps={s.then} />}
-          {s.onError && s.onError.length > 0 && <><span className="text-xs text-muted-foreground">On error:</span><Steps steps={s.onError} /></>}
-          {s.else && s.else.length > 0 && <><span className="text-xs text-muted-foreground">Else:</span><Steps steps={s.else} /></>}
-          {s.branches?.map((b, i) => <Steps key={i} steps={b} />)}
-          {s.handlers && Object.values(s.handlers).map((h, i) => <Steps key={i} steps={h} />)}
+          {s.groups.map((g, i) => (
+            <div key={i}>
+              {groupLabel[g.name] && <span className="text-xs text-muted-foreground">{groupLabel[g.name]}</span>}
+              <Steps steps={g.steps} />
+            </div>
+          ))}
         </li>
       ))}
     </ol>
@@ -412,9 +415,9 @@ function Flows({ page }: { page: SharedPage }) {
         {page.flows.map((f) => (
           <article key={f.id} className="rounded-md border border-border p-3">
             <h3 className="mb-2 text-sm font-medium">{f.name}</h3>
-            <Steps steps={f.document.steps} />
-            {(f.document.faults.length > 0 || f.document.assertions.length > 0) && (
-              <p className="mt-2 text-xs text-muted-foreground">{f.document.faults.length} faults · {f.document.assertions.length} assertions</p>
+            <Steps steps={f.steps} />
+            {(f.faults > 0 || f.assertions > 0) && (
+              <p className="mt-2 text-xs text-muted-foreground">{f.faults} faults · {f.assertions} assertions</p>
             )}
           </article>
         ))}

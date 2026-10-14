@@ -3225,6 +3225,7 @@ namespace Vellum.Migrations
                         .HasColumnName("password_hash");
 
                     b.Property<int>("PasswordVersion")
+                        .IsConcurrencyToken()
                         .HasColumnType("integer")
                         .HasColumnName("password_version");
 

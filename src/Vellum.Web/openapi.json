@@ -29092,7 +29092,9 @@
         "required": [
           "id",
           "name",
-          "document"
+          "steps",
+          "faults",
+          "assertions"
         ],
         "type": "object",
         "properties": {
@@ -29103,8 +29105,94 @@
           "name": {
             "type": "string"
           },
-          "document": {
-            "$ref": "#/components/schemas/Scenario"
+          "steps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SharedFlowStep"
+            }
+          },
+          "faults": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "assertions": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          }
+        }
+      },
+      "SharedFlowStep": {
+        "required": [
+          "id",
+          "type",
+          "fromId",
+          "targetId",
+          "channelId",
+          "dataset",
+          "whenStep",
+          "is",
+          "groups"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "fromId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "targetId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "channelId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "dataset": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "whenStep": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "is": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "groups": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SharedStepGroup"
+            }
           }
         }
       },
@@ -29703,6 +29791,24 @@
               "string"
             ],
             "format": "int32"
+          }
+        }
+      },
+      "SharedStepGroup": {
+        "required": [
+          "name",
+          "steps"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "steps": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SharedFlowStep"
+            }
           }
         }
       },

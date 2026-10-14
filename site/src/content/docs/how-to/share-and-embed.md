@@ -12,12 +12,14 @@ A link shows:
 - the diagrams, with pan, zoom, drill-in and the details of each element and relationship;
 - the truth label of each fact. A citation shows as `path:lines` text only;
 - the contracts: operations, channels, messages and payload schemas;
-- for a project link: the flows, the docs of main and the accepted decisions (ADRs).
+- for a project link: the flows, the docs of main and the accepted decisions (ADRs). A flow shows its steps without payload samples or headers. A flow that names a hidden fact is not shown.
+
+A view link shows the elements that the view places, with their parents, and the facts and schemas between them. A view that places no element shows the whole model, as the canvas does.
 
 Two parts are off by default. You turn each one on for each link:
 
-- **Show estimated costs**: the estimate of main, line by line, with the lines that have no known price;
-- **Show promises with their verification status**: the approved promises and the result of each obligation.
+- **Show estimated costs**: the estimate of main, line by line, with the lines that have no known price. A view link shows the lines of its elements;
+- **Show promises with their verification status**: the approved promises and the result of each obligation. Only a project link can show promises, because a promise can name any part of the model.
 
 A link never shows:
 

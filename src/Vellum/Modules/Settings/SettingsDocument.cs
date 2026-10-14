@@ -92,7 +92,7 @@ public sealed record SharingSettings(string LinkPolicy, IReadOnlyList<string> Em
 public static partial class EmbedOrigin
 {
     [System.Text.RegularExpressions.GeneratedRegex(
-        @"^(?<scheme>https?)://(\*\.)?[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*(?::[0-9]{1,5})?$",
+        @"^(?<scheme>https?)://(\*\.)?[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*(?::[0-9]{1,5})?\z",
         System.Text.RegularExpressions.RegexOptions.CultureInvariant)]
     private static partial System.Text.RegularExpressions.Regex Pattern();
 

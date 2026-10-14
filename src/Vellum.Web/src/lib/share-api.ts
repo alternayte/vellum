@@ -142,25 +142,21 @@ export interface SharedSubscription {
 
 export interface SharedView { id: string; name: string; positions: { elementId: string; x: number; y: number; width: number | null; height: number | null }[] }
 export interface SharedSchema { id: string; name: string; description: string | null; content: string; version: number }
+/** One step of a flow. Payloads, headers and write changes are not shared. */
 export interface SharedStep {
-  type: 'call' | 'publish' | 'write' | 'parallel' | 'branch'
   id: string
-  from?: string
-  by?: string
-  operation?: string
-  channel?: string
-  message?: string
-  store?: string
-  dataset?: string
-  then?: SharedStep[]
-  onError?: SharedStep[]
-  else?: SharedStep[]
-  branches?: SharedStep[][]
-  handlers?: Record<string, SharedStep[]>
-  whenStep?: string
-  is?: string
+  type: 'call' | 'publish' | 'write' | 'parallel' | 'branch' | 'unknown'
+  /** The element that calls, publishes or writes. */
+  fromId: string | null
+  /** The operation called, the message published or the store written. */
+  targetId: string | null
+  channelId: string | null
+  dataset: string | null
+  whenStep: string | null
+  is: string | null
+  groups: { name: 'then' | 'on-error' | 'else' | 'branch' | 'handler'; steps: SharedStep[] }[]
 }
-export interface SharedFlow { id: string; name: string; document: { steps: SharedStep[]; faults: unknown[]; assertions: unknown[] } }
+export interface SharedFlow { id: string; name: string; steps: SharedStep[]; faults: number; assertions: number }
 export interface SharedDoc { id: string; title: string; type: string | null; elementId: string | null; space: string | null; content: string; updatedAt: string }
 export interface SharedDecision {
   id: string

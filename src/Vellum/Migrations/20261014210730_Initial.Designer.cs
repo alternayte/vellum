@@ -24,7 +24,7 @@ using Vellum.Shared;
 namespace Vellum.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20261014204036_Initial")]
+    [Migration("20261014210730_Initial")]
     partial class Initial
     {
         /// <inheritdoc />
@@ -3228,6 +3228,7 @@ namespace Vellum.Migrations
                         .HasColumnName("password_hash");
 
                     b.Property<int>("PasswordVersion")
+                        .IsConcurrencyToken()
                         .HasColumnType("integer")
                         .HasColumnName("password_version");
 

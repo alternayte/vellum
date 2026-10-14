@@ -214,10 +214,13 @@ public static class ShareLinks
         var (link, workspaceId, role, refusal) = await ManagedAsync(projectId, linkId, userId, db, auth, ct);
         if (link is null)
             return refusal!;
+        var now = time.GetUtcNow();
         if (link.RevokedAt is not null)
             return Conflict("The link is revoked. Make a new one.");
+        // An expired link stays expired: a new expiry would open an address that people were told is closed.
+        if (link.ExpiresAt <= now)
+            return Conflict("The link has expired. Make a new one.");
 
-        var now = time.GetUtcNow();
         var password = string.IsNullOrEmpty(request.Password) ? null : request.Password;
         if (Refusal(
                 TextRule.Line("label", request.Label, 200),
