@@ -83,6 +83,7 @@ export default defineConfig({
               items: [
                 'how-to/configure-settings',
                 'how-to/manage-members',
+                'how-to/share-and-embed',
                 'how-to/run-in-hosted-mode',
                 'how-to/back-up-and-restore',
                 'how-to/upgrade',

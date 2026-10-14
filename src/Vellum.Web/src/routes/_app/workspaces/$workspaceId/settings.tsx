@@ -35,6 +35,7 @@ const SECTIONS: { id: SectionId; label: string; adminOnly?: boolean }[] = [
   { id: 'privacy', label: 'Privacy' },
   { id: 'usage', label: 'Usage limits' },
   { id: 'notifications', label: 'Notifications' },
+  { id: 'sharing', label: 'Sharing' },
   { id: 'members', label: 'Members' },
   { id: 'agents', label: 'Agent tokens' },
   { id: 'audit', label: 'Audit log' },
@@ -295,6 +296,36 @@ function SettingsPage() {
                 <div className="mt-4">
                   <SecretControl workspaceId={workspaceId} name="notifications:webhookSecret" label="Signing secret" status={secretFor('notifications:webhookSecret')} canEdit={canEdit} />
                 </div>
+              </>
+            )}
+
+            {section === 'sharing' && (
+              <>
+                <SectionHeading
+                  title="Sharing"
+                  description="Share links give people without an account a read-only page of a project or a view. A change of the policy applies to the links that exist: a link that the policy does not allow answers 404."
+                />
+                <SelectField
+                  label="Link policy"
+                  hint="Off: no link works. Password only: a link without a password answers 404. Public allowed: a link can have a password or none."
+                  options={[
+                    { value: 'off', label: 'Off' },
+                    { value: 'password-only', label: 'Password only' },
+                    { value: 'public', label: 'Public allowed' },
+                  ]}
+                  {...bind('sharing', 'linkPolicy')}
+                  onChange={(value) => setDraft((d) => setOverride(d, 'sharing', 'linkPolicy', value as SettingsDocument['sharing']['linkPolicy']))}
+                />
+                <TextField
+                  label="Embed allow-list"
+                  hint="The origins that may show an embedded view in a frame, separated by commas, such as https://wiki.example.com or https://*.atlassian.net. Empty: no site may. Every other page of Vellum refuses every frame."
+                  placeholder="https://wiki.example.com"
+                  value={current('sharing').embedHosts.join(', ')}
+                  onChange={(text) => setDraft((d) => setOverride(d, 'sharing', 'embedHosts', text.split(',').map((h) => h.trim()).filter(Boolean)))}
+                  overridden={draft.sharing?.embedHosts !== undefined}
+                  onReset={() => setDraft((d) => setOverride(d, 'sharing', 'embedHosts', undefined))}
+                  error={errorFor('sharing.embedHosts') ?? fieldErrors.find((e) => e.field.startsWith('sharing.embedHosts['))?.message}
+                />
               </>
             )}
 

@@ -44,6 +44,8 @@ export interface SettingsDocument {
   privacy: { sendPrivateCodeToAi: boolean }
   usage: { monthlyAiBudgetUsd: number | null; maxScansPerDay: number }
   notifications: { webhookUrl: string | null }
+  /** Who may open a share link, and which sites may frame an embedded view. */
+  sharing: { linkPolicy: 'off' | 'password-only' | 'public'; embedHosts: string[] }
 }
 
 export type SettingsSection = keyof SettingsDocument
