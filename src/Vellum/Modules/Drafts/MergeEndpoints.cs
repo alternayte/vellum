@@ -55,8 +55,8 @@ public static class PreviewMerge
             .FirstOrDefaultAsync(d => d.Id == draftId && d.ProjectId == projectId, ct);
         if (draft is null)
             return Results.NotFound(new ErrorResponse("not_found", "Draft not found"));
-        if (draft.Status != "open")
-            return Results.Conflict(new ErrorResponse("conflict", $"Draft is {draft.Status}"));
+        if (draft.Status != DraftStatus.Open)
+            return Results.Conflict(new ErrorResponse("conflict", $"Draft is {EnumText.Of(draft.Status)}"));
 
         var baseState = JsonSerializer.Deserialize<ModelState>(draft.BaseSnapshot, JsonOpts)!;
         var (oursState, mainVersion) = await store.Load<ModelState>(StreamId.From(draft.BaseStreamId), ct);
@@ -108,8 +108,8 @@ public static class ExecuteMerge
             if (streams is null)
                 return Results.NotFound(new ErrorResponse("not_found", "Draft not found"));
             // The status is read again under the lock.
-            if (streams.Status != "open")
-                return Results.Conflict(new ErrorResponse("conflict", $"Draft is {streams.Status}"));
+            if (streams.Status != DraftStatus.Open)
+                return Results.Conflict(new ErrorResponse("conflict", $"Draft is {EnumText.Of(streams.Status)}"));
 
             // A return before the commit rolls everything back.
             await using var transaction = await db.Database.BeginTransactionAsync(ct);
@@ -136,8 +136,8 @@ public static class ExecuteMerge
 
             // Read under the draft's lock: the status is the one the last writer committed.
             var draft = await db.Drafts.FirstAsync(d => d.Id == draftId, ct);
-            if (draft.Status != "open")
-                return Results.Conflict(new ErrorResponse("conflict", $"Draft is {draft.Status}"));
+            if (draft.Status != DraftStatus.Open)
+                return Results.Conflict(new ErrorResponse("conflict", $"Draft is {EnumText.Of(draft.Status)}"));
 
             if (mainVersion != request.ExpectedMainVersion)
                 return MainChanged();
@@ -178,7 +178,7 @@ public static class ExecuteMerge
                     "cost_sheet_conflict", "The cost sheet of the draft does not merge into the cost sheet of main", sheetRefusal));
             }
 
-            draft.Status = "merged";
+            draft.Status = DraftStatus.Merged;
             draft.MergedAt = now;
 
             // One append. Deedbox saves the draft status in the transaction, and the inline

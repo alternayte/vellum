@@ -53,12 +53,12 @@ public sealed class ModelProjection : Projection<AppDbContext>
                 Id = added.Id,
                 ProjectId = ProjectOf(ctx),
                 Branch = BranchOf(ctx),
-                Kind = added.Kind.ToString().ToLowerInvariant(),
+                Kind = added.Kind,
                 Name = added.Name,
                 Description = added.Description,
                 Technology = added.Technology,
                 OwnerId = added.OwnerId,
-                Status = added.Status.ToString().ToLowerInvariant(),
+                Status = added.Status,
                 ParentId = added.ParentId,
                 Tags = added.Tags,
                 Icon = null
@@ -71,12 +71,12 @@ public sealed class ModelProjection : Projection<AppDbContext>
         OnElement<ModelEvent.ElementTechnologyChanged>(e => e.ElementId, (e, row) => row.Technology = e.Technology);
         OnElement<ModelEvent.ElementOwnerChanged>(e => e.ElementId, (e, row) => row.OwnerId = e.OwnerId);
         OnElement<ModelEvent.ElementReparented>(e => e.ElementId, (e, row) => row.ParentId = e.ParentId);
-        OnElement<ModelEvent.ElementStatusChanged>(e => e.ElementId, (e, row) => row.Status = e.Status.ToString().ToLowerInvariant());
+        OnElement<ModelEvent.ElementStatusChanged>(e => e.ElementId, (e, row) => row.Status = e.Status);
         OnElement<ModelEvent.ElementRetagged>(e => e.ElementId, (e, row) => row.Tags = e.Tags);
         OnElement<ModelEvent.ElementIconChanged>(e => e.ElementId, (e, row) => row.Icon = e.Icon);
         OnElement<ModelEvent.ElementProvenanceRecorded>(e => e.ElementId, (e, row) =>
         {
-            row.FactStatus = e.Status.ToApiString();
+            row.FactStatus = e.Status;
             row.ProvenanceSource = e.Provenance?.Source;
             row.ProvenanceRevision = e.Provenance?.Revision;
             row.ProvenanceConfidence = e.Provenance?.Confidence;
@@ -106,7 +106,7 @@ public sealed class ModelProjection : Projection<AppDbContext>
                 Technology = added.Technology,
                 MessageId = added.MessageId,
                 LineShape = null,
-                Kind = added.Kind.ToString().ToLowerInvariant()
+                Kind = added.Kind
             });
             return Task.CompletedTask;
         });
@@ -114,10 +114,10 @@ public sealed class ModelProjection : Projection<AppDbContext>
         OnRelationship<ModelEvent.RelationshipLabelChanged>(e => e.RelationshipId, (e, row) => row.Label = e.Label);
         OnRelationship<ModelEvent.RelationshipTechnologyChanged>(e => e.RelationshipId, (e, row) => row.Technology = e.Technology);
         OnRelationship<ModelEvent.RelationshipLineShapeChanged>(e => e.RelationshipId, (e, row) => row.LineShape = e.LineShape);
-        OnRelationship<ModelEvent.RelationshipKindChanged>(e => e.RelationshipId, (e, row) => row.Kind = e.Kind.ToString().ToLowerInvariant());
+        OnRelationship<ModelEvent.RelationshipKindChanged>(e => e.RelationshipId, (e, row) => row.Kind = e.Kind);
         OnRelationship<ModelEvent.RelationshipProvenanceRecorded>(e => e.RelationshipId, (e, row) =>
         {
-            row.FactStatus = e.Status.ToApiString();
+            row.FactStatus = e.Status;
             row.ProvenanceSource = e.Provenance?.Source;
             row.ProvenanceRevision = e.Provenance?.Revision;
             row.ProvenanceConfidence = e.Provenance?.Confidence;
@@ -162,7 +162,7 @@ public sealed class ModelProjection : Projection<AppDbContext>
         });
         OnMessage<ModelEvent.MessageProvenanceRecorded>(e => e.MessageId, (e, row) =>
         {
-            row.FactStatus = e.Status.ToApiString();
+            row.FactStatus = e.Status;
             row.ProvenanceSource = e.Provenance?.Source;
             row.ProvenanceRevision = e.Provenance?.Revision;
             row.ProvenanceConfidence = e.Provenance?.Confidence;
@@ -258,16 +258,16 @@ public sealed class ModelProjection : Projection<AppDbContext>
                 Id = element.Id,
                 ProjectId = projectId,
                 Branch = branch,
-                Kind = element.Kind.ToString().ToLowerInvariant(),
+                Kind = element.Kind,
                 Name = element.Name,
                 Description = element.Description,
                 Technology = element.Technology,
                 OwnerId = element.OwnerId,
-                Status = element.Status.ToString().ToLowerInvariant(),
+                Status = element.Status,
                 ParentId = element.ParentId,
                 Tags = element.Tags,
                 Icon = element.Icon,
-                FactStatus = element.FactStatus.ToApiString(),
+                FactStatus = element.FactStatus,
                 ProvenanceSource = element.Provenance?.Source,
                 ProvenanceRevision = element.Provenance?.Revision,
                 ProvenanceConfidence = element.Provenance?.Confidence,
@@ -293,8 +293,8 @@ public sealed class ModelProjection : Projection<AppDbContext>
                 Technology = relationship.Technology,
                 MessageId = relationship.MessageId,
                 LineShape = relationship.LineShape,
-                Kind = relationship.Kind.ToString().ToLowerInvariant(),
-                FactStatus = relationship.FactStatus.ToApiString(),
+                Kind = relationship.Kind,
+                FactStatus = relationship.FactStatus,
                 ProvenanceSource = relationship.Provenance?.Source,
                 ProvenanceRevision = relationship.Provenance?.Revision,
                 ProvenanceConfidence = relationship.Provenance?.Confidence,
@@ -320,7 +320,7 @@ public sealed class ModelProjection : Projection<AppDbContext>
                 ConsumerIds = message.ConsumerIds.ToGuids(),
                 SchemaId = message.SchemaId,
                 Tags = message.Tags,
-                FactStatus = message.FactStatus.ToApiString(),
+                FactStatus = message.FactStatus,
                 ProvenanceSource = message.Provenance?.Source,
                 ProvenanceRevision = message.Provenance?.Revision,
                 ProvenanceConfidence = message.Provenance?.Confidence,

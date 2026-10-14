@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Vellum.Modules.Drafts;
 using Vellum.Modules.Modelling;
 using Vellum.Shared;
 using Decision = Vellum.Shared.CommandResult<System.Collections.Generic.IReadOnlyList<object>>;
@@ -148,7 +149,7 @@ public static class CostBranches
     /// branch closed writes nothing.
     /// </summary>
     public static async Task<bool> IsClosedAsync(AppDbContext db, Guid branch, CancellationToken ct) =>
-        await db.Drafts.AnyAsync(d => d.StreamId == branch && d.Status != "open", ct)
+        await db.Drafts.AnyAsync(d => d.StreamId == branch && d.Status != DraftStatus.Open, ct)
         || !(await db.Projects.AnyAsync(p => p.StreamId == branch, ct)
             || await db.Drafts.AnyAsync(d => d.StreamId == branch, ct)
             || await db.Variants.AnyAsync(v => v.StreamId == branch, ct));

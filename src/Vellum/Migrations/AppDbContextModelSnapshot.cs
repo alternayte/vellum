@@ -7,10 +7,12 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Vellum.Modules.Ai;
 using Vellum.Modules.Costs;
+using Vellum.Modules.Drafts;
 using Vellum.Modules.Identity.AgentTokens;
 using Vellum.Modules.Import;
 using Vellum.Modules.Import.Extraction;
 using Vellum.Modules.LoadTests;
+using Vellum.Modules.Modelling;
 using Vellum.Modules.Promises;
 using Vellum.Modules.Review;
 using Vellum.Modules.Workspaces;
@@ -37,6 +39,7 @@ namespace Vellum.Migrations
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "ai", "design_proposal_kind", new[] { "architecture", "flow" });
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "ai", "design_proposal_status", new[] { "accepted", "decided", "draft", "rejected" });
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "costs", "price_source_kind", new[] { "custom", "fetched" });
+            NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "drafts", "draft_status", new[] { "abandoned", "merged", "open" });
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "identity", "agent_scope", new[] { "export", "propose", "read", "scan_pull_request" });
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "import", "coverage_gap", new[] { "failed", "limit", "scope", "withheld" });
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "import", "entity_kind", new[] { "binding", "channel", "element", "message", "operation", "schema", "subscription" });
@@ -48,6 +51,11 @@ namespace Vellum.Migrations
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "import", "scan_status", new[] { "cancelled", "completed", "failed", "queued", "running", "waiting" });
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "import", "subject", new[] { "fact", "repository" });
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "loadtests", "target_environment", new[] { "development", "production", "staging", "test" });
+            NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "modelling", "element_kind", new[] { "actor", "app", "component", "store", "system" });
+            NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "modelling", "element_status", new[] { "current", "deprecated", "planned", "removed" });
+            NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "modelling", "fact_status", new[] { "declared", "inferred", "measured", "observed_in_source", "unknown" });
+            NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "modelling", "relationship_kind", new[] { "behavioural", "structural" });
+            NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "modelling", "variant_status", new[] { "open" });
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "promises", "impact_gate_policy", new[] { "fail_on_broken", "off" });
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "promises", "promise_lifecycle", new[] { "approved", "draft", "retired" });
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "promises", "promise_origin", new[] { "agent_suggested", "ai_suggested", "human" });
@@ -839,9 +847,8 @@ namespace Vellum.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("project_id");
 
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasColumnType("text")
+                    b.Property<DraftStatus>("Status")
+                        .HasColumnType("drafts.draft_status")
                         .HasColumnName("status");
 
                     b.Property<Guid>("StreamId")
@@ -2068,9 +2075,8 @@ namespace Vellum.Migrations
                         .HasColumnType("text")
                         .HasColumnName("description");
 
-                    b.Property<string>("FactStatus")
-                        .IsRequired()
-                        .HasColumnType("text")
+                    b.Property<FactStatus>("FactStatus")
+                        .HasColumnType("modelling.fact_status")
                         .HasColumnName("fact_status");
 
                     b.Property<string>("Icon")
@@ -2081,9 +2087,8 @@ namespace Vellum.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
-                    b.Property<string>("Kind")
-                        .IsRequired()
-                        .HasColumnType("text")
+                    b.Property<ElementKind>("Kind")
+                        .HasColumnType("modelling.element_kind")
                         .HasColumnName("kind");
 
                     b.Property<string>("Name")
@@ -2139,9 +2144,8 @@ namespace Vellum.Migrations
                         .HasColumnType("text")
                         .HasColumnName("stale_since_revision");
 
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasColumnType("text")
+                    b.Property<ElementStatus>("Status")
+                        .HasColumnType("modelling.element_status")
                         .HasColumnName("status");
 
                     b.PrimitiveCollection<string[]>("Tags")
@@ -2186,9 +2190,8 @@ namespace Vellum.Migrations
                         .HasColumnType("text")
                         .HasColumnName("description");
 
-                    b.Property<string>("FactStatus")
-                        .IsRequired()
-                        .HasColumnType("text")
+                    b.Property<FactStatus>("FactStatus")
+                        .HasColumnType("modelling.fact_status")
                         .HasColumnName("fact_status");
 
                     b.Property<Guid>("Id")
@@ -2277,9 +2280,8 @@ namespace Vellum.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("branch");
 
-                    b.Property<string>("FactStatus")
-                        .IsRequired()
-                        .HasColumnType("text")
+                    b.Property<FactStatus>("FactStatus")
+                        .HasColumnType("modelling.fact_status")
                         .HasColumnName("fact_status");
 
                     b.Property<Guid>("FromId")
@@ -2290,9 +2292,8 @@ namespace Vellum.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
-                    b.Property<string>("Kind")
-                        .IsRequired()
-                        .HasColumnType("text")
+                    b.Property<RelationshipKind>("Kind")
+                        .HasColumnType("modelling.relationship_kind")
                         .HasColumnName("kind");
 
                     b.Property<string>("Label")
@@ -2454,9 +2455,8 @@ namespace Vellum.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("project_id");
 
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasColumnType("text")
+                    b.Property<VariantStatus>("Status")
+                        .HasColumnType("modelling.variant_status")
                         .HasColumnName("status");
 
                     b.Property<Guid>("StreamId")

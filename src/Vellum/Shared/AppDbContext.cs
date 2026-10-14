@@ -2,7 +2,6 @@ using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using Npgsql.NameTranslation;
-using Npgsql.EntityFrameworkCore.PostgreSQL.Infrastructure;
 using Vellum.Modules.Ai.Design;
 using Vellum.Modules.Ai;
 using Vellum.Modules.Costs;
@@ -163,6 +162,8 @@ public static class AppDatabase
     private static readonly IReadOnlyList<PostgresEnum> Enums =
     [
         .. WorkspacesTables.Enums,
+        .. ModellingTables.Enums,
+        .. DraftsTables.Enums,
         .. ImportTables.Enums,
         .. AiTables.Enums,
         .. CostsTables.Enums,

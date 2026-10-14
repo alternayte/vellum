@@ -54,7 +54,7 @@ public static class GetRelationship
         return Results.Ok(new RelationshipDto(
             entity.Id, entity.FromId, entity.ToId,
             entity.Label, entity.Technology, entity.MessageId, entity.LineShape,
-            entity.Kind, entity.FactStatus,
+            EnumText.Of(entity.Kind), entity.FactStatus.ToApiString(),
             ProvenanceMapper.ToDto(entity.ProvenanceSource, entity.ProvenanceRevision,
                 entity.ProvenanceConfidence, entity.ProvenanceAcceptedBy, entity.ProvenanceAcceptedAt, entity.ProvenanceAcceptedAtVersion, entity.ProvenanceAcceptedOnBranch),
             StaleDto.From(entity.StaleSinceRevision, entity.StaleReason)));
@@ -119,7 +119,7 @@ public static class ListRelationships
         }
 
         var items = rows.Select(r => new RelationshipDto(
-            r.Id, r.FromId, r.ToId, r.Label, r.Technology, r.MessageId, r.LineShape, r.Kind, r.FactStatus,
+            r.Id, r.FromId, r.ToId, r.Label, r.Technology, r.MessageId, r.LineShape, EnumText.Of(r.Kind), r.FactStatus.ToApiString(),
             ProvenanceMapper.ToDto(r.ProvenanceSource, r.ProvenanceRevision, r.ProvenanceConfidence,
                 r.ProvenanceAcceptedBy, r.ProvenanceAcceptedAt, r.ProvenanceAcceptedAtVersion, r.ProvenanceAcceptedOnBranch),
             StaleDto.From(r.StaleSinceRevision, r.StaleReason))).ToList();

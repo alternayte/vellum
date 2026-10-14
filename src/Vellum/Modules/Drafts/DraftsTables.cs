@@ -8,6 +8,11 @@ public static class DraftsTables
 {
     public const string Schema = "drafts";
 
+    public static readonly IReadOnlyList<PostgresEnum> Enums =
+    [
+        PostgresEnum.Of<DraftStatus>("draft_status", Schema),
+    ];
+
     public static void Configure(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<DraftEntity>(b =>
@@ -43,7 +48,7 @@ public class DraftEntity
     public Guid StreamId { get; set; }
     public Guid BaseStreamId { get; set; }
     public int ForkVersion { get; set; }
-    public string Status { get; set; } = "open";
+    public DraftStatus Status { get; set; } = DraftStatus.Open;
     public string CreatedBy { get; set; } = null!;
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset? MergedAt { get; set; }
@@ -61,4 +66,11 @@ public class CommentEntity
     public string Body { get; set; } = null!;
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
+}
+
+public enum DraftStatus
+{
+    Open,
+    Merged,
+    Abandoned,
 }
