@@ -142,12 +142,6 @@ builder.Services.AddLoadTestsModule();
 builder.Services.AddCostsModule();
 builder.Services.AddReviewModule();
 
-// Command handlers (Scrutor scan)
-builder.Services.Scan(s => s.FromAssemblyOf<Program>()
-    .AddClasses(c => c.AssignableTo(typeof(ICommandHandler<,>)))
-    .AsImplementedInterfaces()
-    .WithScopedLifetime());
-
 var app = builder.Build();
 
 // The environment is read once, here. An unsafe hosted bootstrap stops the start with a

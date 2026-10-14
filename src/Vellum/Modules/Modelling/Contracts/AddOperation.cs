@@ -10,14 +10,11 @@ public sealed record AddOperationRequest(
     Guid? RequestSchemaId, Guid? ResponseSchemaId,
     int? TimeoutMs, RetryDto? Retry);
 
-public sealed record AddOperationCommandEnvelope(Guid ProjectId, Guid StreamId, AddOperationRequest Request);
-
-public sealed class AddOperationHandler(IServiceProvider services)
-    : ICommandHandler<AddOperationCommandEnvelope, CommandResult<OperationDto>>
+public static class AddOperation
 {
-    public async Task<CommandResult<OperationDto>> HandleAsync(AddOperationCommandEnvelope cmd, CancellationToken ct = default)
+    public static async Task<CommandResult<OperationDto>> HandleAsync(
+        IServiceProvider services, Guid projectId, Guid streamId, AddOperationRequest request, CancellationToken ct)
     {
-        var request = cmd.Request;
         if (request.Transport is null || !ModelEnum.TryParseDefined(request.Transport, out Transport transport))
             return new CommandResult<OperationDto>.Invalid([new ValidationError("transport", "Transport must be http, grpc or command")]);
 
@@ -27,7 +24,7 @@ public sealed class AddOperationHandler(IServiceProvider services)
             request.TimeoutMs ?? 0, request.Retry?.ToDomain() ?? RetryPolicy.None);
 
         return await SchemaBoundWrite.DecideAsync(
-            services, cmd.ProjectId, cmd.StreamId,
+            services, projectId, streamId,
             [("requestSchemaId", request.RequestSchemaId), ("responseSchemaId", request.ResponseSchemaId)],
             state => ContractDecider.AddOperation(state, add),
             state => OperationDto.From(state.Operations[request.Id]),

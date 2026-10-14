@@ -250,7 +250,7 @@ public static class DecideProposals
                 failures.Add(new DecisionFailure(proposalId, "The schema list is being rebuilt. Nothing was applied; try again."));
                 continue;
             }
-            if (await DeleteSchemaHandler.ReferrersAsync(services, store, new DeleteSchemaCommandEnvelope(scan.ProjectId, schemaId), ct) is { } refusal)
+            if (await DeleteSchema.ReferrersAsync(services, store, scan.ProjectId, schemaId, ct) is { } refusal)
             {
                 failures.Add(new DecisionFailure(proposalId, refusal));
                 continue;

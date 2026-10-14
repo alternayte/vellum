@@ -30,6 +30,7 @@ public static class CreateRevision
         ClaimsPrincipal user,
         HttpContext http,
         WorkspaceAuthorizationService auth,
+        TimeProvider time,
         CancellationToken ct)
     {
         var userId = user.UserId();
@@ -86,7 +87,7 @@ public static class CreateRevision
                 Version = checked((int)pinned.Version),
                 State = JsonSerializer.Serialize(pinned.State, JsonOpts),
                 CreatedBy = userId,
-                CreatedAt = DateTimeOffset.UtcNow,
+                CreatedAt = time.GetUtcNow(),
             };
 
             db.Revisions.Add(revision);

@@ -31,22 +31,4 @@ public class ConventionTests
                 Assert.Matches(snakeCase, property.GetColumnName(store)!);
         }
     }
-
-    [Fact]
-    public void All_command_handlers_are_in_a_module()
-    {
-        var assembly = typeof(Program).Assembly;
-        var handlerTypes = assembly.GetTypes()
-            .Where(t => !t.IsAbstract
-                && t.GetInterfaces().Any(i =>
-                    i.IsGenericType && i.GetGenericTypeDefinition() == typeof(ICommandHandler<,>)))
-            .ToList();
-
-        Assert.NotEmpty(handlerTypes);
-        foreach (var handler in handlerTypes)
-        {
-            Assert.Contains("Vellum.Modules", handler.Namespace!,
-                StringComparison.Ordinal);
-        }
-    }
 }

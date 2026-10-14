@@ -9,22 +9,20 @@ using Vellum.Shared;
 
 namespace Vellum.Modules.Schemas;
 
-public sealed record DeleteSchemaCommandEnvelope(Guid ProjectId, Guid SchemaId);
-
 /// <summary>
 /// A schema that a live branch or a stored revision names stays. A revision is a fixed
 /// snapshot that a variant can be forked from at any later time, so a schema it names can
 /// never be deleted.
 /// </summary>
-public sealed class DeleteSchemaHandler(IServiceProvider requestServices)
-    : ICommandHandler<DeleteSchemaCommandEnvelope, CommandResult>
+public static class DeleteSchema
 {
-    public async Task<CommandResult> HandleAsync(DeleteSchemaCommandEnvelope cmd, CancellationToken ct = default)
+    public static async Task<CommandResult> HandleAsync(
+        IServiceProvider requestServices, Guid projectId, Guid schemaId, CancellationToken ct)
     {
         // An ID that is no schema of this project is not looked up in the event store: it can
         // name a stream of another kind.
         var belongsToProject = await requestServices.GetRequiredService<AppDbContext>().Schemas.AsNoTracking()
-            .AnyAsync(s => s.Id == cmd.SchemaId && s.ProjectId == cmd.ProjectId, ct);
+            .AnyAsync(s => s.Id == schemaId && s.ProjectId == projectId, ct);
         if (!belongsToProject)
             return new CommandResult.NotFound("Schema not found");
 
@@ -38,23 +36,23 @@ public sealed class DeleteSchemaHandler(IServiceProvider requestServices)
 
             // The stream lock first, then the row lock (see SchemaReferences). From here until
             // the commit no transaction can write a new reference to this schema.
-            var locked = await store.Execute<SchemaState>(StreamId.From(cmd.SchemaId), _ => [], ct);
-            if (locked.State.Schema?.ProjectId != cmd.ProjectId)
+            var locked = await store.Execute<SchemaState>(StreamId.From(schemaId), _ => [], ct);
+            if (locked.State.Schema?.ProjectId != projectId)
                 return new CommandResult.NotFound("Schema not found");
 
-            var decision = SchemaDecider.Delete(locked.State, cmd.SchemaId);
+            var decision = SchemaDecider.Delete(locked.State, schemaId);
             if (decision is not CommandResult<IReadOnlyList<object>>.Success delete)
                 return new CommandResult.NotFound("Schema not found");
 
             // The stream has the schema and the read model has no row for it: the read model
             // is being rebuilt. The row is the guard, so the delete waits for it.
-            if (!await SchemaReferences.HoldForDeleteAsync(db, cmd.SchemaId, ct))
+            if (!await SchemaReferences.HoldForDeleteAsync(db, schemaId, ct))
                 return new CommandResult.Conflict("The schema list is being rebuilt. Nothing was deleted; try again.");
 
-            if (await ReferrersAsync(services, store, cmd, ct) is { } refusal)
+            if (await ReferrersAsync(services, store, projectId, schemaId, ct) is { } refusal)
                 return new CommandResult.Conflict(refusal);
 
-            await store.Append(StreamId.From(cmd.SchemaId), ExpectedVersion.Exact(locked.Version), delete.Value, ct);
+            await store.Append(StreamId.From(schemaId), ExpectedVersion.Exact(locked.Version), delete.Value, ct);
             await transaction.CommitAsync(ct);
             return new CommandResult.Success();
         }, ct);
@@ -65,7 +63,7 @@ public sealed class DeleteSchemaHandler(IServiceProvider requestServices)
     /// every transaction that could add a reference has either committed or waits for the row.
     /// </summary>
     internal static async Task<string?> ReferrersAsync(
-        IServiceProvider services, IEventStore store, DeleteSchemaCommandEnvelope cmd, CancellationToken ct)
+        IServiceProvider services, IEventStore store, Guid projectId, Guid schemaId, CancellationToken ct)
     {
         var db = services.GetRequiredService<AppDbContext>();
 
@@ -74,11 +72,11 @@ public sealed class DeleteSchemaHandler(IServiceProvider requestServices)
         // in one commit, and the draft's stream keeps it, so one of the two reads finds it.
         var references = new List<string>();
         var branches = await ModelBranches.OpenAsync(
-            cmd.ProjectId, db, ct);
+            projectId, db, ct);
         foreach (var (streamId, branch) in branches)
         {
             var (model, _) = await store.Load<ModelState>(StreamId.From(streamId), ct);
-            references.AddRange(ContractDecider.ReferencesToSchema(model, cmd.SchemaId).Select(r => $"{r} on {branch}"));
+            references.AddRange(ContractDecider.ReferencesToSchema(model, schemaId).Select(r => $"{r} on {branch}"));
         }
 
         if (references.Count > 0)
@@ -89,15 +87,15 @@ public sealed class DeleteSchemaHandler(IServiceProvider requestServices)
 
         // A revision stores its model as JSON text, in which a GUID has one spelling. The text
         // search selects the few revisions that can name the schema; each is then read as a model.
-        var idText = cmd.SchemaId.ToString();
+        var idText = schemaId.ToString();
         var candidates = db.Revisions.AsNoTracking()
-            .Where(r => r.ProjectId == cmd.ProjectId && r.State.Contains(idText))
+            .Where(r => r.ProjectId == projectId && r.State.Contains(idText))
             .OrderBy(r => r.CreatedAt).ThenBy(r => r.Id)
             .Select(r => new { r.Name, r.State })
             .AsAsyncEnumerable();
         await foreach (var revision in candidates.WithCancellation(ct))
         {
-            var pinned = ContractDecider.ReferencesToSchema(CreateRevision.ReadState(revision.State), cmd.SchemaId);
+            var pinned = ContractDecider.ReferencesToSchema(CreateRevision.ReadState(revision.State), schemaId);
             if (pinned.Count > 0)
             {
                 return $"Schema cannot be deleted. It is referenced by {string.Join(", ", pinned)} in revision '{revision.Name}'. " +

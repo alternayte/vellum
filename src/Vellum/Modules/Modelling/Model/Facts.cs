@@ -104,10 +104,10 @@ public static class ProvenanceMapper
             ? null
             : new ProvenanceDto(source, revision, confidence, acceptedBy, acceptedAt);
 
-    public static Provenance? ToDomain(ProvenanceInput? input, Guid actorId) =>
+    public static Provenance? ToDomain(ProvenanceInput? input, Guid actorId, DateTimeOffset acceptedAt) =>
         input is null
             ? null
-            : new Provenance(input.Source, input.Revision, input.Confidence, actorId, DateTimeOffset.UtcNow);
+            : new Provenance(input.Source, input.Revision, input.Confidence, actorId, acceptedAt);
 }
 
 public static class FactRules

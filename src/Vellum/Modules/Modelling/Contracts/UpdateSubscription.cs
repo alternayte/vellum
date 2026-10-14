@@ -13,16 +13,12 @@ public sealed record UpdateSubscriptionRequest(
     Guid? DeadLetterChannelId, bool SetDeadLetterChannelId = false,
     string? FactStatus = null, ProvenanceInput? Provenance = null, bool SetProvenance = false);
 
-public sealed record UpdateSubscriptionCommandEnvelope(
-    Guid ProjectId, Guid StreamId, Guid SubscriptionId, string UserId, UpdateSubscriptionRequest Request);
-
-public sealed class UpdateSubscriptionHandler(IEventStore store)
-    : ICommandHandler<UpdateSubscriptionCommandEnvelope, CommandResult<SubscriptionDto>>
+public static class UpdateSubscription
 {
-    public async Task<CommandResult<SubscriptionDto>> HandleAsync(UpdateSubscriptionCommandEnvelope cmd, CancellationToken ct = default)
+    public static async Task<CommandResult<SubscriptionDto>> HandleAsync(
+        IEventStore store, Guid projectId, Guid streamId, Guid subscriptionId, string userId, UpdateSubscriptionRequest request, TimeProvider time, CancellationToken ct)
     {
-        var request = cmd.Request;
-        SubscriptionId id = cmd.SubscriptionId;
+        SubscriptionId id = subscriptionId;
 
         if (!ContractRequests.TryReadFactStatus(request.FactStatus, out var requestedStatus, out var statusError))
             return new CommandResult<SubscriptionDto>.Invalid([statusError!]);
@@ -37,11 +33,11 @@ public sealed class UpdateSubscriptionHandler(IEventStore store)
 
         // The acceptance stamp is taken once, so the decision stays a pure function of the state.
         var supplied = request.SetProvenance
-            ? ProvenanceMapper.ToDomain(request.Provenance, Guid.Parse(cmd.UserId))
+            ? ProvenanceMapper.ToDomain(request.Provenance, Guid.Parse(userId), time.GetUtcNow())
             : null;
 
-        return await store.ForProject(cmd.ProjectId).Decide<ModelState, SubscriptionDto>(
-            cmd.StreamId,
+        return await store.ForProject(projectId).Decide<ModelState, SubscriptionDto>(
+            streamId,
             state => ContractDecider.UpdateSubscription(state, update).Then(state, after =>
                 requestedStatus is null && !request.SetProvenance
                     ? new CommandResult<IReadOnlyList<object>>.Success([])

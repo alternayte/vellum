@@ -31,6 +31,7 @@ public static class CreateVariant
         ClaimsPrincipal user,
         HttpContext http,
         WorkspaceAuthorizationService auth,
+        TimeProvider time,
         CancellationToken ct)
     {
         var userId = user.UserId();
@@ -121,7 +122,7 @@ public static class CreateVariant
                 ForkVersion = checked((int)forkVersion),
                 Status = "open",
                 CreatedBy = userId,
-                CreatedAt = DateTimeOffset.UtcNow,
+                CreatedAt = time.GetUtcNow(),
             };
             db.Variants.Add(variant);
 

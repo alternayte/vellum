@@ -1,3 +1,4 @@
+using Deedbox;
 using Vellum.Modules.Identity.AgentTokens;
 using System.Security.Claims;
 using Vellum.Shared;
@@ -19,13 +20,12 @@ public static class SchemaEndpoints
             CreateSchemaRequest request,
             ClaimsPrincipal user,
             WorkspaceAuthorizationService auth,
-            ICommandHandler<CreateSchemaCommandEnvelope, CommandResult<SchemaDto>> handler,
+            IEventStore store,
             CancellationToken ct) =>
         {
             var userId = user.UserId();
             await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
-            return (await handler.HandleAsync(
-                new CreateSchemaCommandEnvelope(projectId, request), ct))
+            return (await CreateSchema.HandleAsync(store, projectId, request, ct))
                 .ToCreatedResult($"/api/projects/{projectId}/schemas/{request.Id}");
         });
 
@@ -57,13 +57,13 @@ public static class SchemaEndpoints
             UpdateSchemaRequest request,
             ClaimsPrincipal user,
             WorkspaceAuthorizationService auth,
-            ICommandHandler<UpdateSchemaCommandEnvelope, CommandResult<SchemaDto>> handler,
+            IEventStore store,
+            AppDbContext db,
             CancellationToken ct) =>
         {
             var userId = user.UserId();
             await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
-            return (await handler.HandleAsync(
-                new UpdateSchemaCommandEnvelope(projectId, schemaId, request), ct))
+            return (await UpdateSchema.HandleAsync(store, db, projectId, schemaId, request, ct))
                 .ToHttpResult();
         });
 
@@ -71,13 +71,12 @@ public static class SchemaEndpoints
             Guid projectId, Guid schemaId,
             ClaimsPrincipal user,
             WorkspaceAuthorizationService auth,
-            ICommandHandler<DeleteSchemaCommandEnvelope, CommandResult> handler,
+            HttpContext http,
             CancellationToken ct) =>
         {
             var userId = user.UserId();
             await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
-            return (await handler.HandleAsync(
-                new DeleteSchemaCommandEnvelope(projectId, schemaId), ct))
+            return (await DeleteSchema.HandleAsync(http.RequestServices, projectId, schemaId, ct))
                 .ToHttpResult();
         });
 

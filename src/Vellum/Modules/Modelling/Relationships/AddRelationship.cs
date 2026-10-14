@@ -8,28 +8,23 @@ public sealed record AddRelationshipRequest(
     Guid Id, Guid FromId, Guid ToId, string? Label, string? Technology,
     string? Kind = null);
 
-public sealed record AddRelationshipCommandEnvelope(Guid ProjectId, Guid StreamId, AddRelationshipRequest Request);
-
-public sealed class AddRelationshipHandler : ICommandHandler<AddRelationshipCommandEnvelope, CommandResult<RelationshipDto>>
+public static class AddRelationship
 {
-    private readonly IEventStore _store;
-
-    public AddRelationshipHandler(IEventStore store) => _store = store;
-
-    public async Task<CommandResult<RelationshipDto>> HandleAsync(AddRelationshipCommandEnvelope cmd, CancellationToken ct = default)
+    public static async Task<CommandResult<RelationshipDto>> HandleAsync(
+        IEventStore store, Guid projectId, Guid streamId, AddRelationshipRequest request, CancellationToken ct)
     {
         var kind = RelationshipKind.Structural;
-        if (cmd.Request.Kind is not null && !ModelEnum.TryParseDefined(cmd.Request.Kind, out kind))
+        if (request.Kind is not null && !ModelEnum.TryParseDefined(request.Kind, out kind))
             return new CommandResult<RelationshipDto>.Invalid([new ValidationError("kind", "Invalid relationship kind")]);
 
         var addCmd = new AddRelationshipCommand(
-            cmd.Request.Id, cmd.Request.FromId, cmd.Request.ToId,
-            cmd.Request.Label, cmd.Request.Technology, kind);
+            request.Id, request.FromId, request.ToId,
+            request.Label, request.Technology, kind);
 
-        return await _store.ForProject(cmd.ProjectId).Decide<ModelState, RelationshipDto>(
-            cmd.StreamId,
+        return await store.ForProject(projectId).Decide<ModelState, RelationshipDto>(
+            streamId,
             state => ModelDecider.AddRelationship(state, addCmd),
-            state => ToDto(state.Relationships[cmd.Request.Id]),
+            state => ToDto(state.Relationships[request.Id]),
             ct);
     }
 
