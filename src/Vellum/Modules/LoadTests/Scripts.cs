@@ -78,7 +78,7 @@ public static class Scripts
                 ScenarioId = profile.ScenarioId, ScenarioVersion = world.ScenarioVersion,
                 ModelStreamId = streamId, ModelVersion = world.ModelVersion,
                 ProfileId = profileRow.Id, ProfileVersion = profileRow.Version,
-                TargetId = request.TargetId, TargetName = target.Name!, BaseUrl = authorisation.BaseUrl, Environment = authorisation.Environment,
+                TargetId = request.TargetId, TargetName = target.Name!, BaseUrl = authorisation.BaseUrl, Environment = EnumText.Parse<StoredTargetEnvironment>(authorisation.Environment),
                 AuthorisedBy = authorisation.By, AuthorisedAt = authorisation.At,
                 Content = script.Content, Plan = JsonSerializer.Serialize(script.Plan, Json),
                 CreatedBy = userId, CreatedAt = time.GetUtcNow(),
@@ -164,7 +164,7 @@ public static class Scripts
         return new ScriptDto(
             row.Id, row.Hash, file, K6ScriptGenerator.Version,
             row.ScenarioId, row.ScenarioVersion, row.ModelStreamId, row.ModelVersion, row.ProfileId, row.ProfileVersion,
-            row.TargetId, row.TargetName, row.BaseUrl, row.Environment, row.AuthorisedBy, row.AuthorisedAt, row.CreatedAt,
+            row.TargetId, row.TargetName, row.BaseUrl, EnumText.Of(row.Environment), row.AuthorisedBy, row.AuthorisedAt, row.CreatedAt,
             Plan(row), Command(row.BaseUrl, file), CiWorkflow(row.BaseUrl, file), withContent ? row.Content : null);
     }
 

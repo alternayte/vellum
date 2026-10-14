@@ -61,21 +61,22 @@ public static class GetAiUsage
                 Output = g.Sum(r => (long)(r.OutputTokens ?? 0)),
                 CostKnownCalls = g.Count(r => r.CostUsd != null),
                 CostEstimatedCalls = g.Count(r => r.CostUsd != null
-                    && (r.UsageNote == AiUsageLedger.NoteEstimated || r.UsageNote == AiUsageLedger.NoteOutOfRange)),
+                    && (r.UsageNote == AiUsageNote.CostEstimated || r.UsageNote == AiUsageNote.UsageOutOfRange)),
                 Cost = g.Sum(r => r.CostUsd ?? 0m),
             })
             .ToListAsync(ct);
 
         var totals = groups
-            .OrderBy(g => g.Key.ProviderKind, StringComparer.Ordinal).ThenBy(g => g.Key.Model, StringComparer.Ordinal)
-            .ThenBy(g => g.Key.Task, StringComparer.Ordinal).ThenBy(g => g.Key.ProviderId)
-            .Select(g => new AiUsageTotal(
-                g.Key.ProviderId, g.Key.ProviderKind, g.Key.Model, g.Key.Task, g.Calls,
-                g.InputReported > 0 ? g.Input : null,
-                g.OutputReported > 0 ? g.Output : null,
-                g.CostKnownCalls > 0 ? g.Cost : null,
-                g.CostKnownCalls == g.Calls,
-                g.CostEstimatedCalls > 0))
+            .Select(g => (Group: g, Kind: EnumText.Of(g.Key.ProviderKind), Task: AiUsageLedger.TaskText(g.Key.Task)))
+            .OrderBy(t => t.Kind, StringComparer.Ordinal).ThenBy(t => t.Group.Key.Model, StringComparer.Ordinal)
+            .ThenBy(t => t.Task, StringComparer.Ordinal).ThenBy(t => t.Group.Key.ProviderId)
+            .Select(t => new AiUsageTotal(
+                t.Group.Key.ProviderId, t.Kind, t.Group.Key.Model, t.Task, t.Group.Calls,
+                t.Group.InputReported > 0 ? t.Group.Input : null,
+                t.Group.OutputReported > 0 ? t.Group.Output : null,
+                t.Group.CostKnownCalls > 0 ? t.Group.Cost : null,
+                t.Group.CostKnownCalls == t.Group.Calls,
+                t.Group.CostEstimatedCalls > 0))
             .ToList();
 
         return Results.Ok(new AiUsageResponse(start, end, totals));
@@ -115,11 +116,13 @@ public static class ModelPrices
     public static async Task<IResult> List(ClaimsPrincipal user, InstanceAuthorization admins, AppDbContext db, CancellationToken ct)
     {
         await admins.RequireAdminAsync(user, ct);
-        var prices = await db.ModelPrices.AsNoTracking()
+        // The labels of the kind sort as the text of the kind does.
+        var rows = await db.ModelPrices.AsNoTracking()
             .OrderBy(p => p.ProviderKind).ThenBy(p => p.Model).ThenByDescending(p => p.EffectiveFrom)
-            .Select(p => new ModelPriceDto(p.ProviderKind, p.Model, p.InputUsdPerMillionTokens, p.OutputUsdPerMillionTokens, p.EffectiveFrom))
             .ToListAsync(ct);
-        return Results.Ok(prices);
+        return Results.Ok(rows
+            .Select(p => new ModelPriceDto(EnumText.Of(p.ProviderKind), p.Model, p.InputUsdPerMillionTokens, p.OutputUsdPerMillionTokens, p.EffectiveFrom))
+            .ToList());
     }
 
     public static async Task<IResult> Set(
@@ -144,13 +147,14 @@ public static class ModelPrices
             request.ProviderKind!, request.Model!, Stored(request.InputUsdPerMillionTokens)!.Value, Stored(request.OutputUsdPerMillionTokens)!.Value,
             (request.EffectiveFrom ?? time.GetUtcNow()).ToUniversalTime());
         var id = Guid.NewGuid();
+        var kind = EnumText.Parse<AiProviderKind>(price.ProviderKind);
 
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         await db.Database.ExecuteSqlAsync($"""
             INSERT INTO ai.model_prices
                 (id, provider_kind, model, input_usd_per_million_tokens, output_usd_per_million_tokens, effective_from, created_at, created_by)
             VALUES
-                ({id}, {price.ProviderKind}, {price.Model}, {price.InputUsdPerMillionTokens}, {price.OutputUsdPerMillionTokens},
+                ({id}, {kind}, {price.Model}, {price.InputUsdPerMillionTokens}, {price.OutputUsdPerMillionTokens},
                  {price.EffectiveFrom}, now(), {adminId})
             ON CONFLICT (provider_kind, model, effective_from) DO UPDATE
             SET input_usd_per_million_tokens = excluded.input_usd_per_million_tokens,

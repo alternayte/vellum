@@ -163,7 +163,7 @@ public static class PromiseReads
             if (AgentPrincipal.IsAgentActor(actor))
             {
                 var token = tokens.FirstOrDefault(t => AgentPrincipal.AgentActorPrefix + t.Id == actor);
-                var ci = token?.Scopes.Contains(AgentScopes.Name(AgentScope.ScanPullRequest)) == true;
+                var ci = token?.Scopes.Contains(AgentScope.ScanPullRequest) == true;
                 starters[actor] = new RunStarter(ci ? RunStarter.CiToken : RunStarter.AgentToken, token?.Name);
             }
             else

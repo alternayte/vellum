@@ -90,7 +90,7 @@ public static class AgentTokenEndpoints
             WorkspaceId = workspaceId,
             ProjectId = request.ProjectId,
             Name = name,
-            Scopes = scopes.Select(AgentScopes.Name).ToArray(),
+            Scopes = scopes.ToArray(),
             TokenHash = AgentTokenSecret.Digest(keys, keys.Current.Id, token)!,
             MasterKeyId = keys.Current.Id,
             CreatedBy = userId,
@@ -121,12 +121,12 @@ public static class AgentTokenEndpoints
         db.AgentTokens.Add(row);
         await db.SaveChangesAsync(ct);
         await AuditLog.AppendAsync(db, workspaceId, userId, AgentTokenAudit.Created,
-            $"agent-token:{id} scopes:{string.Join(",", row.Scopes)} project:{row.ProjectId?.ToString() ?? "all"} expires:{expiresAt:yyyy-MM-ddTHH:mm:ssZ}",
+            $"agent-token:{id} scopes:{string.Join(",", row.Scopes.Select(AgentScopes.Name))} project:{row.ProjectId?.ToString() ?? "all"} expires:{expiresAt:yyyy-MM-ddTHH:mm:ssZ}",
             ct);
         await transaction.CommitAsync(ct);
 
         return Results.Created($"/api/db/{workspaceId}/agent-tokens/{id}",
-            new AgentTokenCreated(id, row.Name, token, row.Scopes, row.ProjectId, row.ExpiresAt));
+            new AgentTokenCreated(id, row.Name, token, row.Scopes.Select(AgentScopes.Name).ToList(), row.ProjectId, row.ExpiresAt));
     }
 
     /// <summary>
@@ -148,7 +148,7 @@ public static class AgentTokenEndpoints
             .ToListAsync(ct);
 
         return Results.Ok(rows
-            .Select(t => new AgentTokenDto(t.Id, t.Name, t.Scopes, t.ProjectId, t.CreatedBy, t.CreatedAt, t.ExpiresAt, t.LastUsedAt, t.RevokedAt))
+            .Select(t => new AgentTokenDto(t.Id, t.Name, t.Scopes.Select(AgentScopes.Name).ToList(), t.ProjectId, t.CreatedBy, t.CreatedAt, t.ExpiresAt, t.LastUsedAt, t.RevokedAt))
             .ToList());
     }
 

@@ -7,14 +7,6 @@ using static Vellum.Shared.ResultExtensions;
 
 namespace Vellum.Modules.Costs.Prices;
 
-public static class PriceSourceKind
-{
-    /// <summary>A person entered the number, one at a time or in a CSV file.</summary>
-    public const string Custom = "custom";
-    /// <summary>Vellum read the number from a provider's price API, and a person picked the row.</summary>
-    public const string Fetched = "fetched";
-}
-
 /// <param name="Provider">A name such as <c>azure</c>, <c>aws</c>, <c>gcp</c> or <c>hetzner</c>. See <see cref="CostProvider"/>.</param>
 /// <param name="UnitPrice">Necessary. It is nullable so that a body without it is refused and not stored as a price of 0.</param>
 public sealed record CustomPriceRequest(
@@ -52,7 +44,7 @@ public sealed record PriceEntryDto(
 {
     public static PriceEntryDto From(PriceEntryEntity entry, IReadOnlyList<PriceUserDto>? usedBy = null) => new(
         entry.Id, entry.Provider, entry.Region, entry.Sku, entry.Description, entry.Unit, entry.UnitPrice, entry.Currency,
-        entry.EffectiveDate, entry.Source, entry.AcceptedBy, entry.AcceptedAt,
+        entry.EffectiveDate, EnumText.Of(entry.Source), entry.AcceptedBy, entry.AcceptedAt,
         entry.Source == PriceSourceKind.Fetched
             ? new FetchedFrom(entry.SourceUrl!, entry.FetchedAt!.Value, entry.MeterId!, entry.ProviderEffectiveDate)
             : null,

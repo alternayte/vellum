@@ -166,13 +166,13 @@ public static class MeasuredResults
         // A result is attributed to a target only while the authorisation that the script was generated under is in
         // force. A later authorisation, by any person, is another one: it does not admit the scripts of an earlier one.
         var target = await Targets.LoadAsync(db, projectId, script.TargetId, ct);
-        if (target?.State.AuthorisationInForce is not { } authorisation || authorisation.BaseUrl != script.BaseUrl || authorisation.Environment != script.Environment
+        if (target?.State.AuthorisationInForce is not { } authorisation || authorisation.BaseUrl != script.BaseUrl || authorisation.Environment != EnumText.Of(script.Environment)
             || authorisation.By != script.AuthorisedBy || (authorisation.At - script.AuthorisedAt).Duration() >= StoredTimePrecision)
         {
             return Refused("target_not_authorised", "The authorisation that the script was generated under is not in force",
                 "The target was removed, or its base URL or class changed, or its authorisation was revoked after the script was generated. "
                 + "An authorisation that an owner gave later does not cover this script. Generate a new script and run it.",
-                [new("scriptHash", $"The script is for target '{script.TargetName}' at {script.BaseUrl} ({script.Environment}), under the authorisation of {script.AuthorisedAt:O}.")]);
+                [new("scriptHash", $"The script is for target '{script.TargetName}' at {script.BaseUrl} ({EnumText.Of(script.Environment)}), under the authorisation of {script.AuthorisedAt:O}.")]);
         }
 
         var row = new ResultEntity
@@ -265,7 +265,7 @@ public static class MeasuredResults
         Same("modelStreamId", claimed.ModelStreamId, script.ModelStreamId);
         Same("modelVersion", claimed.ModelVersion, script.ModelVersion);
         Same("targetId", claimed.TargetId, script.TargetId);
-        Same("environment", claimed.Environment, script.Environment);
+        Same("environment", claimed.Environment, EnumText.Of(script.Environment));
         Same("baseUrlHash", claimed.BaseUrlHash, TargetRules.UrlHash(script.BaseUrl));
         return errors;
     }
@@ -356,7 +356,7 @@ public static class MeasuredResults
                 row.StartedAt, row.EndedAt, seconds,
                 new MeasuredProvenance(
                     "k6-import", row.Format, row.ScriptId, row.ScriptHash, row.ContentHash,
-                    row.TargetId, script.TargetName, script.BaseUrl, row.Environment, row.ImportedBy, row.ImportedVia, row.ImportedAt),
+                    row.TargetId, script.TargetName, script.BaseUrl, EnumText.Of(row.Environment), row.ImportedBy, row.ImportedVia, row.ImportedAt),
                 new MeasuredFlowDto(
                     Measured, flow.Iterations, flow.UnexpectedStatus, flow.DroppedIterations,
                     Share(flow.UnexpectedStatus, flow.Iterations), (flow.Iterations - flow.UnexpectedStatus) / seconds, Latency(flow.Latency)),

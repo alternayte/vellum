@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Vellum.Shared.Outbound;
 using Vellum.Shared;
@@ -8,7 +9,7 @@ namespace Vellum.Modules.Ai;
 /// <param name="InputBytes">The UTF-8 byte count of the request text. The reservation estimates the input tokens from it.</param>
 /// <param name="OutputTokenCeiling">The most output tokens the provider can bill for the call.</param>
 public sealed record CallStart(
-    Guid WorkspaceId, Guid ProviderId, string ProviderKind, string Model, string Task, string Purpose,
+    Guid WorkspaceId, Guid ProviderId, AiProviderKind ProviderKind, string Model, AiUsageTask Task, string Purpose,
     string PromptTemplateVersion, string? ActorId, decimal? ProviderBudgetUsd, decimal? WorkspaceBudgetUsd,
     int? RequestsPerMinute, long InputBytes, int OutputTokenCeiling);
 
@@ -22,11 +23,11 @@ public sealed record CallTicket(
 /// started: it may bill output, whatever happened afterwards.
 /// </param>
 /// <param name="Note">
-/// A usage note that says how the call was made, such as <see cref="AiUsageLedger.NoteSchemaFallback"/>.
+/// A usage note that says how the call was made, such as <see cref="AiUsageNote.SchemaRejectedFallback"/>.
 /// A note about the counts or the cost of the call takes its place.
 /// </param>
 public sealed record CallEnd(
-    string Outcome, string? ErrorCode, int? InputTokens, int? OutputTokens, string? ReportedModel, bool MayHaveGenerated, string? Note = null);
+    AiCallOutcome Outcome, string? ErrorCode, int? InputTokens, int? OutputTokens, string? ReportedModel, bool MayHaveGenerated, AiUsageNote? Note = null);
 
 /// <param name="CostUsd">Null only when the model has no price.</param>
 /// <param name="InputTokens">The provider's count when it is within the sane range, else null.</param>
@@ -65,13 +66,21 @@ public sealed record CallCost(decimal? CostUsd, int? InputTokens, int? OutputTok
 /// </summary>
 public sealed class AiUsageLedger(AppDbContext db, TimeProvider time)
 {
-    public const string Started = "started";
-    public const string Abandoned = "abandoned";
-    public const string NoteEstimated = "cost_estimated";
-    public const string NoteOutOfRange = "usage_out_of_range";
-    public const string NoteReaped = "reaped";
-    /// <summary>The provider rejected the request in its structured-output mode, and this call sent the schema in the prompt.</summary>
-    public const string NoteSchemaFallback = "schema_rejected_fallback";
+    /// <summary>The task of a call, as the usage rows store it.</summary>
+    public static AiUsageTask TaskOf(AiTask task) => task switch
+    {
+        AiTask.InferArchitecture => AiUsageTask.InferArchitecture,
+        AiTask.ProposeFlow => AiUsageTask.ProposeFlow,
+        AiTask.Critique => AiUsageTask.Critique,
+        AiTask.Explain => AiUsageTask.Explain,
+        _ => throw new ArgumentOutOfRangeException(nameof(task)),
+    };
+
+    /// <summary>The task as the HTTP API writes it: the member name in camelCase.</summary>
+    public static string TaskText(AiUsageTask task) => JsonNamingPolicy.CamelCase.ConvertName(task.ToString());
+
+    /// <summary>The outcome as the metrics and the log write it: its label in the database, such as <c>invalid_output</c>.</summary>
+    public static string Label(AiCallOutcome outcome) => AppDatabase.EnumLabels.TranslateMemberName(outcome.ToString());
 
     /// <summary>The fewest UTF-8 bytes that the input estimate assumes for one token.</summary>
     public const int MinBytesPerToken = 2;
@@ -109,11 +118,11 @@ public sealed class AiUsageLedger(AppDbContext db, TimeProvider time)
         // that died. Its reservation ends here, under the same lock as the budget check below.
         var abandonedBefore = now - MaxCallDuration;
         await db.UsageRecords
-            .Where(r => r.WorkspaceId == call.WorkspaceId && r.Outcome == Started && r.StartedAt < abandonedBefore)
+            .Where(r => r.WorkspaceId == call.WorkspaceId && r.Outcome == AiCallOutcome.Started && r.StartedAt < abandonedBefore)
             .ExecuteUpdateAsync(set => set
-                .SetProperty(r => r.Outcome, Abandoned)
+                .SetProperty(r => r.Outcome, AiCallOutcome.Abandoned)
                 .SetProperty(r => r.ReservedUsd, (decimal?)null)
-                .SetProperty(r => r.UsageNote, NoteReaped), ct);
+                .SetProperty(r => r.UsageNote, AiUsageNote.Reaped), ct);
 
         var price = await db.ModelPrices.AsNoTracking()
             .Where(p => p.ProviderKind == call.ProviderKind && p.Model == call.Model && p.EffectiveFrom <= now)
@@ -151,7 +160,7 @@ public sealed class AiUsageLedger(AppDbContext db, TimeProvider time)
             Purpose = call.Purpose,
             PromptTemplateVersion = call.PromptTemplateVersion,
             ReservedUsd = reserve,
-            Outcome = Started,
+            Outcome = AiCallOutcome.Started,
             StartedAt = now,
             ActorId = call.ActorId,
         });
@@ -188,7 +197,7 @@ public sealed class AiUsageLedger(AppDbContext db, TimeProvider time)
             cost = null;
         }
 
-        var note = outOfRange ? NoteOutOfRange : estimated ? NoteEstimated : end.Note;
+        var note = outOfRange ? AiUsageNote.UsageOutOfRange : estimated ? AiUsageNote.CostEstimated : end.Note;
         var duration = (int)Math.Min(int.MaxValue, Stopwatch.GetElapsedTime(ticket.StartedTimestamp).TotalMilliseconds);
         var reportedModel = end.ReportedModel is null ? null : OutboundText.Clean(end.ReportedModel, 200);
 

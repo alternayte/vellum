@@ -164,6 +164,10 @@ public static class AppDatabase
     [
         .. WorkspacesTables.Enums,
         .. ImportTables.Enums,
+        .. AiTables.Enums,
+        .. CostsTables.Enums,
+        .. LoadTestsTables.Enums,
+        .. IdentityTables.Enums,
         .. PromisesTables.Enums,
         .. ReviewTables.Enums,
     ];

@@ -112,7 +112,7 @@ public class ReviewFixTests(SharedOutboundHost shared) : IClassFixture<SharedOut
         Assert.Contains("64-bit", (string)issue["message"]!);
         // The step stays, without the payload. The one call was metered once.
         Assert.Null(proposal["scenario"]!["steps"]![0]!["change"]);
-        Assert.Equal("succeeded", Assert.Single(await ai.RowsAsync()).Outcome);
+        Assert.Equal("succeeded", AiUsageLedger.Label(Assert.Single(await ai.RowsAsync()).Outcome));
 
         // A person's own save has the same rule.
         var saved = await ai.Owner.PostAsync(Url(projectId, "scenarios"), new StringContent(
@@ -292,10 +292,9 @@ public class ReviewFixTests(SharedOutboundHost shared) : IClassFixture<SharedOut
         Assert.Contains("valid against this JSON Schema", Text(ai.Stub.Requests[1]));
 
         var rows = await ai.RowsAsync();
-        Assert.Equal(["provider_error", "succeeded"], rows.Select(r => r.Outcome));
-        Assert.Equal(("invalid_request", 0m, null), (rows[0].ErrorCode, rows[0].CostUsd ?? 0m, rows[0].UsageNote));
-        Assert.Equal(AiUsageLedger.NoteSchemaFallback, rows[1].UsageNote);
-        Assert.Equal("schema_rejected_fallback", AiUsageLedger.NoteSchemaFallback);
+        Assert.Equal(["provider_error", "succeeded"], rows.Select(r => AiUsageLedger.Label(r.Outcome)));
+        Assert.Equal(("invalid_request", 0m, null), (rows[0].ErrorCode, rows[0].CostUsd ?? 0m, AiScenario.Note(rows[0].UsageNote)));
+        Assert.Equal("schema_rejected_fallback", AiScenario.Note(rows[1].UsageNote));
 
         // The fallback is made once. A provider that rejects the request in both modes fails it.
         var (twice, otherProject, _) = await OrdersAsync(_host, kind);
@@ -731,8 +730,8 @@ public class ReviewFixTests(SharedOutboundHost shared) : IClassFixture<SharedOut
             {
                 db.DesignProposals.Add(new Vellum.Modules.Ai.ProposalEntity
                 {
-                    Id = Guid.NewGuid(), Kind = i % 2 == 0 ? FlowProposals.Kind : ArchitectureProposals.Kind, WorkspaceId = row.WorkspaceId,
-                    ProjectId = projectId, Status = "draft", Name = $"Draft {i}", Request = row.Request, Document = row.Document,
+                    Id = Guid.NewGuid(), Kind = i % 2 == 0 ? FlowProposals.RowKind : ArchitectureProposals.RowKind, WorkspaceId = row.WorkspaceId,
+                    ProjectId = projectId, Status = DesignProposalStatus.Draft, Name = $"Draft {i}", Request = row.Request, Document = row.Document,
                     CreatedBy = row.CreatedBy, CreatedAt = row.CreatedAt.AddSeconds(i),
                 });
             }

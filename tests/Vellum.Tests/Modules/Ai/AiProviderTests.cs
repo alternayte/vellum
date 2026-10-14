@@ -4,6 +4,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Vellum.Modules.Ai;
 using Vellum.Tests.Shared.Outbound;
 
+using Vellum.Shared;
+
 namespace Vellum.Tests.Modules.Ai;
 
 /// <summary>
@@ -18,7 +20,7 @@ public class AiProviderTests(SharedOutboundHost shared) : IClassFixture<SharedOu
     public static TheoryData<string> Kinds => new(AiScenario.Kinds);
 
     private static IReadOnlyList<string> Outcomes(IEnumerable<Vellum.Modules.Ai.UsageRecordEntity> rows) =>
-        rows.Select(r => r.Outcome).ToList();
+        rows.Select(r => AiUsageLedger.Label(r.Outcome)).ToList();
 
     [Theory, MemberData(nameof(Kinds))]
     public async Task A_structured_answer_is_validated_and_metered(string kind)
@@ -52,7 +54,7 @@ public class AiProviderTests(SharedOutboundHost shared) : IClassFixture<SharedOu
 
         var row = Assert.Single(await ai.RowsAsync());
         Assert.Equal(("succeeded", kind, ai.Model, "proposeFlow", "summarise", "summarise/1"),
-            (row.Outcome, row.ProviderKind, row.Model, row.Task, row.Purpose, row.PromptTemplateVersion));
+            (AiUsageLedger.Label(row.Outcome), EnumText.Of(row.ProviderKind), row.Model, AiUsageLedger.TaskText(row.Task), row.Purpose, row.PromptTemplateVersion));
         Assert.Equal((21, 9, "user:test"), (row.InputTokens, row.OutputTokens, row.ActorId));
         Assert.Null(row.CostUsd);
         Assert.NotNull(row.DurationMs);
@@ -90,7 +92,7 @@ public class AiProviderTests(SharedOutboundHost shared) : IClassFixture<SharedOu
         Assert.DoesNotContain(ai.NativeSchemaField, sent.Body);
 
         var row = Assert.Single(await ai.RowsAsync());
-        Assert.Equal(("succeeded", 21, 9), (row.Outcome, row.InputTokens, row.OutputTokens));
+        Assert.Equal(("succeeded", 21, 9), (AiUsageLedger.Label(row.Outcome), row.InputTokens, row.OutputTokens));
         Assert.Contains("fixture", row.ReportedModel);
     }
 
@@ -202,7 +204,7 @@ public class AiProviderTests(SharedOutboundHost shared) : IClassFixture<SharedOu
         Assert.DoesNotContain("sk-te", unauthorized.Message);
 
         var row = Assert.Single(await wrongKey.RowsAsync());
-        Assert.Equal(("provider_error", "invalid_api_key", 0m), (row.Outcome, row.ErrorCode, row.CostUsd));
+        Assert.Equal(("provider_error", "invalid_api_key", 0m), (AiUsageLedger.Label(row.Outcome), row.ErrorCode, row.CostUsd));
     }
 
     [Theory, MemberData(nameof(Kinds))]
@@ -317,7 +319,7 @@ public class AiProviderTests(SharedOutboundHost shared) : IClassFixture<SharedOu
 
         Assert.Equal(["Hello"], chunks);
         Assert.Equal("stream_interrupted", Assert.IsType<AiFailure.ProviderError>(failure).Code);
-        Assert.Equal(("provider_error", "stream_interrupted"), (Assert.Single(await ai.RowsAsync()) is var row ? (row.Outcome, row.ErrorCode) : default));
+        Assert.Equal(("provider_error", "stream_interrupted"), (Assert.Single(await ai.RowsAsync()) is var row ? (AiUsageLedger.Label(row.Outcome), row.ErrorCode) : default));
     }
 
     [Theory, MemberData(nameof(Kinds))]

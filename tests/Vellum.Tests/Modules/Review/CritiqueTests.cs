@@ -5,6 +5,7 @@ using System.Text.Json.Nodes;
 using Deedbox;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Vellum.Modules.Ai;
 using Vellum.Modules.Ai.Design;
 using Vellum.Modules.Import;
 using Vellum.Modules.Import.Proposals;
@@ -120,7 +121,7 @@ public class CritiqueTests(SharedOutboundHost shared) : IClassFixture<SharedOutb
         Assert.Contains("Never state or imply that anything is verified, proven, safe, secure, scalable, compliant, guaranteed or resolved", sent);
         Assert.Contains("No field is ever null", sent);
         var row = Assert.Single(await ai.RowsAsync());
-        Assert.Equal(("critique", "critique", ReviewPrompts.CritiqueVersion, "succeeded"), (row.Task, row.Purpose, row.PromptTemplateVersion, row.Outcome));
+        Assert.Equal(("critique", "critique", ReviewPrompts.CritiqueVersion, "succeeded"), (AiUsageLedger.TaskText(row.Task), row.Purpose, row.PromptTemplateVersion, AiUsageLedger.Label(row.Outcome)));
 
         // A person keeps a question and a proposed decision. The decision is a proposal with the origin ai-suggested.
         var keptQuestion = await BodyAsync(await ai.Owner.PostAsync(Url(projectId, $"review/critiques/{critique["id"]}/questions/0/keep"), null), HttpStatusCode.Created);

@@ -332,7 +332,7 @@ public class AiClientTests(SharedOutboundHost shared) : IClassFixture<SharedOutb
             Assert.Equal(ai.ExpectedCredential.Value, sent.Header(ai.ExpectedCredential.Name));
             Assert.Contains(ai.NativeSchemaField, sent.Body);
             var row = Assert.Single(await ai.RowsAsync());
-            Assert.Equal(("test-connection", "test", "succeeded"), (row.Purpose, row.Task, row.Outcome));
+            Assert.Equal(("test-connection", "test", "succeeded"), (row.Purpose, AiUsageLedger.TaskText(row.Task), AiUsageLedger.Label(row.Outcome)));
         }
     }
 

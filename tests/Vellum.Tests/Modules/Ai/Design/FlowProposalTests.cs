@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json.Nodes;
+using Vellum.Modules.Ai;
 using Vellum.Modules.Ai.Design;
 using Vellum.Tests.Shared.Outbound;
 using static Vellum.Tests.Modules.Ai.Design.DesignKit;
@@ -114,7 +115,7 @@ public class FlowProposalTests(SharedOutboundHost shared) : IClassFixture<Shared
         Assert.Equal(2, rows.Count);
         Assert.All(rows, row => Assert.Equal(
             ("proposeFlow", "propose-flow", DesignPrompts.ProposeFlowVersion, "succeeded"),
-            (row.Task, row.Purpose, row.PromptTemplateVersion, row.Outcome)));
+            (AiUsageLedger.TaskText(row.Task), row.Purpose, row.PromptTemplateVersion, AiUsageLedger.Label(row.Outcome))));
     }
 
     [Fact]
@@ -234,7 +235,7 @@ public class FlowProposalTests(SharedOutboundHost shared) : IClassFixture<Shared
         var proposal = await BodyAsync(await ProposeFlowAsync(repaired.Owner, repairedProject, OrdersRequest), HttpStatusCode.Created);
 
         Assert.NotNull(proposal["preview"]);
-        Assert.Equal(["invalid_output", "succeeded"], (await repaired.RowsAsync()).Select(r => r.Outcome));
+        Assert.Equal(["invalid_output", "succeeded"], (await repaired.RowsAsync()).Select(r => AiUsageLedger.Label(r.Outcome)));
 
         var (broken, brokenProject, _) = await OrdersAsync(_host, "gemini");
         broken.Stub.Json(broken.Completion("I cannot answer in JSON, sorry."));

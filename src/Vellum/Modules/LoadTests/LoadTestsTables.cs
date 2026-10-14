@@ -40,7 +40,7 @@ public class ScriptEntity
     /// <summary>The target as it was when the script was generated.</summary>
     public string TargetName { get; set; } = null!;
     public string BaseUrl { get; set; } = null!;
-    public string Environment { get; set; } = null!;
+    public StoredTargetEnvironment Environment { get; set; }
     public string AuthorisedBy { get; set; } = null!;
     public DateTimeOffset AuthorisedAt { get; set; }
     /// <summary>The text of the script, as the person downloads it.</summary>
@@ -66,7 +66,7 @@ public class ResultEntity
     public Guid ModelStreamId { get; set; }
     public long ModelVersion { get; set; }
     public Guid TargetId { get; set; }
-    public string Environment { get; set; } = null!;
+    public StoredTargetEnvironment Environment { get; set; }
     /// <summary><c>vellum-k6-result/1</c> or <c>k6-summary-export</c>.</summary>
     public string Format { get; set; } = null!;
     public DateTimeOffset StartedAt { get; set; }
@@ -87,10 +87,27 @@ public class ResultEntity
     public DateTimeOffset ImportedAt { get; set; }
 }
 
+/// <summary>
+/// The class of a target as the script and result rows store it. The target itself, its
+/// events and the API name the class as text (<see cref="TargetEnvironment"/>).
+/// </summary>
+public enum StoredTargetEnvironment
+{
+    Development,
+    Test,
+    Staging,
+    Production,
+}
+
 /// <summary>The tables of the module, in the Postgres schema <c>loadtests</c>.</summary>
 public static class LoadTestsTables
 {
     public const string Schema = "loadtests";
+
+    public static readonly IReadOnlyList<PostgresEnum> Enums =
+    [
+        PostgresEnum.Of<StoredTargetEnvironment>("target_environment", Schema),
+    ];
 
     public static void Configure(ModelBuilder modelBuilder)
     {

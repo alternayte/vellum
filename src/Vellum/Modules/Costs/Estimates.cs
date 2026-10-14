@@ -86,7 +86,7 @@ public sealed class EstimateReader(IEventStore store, AppDbContext db, SettingsR
     }
 
     private static Price ToPrice(PriceEntryEntity entry) => new(
-        entry.Id, entry.Provider, entry.Region, entry.Sku, entry.MeterId, entry.Unit, entry.UnitPrice, entry.Currency, entry.EffectiveDate, entry.Source,
+        entry.Id, entry.Provider, entry.Region, entry.Sku, entry.MeterId, entry.Unit, entry.UnitPrice, entry.Currency, entry.EffectiveDate, EnumText.Of(entry.Source),
         DateOnly.FromDateTime((entry.FetchedAt ?? entry.AcceptedAt).UtcDateTime));
 
     internal static IReadOnlyList<InputChange> Changes(EstimateInputsIndex saved, EstimateInputsIndex now)

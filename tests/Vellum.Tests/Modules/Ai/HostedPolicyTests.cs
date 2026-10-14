@@ -149,7 +149,7 @@ public class HostedPolicyTests
         Assert.Equal("url_refused", refused.Code);
         Assert.Empty(hosted.Transport.For(host).Requests);
         var row = Assert.Single(await hosted.RowsAsync());
-        Assert.Equal(("provider_error", "url_refused", 0m, null), (row.Outcome, row.ErrorCode, row.CostUsd, row.ReservedUsd));
+        Assert.Equal(("provider_error", "url_refused", 0m, null), (AiUsageLedger.Label(row.Outcome), row.ErrorCode, row.CostUsd, row.ReservedUsd));
 
         // Public again: the call goes out, over https, with both rules of a hosted instance on the call.
         hosted.Addresses[host] = PublicAddress;
