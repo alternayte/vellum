@@ -661,6 +661,9 @@ public class AgentTokenTests(IntegrationFixture fixture) : IClassFixture<Integra
         ["GET /api/projects/{projectId}/imports/{importId}"] = "read",
         ["GET /api/projects/{projectId}/imports/{importId:guid}/impact/report"] = "read",
         ["POST /api/projects/{projectId}/imports/{importId:guid}/impact/checks"] = "propose or scan-pull-request",
+        // vellum scan: the rules and limits, then the push of a manifest, facts and citations.
+        ["GET /api/projects/{projectId}/sources/push"] = "push",
+        ["POST /api/projects/{projectId}/sources/push"] = "push",
         ["GET /api/projects/{projectId}/impact-gate/"] = "read",
         ["POST /api/projects/{projectId}/promises/"] = "propose",
         ["PUT /api/projects/{projectId}/promises/{promiseId:guid}"] = "propose",
@@ -790,7 +793,7 @@ public class AgentTokenTests(IntegrationFixture fixture) : IClassFixture<Integra
         }
 
         // A token with every scope, whose user is an Owner: 403 on every endpoint that is not open to agents.
-        var every = await TestHost.CreateAgentAsync(factory, owner, workspaceId);
+        var every = await TestHost.CreateAgentAsync(factory, owner, workspaceId, [.. Enum.GetValues<AgentScope>().Select(AgentScopes.Name)]);
         foreach (var (name, method, endpoint) in endpoints.Where(e => !ForAnAgent.ContainsKey(e.Name)))
         {
             using var response = await SendAsync(every.Client, method, endpoint);

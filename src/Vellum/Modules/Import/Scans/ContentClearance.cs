@@ -5,7 +5,8 @@ using Vellum.Modules.Import.Extraction;
 namespace Vellum.Modules.Import.Scans;
 
 /// <summary>
-/// The check that content passes before it is stored. It runs on the bytes GitHub returned,
+/// The check that content passes before it is stored, and before <c>vellum scan</c> gives a
+/// file to the extractors (it compiles this same file). It runs on the bytes GitHub returned,
 /// at the moment they arrive: content that fails is never written anywhere, and only the
 /// reason is kept. So no later step, and no failed scan, can serve it.
 /// <para>
@@ -18,6 +19,8 @@ internal static partial class ContentClearance
     /// <summary>A file is withheld when at least this many of its lines look like credentials and they are at least <see cref="DenseShare"/> of its lines with text.</summary>
     public const int DenseLines = 5;
     public const double DenseShare = 0.2;
+    /// <summary>The most characters of one line that the check reads. A longer line costs more to check than it can tell.</summary>
+    public const int MaxCheckedLineLength = 2000;
 
     [GeneratedRegex(@"^\s*-?\s*[""']?kind[""']?\s*[:=]\s*[""']?Secret[""']?\s*,?\s*$", RegexOptions.CultureInvariant)]
     private static partial Regex SecretKind();
@@ -58,8 +61,7 @@ internal static partial class ContentClearance
             if (line.IsWhiteSpace())
                 continue;
             withText++;
-            // A long line costs more to check than it can tell.
-            var checkedLine = line.Length > SourceWindow.MaxLineLength ? line[..SourceWindow.MaxLineLength] : line;
+            var checkedLine = line.Length > MaxCheckedLineLength ? line[..MaxCheckedLineLength] : line;
             var value = checkedLine.ToString();
             if (SecretKind().IsMatch(value))
                 return "secret-file";

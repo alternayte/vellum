@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 import { shownInline } from '@/lib/mutation-errors'
-import { describeReview, importApi, isActive, sourcesApi, type DecisionResult, type Proposal, type SourceSummary } from '@/lib/import-api'
+import { CONTENT_NOT_HELD, describeReview, importApi, isActive, sourcesApi, type DecisionResult, type Proposal, type SourceSummary } from '@/lib/import-api'
 import { sourcesKey, useSources } from '@/hooks/use-sources'
 import { SourceSides } from './source-facts'
 
@@ -67,7 +67,14 @@ export function SourcesList({ projectId, onReview }: {
                   <p className="font-mono text-[10px] text-muted-foreground" title={`Snapshot ${source.latestSnapshot.snapshotId}`}>
                     Snapshot {short(source.latestSnapshot.snapshotId, 8)}
                     {source.latestSnapshot.commitSha && ` · ${short(source.latestSnapshot.commitSha)}`}
+                    {source.latestSnapshot.reportedCommitSha && ` · reported ${short(source.latestSnapshot.reportedCommitSha)}`}
                     {` · ${source.latestSnapshot.files} files`}
+                  </p>
+                )}
+                {source.latestSnapshot && !source.latestSnapshot.contentHeld && (
+                  <p className="mt-1 flex items-start gap-1.5 text-[11px] text-muted-foreground" title={CONTENT_NOT_HELD}>
+                    <span className="shrink-0 rounded-full border border-[var(--trace-retry)]/60 px-1.5 text-[10px] text-[var(--trace-retry)]">content not held</span>
+                    <span>Facts and citations only. Source lines stay on the machine that pushed.</span>
                   </p>
                 )}
                 <p className={cn('mt-1 text-xs', source.review.pending > 0 ? 'text-foreground' : 'text-muted-foreground')}>{describeReview(source)}</p>
@@ -77,14 +84,18 @@ export function SourcesList({ projectId, onReview }: {
               {source.review.scanId && source.review.pending > 0 && (
                 <Button size="sm" variant="secondary" className="h-6 px-2 text-xs" onClick={() => onReview(source)}>Review</Button>
               )}
-              <Button
-                size="sm" variant="ghost" className="h-6 gap-1 px-2 text-xs"
-                disabled={scan.isPending || (source.latestScan !== null && isActive(source.latestScan.status))}
-                title="Scan the default ref of this Source again"
-                onClick={() => scan.mutate(source.id)}
-              >
-                <RotateCw className="h-3 w-3" /> Scan again
-              </Button>
+              {source.kind === 'agent-push' ? (
+                <span className="self-center text-[11px] text-muted-foreground">Vellum does not hold these files. Run vellum scan again to update.</span>
+              ) : (
+                <Button
+                  size="sm" variant="ghost" className="h-6 gap-1 px-2 text-xs"
+                  disabled={scan.isPending || (source.latestScan !== null && isActive(source.latestScan.status))}
+                  title="Scan the default ref of this Source again"
+                  onClick={() => scan.mutate(source.id)}
+                >
+                  <RotateCw className="h-3 w-3" /> Scan again
+                </Button>
+              )}
             </div>
           </li>
         ))}
@@ -174,6 +185,7 @@ function SourceGroup({ projectId, source, onOpenScan }: { projectId: string; sou
             {source.citation}@{short(source.latestSnapshot?.revision)}
           </p>
           <p className="mt-0.5 text-xs text-muted-foreground">{describeReview(source)}</p>
+          {source.latestSnapshot && !source.latestSnapshot.contentHeld && <p className="mt-0.5 text-[11px] text-muted-foreground">{CONTENT_NOT_HELD}</p>}
         </div>
         <div className="flex shrink-0 flex-wrap gap-1.5">
           <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={onOpenScan}>Open full review</Button>

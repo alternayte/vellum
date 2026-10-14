@@ -15,8 +15,12 @@ namespace Vellum.Modules.Import.Sources;
 /// <summary>One Snapshot of a Source: the manifest ID, and the commit SHA when the Source is git-based.</summary>
 /// <param name="Revision">What a citation of this Snapshot names after <c>@</c>: the commit SHA of a git Source, else the Snapshot ID.</param>
 /// <param name="Files">The files in the manifest: those the scan read whole.</param>
+/// <param name="ContentHeld">False for a push of <c>vellum scan</c>: the instance holds the manifest, the facts and the citations, and no file content.</param>
+/// <param name="ReportedCommitSha">For a push: the commit that <c>.git/HEAD</c> named on the machine that pushed, as reported. Not verified.</param>
+/// <param name="PushedBy">For a push: the agent token that pushed it, as <c>agent-token:&lt;id&gt;</c>. Null for a scan the instance ran.</param>
 public sealed record SourceSnapshotDto(
-    Guid ScanId, string SnapshotId, string? CommitSha, string Revision, string? Ref, int Files, int Facts, bool IsComplete, DateTimeOffset CreatedAt);
+    Guid ScanId, string SnapshotId, string? CommitSha, string Revision, string? Ref, int Files, int Facts, bool IsComplete, DateTimeOffset CreatedAt,
+    bool ContentHeld, string? ReportedCommitSha, string? PushedBy);
 
 /// <summary>
 /// The proposals of a Source that wait for a person: those of its newest completed tracking
@@ -112,8 +116,9 @@ public static class SourceRequests
             return Invalid("kind", $"A Source kind is one of: {string.Join(", ", Enum.GetValues<SourceKind>().Select(k => EnumText.Of(k)))}.");
         if (kind != SourceKind.Github)
         {
-            return Results.BadRequest(new ErrorResponse("source_kind_unavailable",
-                $"This instance cannot read a Source of kind '{EnumText.Of(kind)}' yet. Create a github Source."));
+            return Results.BadRequest(new ErrorResponse("source_kind_unavailable", kind == SourceKind.AgentPush
+                ? "An agent-push Source is made by its first push: run vellum scan with an agent token that has the push scope."
+                : $"This instance cannot read a Source of kind '{EnumText.Of(kind)}' yet. Create a github Source."));
         }
         var name = string.IsNullOrWhiteSpace(request.Name) ? null : request.Name.Trim();
         if (name is not null && TextRule.Line("name", name, SourceEntity.MaxName) is { } nameError)
@@ -178,6 +183,11 @@ public static class SourceRequests
         var source = await db.Sources.AsNoTracking().FirstOrDefaultAsync(s => s.Id == sourceId && s.ProjectId == projectId, ct);
         if (source is null)
             return NotFound("Source");
+        if (source.Kind == SourceKind.AgentPush)
+        {
+            return Results.Conflict(new ErrorResponse("push_only",
+                "Vellum does not hold the files of an agent-push Source, so it cannot scan it. Run vellum scan on the machine that holds them."));
+        }
 
         var workspace = await settings.GetWorkspaceAsync(source.WorkspaceId, ct);
         if (workspace.GithubApiBaseUrl is not SettingsUrl.Usable github)
@@ -200,7 +210,7 @@ public static class SourceRequests
         if (source is null)
             return NotFound("Source");
         var rows = await SnapshotRowsAsync(db, source.Id, null, MaxSnapshots, ct);
-        return Results.Ok(rows.Select(r => ToDto(source, r.Snapshot, r.Ref)).ToList());
+        return Results.Ok(rows.Select(r => ToDto(source, r)).ToList());
     }
 
     /// <summary>
@@ -248,8 +258,8 @@ public static class SourceRequests
                 .OrderBy(f => f.FactKey, StringComparer.Ordinal).Select(f => Item(EnumText.Of(f.Kind), f.Name, f.FactKey)), out var f3),
             f1 || f2 || f3);
 
-        var baseDto = ToDto(source, baseRow.Snapshot, baseRow.Ref);
-        var headDto = ToDto(source, headRow.Snapshot, headRow.Ref);
+        var baseDto = ToDto(source, baseRow);
+        var headDto = ToDto(source, headRow);
         return Results.Ok(new SnapshotComparisonDto(source.Id, baseDto, headDto, baseDto.SnapshotId == headDto.SnapshotId, fileDiff, factDiff));
     }
 
@@ -398,10 +408,10 @@ public static class SourceRequests
         return new SourceDto(
             source.Id, EnumText.Of(source.Kind), source.Name, source.Host, source.Locator, source.CitationName,
             source.CreatedBy, source.CreatedAt, latestDto,
-            snapshot is null ? null : ToDto(source, snapshot.Snapshot, snapshot.Ref), review);
+            snapshot is null ? null : ToDto(source, snapshot), review);
     }
 
-    private sealed record SnapshotRow(SnapshotEntity Snapshot, string? Ref);
+    private sealed record SnapshotRow(SnapshotEntity Snapshot, string? Ref, bool ContentNotHeld, string? ReportedCommitSha, string RequestedBy);
 
     /// <summary>The Snapshots of a Source, newest first, each with the ref its scan read.</summary>
     private static async Task<List<SnapshotRow>> SnapshotRowsAsync(AppDbContext db, Guid sourceId, Guid[]? scanIds, int take, CancellationToken ct)
@@ -411,15 +421,22 @@ public static class SourceRequests
             query = query.Where(s => scanIds.Contains(s.ScanId));
         var snapshots = await query.OrderByDescending(s => s.CreatedAt).ThenByDescending(s => s.ScanId).Take(take).ToListAsync(ct);
         var ids = snapshots.Select(s => s.ScanId).ToList();
-        var refs = await db.Scans.AsNoTracking().Where(s => ids.Contains(s.Id))
-            .Select(s => new { s.Id, s.ResolvedRef }).ToDictionaryAsync(s => s.Id, s => s.ResolvedRef, ct);
-        return [.. snapshots.Select(s => new SnapshotRow(s, refs.GetValueOrDefault(s.ScanId)))];
+        var scans = await db.Scans.AsNoTracking().Where(s => ids.Contains(s.Id))
+            .Select(s => new { s.Id, s.ResolvedRef, s.ContentNotHeld, s.ReportedCommitSha, s.RequestedBy }).ToDictionaryAsync(s => s.Id, ct);
+        // A snapshot row goes with its scan row (cascade), so every snapshot has one.
+        return [.. snapshots.Select(s => scans[s.ScanId]).Zip(snapshots, (scan, s) =>
+            new SnapshotRow(s, scan.ResolvedRef, scan.ContentNotHeld, scan.ReportedCommitSha, scan.RequestedBy))];
     }
 
-    private static SourceSnapshotDto ToDto(SourceEntity source, SnapshotEntity snapshot, string? reference) => new(
-        snapshot.ScanId, snapshot.SnapshotId, SourceEntity.IsGit(source.Kind) ? snapshot.CommitSha : null,
-        SourceEntity.IsGit(source.Kind) ? snapshot.CommitSha : snapshot.SnapshotId,
-        reference, snapshot.ManifestFiles, snapshot.FactCount, snapshot.IsComplete, snapshot.CreatedAt);
+    private static SourceSnapshotDto ToDto(SourceEntity source, SnapshotRow row)
+    {
+        var snapshot = row.Snapshot;
+        return new(
+            snapshot.ScanId, snapshot.SnapshotId, SourceEntity.IsGit(source.Kind) ? snapshot.CommitSha : null,
+            SourceEntity.IsGit(source.Kind) ? snapshot.CommitSha : snapshot.SnapshotId,
+            row.Ref, snapshot.ManifestFiles, snapshot.FactCount, snapshot.IsComplete, snapshot.CreatedAt,
+            !row.ContentNotHeld, row.ReportedCommitSha, row.ContentNotHeld ? row.RequestedBy : null);
+    }
 
     private sealed record ManifestRow(Guid ScanId, string Path, string BlobSha);
 

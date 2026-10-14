@@ -45,7 +45,7 @@ namespace Vellum.Migrations
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "comments", "thread_status", new[] { "open", "resolved" });
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "costs", "price_source_kind", new[] { "custom", "fetched" });
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "drafts", "draft_status", new[] { "abandoned", "merged", "open" });
-            NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "identity", "agent_scope", new[] { "export", "propose", "read", "scan_pull_request" });
+            NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "identity", "agent_scope", new[] { "export", "propose", "push", "read", "scan_pull_request" });
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "import", "coverage_gap", new[] { "failed", "limit", "scope", "withheld" });
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "import", "entity_kind", new[] { "binding", "channel", "element", "message", "operation", "schema", "subscription" });
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "import", "fact_disposition", new[] { "blocked", "evidence_only", "folded", "mapped" });
@@ -1641,6 +1641,10 @@ namespace Vellum.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("completed_at");
 
+                    b.Property<bool>("ContentNotHeld")
+                        .HasColumnType("boolean")
+                        .HasColumnName("content_not_held");
+
                     b.Property<string>("Coverage")
                         .HasColumnType("jsonb")
                         .HasColumnName("coverage");
@@ -1754,6 +1758,11 @@ namespace Vellum.Migrations
                     b.Property<int>("Relinked")
                         .HasColumnType("integer")
                         .HasColumnName("relinked");
+
+                    b.Property<string>("ReportedCommitSha")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("reported_commit_sha");
 
                     b.Property<string>("Repository")
                         .IsRequired()

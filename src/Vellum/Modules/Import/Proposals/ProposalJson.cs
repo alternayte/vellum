@@ -100,10 +100,13 @@ internal static class EvidenceLinks
 
     /// <summary>
     /// The permanent link to the lines at the commit. A commit SHA never moves, so the link
-    /// shows the same lines for as long as the repository exists.
+    /// shows the same lines for as long as the repository exists. Null for an agent-push
+    /// Source: it has no web page, and the files stay on the machine that pushed them.
     /// </summary>
-    public static string Url(string repository, string commitSha, EvidenceRef evidence)
+    public static string? Url(string repository, string commitSha, EvidenceRef evidence)
     {
+        if (repository.StartsWith(Sources.AgentPush.Host + "/", StringComparison.Ordinal))
+            return null;
         var path = string.Join('/', evidence.Path.Split('/').Select(Uri.EscapeDataString));
         var lines = evidence.EndLine > evidence.StartLine
             ? string.Create(CultureInfo.InvariantCulture, $"L{evidence.StartLine}-L{evidence.EndLine}")

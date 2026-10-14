@@ -178,7 +178,9 @@ export function ImportFlyout({ projectId, owners }: {
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm text-foreground">{scan.repository}</p>
                   <p className="break-words font-mono text-[10px] text-muted-foreground">
-                    {scanSubject(scan)}{scan.commitSha ? ` · ${scan.commitSha.slice(0, 10)}` : ''}
+                    {scan.contentHeld
+                      ? <>{scanSubject(scan)}{scan.commitSha ? ` · ${scan.commitSha.slice(0, 10)}` : ''}</>
+                      : <>pushed · Snapshot {scan.commitSha?.slice(0, 10)}{scan.reportedCommitSha ? ` · reported ${scan.reportedCommitSha.slice(0, 10)}` : ''}</>}
                     {scan.kind === 'comparison' && ' · comparison'}
                   </p>
                   {scan.pullRequest && (

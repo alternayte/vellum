@@ -8069,6 +8069,134 @@
         }
       }
     },
+    "/api/projects/{projectId}/sources/push": {
+      "get": {
+        "tags": [
+          "Sources"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentPushSettings"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Sources"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgentPushRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentPushResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Payload Too Large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/projects/{projectId}/sources/{sourceId}/accept": {
       "post": {
         "tags": [
@@ -14137,6 +14265,382 @@
           }
         }
       },
+      "AgentPushCitation": {
+        "required": [
+          "path",
+          "startLine",
+          "endLine",
+          "rule",
+          "ruleVersion"
+        ],
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "startLine": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "endLine": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "rule": {
+            "type": "string"
+          },
+          "ruleVersion": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          }
+        }
+      },
+      "AgentPushFact": {
+        "required": [
+          "kind",
+          "key",
+          "name",
+          "attributes",
+          "evidence"
+        ],
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "key": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "attributes": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentPushCitation"
+            }
+          }
+        }
+      },
+      "AgentPushFile": {
+        "required": [
+          "path",
+          "size",
+          "blobSha"
+        ],
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "size": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "blobSha": {
+            "type": "string"
+          }
+        }
+      },
+      "AgentPushRequest": {
+        "required": [
+          "name",
+          "commitSha",
+          "rules",
+          "scope",
+          "files",
+          "skipped",
+          "facts",
+          "isComplete",
+          "extractionGap",
+          "filesListed"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "commitSha": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "rules": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentPushRule"
+            }
+          },
+          "scope": {
+            "$ref": "#/components/schemas/AgentPushScope"
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentPushFile"
+            }
+          },
+          "skipped": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentPushSkip"
+            }
+          },
+          "facts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentPushFact"
+            }
+          },
+          "isComplete": {
+            "type": "boolean"
+          },
+          "extractionGap": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "filesListed": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          }
+        }
+      },
+      "AgentPushResponse": {
+        "required": [
+          "sourceId",
+          "sourceName",
+          "sourceCreated",
+          "scanId",
+          "snapshotId",
+          "files",
+          "facts",
+          "proposals",
+          "isComplete"
+        ],
+        "type": "object",
+        "properties": {
+          "sourceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sourceName": {
+            "type": "string"
+          },
+          "sourceCreated": {
+            "type": "boolean"
+          },
+          "scanId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "snapshotId": {
+            "type": "string"
+          },
+          "files": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "facts": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "proposals": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "isComplete": {
+            "type": "boolean"
+          }
+        }
+      },
+      "AgentPushRule": {
+        "required": [
+          "id",
+          "version"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "version": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          }
+        }
+      },
+      "AgentPushScope": {
+        "required": [
+          "maxFiles",
+          "maxFileBytes",
+          "maxTotalBytes",
+          "excludeGlobs",
+          "includePaths",
+          "excludePaths"
+        ],
+        "type": "object",
+        "properties": {
+          "maxFiles": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "maxFileBytes": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "maxTotalBytes": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "excludeGlobs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "includePaths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "excludePaths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "AgentPushSettings": {
+        "required": [
+          "rules",
+          "maxFiles",
+          "maxFileBytes",
+          "maxTotalBytes",
+          "excludeGlobs",
+          "maxFacts"
+        ],
+        "type": "object",
+        "properties": {
+          "rules": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/AgentPushRule"
+            }
+          },
+          "maxFiles": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "maxFileBytes": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "maxTotalBytes": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "excludeGlobs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "maxFacts": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          }
+        }
+      },
+      "AgentPushSkip": {
+        "required": [
+          "path",
+          "reason"
+        ],
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "reason": {
+            "type": "string"
+          }
+        }
+      },
       "AgentTokenCreated": {
         "required": [
           "id",
@@ -19418,7 +19922,10 @@
             "type": "string"
           },
           "url": {
-            "type": "string"
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -21909,7 +22416,10 @@
             "type": "string"
           },
           "url": {
-            "type": "string"
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -28929,7 +29439,9 @@
           "trackedBy",
           "trackedAt",
           "sourceId",
-          "snapshotId"
+          "snapshotId",
+          "contentHeld",
+          "reportedCommitSha"
         ],
         "type": "object",
         "properties": {
@@ -29100,6 +29612,15 @@
               "null",
               "string"
             ]
+          },
+          "contentHeld": {
+            "type": "boolean"
+          },
+          "reportedCommitSha": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -29130,7 +29651,9 @@
           "pullRequestNumber",
           "pullRequest",
           "canResume",
-          "sourceId"
+          "sourceId",
+          "contentHeld",
+          "reportedCommitSha"
         ],
         "type": "object",
         "properties": {
@@ -29270,6 +29793,15 @@
           "sourceId": {
             "type": "string",
             "format": "uuid"
+          },
+          "contentHeld": {
+            "type": "boolean"
+          },
+          "reportedCommitSha": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -32107,7 +32639,10 @@
           "files",
           "facts",
           "isComplete",
-          "createdAt"
+          "createdAt",
+          "contentHeld",
+          "reportedCommitSha",
+          "pushedBy"
         ],
         "type": "object",
         "properties": {
@@ -32155,6 +32690,21 @@
           "createdAt": {
             "type": "string",
             "format": "date-time"
+          },
+          "contentHeld": {
+            "type": "boolean"
+          },
+          "reportedCommitSha": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "pushedBy": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },

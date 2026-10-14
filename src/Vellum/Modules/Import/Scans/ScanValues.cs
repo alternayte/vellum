@@ -1,21 +1,8 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using Vellum.Shared;
 
 namespace Vellum.Modules.Import.Scans;
-
-public static class ScanSnapshots
-{
-    /// <summary>
-    /// The snapshots of a project whose scans read a ref: no pull request and no bare commit.
-    /// Only such a snapshot can stand for the newest state of a repository; a pull request or
-    /// a commit follows no line of history. The database filters them.
-    /// </summary>
-    public static IQueryable<SnapshotEntity> OfRefs(AppDbContext db, Guid projectId) =>
-        db.ImportSnapshots.Where(s => s.ProjectId == projectId && db.Scans.Any(c => c.Id == s.ScanId && c.PullRequestNumber == null
-            && !(c.RequestedRef != null && System.Text.RegularExpressions.Regex.IsMatch(c.RequestedRef, "^[0-9A-Fa-f]{40}$"))));
-}
 
 /// <summary>
 /// The provenance of a pull request scan: the pull request as GitHub described it when the
@@ -138,6 +125,7 @@ public static class ScanNotes
         "limit:facts" => "The scan reached the most facts one snapshot holds. Later facts were left out.",
         "limit:notes" => "More notes exist than one extraction keeps.",
         "blob-missing" => "GitHub did not return this file. It was not read.",
+        "read-failure" => "The machine that pushed could not read this file.",
         "notes-truncated" => "More notes exist than one scan keeps.",
         "tree-truncated" => "GitHub cut the file list of this repository. No file was read.",
         "path-too-long" => "The path is longer than a scan records. The file was not read.",

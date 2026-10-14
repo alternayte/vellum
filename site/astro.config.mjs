@@ -61,7 +61,13 @@ export default defineConfig({
             },
             {
               label: 'Import from a repository',
-              items: ['how-to/connect-github', 'how-to/import-a-repository', 'how-to/check-change-impact', 'how-to/report-impact-in-pull-request-ci'],
+              items: [
+                'how-to/connect-github',
+                'how-to/import-a-repository',
+                'how-to/push-evidence-from-ci-or-a-laptop',
+                'how-to/check-change-impact',
+                'how-to/report-impact-in-pull-request-ci',
+              ],
             },
             {
               label: 'Use the assistant',
@@ -125,6 +131,7 @@ export default defineConfig({
             'reference/promises-and-evidence',
             'reference/review-rules',
             'reference/extraction-rules',
+            'reference/vellum-cli',
             'reference/cost-model',
             'reference/stress-model',
             'reference/k6-results-and-targets',

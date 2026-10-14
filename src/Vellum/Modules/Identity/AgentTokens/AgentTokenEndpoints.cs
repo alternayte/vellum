@@ -7,7 +7,7 @@ using static Vellum.Shared.ResultExtensions;
 
 namespace Vellum.Modules.Identity.AgentTokens;
 
-/// <param name="Scopes">One or more of <c>read</c>, <c>propose</c>, <c>export</c>, <c>scan-pull-request</c>.</param>
+/// <param name="Scopes">One or more of <c>read</c>, <c>propose</c>, <c>export</c>, <c>scan-pull-request</c>, <c>push</c>.</param>
 /// <param name="ProjectId">Restricts the token to one project of the workspace. Null for every project.</param>
 /// <param name="ExpiresAt">Null for 90 days from now. At most 365 days from now.</param>
 public sealed record CreateAgentTokenRequest(string? Name, IReadOnlyList<string>? Scopes, Guid? ProjectId, DateTimeOffset? ExpiresAt);

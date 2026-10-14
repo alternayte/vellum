@@ -167,6 +167,41 @@ jobs:
           name: backend-slow-test-results
           path: test-results
 
+  # vellum scan: the single-file CLI builds from the server's extraction files and runs.
+  # Nothing is published from here.
+  cli:
+    name: CLI (linux-x64)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj') }}
+          restore-keys: nuget-${{ runner.os }}-
+
+      - name: Publish the single file
+        run: dotnet publish src/Vellum.Cli -c Release -r linux-x64 --self-contained -p:PublishSingleFile=true -p:DebugType=none -o artifacts/cli
+
+      # The file runs on a machine with no .NET of its own use: it scans a fixture and pushes nothing.
+      - name: The file runs
+        run: |
+          artifacts/cli/Vellum.Cli --version
+          artifacts/cli/Vellum.Cli scan tests/Vellum.Tests/Fixtures/Repos/orders --dry-run
+          # The HTTP client of the published file works: with no server, the answer is exit code 5
+          # (unreachable), not a crash of the client the test suite cannot see.
+          code=0
+          VELLUM_TOKEN=vlm_agt_none artifacts/cli/Vellum.Cli scan tests/Vellum.Tests/Fixtures/Repos/orders \
+            --url http://127.0.0.1:9 --project 00000000-0000-0000-0000-000000000001 --timeout 5 || code=$?
+          test "$code" = 5
+
   web:
     name: Web client
     runs-on: ubuntu-latest
