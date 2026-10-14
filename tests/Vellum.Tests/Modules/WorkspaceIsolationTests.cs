@@ -118,4 +118,45 @@ public class WorkspaceIsolationTests(IntegrationFixture fixture)
             Assert.Equal(before[i], await owner.GetStringAsync(Url(theirs, reads[i])));
         Assert.Equal(draftBefore, await owner.GetStringAsync(Url(theirs, "channels", draft.StreamId)));
     }
+
+    [Fact]
+    public async Task The_project_its_revisions_and_its_comparisons_are_closed_to_a_user_of_another_workspace()
+    {
+        using var factory = TestHost.Create(fixture);
+
+        // The owner's project: an element, a named revision and a draft.
+        using var owner = await TestHost.SignInAsync(factory);
+        var (_, theirs) = await TestHost.CreateProjectAsync(owner);
+        await TestHost.Created(owner.PostAsJsonAsync(Url(theirs, "elements"), new { id = Guid.NewGuid(), kind = "system", name = "Secret system" }));
+        var revision = Guid.NewGuid();
+        await TestHost.Created(owner.PostAsJsonAsync(Url(theirs, "revisions"), new { id = revision, name = "Secret revision" }));
+        var draft = (await (await TestHost.Created(owner.PostAsJsonAsync(Url(theirs, "drafts"), new { id = Guid.NewGuid(), name = "Secret draft" })))
+            .Content.ReadFromJsonAsync<DraftDto>())!;
+        var compare = $"model/compare?left=revision:{revision}&right={draft.StreamId}";
+        Assert.Contains("Secret system", await owner.GetStringAsync(Url(theirs, $"revisions/{revision}/model")));
+        Assert.Equal(HttpStatusCode.OK, (await owner.GetAsync(Url(theirs, compare))).StatusCode);
+
+        using var stranger = await TestHost.SignInAsync(factory);
+        var (_, mine) = await TestHost.CreateProjectAsync(stranger);
+
+        async Task AssertClosed(HttpStatusCode expected, string url, string what)
+        {
+            var response = await stranger.GetAsync(url);
+            var body = await response.Content.ReadAsStringAsync();
+            Assert.True(response.StatusCode == expected, $"{what}: expected {expected}, got {response.StatusCode} {body}");
+            Assert.DoesNotContain("ecret", body);
+            Assert.DoesNotContain(theirs.ToString(), body);
+        }
+
+        // 1. The owner's project: it reads as a project that does not exist, and its models are forbidden.
+        await AssertClosed(HttpStatusCode.NotFound, $"/api/projects/{theirs}", "GET project");
+        await AssertClosed(HttpStatusCode.Forbidden, Url(theirs, $"revisions/{revision}/model"), "GET revision model");
+        await AssertClosed(HttpStatusCode.Forbidden, Url(theirs, compare), "GET compare");
+        await AssertClosed(HttpStatusCode.Forbidden, Url(theirs, "model/compare?left=main&right=main"), "GET compare of main");
+
+        // 2. The stranger's own project with the owner's revision and draft: they name nothing here.
+        await AssertClosed(HttpStatusCode.NotFound, Url(mine, $"revisions/{revision}/model"), "GET foreign revision model");
+        await AssertClosed(HttpStatusCode.BadRequest, Url(mine, $"model/compare?left=revision:{revision}&right=main"), "compare with a foreign revision");
+        await AssertClosed(HttpStatusCode.BadRequest, Url(mine, $"model/compare?left=main&right={draft.StreamId}"), "compare with a foreign draft");
+    }
 }

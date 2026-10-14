@@ -238,6 +238,28 @@ public class RevisionVariantEndpointTests
     }
 
     [Fact]
+    public async Task A_refused_comparison_names_the_side_it_refuses()
+    {
+        using var factory = CreateFactory();
+        using var client = await CreateAuthenticatedClientAsync(factory);
+        var projectId = await SetupProjectAsync(client);
+
+        async Task<string?> RefusedField(string query)
+        {
+            var response = await client.GetAsync($"/api/projects/{projectId}/model/compare?{query}");
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+            var error = await response.Content.ReadFromJsonAsync<Vellum.Shared.ErrorResponse>();
+            return Assert.Single(error!.Errors!).Field;
+        }
+
+        Assert.Equal("left", await RefusedField($"left=revision:{Guid.NewGuid()}&right=main"));
+        Assert.Equal("right", await RefusedField($"left=main&right=revision:{Guid.NewGuid()}"));
+        Assert.Equal("left", await RefusedField($"left={Guid.NewGuid()}&right=main"));
+        Assert.Equal("right", await RefusedField($"left=main&right={Guid.NewGuid()}"));
+        Assert.Equal("right", await RefusedField("left=main&right=nonsense"));
+    }
+
+    [Fact]
     public async Task Revision_and_variant_endpoints_require_authentication()
     {
         using var factory = CreateFactory();
