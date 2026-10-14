@@ -103,9 +103,8 @@ client for the agent interface.
   certificate only. No run used a real reverse proxy. Use the local profile for real work.
 - No run sent telemetry to a real OpenTelemetry collector.
 - Some actions have no control in the app and work through the HTTP API only: rename or
-  delete a project or a workspace, rename, move or delete a project document, manage
-  document spaces, set the kind of a relationship, and read the findings of a named
-  revision. The how-to guides say where.
+  delete a project or a workspace, rename, move or delete a project document, and manage
+  document spaces. The how-to guides say where.
 - There is no licence file yet.
 
 `PROGRESS.md` holds the exact state of each build step and the evidence for it.

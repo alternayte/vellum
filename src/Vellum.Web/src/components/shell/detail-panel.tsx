@@ -17,6 +17,8 @@ import { ConflictResolver } from '@/components/review/conflict-resolver'
 import { CommentList } from '@/components/comments/comment-list'
 import { CommentInput } from '@/components/comments/comment-input'
 import { useComments } from '@/hooks/use-draft-comments'
+import type { Provenance } from '@/lib/fact-status'
+import { FactTruth } from './fact-truth'
 
 interface ElementData {
   id: string
@@ -28,6 +30,8 @@ interface ElementData {
   tags: string[]
   parentId: string | null
   icon: string | null
+  factStatus?: string
+  provenance?: Provenance | null
 }
 
 interface RelationshipData {
@@ -37,6 +41,9 @@ interface RelationshipData {
   label: string | null
   technology: string | null
   lineShape: string | null
+  kind?: string
+  factStatus?: string
+  provenance?: Provenance | null
 }
 
 interface MessageData {
@@ -47,6 +54,8 @@ interface MessageData {
   consumerIds: string[]
   schemaId: string | null
   tags: string[]
+  factStatus?: string
+  provenance?: Provenance | null
 }
 
 interface SchemaData {
@@ -230,6 +239,14 @@ export function DetailPanel({
                   </div>
                 </div>
               )}
+
+              <section aria-labelledby={idFor('message-truth')}>
+                <h3 id={idFor('message-truth')} className={SECTION_HEADING}>Truth</h3>
+                <FactTruth
+                  projectId={projectId} entityType="message" entityId={selectedMessage.id}
+                  factStatus={selectedMessage.factStatus} provenance={selectedMessage.provenance} readOnly={readOnly}
+                />
+              </section>
             </div>
           </div>
         )}
@@ -348,6 +365,13 @@ export function DetailPanel({
                     />
                   </dd>
                 </dl>
+                <section aria-labelledby={idFor('element-truth')}>
+                  <h3 id={idFor('element-truth')} className={SECTION_HEADING}>Truth</h3>
+                  <FactTruth
+                    projectId={projectId} entityType="element" entityId={selectedElement.id}
+                    factStatus={selectedElement.factStatus} provenance={selectedElement.provenance} readOnly={readOnly}
+                  />
+                </section>
                 <section aria-labelledby={idFor('element-tags')}>
                   <h3 id={idFor('element-tags')} className={SECTION_HEADING}>Tags</h3>
                   <TagEditor
@@ -480,6 +504,14 @@ export function DetailPanel({
                   />
                 </div>
                 <div>
+                  <span id={idFor('relationship-kind')} className="mb-1 block text-xs text-muted-foreground">Kind</span>
+                  <KindToggle
+                    labelledBy={idFor('relationship-kind')}
+                    value={selectedRel.kind ?? 'structural'}
+                    onChange={(kind) => onUpdateRelationship?.(selectedRel.id, { kind })}
+                  />
+                </div>
+                <div>
                   <label htmlFor={idFor('relationship-line')} className="mb-1 block text-xs text-muted-foreground">Line Style</label>
                   <select
                     id={idFor('relationship-line')}
@@ -492,6 +524,13 @@ export function DetailPanel({
                     <option value="step">Right-angle (Step)</option>
                   </select>
                 </div>
+                <section aria-labelledby={idFor('relationship-truth')}>
+                  <h3 id={idFor('relationship-truth')} className={SECTION_HEADING}>Truth</h3>
+                  <FactTruth
+                    projectId={projectId} entityType="relationship" entityId={selectedRel.id}
+                    factStatus={selectedRel.factStatus} provenance={selectedRel.provenance} readOnly={readOnly}
+                  />
+                </section>
               </div>
             )}
           </>
@@ -543,6 +582,37 @@ function StatusSelect({ id, value, onChange }: { id: string; value: string; onCh
         <option value="deprecated">Deprecated</option>
       </select>
     </span>
+  )
+}
+
+const KINDS = [
+  { value: 'structural', label: 'Structural', hint: 'One part uses or depends on the other.' },
+  { value: 'behavioural', label: 'Behavioural', hint: 'One part calls or sends to the other at run time.' },
+] as const
+
+/** Structural or behavioural. The two kinds are drawn differently and the review reads them differently. */
+function KindToggle({ labelledBy, value, onChange }: { labelledBy: string; value: string; onChange: (kind: string) => void }) {
+  return (
+    <div role="radiogroup" aria-labelledby={labelledBy} className="inline-flex rounded-lg border border-border p-0.5">
+      {KINDS.map((kind) => {
+        const active = value === kind.value
+        return (
+          <button
+            key={kind.value}
+            type="button"
+            role="radio"
+            aria-checked={active}
+            title={kind.hint}
+            onClick={() => !active && onChange(kind.value)}
+            className={`rounded-md px-2.5 py-1 text-xs focus-visible:outline-2 focus-visible:outline-primary ${
+              active ? 'bg-accent text-accent-foreground' : 'text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            {kind.label}
+          </button>
+        )
+      })}
+    </div>
   )
 }
 

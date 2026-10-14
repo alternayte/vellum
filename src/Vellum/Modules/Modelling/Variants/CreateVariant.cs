@@ -91,8 +91,12 @@ public static class CreateVariant
 
             if (request.BaseRevisionId is { } revisionId)
             {
-                var revision = await db.Revisions.AsNoTracking()
-                    .FirstOrDefaultAsync(r => r.Id == revisionId && r.ProjectId == projectId, ct);
+                // The row is held until the commit, so a delete of the revision waits for the
+                // fork and then finds the variant that names it (see DeleteRevision).
+                var revision = await db.Revisions
+                    .FromSql($"SELECT * FROM modelling.revisions WHERE id = {revisionId} AND project_id = {projectId} FOR KEY SHARE")
+                    .AsNoTracking()
+                    .ToListAsync(ct) is [var held] ? held : null;
                 if (revision is null)
                     return Results.NotFound(new ErrorResponse("not_found", "Base revision not found"));
 

@@ -24,6 +24,8 @@ export function scopeNote(flyout: Flyout | null, selection: ModelSelection): str
   const model = selectionName(selection)
   if (NOT_BRANCHED[flyout]) return `This panel does not follow ${model}. ${NOT_BRANCHED[flyout]}`
   if (selection.kind === 'revision') {
+    if (flyout === 'review') return `The findings are of ${model}. Decisions and open questions belong to the project. The assistant reads main.`
+    if (flyout === 'contracts') return `The contracts are of ${model}. A revision is read-only.`
     return flyout === 'catalog'
       ? `The catalog lists ${model}. A revision is read-only, so nothing can be added to it.`
       : `This panel shows main, not ${model}. A revision is read-only: the canvas and Compare show it.`

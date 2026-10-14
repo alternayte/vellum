@@ -535,6 +535,8 @@ public static partial class BuildModule
         var decisions = pin.Decisions ?? [];
         if (pin.Seal is { Length: 0 or > PinnedSeal.MaxLength })
             return Invalid($"{field}.seal", $"A seal has at most {PinnedSeal.MaxLength} characters");
+        if (pin.RevisionName is not null && (pin.RevisionId is null || TextRule.Line($"{field}.revisionName", pin.RevisionName) is not null))
+            return Invalid($"{field}.revisionName", "A revision name is one line, and only a state that names a revision has one");
         if (pin.Scenarios.Count + pin.Schemas.Count + pin.Promises.Count + decisions.Count > limits.MaxFiles
             || pin.Runs.Count > limits.MaxPinnedRuns || pin.Sources.Count > limits.MaxFiles)
             return Invalid(field, "The pinned state names more inputs than a bundle holds");
@@ -557,10 +559,21 @@ public static partial class BuildModule
         {
             var (revision, refusal) = await PinnedModel.ResolveAsync(services, projectId, revisionId, null, ct);
             if (revision is null)
-                return (null, refusal);
-            return revision.Pin.StreamId == pin.Branch && revision.Pin.Version == pin.StreamVersion
-                ? (revision, null)
-                : (null, Invalid($"{field}.streamVersion", "The named revision is of another branch or version than the pinned state says"));
+            {
+                // A revision is a snapshot of its branch at one version. A state that names the
+                // revision as it was pinned is generated again from that version after the
+                // revision was deleted.
+                if (pin.RevisionName is null || !await IsBranchAsync(services, projectId, pin.Branch, ct))
+                    return (null, refusal);
+                var folded = await PinnedModel.AtVersionAsync(services.GetRequiredService<IEventStore>(), pin.Branch, pin.StreamVersion, ct);
+                return folded is null
+                    ? (null, refusal)
+                    : (new PinnedModel(new ModelPin(pin.Branch, pin.StreamVersion, revisionId, pin.RevisionName), folded), null);
+            }
+            if (revision.Pin.StreamId != pin.Branch || revision.Pin.Version != pin.StreamVersion)
+                return (null, Invalid($"{field}.streamVersion", "The named revision is of another branch or version than the pinned state says"));
+            // A renamed revision is named as it was pinned.
+            return (pin.RevisionName is { } pinnedName ? revision with { Pin = revision.Pin with { RevisionName = pinnedName } } : revision, null);
         }
 
         if (!await IsBranchAsync(services, projectId, pin.Branch, ct))

@@ -88,12 +88,14 @@ interface MessagesSectionProps {
   elements: NamedElement[]
   schemas: Schema[]
   schemasLoading: boolean
+  /** The messages of a revision: shown, not changed. */
+  readOnly?: boolean
 }
 
 /** The form that is open: a new message, or the message with this ID. */
 type Open = { kind: 'new' } | { kind: 'edit'; id: string } | null
 
-export function MessagesSection({ projectId, branchId, messages, elements, schemas, schemasLoading }: MessagesSectionProps) {
+export function MessagesSection({ projectId, branchId, messages, elements, schemas, schemasLoading, readOnly = false }: MessagesSectionProps) {
   const { addMessage, updateMessage, removeMessage } = useMessageMutations(projectId, branchId)
   const [open, setOpen] = useState<Open>(null)
   const [failure, setFailure] = useState<FormFailure>(NO_FAILURE)
@@ -111,7 +113,7 @@ export function MessagesSection({ projectId, branchId, messages, elements, schem
 
   return (
     <Section
-      title="Messages" count={messages.length} adding={open?.kind === 'new'} onToggle={() => show(open?.kind === 'new' ? null : { kind: 'new' })}
+      title="Messages" count={messages.length} adding={open?.kind === 'new'} onToggle={readOnly ? undefined : () => show(open?.kind === 'new' ? null : { kind: 'new' })}
       hint={elements.length === 0
         ? 'Add an element first. A message has a producer.'
         : 'A message is what a producer publishes to a channel, such as OrderPlaced. Its schema is the contract for the payload.'}
@@ -134,9 +136,9 @@ export function MessagesSection({ projectId, branchId, messages, elements, schem
         ) : (
           <Row
             key={message.id} title={message.name} detail={detail(message)}
-            editLabel={`Edit message ${message.name}`} onEdit={() => show({ kind: 'edit', id: message.id })}
+            editLabel={`Edit message ${message.name}`} onEdit={readOnly ? undefined : () => show({ kind: 'edit', id: message.id })}
             removeLabel={`Remove message ${message.name}`}
-            onRemove={() => {
+            onRemove={readOnly ? undefined : () => {
               setRefusal(null)
               removeMessage.mutate(message.id, { onError: (error) => setRefusal({ id: message.id, message: error.message }) })
             }}

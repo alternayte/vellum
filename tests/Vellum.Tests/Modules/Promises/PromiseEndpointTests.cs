@@ -443,6 +443,11 @@ public class PromiseEndpointTests(ImportHost import) : IClassFixture<ImportHost>
         var pinned = await orders.RunAsync(id, "O1", new { modelRevisionId = revisionId });
         Assert.Equal(passed["evidence"]![0]!["hash"]!.GetValue<string>(), pinned["evidence"]![0]!["hash"]!.GetValue<string>());
         Assert.Equal((revisionId, "With outbox"), (pinned["modelRevision"]!["revisionId"]!.GetValue<Guid>(), pinned["modelRevision"]!["revisionName"]!.GetValue<string>()));
+        // The run pins the revision, so the revision is not deleted, and the refusal names the run.
+        var pinnedRevisionDelete = await owner.DeleteAsync(orders.Url($"revisions/{revisionId}"));
+        Assert.Equal(HttpStatusCode.Conflict, pinnedRevisionDelete.StatusCode);
+        Assert.StartsWith("The promise run of ORD-014/O1 at ",
+            Assert.Single((await pinnedRevisionDelete.Content.ReadFromJsonAsync<Vellum.Shared.ErrorResponse>())!.Errors!).Message);
         var stale = (await orders.GetAsync(id))["current"]!["evidenceStatus"]!["gaps"]!.AsArray().Select(g => g!.GetValue<string>()).ToList();
         Assert.Contains(stale, g => g.StartsWith("ORD-014/O1 passed (stale): it ran on model version", StringComparison.Ordinal) && g.Contains("The model is now at version"));
 

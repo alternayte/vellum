@@ -9,6 +9,7 @@ import { useDraftStore, type ModelSelection } from '@/stores/draft-store'
 import { AbandonDraftDialog, CreateBranchDialog, type BranchKind } from './create-branch-dialog'
 import { CompareDialog } from './compare-dialog'
 import { MergeDialog } from './merge-dialog'
+import { DeleteRevisionDialog, DeleteVariantDialog, RenameRevisionDialog } from './change-branch-dialogs'
 
 interface Props {
   projectId: string
@@ -16,7 +17,9 @@ interface Props {
   role: Role
 }
 
-type Open = { dialog: 'create'; kind: BranchKind } | { dialog: 'merge' } | { dialog: 'abandon' } | { dialog: 'compare' } | null
+type Open =
+  | { dialog: 'create'; kind: BranchKind } | { dialog: 'merge' } | { dialog: 'abandon' } | { dialog: 'compare' }
+  | { dialog: 'rename-revision' } | { dialog: 'delete-revision' } | { dialog: 'delete-variant' } | null
 
 const KIND_LABEL: Record<ModelSelection['kind'], string> = { main: 'main', draft: 'Draft', variant: 'Variant', revision: 'Revision' }
 
@@ -151,6 +154,15 @@ export function BranchSwitcher({ projectId, workspaceId, role }: Props) {
                 {canEdit && <button type="button" className={cn(actionClass, 'text-destructive')} onClick={() => start({ dialog: 'abandon' })}>Abandon this draft…</button>}
               </>
             )}
+            {selection.kind === 'variant' && canEdit && (
+              <button type="button" className={cn(actionClass, 'text-destructive')} onClick={() => start({ dialog: 'delete-variant' })}>Delete this variant…</button>
+            )}
+            {selection.kind === 'revision' && canEdit && (
+              <>
+                <button type="button" className={actionClass} onClick={() => start({ dialog: 'rename-revision' })}>Rename this revision…</button>
+                <button type="button" className={cn(actionClass, 'text-destructive')} onClick={() => start({ dialog: 'delete-revision' })}>Delete this revision…</button>
+              </>
+            )}
             {canEdit && (
               <>
                 <button type="button" className={actionClass} onClick={() => start({ dialog: 'create', kind: 'draft' })}>New draft from main…</button>
@@ -171,6 +183,15 @@ export function BranchSwitcher({ projectId, workspaceId, role }: Props) {
       )}
       {open?.dialog === 'abandon' && selection.kind === 'draft' && (
         <AbandonDraftDialog projectId={projectId} draft={selection} onClose={() => setOpen(null)} />
+      )}
+      {open?.dialog === 'rename-revision' && selection.kind === 'revision' && (
+        <RenameRevisionDialog projectId={projectId} revision={selection} onClose={() => setOpen(null)} />
+      )}
+      {open?.dialog === 'delete-revision' && selection.kind === 'revision' && (
+        <DeleteRevisionDialog projectId={projectId} revision={selection} onClose={() => setOpen(null)} />
+      )}
+      {open?.dialog === 'delete-variant' && selection.kind === 'variant' && (
+        <DeleteVariantDialog projectId={projectId} variant={selection} onClose={() => setOpen(null)} />
       )}
       {open?.dialog === 'compare' && (
         <CompareDialog

@@ -57,6 +57,13 @@ public sealed record PinnedSource(
 /// caller only when its seal verifies. The seal is no input of the files: it changes no file
 /// hash and no bundle hash.
 /// </param>
+/// <param name="RevisionName">
+/// The name of the named revision when the state was pinned. A revision can be renamed, and a
+/// revision that nothing else names can be deleted: a state generated again names the
+/// revision as it was pinned and reads its model from the branch at the pinned version. Null
+/// for a branch pin, and in a state that was made before the member existed; the member is
+/// then left out of its JSON so that its manifest keeps its bytes.
+/// </param>
 public sealed record PinnedState(
     Guid ProjectId, string ProjectName, Guid Branch, long StreamVersion, Guid? RevisionId,
     IReadOnlyList<PinnedStream> Scenarios,
@@ -67,7 +74,9 @@ public sealed record PinnedState(
     [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     IReadOnlyList<PinnedStream>? Decisions = null,
     [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
-    string? Seal = null);
+    string? Seal = null,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    string? RevisionName = null);
 
 /// <param name="StreamVersion">The version of the schema stream. <paramref name="Version"/> is the version of the content, which a rename does not change.</param>
 public sealed record BuildSchema(Guid Id, string Name, string? Description, string Content, int Version, long StreamVersion = 0);
@@ -239,7 +248,8 @@ public sealed record BuildInput(
             [.. promiseStates.SelectMany(p => p.Runs.Values.Select(run => new PinnedRun(p.Id, run.PromiseRevision, run.ObligationId, run.Id)))
                 .OrderBy(r => r.PromiseId).ThenBy(r => r.PromiseRevision).ThenBy(r => r.ObligationId, StringComparer.Ordinal)],
             [.. sources.OrderBy(s => s.Repository, StringComparer.Ordinal)],
-            pins is not null && pins.Decisions is null ? null : [.. decisions.OrderBy(d => d.Id).Select(d => new PinnedStream(d.Id, d.Version))]);
+            pins is not null && pins.Decisions is null ? null : [.. decisions.OrderBy(d => d.Id).Select(d => new PinnedStream(d.Id, d.Version))],
+            RevisionName: pins is not null ? pins.RevisionName : pinned.Pin.RevisionName);
 
         return new BuildInput(
             projectId, projectName, pinned.Pin, pinned.State, schemas, [.. scenarios.Values.Select(s => s.Document)], promises, state, scenarios)

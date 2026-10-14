@@ -13,6 +13,8 @@ vi.mock('../../../src/hooks/use-auth', () => ({
   useAuth: () => ({ user: null }),
 }))
 vi.mock('../../../src/api/client', () => ({}))
+// The truth label reads and writes through the API; these tests are about the other fields.
+vi.mock('../../../src/components/shell/fact-truth', () => ({ FactTruth: () => null }))
 
 const ELEMENTS = [
   {

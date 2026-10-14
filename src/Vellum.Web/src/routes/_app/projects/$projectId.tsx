@@ -29,6 +29,8 @@ import type { ScenarioReference } from '@/components/trace/scenario-editor'
 import { useAddElement, useUpdateElement, useRemoveElement } from '@/hooks/use-elements'
 import { useAddRelationship, useUpdateRelationship, useRemoveRelationship } from '@/hooks/use-relationships'
 import { isProjectRefusal, projectErrorBlocks, refuseWrite, useModel, useProject, writeGuard } from '@/hooks/use-model'
+import { useFactLabel } from '@/lib/fact-labels'
+import { toast } from 'sonner'
 import { useViews, useView, useCreateView, useSaveLayout } from '@/hooks/use-views'
 import { useDocs, useCreateDoc } from '@/hooks/use-docs'
 import { patchApiProjectsByProjectIdDocsByDocId } from '@/api/generated'
@@ -104,6 +106,8 @@ function ProjectWorkspace() {
   // The model of the selected branch or revision. Each tool panel gets the branch as branchId.
   const { elements, relationships, messages, operations, channels, subscriptions, isLoading: modelLoading } = useModel(projectId)
   const contractBranchId = activeDraftStreamId ?? undefined
+  // The named revision that the workbench shows. Contracts and Review read it.
+  const openRevision = selection.kind === 'revision' ? { id: selection.id, name: selection.name } : null
   const { data: project } = useProject(projectId)
   // A named revision never changes, and a viewer changes nothing.
   const readOnly = selection.kind === 'revision' || project?.yourRole === 'Viewer'
@@ -147,6 +151,7 @@ function ProjectWorkspace() {
   const addRelationship = guard(useAddRelationship(projectId, activeDraftStreamId))
   const updateRelationship = guard(useUpdateRelationship(projectId, activeDraftStreamId))
   const removeRelationship = guard(useRemoveRelationship(projectId, activeDraftStreamId))
+  const factLabel = guard(useFactLabel(projectId, activeDraftStreamId))
   const { saveLayout: writeLayout } = useSaveLayout(projectId, activeViewId)
   const saveLayout = useCallback<typeof writeLayout>((positions) => (readOnly ? refuseWrite() : writeLayout(positions)), [readOnly, writeLayout])
   const createView = useCreateView(projectId)
@@ -678,7 +683,7 @@ function ProjectWorkspace() {
             />
           )}
           {activeFlyout === 'contracts' && (
-            <ContractsFlyout projectId={projectId} branchId={contractBranchId} elements={elements ?? []} />
+            <ContractsFlyout projectId={projectId} branchId={contractBranchId} revision={openRevision} elements={elements ?? []} />
           )}
           {activeFlyout === 'scenarios' && (
             <ScenariosFlyout projectId={projectId} branchId={contractBranchId} references={scenarioReferences} />
@@ -686,7 +691,7 @@ function ProjectWorkspace() {
           {activeFlyout === 'import' && <ImportFlyout projectId={projectId} owners={reviewOwners} />}
           {activeFlyout === 'promises' && <PromisesFlyout projectId={projectId} references={scenarioReferences} scenarios={scenarioList ?? []} owners={reviewOwners} />}
           {activeFlyout === 'review' && (
-            <ReviewFlyout projectId={projectId} branchId={contractBranchId} references={scenarioReferences} elementIds={reviewElementIds} owners={reviewOwners} />
+            <ReviewFlyout projectId={projectId} branchId={contractBranchId} revision={openRevision} references={scenarioReferences} elementIds={reviewElementIds} owners={reviewOwners} />
           )}
           {activeFlyout === 'build' && <BuildFlyout projectId={projectId} elements={elements ?? []} selection={() => selectedNodeIdsRef.current} />}
           {activeFlyout === 'stress' && <StressFlyout projectId={projectId} branchId={contractBranchId} scenarios={scenarioList ?? []} />}
@@ -717,6 +722,9 @@ function ProjectWorkspace() {
               readOnly={readOnly}
               messages={messages ?? []}
               onFitViewReady={handleFitViewReady}
+              onFactLabel={(entityType, entityId, action) => factLabel.mutate({ entityType, entityId, action }, {
+                onError: (error) => toast.error(error.message),
+              })}
               onViewportCenterReady={handleViewportCenterReady}
               onAddElement={() => handleOpenCreateDialog()}
               onAddChild={handleOpenCreateDialog}

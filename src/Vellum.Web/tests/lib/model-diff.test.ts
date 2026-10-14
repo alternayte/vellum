@@ -45,6 +45,11 @@ describe('scopeNote', () => {
   })
 
   it('says that a panel shows main while a revision is open', () => {
-    expect(scopeNote('contracts', revision)).toContain("shows main, not the revision 'before'")
+    expect(scopeNote('stress', revision)).toContain("shows main, not the revision 'before'")
+  })
+
+  it('says that Contracts and Review read the open revision', () => {
+    expect(scopeNote('contracts', revision)).toContain("The contracts are of the revision 'before'")
+    expect(scopeNote('review', revision)).toContain("The findings are of the revision 'before'")
   })
 })

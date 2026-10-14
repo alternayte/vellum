@@ -163,6 +163,12 @@ export const branchesApi = {
   revisions: (projectId: string) => api<Revision[]>('GET', `${project(projectId)}/revisions`),
   createRevision: (projectId: string, name: string, note: string | null) =>
     api<Revision>('POST', `${project(projectId)}/revisions`, { id: crypto.randomUUID(), name, note }),
+  renameRevision: (projectId: string, revisionId: string, name: string) =>
+    api<Revision>('PATCH', `${project(projectId)}/revisions/${revisionId}`, { name }),
+  /** Refused with 409 while a promise run, a review snapshot or a variant names the revision; the errors name each one. */
+  deleteRevision: (projectId: string, revisionId: string) => api<void>('DELETE', `${project(projectId)}/revisions/${revisionId}`),
+  /** The variant, its cost sheet and its saved estimates go. Main does not change. */
+  deleteVariant: (projectId: string, variantId: string) => api<void>('DELETE', `${project(projectId)}/variants/${variantId}`),
   revisionModel: (projectId: string, revisionId: string) =>
     api<RevisionModel>('GET', `${project(projectId)}/revisions/${revisionId}/model`),
   variants: async (projectId: string) =>

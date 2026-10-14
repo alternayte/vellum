@@ -8,6 +8,7 @@ import {
 import '@/api/client'
 import { shownInline } from '@/lib/mutation-errors'
 import { unwrap } from './use-contracts'
+import type { Provenance } from '@/lib/fact-status'
 
 export interface Message {
   id: string
@@ -17,6 +18,8 @@ export interface Message {
   consumerIds: string[]
   schemaId: string | null
   tags: string[]
+  factStatus?: string
+  provenance?: Provenance | null
 }
 
 interface Page<T> {

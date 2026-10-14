@@ -16,9 +16,11 @@ import {
   SelectionMode,
   useNodesState,
   useEdgesState,
+  useStore,
   type FitViewOptions,
 } from '@xyflow/react'
 import { SearchOverlay } from './search-overlay'
+import { labelAction } from '@/lib/fact-labels'
 import { NodeContextMenu } from './context-menus/node-context-menu'
 import { EdgeContextMenu } from './context-menus/edge-context-menu'
 import { CanvasContextMenu } from './context-menus/canvas-context-menu'
@@ -103,6 +105,8 @@ interface CanvasViewProps {
   onNodeResize?: (id: string, width: number, height: number) => void
   onNodeDoubleClick?: (elementId: string) => void
   onFitViewReady?: (fitView: () => void) => void
+  /** Accepts a fact as declared or marks it as unknown. The canvas does not change the label: the model does. */
+  onFactLabel?: (entityType: 'element' | 'relationship', id: string, action: 'accept' | 'mark-unknown') => void
   onAddElement?: () => void
   /** Asks for a new element inside `parentId`. The canvas does not add it: the model does. */
   onAddChild?: (parentId: string, kind?: string) => void
@@ -201,6 +205,7 @@ function CanvasViewInner({
   onNodeResize,
   onNodeDoubleClick,
   onFitViewReady,
+  onFactLabel,
   onAddElement,
   onAddChild,
   onConnect: onConnectProp,
@@ -225,6 +230,14 @@ function CanvasViewInner({
 }: CanvasViewProps) {
   const { currentRootId, zoomLevel, setZoom, activeLens, setLens, expandedNodeIds, toggleExpand } = useCanvasStore()
   const { fitView, screenToFlowPosition, getViewport, setViewport, getInternalNode } = useReactFlow()
+  // The zoom is read from the viewport itself: a fit or a programmatic move changes it with no
+  // move event of the pane. It is stored once the viewport has settled, so an animated fit
+  // does not change the level of detail on every frame.
+  const viewportZoom = useStore((s) => s.transform[2])
+  useEffect(() => {
+    const settled = window.setTimeout(() => setZoom(viewportZoom), 80)
+    return () => window.clearTimeout(settled)
+  }, [viewportZoom, setZoom])
   // Read once: the first fit is made at mount.
   const [initialFit] = useState(fitInitial)
   const paneRef = useRef<HTMLDivElement>(null)
@@ -989,7 +1002,6 @@ function CanvasViewInner({
         onConnectEnd={handleConnectEnd}
         onEdgeClick={handleEdgeClick}
         onPaneClick={handlePaneClick}
-        onMoveEnd={(_event, viewport) => setZoom(viewport.zoom)}
         onSelectionChange={handleSelectionChange}
         onNodeContextMenu={handleNodeContextMenu}
         onEdgeContextMenu={readOnly ? noMenu : handleEdgeContextMenu}
@@ -1105,6 +1117,8 @@ function CanvasViewInner({
             readOnly={readOnly}
             onDuplicate={() => onDuplicateElement?.(nodeId)}
             onDelete={() => onDeleteElement?.(nodeId)}
+            labelAction={isReviewMode ? null : labelAction(el.factStatus)}
+            onLabelAction={onFactLabel && (() => { const action = labelAction(el.factStatus); if (action) onFactLabel('element', nodeId, action) })}
           />
         )
       })()}
@@ -1119,6 +1133,11 @@ function CanvasViewInner({
           onReverse={() => onReverseRelationship?.(contextMenu.edgeId)}
           onDelete={() => onDeleteRelationship?.(contextMenu.edgeId)}
           onLineShapeChange={(shape) => onUpdateRelationship?.(contextMenu.edgeId, { lineShape: shape })}
+          labelAction={isReviewMode ? null : labelAction(relationships.find((r) => r.id === contextMenu.edgeId)?.factStatus)}
+          onLabelAction={onFactLabel && (() => {
+            const action = labelAction(relationships.find((r) => r.id === contextMenu.edgeId)?.factStatus)
+            if (action) onFactLabel('relationship', contextMenu.edgeId, action)
+          })}
         />
       )}
 

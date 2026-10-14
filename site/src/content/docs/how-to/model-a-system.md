@@ -88,11 +88,12 @@ To change more than one element, select two or more elements. The toolbar at the
 1. Drag from a handle on the left or the right side of the source element to a handle at the top or the bottom of the target element.
 2. Select the relationship.
 3. In the **Relationship** panel, enter a **Label** and a **Technology**.
-4. Set the **Line Style** to **Curved (Bezier)**, **Straight** or **Right-angle (Step)**.
+4. Set the **Kind** to **Structural** or **Behavioural**. A structural relationship says that one part uses or depends on the other. A behavioural relationship says that one part calls or sends to the other at run time.
+5. Set the **Line Style** to **Curved (Bezier)**, **Straight** or **Right-angle (Step)**.
 
 To delete it, select the **⋯** button in the header of the panel, then select **Delete relationship**. Confirm **Delete this relationship?**.
 
-A relationship has a kind: `structural` or `behavioural`. A relationship that you draw is `structural`. The app has no control for the kind. To set it, send `kind` in `POST /api/projects/{projectId}/relationships`.
+A relationship that you draw is **Structural**. In the API the kind is `structural` or `behavioural`.
 
 The server refuses a relationship when an end does not exist. The messages are `Source element not found` and `Target element not found`.
 
@@ -134,6 +135,29 @@ Each element and relationship has a truth label.
 3. Press `4` again to close the panel.
 
 An element that you draw is **Declared**. An element from an import has the label of its evidence. See [Evidence and truth labels](/concepts/evidence-and-truth-labels/).
+
+The detail panel of an element, a relationship or a message shows the label below **Truth**, with the source, the source revision, the confidence and the person who accepted the fact and when.
+
+## Change a truth label
+
+A person changes a label in two ways only. No control sets **Measured** or **Observed in source**: those labels claim evidence, and only an import or a measured result gives evidence.
+
+| Label now | Action | Label after |
+|---|---|---|
+| **Inferred**, **Observed in source** or **Unknown** | **Accept as declared** | **Declared** |
+| **Declared** | **Mark as unknown** | **Unknown** |
+| **Measured** | None | **Measured** |
+
+1. Select the element or the relationship. In the **Details** tab, find **Truth**.
+2. Select **Accept as declared** or **Mark as unknown**.
+
+![The detail panel of the system Payments System. Below Truth it shows the label Inferred and the button Accept as declared. Below the label are the source github.com/acme/shop@4f2a91c:payments/Client.cs:12-40, the source revision 4f2a91c, the confidence 70%, Accepted by Dev User and the time.](../../../assets/screenshots/detail-panel-truth.png)
+
+You can also right-click the element or the relationship on the canvas and select the action. For an operation, a channel, a subscription or a binding, use the action on its row in **Contracts**.
+
+The fact keeps its source, its source revision and its confidence. Vellum records you as the person who accepted it, and the time. You need the editor role. A named revision is read-only, so it has no action.
+
+The API endpoints are `POST /api/projects/{projectId}/facts/{entityType}/{entityId}/accept` and `POST /api/projects/{projectId}/facts/{entityType}/{entityId}/mark-unknown`. `entityType` is `element`, `relationship`, `message`, `operation`, `channel`, `subscription` or `binding`. Add `?branchId=<stream-id>` for a draft or a variant. The request has no body. An agent token gets `403`. A fact with another label gets `409` and the reason.
 
 The other lenses are `1` for status, `2` for metadata and `3` for messages.
 

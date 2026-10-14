@@ -14,6 +14,8 @@ import {
 interface Props {
   projectId: string
   branchId?: string | null
+  /** The named revision that the workbench shows. The findings are of it. */
+  revision?: { id: string; name: string } | null
   /** The element to show on the canvas for a cited part: the element itself, or the element that owns the part. */
   focusTarget: (cited: Cited) => string | null
   onFocus: (elementId: string) => void
@@ -49,14 +51,14 @@ export function Toggle<T extends string>({ value, label, active, onToggle }: { v
   )
 }
 
-function FindingCard({ view, decisions, projectId, branchId, focusTarget, onFocus, onChanged }: Props & { view: FindingView; decisions: Decision[]; onChanged: () => void }) {
+function FindingCard({ view, decisions, projectId, branchId, revision, focusTarget, onFocus, onChanged }: Props & { view: FindingView; decisions: Decision[]; onChanged: () => void }) {
   const { finding } = view
   const [mode, setMode] = useState<'none' | 'wont-fix' | 'settle'>('none')
   const [reason, setReason] = useState('')
   const [decisionId, setDecisionId] = useState('')
   const set = useMutation({
     mutationFn: (request: { status: 'open' | 'accepted-by-decision' | 'wont-fix'; decisionId?: string; reason?: string }) =>
-      reviewApi.setDisposition(projectId, branchId, finding, request.status, request),
+      reviewApi.setDisposition(projectId, branchId, finding, request.status, request, revision?.id ?? null),
     onSuccess: () => { setMode('none'); setReason(''); onChanged() },
     onError: shownInline,
   })
@@ -157,11 +159,12 @@ function FindingCard({ view, decisions, projectId, branchId, focusTarget, onFocu
  * the declared model shows. It is not evidence about a running system.
  */
 export function FindingsTab(props: Props) {
-  const { projectId, branchId } = props
+  const { projectId, branchId, revision } = props
+  const revisionId = revision?.id ?? null
   const queryClient = useQueryClient()
   const findings = useQuery({
-    queryKey: ['projects', projectId, 'review', 'findings', { branchId: branchId ?? null }],
-    queryFn: () => reviewApi.findings(projectId, branchId), staleTime: 0,
+    queryKey: ['projects', projectId, 'review', 'findings', { branchId: branchId ?? null, revisionId }],
+    queryFn: () => reviewApi.findings(projectId, branchId, revisionId), staleTime: 0,
   })
   const rules = useQuery({ queryKey: ['projects', projectId, 'review', 'rules'], queryFn: () => reviewApi.rules(projectId), staleTime: Infinity })
   const decisions = useQuery({ queryKey: ['projects', projectId, 'decisions'], queryFn: () => reviewApi.decisions(projectId) })
@@ -175,7 +178,7 @@ export function FindingsTab(props: Props) {
     void queryClient.invalidateQueries({ queryKey: ['projects', projectId, 'build'] })
   }
   const save = useMutation({
-    mutationFn: () => reviewApi.saveSnapshot(projectId, branchId, note.trim() || null),
+    mutationFn: () => reviewApi.saveSnapshot(projectId, branchId, note.trim() || null, revisionId),
     onSuccess: () => { setNote(''); return queryClient.invalidateQueries({ queryKey: ['projects', projectId, 'review', 'snapshots'] }) },
     onError: shownInline,
   })
@@ -216,7 +219,7 @@ export function FindingsTab(props: Props) {
               A finding says what the declared model shows. “Verified” means the model satisfies the rule. It is not evidence about a running system. You can always save a draft.
             </p>
             <p className="mt-2 font-mono text-[10px] text-muted-foreground" title={data.hash}>
-              model version {data.modelVersion} · {data.ruleSetVersion} · findings {data.hash.slice(0, 12)}
+              {revision ? `revision ${revision.name} · ` : ''}model version {data.modelVersion} · {data.ruleSetVersion} · findings {data.hash.slice(0, 12)}
             </p>
           </div>
 

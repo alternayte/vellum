@@ -1,5 +1,6 @@
-import { ArrowLeftRight, Pencil, Trash2, Spline, Minus, CornerDownRight } from 'lucide-react'
+import { ArrowLeftRight, BadgeCheck, CircleHelp, Pencil, Trash2, Spline, Minus, CornerDownRight } from 'lucide-react'
 import { ContextMenu, MenuGroup, MenuItem, MenuSeparator } from './menu'
+import { LABEL_ACTION_TEXT } from '@/lib/fact-labels'
 
 interface EdgeContextMenuProps {
   open: boolean
@@ -10,6 +11,9 @@ interface EdgeContextMenuProps {
   onReverse: () => void
   onDelete: () => void
   onLineShapeChange?: (shape: string) => void
+  /** The one label change a person can make to this fact, or null. */
+  labelAction?: 'accept' | 'mark-unknown' | null
+  onLabelAction?: () => void
 }
 
 export function EdgeContextMenu({
@@ -21,6 +25,8 @@ export function EdgeContextMenu({
   onReverse,
   onDelete,
   onLineShapeChange,
+  labelAction = null,
+  onLabelAction,
 }: EdgeContextMenuProps) {
   if (!open) return null
   const shape = currentLineShape || 'bezier'
@@ -39,6 +45,13 @@ export function EdgeContextMenu({
         </>
       )}
       <MenuSeparator />
+      {labelAction && onLabelAction && (
+        <MenuItem
+          icon={labelAction === 'accept' ? <BadgeCheck className="h-3.5 w-3.5" /> : <CircleHelp className="h-3.5 w-3.5" />}
+          label={LABEL_ACTION_TEXT[labelAction]}
+          onSelect={() => { onLabelAction(); onClose() }}
+        />
+      )}
       <MenuItem icon={<ArrowLeftRight className="h-3.5 w-3.5" />} label="Reverse direction" onSelect={() => { onReverse(); onClose() }} />
       <MenuSeparator />
       <MenuItem icon={<Trash2 className="h-3.5 w-3.5" />} label="Delete" destructive onSelect={() => { onDelete(); onClose() }} />

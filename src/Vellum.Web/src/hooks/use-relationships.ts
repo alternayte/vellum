@@ -6,6 +6,7 @@ import {
   deleteApiProjectsByProjectIdRelationshipsByRelationshipId,
 } from '@/api/generated'
 import '@/api/client' // ensure client is configured
+import type { Provenance } from '@/lib/fact-status'
 
 export interface Relationship {
   id: string
@@ -14,6 +15,10 @@ export interface Relationship {
   label: string | null
   technology: string | null
   lineShape: string | null
+  /** `structural` or `behavioural`. */
+  kind?: string
+  factStatus?: string
+  provenance?: Provenance | null
 }
 
 interface Page<T> {
@@ -94,6 +99,8 @@ export function useUpdateRelationship(projectId: string, branchId?: string | nul
           label: fields.label ?? null,
           technology: fields.technology ?? null,
           lineShape: fields.lineShape ?? null,
+          kind: fields.kind ?? null,
+          setKind: 'kind' in fields,
           setLabel: 'label' in fields,
           setTechnology: 'technology' in fields,
           setLineShape: 'lineShape' in fields,

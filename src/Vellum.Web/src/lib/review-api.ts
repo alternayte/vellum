@@ -214,21 +214,25 @@ export interface Critique {
 }
 
 const base = (projectId: string) => `/api/projects/${projectId}`
-const branchQuery = (branchId?: string | null) => (branchId ? `?branchId=${branchId}` : '')
+/** The model a request of the review reads: a named revision, a draft or variant, or main. */
+const modelQuery = (branchId?: string | null, revisionId?: string | null) =>
+  revisionId ? `?revisionId=${revisionId}` : branchId ? `?branchId=${branchId}` : ''
 
 export const reviewApi = {
   rules: (projectId: string) => api<Rule[]>('GET', `${base(projectId)}/review/rules`),
-  findings: (projectId: string, branchId?: string | null) => api<FindingsResponse>('GET', `${base(projectId)}/review/findings${branchQuery(branchId)}`),
+  findings: (projectId: string, branchId?: string | null, revisionId?: string | null) =>
+    api<FindingsResponse>('GET', `${base(projectId)}/review/findings${modelQuery(branchId, revisionId)}`),
   setDisposition: (
-    projectId: string, branchId: string | null | undefined, finding: Finding, status: DispositionStatus, detail: { decisionId?: string; reason?: string } = {},
+    projectId: string, branchId: string | null | undefined, finding: Finding, status: DispositionStatus,
+    detail: { decisionId?: string; reason?: string } = {}, revisionId: string | null = null,
   ) =>
     api<FindingView>('PUT', `${base(projectId)}/review/dispositions`, {
       ruleId: finding.ruleId, subjectId: finding.subject.id, status,
-      decisionId: detail.decisionId ?? null, reason: detail.reason ?? null, revisionId: null, branchId: branchId ?? null,
+      decisionId: detail.decisionId ?? null, reason: detail.reason ?? null, revisionId, branchId: revisionId ? null : branchId ?? null,
     }),
   snapshots: async (projectId: string) => (await api<{ items: SnapshotSummary[] }>('GET', `${base(projectId)}/review/snapshots`)).items,
-  saveSnapshot: (projectId: string, branchId: string | null | undefined, note: string | null) =>
-    api<SnapshotSummary>('POST', `${base(projectId)}/review/snapshots`, { revisionId: null, branchId: branchId ?? null, note }),
+  saveSnapshot: (projectId: string, branchId: string | null | undefined, note: string | null, revisionId: string | null = null) =>
+    api<SnapshotSummary>('POST', `${base(projectId)}/review/snapshots`, { revisionId, branchId: revisionId ? null : branchId ?? null, note }),
   snapshot: (projectId: string, id: string) => api<Snapshot>('GET', `${base(projectId)}/review/snapshots/${id}`),
   deleteSnapshot: (projectId: string, id: string) => api<void>('DELETE', `${base(projectId)}/review/snapshots/${id}`),
 
@@ -239,8 +243,8 @@ export const reviewApi = {
    * `contentHash` is the hash of the decision as the person read it. The server refuses another decision with a 409.
    * The acceptance records the findings of the branch, or of the main model without one.
    */
-  acceptDecision: (projectId: string, decision: Decision, branchId: string | null | undefined) =>
-    api<Decision>('POST', `${base(projectId)}/decisions/${decision.id}/accept`, { contentHash: decision.contentHash, revisionId: null, branchId: branchId ?? null }),
+  acceptDecision: (projectId: string, decision: Decision, branchId: string | null | undefined, revisionId: string | null = null) =>
+    api<Decision>('POST', `${base(projectId)}/decisions/${decision.id}/accept`, { contentHash: decision.contentHash, revisionId, branchId: revisionId ? null : branchId ?? null }),
   rejectDecision: (projectId: string, decision: Decision, reason: string | null) =>
     api<Decision>('POST', `${base(projectId)}/decisions/${decision.id}/reject`, { contentHash: decision.contentHash, reason }),
   deleteDecision: (projectId: string, id: string) => api<void>('DELETE', `${base(projectId)}/decisions/${id}`),
@@ -344,7 +348,8 @@ export function countFindings(findings: FindingView[]): ReviewCounts {
 }
 
 /** Which model an answer of the review is about, in words. */
-export function modelLabel(branchId: string | null | undefined): string {
+export function modelLabel(branchId: string | null | undefined, revisionName?: string | null): string {
+  if (revisionName != null) return `the revision '${revisionName}'`
   return branchId ? 'the draft or variant that is open' : 'the main model'
 }
 

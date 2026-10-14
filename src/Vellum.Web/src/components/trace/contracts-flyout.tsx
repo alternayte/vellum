@@ -1,10 +1,11 @@
-import { useMemo, useState, type FormEvent } from 'react'
+import { useState, type FormEvent } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
   NO_FAILURE, canRouteFrom, canRouteTo, formFailure, isServiceKind, useBindings, useChannels, useContractMutations, useOperations, useSubscriptions,
-  type Channel, type FormFailure, type NewChannel, type NewOperation, type NewSubscription, type Operation, type Subscription,
+  type Binding, type Channel, type FormFailure, type NewChannel, type NewOperation, type NewSubscription, type Operation, type Subscription,
 } from '@/hooks/use-contracts'
 import { useMessages } from '@/hooks/use-messages'
 import { useSchemas, type Schema } from '@/hooks/use-schemas'
@@ -13,10 +14,15 @@ import {
 } from './contract-parts'
 import { MessagesSection } from './messages-section'
 import { SchemasSection } from './schemas-section'
+import { FactTruth } from '@/components/shell/fact-truth'
+import { branchesApi, type EntityType } from '@/lib/branches-api'
+import type { Provenance } from '@/lib/fact-status'
 
 interface ContractsFlyoutProps {
   projectId: string
   branchId?: string | null
+  /** A named revision that the workbench shows. Its contracts are shown and take no change. */
+  revision?: { id: string; name: string } | null
   elements: NamedElement[]
 }
 
@@ -189,18 +195,65 @@ function SubscriptionForm({ subscription, channels, elements, pending, onSubmit,
   )
 }
 
+/** The route of a binding: the channel it delivers to and its routing key. The source stays. */
+function BindingForm({ binding, targets, pending, onSubmit, onCancel }: {
+  binding: Binding
+  targets: Channel[]
+  pending: boolean
+  onSubmit: (change: { targetChannelId: string; routingKey: string | null }) => void
+  onCancel: () => void
+}) {
+  const submit = (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    const form = new FormData(e.currentTarget)
+    onSubmit({ targetChannelId: String(form.get('targetChannelId')), routingKey: String(form.get('routingKey')).trim() || null })
+  }
+  return (
+    <form onSubmit={submit} className="mt-1.5 space-y-2">
+      <Field label="Route to">
+        <select name="targetChannelId" className={selectClass} defaultValue={binding.targetChannelId} required autoFocus>
+          {targets.map((c) => <option key={c.id} value={c.id}>{c.name} ({c.kind})</option>)}
+        </select>
+      </Field>
+      <Field label="Routing key (optional)">
+        <Input name="routingKey" defaultValue={binding.routingKey ?? ''} placeholder="order.created or order.*" maxLength={200} />
+      </Field>
+      <div className="flex gap-2">
+        <Button type="submit" size="sm" className="flex-1" disabled={pending}>Save binding</Button>
+        <Button type="button" variant="ghost" size="sm" onClick={onCancel}>Cancel</Button>
+      </div>
+    </form>
+  )
+}
+
 /**
  * Contracts are what a scenario may reference: operations a service offers, channels that
  * carry messages, the bindings that route a message from an exchange or a topic to another
  * channel, the subscriptions that deliver them, the messages themselves, and the schemas
  * that operations and messages name.
  */
-export function ContractsFlyout({ projectId, branchId, elements }: ContractsFlyoutProps) {
-  const { data: operations = [] } = useOperations(projectId, branchId)
-  const { data: channels = [] } = useChannels(projectId, branchId)
-  const { data: subscriptions = [] } = useSubscriptions(projectId, branchId)
-  const { data: bindings = [] } = useBindings(projectId, branchId)
-  const { data: messages = [] } = useMessages(projectId, branchId ?? undefined)
+export function ContractsFlyout({ projectId, branchId, revision = null, elements }: ContractsFlyoutProps) {
+  const branch = {
+    operations: useOperations(projectId, branchId).data,
+    channels: useChannels(projectId, branchId).data,
+    subscriptions: useSubscriptions(projectId, branchId).data,
+    bindings: useBindings(projectId, branchId).data,
+    messages: useMessages(projectId, branchId ?? undefined).data,
+  }
+  // A revision has no lists of its own: its stored model holds every contract. The key is the one the canvas reads.
+  const pinned = useQuery({
+    queryKey: ['projects', projectId, 'revisions', revision?.id ?? null, 'model'],
+    queryFn: () => branchesApi.revisionModel(projectId, revision!.id),
+    enabled: revision !== null,
+    staleTime: Infinity,
+  })
+  const source = revision ? pinned.data : branch
+  const readOnly = revision !== null
+  const operations = source?.operations ?? []
+  const channels = source?.channels ?? []
+  const subscriptions = source?.subscriptions ?? []
+  const bindings = source?.bindings ?? []
+  const messages = source?.messages ?? []
   const { data: schemas = [], isPending: schemasLoading } = useSchemas(projectId)
   const mutations = useContractMutations(projectId, branchId)
 
@@ -211,6 +264,10 @@ export function ContractsFlyout({ projectId, branchId, elements }: ContractsFlyo
   const [operationFailure, setOperationFailure] = useState<FormFailure>(NO_FAILURE)
   // The exchange or topic that a binding is being added to.
   const [bindingFrom, setBindingFrom] = useState<string | null>(null)
+  const [editingBinding, setEditingBinding] = useState<string | null>(null)
+  const truth = (entityType: EntityType, fact: { id: string; factStatus: string; provenance?: Provenance | null }) => (
+    <FactTruth compact projectId={projectId} entityType={entityType} entityId={fact.id} factStatus={fact.factStatus} provenance={fact.provenance} readOnly={readOnly} />
+  )
   const [error, setError] = useState<string | null>(null)
   const nameOf = (id: string) => elements.find((e) => e.id === id)?.name ?? 'Unknown element'
   const channelName = (id: string) => channels.find((c) => c.id === id)?.name ?? 'Unknown channel'
@@ -221,6 +278,7 @@ export function ContractsFlyout({ projectId, branchId, elements }: ContractsFlyo
     setEditingOperation(null)
     setEditingChannel(null)
     setEditingSubscription(null)
+    setEditingBinding(null)
     setAdding(adding === kind ? null : kind)
   }
   const done = { onSuccess: () => { setAdding(null); setEditingChannel(null); setEditingSubscription(null); setError(null) }, onError: (e: Error) => setError(e.message) }
@@ -230,6 +288,8 @@ export function ContractsFlyout({ projectId, branchId, elements }: ContractsFlyo
     setEditingOperation(null)
     setEditingChannel(null)
     setEditingSubscription(null)
+    setEditingBinding(null)
+    setBindingFrom(null)
     setOperationFailure(NO_FAILURE)
     edit()
   }
@@ -240,7 +300,7 @@ export function ContractsFlyout({ projectId, branchId, elements }: ContractsFlyo
   }
 
   // What uses each schema on this branch. The server holds the rule for a removal; this says why before the click.
-  const schemaUsers = useMemo(() => {
+  const schemaUsers = (() => {
     const users = new Map<string, string[]>()
     const note = (schemaId: string | null, name: string) => {
       if (!schemaId) return
@@ -253,7 +313,7 @@ export function ContractsFlyout({ projectId, branchId, elements }: ContractsFlyo
     }
     for (const message of messages) note(message.schemaId, message.name)
     return users
-  }, [operations, messages])
+  })()
 
   const operationDetail = (op: Operation) => {
     const contract = [
@@ -277,6 +337,7 @@ export function ContractsFlyout({ projectId, branchId, elements }: ContractsFlyo
     <div className="flex h-full flex-col">
       <div className="border-b border-border px-3 py-2">
         <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Contracts</span>
+        {revision && pinned.isError && <p role="alert" className="mt-1 text-xs text-destructive">{pinned.error.message}</p>}
       </div>
       {error && (
         <p role="alert" className="border-b border-border bg-[color-mix(in_srgb,var(--trace-failure)_12%,transparent)] px-3 py-2 text-xs text-foreground">
@@ -285,7 +346,7 @@ export function ContractsFlyout({ projectId, branchId, elements }: ContractsFlyo
       )}
       <div className="flex-1 overflow-y-auto">
         <Section
-          title="Operations" count={operations.length} adding={adding === 'operation'} onToggle={() => toggle('operation')}
+          title="Operations" count={operations.length} adding={adding === 'operation'} onToggle={readOnly ? undefined : () => toggle('operation')}
           hint="An operation is a call a service accepts, such as POST /orders. Scenarios call operations."
         >
           {adding === 'operation' && (
@@ -305,18 +366,18 @@ export function ContractsFlyout({ projectId, branchId, elements }: ContractsFlyo
               </li>
             ) : (
               <Row
-                key={op.id} title={op.name} detail={operationDetail(op)}
+                key={op.id} title={op.name} detail={operationDetail(op)} truth={truth('operation', op)}
                 editLabel={`Edit operation ${op.name}`}
-                onEdit={() => startEdit(() => setEditingOperation(op.id))}
+                onEdit={readOnly ? undefined : () => startEdit(() => setEditingOperation(op.id))}
                 removeLabel={`Remove operation ${op.name}`}
-                onRemove={() => mutations.removeOperation.mutate(op.id, removed)}
+                onRemove={readOnly ? undefined : () => mutations.removeOperation.mutate(op.id, removed)}
               />
             ))}
           </ul>
         </Section>
 
         <Section
-          title="Channels" count={channels.length} adding={adding === 'channel'} onToggle={() => toggle('channel')}
+          title="Channels" count={channels.length} adding={adding === 'channel'} onToggle={readOnly ? undefined : () => toggle('channel')}
           hint="A channel is a topic, queue or exchange. Scenarios publish messages to channels. A binding routes a message from an exchange or a topic to a queue or an exchange."
         >
           {adding === 'channel' && (
@@ -339,23 +400,37 @@ export function ContractsFlyout({ projectId, branchId, elements }: ContractsFlyo
                   ) : (
                     <ul>
                       <Row
-                        title={channel.name} detail={channel.kind}
+                        title={channel.name} detail={channel.kind} truth={truth('channel', channel)}
                         editLabel={`Edit channel ${channel.name}`}
-                        onEdit={() => startEdit(() => setEditingChannel(channel.id))}
+                        onEdit={readOnly ? undefined : () => startEdit(() => setEditingChannel(channel.id))}
                         removeLabel={`Remove channel ${channel.name}`}
-                        onRemove={() => mutations.removeChannel.mutate(channel.id, removed)}
+                        onRemove={readOnly ? undefined : () => mutations.removeChannel.mutate(channel.id, removed)}
                       />
                     </ul>
                   )}
                   {canRouteFrom(channel.kind) && (
                     <div className="mb-1.5 ml-3 border-l border-border pl-2">
                       <ul aria-label={`Bindings of ${channel.name}`} className="space-y-0.5">
-                        {routes.map((binding) => (
+                        {routes.map((binding) => editingBinding === binding.id ? (
+                          <li key={binding.id} className="rounded-md border border-border px-2 pb-2">
+                            <BindingForm
+                              binding={binding} targets={targets} pending={mutations.updateBinding.isPending}
+                              onSubmit={(change) => mutations.updateBinding.mutate({ id: binding.id, ...change }, {
+                                onSuccess: () => { setEditingBinding(null); setError(null) },
+                                onError: (failure: Error) => setError(failure.message),
+                              })}
+                              onCancel={() => { setEditingBinding(null); setError(null) }}
+                            />
+                          </li>
+                        ) : (
                           <Row
                             key={binding.id} title={`to ${channelName(binding.targetChannelId)}`}
                             detail={binding.routingKey ? `routing key ${binding.routingKey}` : 'every message'}
+                            truth={truth('binding', binding)}
+                            editLabel={`Edit binding from ${channel.name} to ${channelName(binding.targetChannelId)}`}
+                            onEdit={readOnly ? undefined : () => startEdit(() => setEditingBinding(binding.id))}
                             removeLabel={`Remove binding from ${channel.name} to ${channelName(binding.targetChannelId)}`}
-                            onRemove={() => mutations.removeBinding.mutate(binding.id, removed)}
+                            onRemove={readOnly ? undefined : () => mutations.removeBinding.mutate(binding.id, removed)}
                           />
                         ))}
                       </ul>
@@ -377,12 +452,12 @@ export function ContractsFlyout({ projectId, branchId, elements }: ContractsFlyo
                             <Button type="button" variant="ghost" size="sm" onClick={() => { setBindingFrom(null); setError(null) }}>Cancel</Button>
                           </div>
                         </form>
-                      ) : (
+                      ) : !readOnly && (
                         <Button
                           variant="ghost" size="sm" className="h-6 gap-1 px-1.5 text-xs text-muted-foreground"
                           disabled={targets.length === 0}
                           title={targets.length === 0 ? 'Add a queue or an exchange to route to.' : undefined}
-                          onClick={() => { setError(null); setBindingFrom(channel.id) }}
+                          onClick={() => { setError(null); setEditingBinding(null); setBindingFrom(channel.id) }}
                         >
                           <Plus className="h-3 w-3" />
                           {routes.length === 0 ? 'Bind to a channel' : 'Add binding'}
@@ -397,7 +472,7 @@ export function ContractsFlyout({ projectId, branchId, elements }: ContractsFlyo
         </Section>
 
         <Section
-          title="Subscriptions" count={subscriptions.length} adding={adding === 'subscription'} onToggle={() => toggle('subscription')}
+          title="Subscriptions" count={subscriptions.length} adding={adding === 'subscription'} onToggle={readOnly ? undefined : () => toggle('subscription')}
           hint={channels.length === 0 ? 'Add a channel first. A subscription delivers its messages to one consumer.' : 'A subscription delivers a channel’s messages to one consumer, with its own retries and dead-letter channel.'}
         >
           {adding === 'subscription' && (
@@ -419,16 +494,17 @@ export function ContractsFlyout({ projectId, branchId, elements }: ContractsFlyo
               <Row
                 key={sub.id} title={`${nameOf(sub.consumerId)} on ${channelName(sub.channelId)}`}
                 detail={`${sub.retry.maxAttempts}× · ${sub.deadLetterChannelId ? `DLQ ${channelName(sub.deadLetterChannelId)}` : 'no DLQ'}`}
+                truth={truth('subscription', sub)}
                 editLabel={`Edit subscription of ${nameOf(sub.consumerId)} on ${channelName(sub.channelId)}`}
-                onEdit={() => startEdit(() => setEditingSubscription(sub.id))}
+                onEdit={readOnly ? undefined : () => startEdit(() => setEditingSubscription(sub.id))}
                 removeLabel={`Remove subscription of ${nameOf(sub.consumerId)}`}
-                onRemove={() => mutations.removeSubscription.mutate(sub.id, removed)}
+                onRemove={readOnly ? undefined : () => mutations.removeSubscription.mutate(sub.id, removed)}
               />
             ))}
           </ul>
         </Section>
 
-        <MessagesSection projectId={projectId} branchId={branchId} messages={messages} elements={elements} schemas={schemas} schemasLoading={schemasLoading} />
+        <MessagesSection projectId={projectId} branchId={branchId} messages={messages} elements={elements} schemas={schemas} schemasLoading={schemasLoading} readOnly={readOnly} />
         <SchemasSection projectId={projectId} schemas={schemas} usedBy={schemaUsers} />
       </div>
     </div>
