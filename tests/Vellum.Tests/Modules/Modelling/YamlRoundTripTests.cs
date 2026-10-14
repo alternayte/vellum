@@ -9,8 +9,7 @@ namespace Vellum.Tests.Modules.Modelling;
 /// The YAML export is a document the import reads. Before, the import refused every YAML
 /// export, the one of an empty project included.
 /// </summary>
-[Collection("Integration")]
-public class YamlRoundTripTests(IntegrationFixture fixture)
+public class YamlRoundTripTests(IntegrationFixture fixture) : IClassFixture<IntegrationFixture>
 {
     private static string Url(Guid projectId, string path) => $"/api/projects/{projectId}/{path}";
 
@@ -25,7 +24,7 @@ public class YamlRoundTripTests(IntegrationFixture fixture)
     [Fact]
     public async Task The_yaml_export_of_an_empty_project_imports()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         using var client = await TestHost.SignInAsync(factory);
         var (_, projectId) = await TestHost.CreateProjectAsync(client);
 
@@ -37,7 +36,7 @@ public class YamlRoundTripTests(IntegrationFixture fixture)
     [Fact]
     public async Task A_yaml_export_restores_elements_messages_schemas_contracts_and_facts()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         using var client = await TestHost.SignInAsync(factory);
         var (_, projectId) = await TestHost.CreateProjectAsync(client);
 
@@ -118,7 +117,7 @@ public class YamlRoundTripTests(IntegrationFixture fixture)
     [InlineData("version: \"unterminated\nelements: [\n")]
     public async Task Yaml_that_is_not_an_export_document_is_a_400(string yaml)
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         using var client = await TestHost.SignInAsync(factory);
         var (_, projectId) = await TestHost.CreateProjectAsync(client);
 

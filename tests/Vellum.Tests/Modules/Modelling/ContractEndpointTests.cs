@@ -9,8 +9,7 @@ using Vellum.Shared;
 
 namespace Vellum.Tests.Modules.Modelling;
 
-[Collection("Integration")]
-public class ContractEndpointTests(IntegrationFixture fixture)
+public class ContractEndpointTests(IntegrationFixture fixture) : IClassFixture<IntegrationFixture>
 {
     private sealed record Model(
         Guid ProjectId, Guid Orders, Guid Inventory, Guid Schema,
@@ -57,7 +56,7 @@ public class ContractEndpointTests(IntegrationFixture fixture)
     [Fact]
     public async Task Operations_are_created_listed_updated_and_deleted()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         using var client = await TestHost.SignInAsync(factory);
         var (_, projectId) = await TestHost.CreateProjectAsync(client);
         var model = await SeedAsync(client, projectId);
@@ -92,7 +91,7 @@ public class ContractEndpointTests(IntegrationFixture fixture)
     [Fact]
     public async Task Channels_and_subscriptions_are_created_listed_updated_and_deleted()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         using var client = await TestHost.SignInAsync(factory);
         var (_, projectId) = await TestHost.CreateProjectAsync(client);
         var model = await SeedAsync(client, projectId);
@@ -123,7 +122,7 @@ public class ContractEndpointTests(IntegrationFixture fixture)
     [Fact]
     public async Task Invalid_contracts_are_refused_with_400()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         using var client = await TestHost.SignInAsync(factory);
         var (_, projectId) = await TestHost.CreateProjectAsync(client);
         var model = await SeedAsync(client, projectId);
@@ -175,7 +174,7 @@ public class ContractEndpointTests(IntegrationFixture fixture)
     [Fact]
     public async Task A_referenced_element_channel_or_schema_cannot_be_removed()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         using var client = await TestHost.SignInAsync(factory);
         var (_, projectId) = await TestHost.CreateProjectAsync(client);
         var model = await SeedAsync(client, projectId);
@@ -200,7 +199,7 @@ public class ContractEndpointTests(IntegrationFixture fixture)
     [Fact]
     public async Task A_schema_that_only_a_draft_references_cannot_be_deleted()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         using var client = await TestHost.SignInAsync(factory);
         var (_, projectId) = await TestHost.CreateProjectAsync(client);
         var orders = Guid.NewGuid();
@@ -221,7 +220,7 @@ public class ContractEndpointTests(IntegrationFixture fixture)
     [Fact]
     public async Task Contracts_of_one_project_are_not_reachable_through_another()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         using var client = await TestHost.SignInAsync(factory);
         var (_, projectId) = await TestHost.CreateProjectAsync(client);
         var model = await SeedAsync(client, projectId);
@@ -247,7 +246,7 @@ public class ContractEndpointTests(IntegrationFixture fixture)
     [Fact]
     public async Task A_viewer_reads_contracts_and_cannot_write_them()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         using var owner = await TestHost.SignInAsync(factory);
         var (workspaceId, projectId) = await TestHost.CreateProjectAsync(owner);
         var model = await SeedAsync(owner, projectId);
@@ -279,7 +278,7 @@ public class ContractEndpointTests(IntegrationFixture fixture)
     [Fact]
     public async Task Drafts_and_variants_carry_contracts_and_change_them_apart_from_main()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         using var client = await TestHost.SignInAsync(factory);
         var (_, projectId) = await TestHost.CreateProjectAsync(client);
         var model = await SeedAsync(client, projectId);
@@ -309,7 +308,7 @@ public class ContractEndpointTests(IntegrationFixture fixture)
     [Fact]
     public async Task A_merge_brings_the_drafts_contracts_to_main()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         using var client = await TestHost.SignInAsync(factory);
         var (_, projectId) = await TestHost.CreateProjectAsync(client);
         var model = await SeedAsync(client, projectId);
@@ -359,7 +358,7 @@ public class ContractEndpointTests(IntegrationFixture fixture)
     [Fact]
     public async Task A_merge_that_would_leave_a_dangling_contract_is_refused()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         using var client = await TestHost.SignInAsync(factory);
         var (_, projectId) = await TestHost.CreateProjectAsync(client);
         var payments = Guid.NewGuid();
@@ -393,7 +392,7 @@ public class ContractEndpointTests(IntegrationFixture fixture)
     [Fact]
     public async Task Export_and_import_round_trip_contracts_deterministically()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         using var client = await TestHost.SignInAsync(factory);
         var (_, projectId) = await TestHost.CreateProjectAsync(client);
         var model = await SeedAsync(client, projectId);

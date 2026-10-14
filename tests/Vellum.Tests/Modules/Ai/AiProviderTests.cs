@@ -11,7 +11,6 @@ namespace Vellum.Tests.Modules.Ai;
 /// handler pipeline. The transport serves the fixtures under <c>Fixtures/Ai</c>, which are
 /// written from each vendor's API reference.
 /// </summary>
-[Collection("Integration")]
 public class AiProviderTests(SharedOutboundHost shared) : IClassFixture<SharedOutboundHost>
 {
     private readonly OutboundHost _host = shared.Host;

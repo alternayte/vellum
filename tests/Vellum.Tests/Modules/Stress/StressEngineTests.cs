@@ -309,17 +309,27 @@ public class StressEngineTests
     // far below it: 0 of 200 in each of the three cases.
     [InlineData(80, 60)]
     [InlineData(90, 60)]
+    public void A_steady_M_M_1_queue_is_named_in_at_most_10_of_200_seeds(double lambda, double duration) =>
+        SteadyQueueIsRarelyNamed(lambda, duration);
+
+    // The case above near full load, over 600 s: 200 runs of 57 000 arrivals each.
+    [Theory]
+    [Trait("Category", "Slow")]
     [InlineData(95, 600)]
-    public void A_steady_M_M_1_queue_is_named_in_at_most_10_of_200_seeds(double lambda, double duration)
+    public void A_steady_M_M_1_queue_near_full_load_is_named_in_at_most_10_of_200_seeds(double lambda, double duration) =>
+        SteadyQueueIsRarelyNamed(lambda, duration);
+
+    private static void SteadyQueueIsRarelyNamed(double lambda, double duration)
     {
+        // Each seed is an independent pure run, so the runs can go side by side.
         var named = 0;
         var growing = 0;
-        for (var seed = 1; seed <= 200; seed++)
+        Parallel.For(1, 201, seed =>
         {
             var result = Run(Model(), Flow(CallServe()), Profile(Poisson(lambda, duration), Exponential(10), seed: seed.ToString()));
-            if (result.Bottleneck.Found) named++;
-            if (result.Elements[0].Saturation!.QueueGrows) growing++;
-        }
+            if (result.Bottleneck.Found) Interlocked.Increment(ref named);
+            if (result.Elements[0].Saturation!.QueueGrows) Interlocked.Increment(ref growing);
+        });
 
         Assert.True(named <= 10, $"named in {named} of 200 seeds");
         // The growth statement needs the same bound, so it is not made more often.

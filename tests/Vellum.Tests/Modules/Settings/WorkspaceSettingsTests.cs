@@ -7,8 +7,7 @@ using Vellum.Shared;
 namespace Vellum.Tests.Modules.Settings;
 
 /// <summary>Workspace settings on the shared instance: local profile, default policy.</summary>
-[Collection("Integration")]
-public class WorkspaceSettingsTests
+public class WorkspaceSettingsTests : IClassFixture<IntegrationFixture>
 {
     private readonly IntegrationFixture _fixture;
 
@@ -29,7 +28,7 @@ public class WorkspaceSettingsTests
     [Fact]
     public async Task A_new_workspace_has_the_defaults_and_no_overrides()
     {
-        using var factory = TestHost.Create(_fixture);
+        var factory = _fixture.Factory;
         using var owner = await TestHost.SignInAsync(factory);
         var (workspaceId, _) = await TestHost.CreateProjectAsync(owner);
 
@@ -58,7 +57,7 @@ public class WorkspaceSettingsTests
     [Fact]
     public async Task An_override_applies_at_once_and_a_removed_override_falls_back_to_the_default()
     {
-        using var factory = TestHost.Create(_fixture);
+        var factory = _fixture.Factory;
         using var owner = await TestHost.SignInAsync(factory);
         var (workspaceId, _) = await TestHost.CreateProjectAsync(owner);
         var url = $"/api/workspaces/{workspaceId}/settings";
@@ -195,7 +194,7 @@ public class WorkspaceSettingsTests
     [MemberData(nameof(InvalidOverrides))]
     public async Task An_invalid_override_is_refused_with_the_field_and_nothing_is_saved(string overrides, string field)
     {
-        using var factory = TestHost.Create(_fixture);
+        var factory = _fixture.Factory;
         using var owner = await TestHost.SignInAsync(factory);
         var (workspaceId, _) = await TestHost.CreateProjectAsync(owner);
         var url = $"/api/workspaces/{workspaceId}/settings";
@@ -218,7 +217,7 @@ public class WorkspaceSettingsTests
     [InlineData("\"text\"")]
     public async Task A_body_that_is_not_a_document_is_refused(string body)
     {
-        using var factory = TestHost.Create(_fixture);
+        var factory = _fixture.Factory;
         using var owner = await TestHost.SignInAsync(factory);
         var (workspaceId, _) = await TestHost.CreateProjectAsync(owner);
 
@@ -230,7 +229,7 @@ public class WorkspaceSettingsTests
     [Fact]
     public async Task An_explicit_null_clears_a_nullable_value_and_routing_follows_enabled_providers()
     {
-        using var factory = TestHost.Create(_fixture);
+        var factory = _fixture.Factory;
         using var owner = await TestHost.SignInAsync(factory);
         var (workspaceId, _) = await TestHost.CreateProjectAsync(owner);
         var url = $"/api/workspaces/{workspaceId}/settings";
@@ -251,7 +250,7 @@ public class WorkspaceSettingsTests
     [Fact]
     public async Task The_local_policy_allows_a_private_address_and_private_code_forwarding()
     {
-        using var factory = TestHost.Create(_fixture);
+        var factory = _fixture.Factory;
         using var owner = await TestHost.SignInAsync(factory);
         var (workspaceId, _) = await TestHost.CreateProjectAsync(owner);
 

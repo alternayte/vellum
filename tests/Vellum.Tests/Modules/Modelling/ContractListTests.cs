@@ -65,8 +65,7 @@ public class ContractLimitTests
     }
 }
 
-[Collection("Integration")]
-public class ContractListTests(IntegrationFixture fixture)
+public class ContractListTests(IntegrationFixture fixture) : IClassFixture<IntegrationFixture>
 {
     private static string Url(Guid projectId, string path) => $"/api/projects/{projectId}/{path}";
 
@@ -93,7 +92,7 @@ public class ContractListTests(IntegrationFixture fixture)
     [Fact]
     public async Task Contract_lists_are_paged_in_a_stable_order()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         using var client = await TestHost.SignInAsync(factory);
         var (_, projectId) = await TestHost.CreateProjectAsync(client);
 

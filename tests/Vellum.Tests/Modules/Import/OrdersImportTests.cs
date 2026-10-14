@@ -13,7 +13,6 @@ namespace Vellum.Tests.Modules.Import;
 /// real worker and the real outbound pipeline; only GitHub is a stub. Fact keys are opaque:
 /// the test reads them from the extraction of the fixture and finds proposals by kind and name.
 /// </summary>
-[Collection("Integration")]
 public class OrdersImportTests(ImportHost import) : IClassFixture<ImportHost>
 {
     [Fact]
@@ -21,7 +20,7 @@ public class OrdersImportTests(ImportHost import) : IClassFixture<ImportHost>
     {
         // appsettings.Testing.json turns it off for every test host, so no host of another
         // test class takes a scan and calls the network.
-        using var plain = TestHost.Create(import.Fixture);
+        var plain = import.Fixture.Factory;
         Assert.False(plain.Services.GetRequiredService<ScanWorkerOptions>().Enabled);
     }
 

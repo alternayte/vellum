@@ -1,51 +1,16 @@
 // tests/Vellum.Tests/Modules/Docs/AdrEndpointTests.cs
 using System.Net;
 using System.Net.Http.Json;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
 using Vellum.Modules.Docs;
-using Vellum.Modules.Identity;
-using Vellum.Modules.Drafts;
-using Vellum.Modules.Modelling;
-using Vellum.Modules.Views;
-using Vellum.Modules.Workspaces;
 
 namespace Vellum.Tests.Modules.Docs;
 
-[Collection("Integration")]
-public class AdrEndpointTests
+public class AdrEndpointTests : IClassFixture<IntegrationFixture>
 {
     private readonly IntegrationFixture _fixture;
 
     public AdrEndpointTests(IntegrationFixture fixture) => _fixture = fixture;
-
-    private WebApplicationFactory<Program> CreateFactory()
-    {
-        return new WebApplicationFactory<Program>()
-            .WithWebHostBuilder(builder =>
-            {
-                builder.UseEnvironment("Testing");
-                builder.UseSetting("ConnectionStrings:DefaultConnection", _fixture.ConnectionString);
-                builder.ConfigureServices(services =>
-                {
-                    services.RemoveAll<DbContextOptions<AppIdentityDbContext>>();
-                    services.RemoveAll<DbContextOptions<WorkspacesDbContext>>();
-                    services.RemoveAll<DbContextOptions<ModellingDbContext>>();
-                    services.RemoveAll<DbContextOptions<ViewsDbContext>>();
-                    services.RemoveAll<DbContextOptions<DocsDbContext>>();
-                    services.RemoveAll<DbContextOptions<DraftsDbContext>>();
-                    var cs = _fixture.ConnectionString;
-                    services.AddDbContext<AppIdentityDbContext>(o => o.UseNpgsql(cs).UseSnakeCaseNamingConvention());
-                    services.AddDbContext<WorkspacesDbContext>(o => o.UseNpgsql(cs).UseSnakeCaseNamingConvention());
-                    services.AddDbContext<ModellingDbContext>(o => o.UseNpgsql(cs).UseSnakeCaseNamingConvention());
-                    services.AddDbContext<ViewsDbContext>(o => o.UseNpgsql(cs).UseSnakeCaseNamingConvention());
-                    services.AddDbContext<DocsDbContext>(o => o.UseNpgsql(cs).UseSnakeCaseNamingConvention());
-                    services.AddDbContext<DraftsDbContext>(o => o.UseNpgsql(cs).UseSnakeCaseNamingConvention());
-                });
-            });
-    }
 
     private static HttpClient CreateClient(WebApplicationFactory<Program> factory) =>
         factory.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = true, AllowAutoRedirect = false });
@@ -70,7 +35,7 @@ public class AdrEndpointTests
     [Fact]
     public async Task Create_doc_with_type_and_filter()
     {
-        using var factory = CreateFactory();
+        var factory = _fixture.Factory;
         using var client = await CreateAuthenticatedClientAsync(factory);
         var projectId = await SetupProjectAsync(client);
         var docId = Guid.NewGuid();
@@ -112,7 +77,7 @@ public class AdrEndpointTests
     [Fact]
     public async Task Create_doc_with_draft_id_and_filter_by_draft()
     {
-        using var factory = CreateFactory();
+        var factory = _fixture.Factory;
         using var client = await CreateAuthenticatedClientAsync(factory);
         var projectId = await SetupProjectAsync(client);
         var draftId = Guid.NewGuid();
@@ -136,7 +101,7 @@ public class AdrEndpointTests
     [Fact]
     public async Task Update_doc_can_clear_type()
     {
-        using var factory = CreateFactory();
+        var factory = _fixture.Factory;
         using var client = await CreateAuthenticatedClientAsync(factory);
         var projectId = await SetupProjectAsync(client);
         var docId = Guid.NewGuid();
@@ -156,7 +121,7 @@ public class AdrEndpointTests
     [Fact]
     public async Task Update_doc_can_clear_draft_id()
     {
-        using var factory = CreateFactory();
+        var factory = _fixture.Factory;
         using var client = await CreateAuthenticatedClientAsync(factory);
         var projectId = await SetupProjectAsync(client);
         var docId = Guid.NewGuid();
@@ -177,7 +142,7 @@ public class AdrEndpointTests
     [Fact]
     public async Task Regular_doc_has_null_type_and_draft_fields()
     {
-        using var factory = CreateFactory();
+        var factory = _fixture.Factory;
         using var client = await CreateAuthenticatedClientAsync(factory);
         var projectId = await SetupProjectAsync(client);
         var docId = Guid.NewGuid();
@@ -194,11 +159,3 @@ public class AdrEndpointTests
 
 file sealed record AdrDocListDto(IReadOnlyList<DocDto> Items, string? Cursor);
 
-file static class AdrServiceCollectionExtensions
-{
-    public static void RemoveAll<T>(this IServiceCollection services)
-    {
-        var descriptors = services.Where(d => d.ServiceType == typeof(T)).ToList();
-        foreach (var d in descriptors) services.Remove(d);
-    }
-}

@@ -10,8 +10,7 @@ namespace Vellum.Tests.Modules;
 /// not through the first user's project, and not through the second user's own project with
 /// an ID or a <c>?branchId=</c> of the first.
 /// </summary>
-[Collection("Integration")]
-public class WorkspaceIsolationTests(IntegrationFixture fixture)
+public class WorkspaceIsolationTests(IntegrationFixture fixture) : IClassFixture<IntegrationFixture>
 {
     private static string Url(Guid projectId, string path, Guid? branchId = null) =>
         $"/api/projects/{projectId}/{path}" + (branchId is null ? "" : $"?branchId={branchId}");
@@ -28,7 +27,7 @@ public class WorkspaceIsolationTests(IntegrationFixture fixture)
     [Fact]
     public async Task Contracts_scenarios_and_runs_of_one_workspace_are_closed_to_a_user_of_another()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
 
         // The owner's workspace: a model with contracts on main and on a draft, and a scenario.
         using var owner = await TestHost.SignInAsync(factory);
@@ -122,7 +121,7 @@ public class WorkspaceIsolationTests(IntegrationFixture fixture)
     [Fact]
     public async Task The_project_its_revisions_and_its_comparisons_are_closed_to_a_user_of_another_workspace()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
 
         // The owner's project: an element, a named revision and a draft.
         using var owner = await TestHost.SignInAsync(factory);

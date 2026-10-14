@@ -1,49 +1,15 @@
 using System.Net;
 using System.Net.Http.Json;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
-using Vellum.Modules.Drafts;
-using Vellum.Modules.Identity;
-using Vellum.Modules.Modelling;
 using Vellum.Modules.Modelling.Elements;
-using Vellum.Modules.Modelling.Relationships;
-using Vellum.Modules.Workspaces;
 
 namespace Vellum.Tests.Modules.Modelling;
 
-[Collection("Integration")]
-public class ModellingEndpointTests
+public class ModellingEndpointTests : IClassFixture<IntegrationFixture>
 {
     private readonly IntegrationFixture _fixture;
 
     public ModellingEndpointTests(IntegrationFixture fixture) => _fixture = fixture;
-
-    private WebApplicationFactory<Program> CreateFactory()
-    {
-        return new WebApplicationFactory<Program>()
-            .WithWebHostBuilder(builder =>
-            {
-                builder.UseEnvironment("Testing");
-                builder.UseSetting("ConnectionStrings:DefaultConnection", _fixture.ConnectionString);
-                builder.ConfigureServices(services =>
-                {
-                    services.RemoveAll<DbContextOptions<AppIdentityDbContext>>();
-                    services.RemoveAll<DbContextOptions<WorkspacesDbContext>>();
-                    services.RemoveAll<DbContextOptions<ModellingDbContext>>();
-                    services.RemoveAll<DbContextOptions<DraftsDbContext>>();
-                    services.AddDbContext<AppIdentityDbContext>(o =>
-                        o.UseNpgsql(_fixture.ConnectionString).UseSnakeCaseNamingConvention());
-                    services.AddDbContext<WorkspacesDbContext>(o =>
-                        o.UseNpgsql(_fixture.ConnectionString).UseSnakeCaseNamingConvention());
-                    services.AddDbContext<ModellingDbContext>(o =>
-                        o.UseNpgsql(_fixture.ConnectionString).UseSnakeCaseNamingConvention());
-                    services.AddDbContext<DraftsDbContext>(o =>
-                        o.UseNpgsql(_fixture.ConnectionString).UseSnakeCaseNamingConvention());
-                });
-            });
-    }
 
     private static HttpClient CreateClient(WebApplicationFactory<Program> factory)
     {
@@ -76,7 +42,7 @@ public class ModellingEndpointTests
     [Fact]
     public async Task Add_element_and_get_returns_it()
     {
-        using var factory = CreateFactory();
+        var factory = _fixture.Factory;
         using var client = await CreateAuthenticatedClientAsync(factory);
         var projectId = await SetupProjectAsync(client);
         var elementId = Guid.NewGuid();
@@ -95,7 +61,7 @@ public class ModellingEndpointTests
     [Fact]
     public async Task Patch_element_renames_it()
     {
-        using var factory = CreateFactory();
+        var factory = _fixture.Factory;
         using var client = await CreateAuthenticatedClientAsync(factory);
         var projectId = await SetupProjectAsync(client);
         var elementId = Guid.NewGuid();
@@ -115,7 +81,7 @@ public class ModellingEndpointTests
     [Fact]
     public async Task Delete_element_cascades_relationships()
     {
-        using var factory = CreateFactory();
+        var factory = _fixture.Factory;
         using var client = await CreateAuthenticatedClientAsync(factory);
         var projectId = await SetupProjectAsync(client);
         var sysA = Guid.NewGuid();
@@ -139,18 +105,10 @@ public class ModellingEndpointTests
     [Fact]
     public async Task Unauthenticated_element_request_returns_401()
     {
-        using var factory = CreateFactory();
+        var factory = _fixture.Factory;
         using var client = CreateClient(factory);
         var response = await client.GetAsync($"/api/projects/{Guid.NewGuid()}/elements");
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 }
 
-file static class ServiceCollectionExtensions
-{
-    public static void RemoveAll<T>(this IServiceCollection services)
-    {
-        var descriptors = services.Where(d => d.ServiceType == typeof(T)).ToList();
-        foreach (var d in descriptors) services.Remove(d);
-    }
-}

@@ -27,6 +27,7 @@
     <!-- Fixtures/Repos holds source files of sample repositories. They are test data, not code of this project. -->
     <Compile Remove="Fixtures\**" />
     <Content Include="Fixtures\**" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

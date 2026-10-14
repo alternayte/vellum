@@ -13,7 +13,6 @@ namespace Vellum.Tests.Modules.Promises;
 /// failed check can block only by opt-in policy) and the tokens that read it. Vellum writes
 /// nothing to GitHub; a CI job reads the report with a token.
 /// </summary>
-[Collection("Integration")]
 public class ImpactReportTests(ImportHost import) : IClassFixture<ImportHost>
 {
     private const string Title = "Remove the outbox <img src=x onerror=alert(1)> [see](https://evil.example) | x";

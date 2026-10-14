@@ -6,7 +6,6 @@ using Vellum.Tests.Shared.Outbound;
 namespace Vellum.Tests.Modules.Settings;
 
 /// <summary>Which characters a stored credential can hold. A credential that travels in a header must be one header value.</summary>
-[Collection("Integration")]
 public class SecretValueTests(SharedOutboundHost shared) : IClassFixture<SharedOutboundHost>
 {
     private readonly OutboundHost _host = shared.Host;

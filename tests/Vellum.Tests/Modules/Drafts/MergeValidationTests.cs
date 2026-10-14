@@ -12,8 +12,7 @@ namespace Vellum.Tests.Modules.Drafts;
 /// writes events that no decider produced. These tests go through the real snapshot, the real
 /// streams and the real append.
 /// </summary>
-[Collection("Integration")]
-public class MergeValidationTests(IntegrationFixture fixture)
+public class MergeValidationTests(IntegrationFixture fixture) : IClassFixture<IntegrationFixture>
 {
     private static string Url(Guid projectId, string path, Guid? branchId = null) =>
         $"/api/projects/{projectId}/{path}" + (branchId is null ? "" : $"?branchId={branchId}");
@@ -34,7 +33,7 @@ public class MergeValidationTests(IntegrationFixture fixture)
     [Fact]
     public async Task Unchanged_entities_that_hold_lists_do_not_conflict()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         using var client = await TestHost.SignInAsync(factory);
         var (_, projectId) = await TestHost.CreateProjectAsync(client);
 
@@ -94,7 +93,7 @@ public class MergeValidationTests(IntegrationFixture fixture)
     [Fact]
     public async Task A_merge_whose_events_do_not_fit_main_is_refused_and_writes_nothing()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         using var client = await TestHost.SignInAsync(factory);
         var (_, projectId) = await TestHost.CreateProjectAsync(client);
 

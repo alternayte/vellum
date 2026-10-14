@@ -8,8 +8,7 @@ namespace Vellum.Tests.Shared;
 /// A path that no endpoint has. Under the API, the MCP endpoint and the agent files it is a
 /// 404 in the error shape of the API; anywhere else it is a page of the app.
 /// </summary>
-[Collection("Integration")]
-public class UnknownPathTests(IntegrationFixture fixture)
+public class UnknownPathTests(IntegrationFixture fixture) : IClassFixture<IntegrationFixture>
 {
     [Fact]
     public async Task An_unknown_API_path_is_a_404_with_the_error_envelope_and_an_unknown_page_is_the_app()

@@ -1,15 +1,11 @@
 using System.Net;
 using System.Net.Http.Json;
 using Deedbox;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Vellum.Modules.Drafts;
-using Vellum.Modules.Identity;
 using Vellum.Modules.Modelling;
-using Vellum.Modules.Schemas;
-using Vellum.Modules.Workspaces;
 
 namespace Vellum.Tests.Modules.Modelling;
 
@@ -18,43 +14,16 @@ namespace Vellum.Tests.Modules.Modelling;
 /// every stored event, so it must reproduce the same rows: main branch, forked branch and
 /// schemas. This pins the reset, the fork event and the project header on stored events.
 /// </summary>
-[Collection("Integration")]
-public class ProjectionRebuildTests
+public class ProjectionRebuildTests : IClassFixture<IntegrationFixture>
 {
     private readonly IntegrationFixture _fixture;
 
     public ProjectionRebuildTests(IntegrationFixture fixture) => _fixture = fixture;
 
-    private WebApplicationFactory<Program> CreateFactory()
-    {
-        return new WebApplicationFactory<Program>()
-            .WithWebHostBuilder(builder =>
-            {
-                builder.UseEnvironment("Testing");
-                builder.UseSetting("ConnectionStrings:DefaultConnection", _fixture.ConnectionString);
-                builder.ConfigureServices(services =>
-                {
-                    var cs = _fixture.ConnectionString;
-                    Replace<AppIdentityDbContext>(services, cs);
-                    Replace<WorkspacesDbContext>(services, cs);
-                    Replace<ModellingDbContext>(services, cs);
-                    Replace<DraftsDbContext>(services, cs);
-                    Replace<SchemasDbContext>(services, cs);
-                });
-            });
-    }
-
-    private static void Replace<TContext>(IServiceCollection services, string connectionString) where TContext : DbContext
-    {
-        foreach (var descriptor in services.Where(d => d.ServiceType == typeof(DbContextOptions<TContext>)).ToList())
-            services.Remove(descriptor);
-        services.AddDbContext<TContext>(o => o.UseNpgsql(connectionString).UseSnakeCaseNamingConvention());
-    }
-
     [Fact]
     public async Task Rebuild_reproduces_main_branch_and_schema_rows()
     {
-        using var factory = CreateFactory();
+        var factory = _fixture.Factory;
         using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = true, AllowAutoRedirect = false });
         await client.PostAsJsonAsync("/api/auth/register",
             new { email = $"test-{Guid.NewGuid():N}@vellum.local", password = "Test12345!", displayName = "Test User" });
@@ -119,7 +88,7 @@ public class ProjectionRebuildTests
     [Fact]
     public async Task Rebuild_replays_contract_events_and_closed_branches()
     {
-        using var factory = CreateFactory();
+        var factory = _fixture.Factory;
         using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = true, AllowAutoRedirect = false });
         await client.PostAsJsonAsync("/api/auth/register",
             new { email = $"test-{Guid.NewGuid():N}@vellum.local", password = "Test12345!", displayName = "Test User" });

@@ -1,51 +1,16 @@
 // tests/Vellum.Tests/Modules/Drafts/CommentEndpointTests.cs
 using System.Net;
 using System.Net.Http.Json;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
-using Vellum.Modules.Docs;
 using Vellum.Modules.Drafts;
-using Vellum.Modules.Identity;
-using Vellum.Modules.Modelling;
-using Vellum.Modules.Views;
-using Vellum.Modules.Workspaces;
 
 namespace Vellum.Tests.Modules.Drafts;
 
-[Collection("Integration")]
-public class CommentEndpointTests
+public class CommentEndpointTests : IClassFixture<IntegrationFixture>
 {
     private readonly IntegrationFixture _fixture;
 
     public CommentEndpointTests(IntegrationFixture fixture) => _fixture = fixture;
-
-    private WebApplicationFactory<Program> CreateFactory()
-    {
-        return new WebApplicationFactory<Program>()
-            .WithWebHostBuilder(builder =>
-            {
-                builder.UseEnvironment("Testing");
-                builder.UseSetting("ConnectionStrings:DefaultConnection", _fixture.ConnectionString);
-                builder.ConfigureServices(services =>
-                {
-                    services.RemoveAll<DbContextOptions<AppIdentityDbContext>>();
-                    services.RemoveAll<DbContextOptions<WorkspacesDbContext>>();
-                    services.RemoveAll<DbContextOptions<ModellingDbContext>>();
-                    services.RemoveAll<DbContextOptions<ViewsDbContext>>();
-                    services.RemoveAll<DbContextOptions<DocsDbContext>>();
-                    services.RemoveAll<DbContextOptions<DraftsDbContext>>();
-                    var cs = _fixture.ConnectionString;
-                    services.AddDbContext<AppIdentityDbContext>(o => o.UseNpgsql(cs).UseSnakeCaseNamingConvention());
-                    services.AddDbContext<WorkspacesDbContext>(o => o.UseNpgsql(cs).UseSnakeCaseNamingConvention());
-                    services.AddDbContext<ModellingDbContext>(o => o.UseNpgsql(cs).UseSnakeCaseNamingConvention());
-                    services.AddDbContext<ViewsDbContext>(o => o.UseNpgsql(cs).UseSnakeCaseNamingConvention());
-                    services.AddDbContext<DocsDbContext>(o => o.UseNpgsql(cs).UseSnakeCaseNamingConvention());
-                    services.AddDbContext<DraftsDbContext>(o => o.UseNpgsql(cs).UseSnakeCaseNamingConvention());
-                });
-            });
-    }
 
     private static HttpClient CreateClient(WebApplicationFactory<Program> factory) =>
         factory.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = true, AllowAutoRedirect = false });
@@ -81,7 +46,7 @@ public class CommentEndpointTests
     [Fact]
     public async Task Create_comment_and_list_returns_it()
     {
-        using var factory = CreateFactory();
+        var factory = _fixture.Factory;
         var (client, _) = await CreateAuthenticatedClientAsync(factory);
         var (_, projectId) = await SetupProjectAsync(client);
         var draftId = await CreateDraftAsync(client, projectId);
@@ -106,7 +71,7 @@ public class CommentEndpointTests
     [Fact]
     public async Task Create_comment_is_idempotent()
     {
-        using var factory = CreateFactory();
+        var factory = _fixture.Factory;
         var (client, _) = await CreateAuthenticatedClientAsync(factory);
         var (_, projectId) = await SetupProjectAsync(client);
         var draftId = await CreateDraftAsync(client, projectId);
@@ -124,7 +89,7 @@ public class CommentEndpointTests
     [Fact]
     public async Task List_comments_filters_by_entity_id()
     {
-        using var factory = CreateFactory();
+        var factory = _fixture.Factory;
         var (client, _) = await CreateAuthenticatedClientAsync(factory);
         var (_, projectId) = await SetupProjectAsync(client);
         var draftId = await CreateDraftAsync(client, projectId);
@@ -147,7 +112,7 @@ public class CommentEndpointTests
     [Fact]
     public async Task Update_own_comment_succeeds()
     {
-        using var factory = CreateFactory();
+        var factory = _fixture.Factory;
         var (client, _) = await CreateAuthenticatedClientAsync(factory);
         var (_, projectId) = await SetupProjectAsync(client);
         var draftId = await CreateDraftAsync(client, projectId);
@@ -169,7 +134,7 @@ public class CommentEndpointTests
     [Fact]
     public async Task Delete_own_comment_succeeds()
     {
-        using var factory = CreateFactory();
+        var factory = _fixture.Factory;
         var (client, _) = await CreateAuthenticatedClientAsync(factory);
         var (_, projectId) = await SetupProjectAsync(client);
         var draftId = await CreateDraftAsync(client, projectId);
@@ -192,7 +157,7 @@ public class CommentEndpointTests
     [Fact]
     public async Task Update_comment_by_non_author_returns_403()
     {
-        using var factory = CreateFactory();
+        var factory = _fixture.Factory;
 
         // Author sets up workspace + draft + comment
         var (authorClient, _) = await CreateAuthenticatedClientAsync(factory);
@@ -218,7 +183,7 @@ public class CommentEndpointTests
     [Fact]
     public async Task Delete_comment_by_non_author_returns_403()
     {
-        using var factory = CreateFactory();
+        var factory = _fixture.Factory;
 
         var (authorClient, _) = await CreateAuthenticatedClientAsync(factory);
         var (workspaceId, projectId) = await SetupProjectAsync(authorClient);
@@ -242,7 +207,7 @@ public class CommentEndpointTests
     [Fact]
     public async Task Comments_remain_listed_on_abandoned_draft()
     {
-        using var factory = CreateFactory();
+        var factory = _fixture.Factory;
         var (client, _) = await CreateAuthenticatedClientAsync(factory);
         var (_, projectId) = await SetupProjectAsync(client);
         var draftId = await CreateDraftAsync(client, projectId);
@@ -268,7 +233,7 @@ public class CommentEndpointTests
     [Fact]
     public async Task A_comment_of_another_project_is_never_returned_or_revealed()
     {
-        using var factory = TestHost.Create(_fixture);
+        var factory = _fixture.Factory;
         using var owner = await TestHost.SignInAsync(factory);
         var (_, ownerProject) = await TestHost.CreateProjectAsync(owner);
         var ownerDraft = Guid.NewGuid();
@@ -303,11 +268,3 @@ public class CommentEndpointTests
 file sealed record CommentPageDto(IReadOnlyList<CommentDto> Items, string? Cursor);
 file sealed record UserInfoResponse(string Id, string Email, string? DisplayName);
 
-file static class CommentServiceCollectionExtensions
-{
-    public static void RemoveAll<T>(this IServiceCollection services)
-    {
-        var descriptors = services.Where(d => d.ServiceType == typeof(T)).ToList();
-        foreach (var d in descriptors) services.Remove(d);
-    }
-}

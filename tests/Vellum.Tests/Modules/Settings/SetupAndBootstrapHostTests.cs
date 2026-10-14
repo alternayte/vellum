@@ -13,8 +13,7 @@ using Vellum.Shared;
 namespace Vellum.Tests.Modules.Settings;
 
 /// <summary>Each test starts on its own empty database: setup happens once per instance.</summary>
-[Collection("Integration")]
-public class SetupAndBootstrapHostTests
+public class SetupAndBootstrapHostTests : IClassFixture<IntegrationFixture>
 {
     private readonly IntegrationFixture _fixture;
 
@@ -40,7 +39,7 @@ public class SetupAndBootstrapHostTests
     [Fact]
     public async Task Local_setup_creates_the_admin_once_and_then_closes_registration()
     {
-        var database = await TestHost.CreateDatabaseAsync(_fixture);
+        var database = await TestHost.CreateDatabaseAsync();
         using var factory = TestHost.Create(database);
         using var client = TestHost.Client(factory);
 
@@ -117,7 +116,7 @@ public class SetupAndBootstrapHostTests
     [Fact]
     public async Task Hosted_setup_needs_the_setup_token()
     {
-        var database = await TestHost.CreateDatabaseAsync(_fixture);
+        var database = await TestHost.CreateDatabaseAsync();
         using var factory = TestHost.Create(database, TestHost.Hosted(TestHost.NewMasterKey()));
         using var client = TestHost.Client(factory, https: true);
 
@@ -161,7 +160,7 @@ public class SetupAndBootstrapHostTests
     [Fact]
     public async Task Concurrent_setup_calls_create_one_admin()
     {
-        var database = await TestHost.CreateDatabaseAsync(_fixture);
+        var database = await TestHost.CreateDatabaseAsync();
         using var factory = TestHost.Create(database);
         // The host is started before the race, so the calls race on setup and not on start-up.
         using (var warm = TestHost.Client(factory))
@@ -197,7 +196,7 @@ public class SetupAndBootstrapHostTests
     [Fact]
     public async Task A_hosted_host_without_a_master_key_does_not_start()
     {
-        var database = await TestHost.CreateDatabaseAsync(_fixture);
+        var database = await TestHost.CreateDatabaseAsync();
         var settings = TestHost.Hosted(masterKey: "");
         using var factory = TestHost.Create(database, settings);
 
@@ -207,7 +206,7 @@ public class SetupAndBootstrapHostTests
     [Fact]
     public async Task A_hosted_host_that_accepts_any_host_name_does_not_start()
     {
-        var database = await TestHost.CreateDatabaseAsync(_fixture);
+        var database = await TestHost.CreateDatabaseAsync();
         var settings = TestHost.Hosted(TestHost.NewMasterKey());
         settings["AllowedHosts"] = "*";
         using var factory = TestHost.Create(database, settings);
@@ -218,7 +217,7 @@ public class SetupAndBootstrapHostTests
     [Fact]
     public async Task A_hosted_host_without_secure_cookies_does_not_start()
     {
-        var database = await TestHost.CreateDatabaseAsync(_fixture);
+        var database = await TestHost.CreateDatabaseAsync();
         var settings = TestHost.Hosted(TestHost.NewMasterKey());
         settings["Vellum:SecureCookies"] = "false";
         using var factory = TestHost.Create(database, settings);
@@ -229,7 +228,7 @@ public class SetupAndBootstrapHostTests
     [Fact]
     public async Task A_hosted_host_with_no_user_needs_a_setup_token_and_one_with_a_user_does_not()
     {
-        var database = await TestHost.CreateDatabaseAsync(_fixture);
+        var database = await TestHost.CreateDatabaseAsync();
         var key = TestHost.NewMasterKey();
 
         using (var open = TestHost.Create(database, TestHost.Hosted(key, setupToken: null)))
@@ -250,7 +249,7 @@ public class SetupAndBootstrapHostTests
     [Fact]
     public async Task A_session_cookie_is_accepted_by_another_instance_with_the_same_master_key_and_an_instance_with_a_different_one_does_not_start()
     {
-        var database = await TestHost.CreateDatabaseAsync(_fixture);
+        var database = await TestHost.CreateDatabaseAsync();
         var key = TestHost.NewMasterKey();
 
         string cookie;
@@ -302,7 +301,7 @@ public class SetupAndBootstrapHostTests
     [Fact]
     public async Task Health_is_anonymous_and_says_nothing_but_the_status()
     {
-        using var factory = TestHost.Create(_fixture);
+        var factory = _fixture.Factory;
         using var client = factory.CreateClient();
 
         var response = await client.GetAsync("/health");

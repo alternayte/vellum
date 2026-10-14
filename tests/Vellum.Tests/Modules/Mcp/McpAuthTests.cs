@@ -9,15 +9,14 @@ namespace Vellum.Tests.Modules.Mcp;
 /// The MCP endpoint over the real app: it takes agent tokens only, and every tool stays
 /// inside the workspace, the project restriction and the scopes of the token.
 /// </summary>
-[Collection("Integration")]
-public class McpAuthTests(IntegrationFixture fixture)
+public class McpAuthTests(IntegrationFixture fixture) : IClassFixture<IntegrationFixture>
 {
     private static JsonObject Project(Guid projectId) => new() { ["projectId"] = projectId };
 
     [Fact]
     public async Task A_cookie_session_does_not_open_mcp()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         var owner = await TestHost.SignInAsync(factory);
         await TestHost.CreateProjectAsync(owner);
 
@@ -31,7 +30,7 @@ public class McpAuthTests(IntegrationFixture fixture)
     [Fact]
     public async Task An_agent_token_initializes_lists_the_tools_and_calls_one()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         var owner = await TestHost.SignInAsync(factory);
         var (workspaceId, projectId) = await TestHost.CreateProjectAsync(owner);
         await TestHost.Created(owner.PostAsJsonAsync($"/api/projects/{projectId}/elements", new { id = Guid.NewGuid(), kind = "system", name = "Shop" }));
@@ -58,7 +57,7 @@ public class McpAuthTests(IntegrationFixture fixture)
     [Fact]
     public async Task A_tool_gives_nothing_of_a_project_in_another_workspace()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         var owner = await TestHost.SignInAsync(factory);
         var (_, projectId) = await TestHost.CreateProjectAsync(owner);
         var stranger = await TestHost.SignInAsync(factory);
@@ -94,7 +93,7 @@ public class McpAuthTests(IntegrationFixture fixture)
     [Fact]
     public async Task A_tool_obeys_the_scope_and_the_project_restriction_of_the_token()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         var owner = await TestHost.SignInAsync(factory);
         var (workspaceId, projectA) = await TestHost.CreateProjectAsync(owner);
         var projectB = Guid.NewGuid();
@@ -120,7 +119,7 @@ public class McpAuthTests(IntegrationFixture fixture)
     [Fact]
     public async Task A_token_stops_on_mcp_when_it_is_revoked_or_its_user_leaves_the_workspace()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         var owner = await TestHost.SignInAsync(factory);
         var (workspaceId, projectId) = await TestHost.CreateProjectAsync(owner);
         var second = await TestHost.SignInMemberAsync(factory, owner, workspaceId, "Owner");

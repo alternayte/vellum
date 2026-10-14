@@ -8,7 +8,6 @@ using Vellum.Tests.Shared.Outbound;
 namespace Vellum.Tests.Modules.GitHub;
 
 /// <summary>The GitHub reads against names, refs and answers that are built to mislead them.</summary>
-[Collection("Integration")]
 public class GitHubHardeningTests(SharedOutboundHost shared) : IClassFixture<SharedOutboundHost>
 {
     private const string Token = "ghp_fixtureTOKEN0123456789abcdefghijABCD";

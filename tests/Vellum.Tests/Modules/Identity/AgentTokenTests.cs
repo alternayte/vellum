@@ -20,8 +20,7 @@ namespace Vellum.Tests.Modules.Identity;
 /// Agent tokens and the boundary between a person and an agent, through the real app with
 /// real tokens: no test here builds a principal.
 /// </summary>
-[Collection("Integration")]
-public class AgentTokenTests(IntegrationFixture fixture)
+public class AgentTokenTests(IntegrationFixture fixture) : IClassFixture<IntegrationFixture>
 {
     private static string Tokens(Guid workspaceId, string path = "") => $"/api/workspaces/{workspaceId}/agent-tokens{path}";
     private static string Promises(Guid projectId, string path = "") => $"/api/projects/{projectId}/promises{path}";
@@ -51,7 +50,8 @@ public class AgentTokenTests(IntegrationFixture fixture)
     private async Task<(WebApplicationFactory<Program> Factory, HttpClient Owner, Guid WorkspaceId, Guid ProjectId)> StartAsync(
         Action<IServiceCollection>? configure = null)
     {
-        var factory = TestHost.Create(fixture.ConnectionString, configure: configure);
+        // A test that changes services has an app of its own; the others share the app of the class.
+        var factory = configure is null ? fixture.Factory : TestHost.Create(fixture.ConnectionString, configure: configure);
         var owner = await TestHost.SignInAsync(factory);
         var (workspaceId, projectId) = await TestHost.CreateProjectAsync(owner);
         await Json(owner.PutAsJsonAsync(Promises(projectId, "/prefix"), new { prefix = "ORD" }), HttpStatusCode.OK);
@@ -67,7 +67,6 @@ public class AgentTokenTests(IntegrationFixture fixture)
     public async Task An_agent_token_never_approves_and_never_claims_a_human_origin()
     {
         var (factory, owner, workspaceId, projectId) = await StartAsync();
-        using var _ = factory;
         var agent = await TestHost.CreateAgentAsync(factory, owner, workspaceId);
 
         // The body says a person wrote it. The origin is what the caller is.
@@ -130,7 +129,6 @@ public class AgentTokenTests(IntegrationFixture fixture)
     public async Task A_change_by_a_token_names_the_token_and_a_token_removes_only_what_agents_alone_wrote()
     {
         var (factory, owner, workspaceId, projectId) = await StartAsync();
-        using var _ = factory;
         var agent = await TestHost.CreateAgentAsync(factory, owner, workspaceId, ["read", "propose"]);
         var token = $"agent-token:{agent.TokenId}";
         var person = "user:" + (await owner.GetFromJsonAsync<JsonObject>("/api/auth/me"))!["id"]!.GetValue<string>();
@@ -210,7 +208,6 @@ public class AgentTokenTests(IntegrationFixture fixture)
     public async Task A_bearer_request_is_an_agent_request_whatever_cookie_comes_with_it()
     {
         var (factory, owner, workspaceId, projectId) = await StartAsync();
-        using var _ = factory;
         var agent = await TestHost.CreateAgentAsync(factory, owner, workspaceId);
         var id = (await Json(owner.PostAsJsonAsync(Promises(projectId), Promise()), HttpStatusCode.Created))["id"]!.GetValue<Guid>();
 
@@ -237,7 +234,6 @@ public class AgentTokenTests(IntegrationFixture fixture)
     public async Task A_token_stays_inside_its_scopes_its_project_and_its_workspace()
     {
         var (factory, owner, workspaceId, projectA) = await StartAsync();
-        using var _ = factory;
         var projectB = Guid.NewGuid();
         await TestHost.Created(owner.PostAsJsonAsync($"/api/workspaces/{workspaceId}/projects", new { id = projectB, name = "Second Project" }));
         await Json(owner.PutAsJsonAsync(Promises(projectB, "/prefix"), new { prefix = "SEC" }), HttpStatusCode.OK);
@@ -301,7 +297,6 @@ public class AgentTokenTests(IntegrationFixture fixture)
     public async Task A_human_only_endpoint_refuses_an_agent_token(string method, string route)
     {
         var (factory, owner, workspaceId, projectId) = await StartAsync();
-        using var _ = factory;
         var agent = await TestHost.CreateAgentAsync(factory, owner, workspaceId);
         var url = route
             .Replace("{workspaceId}", workspaceId.ToString())
@@ -323,7 +318,6 @@ public class AgentTokenTests(IntegrationFixture fixture)
     public async Task The_database_holds_a_keyed_hash_and_the_token_is_shown_once()
     {
         var (factory, owner, workspaceId, projectId) = await StartAsync();
-        using var _ = factory;
         var ownerId = (await owner.GetFromJsonAsync<UserInfoResponse>("/api/auth/me"))!.Id;
 
         var before = DateTimeOffset.UtcNow;
@@ -391,7 +385,6 @@ public class AgentTokenTests(IntegrationFixture fixture)
     public async Task Only_an_owner_creates_lists_and_revokes_and_a_request_is_bounded()
     {
         var (factory, owner, workspaceId, projectId) = await StartAsync();
-        using var _ = factory;
         var editor = await TestHost.SignInMemberAsync(factory, owner, workspaceId, "Editor");
         var stranger = await TestHost.SignInAsync(factory);
         var (otherWorkspace, otherProject) = await TestHost.CreateProjectAsync(stranger);
@@ -499,7 +492,6 @@ public class AgentTokenTests(IntegrationFixture fixture)
     public async Task Deleting_a_project_deletes_the_tokens_that_are_restricted_to_it()
     {
         var (factory, owner, workspaceId, projectA) = await StartAsync();
-        using var _ = factory;
         var projectB = Guid.NewGuid();
         await TestHost.Created(owner.PostAsJsonAsync($"/api/workspaces/{workspaceId}/projects", new { id = projectB, name = "Second Project" }));
         var narrow = await TestHost.CreateAgentAsync(factory, owner, workspaceId, projectId: projectA);
@@ -518,7 +510,7 @@ public class AgentTokenTests(IntegrationFixture fixture)
     [Fact]
     public async Task A_token_moves_to_the_new_master_key_when_it_is_used_and_stops_under_a_key_that_is_gone()
     {
-        var database = await TestHost.CreateDatabaseAsync(fixture);
+        var database = await TestHost.CreateDatabaseAsync();
         var (oldKey, newKey) = (TestHost.NewMasterKey(), TestHost.NewMasterKey());
         static Dictionary<string, string?> Keys(string current, string? previous = null) =>
             new() { ["Vellum:MasterKey"] = current, ["Vellum:PreviousMasterKey"] = previous };
@@ -714,7 +706,6 @@ public class AgentTokenTests(IntegrationFixture fixture)
     public async Task Every_endpoint_is_of_one_class_and_an_agent_token_gets_403_wherever_it_is_not_let_in()
     {
         var (factory, owner, workspaceId, projectId) = await StartAsync();
-        using var _ = factory;
         var endpoints = factory.Services.GetRequiredService<EndpointDataSource>().Endpoints.OfType<RouteEndpoint>()
             .SelectMany(e => (e.Metadata.GetMetadata<HttpMethodMetadata>()?.HttpMethods ?? ["*"])
                 .Select(method => (Name: $"{method} {e.RoutePattern.RawText}", Method: method, Endpoint: e)))

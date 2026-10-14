@@ -9,7 +9,6 @@ namespace Vellum.Tests.Modules.Import;
 /// hand-edited or declared fact, the memory of a rejection, links to hand-made entities,
 /// dependencies between proposals, and the all-or-nothing rule of one decision.
 /// </summary>
-[Collection("Integration")]
 public class ImportDecisionTests(ImportHost import) : IClassFixture<ImportHost>
 {
     private static async Task PatchAsync(ImportScenario s, string path, object body)

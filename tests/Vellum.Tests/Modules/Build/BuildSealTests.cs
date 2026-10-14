@@ -5,7 +5,6 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Deedbox;
-using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
 using Vellum.Modules.Build;
 using Vellum.Modules.Promises;
@@ -18,8 +17,7 @@ namespace Vellum.Tests.Modules.Build;
 /// out or a commit invented, is refused, so it cannot give a bundle that says build ready.
 /// A bundle from before the seal is still checked.
 /// </summary>
-[Collection("Integration")]
-public class BuildSealTests(IntegrationFixture fixture)
+public class BuildSealTests(IntegrationFixture fixture) : IClassFixture<IntegrationFixture>
 {
     private static string Build(Guid projectId, string path) => $"/api/projects/{projectId}/build/{path}";
 
@@ -69,7 +67,7 @@ public class BuildSealTests(IntegrationFixture fixture)
     [Fact]
     public async Task An_export_takes_only_a_pinned_state_that_vellum_issued()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         var owner = await TestHost.SignInAsync(factory);
         var (workspaceId, projectId) = await TestHost.CreateProjectAsync(owner);
         var otherProject = Guid.NewGuid();

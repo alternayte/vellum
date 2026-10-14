@@ -15,8 +15,7 @@ namespace Vellum.Tests.Modules.Trace;
 /// refused for structure and size only (400 or 413), never with a 500, and a document that
 /// names things that do not exist is still saved.
 /// </summary>
-[Collection("Integration")]
-public class ScenarioLimitsTests(IntegrationFixture fixture)
+public class ScenarioLimitsTests(IntegrationFixture fixture) : IClassFixture<IntegrationFixture>
 {
     private static readonly Guid Any = new("00000000-0000-0000-0000-000000000001");
 
@@ -33,12 +32,11 @@ public class ScenarioLimitsTests(IntegrationFixture fixture)
     /// <summary>A value inside <paramref name="levels"/> arrays.</summary>
     private static string Nested(int levels) => new string('[', levels) + "1" + new string(']', levels);
 
-    private async Task<(HttpClient Client, Guid ProjectId, IDisposable Factory)> StartAsync()
+    private async Task<(HttpClient Client, Guid ProjectId)> StartAsync()
     {
-        var factory = TestHost.Create(fixture);
-        var client = await TestHost.SignInAsync(factory);
+        var client = await TestHost.SignInAsync(fixture.Factory);
         var (_, projectId) = await TestHost.CreateProjectAsync(client);
-        return (client, projectId, factory);
+        return (client, projectId);
     }
 
     private static async Task<ErrorResponse> RefusedAsync(HttpResponseMessage response, HttpStatusCode status)
@@ -54,8 +52,8 @@ public class ScenarioLimitsTests(IntegrationFixture fixture)
     [Fact]
     public async Task A_payload_nests_at_most_32_levels()
     {
-        var (client, projectId, factory) = await StartAsync();
-        using var _ = factory;
+        var (client, projectId) = await StartAsync();
+        using var _ = client;
 
         await TestHost.Created(client.PostAsync(Url(projectId), Json(Document(Guid.NewGuid(), $"[{Write("w", Nested(ScenarioShape.MaxPayloadDepth))}]"))));
 
@@ -74,8 +72,8 @@ public class ScenarioLimitsTests(IntegrationFixture fixture)
     [Fact]
     public async Task The_deepest_document_the_limits_allow_is_saved_read_replaced_and_run()
     {
-        var (client, projectId, factory) = await StartAsync();
-        using var _ = factory;
+        var (client, projectId) = await StartAsync();
+        using var _ = client;
 
         // Step lists nested to the engine's limit through publish handlers, the deepest way to
         // nest in JSON, with a payload of the deepest allowed nesting at the bottom.
@@ -108,8 +106,8 @@ public class ScenarioLimitsTests(IntegrationFixture fixture)
     [Fact]
     public async Task A_scenario_has_at_most_the_steps_the_engine_plays()
     {
-        var (client, projectId, factory) = await StartAsync();
-        using var _ = factory;
+        var (client, projectId) = await StartAsync();
+        using var _ = client;
 
         // The step list counts as one, as it does for the engine.
         string Steps(int count) => "[" + string.Join(",", Enumerable.Range(0, count).Select(i => Write($"w{i}"))) + "]";
@@ -121,8 +119,8 @@ public class ScenarioLimitsTests(IntegrationFixture fixture)
     [Fact]
     public async Task A_document_or_a_payload_that_is_too_large_is_refused()
     {
-        var (client, projectId, factory) = await StartAsync();
-        using var _ = factory;
+        var (client, projectId) = await StartAsync();
+        using var _ = client;
 
         // A 40 MB dataset name was stored, and stored again on every save.
         var huge = await client.PostAsync(Url(projectId), Json(Document(Guid.NewGuid(), $"[{Write("w", dataset: new string('d', 40 * 1024 * 1024))}]")));
@@ -153,8 +151,8 @@ public class ScenarioLimitsTests(IntegrationFixture fixture)
     [InlineData("\"\\ud83d\"")]
     public async Task A_payload_with_text_the_event_store_cannot_keep_is_refused(string payload)
     {
-        var (client, projectId, factory) = await StartAsync();
-        using var _ = factory;
+        var (client, projectId) = await StartAsync();
+        using var _ = client;
 
         Assert.Equal("steps[0].change",
             await FieldAsync(client.PostAsync(Url(projectId), Json(Document(Guid.NewGuid(), $"[{Write("w", payload)}]")))));
@@ -163,8 +161,8 @@ public class ScenarioLimitsTests(IntegrationFixture fixture)
     [Fact]
     public async Task Identifiers_and_names_inside_a_scenario_follow_the_text_rule()
     {
-        var (client, projectId, factory) = await StartAsync();
-        using var _ = factory;
+        var (client, projectId) = await StartAsync();
+        using var _ = client;
 
         Task<string> Field(string steps, string assertions = "[]") =>
             FieldAsync(client.PostAsync(Url(projectId), Json(Document(Guid.NewGuid(), steps, assertions))));
@@ -188,8 +186,8 @@ public class ScenarioLimitsTests(IntegrationFixture fixture)
     [Fact]
     public async Task The_type_of_a_step_or_an_assertion_may_stand_anywhere_in_its_object()
     {
-        var (client, projectId, factory) = await StartAsync();
-        using var _ = factory;
+        var (client, projectId) = await StartAsync();
+        using var _ = client;
 
         var id = Guid.NewGuid();
         var document = $$"""
@@ -222,8 +220,8 @@ public class ScenarioLimitsTests(IntegrationFixture fixture)
     public async Task A_missing_or_unknown_type_is_a_400_that_says_where_and_what_is_allowed(
         string steps, string assertions, string where, string what)
     {
-        var (client, projectId, factory) = await StartAsync();
-        using var _ = factory;
+        var (client, projectId) = await StartAsync();
+        using var _ = client;
 
         var response = await client.PostAsync(Url(projectId), Json(Document(Guid.NewGuid(), steps, assertions)));
 
@@ -237,7 +235,7 @@ public class ScenarioLimitsTests(IntegrationFixture fixture)
     [Fact]
     public async Task A_taken_ID_gets_one_answer_whatever_holds_it()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         using var owner = await TestHost.SignInAsync(factory);
         var (_, ownerProject) = await TestHost.CreateProjectAsync(owner);
 
@@ -271,7 +269,7 @@ public class ScenarioLimitsTests(IntegrationFixture fixture)
     [Fact]
     public async Task A_project_holds_at_most_2000_scenarios()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         using var client = await TestHost.SignInAsync(factory);
         var (_, projectId) = await TestHost.CreateProjectAsync(client);
 

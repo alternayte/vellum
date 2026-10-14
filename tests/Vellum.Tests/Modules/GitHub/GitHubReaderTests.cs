@@ -12,7 +12,6 @@ namespace Vellum.Tests.Modules.GitHub;
 /// The GitHub reads through the real Refit client and handler pipeline. The transport serves
 /// the fixtures under <c>Fixtures/GitHub</c>, which are written from GitHub's REST reference.
 /// </summary>
-[Collection("Integration")]
 public class GitHubReaderTests(SharedOutboundHost shared) : IClassFixture<SharedOutboundHost>
 {
     private const string Token = "ghp_fixtureTOKEN0123456789abcdefghijABCD";

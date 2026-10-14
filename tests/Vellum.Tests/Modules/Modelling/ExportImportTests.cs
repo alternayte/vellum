@@ -2,64 +2,22 @@ using Vellum.Modules.Modelling.Export;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
-using Vellum.Modules.Docs;
-using Vellum.Modules.Drafts;
-using Vellum.Modules.Identity;
-using Vellum.Modules.Modelling;
 using Vellum.Modules.Modelling.Elements;
 using Vellum.Modules.Modelling.Messages;
 using Vellum.Modules.Modelling.Relationships;
 using Vellum.Modules.Schemas;
-using Vellum.Modules.Views;
-using Vellum.Modules.Workspaces;
 using Vellum.Shared;
 
 namespace Vellum.Tests.Modules.Modelling;
 
-[Collection("Integration")]
-public class ExportImportTests
+public class ExportImportTests : IClassFixture<IntegrationFixture>
 {
     private readonly IntegrationFixture _fixture;
 
     public ExportImportTests(IntegrationFixture fixture) => _fixture = fixture;
-
-    private WebApplicationFactory<Program> CreateFactory()
-    {
-        return new WebApplicationFactory<Program>()
-            .WithWebHostBuilder(builder =>
-            {
-                builder.UseEnvironment("Testing");
-                builder.UseSetting("ConnectionStrings:DefaultConnection", _fixture.ConnectionString);
-                builder.ConfigureServices(services =>
-                {
-                    services.RemoveAll<DbContextOptions<AppIdentityDbContext>>();
-                    services.RemoveAll<DbContextOptions<WorkspacesDbContext>>();
-                    services.RemoveAll<DbContextOptions<ModellingDbContext>>();
-                    services.RemoveAll<DbContextOptions<DraftsDbContext>>();
-                    services.RemoveAll<DbContextOptions<ViewsDbContext>>();
-                    services.RemoveAll<DbContextOptions<DocsDbContext>>();
-                    services.RemoveAll<DbContextOptions<SchemasDbContext>>();
-                    services.AddDbContext<AppIdentityDbContext>(o =>
-                        o.UseNpgsql(_fixture.ConnectionString).UseSnakeCaseNamingConvention());
-                    services.AddDbContext<WorkspacesDbContext>(o =>
-                        o.UseNpgsql(_fixture.ConnectionString).UseSnakeCaseNamingConvention());
-                    services.AddDbContext<ModellingDbContext>(o =>
-                        o.UseNpgsql(_fixture.ConnectionString).UseSnakeCaseNamingConvention());
-                    services.AddDbContext<DraftsDbContext>(o =>
-                        o.UseNpgsql(_fixture.ConnectionString).UseSnakeCaseNamingConvention());
-                    services.AddDbContext<ViewsDbContext>(o =>
-                        o.UseNpgsql(_fixture.ConnectionString).UseSnakeCaseNamingConvention());
-                    services.AddDbContext<DocsDbContext>(o =>
-                        o.UseNpgsql(_fixture.ConnectionString).UseSnakeCaseNamingConvention());
-                    services.AddDbContext<SchemasDbContext>(o =>
-                        o.UseNpgsql(_fixture.ConnectionString).UseSnakeCaseNamingConvention());
-                });
-            });
-    }
 
     private static HttpClient CreateClient(WebApplicationFactory<Program> factory)
     {
@@ -92,7 +50,7 @@ public class ExportImportTests
     [Fact]
     public async Task Export_json_returns_ok()
     {
-        using var factory = CreateFactory();
+        var factory = _fixture.Factory;
         using var client = await CreateAuthenticatedClientAsync(factory);
         var projectId = await SetupProjectAsync(client);
 
@@ -120,7 +78,7 @@ public class ExportImportTests
     [InlineData("""{ "elements": [ { "id": "ID1", "kind": "system", "name": "A", "status": "current" } ], "operations": [ { "id": "ID2", "ownerId": "ID1" } ] }""", HttpStatusCode.BadRequest)]
     public async Task An_incomplete_import_document_is_refused_or_read_with_defaults(string document, HttpStatusCode expected)
     {
-        using var factory = CreateFactory();
+        var factory = _fixture.Factory;
         using var client = await CreateAuthenticatedClientAsync(factory);
         var projectId = await SetupProjectAsync(client);
 
@@ -134,7 +92,7 @@ public class ExportImportTests
     [Fact]
     public async Task Export_yaml_returns_ok()
     {
-        using var factory = CreateFactory();
+        var factory = _fixture.Factory;
         using var client = await CreateAuthenticatedClientAsync(factory);
         var projectId = await SetupProjectAsync(client);
 
@@ -147,7 +105,7 @@ public class ExportImportTests
     [Fact]
     public async Task Export_then_import_round_trips()
     {
-        using var factory = CreateFactory();
+        var factory = _fixture.Factory;
         using var client = await CreateAuthenticatedClientAsync(factory);
         var projectId = await SetupProjectAsync(client);
 
@@ -168,7 +126,7 @@ public class ExportImportTests
     [Fact]
     public async Task Facts_and_kinds_survive_export_and_import_between_projects()
     {
-        using var factory = CreateFactory();
+        var factory = _fixture.Factory;
         using var client = await CreateAuthenticatedClientAsync(factory);
         var sourceProjectId = await SetupProjectAsync(client);
 
@@ -267,7 +225,7 @@ public class ExportImportTests
     [Fact]
     public async Task Import_rejects_invalid_document_with_400()
     {
-        using var factory = CreateFactory();
+        var factory = _fixture.Factory;
         using var client = await CreateAuthenticatedClientAsync(factory);
         var projectId = await SetupProjectAsync(client);
 
@@ -300,7 +258,7 @@ public class ExportImportTests
     [Fact]
     public async Task Import_with_document_schema_and_message_reference_succeeds()
     {
-        using var factory = CreateFactory();
+        var factory = _fixture.Factory;
         using var client = await CreateAuthenticatedClientAsync(factory);
         var projectId = await SetupProjectAsync(client);
 
@@ -355,7 +313,7 @@ public class ExportImportTests
     [Fact]
     public async Task Import_rejects_invalid_enum_label_with_400()
     {
-        using var factory = CreateFactory();
+        var factory = _fixture.Factory;
         using var client = await CreateAuthenticatedClientAsync(factory);
         var projectId = await SetupProjectAsync(client);
 
@@ -387,7 +345,7 @@ public class ExportImportTests
     [Fact]
     public async Task Import_rejects_message_with_unknown_schema()
     {
-        using var factory = CreateFactory();
+        var factory = _fixture.Factory;
         using var client = await CreateAuthenticatedClientAsync(factory);
         var projectId = await SetupProjectAsync(client);
 
@@ -423,7 +381,7 @@ public class ExportImportTests
     [Fact]
     public async Task Unauthenticated_export_returns_401()
     {
-        using var factory = CreateFactory();
+        var factory = _fixture.Factory;
         using var client = CreateClient(factory);
         var response = await client.GetAsync($"/api/projects/{Guid.NewGuid()}/export");
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
@@ -432,7 +390,7 @@ public class ExportImportTests
     [Fact]
     public async Task A_document_with_schemas_imports_into_a_second_project_with_schema_IDs_of_that_project()
     {
-        using var factory = CreateFactory();
+        var factory = _fixture.Factory;
         using var client = await CreateAuthenticatedClientAsync(factory);
         var first = await SetupProjectAsync(client);
         var second = await SetupProjectAsync(client);
@@ -518,7 +476,7 @@ public class ExportImportTests
     [Fact]
     public async Task A_preview_does_not_tell_whether_an_ID_is_in_use_in_a_project_the_caller_cannot_read()
     {
-        using var factory = TestHost.Create(_fixture);
+        var factory = _fixture.Factory;
 
         // The owner's project: a schema, a deleted schema and the model stream.
         using var owner = await TestHost.SignInAsync(factory);
@@ -577,7 +535,7 @@ public class ExportImportTests
     [Fact]
     public async Task A_refused_import_names_every_refused_entry_and_writes_nothing()
     {
-        using var factory = CreateFactory();
+        var factory = _fixture.Factory;
         using var client = await CreateAuthenticatedClientAsync(factory);
         var projectId = await SetupProjectAsync(client);
 
@@ -607,11 +565,3 @@ public class ExportImportTests
     }
 }
 
-file static class ExportImportServiceCollectionExtensions
-{
-    public static void RemoveAll<T>(this IServiceCollection services)
-    {
-        var descriptors = services.Where(d => d.ServiceType == typeof(T)).ToList();
-        foreach (var d in descriptors) services.Remove(d);
-    }
-}

@@ -12,7 +12,6 @@ namespace Vellum.Tests.Modules.Import;
 /// convention; no line of the source states that binding, so no fact and no proposal exists
 /// for it, and a person declares it.
 /// </summary>
-[Collection("Integration")]
 public class OrdersBindingImportTests(ImportHost import) : IClassFixture<ImportHost>
 {
     private static JsonObject PublishToExchange(

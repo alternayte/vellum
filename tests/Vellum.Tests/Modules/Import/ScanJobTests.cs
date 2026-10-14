@@ -5,7 +5,6 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Vellum.Modules.Import;
 using Vellum.Modules.Import.Extraction;
-using Vellum.Modules.Import.Proposals;
 using Vellum.Tests.Shared.Outbound;
 
 namespace Vellum.Tests.Modules.Import;
@@ -16,7 +15,6 @@ namespace Vellum.Tests.Modules.Import;
 /// reports each failure with what to do. Counting the stub's requests shows what was, and
 /// what was never, asked of GitHub.
 /// </summary>
-[Collection("Integration")]
 public class ScanJobTests(ImportHost import) : IClassFixture<ImportHost>
 {
     private const string Token = "ghp_fixtureTOKEN0123456789abcdefghijABCD";

@@ -11,8 +11,7 @@ namespace Vellum.Tests.Modules.Mcp;
 /// agent tokens: what a token reads, what it proposes, that a proposal changes nothing until
 /// a person decides, and that a token never decides.
 /// </summary>
-[Collection("Integration")]
-public class McpProposalToolTests(IntegrationFixture fixture)
+public class McpProposalToolTests(IntegrationFixture fixture) : IClassFixture<IntegrationFixture>
 {
     private static string? ErrorType(string text) => JsonNode.Parse(text)!["error"]?["type"]?.GetValue<string>();
 
@@ -34,7 +33,7 @@ public class McpProposalToolTests(IntegrationFixture fixture)
     [Fact]
     public async Task The_review_tools_read_findings_decisions_questions_and_runs_and_propose_without_deciding()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         var owner = await TestHost.SignInAsync(factory);
         var (workspaceId, projectId) = await TestHost.CreateProjectAsync(owner);
         var orders = await OrdersReference.SeedAsync(owner, projectId);
@@ -112,7 +111,7 @@ public class McpProposalToolTests(IntegrationFixture fixture)
     [Fact]
     public async Task A_proposed_architecture_and_a_proposed_flow_change_nothing_until_a_person_accepts()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         var owner = await TestHost.SignInAsync(factory);
         var (workspaceId, projectId) = await TestHost.CreateProjectAsync(owner);
         var orders = await OrdersReference.SeedAsync(owner, projectId);

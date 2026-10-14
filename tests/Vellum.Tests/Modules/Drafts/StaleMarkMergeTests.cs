@@ -10,15 +10,14 @@ namespace Vellum.Tests.Modules.Drafts;
 /// The stale mark belongs to main. A merge brings the draft's values, status and provenance
 /// to main, and leaves every mark on main as it was before the merge.
 /// </summary>
-[Collection("Integration")]
-public class StaleMarkMergeTests(IntegrationFixture fixture)
+public class StaleMarkMergeTests(IntegrationFixture fixture) : IClassFixture<IntegrationFixture>
 {
     private static readonly StaleMark Mark = StaleMarkScenario.Mark;
 
     [Fact]
     public async Task A_merge_of_edits_to_other_fields_leaves_the_marks_on_main()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         var s = await StaleMarkScenario.CreateAsync(factory);
         await s.MarkAllAsync();
         var draft = await DraftAsync(s);
@@ -35,7 +34,7 @@ public class StaleMarkMergeTests(IntegrationFixture fixture)
     [Fact]
     public async Task A_draft_cannot_clear_a_mark_on_main_and_its_status_change_still_merges()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         var s = await StaleMarkScenario.CreateAsync(factory);
         await s.MarkAllAsync();
         var draft = await DraftAsync(s);
@@ -56,7 +55,7 @@ public class StaleMarkMergeTests(IntegrationFixture fixture)
     [Fact]
     public async Task A_draft_cannot_set_a_mark_on_main()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         var s = await StaleMarkScenario.CreateAsync(factory);
         var draft = await DraftAsync(s);
 
@@ -80,7 +79,7 @@ public class StaleMarkMergeTests(IntegrationFixture fixture)
     [Fact]
     public async Task A_mark_that_main_cleared_after_the_fork_does_not_come_back_with_the_merge()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         var s = await StaleMarkScenario.CreateAsync(factory);
         await s.MarkAllAsync();
         var draft = await DraftAsync(s);
@@ -105,7 +104,7 @@ public class StaleMarkMergeTests(IntegrationFixture fixture)
     [Fact]
     public async Task A_mark_alone_is_no_change_and_no_conflict()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         var s = await StaleMarkScenario.CreateAsync(factory);
         var draft = await DraftAsync(s);
 

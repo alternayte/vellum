@@ -1,14 +1,16 @@
 using System.Net;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 using Npgsql;
 using Vellum.Tests.Shared.Outbound;
 
 namespace Vellum.Tests;
 
-[Collection("Integration")]
-public class StartupTests
+public class StartupTests : IClassFixture<IntegrationFixture>
 {
     private readonly IntegrationFixture _fixture;
 
@@ -49,5 +51,13 @@ public class StartupTests
             "SELECT count(*) FROM information_schema.schemata WHERE schema_name IN ('deedbox','identity','workspaces','modelling','views','docs','drafts','schemas','review','trace','settings','ai')",
             check);
         Assert.Equal(12L, await schemas.ExecuteScalarAsync());
+
+        // Test hosts hash passwords with a token work factor (TestHost). The app itself keeps
+        // the ASP.NET Core Identity default.
+        Assert.Equal(new PasswordHasherOptions().IterationCount,
+            factory.Services.GetRequiredService<IOptions<PasswordHasherOptions>>().Value.IterationCount);
+        Assert.True(new PasswordHasherOptions().IterationCount >= 100_000);
+        Assert.Equal(TestHost.TestPasswordIterations,
+            _fixture.Factory.Services.GetRequiredService<IOptions<PasswordHasherOptions>>().Value.IterationCount);
     }
 }

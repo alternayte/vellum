@@ -18,7 +18,6 @@ namespace Vellum.Tests.Modules.Import;
 /// cleared, it does not outlive its project, a resume is not free, the queue is fair, a
 /// scan that keeps failing stops, and a removal says what it breaks.
 /// </summary>
-[Collection("Integration")]
 public class ImportSafetyTests(ImportHost import) : IClassFixture<ImportHost>
 {
     private static Task SettingsAsync(ImportScenario s, JsonObject? usage = null)
@@ -486,7 +485,9 @@ public class ImportSafetyTests(ImportHost import) : IClassFixture<ImportHost>
         Assert.Equal((0, 1), (refused.Coverage.Covered, refused.Coverage.Failed));
     }
 
+    // The plan has 20,000 facts, so that writing it takes long enough to overlap model writes.
     [Fact]
+    [Trait("Category", "Slow")]
     public async Task Writing_a_large_plan_does_not_hold_up_a_write_to_the_model()
     {
         var s = await ImportScenario.CreateAsync(import);

@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Security.Cryptography;
 using System.Text.Json.Nodes;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -11,7 +12,6 @@ using Vellum.Modules.Drafts;
 using Vellum.Modules.Identity;
 using Vellum.Modules.Modelling;
 using Vellum.Modules.Schemas;
-using Npgsql;
 using Vellum.Modules.Review;
 using Vellum.Modules.Settings.Setup;
 using Vellum.Shared;
@@ -23,8 +23,6 @@ namespace Vellum.Tests;
 /// <summary>The app over the fixture's database, and the calls most endpoint tests start with.</summary>
 internal static class TestHost
 {
-    public static WebApplicationFactory<Program> Create(IntegrationFixture fixture) => Create(fixture.ConnectionString);
-
     /// <summary>
     /// The app over any database, with bootstrap values as the environment would give them
     /// (<c>Vellum:Profile</c>, <c>Vellum:MasterKey</c>, <c>AllowedHosts</c> and so on).
@@ -37,6 +35,7 @@ internal static class TestHost
         {
             builder.UseEnvironment("Testing");
             builder.UseSetting("ConnectionStrings:DefaultConnection", connectionString);
+            builder.UseSetting("Vellum:DataDirectory", TestDatabase.DataDirectory(connectionString));
             foreach (var (key, value) in settings ?? new Dictionary<string, string?>())
                 builder.UseSetting(key, value);
             builder.ConfigureServices(services =>
@@ -50,22 +49,25 @@ internal static class TestHost
                 Replace<DraftsDbContext>(services, cs);
                 Replace<SchemasDbContext>(services, cs);
                 Replace<ReviewDbContext>(services, cs);
-                // Every test client has one address, and tests register accounts freely.
-                services.AddSingleton(new AnonymousRateLimits(RegistrationsPerMinute: 100_000, RequestsPerMinute: 1_000_000));
+                // Every test client has one address, and the tests of a class share one app:
+                // they register accounts and sign in freely.
+                services.AddSingleton(new AnonymousRateLimits(
+                    RegistrationsPerMinute: 100_000, RequestsPerMinute: 1_000_000, CredentialAttemptsPerMinute: 100_000));
+                // Tests register and sign in thousands of accounts. A test hash is cheap; the
+                // app keeps the default work factor (StartupTests).
+                services.Configure<PasswordHasherOptions>(o => o.IterationCount = TestPasswordIterations);
                 configure?.Invoke(services);
             });
         });
 
-    /// <summary>A new empty database on the fixture's server. The app creates its schema when it starts.</summary>
-    public static async Task<string> CreateDatabaseAsync(IntegrationFixture fixture)
-    {
-        var database = $"t_{Guid.NewGuid():N}";
-        await using var admin = new NpgsqlConnection(fixture.ConnectionString);
-        await admin.OpenAsync();
-        await using var create = new NpgsqlCommand($"CREATE DATABASE {database}", admin);
-        await create.ExecuteNonQueryAsync();
-        return new NpgsqlConnectionStringBuilder(fixture.ConnectionString) { Database = database }.ToString();
-    }
+    /// <summary>The PBKDF2 iteration count of test hosts.</summary>
+    public const int TestPasswordIterations = 1;
+
+    /// <summary>
+    /// A new database of an instance that has never started: every schema, no user, no
+    /// setting and no key. The app finds its migrations applied when it starts.
+    /// </summary>
+    public static Task<string> CreateDatabaseAsync() => TestDatabase.CreateUnsetAsync();
 
     public static string NewMasterKey() => Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
 

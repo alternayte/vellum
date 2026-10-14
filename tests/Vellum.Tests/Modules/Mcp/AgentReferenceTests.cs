@@ -11,8 +11,7 @@ namespace Vellum.Tests.Modules.Mcp;
 /// The agent reference and the capability endpoint: served to anyone, holding nothing of an
 /// instance, and in step with the tools and the endpoints that the server registered.
 /// </summary>
-[Collection("Integration")]
-public class AgentReferenceTests(IntegrationFixture fixture)
+public class AgentReferenceTests(IntegrationFixture fixture) : IClassFixture<IntegrationFixture>
 {
     private const string Start = "<!-- generated:mcp-tools:start -->";
     private const string End = "<!-- generated:mcp-tools:end -->";
@@ -29,7 +28,7 @@ public class AgentReferenceTests(IntegrationFixture fixture)
     [Fact]
     public async Task Llms_txt_is_open_small_and_in_the_form_of_the_convention()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         var anonymous = factory.CreateClient();
 
         using var response = await anonymous.GetAsync("/llms.txt");
@@ -69,7 +68,7 @@ public class AgentReferenceTests(IntegrationFixture fixture)
     [Fact]
     public async Task Llms_full_txt_states_the_tools_and_the_endpoints_that_are_registered()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         var owner = await TestHost.SignInAsync(factory);
         var (workspaceId, _) = await TestHost.CreateProjectAsync(owner);
         var agent = await TestHost.CreateAgentAsync(factory, owner, workspaceId);
@@ -135,7 +134,7 @@ public class AgentReferenceTests(IntegrationFixture fixture)
     [Fact]
     public void The_reference_page_of_the_docs_holds_the_registered_tools()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         var generated = AgentReference.ToolsMarkdown(factory.Services.GetServices<McpServerTool>());
         Assert.Contains(generated, factory.Services.GetRequiredService<AgentReference>().LlmsFull);
 
@@ -154,7 +153,7 @@ public class AgentReferenceTests(IntegrationFixture fixture)
     [Fact]
     public async Task The_skill_is_served_from_its_one_file()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
 
         using var response = await factory.CreateClient().GetAsync("/skills/vellum/SKILL.md");
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -180,7 +179,7 @@ public class AgentReferenceTests(IntegrationFixture fixture)
     [Fact]
     public async Task The_capability_endpoint_says_what_the_caller_may_call()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         var owner = await TestHost.SignInAsync(factory);
         var (workspaceId, projectId) = await TestHost.CreateProjectAsync(owner);
         var expiresAt = DateTimeOffset.UtcNow.AddDays(3);

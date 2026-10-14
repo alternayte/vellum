@@ -17,7 +17,6 @@ namespace Vellum.Tests.Modules.Promises;
 /// check that exercises nothing is not a pass; and a source check concludes absence only
 /// from a scan that could have found the pattern. Everything goes through the HTTP API.
 /// </summary>
-[Collection("Integration")]
 public class PromiseBindingTests(ImportHost import) : IClassFixture<ImportHost>
 {
     private static string Url(Guid projectId, string path = "") => $"/api/projects/{projectId}/promises{path}";

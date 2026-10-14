@@ -1,59 +1,15 @@
 using System.Net;
 using System.Net.Http.Json;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
-using Vellum.Modules.Docs;
-using Vellum.Modules.Drafts;
-using Vellum.Modules.Identity;
-using Vellum.Modules.Modelling;
 using Vellum.Modules.Schemas;
-using Vellum.Modules.Views;
-using Vellum.Modules.Workspaces;
 
 namespace Vellum.Tests.Modules.Schemas;
 
-[Collection("Integration")]
-public class SchemaEndpointTests
+public class SchemaEndpointTests : IClassFixture<IntegrationFixture>
 {
     private readonly IntegrationFixture _fixture;
 
     public SchemaEndpointTests(IntegrationFixture fixture) => _fixture = fixture;
-
-    private WebApplicationFactory<Program> CreateFactory()
-    {
-        return new WebApplicationFactory<Program>()
-            .WithWebHostBuilder(builder =>
-            {
-                builder.UseEnvironment("Testing");
-                builder.UseSetting("ConnectionStrings:DefaultConnection", _fixture.ConnectionString);
-                builder.ConfigureServices(services =>
-                {
-                    services.RemoveAll<DbContextOptions<AppIdentityDbContext>>();
-                    services.RemoveAll<DbContextOptions<WorkspacesDbContext>>();
-                    services.RemoveAll<DbContextOptions<ModellingDbContext>>();
-                    services.RemoveAll<DbContextOptions<DraftsDbContext>>();
-                    services.RemoveAll<DbContextOptions<ViewsDbContext>>();
-                    services.RemoveAll<DbContextOptions<DocsDbContext>>();
-                    services.RemoveAll<DbContextOptions<SchemasDbContext>>();
-                    services.AddDbContext<AppIdentityDbContext>(o =>
-                        o.UseNpgsql(_fixture.ConnectionString).UseSnakeCaseNamingConvention());
-                    services.AddDbContext<WorkspacesDbContext>(o =>
-                        o.UseNpgsql(_fixture.ConnectionString).UseSnakeCaseNamingConvention());
-                    services.AddDbContext<ModellingDbContext>(o =>
-                        o.UseNpgsql(_fixture.ConnectionString).UseSnakeCaseNamingConvention());
-                    services.AddDbContext<DraftsDbContext>(o =>
-                        o.UseNpgsql(_fixture.ConnectionString).UseSnakeCaseNamingConvention());
-                    services.AddDbContext<ViewsDbContext>(o =>
-                        o.UseNpgsql(_fixture.ConnectionString).UseSnakeCaseNamingConvention());
-                    services.AddDbContext<DocsDbContext>(o =>
-                        o.UseNpgsql(_fixture.ConnectionString).UseSnakeCaseNamingConvention());
-                    services.AddDbContext<SchemasDbContext>(o =>
-                        o.UseNpgsql(_fixture.ConnectionString).UseSnakeCaseNamingConvention());
-                });
-            });
-    }
 
     private static HttpClient CreateClient(WebApplicationFactory<Program> factory)
     {
@@ -86,7 +42,7 @@ public class SchemaEndpointTests
     [Fact]
     public async Task Create_and_get_schema()
     {
-        using var factory = CreateFactory();
+        var factory = _fixture.Factory;
         using var client = await CreateAuthenticatedClientAsync(factory);
         var projectId = await SetupProjectAsync(client);
 
@@ -110,7 +66,7 @@ public class SchemaEndpointTests
     [Fact]
     public async Task List_schemas()
     {
-        using var factory = CreateFactory();
+        var factory = _fixture.Factory;
         using var client = await CreateAuthenticatedClientAsync(factory);
         var projectId = await SetupProjectAsync(client);
 
@@ -134,7 +90,7 @@ public class SchemaEndpointTests
     [Fact]
     public async Task Update_schema()
     {
-        using var factory = CreateFactory();
+        var factory = _fixture.Factory;
         using var client = await CreateAuthenticatedClientAsync(factory);
         var projectId = await SetupProjectAsync(client);
 
@@ -160,7 +116,7 @@ public class SchemaEndpointTests
     [Fact]
     public async Task Delete_schema_returns_204_and_get_returns_404()
     {
-        using var factory = CreateFactory();
+        var factory = _fixture.Factory;
         using var client = await CreateAuthenticatedClientAsync(factory);
         var projectId = await SetupProjectAsync(client);
 
@@ -182,18 +138,10 @@ public class SchemaEndpointTests
     [Fact]
     public async Task Unauthenticated_request_returns_401()
     {
-        using var factory = CreateFactory();
+        var factory = _fixture.Factory;
         using var client = CreateClient(factory);
         var response = await client.GetAsync($"/api/projects/{Guid.NewGuid()}/schemas");
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 }
 
-file static class SchemaTestServiceCollectionExtensions
-{
-    public static void RemoveAll<T>(this IServiceCollection services)
-    {
-        var descriptors = services.Where(d => d.ServiceType == typeof(T)).ToList();
-        foreach (var d in descriptors) services.Remove(d);
-    }
-}

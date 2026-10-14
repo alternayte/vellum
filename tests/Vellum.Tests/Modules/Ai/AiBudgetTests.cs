@@ -2,7 +2,6 @@ using System.Net;
 using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json.Nodes;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Vellum.Modules.Ai;
 using Vellum.Modules.Ai.Usage;
@@ -11,7 +10,6 @@ using Vellum.Tests.Shared.Outbound;
 namespace Vellum.Tests.Modules.Ai;
 
 /// <summary>What a call costs the budget on every way it can end, and what the price and usage endpoints accept.</summary>
-[Collection("Integration")]
 public class AiBudgetTests(SharedOutboundHost shared) : IClassFixture<SharedOutboundHost>
 {
     private readonly OutboundHost _host = shared.Host;

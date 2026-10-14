@@ -12,8 +12,7 @@ using Vellum.Shared;
 
 namespace Vellum.Tests.Modules.Settings;
 
-[Collection("Integration")]
-public class SecretsTests
+public class SecretsTests : IClassFixture<IntegrationFixture>
 {
     private const string Github = "https://api.github.com";
 
@@ -76,7 +75,7 @@ public class SecretsTests
     [Fact]
     public async Task A_secret_round_trips_through_the_reader_and_no_response_holds_its_value()
     {
-        using var factory = TestHost.Create(_fixture);
+        var factory = _fixture.Factory;
         using var owner = await TestHost.SignInAsync(factory);
         var (workspaceId, _) = await TestHost.CreateProjectAsync(owner);
         var providerId = Guid.NewGuid();
@@ -172,7 +171,7 @@ public class SecretsTests
     [Fact]
     public async Task A_fingerprint_differs_between_workspaces_and_is_not_a_plain_hash_of_the_value()
     {
-        using var factory = TestHost.Create(_fixture);
+        var factory = _fixture.Factory;
         using var owner = await TestHost.SignInAsync(factory);
         var (workspaceA, _) = await TestHost.CreateProjectAsync(owner);
         var (workspaceB, _) = await TestHost.CreateProjectAsync(owner);
@@ -197,7 +196,7 @@ public class SecretsTests
     [Fact]
     public async Task A_credential_does_not_follow_a_changed_url()
     {
-        using var factory = TestHost.Create(_fixture);
+        var factory = _fixture.Factory;
         using var owner = await TestHost.SignInAsync(factory);
         var (workspaceId, _) = await TestHost.CreateProjectAsync(owner);
         var providerId = Guid.NewGuid();
@@ -244,7 +243,7 @@ public class SecretsTests
     [Fact]
     public async Task A_database_writer_cannot_redirect_a_credential_or_forge_its_fingerprint()
     {
-        using var factory = TestHost.Create(_fixture);
+        var factory = _fixture.Factory;
         using var owner = await TestHost.SignInAsync(factory);
         var (workspaceId, _) = await TestHost.CreateProjectAsync(owner);
         var value = NewValue();
@@ -274,7 +273,7 @@ public class SecretsTests
     [Fact]
     public async Task An_api_key_needs_its_provider_and_leaves_with_it()
     {
-        using var factory = TestHost.Create(_fixture);
+        var factory = _fixture.Factory;
         using var owner = await TestHost.SignInAsync(factory);
         var (workspaceId, _) = await TestHost.CreateProjectAsync(owner);
         var kept = Guid.NewGuid();
@@ -330,7 +329,7 @@ public class SecretsTests
     [InlineData("notifications:webhookSecret2")]
     public async Task A_secret_name_that_is_not_allowed_is_refused(string name)
     {
-        using var factory = TestHost.Create(_fixture);
+        var factory = _fixture.Factory;
         using var owner = await TestHost.SignInAsync(factory);
         var (workspaceId, _) = await TestHost.CreateProjectAsync(owner);
         var url = $"/api/workspaces/{workspaceId}/secrets/{name}";
@@ -346,7 +345,7 @@ public class SecretsTests
     [Fact]
     public async Task A_secret_value_has_a_bounded_length()
     {
-        using var factory = TestHost.Create(_fixture);
+        var factory = _fixture.Factory;
         using var owner = await TestHost.SignInAsync(factory);
         var (workspaceId, _) = await TestHost.CreateProjectAsync(owner);
         var url = $"/api/workspaces/{workspaceId}/secrets/github:token";
@@ -364,7 +363,7 @@ public class SecretsTests
     [Fact]
     public async Task A_row_moved_to_another_workspace_or_another_name_does_not_decrypt()
     {
-        using var factory = TestHost.Create(_fixture);
+        var factory = _fixture.Factory;
         using var owner = await TestHost.SignInAsync(factory);
         var (workspaceA, _) = await TestHost.CreateProjectAsync(owner);
         var (workspaceB, _) = await TestHost.CreateProjectAsync(owner);
@@ -418,7 +417,7 @@ public class SecretsTests
     [Fact]
     public async Task Rotation_moves_every_key_to_the_new_master_key_and_reports_what_remains()
     {
-        var database = await TestHost.CreateDatabaseAsync(_fixture);
+        var database = await TestHost.CreateDatabaseAsync();
         var oldKey = TestHost.NewMasterKey();
         var newKey = TestHost.NewMasterKey();
         var value = NewValue();
@@ -501,7 +500,7 @@ public class SecretsTests
     [Fact]
     public async Task A_secret_saved_while_rotation_runs_is_not_corrupted()
     {
-        var database = await TestHost.CreateDatabaseAsync(_fixture);
+        var database = await TestHost.CreateDatabaseAsync();
         var oldKey = TestHost.NewMasterKey();
         var newKey = TestHost.NewMasterKey();
         Guid workspaceId;

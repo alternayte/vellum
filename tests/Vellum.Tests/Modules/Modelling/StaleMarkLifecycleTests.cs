@@ -13,8 +13,7 @@ namespace Vellum.Tests.Modules.Modelling;
 /// clears it by stating the fact's status or provenance. It travels with the model through an
 /// export, an import and a fork.
 /// </summary>
-[Collection("Integration")]
-public class StaleMarkLifecycleTests(IntegrationFixture fixture)
+public class StaleMarkLifecycleTests(IntegrationFixture fixture) : IClassFixture<IntegrationFixture>
 {
     private static readonly StaleMark Mark = StaleMarkScenario.Mark;
 
@@ -23,7 +22,7 @@ public class StaleMarkLifecycleTests(IntegrationFixture fixture)
     [Fact]
     public async Task An_edit_of_a_marked_fact_keeps_the_mark_in_the_state_and_in_the_read_model()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         var s = await StaleMarkScenario.CreateAsync(factory);
         await s.MarkAllAsync();
 
@@ -56,7 +55,7 @@ public class StaleMarkLifecycleTests(IntegrationFixture fixture)
     [Fact]
     public async Task A_person_who_states_the_status_or_the_provenance_clears_the_mark()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         var s = await StaleMarkScenario.CreateAsync(factory);
         await s.MarkAllAsync();
 
@@ -75,7 +74,7 @@ public class StaleMarkLifecycleTests(IntegrationFixture fixture)
     [Fact]
     public async Task A_mark_on_a_marked_fact_and_a_clear_of_an_unmarked_fact_append_no_event()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         var s = await StaleMarkScenario.CreateAsync(factory);
 
         foreach (var (_, id) in s.Facts)
@@ -104,7 +103,7 @@ public class StaleMarkLifecycleTests(IntegrationFixture fixture)
     [InlineData("yaml")]
     public async Task An_export_carries_the_marks_and_an_import_into_a_new_project_sets_them(string format)
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         var s = await StaleMarkScenario.CreateAsync(factory);
         await s.MarkAllAsync();
 
@@ -122,7 +121,7 @@ public class StaleMarkLifecycleTests(IntegrationFixture fixture)
     [Fact]
     public async Task A_document_without_the_stale_member_imports_with_no_mark_and_leaves_a_mark_that_is_there()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         var s = await StaleMarkScenario.CreateAsync(factory);
 
         // The document as an older Vellum wrote it: no fact has a `stale` member.
@@ -150,7 +149,7 @@ public class StaleMarkLifecycleTests(IntegrationFixture fixture)
     [InlineData("reason", null, "stale.reason")]
     public async Task An_import_refuses_a_mark_that_is_not_bounded_plain_text(string member, string? value, string expected)
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         var s = await StaleMarkScenario.CreateAsync(factory);
         await s.MarkAllAsync();
         var document = JsonNode.Parse(await s.Client.GetStringAsync(s.Url("export?format=json")))!.AsObject();
@@ -170,7 +169,7 @@ public class StaleMarkLifecycleTests(IntegrationFixture fixture)
     [Fact]
     public async Task A_variant_and_a_draft_start_with_the_marks_of_main()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         var s = await StaleMarkScenario.CreateAsync(factory);
         await s.MarkAllAsync();
 

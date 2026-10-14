@@ -97,8 +97,7 @@ public class OneIdPerEntityDeciderTests
     }
 }
 
-[Collection("Integration")]
-public class OneIdPerEntityEndpointTests(IntegrationFixture fixture)
+public class OneIdPerEntityEndpointTests(IntegrationFixture fixture) : IClassFixture<IntegrationFixture>
 {
     private static string Url(Guid projectId, string path, Guid? branchId = null) =>
         $"/api/projects/{projectId}/{path}" + (branchId is null ? "" : $"?branchId={branchId}");
@@ -106,7 +105,7 @@ public class OneIdPerEntityEndpointTests(IntegrationFixture fixture)
     [Fact]
     public async Task An_ID_that_a_channel_has_is_refused_for_an_element_a_relationship_and_a_message()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         using var client = await TestHost.SignInAsync(factory);
         var (_, projectId) = await TestHost.CreateProjectAsync(client);
 
@@ -139,7 +138,7 @@ public class OneIdPerEntityEndpointTests(IntegrationFixture fixture)
     [InlineData("subscriptions", """{ "channelId": "CHANNEL", "consumerId": "FROM" }""")]
     public async Task A_create_without_an_ID_is_a_400_that_names_the_id(string path, string body)
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         using var client = await TestHost.SignInAsync(factory);
         var (_, projectId) = await TestHost.CreateProjectAsync(client);
 
@@ -159,7 +158,7 @@ public class OneIdPerEntityEndpointTests(IntegrationFixture fixture)
     [Fact]
     public async Task An_import_that_gives_one_ID_to_two_kinds_is_refused_and_writes_nothing()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         using var client = await TestHost.SignInAsync(factory);
         var (_, projectId) = await TestHost.CreateProjectAsync(client);
 
@@ -188,7 +187,7 @@ public class OneIdPerEntityEndpointTests(IntegrationFixture fixture)
     [Fact]
     public async Task A_merge_that_would_give_one_ID_to_two_kinds_is_a_conflict()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         using var client = await TestHost.SignInAsync(factory);
         var (_, projectId) = await TestHost.CreateProjectAsync(client);
 

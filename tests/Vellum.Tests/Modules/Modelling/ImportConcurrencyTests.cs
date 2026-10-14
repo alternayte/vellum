@@ -13,8 +13,7 @@ namespace Vellum.Tests.Modules.Modelling;
 /// not lose a lock cycle against a write to one of those streams, it must be all or nothing,
 /// and its size has a limit.
 /// </summary>
-[Collection("Integration")]
-public class ImportConcurrencyTests(IntegrationFixture fixture)
+public class ImportConcurrencyTests(IntegrationFixture fixture) : IClassFixture<IntegrationFixture>
 {
     private const int Schemas = 120;
 
@@ -35,10 +34,12 @@ public class ImportConcurrencyTests(IntegrationFixture fixture)
         }),
     };
 
+    // 12 imports of 120 schemas against 720 patches: the load is what gives a lock cycle its chance.
     [Fact]
+    [Trait("Category", "Slow")]
     public async Task Concurrent_imports_and_schema_patches_do_not_deadlock_or_leave_partial_state()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         using var client = await TestHost.SignInAsync(factory);
         var (_, projectId) = await TestHost.CreateProjectAsync(client);
 
@@ -94,7 +95,7 @@ public class ImportConcurrencyTests(IntegrationFixture fixture)
     [Fact]
     public async Task A_refused_import_leaves_no_model_and_no_schemas()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         using var client = await TestHost.SignInAsync(factory);
         var (_, projectId) = await TestHost.CreateProjectAsync(client);
 
@@ -121,7 +122,7 @@ public class ImportConcurrencyTests(IntegrationFixture fixture)
     [Fact]
     public async Task An_import_over_a_size_limit_is_refused()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         using var client = await TestHost.SignInAsync(factory);
         var (_, projectId) = await TestHost.CreateProjectAsync(client);
 

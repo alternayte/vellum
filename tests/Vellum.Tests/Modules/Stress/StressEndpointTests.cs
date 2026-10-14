@@ -16,8 +16,7 @@ namespace Vellum.Tests.Modules.Stress;
 /// Orders reference flow: a customer places an order, the Orders API stores it and
 /// <c>OrderCreated</c> goes to Inventory and Billing.
 /// </summary>
-[Collection("Integration")]
-public class StressEndpointTests(IntegrationFixture fixture)
+public class StressEndpointTests(IntegrationFixture fixture) : IClassFixture<IntegrationFixture>
 {
     private static string Url(Guid projectId, string path) => $"/api/projects/{projectId}/stress/{path}";
 
@@ -61,7 +60,8 @@ public class StressEndpointTests(IntegrationFixture fixture)
     private async Task<(WebApplicationFactory<Program> Factory, HttpClient Owner, Guid WorkspaceId, OrdersReference Orders)> SeedAsync(
         Action<IServiceCollection>? configure = null)
     {
-        var factory = TestHost.Create(fixture.ConnectionString, configure: configure);
+        // A test that changes services has an app of its own; the others share the app of the class.
+        var factory = configure is null ? fixture.Factory : TestHost.Create(fixture.ConnectionString, configure: configure);
         var owner = await TestHost.SignInAsync(factory);
         var (workspaceId, projectId) = await TestHost.CreateProjectAsync(owner);
         return (factory, owner, workspaceId, await OrdersReference.SeedAsync(owner, projectId));
@@ -77,7 +77,6 @@ public class StressEndpointTests(IntegrationFixture fixture)
     public async Task The_orders_reference_flow_runs_is_stored_and_keeps_its_committed_numbers()
     {
         var (factory, owner, _, orders) = await SeedAsync();
-        using var _f = factory;
         var project = orders.ProjectId;
 
         // What the form asks for comes from the scenario and the model.
@@ -158,7 +157,6 @@ public class StressEndpointTests(IntegrationFixture fixture)
     public async Task Two_runs_compare_by_metric_deltas_and_by_the_inputs_that_differ_without_a_verdict()
     {
         var (factory, owner, _, orders) = await SeedAsync();
-        using var _f = factory;
         var project = orders.ProjectId;
         var profileId = await CreateAsync(owner, project, Profile(orders, apiWorkers: 2));
         var left = (await RunAsync(owner, project, profileId))["run"]!["id"]!.GetValue<Guid>();
@@ -204,7 +202,6 @@ public class StressEndpointTests(IntegrationFixture fixture)
     public async Task Two_outage_windows_on_one_target_are_two_inputs_and_only_equal_hashes_are_the_same_result()
     {
         var (factory, owner, _, orders) = await SeedAsync();
-        using var _f = factory;
         var project = orders.ProjectId;
 
         JsonObject With(double from, double to)
@@ -241,7 +238,6 @@ public class StressEndpointTests(IntegrationFixture fixture)
     public async Task A_stored_run_is_outdated_when_the_model_or_the_scenario_changed_after_it()
     {
         var (factory, owner, _, orders) = await SeedAsync();
-        using var _f = factory;
         var project = orders.ProjectId;
         var profileId = await CreateAsync(owner, project, Profile(orders));
         await RunAsync(owner, project, profileId);
@@ -295,7 +291,6 @@ public class StressEndpointTests(IntegrationFixture fixture)
     public async Task A_save_refuses_a_profile_outside_its_rules()
     {
         var (factory, owner, _, orders) = await SeedAsync();
-        using var _f = factory;
         var project = orders.ProjectId;
 
         async Task<string> Field(JsonObject profile)
@@ -333,7 +328,6 @@ public class StressEndpointTests(IntegrationFixture fixture)
     public async Task A_viewer_reads_and_only_an_editor_saves_runs_and_deletes()
     {
         var (factory, owner, workspaceId, orders) = await SeedAsync();
-        using var _f = factory;
         var project = orders.ProjectId;
         var profileId = await CreateAsync(owner, project, Profile(orders));
         var runId = (await RunAsync(owner, project, profileId))["run"]!["id"]!.GetValue<Guid>();
@@ -364,7 +358,6 @@ public class StressEndpointTests(IntegrationFixture fixture)
     public async Task Stress_data_of_one_workspace_is_closed_to_a_user_of_another()
     {
         var (factory, owner, _, orders) = await SeedAsync();
-        using var _f = factory;
         var theirs = orders.ProjectId;
         var profileId = await CreateAsync(owner, theirs, Profile(orders));
         var runId = (await RunAsync(owner, theirs, profileId))["run"]!["id"]!.GetValue<Guid>();
@@ -406,7 +399,6 @@ public class StressEndpointTests(IntegrationFixture fixture)
     public async Task A_stored_run_of_engine_version_1_stays_readable_with_its_numbers_and_its_version()
     {
         var (factory, owner, _, orders) = await SeedAsync();
-        using var _f = factory;
         var project = orders.ProjectId;
         var profileId = await CreateAsync(owner, project, Profile(orders));
         var current = (await RunAsync(owner, project, profileId))["run"]!["id"]!.GetValue<Guid>();
@@ -471,7 +463,6 @@ public class StressEndpointTests(IntegrationFixture fixture)
     public async Task Deleting_a_project_removes_its_profiles_and_runs()
     {
         var (factory, owner, _, orders) = await SeedAsync();
-        using var _f = factory;
         var project = orders.ProjectId;
         var profileId = await CreateAsync(owner, project, Profile(orders));
         await RunAsync(owner, project, profileId);
@@ -574,7 +565,6 @@ public class StressEndpointTests(IntegrationFixture fixture)
     public async Task A_run_on_a_full_instance_gets_429_busy_and_a_time_to_wait()
     {
         var (factory, owner, _, orders) = await SeedAsync();
-        using var _f = factory;
         var profileId = await CreateAsync(owner, orders.ProjectId, Profile(orders));
 
         // Other workspaces hold every place of the instance. The limit is the instance policy, which starts at its default.

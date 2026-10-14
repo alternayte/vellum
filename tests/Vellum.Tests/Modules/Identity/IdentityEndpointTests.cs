@@ -13,28 +13,11 @@ using Vellum.Modules.Identity;
 
 namespace Vellum.Tests.Modules.Identity;
 
-[Collection("Integration")]
-public class IdentityEndpointTests
+public class IdentityEndpointTests : IClassFixture<IntegrationFixture>
 {
     private readonly IntegrationFixture _fixture;
 
     public IdentityEndpointTests(IntegrationFixture fixture) => _fixture = fixture;
-
-    private WebApplicationFactory<Program> CreateFactory()
-    {
-        return new WebApplicationFactory<Program>()
-            .WithWebHostBuilder(builder =>
-            {
-                builder.UseEnvironment("Testing");
-                builder.UseSetting("ConnectionStrings:DefaultConnection", _fixture.ConnectionString);
-                builder.ConfigureServices(services =>
-                {
-                    services.RemoveAll<DbContextOptions<AppIdentityDbContext>>();
-                    services.AddDbContext<AppIdentityDbContext>(o =>
-                        o.UseNpgsql(_fixture.ConnectionString).UseSnakeCaseNamingConvention());
-                });
-            });
-    }
 
     private static HttpClient CreateClient(WebApplicationFactory<Program> factory)
     {
@@ -48,7 +31,7 @@ public class IdentityEndpointTests
     [Fact]
     public async Task Register_and_get_me_returns_user()
     {
-        using var factory = CreateFactory();
+        var factory = _fixture.Factory;
         using var client = CreateClient(factory);
         var email = $"test-{Guid.NewGuid():N}@vellum.local";
 
@@ -67,7 +50,7 @@ public class IdentityEndpointTests
     [Fact]
     public async Task Login_with_wrong_password_returns_401()
     {
-        using var factory = CreateFactory();
+        var factory = _fixture.Factory;
         using var client = CreateClient(factory);
 
         var response = await client.PostAsJsonAsync("/api/auth/login",
@@ -78,7 +61,7 @@ public class IdentityEndpointTests
     [Fact]
     public async Task Me_without_auth_returns_401()
     {
-        using var factory = CreateFactory();
+        var factory = _fixture.Factory;
         using var client = CreateClient(factory);
 
         var response = await client.GetAsync("/api/auth/me");
@@ -88,7 +71,7 @@ public class IdentityEndpointTests
     [Fact]
     public async Task Register_with_weak_password_returns_400()
     {
-        using var factory = CreateFactory();
+        var factory = _fixture.Factory;
         using var client = CreateClient(factory);
         var email = $"test-{Guid.NewGuid():N}@vellum.local";
 
@@ -100,7 +83,7 @@ public class IdentityEndpointTests
     [Fact]
     public async Task A_new_password_has_at_least_ten_characters()
     {
-        using var factory = CreateFactory();
+        var factory = _fixture.Factory;
         using var client = CreateClient(factory);
 
         var nine = await client.PostAsJsonAsync("/api/auth/register",
@@ -115,7 +98,7 @@ public class IdentityEndpointTests
     [Fact]
     public async Task Five_wrong_passwords_lock_the_account_and_the_answer_does_not_say_so()
     {
-        using var factory = CreateFactory();
+        var factory = _fixture.Factory;
         using var client = CreateClient(factory);
         var email = $"test-{Guid.NewGuid():N}@vellum.local";
         const string password = "Test12345!";
@@ -152,7 +135,9 @@ public class IdentityEndpointTests
     [InlineData("/api/setup")]
     public async Task Sign_in_and_setup_are_rate_limited_for_each_client(string url)
     {
-        using var factory = CreateFactory();
+        // The app of the class lifts the limits for its tests. This app has the limits of a
+        // real instance.
+        using var factory = TestHost.Create(_fixture.ConnectionString, configure: services => services.AddSingleton(new Vellum.Shared.AnonymousRateLimits()));
         using var client = CreateClient(factory);
         var body = new { email = "nobody@vellum.local", password = "Wrong12345!", displayName = "N", workspaceName = "W", setupToken = "x" };
 
@@ -236,7 +221,7 @@ public class IdentityEndpointTests
     [Fact]
     public async Task An_external_sign_in_cannot_create_the_first_user()
     {
-        var database = await TestHost.CreateDatabaseAsync(_fixture);
+        var database = await TestHost.CreateDatabaseAsync();
         using var factory = TestHost.Create(database, configure: services => services.AddTransient<IStartupFilter, ExternalSignIn>());
         using var client = TestHost.Client(factory);
 
@@ -251,7 +236,7 @@ public class IdentityEndpointTests
     [Fact]
     public async Task The_sign_in_methods_name_only_what_the_instance_offers()
     {
-        using var factory = CreateFactory();
+        var factory = _fixture.Factory;
         using var client = CreateClient(factory);
 
         // No credential is needed. This instance has no external provider.
@@ -264,7 +249,7 @@ public class IdentityEndpointTests
             new { email = $"test-{Guid.NewGuid():N}@vellum.local", password = "Test12345!", displayName = "Test" });
         Assert.Equal(register.StatusCode != HttpStatusCode.Forbidden, plain.RegistrationOpen);
 
-        using var withGitHub = CreateFactory().WithWebHostBuilder(builder =>
+        using var withGitHub = _fixture.Factory.WithWebHostBuilder(builder =>
         {
             builder.UseSetting("Authentication:GitHub:ClientId", "client-id");
             builder.UseSetting("Authentication:GitHub:ClientSecret", "client-secret");
@@ -275,12 +260,3 @@ public class IdentityEndpointTests
     }
 }
 
-// Helper to remove all registrations of a type
-file static class ServiceCollectionExtensions
-{
-    public static void RemoveAll<T>(this IServiceCollection services)
-    {
-        var descriptors = services.Where(d => d.ServiceType == typeof(T)).ToList();
-        foreach (var d in descriptors) services.Remove(d);
-    }
-}

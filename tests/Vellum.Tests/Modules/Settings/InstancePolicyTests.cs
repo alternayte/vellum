@@ -14,23 +14,19 @@ namespace Vellum.Tests.Modules.Settings;
 /// Instance policy and defaults change the whole instance, so this class has its own
 /// database. Each test sets the policy it needs.
 /// </summary>
-[Collection("Integration")]
 public class InstancePolicyTests : IAsyncLifetime
 {
     private const string Provider = "33333333-3333-3333-3333-333333333333";
 
-    private readonly IntegrationFixture _fixture;
     private readonly string _masterKey = TestHost.NewMasterKey();
     private WebApplicationFactory<Program> _factory = null!;
     private HttpClient _admin = null!;
     private Guid _workspaceId;
     private JsonObject _initial = null!;
 
-    public InstancePolicyTests(IntegrationFixture fixture) => _fixture = fixture;
-
     public async Task InitializeAsync()
     {
-        var database = await TestHost.CreateDatabaseAsync(_fixture);
+        var database = await TestHost.CreateDatabaseAsync();
         _factory = TestHost.Create(database,
             new Dictionary<string, string?> { ["Vellum:MasterKey"] = _masterKey },
             services => TestHost.UseResolver(services, new Dictionary<string, string> { ["internal.example"] = "10.0.0.5" }));

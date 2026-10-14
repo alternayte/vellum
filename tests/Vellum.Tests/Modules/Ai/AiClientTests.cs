@@ -8,7 +8,6 @@ using Vellum.Tests.Shared.Outbound;
 namespace Vellum.Tests.Modules.Ai;
 
 /// <summary>Routing, redaction, budgets, rate limits, the usage endpoint and the connection test.</summary>
-[Collection("Integration")]
 public class AiClientTests(SharedOutboundHost shared) : IClassFixture<SharedOutboundHost>
 {
     private readonly OutboundHost _host = shared.Host;

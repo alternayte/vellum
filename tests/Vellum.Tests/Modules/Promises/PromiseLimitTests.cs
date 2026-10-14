@@ -7,8 +7,7 @@ using Vellum.Modules.Promises;
 namespace Vellum.Tests.Modules.Promises;
 
 /// <summary>The bounds on verification runs, on a host that is given small ones.</summary>
-[Collection("Integration")]
-public class PromiseLimitTests(IntegrationFixture fixture)
+public class PromiseLimitTests(IntegrationFixture fixture) : IClassFixture<IntegrationFixture>
 {
     private static string Url(Guid projectId, string path = "") => $"/api/projects/{projectId}/promises{path}";
 

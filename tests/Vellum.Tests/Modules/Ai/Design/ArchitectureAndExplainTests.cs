@@ -9,7 +9,6 @@ using static Vellum.Tests.Modules.Ai.Design.DesignKit;
 namespace Vellum.Tests.Modules.Ai.Design;
 
 /// <summary>Additions to the model as proposals, and Rubber Duck explanations, through the real provider adapters.</summary>
-[Collection("Integration")]
 public class ArchitectureAndExplainTests(SharedOutboundHost shared) : IClassFixture<SharedOutboundHost>
 {
     private readonly OutboundHost _host = shared.Host;

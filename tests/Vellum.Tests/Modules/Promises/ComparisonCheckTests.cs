@@ -15,7 +15,6 @@ namespace Vellum.Tests.Modules.Promises;
 /// check, it fails only where the scan could have found the pattern under the linked service,
 /// and a comparison snapshot never stands for the newest state of the repository.
 /// </summary>
-[Collection("Integration")]
 public class ComparisonCheckTests(ImportHost import) : IClassFixture<ImportHost>
 {
     private static async Task<JsonObject> Ok(Task<HttpResponseMessage> request, HttpStatusCode expected = HttpStatusCode.OK)

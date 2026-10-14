@@ -10,8 +10,7 @@ using Vellum.Shared;
 
 namespace Vellum.Tests.Modules.Trace;
 
-[Collection("Integration")]
-public class ScenarioEndpointTests(IntegrationFixture fixture)
+public class ScenarioEndpointTests(IntegrationFixture fixture) : IClassFixture<IntegrationFixture>
 {
     private static Guid G(int n) => new($"00000000-0000-0000-0000-{n:D12}");
 
@@ -89,7 +88,7 @@ public class ScenarioEndpointTests(IntegrationFixture fixture)
     [Fact]
     public async Task A_scenario_is_created_read_listed_replaced_and_deleted()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         using var client = await TestHost.SignInAsync(factory);
         var (_, projectId) = await TestHost.CreateProjectAsync(client);
         var id = Guid.NewGuid();
@@ -153,7 +152,7 @@ public class ScenarioEndpointTests(IntegrationFixture fixture)
     [InlineData("""{ "name": "no id", "steps": [], "faults": [], "assertions": [] }""")]
     public async Task A_body_that_is_not_a_scenario_document_is_refused_with_400(string body)
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         using var client = await TestHost.SignInAsync(factory);
         var (_, projectId) = await TestHost.CreateProjectAsync(client);
 
@@ -167,7 +166,7 @@ public class ScenarioEndpointTests(IntegrationFixture fixture)
     [Fact]
     public async Task An_unfinished_scenario_is_saved_as_given_and_a_run_reports_its_issues()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         using var client = await TestHost.SignInAsync(factory);
         var (_, projectId) = await TestHost.CreateProjectAsync(client);
         await SeedOrdersAsync(client, projectId);
@@ -192,7 +191,7 @@ public class ScenarioEndpointTests(IntegrationFixture fixture)
     [Fact]
     public async Task A_scenario_belongs_to_one_project()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         using var client = await TestHost.SignInAsync(factory);
         var (_, projectId) = await TestHost.CreateProjectAsync(client);
         var (_, otherProjectId) = await TestHost.CreateProjectAsync(client);
@@ -212,7 +211,7 @@ public class ScenarioEndpointTests(IntegrationFixture fixture)
     [Fact]
     public async Task An_id_that_names_a_schema_is_not_a_scenario()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         using var client = await TestHost.SignInAsync(factory);
         var (_, projectId) = await TestHost.CreateProjectAsync(client);
 
@@ -232,7 +231,7 @@ public class ScenarioEndpointTests(IntegrationFixture fixture)
     [Fact]
     public async Task A_viewer_reads_and_runs_scenarios_and_cannot_change_them()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         using var owner = await TestHost.SignInAsync(factory);
         var (workspaceId, projectId) = await TestHost.CreateProjectAsync(owner);
         var id = Guid.NewGuid();
@@ -258,7 +257,7 @@ public class ScenarioEndpointTests(IntegrationFixture fixture)
     [Fact]
     public async Task The_orders_scenario_plays_request_write_publish_fan_out_retry_and_dead_letter()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         using var client = await TestHost.SignInAsync(factory);
         var (_, projectId) = await TestHost.CreateProjectAsync(client);
         await SeedOrdersAsync(client, projectId);
@@ -334,7 +333,7 @@ public class ScenarioEndpointTests(IntegrationFixture fixture)
     [Fact]
     public async Task A_run_is_pinned_to_the_branch_it_names()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         using var client = await TestHost.SignInAsync(factory);
         var (_, projectId) = await TestHost.CreateProjectAsync(client);
         await SeedOrdersAsync(client, projectId);
@@ -360,7 +359,7 @@ public class ScenarioEndpointTests(IntegrationFixture fixture)
     [Fact]
     public async Task A_scenario_with_a_dangling_operation_or_a_payload_its_schema_refuses_returns_issues_and_no_events()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         using var client = await TestHost.SignInAsync(factory);
         var (_, projectId) = await TestHost.CreateProjectAsync(client);
         await SeedOrdersAsync(client, projectId);
@@ -392,7 +391,7 @@ public class ScenarioEndpointTests(IntegrationFixture fixture)
     [Fact]
     public async Task A_rebuild_reproduces_the_scenario_list()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         using var client = await TestHost.SignInAsync(factory);
         var (_, projectId) = await TestHost.CreateProjectAsync(client);
 

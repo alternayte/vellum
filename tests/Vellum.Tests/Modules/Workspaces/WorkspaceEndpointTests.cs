@@ -1,39 +1,17 @@
 using System.Net;
 using System.Net.Http.Json;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
-using Vellum.Modules.Identity;
 using Vellum.Modules.Workspaces;
 
 namespace Vellum.Tests.Modules.Workspaces;
 
-[Collection("Integration")]
-public class WorkspaceEndpointTests
+public class WorkspaceEndpointTests : IClassFixture<IntegrationFixture>
 {
     private readonly IntegrationFixture _fixture;
 
     public WorkspaceEndpointTests(IntegrationFixture fixture) => _fixture = fixture;
-
-    private WebApplicationFactory<Program> CreateFactory()
-    {
-        return new WebApplicationFactory<Program>()
-            .WithWebHostBuilder(builder =>
-            {
-                builder.UseEnvironment("Testing");
-                builder.UseSetting("ConnectionStrings:DefaultConnection", _fixture.ConnectionString);
-                builder.ConfigureServices(services =>
-                {
-                    services.RemoveAll<DbContextOptions<AppIdentityDbContext>>();
-                    services.RemoveAll<DbContextOptions<WorkspacesDbContext>>();
-                    services.AddDbContext<AppIdentityDbContext>(o =>
-                        o.UseNpgsql(_fixture.ConnectionString).UseSnakeCaseNamingConvention());
-                    services.AddDbContext<WorkspacesDbContext>(o =>
-                        o.UseNpgsql(_fixture.ConnectionString).UseSnakeCaseNamingConvention());
-                });
-            });
-    }
 
     private static HttpClient CreateClient(WebApplicationFactory<Program> factory)
     {
@@ -56,7 +34,7 @@ public class WorkspaceEndpointTests
     [Fact]
     public async Task Create_workspace_and_list_returns_it()
     {
-        using var factory = CreateFactory();
+        var factory = _fixture.Factory;
         using var client = await CreateAuthenticatedClientAsync(factory);
         var workspaceId = Guid.NewGuid();
 
@@ -72,7 +50,7 @@ public class WorkspaceEndpointTests
     [Fact]
     public async Task Create_project_in_workspace()
     {
-        using var factory = CreateFactory();
+        var factory = _fixture.Factory;
         using var client = await CreateAuthenticatedClientAsync(factory);
         var workspaceId = Guid.NewGuid();
         var projectId = Guid.NewGuid();
@@ -93,7 +71,7 @@ public class WorkspaceEndpointTests
     [Fact]
     public async Task A_workspace_or_project_without_an_id_is_refused()
     {
-        using var factory = CreateFactory();
+        var factory = _fixture.Factory;
         using var client = await CreateAuthenticatedClientAsync(factory);
 
         var workspace = await client.PostAsJsonAsync("/api/workspaces", new { name = "No ID" });
@@ -108,7 +86,7 @@ public class WorkspaceEndpointTests
     [Fact]
     public async Task A_create_with_the_id_of_another_tenants_record_is_409_and_shows_nothing_of_it()
     {
-        using var factory = CreateFactory();
+        var factory = _fixture.Factory;
         using var a = await CreateAuthenticatedClientAsync(factory);
         using var b = await CreateAuthenticatedClientAsync(factory);
         var workspaceA = Guid.NewGuid();
@@ -137,7 +115,7 @@ public class WorkspaceEndpointTests
     [Fact]
     public async Task Unauthenticated_workspace_request_returns_401()
     {
-        using var factory = CreateFactory();
+        var factory = _fixture.Factory;
         using var client = CreateClient(factory);
         var response = await client.GetAsync("/api/workspaces");
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
@@ -146,7 +124,7 @@ public class WorkspaceEndpointTests
     [Fact]
     public async Task An_owner_invites_by_email_the_person_accepts_and_the_last_owner_stays_an_owner()
     {
-        using var factory = CreateFactory();
+        var factory = _fixture.Factory;
         using var owner = await CreateAuthenticatedClientAsync(factory);
         var workspaceId = Guid.NewGuid();
         await owner.PostAsJsonAsync("/api/workspaces", new { id = workspaceId, name = "Members" });
@@ -196,11 +174,3 @@ public class WorkspaceEndpointTests
     }
 }
 
-file static class ServiceCollectionExtensions
-{
-    public static void RemoveAll<T>(this IServiceCollection services)
-    {
-        var descriptors = services.Where(d => d.ServiceType == typeof(T)).ToList();
-        foreach (var d in descriptors) services.Remove(d);
-    }
-}

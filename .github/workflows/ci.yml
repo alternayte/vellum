@@ -1,18 +1,24 @@
 # Fast CI (Vellum-SDD.md §9): build, format, type checks and tests for correctness, security
 # and data boundaries. No browser, no screenshots, no paid AI key and no live GitHub access.
 # The five live smoke tests skip, because no VELLUM_LIVE_* value is set.
+# Backend tests marked Category=Slow run in their own job: on a manual run, on a v* tag and
+# every night. A push and a pull request run the other backend tests.
 name: CI
 
 on:
   push:
     branches: [main]
+    tags: ["v*"]
   pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 3 * * *"
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.event_name }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:
@@ -24,7 +30,7 @@ jobs:
   backend:
     name: Backend
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
 
@@ -64,14 +70,59 @@ jobs:
           dotnet format whitespace Vellum.slnx --verify-no-changes
 
       # The integration tests start Postgres with Testcontainers. Docker is on the runner.
+      # Test classes run in parallel, each on its own copy of a template database. The step
+      # time-out is about twice the time the suite takes: a slower suite fails here.
       - name: Test
-        run: dotnet test Vellum.slnx --no-build --logger "trx;LogFileName=backend.trx" --results-directory test-results
+        timeout-minutes: 12
+        run: dotnet test Vellum.slnx --no-build --filter "Category!=Slow" --logger "trx;LogFileName=backend.trx" --results-directory test-results
 
       - name: Keep the test results
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: backend-test-results
+          path: test-results
+
+  backend-slow:
+    name: Backend (slow tests)
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule' || startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('**/*.csproj') }}
+          restore-keys: nuget-${{ runner.os }}-
+
+      - name: Install k6
+        uses: grafana/setup-k6-action@v1
+        with:
+          k6-version: "2.1.0"
+
+      - name: Restore
+        run: dotnet restore Vellum.slnx
+
+      - name: Build
+        run: dotnet build Vellum.slnx --no-restore
+
+      # Tests that take long by design: a statistical bound over 200 long runs, a lock-cycle
+      # hunt under load, a 20,000-fact plan and a real k6 run.
+      - name: Test
+        run: dotnet test Vellum.slnx --no-build --filter "Category=Slow" --logger "trx;LogFileName=backend-slow.trx" --results-directory test-results
+
+      - name: Keep the test results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-slow-test-results
           path: test-results
 
   web:

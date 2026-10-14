@@ -12,14 +12,13 @@ namespace Vellum.Tests.Modules.Import;
 /// The import tables of a database that already holds scans and accepted facts are upgraded
 /// in place: the rows written by the first import schema keep their meaning under the new keys.
 /// </summary>
-[Collection("Integration")]
-public class ImportMigrationTests(IntegrationFixture fixture)
+public class ImportMigrationTests
 {
     [Fact]
     public async Task Rows_of_the_first_import_schema_are_upgraded_in_place()
     {
         var options = new DbContextOptionsBuilder<ImportDbContext>()
-            .UseNpgsql(await TestHost.CreateDatabaseAsync(fixture)).UseSnakeCaseNamingConvention().Options;
+            .UseNpgsql(await TestDatabase.CreateEmptyAsync()).UseSnakeCaseNamingConvention().Options;
         await using var db = new ImportDbContext(options);
         await db.GetInfrastructure().GetRequiredService<IMigrator>().MigrateAsync("InitialImport");
 

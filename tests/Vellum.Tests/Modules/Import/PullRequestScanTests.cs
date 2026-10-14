@@ -11,7 +11,6 @@ namespace Vellum.Tests.Modules.Import;
 /// SHAs, and gives the same impact report as a scan of that commit by ref. The GitHub answers
 /// are the recorded <c>Fixtures/GitHub/pull-request.json</c> with the SHAs of the fixture commits.
 /// </summary>
-[Collection("Integration")]
 public class PullRequestScanTests(ImportHost import) : IClassFixture<ImportHost>
 {
     private const string Token = "ghp_pullRequestScanTestToken000000000000";

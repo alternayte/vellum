@@ -53,8 +53,7 @@ public class TextRuleTests
 /// Postgres cannot store U+0000 and an index row has a size limit. Before the shared text
 /// rule each of these requests ended in a 500 from the database.
 /// </summary>
-[Collection("Integration")]
-public class BoundedTextEndpointTests(IntegrationFixture fixture)
+public class BoundedTextEndpointTests(IntegrationFixture fixture) : IClassFixture<IntegrationFixture>
 {
     private const string Nul = "a\0b";
     private static readonly string TooLong = new('n', TextRule.MaxName + 1);
@@ -73,7 +72,7 @@ public class BoundedTextEndpointTests(IntegrationFixture fixture)
     [Fact]
     public async Task Every_name_and_description_is_refused_with_its_field_when_it_holds_NUL_or_is_too_long()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         using var client = await TestHost.SignInAsync(factory);
         var (workspaceId, projectId) = await TestHost.CreateProjectAsync(client);
 
@@ -160,7 +159,7 @@ public class BoundedTextEndpointTests(IntegrationFixture fixture)
     [InlineData(""" "name": "ok", "factStatus": "observed-in-source", "provenance": { "source": "a\u0000b" } """)]
     public async Task An_import_with_text_the_database_cannot_store_is_a_400(string members)
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         using var client = await TestHost.SignInAsync(factory);
         var (_, projectId) = await TestHost.CreateProjectAsync(client);
 
@@ -180,7 +179,7 @@ public class BoundedTextEndpointTests(IntegrationFixture fixture)
     [Fact]
     public async Task Text_that_only_reaches_a_query_is_a_400_too()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         using var client = await TestHost.SignInAsync(factory);
         var (workspaceId, projectId) = await TestHost.CreateProjectAsync(client);
 
@@ -195,7 +194,7 @@ public class BoundedTextEndpointTests(IntegrationFixture fixture)
     [Fact]
     public async Task A_body_larger_than_the_limit_of_its_endpoint_is_a_413_with_the_error_envelope()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         using var client = await TestHost.SignInAsync(factory);
         var (_, projectId) = await TestHost.CreateProjectAsync(client);
 

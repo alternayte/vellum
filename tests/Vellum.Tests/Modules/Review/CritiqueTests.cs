@@ -9,7 +9,6 @@ using Vellum.Modules.Ai.Design;
 using Vellum.Modules.Import;
 using Vellum.Modules.Import.Proposals;
 using Vellum.Modules.Import.Scans;
-using Vellum.Modules.Modelling;
 using Vellum.Modules.Modelling.Model;
 using Vellum.Modules.Review.Critique;
 using Vellum.Modules.Review.Rules;
@@ -27,7 +26,6 @@ namespace Vellum.Tests.Modules.Review;
 /// makes false claims. Whatever the model writes, nothing of it becomes a finding, a
 /// disposition or a decision without an act of a person.
 /// </summary>
-[Collection("Integration")]
 public class CritiqueTests(SharedOutboundHost shared) : IClassFixture<SharedOutboundHost>
 {
     private readonly OutboundHost _host = shared.Host;

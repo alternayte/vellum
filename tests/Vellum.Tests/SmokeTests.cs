@@ -2,8 +2,7 @@ using Npgsql;
 
 namespace Vellum.Tests;
 
-[Collection("Integration")]
-public class SmokeTests
+public class SmokeTests : IClassFixture<IntegrationFixture>
 {
     private readonly IntegrationFixture _fixture;
 

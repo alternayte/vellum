@@ -18,8 +18,7 @@ namespace Vellum.Tests.Modules.Build;
 /// project that moved on, a zip that is not a bundle is refused, only approved promises in
 /// force are requirements, and the SDD states what the verification matrix asks of it.
 /// </summary>
-[Collection("Integration")]
-public class BuildPinningTests(IntegrationFixture fixture)
+public class BuildPinningTests(IntegrationFixture fixture) : IClassFixture<IntegrationFixture>
 {
     private sealed record Seeded(HttpClient Owner, Guid WorkspaceId, OrdersReference Orders, Guid Ord014)
     {
@@ -98,7 +97,7 @@ public class BuildPinningTests(IntegrationFixture fixture)
     [Fact]
     public async Task Verify_finds_an_edited_manifest_and_refuses_a_zip_that_is_not_a_bundle()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         var s = await SeedAsync(factory);
         var zip = await ExportAsync(s, new { format = "bundle" });
         var entries = Unzip(zip);
@@ -182,7 +181,7 @@ public class BuildPinningTests(IntegrationFixture fixture)
     [Fact]
     public async Task A_bundle_is_generated_again_from_its_pinned_versions_whatever_changed_later()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         var s = await SeedAsync(factory);
         var orders = s.Orders;
         var zip = await ExportAsync(s, new { format = "bundle" });
@@ -255,7 +254,7 @@ public class BuildPinningTests(IntegrationFixture fixture)
     [Fact]
     public async Task Only_an_approved_promise_in_force_binds()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         var s = await SeedAsync(factory, outbox: false);
         var orders = s.Orders;
 
@@ -354,7 +353,7 @@ public class BuildPinningTests(IntegrationFixture fixture)
     [Fact]
     public async Task The_sdd_states_failure_invariants_scenario_versions_and_every_contract_and_blocks_on_stale_evidence()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         var s = await SeedAsync(factory);
         var orders = s.Orders;
         var entries = Unzip(await ExportAsync(s, new { format = "bundle" })).ToDictionary(e => e.Path, e => e.Bytes);

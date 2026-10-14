@@ -1,63 +1,18 @@
 using System.Net;
 using System.Net.Http.Json;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
-using Vellum.Modules.Docs;
-using Vellum.Modules.Drafts;
-using Vellum.Modules.Identity;
-using Vellum.Modules.Modelling;
 using Vellum.Modules.Modelling.Elements;
 using Vellum.Modules.Modelling.Revisions;
 using Vellum.Modules.Modelling.Relationships;
 using Vellum.Modules.Modelling.Variants;
-using Vellum.Modules.Schemas;
-using Vellum.Modules.Views;
-using Vellum.Modules.Workspaces;
 
 namespace Vellum.Tests.Modules.Modelling;
 
-[Collection("Integration")]
-public class RevisionVariantEndpointTests
+public class RevisionVariantEndpointTests : IClassFixture<IntegrationFixture>
 {
     private readonly IntegrationFixture _fixture;
 
     public RevisionVariantEndpointTests(IntegrationFixture fixture) => _fixture = fixture;
-
-    private WebApplicationFactory<Program> CreateFactory()
-    {
-        return new WebApplicationFactory<Program>()
-            .WithWebHostBuilder(builder =>
-            {
-                builder.UseEnvironment("Testing");
-                builder.UseSetting("ConnectionStrings:DefaultConnection", _fixture.ConnectionString);
-                builder.ConfigureServices(services =>
-                {
-                    services.RemoveAll<DbContextOptions<AppIdentityDbContext>>();
-                    services.RemoveAll<DbContextOptions<WorkspacesDbContext>>();
-                    services.RemoveAll<DbContextOptions<ModellingDbContext>>();
-                    services.RemoveAll<DbContextOptions<DraftsDbContext>>();
-                    services.RemoveAll<DbContextOptions<ViewsDbContext>>();
-                    services.RemoveAll<DbContextOptions<DocsDbContext>>();
-                    services.RemoveAll<DbContextOptions<SchemasDbContext>>();
-                    services.AddDbContext<AppIdentityDbContext>(o =>
-                        o.UseNpgsql(_fixture.ConnectionString).UseSnakeCaseNamingConvention());
-                    services.AddDbContext<WorkspacesDbContext>(o =>
-                        o.UseNpgsql(_fixture.ConnectionString).UseSnakeCaseNamingConvention());
-                    services.AddDbContext<ModellingDbContext>(o =>
-                        o.UseNpgsql(_fixture.ConnectionString).UseSnakeCaseNamingConvention());
-                    services.AddDbContext<DraftsDbContext>(o =>
-                        o.UseNpgsql(_fixture.ConnectionString).UseSnakeCaseNamingConvention());
-                    services.AddDbContext<ViewsDbContext>(o =>
-                        o.UseNpgsql(_fixture.ConnectionString).UseSnakeCaseNamingConvention());
-                    services.AddDbContext<DocsDbContext>(o =>
-                        o.UseNpgsql(_fixture.ConnectionString).UseSnakeCaseNamingConvention());
-                    services.AddDbContext<SchemasDbContext>(o =>
-                        o.UseNpgsql(_fixture.ConnectionString).UseSnakeCaseNamingConvention());
-                });
-            });
-    }
 
     private static HttpClient CreateClient(WebApplicationFactory<Program> factory) =>
         factory.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = true, AllowAutoRedirect = false });
@@ -93,7 +48,7 @@ public class RevisionVariantEndpointTests
     [Fact]
     public async Task Create_revision_pins_current_version()
     {
-        using var factory = CreateFactory();
+        var factory = _fixture.Factory;
         using var client = await CreateAuthenticatedClientAsync(factory);
         var projectId = await SetupProjectAsync(client);
 
@@ -121,7 +76,7 @@ public class RevisionVariantEndpointTests
     [Fact]
     public async Task Create_revision_with_duplicate_name_conflicts()
     {
-        using var factory = CreateFactory();
+        var factory = _fixture.Factory;
         using var client = await CreateAuthenticatedClientAsync(factory);
         var projectId = await SetupProjectAsync(client);
 
@@ -137,7 +92,7 @@ public class RevisionVariantEndpointTests
     [Fact]
     public async Task Variant_forks_full_model_and_isolates_edits()
     {
-        using var factory = CreateFactory();
+        var factory = _fixture.Factory;
         using var client = await CreateAuthenticatedClientAsync(factory);
         var projectId = await SetupProjectAsync(client);
 
@@ -175,7 +130,7 @@ public class RevisionVariantEndpointTests
     [Fact]
     public async Task Variant_from_revision_uses_pinned_state()
     {
-        using var factory = CreateFactory();
+        var factory = _fixture.Factory;
         using var client = await CreateAuthenticatedClientAsync(factory);
         var projectId = await SetupProjectAsync(client);
 
@@ -203,7 +158,7 @@ public class RevisionVariantEndpointTests
     [Fact]
     public async Task Reused_revision_and_variant_ids_are_idempotent()
     {
-        using var factory = CreateFactory();
+        var factory = _fixture.Factory;
         using var client = await CreateAuthenticatedClientAsync(factory);
         var projectId = await SetupProjectAsync(client);
 
@@ -240,7 +195,7 @@ public class RevisionVariantEndpointTests
     [Fact]
     public async Task A_refused_comparison_names_the_side_it_refuses()
     {
-        using var factory = CreateFactory();
+        var factory = _fixture.Factory;
         using var client = await CreateAuthenticatedClientAsync(factory);
         var projectId = await SetupProjectAsync(client);
 
@@ -262,7 +217,7 @@ public class RevisionVariantEndpointTests
     [Fact]
     public async Task Revision_and_variant_endpoints_require_authentication()
     {
-        using var factory = CreateFactory();
+        var factory = _fixture.Factory;
         using var client = CreateClient(factory);
 
         var revisions = await client.GetAsync($"/api/projects/{Guid.NewGuid()}/revisions");
@@ -273,11 +228,3 @@ public class RevisionVariantEndpointTests
     }
 }
 
-file static class RevisionVariantServiceCollectionExtensions
-{
-    public static void RemoveAll<T>(this IServiceCollection services)
-    {
-        var descriptors = services.Where(d => d.ServiceType == typeof(T)).ToList();
-        foreach (var d in descriptors) services.Remove(d);
-    }
-}

@@ -101,7 +101,9 @@ public sealed class SetupAccess(Bootstrap bootstrap, ILogger<SetupAccess> log)
     private string LoadOrCreateCode()
     {
         Directory.CreateDirectory(bootstrap.DataDirectory);
-        var options = new FileStreamOptions { Mode = FileMode.CreateNew, Access = FileAccess.Write, Share = FileShare.None };
+        // Readers may open the file while the creator writes it; they read again until the
+        // code is there (as for the master key file in Bootstrap).
+        var options = new FileStreamOptions { Mode = FileMode.CreateNew, Access = FileAccess.Write, Share = FileShare.Read };
         if (!OperatingSystem.IsWindows())
             options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
 

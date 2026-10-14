@@ -16,7 +16,6 @@ namespace Vellum.Tests.Modules.Import;
 /// a scan that did not, and shows that it concludes nothing: no removal, no stale mark, no
 /// cleared mark, nothing superseded.
 /// </summary>
-[Collection("Integration")]
 public class ImportCoverageTests(ImportHost import) : IClassFixture<ImportHost>
 {
     private static SortedDictionary<string, byte[]> WithoutBilling()

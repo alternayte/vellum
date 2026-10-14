@@ -14,7 +14,6 @@ namespace Vellum.Tests.Modules.Promises;
 /// source lines or a contract diff, what is reached through a flow is possible, and what the
 /// scan did not look at is unknown.
 /// </summary>
-[Collection("Integration")]
 public class ChangeImpactTests(ImportHost import) : IClassFixture<ImportHost>
 {
     private static async Task<JsonObject> Ok(Task<HttpResponseMessage> request, HttpStatusCode expected = HttpStatusCode.OK)

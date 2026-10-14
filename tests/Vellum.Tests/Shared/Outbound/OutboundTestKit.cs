@@ -139,13 +139,26 @@ internal static class Fixtures
         Read(name).Replace("__TEXT__", JsonSerializer.Serialize(text)[1..^1], StringComparison.Ordinal);
 }
 
-/// <summary>The class fixture: one <see cref="OutboundHost"/> in the local profile for all tests of a class.</summary>
-public sealed class SharedOutboundHost(IntegrationFixture fixture) : IDisposable
+/// <summary>
+/// The class fixture: a database of the class and one <see cref="OutboundHost"/> in the local
+/// profile over it for all tests of the class.
+/// </summary>
+public sealed class SharedOutboundHost : IAsyncLifetime
 {
-    public IntegrationFixture Fixture { get; } = fixture;
-    public OutboundHost Host { get; } = new(fixture);
+    public IntegrationFixture Fixture { get; } = new();
+    public OutboundHost Host { get; private set; } = null!;
 
-    public void Dispose() => Host.Dispose();
+    public async Task InitializeAsync()
+    {
+        await Fixture.InitializeAsync();
+        Host = new(Fixture);
+    }
+
+    public async Task DisposeAsync()
+    {
+        Host?.Dispose();
+        await Fixture.DisposeAsync();
+    }
 }
 
 /// <summary>

@@ -11,13 +11,9 @@ using Vellum.Modules.Settings.Crypto;
 namespace Vellum.Tests.Modules.Settings;
 
 /// <summary>An instance never runs with a master key that cannot read what the database holds.</summary>
-[Collection("Integration")]
 public class MasterKeyGuardTests : IDisposable
 {
-    private readonly IntegrationFixture _fixture;
     private readonly string _directory = Path.Combine(Path.GetTempPath(), $"vellum-keyguard-{Guid.NewGuid():N}");
-
-    public MasterKeyGuardTests(IntegrationFixture fixture) => _fixture = fixture;
 
     public void Dispose()
     {
@@ -62,7 +58,7 @@ public class MasterKeyGuardTests : IDisposable
     [InlineData(true)]
     public async Task A_start_with_another_master_key_is_refused_and_changes_nothing(bool hosted)
     {
-        var database = await TestHost.CreateDatabaseAsync(_fixture);
+        var database = await TestHost.CreateDatabaseAsync();
         Dictionary<string, string?> Settings(string key) =>
             hosted ? TestHost.Hosted(key) : new() { ["Vellum:MasterKey"] = key };
         var originalKey = TestHost.NewMasterKey();
@@ -94,7 +90,7 @@ public class MasterKeyGuardTests : IDisposable
     [Fact]
     public async Task A_local_instance_that_lost_its_key_file_does_not_create_a_new_key()
     {
-        var database = await TestHost.CreateDatabaseAsync(_fixture);
+        var database = await TestHost.CreateDatabaseAsync();
         var first = Path.Combine(_directory, "first");
         var second = Path.Combine(_directory, "second");
         var keyId = await SeedAsync(database, new() { ["Vellum:DataDirectory"] = first });
@@ -120,7 +116,7 @@ public class MasterKeyGuardTests : IDisposable
     [Fact]
     public async Task A_key_file_on_disk_never_takes_over_from_the_environment_key_without_notice()
     {
-        var database = await TestHost.CreateDatabaseAsync(_fixture);
+        var database = await TestHost.CreateDatabaseAsync();
         // The instance ran with a generated key file first.
         var fileKeyId = await SeedAsync(database, new() { ["Vellum:DataDirectory"] = _directory });
         var fileKey = File.ReadAllText(Path.Combine(_directory, Bootstrap.MasterKeyFileName)).Trim();
@@ -165,7 +161,7 @@ public class MasterKeyGuardTests : IDisposable
     [Fact]
     public async Task Keys_forget_deletes_the_rows_of_a_lost_key_only_when_it_is_confirmed()
     {
-        var database = await TestHost.CreateDatabaseAsync(_fixture);
+        var database = await TestHost.CreateDatabaseAsync();
         var lostKeyId = await SeedAsync(database, new() { ["Vellum:MasterKey"] = TestHost.NewMasterKey() });
         var newKey = TestHost.NewMasterKey();
         var configuration = new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>

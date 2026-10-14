@@ -13,8 +13,7 @@ namespace Vellum.Tests.Modules.Identity;
 /// the real handler: challenge, state, callback, completion. The browser uses https: the
 /// handler's state cookie is cross-site, so it is a Secure cookie.
 /// </summary>
-[Collection("Integration")]
-public class GitHubSignInTests(IntegrationFixture fixture)
+public class GitHubSignInTests(IntegrationFixture fixture) : IClassFixture<IntegrationFixture>
 {
     private static readonly Dictionary<string, string?> GitHub = new()
     {
@@ -130,7 +129,7 @@ public class GitHubSignInTests(IntegrationFixture fixture)
     [Fact]
     public async Task A_provider_that_is_not_configured_is_no_page()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         using var browser = TestHost.Client(factory, https: true);
 
         Assert.Equal(HttpStatusCode.NotFound, (await browser.GetAsync("/api/auth/external/GitHub")).StatusCode);

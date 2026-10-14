@@ -3,7 +3,6 @@ using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json.Nodes;
 using Microsoft.Extensions.DependencyInjection;
-using Vellum.Shared;
 using Vellum.Shared.Outbound;
 using Vellum.Tests.Shared.Outbound;
 
@@ -14,7 +13,6 @@ namespace Vellum.Tests.Modules.Costs;
 /// transport serves the fixtures under <c>Fixtures/Costs</c>: answers of
 /// <c>prices.azure.com</c> recorded on 2026-10-13. No test opens a socket.
 /// </summary>
-[Collection("Integration")]
 public class AzureRetailPricesTests(SharedOutboundHost shared) : IClassFixture<SharedOutboundHost>
 {
     private const string StorageMeter = "10e5ee74-8fd6-4972-909f-65a83f92f0ce";
@@ -291,7 +289,7 @@ public class AzureRetailPricesTests(SharedOutboundHost shared) : IClassFixture<S
     {
         var transport = new RoutedTransport();
         var addresses = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase) { ["mirror.internal.test"] = "10.0.0.5" };
-        var database = await TestHost.CreateDatabaseAsync(shared.Fixture);
+        var database = await TestHost.CreateDatabaseAsync();
         await using var factory = TestHost.Create(database, TestHost.Hosted(TestHost.NewMasterKey()), services =>
         {
             TestHost.UseResolver(services, addresses);

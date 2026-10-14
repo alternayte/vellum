@@ -9,8 +9,7 @@ using Vellum.Modules.Settings.Instance;
 
 namespace Vellum.Tests.Modules.Settings;
 
-[Collection("Integration")]
-public class IsolationAndAuditTests
+public class IsolationAndAuditTests : IClassFixture<IntegrationFixture>
 {
     private readonly IntegrationFixture _fixture;
 
@@ -54,7 +53,7 @@ public class IsolationAndAuditTests
     [Fact]
     public async Task A_member_of_another_workspace_reaches_nothing_and_changes_nothing()
     {
-        using var factory = TestHost.Create(_fixture);
+        var factory = _fixture.Factory;
         using var ownerA = await TestHost.SignInAsync(factory);
         var (workspaceA, _) = await TestHost.CreateProjectAsync(ownerA);
         using var ownerB = await TestHost.SignInAsync(factory);
@@ -80,7 +79,7 @@ public class IsolationAndAuditTests
     [InlineData("Editor")]
     public async Task A_plain_member_reads_settings_and_can_do_nothing_else(string role)
     {
-        using var factory = TestHost.Create(_fixture);
+        var factory = _fixture.Factory;
         using var owner = await TestHost.SignInAsync(factory);
         var (workspaceId, _) = await TestHost.CreateProjectAsync(owner);
         using var member = await TestHost.SignInMemberAsync(factory, owner, workspaceId, role);
@@ -95,7 +94,7 @@ public class IsolationAndAuditTests
     [Fact]
     public async Task The_instance_admin_has_no_access_to_a_workspace_without_a_membership()
     {
-        using var factory = TestHost.Create(_fixture);
+        var factory = _fixture.Factory;
         using var owner = await TestHost.SignInAsync(factory);
         var (workspaceId, projectId) = await TestHost.CreateProjectAsync(owner);
         using var admin = await SignInAsInstanceAdminAsync(factory);
@@ -113,7 +112,7 @@ public class IsolationAndAuditTests
     [Fact]
     public async Task Sensitive_changes_are_audited_newest_first_without_values()
     {
-        using var factory = TestHost.Create(_fixture);
+        var factory = _fixture.Factory;
         using var owner = await TestHost.SignInAsync(factory);
         var (workspaceId, _) = await TestHost.CreateProjectAsync(owner);
         var ownerId = (await owner.GetFromJsonAsync<UserInfoResponse>("/api/auth/me"))!.Id;

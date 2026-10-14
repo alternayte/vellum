@@ -12,8 +12,13 @@ down:
 run:
     dotnet run --project src/Vellum
 
+# The backend tests without the slow ones. `just test-slow` runs those.
 test:
-    DOCKER_CONFIG={{justfile_directory()}}/.docker-test dotnet test
+    DOCKER_CONFIG={{justfile_directory()}}/.docker-test dotnet test Vellum.slnx --filter "Category!=Slow"
+
+# The backend tests that take long by design (Category=Slow).
+test-slow:
+    DOCKER_CONFIG={{justfile_directory()}}/.docker-test dotnet test Vellum.slnx --filter "Category=Slow"
 
 migrate-identity name:
     dotnet ef migrations add {{name}} --project src/Vellum --context AppIdentityDbContext --output-dir Modules/Identity/Migrations

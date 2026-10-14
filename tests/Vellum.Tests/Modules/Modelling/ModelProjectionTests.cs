@@ -1,58 +1,16 @@
 using System.Net;
 using System.Net.Http.Json;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
-using Vellum.Modules.Drafts;
-using Vellum.Modules.Identity;
-using Vellum.Modules.Modelling;
 using Vellum.Modules.Modelling.Elements;
 using Vellum.Modules.Modelling.Relationships;
-using Vellum.Modules.Workspaces;
 
 namespace Vellum.Tests.Modules.Modelling;
 
-file static class ProjectionServiceCollectionExtensions
-{
-    public static void RemoveAll<T>(this IServiceCollection services)
-    {
-        var descriptors = services.Where(d => d.ServiceType == typeof(T)).ToList();
-        foreach (var d in descriptors) services.Remove(d);
-    }
-}
-
-[Collection("Integration")]
-public class ModelProjectionTests
+public class ModelProjectionTests : IClassFixture<IntegrationFixture>
 {
     private readonly IntegrationFixture _fixture;
 
     public ModelProjectionTests(IntegrationFixture fixture) => _fixture = fixture;
-
-    private WebApplicationFactory<Program> CreateFactory()
-    {
-        return new WebApplicationFactory<Program>()
-            .WithWebHostBuilder(builder =>
-            {
-                builder.UseEnvironment("Testing");
-                builder.UseSetting("ConnectionStrings:DefaultConnection", _fixture.ConnectionString);
-                builder.ConfigureServices(services =>
-                {
-                    services.RemoveAll<DbContextOptions<AppIdentityDbContext>>();
-                    services.RemoveAll<DbContextOptions<WorkspacesDbContext>>();
-                    services.RemoveAll<DbContextOptions<ModellingDbContext>>();
-                    services.RemoveAll<DbContextOptions<DraftsDbContext>>();
-                    services.AddDbContext<AppIdentityDbContext>(o =>
-                        o.UseNpgsql(_fixture.ConnectionString).UseSnakeCaseNamingConvention());
-                    services.AddDbContext<WorkspacesDbContext>(o =>
-                        o.UseNpgsql(_fixture.ConnectionString).UseSnakeCaseNamingConvention());
-                    services.AddDbContext<ModellingDbContext>(o =>
-                        o.UseNpgsql(_fixture.ConnectionString).UseSnakeCaseNamingConvention());
-                    services.AddDbContext<DraftsDbContext>(o =>
-                        o.UseNpgsql(_fixture.ConnectionString).UseSnakeCaseNamingConvention());
-                });
-            });
-    }
 
     private static HttpClient CreateClient(WebApplicationFactory<Program> factory)
     {
@@ -85,7 +43,7 @@ public class ModelProjectionTests
     [Fact]
     public async Task Element_add_projects_a_row()
     {
-        using var factory = CreateFactory();
+        var factory = _fixture.Factory;
         using var client = await CreateAuthenticatedClientAsync(factory);
         var projectId = await SetupProjectAsync(client);
         var elementId = Guid.NewGuid();
@@ -106,7 +64,7 @@ public class ModelProjectionTests
     [Fact]
     public async Task Element_update_projects_changes()
     {
-        using var factory = CreateFactory();
+        var factory = _fixture.Factory;
         using var client = await CreateAuthenticatedClientAsync(factory);
         var projectId = await SetupProjectAsync(client);
         var elementId = Guid.NewGuid();
@@ -127,7 +85,7 @@ public class ModelProjectionTests
     [Fact]
     public async Task Element_update_with_SetTechnology_clears_technology()
     {
-        using var factory = CreateFactory();
+        var factory = _fixture.Factory;
         using var client = await CreateAuthenticatedClientAsync(factory);
         var projectId = await SetupProjectAsync(client);
         var elementId = Guid.NewGuid();
@@ -147,7 +105,7 @@ public class ModelProjectionTests
     [Fact]
     public async Task Element_remove_deletes_the_row()
     {
-        using var factory = CreateFactory();
+        var factory = _fixture.Factory;
         using var client = await CreateAuthenticatedClientAsync(factory);
         var projectId = await SetupProjectAsync(client);
         var elementId = Guid.NewGuid();
@@ -165,7 +123,7 @@ public class ModelProjectionTests
     [Fact]
     public async Task Relationship_add_projects_a_row()
     {
-        using var factory = CreateFactory();
+        var factory = _fixture.Factory;
         using var client = await CreateAuthenticatedClientAsync(factory);
         var projectId = await SetupProjectAsync(client);
         var sysA = Guid.NewGuid();
@@ -193,7 +151,7 @@ public class ModelProjectionTests
     [Fact]
     public async Task Relationship_remove_deletes_the_row()
     {
-        using var factory = CreateFactory();
+        var factory = _fixture.Factory;
         using var client = await CreateAuthenticatedClientAsync(factory);
         var projectId = await SetupProjectAsync(client);
         var sysA = Guid.NewGuid();
@@ -217,7 +175,7 @@ public class ModelProjectionTests
     [Fact]
     public async Task Cascade_remove_cleans_up_children_and_relationships()
     {
-        using var factory = CreateFactory();
+        var factory = _fixture.Factory;
         using var client = await CreateAuthenticatedClientAsync(factory);
         var projectId = await SetupProjectAsync(client);
         var parent = Guid.NewGuid();

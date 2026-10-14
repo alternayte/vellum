@@ -113,10 +113,29 @@ public class BootstrapTests : IDisposable
     {
         var config = Config(("Vellum:DataDirectory", _directory));
 
-        var ids = Enumerable.Range(0, 16).AsParallel().WithDegreeOfParallelism(16)
-            .Select(_ => Load(config).Keys.Current.Id).Distinct().ToList();
+        // Threads of their own, released together: thread-pool workers would start one by one
+        // while the pool grows, and the reads would not overlap.
+        const int instances = 16;
+        var ids = new string?[instances];
+        var failures = new Exception?[instances];
+        using var start = new Barrier(instances);
+        var threads = Enumerable.Range(0, instances).Select(i => new Thread(() =>
+        {
+            start.SignalAndWait();
+            try
+            {
+                ids[i] = Load(config).Keys.Current.Id;
+            }
+            catch (Exception ex)
+            {
+                failures[i] = ex;
+            }
+        })).ToList();
+        threads.ForEach(t => t.Start());
+        threads.ForEach(t => t.Join());
 
-        Assert.Single(ids);
+        Assert.All(failures, Assert.Null);
+        Assert.Single(ids.Distinct());
         Assert.Single(Directory.GetFiles(_directory));
     }
 

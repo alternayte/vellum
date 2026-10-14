@@ -10,8 +10,7 @@ namespace Vellum.Tests.Examples;
 /// through the real endpoint and plays its scenarios, so a change to the model document
 /// format, the scenario format or the trace engine that breaks the example fails here.
 /// </summary>
-[Collection("Integration")]
-public class OrdersExampleTests(IntegrationFixture fixture)
+public class OrdersExampleTests(IntegrationFixture fixture) : IClassFixture<IntegrationFixture>
 {
     private static readonly string Directory = Path.Combine(RepositoryRoot(), "examples", "orders");
 
@@ -30,7 +29,7 @@ public class OrdersExampleTests(IntegrationFixture fixture)
     [Fact]
     public async Task The_orders_example_imports_into_an_empty_project_and_its_scenarios_hold()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         var client = await TestHost.SignInAsync(factory);
         var (_, projectId) = await TestHost.CreateProjectAsync(client);
         string Url(string path) => $"/api/projects/{projectId}/{path}";

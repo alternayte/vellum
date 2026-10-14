@@ -273,7 +273,11 @@ public sealed class Bootstrap
     /// <returns>The new key, or null when another instance created the file first.</returns>
     private static MasterKey? TryCreateKeyFile(string path)
     {
-        var options = new FileStreamOptions { Mode = FileMode.CreateNew, Access = FileAccess.Write, Share = FileShare.None };
+        // "Create new" alone decides which instance writes the key. The creator lets readers
+        // open the file while it writes: they see an empty file and read again. An exclusive
+        // share would make a reader that opens it in that moment fail, and on Unix a reader
+        // that opens it before the creator takes its lock would leave the file empty for good.
+        var options = new FileStreamOptions { Mode = FileMode.CreateNew, Access = FileAccess.Write, Share = FileShare.Read };
         if (!OperatingSystem.IsWindows())
             options.UnixCreateMode = UnixFileMode.UserRead | UnixFileMode.UserWrite;
 

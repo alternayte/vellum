@@ -14,7 +14,9 @@ public sealed record BodyLimitMetadata(int Bytes);
 /// </summary>
 /// <param name="RegistrationsPerMinute">New accounts through <c>POST /api/auth/register</c>.</param>
 /// <param name="RequestsPerMinute">Every request to the API, the MCP endpoint and the agent documents that carries no valid credential.</param>
-public sealed record AnonymousRateLimits(int RegistrationsPerMinute = 10, int RequestsPerMinute = 300);
+/// <param name="CredentialAttemptsPerMinute">Sign-in and first-run setup attempts.</param>
+public sealed record AnonymousRateLimits(
+    int RegistrationsPerMinute = 10, int RequestsPerMinute = 300, int CredentialAttemptsPerMinute = RequestLimits.CredentialPermits);
 
 /// <summary>
 /// Body size limits and per-client rate limits for endpoints that an attacker can call
@@ -74,7 +76,7 @@ public static class RequestLimits
                 Client(http),
                 _ => new FixedWindowRateLimiterOptions
                 {
-                    PermitLimit = CredentialPermits,
+                    PermitLimit = http.RequestServices.GetRequiredService<AnonymousRateLimits>().CredentialAttemptsPerMinute,
                     Window = CredentialWindow,
                     QueueLimit = 0,
                 }));

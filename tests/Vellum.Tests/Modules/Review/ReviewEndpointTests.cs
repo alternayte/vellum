@@ -17,8 +17,7 @@ namespace Vellum.Tests.Modules.Review;
 /// does about a finding, decisions, Build Ready, pinned bundles, who may do what, and what a
 /// project keeps when it is deleted.
 /// </summary>
-[Collection("Integration")]
-public class ReviewEndpointTests(IntegrationFixture fixture)
+public class ReviewEndpointTests(IntegrationFixture fixture) : IClassFixture<IntegrationFixture>
 {
     private sealed record Seeded(HttpClient Owner, Guid WorkspaceId, OrdersReference Orders, Guid Ord014)
     {
@@ -80,7 +79,7 @@ public class ReviewEndpointTests(IntegrationFixture fixture)
     [Fact]
     public async Task The_orders_reference_case_gives_this_finding_set_and_the_same_bytes_each_time()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         var s = await SeedAsync(factory);
 
         var first = await (await s.Owner.GetAsync(s.Url("review/findings"))).Content.ReadAsStringAsync();
@@ -136,7 +135,7 @@ public class ReviewEndpointTests(IntegrationFixture fixture)
     [Fact]
     public async Task A_blocking_finding_prevents_build_ready_until_an_accepted_decision_settles_it_and_only_while_that_decision_is_in_force()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         var s = await SeedAsync(factory);
         var relay = OrdersReference.RelayOutbox;
         (string, string)[] blocked = [("review-CON-001", relay.ToString())];
@@ -244,7 +243,7 @@ public class ReviewEndpointTests(IntegrationFixture fixture)
     [Fact]
     public async Task A_wont_fix_needs_a_reason_and_needs_a_new_review_when_the_subject_changes()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         var s = await SeedAsync(factory);
         var billing = OrdersReference.BillingSub;
 
@@ -275,7 +274,7 @@ public class ReviewEndpointTests(IntegrationFixture fixture)
     [Fact]
     public async Task An_agent_token_reads_and_proposes_and_does_nothing_else()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         var s = await SeedAsync(factory);
         var agent = await TestHost.CreateAgentAsync(factory, s.Owner, s.WorkspaceId, ["read", "propose"]);
         var reader = await TestHost.CreateAgentAsync(factory, s.Owner, s.WorkspaceId, ["read"]);
@@ -334,7 +333,7 @@ public class ReviewEndpointTests(IntegrationFixture fixture)
     [Fact]
     public async Task A_pinned_state_without_decisions_is_not_exported_and_a_bundle_of_that_format_still_verifies()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         var s = await SeedAsync(factory);
         var exporter = await TestHost.CreateAgentAsync(factory, s.Owner, s.WorkspaceId, ["read", "export"]);
         var viewer = await TestHost.SignInMemberAsync(factory, s.Owner, s.WorkspaceId, "Viewer");
@@ -393,7 +392,7 @@ public class ReviewEndpointTests(IntegrationFixture fixture)
     [Fact]
     public async Task An_acceptance_and_a_rejection_bind_the_decision_that_was_read()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         var s = await SeedAsync(factory);
         var relay = OrdersReference.RelayOutbox;
         var editor = await TestHost.SignInMemberAsync(factory, s.Owner, s.WorkspaceId, "Editor");
@@ -430,7 +429,7 @@ public class ReviewEndpointTests(IntegrationFixture fixture)
     [Fact]
     public async Task An_acceptance_records_the_findings_of_the_model_the_person_read()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         var s = await SeedAsync(factory);
         var relay = OrdersReference.RelayOutbox;
         var draft = (Guid)(await Ok(s.Owner.PostAsJsonAsync(s.Url("drafts"), new { id = Guid.NewGuid(), name = "Rename the relay" }), HttpStatusCode.Created))["streamId"]!;
@@ -459,7 +458,7 @@ public class ReviewEndpointTests(IntegrationFixture fixture)
     [Fact]
     public async Task A_question_is_answered_or_dropped_once()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         var s = await SeedAsync(factory);
         var question = await Ok(s.Owner.PostAsJsonAsync(s.Url("questions"), new { text = "Who reads the dead-letter queue?" }), HttpStatusCode.Created);
         string Url(string act) => s.Url($"questions/{question["id"]}/{act}");
@@ -480,7 +479,7 @@ public class ReviewEndpointTests(IntegrationFixture fixture)
     [Fact]
     public async Task Two_people_who_answer_one_finding_at_the_same_time_both_get_an_answer()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         var s = await SeedAsync(factory);
 
         var answers = await Task.WhenAll(Enumerable.Range(0, 12).Select(i =>
@@ -497,7 +496,7 @@ public class ReviewEndpointTests(IntegrationFixture fixture)
     [Fact]
     public async Task Another_workspace_reaches_nothing_and_a_deleted_project_keeps_nothing()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         var s = await SeedAsync(factory);
         var decision = await Ok(s.Owner.PostAsJsonAsync(s.Url("decisions"), Decision("The relay has no schema", [("CON-001", OrdersReference.RelayOutbox)])), HttpStatusCode.Created);
         await Ok(DecideAsync(s.Owner, s, decision, "accept"));

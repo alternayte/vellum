@@ -20,8 +20,7 @@ namespace Vellum.Tests.Modules.Ai;
 /// policy starts closed: no private network, https for every request, no private code to a
 /// provider. Each test has its own database and its own app.
 /// </summary>
-[Collection("Integration")]
-public class HostedPolicyTests(IntegrationFixture fixture)
+public class HostedPolicyTests
 {
     private const string PublicAddress = "93.184.216.34";
     private const string PrivateAddress = "10.0.0.5";
@@ -47,12 +46,12 @@ public class HostedPolicyTests(IntegrationFixture fixture)
         WebApplicationFactory<Program> Factory, HttpClient Owner, Guid WorkspaceId,
         RoutedTransport Transport, RecordingTransport Recorder, ConcurrentDictionary<string, string> Addresses) : IAsyncDisposable
     {
-        public static async Task<Hosted> StartAsync(IntegrationFixture fixture)
+        public static async Task<Hosted> StartAsync()
         {
             var transport = new RoutedTransport();
             var recorder = new RecordingTransport(transport);
             var addresses = new ConcurrentDictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            var database = await TestHost.CreateDatabaseAsync(fixture);
+            var database = await TestHost.CreateDatabaseAsync();
             var factory = TestHost.Create(database, TestHost.Hosted(TestHost.NewMasterKey()), services =>
             {
                 services.AddSingleton<HostResolver>(_ => (host, _) =>
@@ -139,7 +138,7 @@ public class HostedPolicyTests(IntegrationFixture fixture)
     [Fact]
     public async Task The_ai_client_refuses_a_provider_whose_name_now_resolves_to_a_private_address()
     {
-        await using var hosted = await Hosted.StartAsync(fixture);
+        await using var hosted = await Hosted.StartAsync();
         const string host = "llm.hosted.example";
         await hosted.AddProviderAsync($"https://{host}/v1");
         hosted.Transport.For(host).Json(Completion());
@@ -167,7 +166,7 @@ public class HostedPolicyTests(IntegrationFixture fixture)
     [Fact]
     public async Task The_ai_client_never_sends_a_key_over_http_to_a_host_that_is_not_private()
     {
-        await using var hosted = await Hosted.StartAsync(fixture);
+        await using var hosted = await Hosted.StartAsync();
         const string host = "ollama.hosted.example";
         // The admin allows private networks, and the provider is plain http on a private address: that is allowed.
         await hosted.AllowPrivateNetworksAsync();
@@ -191,7 +190,7 @@ public class HostedPolicyTests(IntegrationFixture fixture)
     [Fact]
     public async Task The_github_reader_keeps_the_hosted_rules_on_every_request_and_on_a_redirect()
     {
-        await using var hosted = await Hosted.StartAsync(fixture);
+        await using var hosted = await Hosted.StartAsync();
         const string host = "ghe.hosted.example";
         await hosted.SaveSettingsAsync(new JsonObject { ["github"] = new JsonObject { ["apiBaseUrl"] = $"https://{host}/api/v3" } });
         await hosted.SaveSecretAsync("github:token", Token);
@@ -229,7 +228,7 @@ public class HostedPolicyTests(IntegrationFixture fixture)
     [Fact]
     public async Task The_github_reader_never_sends_a_token_over_http_to_a_host_that_is_not_private()
     {
-        await using var hosted = await Hosted.StartAsync(fixture);
+        await using var hosted = await Hosted.StartAsync();
         const string host = "ghe-internal.hosted.example";
         await hosted.AllowPrivateNetworksAsync();
         hosted.Addresses[host] = PrivateAddress;
@@ -258,7 +257,7 @@ public class HostedPolicyTests(IntegrationFixture fixture)
     [Fact]
     public async Task A_hosted_workspace_cannot_send_private_code_and_cannot_switch_the_setting_on()
     {
-        await using var hosted = await Hosted.StartAsync(fixture);
+        await using var hosted = await Hosted.StartAsync();
         const string host = "llm-privacy.hosted.example";
         await hosted.AddProviderAsync($"https://{host}/v1");
         hosted.Transport.For(host).Json(Completion());

@@ -1,12 +1,9 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Reflection;
-using System.Security.Claims;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Deedbox;
-using Microsoft.AspNetCore.Builder;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using ModelContextProtocol.Server;
@@ -20,7 +17,6 @@ namespace Vellum.Tests.Modules.Promises;
 /// Promises through the HTTP API on real Postgres: requirement IDs, the lifecycle, links,
 /// obligations, the two deterministic checks, external evidence, isolation and the read model.
 /// </summary>
-[Collection("Integration")]
 public class PromiseEndpointTests(ImportHost import) : IClassFixture<ImportHost>
 {
     private static readonly string Sha = new('a', 40);

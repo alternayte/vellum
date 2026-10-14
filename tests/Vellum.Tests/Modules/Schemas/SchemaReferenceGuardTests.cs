@@ -11,8 +11,7 @@ namespace Vellum.Tests.Modules.Schemas;
 /// A schema that a live branch or a stored revision names cannot be deleted, and a delete
 /// cannot fall between the check that a schema exists and the write that names it.
 /// </summary>
-[Collection("Integration")]
-public class SchemaReferenceGuardTests(IntegrationFixture fixture)
+public class SchemaReferenceGuardTests(IntegrationFixture fixture) : IClassFixture<IntegrationFixture>
 {
     private static string Url(Guid projectId, string path, Guid? branchId = null) =>
         $"/api/projects/{projectId}/{path}" + (branchId is null ? "" : $"?branchId={branchId}");
@@ -35,7 +34,7 @@ public class SchemaReferenceGuardTests(IntegrationFixture fixture)
     [Fact]
     public async Task A_schema_that_a_revision_names_stays_so_a_variant_of_the_revision_has_it()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         using var client = await TestHost.SignInAsync(factory);
         var (_, projectId) = await TestHost.CreateProjectAsync(client);
         var (owner, schema) = await SeedAsync(client, projectId);
@@ -65,7 +64,7 @@ public class SchemaReferenceGuardTests(IntegrationFixture fixture)
     [Fact]
     public async Task A_schema_that_a_message_or_an_open_branch_names_stays_until_the_reference_goes()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         using var client = await TestHost.SignInAsync(factory);
         var (_, projectId) = await TestHost.CreateProjectAsync(client);
         var (owner, schema) = await SeedAsync(client, projectId);
@@ -95,7 +94,7 @@ public class SchemaReferenceGuardTests(IntegrationFixture fixture)
     [Fact]
     public async Task A_delete_that_races_a_new_reference_never_leaves_the_reference_dangling()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         using var client = await TestHost.SignInAsync(factory);
         var (_, projectId) = await TestHost.CreateProjectAsync(client);
         var owner = Guid.NewGuid();

@@ -1,9 +1,6 @@
 using System.Text.Json;
 using Deedbox;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Mvc.Testing;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Vellum.Modules.Schemas;
 using Vellum.Shared;
@@ -14,8 +11,7 @@ namespace Vellum.Tests.Shared;
 /// An append that expects a version the stream is no longer at writes nothing, and the
 /// caller gets the app's 409 conflict envelope.
 /// </summary>
-[Collection("Integration")]
-public class ConcurrencyConflictTests
+public class ConcurrencyConflictTests : IClassFixture<IntegrationFixture>
 {
     private readonly IntegrationFixture _fixture;
 
@@ -24,19 +20,7 @@ public class ConcurrencyConflictTests
     [Fact]
     public async Task Stale_append_is_refused_and_becomes_a_409_conflict_envelope()
     {
-        using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-        {
-            builder.UseEnvironment("Testing");
-            builder.UseSetting("ConnectionStrings:DefaultConnection", _fixture.ConnectionString);
-            builder.ConfigureServices(services =>
-            {
-                foreach (var descriptor in services.Where(d => d.ServiceType == typeof(DbContextOptions<SchemasDbContext>)).ToList())
-                    services.Remove(descriptor);
-                services.AddDbContext<SchemasDbContext>(o =>
-                    o.UseNpgsql(_fixture.ConnectionString).UseSnakeCaseNamingConvention());
-            });
-        });
-        using var scope = factory.Services.CreateScope();
+        using var scope = _fixture.Factory.Services.CreateScope();
         var store = scope.ServiceProvider.GetRequiredService<IEventStore>();
 
         var schemaId = Guid.NewGuid();

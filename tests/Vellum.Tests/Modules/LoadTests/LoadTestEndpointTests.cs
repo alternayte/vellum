@@ -23,8 +23,7 @@ namespace Vellum.Tests.Modules.LoadTests;
 /// Orders API: a baseline, and a run against a slower stand-in that fails 2 % of the requests.
 /// A test binds a file to its own script, because each test has its own project and IDs.
 /// </summary>
-[Collection("Integration")]
-public class LoadTestEndpointTests(IntegrationFixture fixture)
+public class LoadTestEndpointTests(IntegrationFixture fixture) : IClassFixture<IntegrationFixture>
 {
     private const string Baseline = "orders-baseline.vellum-k6-result.json";
     private const string Regressed = "orders-regressed.vellum-k6-result.json";
@@ -88,12 +87,12 @@ public class LoadTestEndpointTests(IntegrationFixture fixture)
     private sealed record Seeded(WebApplicationFactory<Program> Factory, HttpClient Owner, Guid WorkspaceId, OrdersReference Orders, Guid ProfileId) : IDisposable
     {
         public Guid Project => Orders.ProjectId;
-        public void Dispose() => Factory.Dispose();
+        public void Dispose() => Owner.Dispose();
     }
 
     private async Task<Seeded> SeedAsync(Func<OrdersReference, JsonObject>? profile = null, bool outbox = false)
     {
-        var factory = TestHost.Create(fixture.ConnectionString);
+        var factory = fixture.Factory;
         var owner = await TestHost.SignInAsync(factory);
         var (workspaceId, projectId) = await TestHost.CreateProjectAsync(owner);
         var orders = await OrdersReference.SeedAsync(owner, projectId);
@@ -817,7 +816,9 @@ public class LoadTestEndpointTests(IntegrationFixture fixture)
     /// stand-in of the Orders API, and both files that the run leaves import as measured. A run
     /// with another load than the profile's stops, and no redirect takes a request elsewhere.
     /// </summary>
+    // A real k6 run against a stand-in, for the duration of the generated script.
     [K6Fact]
+    [Trait("Category", "Slow")]
     public async Task K6_runs_a_generated_script_against_a_local_stand_in_and_both_of_its_result_files_import()
     {
         var redirect = false;

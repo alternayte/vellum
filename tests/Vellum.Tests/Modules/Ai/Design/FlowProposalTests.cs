@@ -12,7 +12,6 @@ namespace Vellum.Tests.Modules.Ai.Design;
 /// Natural language to a scenario, through the real provider adapters with fixture replies.
 /// No test opens a socket.
 /// </summary>
-[Collection("Integration")]
 public class FlowProposalTests(SharedOutboundHost shared) : IClassFixture<SharedOutboundHost>
 {
     private readonly OutboundHost _host = shared.Host;

@@ -7,7 +7,6 @@ using Vellum.Tests.Shared.Outbound;
 namespace Vellum.Tests.Modules.Ai;
 
 /// <summary>Vendor answers that the first set of fixtures did not hold, and what a failure may say about them.</summary>
-[Collection("Integration")]
 public class AiVendorShapeTests(SharedOutboundHost shared) : IClassFixture<SharedOutboundHost>
 {
     private readonly OutboundHost _host = shared.Host;

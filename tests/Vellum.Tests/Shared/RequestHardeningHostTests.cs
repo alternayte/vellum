@@ -8,8 +8,7 @@ using Vellum.Shared;
 namespace Vellum.Tests.Shared;
 
 /// <summary>What every request gets before its endpoint: the same-origin rule for writes, the response headers, the limits for callers with no credential.</summary>
-[Collection("Integration")]
-public class RequestHardeningHostTests(IntegrationFixture fixture)
+public class RequestHardeningHostTests(IntegrationFixture fixture) : IClassFixture<IntegrationFixture>
 {
     private static HttpRequestMessage Post(string url, params (string Name, string Value)[] headers)
     {
@@ -22,7 +21,7 @@ public class RequestHardeningHostTests(IntegrationFixture fixture)
     [Fact]
     public async Task A_write_that_a_page_of_another_origin_sends_is_refused_even_with_a_valid_session_cookie()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         using var client = await TestHost.SignInAsync(factory);
         var workspace = Guid.NewGuid();
         var body = new { id = workspace, name = "Forged" };
@@ -81,7 +80,7 @@ public class RequestHardeningHostTests(IntegrationFixture fixture)
     [Fact]
     public async Task An_agent_token_is_no_ambient_credential_so_its_writes_are_not_held_to_the_same_origin_rule()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         using var owner = await TestHost.SignInAsync(factory);
         var (workspaceId, _) = await TestHost.CreateProjectAsync(owner);
         var agent = await TestHost.CreateAgentAsync(factory, owner, workspaceId);
@@ -97,7 +96,7 @@ public class RequestHardeningHostTests(IntegrationFixture fixture)
     [Fact]
     public async Task Every_response_has_the_security_headers_and_a_local_instance_sends_no_hsts()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         using var client = factory.CreateClient();
 
         foreach (var url in new[] { "/api/setup/status", "/api/auth/me", "/health", "/no-such-page" })
@@ -120,7 +119,7 @@ public class RequestHardeningHostTests(IntegrationFixture fixture)
     [Fact]
     public async Task A_hosted_instance_sends_hsts_over_https_and_marks_its_session_cookie()
     {
-        var database = await TestHost.CreateDatabaseAsync(fixture);
+        var database = await TestHost.CreateDatabaseAsync();
         using var factory = TestHost.Create(database, TestHost.Hosted(TestHost.NewMasterKey()));
         using var https = TestHost.Client(factory, https: true);
         using var http = TestHost.Client(factory);
@@ -187,7 +186,7 @@ public class RequestHardeningHostTests(IntegrationFixture fixture)
     [Fact]
     public async Task An_unexpected_error_answers_with_no_exception_text()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         using var client = await TestHost.SignInAsync(factory);
 
         // A project that does not exist surfaces as an exception in this handler.
@@ -208,7 +207,7 @@ public class RequestHardeningHostTests(IntegrationFixture fixture)
     [InlineData("docs", "title")]
     public async Task Text_that_cannot_be_stored_is_a_400_that_names_the_field(string resource, string field)
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         using var client = await TestHost.SignInAsync(factory);
         var (_, projectId) = await TestHost.CreateProjectAsync(client);
         var url = $"/api/projects/{projectId}/{resource}";

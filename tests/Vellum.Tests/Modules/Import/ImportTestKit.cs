@@ -204,14 +204,34 @@ internal sealed class FixtureGitHub
 /// One app for the import tests. No worker loop runs in it: a test runs the worker itself, so
 /// each step of a scan happens when the test says. The clock is the test's.
 /// </summary>
-public sealed class ImportHost : IDisposable
+public sealed class ImportHost : IAsyncLifetime, IDisposable
 {
+    private readonly bool _ownsFixture;
+
     internal ManualTime Time { get; } = new();
-    public OutboundHost Host { get; }
+    public OutboundHost Host { get; private set; } = null!;
     public IntegrationFixture Fixture { get; }
 
-    public ImportHost(IntegrationFixture fixture) : this(fixture, runWorker: false)
+    /// <summary>The class fixture: a database of the class and the app over it.</summary>
+    public ImportHost()
     {
+        Fixture = new IntegrationFixture();
+        _ownsFixture = true;
+    }
+
+    public async Task InitializeAsync()
+    {
+        if (!_ownsFixture)
+            return;
+        await Fixture.InitializeAsync();
+        Host = Start(runWorker: false, configure: null);
+    }
+
+    public async Task DisposeAsync()
+    {
+        Dispose();
+        if (_ownsFixture)
+            await Fixture.DisposeAsync();
     }
 
     /// <summary>An app whose own worker loop runs, as it does outside tests.</summary>
@@ -223,7 +243,11 @@ public sealed class ImportHost : IDisposable
     private ImportHost(IntegrationFixture fixture, bool runWorker, Action<IServiceCollection>? configure = null)
     {
         Fixture = fixture;
-        Host = new OutboundHost(fixture, configure: services =>
+        Host = Start(runWorker, configure);
+    }
+
+    private OutboundHost Start(bool runWorker, Action<IServiceCollection>? configure) =>
+        new(Fixture, configure: services =>
         {
             configure?.Invoke(services);
             services.AddSingleton<TimeProvider>(Time);
@@ -235,9 +259,8 @@ public sealed class ImportHost : IDisposable
                 LeaseDuration = TimeSpan.FromSeconds(60),
             });
         });
-    }
 
-    public void Dispose() => Host.Dispose();
+    public void Dispose() => Host?.Dispose();
 }
 
 /// <summary>One user, one project and one stub GitHub of their own.</summary>

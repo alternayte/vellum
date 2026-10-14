@@ -13,8 +13,7 @@ namespace Vellum.Tests.Modules.Costs;
 /// Cost sheets, the price book, saved estimates and comparison through the HTTP API on real
 /// Postgres: who may do what, what one workspace sees of another, and what a deleted project leaves.
 /// </summary>
-[Collection("Integration")]
-public class CostEndpointTests(IntegrationFixture fixture)
+public class CostEndpointTests(IntegrationFixture fixture) : IClassFixture<IntegrationFixture>
 {
     private const string AsOf = "2026-10-13";
 
@@ -66,7 +65,7 @@ public class CostEndpointTests(IntegrationFixture fixture)
     [Fact]
     public async Task A_sheet_gives_a_live_estimate_and_a_saved_estimate_says_what_changed_after_it()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         using var owner = await TestHost.SignInAsync(factory);
         var (workspaceId, projectId) = await TestHost.CreateProjectAsync(owner);
         var element = await ElementAsync(owner, projectId);
@@ -134,7 +133,7 @@ public class CostEndpointTests(IntegrationFixture fixture)
     [Fact]
     public async Task A_resource_points_only_at_things_of_its_own_branch_and_workspace()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         using var owner = await TestHost.SignInAsync(factory);
         var (workspaceId, projectId) = await TestHost.CreateProjectAsync(owner);
         var element = await ElementAsync(owner, projectId);
@@ -173,7 +172,7 @@ public class CostEndpointTests(IntegrationFixture fixture)
     [Fact]
     public async Task Two_variants_are_compared_and_an_unknown_line_blocks_the_verdict()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         using var owner = await TestHost.SignInAsync(factory);
         var (workspaceId, projectId) = await TestHost.CreateProjectAsync(owner);
         var element = await ElementAsync(owner, projectId);
@@ -214,7 +213,7 @@ public class CostEndpointTests(IntegrationFixture fixture)
     [Fact]
     public async Task A_request_without_its_number_is_refused_with_the_field_and_is_not_read_as_zero()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         using var owner = await TestHost.SignInAsync(factory);
         var (workspaceId, projectId) = await TestHost.CreateProjectAsync(owner);
 
@@ -232,7 +231,7 @@ public class CostEndpointTests(IntegrationFixture fixture)
     [Fact]
     public async Task Adding_and_deleting_a_price_writes_an_audit_entry_with_the_actor_and_the_entry()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         using var owner = await TestHost.SignInAsync(factory);
         var (workspaceId, _) = await TestHost.CreateProjectAsync(owner);
 
@@ -250,7 +249,7 @@ public class CostEndpointTests(IntegrationFixture fixture)
     [Fact]
     public async Task A_merge_takes_the_cost_sheet_of_the_draft_to_main_or_is_refused_and_a_closed_draft_keeps_no_cost_data()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         using var owner = await TestHost.SignInAsync(factory);
         var (workspaceId, projectId) = await TestHost.CreateProjectAsync(owner);
         var element = await ElementAsync(owner, projectId);
@@ -332,7 +331,7 @@ public class CostEndpointTests(IntegrationFixture fixture)
     [Fact]
     public async Task A_viewer_reads_an_editor_writes_the_sheet_and_only_an_owner_changes_the_price_book()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         using var owner = await TestHost.SignInAsync(factory);
         var (workspaceId, projectId) = await TestHost.CreateProjectAsync(owner);
         var element = await ElementAsync(owner, projectId);
@@ -389,7 +388,7 @@ public class CostEndpointTests(IntegrationFixture fixture)
     [Fact]
     public async Task Costs_and_prices_of_one_workspace_are_closed_to_a_user_of_another()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
 
         using var owner = await TestHost.SignInAsync(factory);
         var (theirWorkspace, theirs) = await TestHost.CreateProjectAsync(owner);
@@ -457,7 +456,7 @@ public class CostEndpointTests(IntegrationFixture fixture)
     [Fact]
     public async Task Deleting_a_project_removes_its_sheets_pins_and_saved_estimates_and_keeps_the_price_book()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         using var owner = await TestHost.SignInAsync(factory);
         var (workspaceId, projectId) = await TestHost.CreateProjectAsync(owner);
         var element = await ElementAsync(owner, projectId);

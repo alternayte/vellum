@@ -21,8 +21,7 @@ namespace Vellum.Tests.Modules.Build;
 /// they are the same bytes for the same pinned state, and that a bundle can be checked
 /// against the state it names.
 /// </summary>
-[Collection("Integration")]
-public class BuildExportTests(IntegrationFixture fixture)
+public class BuildExportTests(IntegrationFixture fixture) : IClassFixture<IntegrationFixture>
 {
     private static readonly Guid Payments = new("00000000-0000-0000-0000-000000000090");
     private static readonly Guid Refund = new("00000000-0000-0000-0000-000000000091");
@@ -116,7 +115,7 @@ public class BuildExportTests(IntegrationFixture fixture)
     [Fact]
     public async Task The_sdd_holds_every_id_contract_payload_scenario_promise_and_blocker_of_the_orders_project()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         var s = await SeedAsync(factory);
         var orders = s.Orders;
 
@@ -237,7 +236,7 @@ public class BuildExportTests(IntegrationFixture fixture)
     [Fact]
     public async Task The_same_pinned_state_gives_the_same_bytes_and_a_changed_payload_changes_only_the_files_that_hold_it()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         var s = await SeedAsync(factory);
 
         // Two exports: the same zip, byte for byte.
@@ -302,7 +301,7 @@ public class BuildExportTests(IntegrationFixture fixture)
     [Fact]
     public async Task Verify_shows_that_a_bundle_is_what_its_pinned_state_generates_and_finds_an_edited_file()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         var s = await SeedAsync(factory);
         var manifest = await ManifestAsync(s);
         var zip = await ExportAsync(s, new { format = "bundle" });
@@ -383,7 +382,7 @@ public class BuildExportTests(IntegrationFixture fixture)
     [Fact]
     public async Task An_export_of_a_named_revision_stays_the_same_when_the_model_changes()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         var s = await SeedAsync(factory);
         var revisionId = Guid.NewGuid();
         await TestHost.Created(s.Owner.PostAsJsonAsync(s.Orders.Url("revisions"), new { id = revisionId, name = "Release 1" }));
@@ -417,7 +416,7 @@ public class BuildExportTests(IntegrationFixture fixture)
     [Fact]
     public async Task A_brief_holds_the_closure_of_the_selection_and_no_unapproved_requirement()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         var s = await SeedAsync(factory);
 
         async Task<JsonObject> BriefAsync(object body)
@@ -492,7 +491,7 @@ public class BuildExportTests(IntegrationFixture fixture)
     [Fact]
     public async Task A_binding_is_in_the_sdd_the_model_document_and_the_asyncapi_document_and_an_inferred_one_blocks()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         var s = await SeedAsync(factory);
         var orders = s.Orders;
         var binding = Guid.NewGuid();
@@ -526,7 +525,7 @@ public class BuildExportTests(IntegrationFixture fixture)
     [Fact]
     public async Task A_viewer_exports_and_an_outsider_does_not_and_an_export_has_a_size_bound()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         var s = await SeedAsync(factory);
         var viewer = await TestHost.SignInMemberAsync(factory, s.Owner, s.WorkspaceId, "Viewer");
         var outsider = await TestHost.SignInAsync(factory);

@@ -25,7 +25,6 @@ namespace Vellum.Tests.Modules.Ai.Design;
 /// sees over HTTP. The provider replies are text in the form the schemas ask for. No test
 /// opens a socket.
 /// </summary>
-[Collection("Integration")]
 public class ReviewFixTests(SharedOutboundHost shared) : IClassFixture<SharedOutboundHost>
 {
     private readonly OutboundHost _host = shared.Host;

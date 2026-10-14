@@ -15,7 +15,6 @@ namespace Vellum.Tests.Modules.Import;
 /// complete scan proposes a removal and marks the accepted fact stale, and does no more:
 /// the fact keeps its values, a declared fact gets no mark, and nothing is accepted.
 /// </summary>
-[Collection("Integration")]
 public class ImportStalenessTests(ImportHost import) : IClassFixture<ImportHost>
 {
     private static SortedDictionary<string, byte[]> WithoutBilling()

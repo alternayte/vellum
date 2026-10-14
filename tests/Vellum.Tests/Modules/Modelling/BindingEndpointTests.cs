@@ -8,8 +8,7 @@ using Vellum.Shared;
 
 namespace Vellum.Tests.Modules.Modelling;
 
-[Collection("Integration")]
-public class BindingEndpointTests(IntegrationFixture fixture)
+public class BindingEndpointTests(IntegrationFixture fixture) : IClassFixture<IntegrationFixture>
 {
     private static string Url(Guid projectId, string path, Guid? branchId = null) =>
         $"/api/projects/{projectId}/{path}" + (branchId is null ? "" : $"?branchId={branchId}");
@@ -27,7 +26,7 @@ public class BindingEndpointTests(IntegrationFixture fixture)
     [Fact]
     public async Task Bindings_are_created_listed_updated_and_deleted_and_hold_their_channels()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         using var client = await TestHost.SignInAsync(factory);
         var (_, projectId) = await TestHost.CreateProjectAsync(client);
         Guid exchange = Guid.NewGuid(), queue = Guid.NewGuid(), other = Guid.NewGuid(), binding = Guid.NewGuid();
@@ -74,7 +73,7 @@ public class BindingEndpointTests(IntegrationFixture fixture)
     [Fact]
     public async Task A_draft_carries_bindings_a_merge_brings_them_to_main_and_an_export_round_trips_them()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         using var client = await TestHost.SignInAsync(factory);
         var (_, projectId) = await TestHost.CreateProjectAsync(client);
         Guid exchange = Guid.NewGuid(), queue = Guid.NewGuid(), other = Guid.NewGuid(), first = Guid.NewGuid(), second = Guid.NewGuid();

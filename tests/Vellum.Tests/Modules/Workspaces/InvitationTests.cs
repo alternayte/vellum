@@ -18,13 +18,12 @@ namespace Vellum.Tests.Modules.Workspaces;
 /// stays in its workspace, and closes for good when it is accepted, declined, revoked or
 /// expired. The workspace keeps an owner.
 /// </summary>
-[Collection("Integration")]
-public class InvitationTests(IntegrationFixture fixture)
+public class InvitationTests(IntegrationFixture fixture) : IClassFixture<IntegrationFixture>
 {
     [Fact]
     public async Task An_invitation_answers_the_same_for_an_address_with_an_account_and_one_without()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         using var owner = await TestHost.SignInAsync(factory);
         var (workspaceId, _) = await TestHost.CreateProjectAsync(owner);
         using var known = await TestHost.SignInAsync(factory);
@@ -61,7 +60,7 @@ public class InvitationTests(IntegrationFixture fixture)
     [Fact]
     public async Task The_link_holds_a_secret_of_256_bits_that_the_owner_reads_once()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         using var owner = await TestHost.SignInAsync(factory);
         var (workspaceId, _) = await TestHost.CreateProjectAsync(owner);
         using var invitee = await TestHost.SignInAsync(factory);
@@ -141,7 +140,7 @@ public class InvitationTests(IntegrationFixture fixture)
     [Fact]
     public async Task An_account_that_registered_with_the_invited_address_but_has_no_link_cannot_accept_or_decline()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         using var owner = await TestHost.SignInAsync(factory);
         var (workspaceId, _) = await TestHost.CreateProjectAsync(owner);
 
@@ -161,7 +160,7 @@ public class InvitationTests(IntegrationFixture fixture)
     [Fact]
     public async Task A_renewed_invitation_has_a_new_secret_and_the_old_link_stops_working()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         using var owner = await TestHost.SignInAsync(factory);
         var (workspaceId, _) = await TestHost.CreateProjectAsync(owner);
         using var invitee = await TestHost.SignInAsync(factory);
@@ -228,7 +227,7 @@ public class InvitationTests(IntegrationFixture fixture)
     [Fact]
     public async Task Invitations_stay_in_their_workspace()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         using var ownerA = await TestHost.SignInAsync(factory);
         var (workspaceA, _) = await TestHost.CreateProjectAsync(ownerA);
         using var ownerB = await TestHost.SignInAsync(factory);
@@ -258,7 +257,7 @@ public class InvitationTests(IntegrationFixture fixture)
     [Fact]
     public async Task A_revoked_expired_or_declined_invitation_is_not_accepted()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         using var owner = await TestHost.SignInAsync(factory);
         var (workspaceId, _) = await TestHost.CreateProjectAsync(owner);
         using var invitee = await TestHost.SignInAsync(factory);
@@ -325,7 +324,7 @@ public class InvitationTests(IntegrationFixture fixture)
     [Fact]
     public async Task The_last_owner_is_not_removed_whatever_the_case_of_the_stored_role()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         using var owner = await TestHost.SignInAsync(factory);
         var (workspaceId, _) = await TestHost.CreateProjectAsync(owner);
         var ownerId = (await owner.GetFromJsonAsync<UserInfoResponse>("/api/auth/me"))!.Id;
@@ -373,7 +372,7 @@ public class InvitationTests(IntegrationFixture fixture)
     [Fact]
     public async Task The_invited_person_reads_the_display_name_of_the_inviter_and_never_the_address()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         using var owner = await TestHost.SignInAsync(factory);
         var (workspaceId, _) = await TestHost.CreateProjectAsync(owner);
         var me = (await owner.GetFromJsonAsync<UserInfoResponse>("/api/auth/me"))!;
@@ -437,7 +436,7 @@ public class InvitationTests(IntegrationFixture fixture)
     [Fact]
     public async Task An_invitation_whose_issuer_is_no_owner_any_more_is_not_accepted()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         using var first = await TestHost.SignInAsync(factory);
         var (workspaceId, _) = await TestHost.CreateProjectAsync(first);
         using var issuer = await TestHost.SignInMemberAsync(factory, first, workspaceId, "Owner");

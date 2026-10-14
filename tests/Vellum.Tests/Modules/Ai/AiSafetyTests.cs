@@ -18,7 +18,6 @@ namespace Vellum.Tests.Modules.Ai;
 /// On a local instance: the gate for private code, settings and stored credentials that
 /// cannot be sent, and what a failure tells the caller about a private server.
 /// </summary>
-[Collection("Integration")]
 public class AiSafetyTests(SharedOutboundHost shared) : IClassFixture<SharedOutboundHost>
 {
     private readonly OutboundHost _host = shared.Host;

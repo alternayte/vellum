@@ -7,8 +7,7 @@ using Vellum.Shared;
 namespace Vellum.Tests.Modules.Settings;
 
 /// <summary>Versions, body limits and input rules of the settings, secrets, instance and setup endpoints.</summary>
-[Collection("Integration")]
-public class RequestHardeningTests
+public class RequestHardeningTests : IClassFixture<IntegrationFixture>
 {
     private readonly IntegrationFixture _fixture;
 
@@ -30,7 +29,7 @@ public class RequestHardeningTests
     [Fact]
     public async Task A_workspace_settings_save_needs_the_version_that_was_read()
     {
-        using var factory = TestHost.Create(_fixture);
+        var factory = _fixture.Factory;
         using var owner = await TestHost.SignInAsync(factory);
         var (workspaceId, _) = await TestHost.CreateProjectAsync(owner);
         var url = $"/api/workspaces/{workspaceId}/settings";
@@ -72,7 +71,7 @@ public class RequestHardeningTests
     [Fact]
     public async Task An_instance_settings_save_needs_the_version_that_was_read()
     {
-        var database = await TestHost.CreateDatabaseAsync(_fixture);
+        var database = await TestHost.CreateDatabaseAsync();
         using var factory = TestHost.Create(database);
         var (admin, _, _) = await TestHost.SetUpAsync(factory);
         const string url = "/api/instance/settings";
@@ -107,7 +106,7 @@ public class RequestHardeningTests
     [InlineData("""{ "ai": { "providers": [ { "id": "11111111-1111-1111-1111-111111111111", "kind": "open\u0000ai", "name": "n", "model": "m" } ] } }""", "ai.providers[0].kind")]
     public async Task A_control_character_in_a_setting_is_a_validation_error(string overrides, string field)
     {
-        using var factory = TestHost.Create(_fixture);
+        var factory = _fixture.Factory;
         using var owner = await TestHost.SignInAsync(factory);
         var (workspaceId, _) = await TestHost.CreateProjectAsync(owner);
 
@@ -121,7 +120,7 @@ public class RequestHardeningTests
     [Fact]
     public async Task A_body_over_the_limit_is_refused_before_it_is_parsed_and_before_any_role_check()
     {
-        using var factory = TestHost.Create(_fixture);
+        var factory = _fixture.Factory;
         using var owner = await TestHost.SignInAsync(factory);
         var (workspaceId, _) = await TestHost.CreateProjectAsync(owner);
         using var stranger = await TestHost.SignInAsync(factory);
@@ -168,7 +167,7 @@ public class RequestHardeningTests
     [Fact]
     public async Task A_hosted_instance_sends_a_credential_over_https_only()
     {
-        var database = await TestHost.CreateDatabaseAsync(_fixture);
+        var database = await TestHost.CreateDatabaseAsync();
         using var factory = TestHost.Create(database, TestHost.Hosted(TestHost.NewMasterKey()),
             services => TestHost.UseResolver(services, new Dictionary<string, string> { ["internal.example"] = "10.0.0.5" }));
         var (admin, created, _) = await TestHost.SetUpAsync(factory, TestHost.SetupToken, https: true);
@@ -198,7 +197,7 @@ public class RequestHardeningTests
     [Fact]
     public async Task An_invitation_needs_an_email_address_and_the_audit_holds_none_of_the_text()
     {
-        using var factory = TestHost.Create(_fixture);
+        var factory = _fixture.Factory;
         using var owner = await TestHost.SignInAsync(factory);
         var (workspaceId, _) = await TestHost.CreateProjectAsync(owner);
         const string marker = "not-an-address role:owner injected-audit-text";

@@ -11,7 +11,6 @@ namespace Vellum.Tests.Modules.Import;
 /// nothing, a Viewer reads and writes nothing, and an import of one project is not reachable
 /// through another project.
 /// </summary>
-[Collection("Integration")]
 public class ImportAccessTests(ImportHost import) : IClassFixture<ImportHost>
 {
     private static async Task AssertStatus(HttpStatusCode expected, Task<HttpResponseMessage> request, string what)

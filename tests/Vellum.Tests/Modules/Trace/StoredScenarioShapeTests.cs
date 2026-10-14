@@ -18,8 +18,7 @@ namespace Vellum.Tests.Modules.Trace;
 /// A difference means stored scenarios read differently. Add members as nullable, or migrate
 /// the stored events; then delete the file, run the test once to write it again, and commit it.
 /// </summary>
-[Collection("Integration")]
-public class StoredScenarioShapeTests(IntegrationFixture fixture)
+public class StoredScenarioShapeTests(IntegrationFixture fixture) : IClassFixture<IntegrationFixture>
 {
     private static Guid G(int n) => new($"00000000-0000-0000-0000-{n:D12}");
 
@@ -67,7 +66,7 @@ public class StoredScenarioShapeTests(IntegrationFixture fixture)
     [Fact]
     public async Task The_stored_scenario_event_keeps_its_shape()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         var streamId = Guid.NewGuid();
         var scenario = EveryType();
 

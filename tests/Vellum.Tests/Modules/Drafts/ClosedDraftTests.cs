@@ -14,8 +14,7 @@ namespace Vellum.Tests.Modules.Drafts;
 /// A merged or abandoned draft is history. Its branch has no read-model rows, a read of it
 /// finds nothing, and a projection rebuild gives the same end state. A variant stays.
 /// </summary>
-[Collection("Integration")]
-public class ClosedDraftTests(IntegrationFixture fixture)
+public class ClosedDraftTests(IntegrationFixture fixture) : IClassFixture<IntegrationFixture>
 {
     private static string Url(Guid projectId, string path, Guid? branchId = null) =>
         $"/api/projects/{projectId}/{path}" + (branchId is null ? "" : $"?branchId={branchId}");
@@ -23,7 +22,7 @@ public class ClosedDraftTests(IntegrationFixture fixture)
     [Fact]
     public async Task A_closed_draft_has_no_rows_and_no_reads_before_and_after_a_rebuild()
     {
-        using var factory = TestHost.Create(fixture);
+        var factory = fixture.Factory;
         using var client = await TestHost.SignInAsync(factory);
         var (_, projectId) = await TestHost.CreateProjectAsync(client);
 

@@ -2,48 +2,16 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
 using Vellum.Modules.Docs;
-using Vellum.Modules.Identity;
-using Vellum.Modules.Modelling;
-using Vellum.Modules.Views;
-using Vellum.Modules.Workspaces;
 
 namespace Vellum.Tests.Modules.Docs;
 
-[Collection("Integration")]
-public class DocEndpointTests
+public class DocEndpointTests : IClassFixture<IntegrationFixture>
 {
     private readonly IntegrationFixture _fixture;
 
     public DocEndpointTests(IntegrationFixture fixture) => _fixture = fixture;
-
-    private WebApplicationFactory<Program> CreateFactory()
-    {
-        return new WebApplicationFactory<Program>()
-            .WithWebHostBuilder(builder =>
-            {
-                builder.UseEnvironment("Testing");
-                builder.UseSetting("ConnectionStrings:DefaultConnection", _fixture.ConnectionString);
-                builder.ConfigureServices(services =>
-                {
-                    services.RemoveAll<DbContextOptions<AppIdentityDbContext>>();
-                    services.RemoveAll<DbContextOptions<WorkspacesDbContext>>();
-                    services.RemoveAll<DbContextOptions<ModellingDbContext>>();
-                    services.RemoveAll<DbContextOptions<ViewsDbContext>>();
-                    services.RemoveAll<DbContextOptions<DocsDbContext>>();
-                    var cs = _fixture.ConnectionString;
-                    services.AddDbContext<AppIdentityDbContext>(o => o.UseNpgsql(cs).UseSnakeCaseNamingConvention());
-                    services.AddDbContext<WorkspacesDbContext>(o => o.UseNpgsql(cs).UseSnakeCaseNamingConvention());
-                    services.AddDbContext<ModellingDbContext>(o => o.UseNpgsql(cs).UseSnakeCaseNamingConvention());
-                    services.AddDbContext<ViewsDbContext>(o => o.UseNpgsql(cs).UseSnakeCaseNamingConvention());
-                    services.AddDbContext<DocsDbContext>(o => o.UseNpgsql(cs).UseSnakeCaseNamingConvention());
-                });
-            });
-    }
 
     private static HttpClient CreateClient(WebApplicationFactory<Program> factory) =>
         factory.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = true, AllowAutoRedirect = false });
@@ -68,7 +36,7 @@ public class DocEndpointTests
     [Fact]
     public async Task Create_doc_and_get_returns_it()
     {
-        using var factory = CreateFactory();
+        var factory = _fixture.Factory;
         using var client = await CreateAuthenticatedClientAsync(factory);
         var projectId = await SetupProjectAsync(client);
         var docId = Guid.NewGuid();
@@ -87,7 +55,7 @@ public class DocEndpointTests
     [Fact]
     public async Task Update_doc_content_and_title()
     {
-        using var factory = CreateFactory();
+        var factory = _fixture.Factory;
         using var client = await CreateAuthenticatedClientAsync(factory);
         var projectId = await SetupProjectAsync(client);
         var docId = Guid.NewGuid();
@@ -107,7 +75,7 @@ public class DocEndpointTests
     [Fact]
     public async Task List_docs_filtered_by_space()
     {
-        using var factory = CreateFactory();
+        var factory = _fixture.Factory;
         using var client = await CreateAuthenticatedClientAsync(factory);
         var projectId = await SetupProjectAsync(client);
         var spaceId = Guid.NewGuid();
@@ -127,7 +95,7 @@ public class DocEndpointTests
     [Fact]
     public async Task List_docs_filtered_by_element()
     {
-        using var factory = CreateFactory();
+        var factory = _fixture.Factory;
         using var client = await CreateAuthenticatedClientAsync(factory);
         var projectId = await SetupProjectAsync(client);
         var elementId = Guid.NewGuid();
@@ -146,7 +114,7 @@ public class DocEndpointTests
     [Fact]
     public async Task Delete_doc_removes_it()
     {
-        using var factory = CreateFactory();
+        var factory = _fixture.Factory;
         using var client = await CreateAuthenticatedClientAsync(factory);
         var projectId = await SetupProjectAsync(client);
         var docId = Guid.NewGuid();
@@ -162,7 +130,7 @@ public class DocEndpointTests
     [Fact]
     public async Task Delete_space_sets_doc_space_to_null()
     {
-        using var factory = CreateFactory();
+        var factory = _fixture.Factory;
         using var client = await CreateAuthenticatedClientAsync(factory);
         var projectId = await SetupProjectAsync(client);
         var spaceId = Guid.NewGuid();
@@ -182,7 +150,7 @@ public class DocEndpointTests
     [Fact]
     public async Task Update_doc_can_set_element_id_to_null()
     {
-        using var factory = CreateFactory();
+        var factory = _fixture.Factory;
         using var client = await CreateAuthenticatedClientAsync(factory);
         var projectId = await SetupProjectAsync(client);
         var docId = Guid.NewGuid();
@@ -202,7 +170,7 @@ public class DocEndpointTests
     [Fact]
     public async Task Unauthenticated_request_returns_401()
     {
-        using var factory = CreateFactory();
+        var factory = _fixture.Factory;
         using var client = CreateClient(factory);
         var response = await client.GetAsync($"/api/projects/{Guid.NewGuid()}/docs");
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
@@ -211,7 +179,7 @@ public class DocEndpointTests
     [Fact]
     public async Task Create_doc_with_type_and_get_returns_type()
     {
-        using var factory = CreateFactory();
+        var factory = _fixture.Factory;
         using var client = await CreateAuthenticatedClientAsync(factory);
         var projectId = await SetupProjectAsync(client);
         var docId = Guid.NewGuid();
@@ -229,11 +197,3 @@ public class DocEndpointTests
 
 file sealed record DocListDto(IReadOnlyList<DocDto> Items, string? Cursor);
 
-file static class DocServiceCollectionExtensions
-{
-    public static void RemoveAll<T>(this IServiceCollection services)
-    {
-        var descriptors = services.Where(d => d.ServiceType == typeof(T)).ToList();
-        foreach (var d in descriptors) services.Remove(d);
-    }
-}
