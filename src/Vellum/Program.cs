@@ -80,6 +80,9 @@ builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<UnauthorizedExceptionHandler>();
 builder.Services.AddExceptionHandler<ConcurrencyExceptionHandler>();
 builder.Services.AddExceptionHandler<InvalidCursorExceptionHandler>();
+// A bad route or body value is 400 in every environment. Development would otherwise throw,
+// and the exception handler would answer 500.
+builder.Services.Configure<Microsoft.AspNetCore.Routing.RouteHandlerOptions>(options => options.ThrowOnBadRequest = false);
 builder.Services.AddRequestLimits();
 
 // Operator telemetry. Nothing is exported unless OTEL_EXPORTER_OTLP_ENDPOINT names a collector.
