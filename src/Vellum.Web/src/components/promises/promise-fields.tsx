@@ -7,6 +7,7 @@ import { fieldMessages } from '@/lib/mutation-errors'
 import { ApiError } from '@/lib/settings-api'
 import { SOURCE_PATTERNS, type PromiseInput } from '@/lib/promises-api'
 import { TRACE_EVENT_KINDS } from '@/lib/trace'
+import { isServiceKind } from '@/hooks/use-contracts'
 import type { ScenarioReference } from '@/components/trace/scenario-editor'
 
 export const labelClass = 'block text-xs font-medium text-muted-foreground'
@@ -65,11 +66,13 @@ const GROUPS: ScenarioReference['group'][] = ['Elements', 'Operations', 'Channel
  * A part of the model, chosen by name. The value is its ID; nobody types one. An ID that
  * the model no longer holds stays selectable, so the form shows what is stored.
  */
-export function ReferenceSelect({ value, onChange, references, groups = GROUPS, empty, className, ...control }: {
+export function ReferenceSelect({ value, onChange, references, groups = GROUPS, offered, empty, className, ...control }: {
   value: string | null
   onChange: (id: string | null) => void
   references: ScenarioReference[]
   groups?: ScenarioReference['group'][]
+  /** The parts that may be chosen. A stored part outside them stays listed. */
+  offered?: (reference: ScenarioReference) => boolean
   /** The label of "no part". Without it a part must be chosen. */
   empty?: string
   className?: string
@@ -85,7 +88,7 @@ export function ReferenceSelect({ value, onChange, references, groups = GROUPS, 
       {(empty !== undefined || value === null) && <option value="">{empty ?? 'Choose…'}</option>}
       {!known && <option value={value!}>No longer in the model ({value!.slice(0, 8)})</option>}
       {groups.map((group) => {
-        const items = references.filter((r) => r.group === group)
+        const items = references.filter((r) => r.group === group && (!offered || offered(r) || r.id === value))
         if (items.length === 0) return null
         return (
           <optgroup key={group} label={group}>
@@ -192,7 +195,7 @@ export function PatternFields({ value, onChange, repositories, references, disab
       <Field label="Service" field={`${prefix}.service`} error={error} hint="An element that an accepted import links to a service of the repository.">
         {(control) => (
           <ReferenceSelect
-            {...control} className="mt-1" empty="The whole repository" groups={['Elements']}
+            {...control} className="mt-1" empty="The whole repository" groups={['Elements']} offered={(r) => isServiceKind(r.kind)}
             value={value.service} references={references} disabled={disabled} onChange={(service) => onChange({ ...value, service })}
           />
         )}

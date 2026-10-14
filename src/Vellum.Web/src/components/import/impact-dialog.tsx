@@ -8,6 +8,7 @@ import { fetchScenario, useRunScenario } from '@/hooks/use-scenarios'
 import { shownInline } from '@/lib/mutation-errors'
 import { cn, prefersReducedMotion } from '@/lib/utils'
 import { selectClass } from '@/components/settings/fields'
+import { prettyJson } from '@/lib/pretty-json'
 import { importApi, pullRequestState, scanSubject, type ChangeImpact, type ImpactGate, type ImpactGatePolicy, type ImpactCertainty, type ImpactChange, type ImpactFlow, type ImpactPromise, type ImpactReason, type ImpactStep, type ScanSummary } from '@/lib/import-api'
 import { CERTAINTY, flowStepImpact, strongest } from '@/lib/impact'
 import { RESULT_COLOR, RESULT_LABEL, promisesApi } from '@/lib/promises-api'
@@ -501,7 +502,7 @@ function Change({ projectId, change, scanId, anchor }: { projectId: string; chan
                     <figure key={side} className="min-w-0 overflow-hidden rounded-md border border-border">
                       <figcaption className="border-b border-border bg-muted/40 px-2 py-1 font-mono text-[10px] text-muted-foreground">{d.field} · {side}</figcaption>
                       {/* Repository text is shown as text. It is never rendered as markup. */}
-                      <pre tabIndex={0} className="max-h-40 overflow-auto whitespace-pre-wrap break-all bg-background px-2 py-1.5 font-mono text-[11px] text-foreground focus-visible:outline-2 focus-visible:outline-primary">{value ?? 'empty'}</pre>
+                      <pre tabIndex={0} className={`max-h-40 overflow-auto bg-background px-2 py-1.5 font-mono text-[11px] leading-relaxed text-foreground focus-visible:outline-2 focus-visible:outline-primary ${prettyJson(value) === null ? 'whitespace-pre-wrap break-all' : ''}`}>{prettyJson(value) ?? value ?? 'empty'}</pre>
                     </figure>
                   ))}
                 </div>

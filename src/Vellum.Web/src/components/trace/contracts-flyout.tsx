@@ -3,8 +3,8 @@ import { Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
-  NO_FAILURE, canRouteFrom, canRouteTo, formFailure, useBindings, useChannels, useContractMutations, useOperations, useSubscriptions,
-  type FormFailure, type NewOperation, type Operation,
+  NO_FAILURE, canRouteFrom, canRouteTo, formFailure, isServiceKind, useBindings, useChannels, useContractMutations, useOperations, useSubscriptions,
+  type Channel, type FormFailure, type NewChannel, type NewOperation, type NewSubscription, type Operation, type Subscription,
 } from '@/hooks/use-contracts'
 import { useMessages } from '@/hooks/use-messages'
 import { useSchemas, type Schema } from '@/hooks/use-schemas'
@@ -57,7 +57,7 @@ function OperationForm({ operation, elements, schemas, schemasLoading, failure, 
       <Field label="Offered by" error={failure.fields.ownerId}>
         {(invalid) => (
           <select name="ownerId" className={selectClass} defaultValue={operation?.ownerId} required {...invalid}>
-            {elements.map((el) => <option key={el.id} value={el.id}>{el.name}</option>)}
+            {serviceChoices(elements, operation?.ownerId).map((el) => <option key={el.id} value={el.id}>{el.name}</option>)}
           </select>
         )}
       </Field>
@@ -94,7 +94,95 @@ function OperationForm({ operation, elements, schemas, schemasLoading, failure, 
       </div>
       <FormError message={failure.message} />
       <div className="flex gap-2">
-        <Button type="submit" size="sm" className="flex-1" disabled={pending || elements.length === 0}>{operation ? 'Save operation' : 'Add operation'}</Button>
+        <Button type="submit" size="sm" className="flex-1" disabled={pending || serviceChoices(elements, operation?.ownerId).length === 0}>{operation ? 'Save operation' : 'Add operation'}</Button>
+        {onCancel && <Button type="button" variant="ghost" size="sm" onClick={onCancel}>Cancel</Button>}
+      </div>
+    </form>
+  )
+}
+
+/**
+ * The elements that can offer an operation or consume a subscription. A stored owner of
+ * another kind stays in the list, so an edit shows what is stored and does not change it.
+ */
+function serviceChoices(elements: NamedElement[], current?: string) {
+  return elements.filter((el) => isServiceKind(el.kind) || el.id === current)
+}
+
+function ChannelForm({ channel, pending, onSubmit, onCancel }: {
+  channel?: Channel
+  pending: boolean
+  onSubmit: (channel: NewChannel) => void
+  onCancel?: () => void
+}) {
+  const submit = (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    const form = new FormData(e.currentTarget)
+    onSubmit({ name: String(form.get('name')).trim(), kind: String(form.get('kind')) })
+  }
+  return (
+    <form onSubmit={submit} className="mt-2 space-y-2">
+      <Field label="Name"><Input name="name" defaultValue={channel?.name ?? ''} placeholder="order-events" required autoFocus /></Field>
+      <Field label="Kind">
+        <select name="kind" className={selectClass} defaultValue={channel?.kind ?? 'topic'}>
+          <option value="topic">Topic</option>
+          <option value="queue">Queue</option>
+          <option value="exchange">Exchange</option>
+        </select>
+      </Field>
+      <div className="flex gap-2">
+        <Button type="submit" size="sm" className="flex-1" disabled={pending}>{channel ? 'Save channel' : 'Add channel'}</Button>
+        {onCancel && <Button type="button" variant="ghost" size="sm" onClick={onCancel}>Cancel</Button>}
+      </div>
+    </form>
+  )
+}
+
+function SubscriptionForm({ subscription, channels, elements, pending, onSubmit, onCancel }: {
+  subscription?: Subscription
+  channels: Channel[]
+  elements: NamedElement[]
+  pending: boolean
+  onSubmit: (subscription: NewSubscription) => void
+  onCancel?: () => void
+}) {
+  const consumers = serviceChoices(elements, subscription?.consumerId)
+  const submit = (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    const form = new FormData(e.currentTarget)
+    onSubmit({
+      channelId: String(form.get('channelId')),
+      consumerId: String(form.get('consumerId')),
+      retry: { maxAttempts: Number(form.get('maxAttempts')), backoffMs: Number(form.get('backoffMs')) },
+      deadLetterChannelId: String(form.get('deadLetterChannelId')) || null,
+    })
+  }
+  return (
+    <form onSubmit={submit} className="mt-2 space-y-2">
+      <Field label="Channel">
+        <select name="channelId" className={selectClass} defaultValue={subscription?.channelId} required autoFocus={subscription !== undefined}>
+          {channels.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
+      </Field>
+      <Field label="Consumer">
+        <select name="consumerId" className={selectClass} defaultValue={subscription?.consumerId} required>
+          {consumers.map((el) => <option key={el.id} value={el.id}>{el.name}</option>)}
+        </select>
+      </Field>
+      <div className="grid grid-cols-2 gap-2">
+        <Field label="Attempts"><Input name="maxAttempts" type="number" min={1} max={10} defaultValue={subscription?.retry.maxAttempts ?? 1} required /></Field>
+        <Field label="Backoff (ms)"><Input name="backoffMs" type="number" min={0} defaultValue={subscription?.retry.backoffMs ?? 0} required /></Field>
+      </div>
+      <Field label="Dead-letter channel">
+        <select name="deadLetterChannelId" className={selectClass} defaultValue={subscription?.deadLetterChannelId ?? ''}>
+          <option value="">None: a failed message is lost</option>
+          {channels.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+        </select>
+      </Field>
+      <div className="flex gap-2">
+        <Button type="submit" size="sm" className="flex-1" disabled={pending || channels.length === 0 || consumers.length === 0}>
+          {subscription ? 'Save subscription' : 'Add subscription'}
+        </Button>
         {onCancel && <Button type="button" variant="ghost" size="sm" onClick={onCancel}>Cancel</Button>}
       </div>
     </form>
@@ -118,6 +206,8 @@ export function ContractsFlyout({ projectId, branchId, elements }: ContractsFlyo
 
   const [adding, setAdding] = useState<'operation' | 'channel' | 'subscription' | null>(null)
   const [editingOperation, setEditingOperation] = useState<string | null>(null)
+  const [editingChannel, setEditingChannel] = useState<string | null>(null)
+  const [editingSubscription, setEditingSubscription] = useState<string | null>(null)
   const [operationFailure, setOperationFailure] = useState<FormFailure>(NO_FAILURE)
   // The exchange or topic that a binding is being added to.
   const [bindingFrom, setBindingFrom] = useState<string | null>(null)
@@ -129,9 +219,20 @@ export function ContractsFlyout({ projectId, branchId, elements }: ContractsFlyo
     setError(null)
     setOperationFailure(NO_FAILURE)
     setEditingOperation(null)
+    setEditingChannel(null)
+    setEditingSubscription(null)
     setAdding(adding === kind ? null : kind)
   }
-  const done = { onSuccess: () => { setAdding(null); setError(null) }, onError: (e: Error) => setError(e.message) }
+  const done = { onSuccess: () => { setAdding(null); setEditingChannel(null); setEditingSubscription(null); setError(null) }, onError: (e: Error) => setError(e.message) }
+  const startEdit = (edit: () => void) => {
+    setError(null)
+    setAdding(null)
+    setEditingOperation(null)
+    setEditingChannel(null)
+    setEditingSubscription(null)
+    setOperationFailure(NO_FAILURE)
+    edit()
+  }
   const removed = { onError: (e: Error) => setError(e.message) }
   const operationDone = {
     onSuccess: () => { setAdding(null); setEditingOperation(null); setOperationFailure(NO_FAILURE) },
@@ -162,12 +263,6 @@ export function ContractsFlyout({ projectId, branchId, elements }: ContractsFlyo
     return `${nameOf(op.ownerId)} · ${op.transport} · ${op.timeoutMs} ms · ${op.retry.maxAttempts}× · ${contract}`
   }
 
-  const submitChannel = (e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault()
-    const form = new FormData(e.currentTarget)
-    mutations.addChannel.mutate({ name: String(form.get('name')).trim(), kind: String(form.get('kind')) }, done)
-  }
-
   const submitBinding = (sourceChannelId: string) => (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     const form = new FormData(e.currentTarget)
@@ -176,17 +271,6 @@ export function ContractsFlyout({ projectId, branchId, elements }: ContractsFlyo
       targetChannelId: String(form.get('targetChannelId')),
       routingKey: String(form.get('routingKey')).trim() || null,
     }, { onSuccess: () => { setBindingFrom(null); setError(null) }, onError: (failure: Error) => setError(failure.message) })
-  }
-
-  const submitSubscription = (e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault()
-    const form = new FormData(e.currentTarget)
-    mutations.addSubscription.mutate({
-      channelId: String(form.get('channelId')),
-      consumerId: String(form.get('consumerId')),
-      retry: { maxAttempts: Number(form.get('maxAttempts')), backoffMs: Number(form.get('backoffMs')) },
-      deadLetterChannelId: String(form.get('deadLetterChannelId')) || null,
-    }, done)
   }
 
   return (
@@ -223,7 +307,7 @@ export function ContractsFlyout({ projectId, branchId, elements }: ContractsFlyo
               <Row
                 key={op.id} title={op.name} detail={operationDetail(op)}
                 editLabel={`Edit operation ${op.name}`}
-                onEdit={() => { setError(null); setAdding(null); setOperationFailure(NO_FAILURE); setEditingOperation(op.id) }}
+                onEdit={() => startEdit(() => setEditingOperation(op.id))}
                 removeLabel={`Remove operation ${op.name}`}
                 onRemove={() => mutations.removeOperation.mutate(op.id, removed)}
               />
@@ -236,17 +320,7 @@ export function ContractsFlyout({ projectId, branchId, elements }: ContractsFlyo
           hint="A channel is a topic, queue or exchange. Scenarios publish messages to channels. A binding routes a message from an exchange or a topic to a queue or an exchange."
         >
           {adding === 'channel' && (
-            <form onSubmit={submitChannel} className="mt-2 space-y-2">
-              <Field label="Name"><Input name="name" placeholder="order-events" required autoFocus /></Field>
-              <Field label="Kind">
-                <select name="kind" className={selectClass} defaultValue="topic">
-                  <option value="topic">Topic</option>
-                  <option value="queue">Queue</option>
-                  <option value="exchange">Exchange</option>
-                </select>
-              </Field>
-              <Button type="submit" size="sm" className="w-full" disabled={mutations.addChannel.isPending}>Add channel</Button>
-            </form>
+            <ChannelForm pending={mutations.addChannel.isPending} onSubmit={(channel) => mutations.addChannel.mutate(channel, done)} />
           )}
           <ul className="mt-1.5 space-y-0.5">
             {channels.map((channel) => {
@@ -254,13 +328,25 @@ export function ContractsFlyout({ projectId, branchId, elements }: ContractsFlyo
               const targets = channels.filter((c) => c.id !== channel.id && canRouteTo(c.kind))
               return (
                 <li key={channel.id}>
-                  <ul>
-                    <Row
-                      title={channel.name} detail={channel.kind}
-                      removeLabel={`Remove channel ${channel.name}`}
-                      onRemove={() => mutations.removeChannel.mutate(channel.id, removed)}
-                    />
-                  </ul>
+                  {editingChannel === channel.id ? (
+                    <div className="rounded-md border border-border px-2 pb-2">
+                      <ChannelForm
+                        channel={channel} pending={mutations.updateChannel.isPending}
+                        onSubmit={(change) => mutations.updateChannel.mutate({ id: channel.id, ...change }, done)}
+                        onCancel={() => { setEditingChannel(null); setError(null) }}
+                      />
+                    </div>
+                  ) : (
+                    <ul>
+                      <Row
+                        title={channel.name} detail={channel.kind}
+                        editLabel={`Edit channel ${channel.name}`}
+                        onEdit={() => startEdit(() => setEditingChannel(channel.id))}
+                        removeLabel={`Remove channel ${channel.name}`}
+                        onRemove={() => mutations.removeChannel.mutate(channel.id, removed)}
+                      />
+                    </ul>
+                  )}
                   {canRouteFrom(channel.kind) && (
                     <div className="mb-1.5 ml-3 border-l border-border pl-2">
                       <ul aria-label={`Bindings of ${channel.name}`} className="space-y-0.5">
@@ -315,35 +401,26 @@ export function ContractsFlyout({ projectId, branchId, elements }: ContractsFlyo
           hint={channels.length === 0 ? 'Add a channel first. A subscription delivers its messages to one consumer.' : 'A subscription delivers a channel’s messages to one consumer, with its own retries and dead-letter channel.'}
         >
           {adding === 'subscription' && (
-            <form onSubmit={submitSubscription} className="mt-2 space-y-2">
-              <Field label="Channel">
-                <select name="channelId" className={selectClass} required>
-                  {channels.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
-              </Field>
-              <Field label="Consumer">
-                <select name="consumerId" className={selectClass} required>
-                  {elements.map((el) => <option key={el.id} value={el.id}>{el.name}</option>)}
-                </select>
-              </Field>
-              <div className="grid grid-cols-2 gap-2">
-                <Field label="Attempts"><Input name="maxAttempts" type="number" min={1} max={10} defaultValue={1} required /></Field>
-                <Field label="Backoff (ms)"><Input name="backoffMs" type="number" min={0} defaultValue={0} required /></Field>
-              </div>
-              <Field label="Dead-letter channel">
-                <select name="deadLetterChannelId" className={selectClass} defaultValue="">
-                  <option value="">None: a failed message is lost</option>
-                  {channels.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                </select>
-              </Field>
-              <Button type="submit" size="sm" className="w-full" disabled={mutations.addSubscription.isPending || channels.length === 0 || elements.length === 0}>Add subscription</Button>
-            </form>
+            <SubscriptionForm
+              channels={channels} elements={elements} pending={mutations.addSubscription.isPending}
+              onSubmit={(subscription) => mutations.addSubscription.mutate(subscription, done)}
+            />
           )}
           <ul className="mt-1.5 space-y-0.5">
-            {subscriptions.map((sub) => (
+            {subscriptions.map((sub) => editingSubscription === sub.id ? (
+              <li key={sub.id} className="rounded-md border border-border px-2 pb-2">
+                <SubscriptionForm
+                  subscription={sub} channels={channels} elements={elements} pending={mutations.updateSubscription.isPending}
+                  onSubmit={(change) => mutations.updateSubscription.mutate({ id: sub.id, ...change }, done)}
+                  onCancel={() => { setEditingSubscription(null); setError(null) }}
+                />
+              </li>
+            ) : (
               <Row
                 key={sub.id} title={`${nameOf(sub.consumerId)} on ${channelName(sub.channelId)}`}
                 detail={`${sub.retry.maxAttempts}× · ${sub.deadLetterChannelId ? `DLQ ${channelName(sub.deadLetterChannelId)}` : 'no DLQ'}`}
+                editLabel={`Edit subscription of ${nameOf(sub.consumerId)} on ${channelName(sub.channelId)}`}
+                onEdit={() => startEdit(() => setEditingSubscription(sub.id))}
                 removeLabel={`Remove subscription of ${nameOf(sub.consumerId)}`}
                 onRemove={() => mutations.removeSubscription.mutate(sub.id, removed)}
               />

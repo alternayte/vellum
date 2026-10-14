@@ -6,6 +6,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { cn } from '@/lib/utils'
 import { shownInline } from '@/lib/mutation-errors'
 import { describeNotCovered, importApi, withDependencies, type Proposal, type ProposalAction, type ProposalEvidence, type ScanSummary } from '@/lib/import-api'
+import { prettyJson } from '@/lib/pretty-json'
 
 const ACTION: Record<ProposalAction, { label: string; color: string; sign: string }> = {
   add: { label: 'Add', color: 'var(--trace-request)', sign: '+' },
@@ -18,6 +19,24 @@ const ACTION: Record<ProposalAction, { label: string; color: string; sign: strin
 function show(value: unknown): string {
   if (value === null || value === undefined || value === '') return 'empty'
   return typeof value === 'string' ? value : JSON.stringify(value)
+}
+
+/**
+ * A value of a proposal. An object, or a text that holds a JSON object or array (a schema),
+ * is indented in a scrolling block; anything else is a line of text.
+ */
+function Value({ value, muted }: { value: unknown; muted?: boolean }) {
+  const pretty = prettyJson(value)
+  if (pretty === null) return <span className={muted ? 'break-all text-muted-foreground' : 'break-all text-foreground'}>{show(value)}</span>
+  return (
+    // Repository text is shown as text. It is never rendered as markup.
+    <pre
+      tabIndex={0}
+      className={`max-h-56 overflow-auto rounded-md border border-border bg-background px-2 py-1.5 font-mono text-[11px] leading-relaxed focus-visible:outline-2 focus-visible:outline-primary ${muted ? 'text-muted-foreground' : 'text-foreground'}`}
+    >
+      {pretty}
+    </pre>
+  )
 }
 
 /**
@@ -238,20 +257,34 @@ function ProposalDetail({ projectId, scanId, proposal: listed, link, onLink }: {
   return (
     <div className="mt-2 space-y-3 pb-1">
       {fields.length > 0 && (
-        <table className="w-full text-left text-xs">
-          <thead className="text-[10px] uppercase tracking-wider text-muted-foreground">
+        // On a narrow screen each field is a block: its name, then each side under a label.
+        <table className="w-full table-fixed text-left text-xs max-sm:block">
+          <colgroup>
+            <col className="w-32" />
+            {proposal.changes.length > 0 && <col />}
+            <col />
+          </colgroup>
+          <thead className="text-[10px] uppercase tracking-wider text-muted-foreground max-sm:hidden">
             <tr>
               <th className="py-1 pr-3 font-medium">Field</th>
               {proposal.changes.length > 0 && <th className="py-1 pr-3 font-medium">In the model</th>}
               <th className="py-1 font-medium">In the source</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody className="max-sm:block">
             {fields.map((change) => (
-              <tr key={change.field} className="border-t border-border align-top">
-                <td className="py-1 pr-3 font-mono text-muted-foreground">{change.field}</td>
-                {proposal.changes.length > 0 && <td className="break-all py-1 pr-3 text-muted-foreground">{show(change.from)}</td>}
-                <td className="break-all py-1 text-foreground">{show(change.to)}</td>
+              <tr key={change.field} className="border-t border-border align-top max-sm:block max-sm:py-1">
+                <td className="break-words py-1 pr-3 font-mono text-muted-foreground max-sm:block max-sm:pr-0">{change.field}</td>
+                {proposal.changes.length > 0 && (
+                  <td className="min-w-0 py-1 pr-3 max-sm:block max-sm:pr-0">
+                    <span className="mb-0.5 hidden text-[10px] uppercase tracking-wider text-muted-foreground max-sm:block">In the model</span>
+                    <Value value={change.from} muted />
+                  </td>
+                )}
+                <td className="min-w-0 py-1 max-sm:block">
+                  {proposal.changes.length > 0 && <span className="mb-0.5 hidden text-[10px] uppercase tracking-wider text-muted-foreground max-sm:block">In the source</span>}
+                  <Value value={change.to} />
+                </td>
               </tr>
             ))}
           </tbody>

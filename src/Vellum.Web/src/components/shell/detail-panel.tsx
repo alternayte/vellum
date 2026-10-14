@@ -6,7 +6,8 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Plus, X } from 'lucide-react'
+import { ArrowLeft, ArrowRight, MoreHorizontal, Plus, Trash2, X } from 'lucide-react'
+import { DropdownMenu } from 'radix-ui'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { kindColor } from '@/lib/kind-colors'
 import { ARCHITECTURE_ICONS, defaultIconForKind, getIconComponent } from '@/lib/default-icons'
@@ -90,6 +91,8 @@ export function DetailPanel({
   const { isReviewMode, reviewData, activeDraftId } = useDraftStore()
   // Each control has its label tied to it by ID, so a screen reader names the field.
   const fieldId = useId()
+  // The tab stays when the selection moves, so following a connection keeps the Connections tab.
+  const [elementTab, setElementTab] = useState<ElementTab>('details')
   const idFor = (field: string) => `${fieldId}-${field}`
 
   const { data: commentsData } = useComments(projectId, activeDraftId)
@@ -233,14 +236,26 @@ export function DetailPanel({
 
         {selectedElement && (
           <div key={selectedElement.id}>
-            <SheetHeader className="flex-row items-center gap-3 pr-10">
+            <SheetHeader className="flex-row items-center gap-3 pr-12">
               <ElementIconTile icon={selectedElement.icon} kind={selectedElement.kind} />
-              <div className="min-w-0">
+              <div className="min-w-0 flex-1">
                 <SheetTitle className="truncate font-display text-base leading-tight">{selectedElement.name}</SheetTitle>
                 <p className="mt-0.5 font-mono text-[10px] uppercase tracking-wider" style={{ color: kindColor(selectedElement.kind) }}>
                   {selectedElement.kind}
                 </p>
               </div>
+              {!isReviewMode && onDeleteElement && (
+                <MoreActions
+                  label={`More actions for ${selectedElement.name}`}
+                  deleteLabel="Delete element"
+                  onDelete={() => {
+                    if (window.confirm(`Delete "${selectedElement.name}"?`)) {
+                      onDeleteElement(selectedElement.id)
+                      handleClose()
+                    }
+                  }}
+                />
+              )}
             </SheetHeader>
 
             {isReviewMode ? (
@@ -269,7 +284,25 @@ export function DetailPanel({
                 )}
               </>
             ) : (
-              <div className="space-y-5 px-4 pb-4">
+              <>
+                <ElementTabs
+                  idPrefix={fieldId}
+                  tab={elementTab}
+                  onTab={setElementTab}
+                  connectionCount={relationships.filter((r) => r.fromId === selectedElement.id || r.toId === selectedElement.id).length}
+                />
+                {elementTab === 'connections' ? (
+                  <div role="tabpanel" id={`${fieldId}-panel-connections`} aria-labelledby={`${fieldId}-tab-connections`} className="px-4 pb-4 pt-4">
+                    <Connections
+                      element={selectedElement}
+                      elements={elements}
+                      relationships={relationships}
+                      onSelectElement={selectElement}
+                      onSelectRelationship={selectRelationship}
+                    />
+                  </div>
+                ) : (
+              <div role="tabpanel" id={`${fieldId}-panel-details`} aria-labelledby={`${fieldId}-tab-details`} className="space-y-5 px-4 pb-4 pt-4">
                 <Textarea
                   aria-label="Description"
                   placeholder="Add a description"
@@ -367,30 +400,29 @@ export function DetailPanel({
                     )}
                   </section>
                 )}
-                <div className="pt-2 border-t border-border">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="text-xs text-destructive hover:text-destructive"
-                    onClick={() => {
-                      if (window.confirm(`Delete "${selectedElement.name}"?`)) {
-                        onDeleteElement?.(selectedElement.id)
-                        handleClose()
-                      }
-                    }}
-                  >
-                    Delete element
-                  </Button>
-                </div>
               </div>
+                )}
+              </>
             )}
           </div>
         )}
 
         {selectedRel && (
           <>
-            <SheetHeader>
-              <SheetTitle className="font-display">Relationship</SheetTitle>
+            <SheetHeader className="flex-row items-center gap-3 pr-12">
+              <SheetTitle className="min-w-0 flex-1 font-display">Relationship</SheetTitle>
+              {!isReviewMode && onDeleteRelationship && (
+                <MoreActions
+                  label="More actions for this relationship"
+                  deleteLabel="Delete relationship"
+                  onDelete={() => {
+                    if (window.confirm('Delete this relationship?')) {
+                      onDeleteRelationship(selectedRel.id)
+                      handleClose()
+                    }
+                  }}
+                />
+              )}
             </SheetHeader>
             {isReviewMode ? (
               <>
@@ -421,11 +453,11 @@ export function DetailPanel({
               <div className="mt-4 space-y-4 px-4 pb-4">
                 <div>
                   <p className="mb-1 block text-xs text-muted-foreground">From</p>
-                  <p className="text-sm">{elements.find((e) => e.id === selectedRel.fromId)?.name ?? 'Unknown'}</p>
+                  <ElementLinkOrUnknown element={elements.find((e) => e.id === selectedRel.fromId)} onSelect={selectElement} />
                 </div>
                 <div>
                   <p className="mb-1 block text-xs text-muted-foreground">To</p>
-                  <p className="text-sm">{elements.find((e) => e.id === selectedRel.toId)?.name ?? 'Unknown'}</p>
+                  <ElementLinkOrUnknown element={elements.find((e) => e.id === selectedRel.toId)} onSelect={selectElement} />
                 </div>
                 <div>
                   <label htmlFor={idFor('relationship-label')} className="mb-1 block text-xs text-muted-foreground">Label</label>
@@ -459,21 +491,6 @@ export function DetailPanel({
                     <option value="straight">Straight</option>
                     <option value="step">Right-angle (Step)</option>
                   </select>
-                </div>
-                <div className="pt-2 border-t border-border">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="text-xs text-destructive hover:text-destructive"
-                    onClick={() => {
-                      if (window.confirm('Delete this relationship?')) {
-                        onDeleteRelationship?.(selectedRel.id)
-                        handleClose()
-                      }
-                    }}
-                  >
-                    Delete relationship
-                  </Button>
                 </div>
               </div>
             )}
@@ -577,6 +594,11 @@ function TagEditor({ tags, onChange }: { tags: string[]; onChange: (tags: string
     const tag = raw.trim()
     if (tag && !tags.includes(tag)) onChange([...tags, tag])
   }
+  const [draft, setDraft] = useState('')
+  const submit = () => {
+    add(draft)
+    setDraft('')
+  }
   return (
     <div className="flex flex-wrap items-center gap-1.5">
       {tags.map((tag) => (
@@ -592,18 +614,204 @@ function TagEditor({ tags, onChange }: { tags: string[]; onChange: (tags: string
           </button>
         </span>
       ))}
-      <input
-        aria-label="Add tag"
-        placeholder={tags.length === 0 ? 'Add a tag…' : 'Add…'}
-        className="h-6 min-w-16 flex-1 rounded-md border border-dashed border-border bg-transparent px-2 text-xs text-foreground placeholder:text-muted-foreground hover:border-input focus-visible:border-ring focus-visible:outline-none"
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') {
-            e.preventDefault()
-            add(e.currentTarget.value)
-            e.currentTarget.value = ''
-          }
-        }}
-      />
+      {/* The input and its Add button wrap as one unit, so the button stays visible on a narrow panel. */}
+      <div className="flex min-w-36 flex-1 items-center gap-1">
+        <input
+          aria-label="New tag"
+          placeholder={tags.length === 0 ? 'Add a tag…' : 'New tag'}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          enterKeyHint="done"
+          className="h-6 min-w-0 flex-1 rounded-md border border-dashed border-border bg-transparent px-2 text-xs text-foreground placeholder:text-muted-foreground hover:border-input focus-visible:border-ring focus-visible:outline-none"
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              submit()
+            }
+          }}
+        />
+        <button
+          type="button"
+          onClick={submit}
+          disabled={draft.trim() === ''}
+          className="inline-flex h-6 shrink-0 items-center gap-1 rounded-md border border-border px-1.5 text-xs text-foreground hover:bg-muted focus-visible:outline-2 focus-visible:outline-primary disabled:text-muted-foreground disabled:opacity-60 disabled:hover:bg-transparent"
+        >
+          <Plus className="h-3 w-3" aria-hidden="true" />
+          Add tag
+        </button>
+      </div>
     </div>
+  )
+}
+
+type ElementTab = 'details' | 'connections'
+
+function ElementTabs({ idPrefix, tab, onTab, connectionCount }: {
+  idPrefix: string
+  tab: ElementTab
+  onTab: (tab: ElementTab) => void
+  connectionCount: number
+}) {
+  const tabs: { id: ElementTab; label: string; count?: number }[] = [
+    { id: 'details', label: 'Details' },
+    { id: 'connections', label: 'Connections', count: connectionCount },
+  ]
+  return (
+    <div
+      role="tablist"
+      aria-label="Element sections"
+      className="flex gap-4 border-b border-border px-4"
+      onKeyDown={(e) => {
+        if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return
+        e.preventDefault()
+        const next = tab === 'details' ? 'connections' : 'details'
+        onTab(next)
+        document.getElementById(`${idPrefix}-tab-${next}`)?.focus()
+      }}
+    >
+      {tabs.map((t) => {
+        const active = tab === t.id
+        return (
+          <button
+            key={t.id}
+            type="button"
+            role="tab"
+            id={`${idPrefix}-tab-${t.id}`}
+            aria-selected={active}
+            aria-controls={`${idPrefix}-panel-${t.id}`}
+            tabIndex={active ? 0 : -1}
+            onClick={() => onTab(t.id)}
+            className={`-mb-px inline-flex h-9 items-center gap-1.5 border-b-2 text-xs font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary ${
+              active ? 'border-primary text-foreground' : 'border-transparent text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            {t.label}
+            {t.count !== undefined && (
+              <span className="rounded-full bg-muted px-1.5 font-mono text-[10px] tabular-nums text-muted-foreground">{t.count}</span>
+            )}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+/** The relationships that leave and reach the element, each naming the element at the other end. */
+function Connections({ element, elements, relationships, onSelectElement, onSelectRelationship }: {
+  element: ElementData
+  elements: ElementData[]
+  relationships: RelationshipData[]
+  onSelectElement: (id: string) => void
+  onSelectRelationship: (id: string) => void
+}) {
+  const outgoing = relationships.filter((r) => r.fromId === element.id)
+  const incoming = relationships.filter((r) => r.toId === element.id)
+  if (outgoing.length === 0 && incoming.length === 0) {
+    return (
+      <p className="text-xs leading-relaxed text-muted-foreground">
+        No relationships yet. Drag from a handle of this {element.kind} on the canvas to connect it.
+      </p>
+    )
+  }
+  const group = (title: string, direction: 'out' | 'in', items: RelationshipData[]) => {
+    const headingId = `connections-${direction}`
+    return (
+      <section aria-labelledby={headingId}>
+        <h3 id={headingId} className={SECTION_HEADING}>{title} <span className="font-mono tabular-nums">{items.length}</span></h3>
+        {items.length === 0 ? (
+          <p className="text-xs text-muted-foreground">None.</p>
+        ) : (
+          <ul aria-labelledby={headingId} className="divide-y divide-border overflow-hidden rounded-md border border-border">
+            {items.map((rel) => {
+              const otherId = direction === 'out' ? rel.toId : rel.fromId
+              const other = elements.find((e) => e.id === otherId)
+              const Arrow = direction === 'out' ? ArrowRight : ArrowLeft
+              return (
+                <li key={rel.id} className="flex items-stretch">
+                  <button
+                    type="button"
+                    disabled={!other}
+                    onClick={() => other && onSelectElement(other.id)}
+                    className="flex min-w-0 flex-1 items-start gap-2 px-2.5 py-1.5 text-left hover:bg-muted focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary disabled:cursor-default disabled:hover:bg-transparent"
+                  >
+                    <Arrow aria-hidden="true" className="mt-1 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-center gap-2">
+                        {other && <span aria-hidden="true" className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: kindColor(other.kind) }} />}
+                        <span className="min-w-0 truncate text-sm text-foreground">{other?.name ?? 'Removed element'}</span>
+                      </span>
+                      {(rel.label || rel.technology) && (
+                        <span className={`block truncate text-xs text-muted-foreground ${other ? 'pl-4' : ''}`}>
+                          {rel.label}
+                          {rel.label && rel.technology && ' · '}
+                          {rel.technology && <span className="font-mono text-[11px]">{rel.technology}</span>}
+                        </span>
+                      )}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onSelectRelationship(rel.id)}
+                    title="Open this relationship"
+                    aria-label={`Open the relationship ${direction === 'out' ? 'to' : 'from'} ${other?.name ?? 'a removed element'}`}
+                    className="shrink-0 border-l border-border px-2.5 text-[11px] text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary"
+                  >
+                    Edit
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
+        )}
+      </section>
+    )
+  }
+  return (
+    <div className="space-y-5">
+      {group('Outgoing', 'out', outgoing)}
+      {group('Incoming', 'in', incoming)}
+    </div>
+  )
+}
+
+function ElementLinkOrUnknown({ element, onSelect }: { element: ElementData | undefined; onSelect: (id: string) => void }) {
+  if (!element) return <p className="text-sm text-muted-foreground">Unknown</p>
+  return (
+    <button
+      type="button"
+      onClick={() => onSelect(element.id)}
+      className="inline-flex items-center gap-2 rounded text-sm text-foreground underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-primary"
+    >
+      <span aria-hidden="true" className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: kindColor(element.kind) }} />
+      {element.name}
+    </button>
+  )
+}
+
+/** The header overflow menu. Delete lives here, away from the fields, and still asks first. */
+function MoreActions({ label, deleteLabel, onDelete }: { label: string; deleteLabel: string; onDelete: () => void }) {
+  return (
+    <DropdownMenu.Root modal={false}>
+      <DropdownMenu.Trigger asChild>
+        <Button variant="ghost" size="icon-sm" aria-label={label} title="More actions" className="shrink-0">
+          <MoreHorizontal aria-hidden="true" />
+        </Button>
+      </DropdownMenu.Trigger>
+      <DropdownMenu.Portal>
+        <DropdownMenu.Content
+          align="end"
+          sideOffset={4}
+          className="z-50 min-w-44 rounded-lg bg-popover p-1 text-sm text-popover-foreground shadow-md ring-1 ring-foreground/10"
+        >
+          <DropdownMenu.Item
+            onSelect={onDelete}
+            className="flex cursor-default items-center gap-2 rounded-md px-2 py-1.5 text-xs text-destructive outline-none data-[highlighted]:bg-destructive/10"
+          >
+            <Trash2 aria-hidden="true" className="h-3.5 w-3.5" />
+            {deleteLabel}…
+          </DropdownMenu.Item>
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Root>
   )
 }
