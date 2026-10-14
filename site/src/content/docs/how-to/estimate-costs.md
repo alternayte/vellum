@@ -13,12 +13,31 @@ You need the owner role in the workspace. Each member of the workspace can read 
 
 1. Open the workspace on the home screen and select **Settings**, then **Prices**.
 2. To enter a price yourself, fill in **Add a custom price** and select **Add price**. Give the price for one unit, for example `0.25` in **Unit price**, `USD` in **Currency** and `hour` in **For one**.
-3. To fetch a price from Azure, fill in **Fetch a price from Azure** and select **Search meters**. The service name is necessary, for example `Virtual Machines`. The values are case sensitive.
-4. Read the rows. Select **Add to the price book** on the row that you want.
+3. To enter many prices, select a file in **Import custom prices from a CSV file** and select **Import file**.
+4. To fetch a price from Azure, fill in **Fetch a price from Azure** and select **Search meters**. The service name is necessary, for example `Virtual Machines`. The values are case sensitive. Select **Add to the price book** on the row that you want.
+5. To fetch prices from AWS, fill in **Fetch prices from AWS**. Select a service, for example `AWSLambda`, and a region. Type words that the product holds, for example `t3.micro Linux Shared`. Select **Search prices**. Tick the rows that you want and select **Add to the price book**.
+6. To fetch prices from Google Cloud, save an API key in **Cloud Billing API key** first. Then select a service, type a region and words, and select **Search SKUs**. Tick the SKUs that you want and select **Add to the price book**.
 
-The provider of a custom price is `azure`, `aws`, `gcp` or `custom`. A unit price is a number from 0 to 1000000. A currency is a three-letter code in upper case.
+The provider is a name that you choose, for example `hetzner` or `on-premises`. It has 1 to 40 letters, digits, spaces, dots, hyphens and underscores, and starts with a letter or a digit. Vellum names fetched prices `azure`, `aws` and `gcp`. A price applies to a resource of the same provider, in upper or lower case. A unit price is a number from 0 to 1000000. A currency is a three-letter code in upper case.
 
-Vellum does not pick a row for you. When you pick a row, Vellum reads that row again from the Azure API. It stores the price, the meter ID and the effective date of that answer.
+Vellum does not pick a row for you. When you pick a row, Vellum reads that row again from the provider. It stores the price, the provider's ID of the price, the effective date, the address it read and the time. It also records you as the person who accepted the price. The ID is the Azure meter ID, the AWS rate code or the Google Cloud SKU ID.
+
+### Import a CSV file
+
+The first line of the file names the columns: `provider`, `region`, `sku`, `unit`, `unitPrice`, `currency` and `effectiveDate`. A `description` column is optional. The order of the columns is free. Each further line is one price:
+
+```csv
+provider,region,sku,unit,unitPrice,currency,effectiveDate
+hetzner,fsn1,CX22,hour,0.0066,EUR,2026-01-01
+```
+
+Vellum checks every line first. If one line is wrong, Vellum imports nothing and lists each error with its line and column, for example `line 3.unitPrice`. A file holds 500 prices and 1 MB at most. Write a decimal number with a dot. Write a date as `YYYY-MM-DD`.
+
+### AWS and Google Cloud
+
+The AWS prices come from the public AWS Price List Bulk API. It needs no credential. Vellum reads the price file of one service in one region and lists its on-demand prices. Vellum does not read a file larger than 200 MB, for example EC2 in a large region. Enter such a price as a custom price.
+
+The Google Cloud prices come from the Cloud Billing Catalog API. It needs an API key of a Google Cloud project that has the Cloud Billing API turned on. Vellum stores the key encrypted as the workspace secret `gcp:apiKey`. Vellum sends the key to `https://cloudbilling.googleapis.com` only, in a header. The key is never in an address, a log or the audit log.
 
 A search shows 500 rows at most. When the API has more rows, the result says so. Narrow the search. Vellum permits 30 searches and fetches in one minute for each workspace.
 
@@ -26,11 +45,15 @@ Some meters have price tiers. The price then depends on the amount that you use,
 
 A row that Vellum does not store has no **Add to the price book** button. The row shows the reason, for example a row that is not a consumption price.
 
-Vellum fetches prices from Azure only. Enter the prices of AWS, Google Cloud and your own infrastructure as custom prices.
+Vellum fetches prices from Azure, AWS and Google Cloud. Enter the prices of other providers and of your own infrastructure as custom prices.
 
 When an entry shows **Vellum does not read this unit**, a line that uses the entry is unknown. Enter the price again as a custom price with a unit that Vellum reads, for example `hour`, `GB/month` or `1000000 requests`.
 
-To change a price, add a new entry. An entry never changes. To remove an entry, select **Delete** on its row. A line that names a deleted entry is unknown.
+To change a price, add a new entry. An entry never changes. To remove an entry, select **Delete** on its row.
+
+A project protects each price that it uses. A project uses a price when a resource of one of its cost sheets names it (main, a draft or a variant), or when one of its saved estimates was made with it. Each row shows **Used by** and the number of projects. Vellum refuses to delete a used price and names the projects. Remove the price from their resources and delete their saved estimates that use it. Then delete the price.
+
+![The Prices section of the workspace settings. The price book has two entries. The first is aws, EU-Requests-Fair-Tier1 in eu-west-1, 0.0000001 USD per Requests, fetched, with its rate code, and no project uses it. The second is hetzner, CX22 in fsn1, 0.0066 EUR per hour, custom, used by 1 project. Below are the form Add a custom price and the section Import custom prices from a CSV file.](../../../assets/screenshots/price-book.png)
 
 A price book holds 2000 entries at most.
 
@@ -152,9 +175,9 @@ Open **Settings**, then **Cost**. You need the owner role to change a setting. S
 ## What Vellum does not price
 
 - Vellum has no price list of its own.
-- Vellum does not fetch prices from AWS or Google Cloud.
-- Vellum stores Azure consumption prices only. It does not store reservation prices.
-- Vellum does not model price tiers. It stores no price of a meter that has tiers.
+- Vellum fetches prices from Azure, AWS and Google Cloud only.
+- Vellum stores Azure consumption prices and AWS on-demand prices only. It does not store reservation prices.
+- Vellum does not model price tiers. It stores no price of a meter, a product or a SKU that has tiers.
 - Vellum does not convert currencies.
 - Vellum does not add discounts, taxes or support plans.
 - Vellum does not add the cost of people to a total.

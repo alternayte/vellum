@@ -57,6 +57,13 @@ public sealed record WorkspaceSettings(
 
     public SettingsUrl AzureRetailPricesBaseUrl => Resolve(AzurePricesField, Effective.Cost.AzureRetailPricesBaseUrl);
 
+    /// <summary>
+    /// The Google Cloud Billing Catalog API. The address is fixed and is no setting: the API key
+    /// (<see cref="SecretNames.GcpApiKey"/>) is bound to it and goes nowhere else.
+    /// </summary>
+    public static readonly SettingsUrl.Usable GcpCloudBillingUrl = new(
+        new Uri("https://cloudbilling.googleapis.com"), OutboundUrlPolicy.OriginOf(new Uri("https://cloudbilling.googleapis.com")));
+
     /// <summary>The address of a provider: its base URL, or the address of its kind when the base URL is empty.</summary>
     public SettingsUrl ProviderBaseUrl(Guid providerId)
     {
@@ -79,6 +86,7 @@ public sealed record WorkspaceSettings(
     {
         SecretNames.GithubToken => GithubApiBaseUrl,
         SecretNames.WebhookSecret => WebhookUrl,
+        SecretNames.GcpApiKey => GcpCloudBillingUrl,
         _ when SecretNames.ProviderIdOf(secretName) is { } providerId => ProviderBaseUrl(providerId),
         _ => new SettingsUrl.NotConfigured(),
     };

@@ -67,29 +67,6 @@ public sealed record AzureMeter(
 /// <param name="SourceUrl">The address of the first page.</param>
 public sealed record AzureMeterPage(IReadOnlyList<AzureMeter> Items, bool More, string SourceUrl);
 
-/// <summary>Why a read of the price API gave no value. Callers see these and no HTTP type.</summary>
-public abstract record AzurePricesFailure
-{
-    private AzurePricesFailure() { }
-
-    /// <summary>The workspace has no usable address for the price API.</summary>
-    public sealed record NotConfigured(string? Reason) : AzurePricesFailure;
-    /// <summary>The API refused the filter.</summary>
-    public sealed record BadFilter : AzurePricesFailure;
-    public sealed record RateLimited : AzurePricesFailure;
-    /// <param name="Reason">
-    /// One of <c>url_refused</c>, <c>invalid_setting</c>, <c>timeout</c>, <c>network</c>,
-    /// <c>server_error</c>, <c>too_large</c>, <c>next_page_refused</c>, <c>unexpected_response</c>.
-    /// </param>
-    public sealed record Unavailable(string Reason) : AzurePricesFailure;
-}
-
-public readonly record struct AzurePricesResult(AzureMeterPage? Value, AzurePricesFailure? Failure)
-{
-    public static implicit operator AzurePricesResult(AzureMeterPage value) => new(value, null);
-    public static implicit operator AzurePricesResult(AzurePricesFailure failure) => new(null, failure);
-}
-
 /// <param name="ServiceName">Exact and case sensitive, for example <c>Virtual Machines</c>.</param>
 /// <param name="ArmRegionName">Exact, for example <c>westeurope</c>.</param>
 /// <param name="SkuName">Exact, for example <c>D2s v5</c>.</param>
@@ -165,15 +142,15 @@ public sealed class AzureRetailPrices(IServiceProvider services, SettingsResolve
         value.Length <= MaxFilterValueChars && !value.Contains('\'') && !OutboundText.HasControlCharacter(value)
         && value.Trim().Length == value.Length;
 
-    public static bool IsCurrency(string? code) => code is { Length: 3 } && code.All(c => c is >= 'A' and <= 'Z');
+    public static bool IsCurrency(string? code) => PriceSources.IsCurrency(code);
 
     /// <param name="filter">A filter from <see cref="Filter"/>.</param>
-    public async Task<AzurePricesResult> SearchAsync(Guid workspaceId, string filter, string currency, CancellationToken ct)
+    public async Task<PriceSourceResult<AzureMeterPage>> SearchAsync(Guid workspaceId, string filter, string currency, CancellationToken ct)
     {
         var workspace = await settings.GetWorkspaceAsync(workspaceId, ct);
         if (workspace.AzureRetailPricesBaseUrl is not SettingsUrl.Usable destination)
         {
-            return new AzurePricesFailure.NotConfigured(
+            return new PriceSourceFailure.NotConfigured(
                 workspace.AzureRetailPricesBaseUrl is SettingsUrl.BlockedByPolicy blocked ? blocked.Message : null);
         }
 
@@ -203,7 +180,7 @@ public sealed class AzureRetailPrices(IServiceProvider services, SettingsResolve
                 }
 
                 if (body?.Items is not { } records || sourceUrl is null)
-                    return new AzurePricesFailure.Unavailable("unexpected_response");
+                    return new PriceSourceFailure.Unavailable("unexpected_response");
 
                 foreach (var record in records)
                 {
@@ -223,7 +200,7 @@ public sealed class AzureRetailPrices(IServiceProvider services, SettingsResolve
                 if (!Uri.TryCreate(body.NextPageLink, UriKind.Absolute, out var next)
                     || next.Scheme != baseUrl.Scheme || next.Port != baseUrl.Port
                     || !string.Equals(next.IdnHost, baseUrl.IdnHost, StringComparison.OrdinalIgnoreCase))
-                    return new AzurePricesFailure.Unavailable("next_page_refused");
+                    return new PriceSourceFailure.Unavailable("next_page_refused");
 
                 var follow = call with { Operation = "list-prices-next", AbsoluteUri = next };
                 response = await OutboundSend.RunAsync(() => api.Follow(follow, ct));
@@ -231,14 +208,7 @@ public sealed class AzureRetailPrices(IServiceProvider services, SettingsResolve
         }
         catch (OutboundException ex)
         {
-            return new AzurePricesFailure.Unavailable(ex.Failure switch
-            {
-                OutboundFailure.ResponseTooLarge => "too_large",
-                OutboundFailure.UrlRefused => "url_refused",
-                OutboundFailure.InvalidRequest => "invalid_setting",
-                OutboundFailure.Timeout => "timeout",
-                _ => "network",
-            });
+            return PriceSourceFailure.From(ex);
         }
     }
 
@@ -258,12 +228,12 @@ public sealed class AzureRetailPrices(IServiceProvider services, SettingsResolve
             more, sourceUrl);
     }
 
-    private static AzurePricesFailure Failure(int status) => status switch
+    private static PriceSourceFailure Failure(int status) => status switch
     {
-        400 => new AzurePricesFailure.BadFilter(),
-        429 => new AzurePricesFailure.RateLimited(),
-        >= 500 => new AzurePricesFailure.Unavailable("server_error"),
-        _ => new AzurePricesFailure.Unavailable("unexpected_response"),
+        400 => new PriceSourceFailure.BadFilter(),
+        429 => new PriceSourceFailure.RateLimited(),
+        >= 500 => new PriceSourceFailure.Unavailable("server_error"),
+        _ => new PriceSourceFailure.Unavailable("unexpected_response"),
     };
 
     /// <summary>
@@ -293,7 +263,5 @@ public sealed class AzureRetailPrices(IServiceProvider services, SettingsResolve
             type, tier, term, item.IsPrimaryMeterRegion, notImportable);
     }
 
-    /// <summary>Remote text for a client: cut, without control characters, and null when nothing is left.</summary>
-    private static string? Clean(string? text, int maxLength) =>
-        text is null ? null : OutboundText.Clean(text, maxLength).Trim() is { Length: > 0 } clean ? clean : null;
+    private static string? Clean(string? text, int maxLength) => PriceSources.Clean(text, maxLength);
 }

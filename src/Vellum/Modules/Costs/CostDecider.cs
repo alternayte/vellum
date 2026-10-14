@@ -49,8 +49,7 @@ public static class CostRules
         Add(TextRule.Line("name", resource.Name));
         if (!CostCategory.All.Contains(resource.Category))
             errors.Add(new("category", $"Must be one of: {string.Join(", ", CostCategory.All)}"));
-        if (!CostProvider.All.Contains(resource.Provider))
-            errors.Add(new("provider", $"Must be one of: {string.Join(", ", CostProvider.All)}"));
+        Add(CostProvider.Check("provider", resource.Provider));
         Add(TextRule.Line("region", resource.Region, MaxRegionChars));
         Add(TextRule.Line("sku", resource.Sku));
 

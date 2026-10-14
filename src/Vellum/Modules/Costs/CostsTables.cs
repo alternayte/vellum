@@ -36,27 +36,18 @@ public class PriceEntryEntity
     public decimal UnitPrice { get; set; }
     public string Currency { get; set; } = null!;
     public DateOnly EffectiveDate { get; set; }
-    /// <summary><c>custom</c> or <c>fetched</c>.</summary>
+    /// <summary><c>custom</c> (entered, one at a time or from a CSV file) or <c>fetched</c>.</summary>
     public string Source { get; set; } = null!;
     /// <summary>The person who entered a custom price, or who picked the fetched row.</summary>
     public string AcceptedBy { get; set; } = null!;
     public DateTimeOffset AcceptedAt { get; set; }
-    /// <summary>Fetched only: the address the row came from. It holds no credential; the price API takes none.</summary>
+    /// <summary>Fetched only: the address the row came from. It holds no credential: a key goes in a header.</summary>
     public string? SourceUrl { get; set; }
     public DateTimeOffset? FetchedAt { get; set; }
-    /// <summary>Fetched only: the provider's own ID of the meter.</summary>
+    /// <summary>Fetched only: the provider's own ID of the price: the Azure meter ID, the AWS rate code or the Google Cloud SKU ID.</summary>
     public string? MeterId { get; set; }
     /// <summary>Fetched only: the provider's effective date, when the provider gives one.</summary>
     public DateOnly? ProviderEffectiveDate { get; set; }
-}
-
-/// <summary>A price entry that a project pinned. A pinned entry cannot be deleted from the price book.</summary>
-public class PinEntity
-{
-    public Guid ProjectId { get; set; }
-    public Guid PriceEntryId { get; set; }
-    public string PinnedBy { get; set; } = null!;
-    public DateTimeOffset PinnedAt { get; set; }
 }
 
 /// <summary>An estimate that a person saved. Rows are added and never changed.</summary>
@@ -103,13 +94,6 @@ public static class CostsTables
             // No fixed scale: the number is stored with the decimal places it was entered or fetched with.
             b.Property(p => p.UnitPrice).HasColumnType("numeric");
             b.HasIndex(p => new { p.WorkspaceId, p.Provider, p.Sku, p.Id });
-        });
-
-        modelBuilder.Entity<PinEntity>(b =>
-        {
-            b.ToTable("pins", Schema);
-            b.HasKey(p => new { p.ProjectId, p.PriceEntryId });
-            b.HasIndex(p => p.PriceEntryId);
         });
 
         modelBuilder.Entity<SavedEstimateEntity>(b =>

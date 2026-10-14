@@ -348,7 +348,6 @@ public class CostEndpointTests(IntegrationFixture fixture) : IClassFixture<Integ
         await Status(HttpStatusCode.Forbidden, viewer.PostAsJsonAsync(Costs(projectId, "/copy"), new { from = "main" }), "viewer POST copy");
         await Status(HttpStatusCode.Forbidden, viewer.PostAsJsonAsync(Costs(projectId, "/estimates"), new { }), "viewer POST estimate");
         await Status(HttpStatusCode.Forbidden, viewer.DeleteAsync(Costs(projectId, $"/estimates/{saved["id"]}")), "viewer DELETE estimate");
-        await Status(HttpStatusCode.Forbidden, viewer.PutAsync(Costs(projectId, $"/pins/{price}"), null), "viewer PUT pin");
 
         // The price book is a workspace setting: an editor does not change it and does not make Vellum call a provider.
         foreach (var member in new[] { editor, viewer })
@@ -360,21 +359,18 @@ public class CostEndpointTests(IntegrationFixture fixture) : IClassFixture<Integ
             await Status(HttpStatusCode.Forbidden, member.PostAsJsonAsync(Prices(workspaceId, "/azure"), new { meterId = "m", currency = "USD" }), "member POST azure");
         }
 
-        // A pin keeps the entry in the book until the project lets it go.
-        await Status(HttpStatusCode.NoContent, editor.PutAsync(Costs(projectId, $"/pins/{price}"), null), "editor PUT pin");
+        // The resource and the saved estimate use the entry, so it stays in the book.
         var book = await Ok(viewer.GetAsync(Costs(projectId, "/prices")));
-        Assert.Equal((workspaceId, $"""["{price}"]""", 1),
-            (book["workspaceId"]!.GetValue<Guid>(), book["pinned"]!.ToJsonString(), book["entries"]!.AsArray().Count));
-        await Status(HttpStatusCode.Conflict, owner.DeleteAsync(Prices(workspaceId, $"/{price}")), "delete a pinned price");
-        await Status(HttpStatusCode.NoContent, editor.DeleteAsync(Costs(projectId, $"/pins/{price}")), "editor DELETE pin");
-        await Status(HttpStatusCode.NoContent, owner.DeleteAsync(Prices(workspaceId, $"/{price}")), "delete an unpinned price");
-
-        // The resource still names the deleted entry. Its line is unknown; no number is made up.
-        var unknown = Assert.Single((await Ok(viewer.GetAsync(Costs(projectId, "/estimate"))))["estimate"]!["unknown"]!.AsArray())!;
-        Assert.Equal("price-not-found", unknown["reason"]!.GetValue<string>());
+        Assert.Equal((workspaceId, 1), (book["workspaceId"]!.GetValue<Guid>(), book["entries"]!.AsArray().Count));
+        Assert.Equal(projectId, Assert.Single(book["entries"]![0]!["usedBy"]!.AsArray())!["projectId"]!.GetValue<Guid>());
+        await Status(HttpStatusCode.Conflict, owner.DeleteAsync(Prices(workspaceId, $"/{price}")), "delete a used price");
+        await Status(HttpStatusCode.OK, editor.DeleteAsync(Costs(projectId, $"/resources/{resourceId}")), "editor DELETE resource");
+        await Status(HttpStatusCode.Conflict, owner.DeleteAsync(Prices(workspaceId, $"/{price}")), "delete a price a saved estimate uses");
+        await Status(HttpStatusCode.NoContent, editor.DeleteAsync(Costs(projectId, $"/estimates/{saved["id"]}")), "editor DELETE estimate");
+        await Status(HttpStatusCode.NoContent, owner.DeleteAsync(Prices(workspaceId, $"/{price}")), "delete a price no project uses");
 
         var invalid = await Ok(owner.PostAsJsonAsync(Prices(workspaceId),
-            new { provider = "ibm", sku = "", unit = "10K", unitPrice = -1, currency = "usd" }), HttpStatusCode.BadRequest);
+            new { provider = "ibm/cloud!", sku = "", unit = "10K", unitPrice = -1, currency = "usd" }), HttpStatusCode.BadRequest);
         Assert.Equal(["currency", "effectiveDate", "provider", "sku", "unit", "unitPrice"],
             invalid["errors"]!.AsArray().Select(e => e!["field"]!.GetValue<string>()).Order(StringComparer.Ordinal));
     }
@@ -415,7 +411,6 @@ public class CostEndpointTests(IntegrationFixture fixture) : IClassFixture<Integ
             await Status(HttpStatusCode.Forbidden, stranger.PostAsJsonAsync(Costs(theirs, "/estimates", branch), new { }), "POST estimate");
             await Status(HttpStatusCode.Forbidden, stranger.DeleteAsync(Costs(theirs, $"/estimates/{saved["id"]}", branch)), "DELETE estimate");
         }
-        await Status(HttpStatusCode.Forbidden, stranger.PutAsync(Costs(theirs, $"/pins/{price}"), null), "PUT pin");
         await Status(HttpStatusCode.Forbidden, stranger.GetAsync(Prices(theirWorkspace)), "GET prices");
         await Status(HttpStatusCode.Forbidden, stranger.PostAsJsonAsync(Prices(theirWorkspace),
             new { provider = "custom", sku = "planted", unit = "hour", unitPrice = 1, currency = "USD", effectiveDate = "2026-01-01" }), "POST price");
@@ -430,7 +425,6 @@ public class CostEndpointTests(IntegrationFixture fixture) : IClassFixture<Integ
         await Status(HttpStatusCode.NotFound, stranger.GetAsync(Costs(mine, $"/estimates/{saved["id"]}")), "their estimate, own project");
         await Status(HttpStatusCode.NotFound, stranger.DeleteAsync(Costs(mine, $"/estimates/{saved["id"]}")), "delete their estimate");
         await Status(HttpStatusCode.NotFound, stranger.PutAsJsonAsync(Costs(mine, $"/resources/{resourceId}"), Resource(myElement, "Theirs", 1, null)), "their resource, own project");
-        await Status(HttpStatusCode.NotFound, stranger.PutAsync(Costs(mine, $"/pins/{price}"), null), "pin their price");
         await Status(HttpStatusCode.NotFound, stranger.DeleteAsync(Prices(myWorkspace, $"/{price}")), "delete their price through own workspace");
         await Status(HttpStatusCode.BadRequest, stranger.PostAsJsonAsync(Costs(mine, "/resources"), Resource(myElement, "Borrowed price", 1, price)), "their price in own resource");
         await Status(HttpStatusCode.BadRequest, stranger.PostAsJsonAsync(Costs(mine, "/resources"), Resource(element, "Their element", 1, null)), "their element in own resource");
@@ -448,7 +442,7 @@ public class CostEndpointTests(IntegrationFixture fixture) : IClassFixture<Integ
     }
 
     [Fact]
-    public async Task Deleting_a_project_removes_its_sheets_pins_and_saved_estimates_and_keeps_the_price_book()
+    public async Task Deleting_a_project_removes_its_sheets_and_saved_estimates_and_keeps_the_price_book()
     {
         var factory = fixture.Factory;
         using var owner = await TestHost.SignInAsync(factory);
@@ -460,7 +454,6 @@ public class CostEndpointTests(IntegrationFixture fixture) : IClassFixture<Integ
             .Content.ReadFromJsonAsync<DraftDto>())!;
         await Ok(owner.PostAsJsonAsync(Costs(projectId, "/copy", draft.StreamId), new { from = "main" }));
         await Ok(owner.PostAsJsonAsync(Costs(projectId, "/estimates"), new { }), HttpStatusCode.Created);
-        await Status(HttpStatusCode.NoContent, owner.PutAsync(Costs(projectId, $"/pins/{price}"), null), "pin");
 
         // A second project of the workspace keeps what it has.
         var keptProject = Guid.NewGuid();
@@ -477,16 +470,104 @@ public class CostEndpointTests(IntegrationFixture fixture) : IClassFixture<Integ
 
         Assert.False(await db.Sheets.AnyAsync(s => s.ProjectId == projectId));
         Assert.False(await db.Estimates.AnyAsync(e => e.ProjectId == projectId));
-        Assert.False(await db.Pins.AnyAsync(p => p.ProjectId == projectId));
         foreach (var sheet in sheets)
         {
             var (read, version) = await CostAccess.LoadSheetAsync(db, sheet, default);
             Assert.Equal((0L, 0, 0), (version, read.Resources.Count, read.Assumptions.Count));
         }
 
-        // The pin is gone with the project, so the entry can be deleted; until then it is in the book.
-        Assert.Single((await Ok(owner.GetAsync(Prices(workspaceId))))["items"]!.AsArray());
+        // The deleted project no longer uses the entry. The kept project still does, so it stays.
+        var entry = Assert.Single((await Ok(owner.GetAsync(Prices(workspaceId))))["items"]!.AsArray())!;
+        Assert.Equal(["Kept"], entry["usedBy"]!.AsArray().Select(u => u!["name"]!.GetValue<string>()));
         Assert.Single((await Ok(owner.GetAsync(Costs(keptProject))))["resources"]!.AsArray());
-        await Status(HttpStatusCode.NoContent, owner.DeleteAsync(Prices(workspaceId, $"/{price}")), "delete the unpinned price");
+        await Status(HttpStatusCode.Conflict, owner.DeleteAsync(Prices(workspaceId, $"/{price}")), "delete the price the kept project uses");
+    }
+
+    [Fact]
+    public async Task A_used_price_cannot_be_deleted_and_the_refusal_names_each_project_that_uses_it()
+    {
+        var factory = fixture.Factory;
+        using var owner = await TestHost.SignInAsync(factory);
+        var (workspaceId, _) = await TestHost.CreateProjectAsync(owner);
+        var (first, second) = (Guid.NewGuid(), Guid.NewGuid());
+        await TestHost.Created(owner.PostAsJsonAsync($"/api/workspaces/{workspaceId}/projects", new { id = first, name = "Orders" }));
+        await TestHost.Created(owner.PostAsJsonAsync($"/api/workspaces/{workspaceId}/projects", new { id = second, name = "Billing" }));
+        var price = await PriceAsync(owner, workspaceId);
+        var unused = await PriceAsync(owner, workspaceId, sku: "unused");
+
+        // The first project uses the entry in a usage line of a draft; the second in the baseline of main.
+        await Ok(owner.PostAsJsonAsync(Costs(second, "/resources"), Resource(await ElementAsync(owner, second), "Billing API", 1, price)), HttpStatusCode.Created);
+        var element = await ElementAsync(owner, first);
+        var draft = (await (await TestHost.Created(owner.PostAsJsonAsync($"/api/projects/{first}/drafts", new { id = Guid.NewGuid(), name = "Draft" })))
+            .Content.ReadFromJsonAsync<DraftDto>())!;
+        var withAssumption = await Ok(owner.PostAsJsonAsync(Costs(first, "/assumptions", draft.StreamId), Assumption()), HttpStatusCode.Created);
+        var assumption = withAssumption["assumptions"]![0]!["id"]!.GetValue<Guid>();
+        await Ok(owner.PostAsJsonAsync(Costs(first, "/resources", draft.StreamId),
+            Resource(element, "Orders API", null, null, [new { name = "Requests", assumptionId = assumption, priceRef = price }])), HttpStatusCode.Created);
+
+        var refused = await Ok(owner.DeleteAsync(Prices(workspaceId, $"/{price}")), HttpStatusCode.Conflict);
+        Assert.Equal(("price_in_use", "Used by 2 projects: Billing, Orders"), (refused["type"]!.GetValue<string>(), refused["title"]!.GetValue<string>()));
+        var book = (await Ok(owner.GetAsync(Prices(workspaceId))))["items"]!.AsArray();
+        Assert.Equal(["Billing", "Orders"],
+            book.Single(e => e!["id"]!.GetValue<Guid>() == price)!["usedBy"]!.AsArray().Select(u => u!["name"]!.GetValue<string>()));
+        Assert.Empty(book.Single(e => e!["id"]!.GetValue<Guid>() == unused)!["usedBy"]!.AsArray());
+        Assert.Equal(2, book.Count);
+
+        await Status(HttpStatusCode.NoContent, owner.DeleteAsync(Prices(workspaceId, $"/{unused}")), "delete the unused price");
+        var audit = (await Ok(owner.GetAsync($"/api/workspaces/{workspaceId}/audit"))).AsArray();
+        Assert.Single(audit, a => a!["action"]!.GetValue<string>() == "price.deleted");
+    }
+
+    [Fact]
+    public async Task A_csv_file_is_checked_line_by_line_and_adds_every_price_or_none()
+    {
+        var factory = fixture.Factory;
+        using var owner = await TestHost.SignInAsync(factory);
+        var (workspaceId, projectId) = await TestHost.CreateProjectAsync(owner);
+        using var editor = await TestHost.SignInMemberAsync(factory, owner, workspaceId, "Editor");
+        Task<HttpResponseMessage> Send(HttpClient client, string csv) => client.PostAsJsonAsync(Prices(workspaceId, "/csv"), new { csv });
+
+        var bad = await Ok(Send(owner, """
+            provider,region,sku,unit,unitPrice,currency,effectiveDate
+            hetzner,fsn1,CX22,hour,0.0066,EUR,2026-01-01
+            hetzner,fsn1,,hour,1.5.0,eur,2026-13-01
+            ibm/cloud!,eu-de,"bx2-2x8, profile",hour,-1,USD,2026-01-01
+            only,three,values
+            """), HttpStatusCode.BadRequest);
+        Assert.Equal(
+            ["line 3.currency", "line 3.effectiveDate", "line 3.sku", "line 3.unitPrice", "line 4.provider", "line 4.unitPrice", "line 5"],
+            bad["errors"]!.AsArray().Select(e => e!["field"]!.GetValue<string>()).Order(StringComparer.Ordinal));
+        // Nothing of the file was added, the good line neither.
+        Assert.Empty((await Ok(owner.GetAsync(Prices(workspaceId))))["items"]!.AsArray());
+
+        var header = await Ok(Send(owner, "provider,sku,unit,unitPrice,currency,effectiveDate,colour\nx,y,hour,1,USD,2026-01-01,red"), HttpStatusCode.BadRequest);
+        Assert.Equal(2, header["errors"]!.AsArray().Count);
+        Assert.All(header["errors"]!.AsArray(), e => Assert.Equal("line 1", e!["field"]!.GetValue<string>()));
+
+        await Status(HttpStatusCode.Forbidden, Send(editor, "provider,region,sku,unit,unitPrice,currency,effectiveDate\nhetzner,fsn1,CX22,hour,0.0066,EUR,2026-01-01"), "editor CSV");
+
+        // Columns in any order, a quoted value with a comma, a blank line and a byte order mark.
+        var done = await Ok(Send(owner, "\uFEFFsku,provider,region,unit,unitPrice,currency,effectiveDate,description\r\n"
+            + "CX22,Hetzner,fsn1,hour,0.0066,EUR,2026-01-01,\"2 vCPU, 4 GB\"\r\n\r\n"
+            + "Rack,on-premises,,month,450,EUR,2026-02-01,\r\n"), HttpStatusCode.Created);
+        Assert.Equal(2, done["imported"]!.GetValue<int>());
+        var entries = (await Ok(owner.GetAsync(Prices(workspaceId))))["items"]!.AsArray();
+        var cx22 = entries.Single(e => e!["sku"]!.GetValue<string>() == "CX22")!;
+        Assert.Equal(("Hetzner", "fsn1", "hour", 0.0066m, "EUR", "2026-01-01", "custom", "2 vCPU, 4 GB"),
+            (cx22["provider"]!.GetValue<string>(), cx22["region"]!.GetValue<string>(), cx22["unit"]!.GetValue<string>(), cx22["unitPrice"]!.GetValue<decimal>(),
+                cx22["currency"]!.GetValue<string>(), cx22["effectiveDate"]!.GetValue<string>(), cx22["source"]!.GetValue<string>(), cx22["description"]!.GetValue<string>()));
+        Assert.All(entries, e => Assert.True(Guid.TryParse(e!["acceptedBy"]!.GetValue<string>(), out _)));
+        var audit = (await Ok(owner.GetAsync($"/api/workspaces/{workspaceId}/audit"))).AsArray();
+        Assert.Equal(2, audit.Count(a => a!["action"]!.GetValue<string>() == "price.added"));
+
+        // A provider is a free name and matches a resource in any case.
+        var element = await ElementAsync(owner, projectId);
+        await Ok(owner.PostAsJsonAsync(Costs(projectId, "/resources"), new
+        {
+            elementId = element, name = "Web", category = "compute", provider = "hetzner", region = "fsn1", sku = "CX22",
+            quantity = 1, unit = "instances", priceRef = cx22["id"]!.GetValue<Guid>(),
+        }), HttpStatusCode.Created);
+        var line = Assert.Single((await Ok(owner.GetAsync(Costs(projectId, $"/estimate?asOf={AsOf}"))))["estimate"]!["lines"]!.AsArray())!;
+        Assert.Equal(("known", 4.818m), (line["status"]!.GetValue<string>(), line["amount"]!.GetValue<decimal>()));
     }
 }

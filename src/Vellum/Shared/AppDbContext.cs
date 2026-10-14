@@ -119,7 +119,6 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : IdentityDbCo
     // costs
     public DbSet<SheetEntity> Sheets => Set<SheetEntity>();
     public DbSet<PriceEntryEntity> PriceEntries => Set<PriceEntryEntity>();
-    public DbSet<PinEntity> Pins => Set<PinEntity>();
     public DbSet<SavedEstimateEntity> Estimates => Set<SavedEstimateEntity>();
 
     // review

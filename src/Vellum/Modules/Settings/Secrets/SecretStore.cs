@@ -13,6 +13,8 @@ public static class SecretNames
 {
     public const string GithubToken = "github:token";
     public const string WebhookSecret = "notifications:webhookSecret";
+    /// <summary>The API key of the Google Cloud Billing Catalog API. It goes to <c>https://cloudbilling.googleapis.com</c> only.</summary>
+    public const string GcpApiKey = "gcp:apiKey";
 
     public static string AiApiKey(Guid providerId) => $"ai:{providerId:D}:apiKey";
 
@@ -30,7 +32,8 @@ public static class SecretNames
     /// The rule that <paramref name="value"/> breaks for the secret <paramref name="name"/>,
     /// or null when the value can be stored. A GitHub token and an AI API key travel in an
     /// HTTP header, so each must be one header value: printable ASCII and nothing else. A line
-    /// break in such a value would add a header to the request. A webhook signing secret is
+    /// break in such a value would add a header to the request. The same holds for the Google
+    /// Cloud API key. A webhook signing secret is
     /// the key of a signature and never a header value; it can be any printable text, and a
     /// control character in it is refused because no real secret holds one.
     /// </summary>
@@ -45,7 +48,7 @@ public static class SecretNames
 
     /// <summary>Returns the stored form of an allowed name, or null for any other name.</summary>
     public static string? Normalize(string? name) =>
-        name is GithubToken or WebhookSecret ? name
+        name is GithubToken or WebhookSecret or GcpApiKey ? name
         : ProviderIdOf(name) is { } providerId ? AiApiKey(providerId)
         : null;
 }

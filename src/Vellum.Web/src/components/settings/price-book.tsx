@@ -2,17 +2,18 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { SectionHeading, selectClass } from '@/components/settings/fields'
-import { cn } from '@/lib/utils'
+import { SectionHeading } from '@/components/settings/fields'
 import { shownInline } from '@/lib/mutation-errors'
-import { PROVIDERS, costsApi, describeError, formatNumber, priceEntryLabel, type AzureMeter } from '@/lib/costs-api'
+import { PROVIDER_SUGGESTIONS, costsApi, describeError, formatNumber, priceEntryLabel, type AzureMeter } from '@/lib/costs-api'
+import { AwsFetch, CsvImport, GcpFetch } from '@/components/costs/price-sources'
 
 const labelClass = 'block text-xs font-medium text-muted-foreground'
 const cell = 'px-3 py-2 align-top'
 
 /**
- * The price book of the workspace. An entry is a price that a person entered, or a row of
- * the Azure price API that a person picked. Vellum adds no entry by itself.
+ * The price book of the workspace. An entry is a price that a person entered (one at a time
+ * or from a CSV file), or a row of the Azure, AWS or Google Cloud price API that a person
+ * picked. Vellum adds no entry by itself. A project that uses an entry protects it.
  */
 export function PriceBook({ workspaceId, currency }: { workspaceId: string; currency: string }) {
   const queryClient = useQueryClient()
@@ -41,7 +42,7 @@ export function PriceBook({ workspaceId, currency }: { workspaceId: string; curr
               <tr>
                 <th className={`${cell} font-medium`}>Provider</th><th className={`${cell} font-medium`}>SKU</th><th className={`${cell} font-medium`}>Region</th>
                 <th className={`${cell} text-right font-medium`}>Unit price</th><th className={`${cell} font-medium`}>Effective</th>
-                <th className={`${cell} font-medium`}>Source</th><th className={cell}></th>
+                <th className={`${cell} font-medium`}>Source and use</th><th className={cell}></th>
               </tr>
             </thead>
             <tbody>
@@ -61,7 +62,10 @@ export function PriceBook({ workspaceId, currency }: { workspaceId: string; curr
                   <td className={`${cell} whitespace-nowrap text-xs text-muted-foreground`}>{entry.effectiveDate}</td>
                   <td className={`${cell} text-xs text-muted-foreground`}>
                     {priceEntryLabel(entry)}
-                    {entry.fetched && <span className="block font-mono text-[10px]" title={entry.fetched.url}>meter {entry.fetched.meterId}</span>}
+                    {entry.fetched && <span className="block break-all font-mono text-[10px]" title={entry.fetched.url}>{entry.provider === 'aws' ? 'rate' : entry.provider === 'gcp' ? 'SKU' : 'meter'} {entry.fetched.meterId}</span>}
+                    <span className="mt-1 block" title={entry.usedBy.map((u) => u.name).join(', ')}>
+                      {entry.usedBy.length === 0 ? 'No project uses it' : `Used by ${entry.usedBy.length} ${entry.usedBy.length === 1 ? 'project' : 'projects'}`}
+                    </span>
                   </td>
                   <td className={`${cell} text-right`}>
                     <Button size="sm" variant="ghost" disabled={remove.isPending} onClick={() => remove.mutate(entry.id)}>Delete</Button>
@@ -74,22 +78,26 @@ export function PriceBook({ workspaceId, currency }: { workspaceId: string; curr
       )}
       {remove.isError && <p role="alert" className="mt-2 text-xs text-destructive">{describeError(remove.error)}</p>}
 
+
       <CustomPriceForm workspaceId={workspaceId} currency={currency} onAdded={refresh} />
+      <CsvImport workspaceId={workspaceId} onAdded={refresh} />
       <AzureSearch workspaceId={workspaceId} currency={currency} onAdded={refresh} />
+      <AwsFetch workspaceId={workspaceId} onAdded={refresh} />
+      <GcpFetch workspaceId={workspaceId} currency={currency} onAdded={refresh} />
 
       <p className="mt-8 max-w-prose text-xs leading-relaxed text-muted-foreground">
-        Vellum fetches prices from Azure only. Enter the prices of AWS, Google Cloud and your own infrastructure as custom entries.
+        Vellum fetches prices from Azure, AWS and Google Cloud. Enter the prices of any other provider and of your own infrastructure as custom prices, one at a time or from a CSV file.
       </p>
     </>
   )
 }
 
 function CustomPriceForm({ workspaceId, currency, onAdded }: { workspaceId: string; currency: string; onAdded: () => void }) {
-  const empty = { provider: 'custom', region: '', sku: '', description: '', unit: '', unitPrice: '', currency, effectiveDate: new Date().toISOString().slice(0, 10) }
+  const empty = { provider: '', region: '', sku: '', description: '', unit: '', unitPrice: '', currency, effectiveDate: new Date().toISOString().slice(0, 10) }
   const [form, setForm] = useState(empty)
   const add = useMutation({
     mutationFn: () => costsApi.addCustomPrice(workspaceId, {
-      provider: form.provider, region: form.region.trim(), sku: form.sku.trim(), description: form.description.trim() || null,
+      provider: form.provider.trim(), region: form.region.trim(), sku: form.sku.trim(), description: form.description.trim() || null,
       unit: form.unit.trim(), unitPrice: Number(form.unitPrice), currency: form.currency.trim().toUpperCase(), effectiveDate: form.effectiveDate,
     }),
     onSuccess: () => { setForm({ ...empty, provider: form.provider, currency: form.currency }); onAdded() },
@@ -109,9 +117,8 @@ function CustomPriceForm({ workspaceId, currency, onAdded }: { workspaceId: stri
       <form className="mt-3 grid items-end gap-2 sm:grid-cols-4" onSubmit={(e) => { e.preventDefault(); add.mutate() }}>
         <label className={labelClass}>
           Provider
-          <select className={cn(selectClass, 'mt-1')} value={form.provider} onChange={(e) => setForm({ ...form, provider: e.target.value })}>
-            {PROVIDERS.map((p) => <option key={p} value={p}>{p}</option>)}
-          </select>
+          <Input className="mt-1" list="price-providers" placeholder="hetzner" maxLength={40} required value={form.provider} onChange={(e) => setForm({ ...form, provider: e.target.value })} />
+          <datalist id="price-providers">{PROVIDER_SUGGESTIONS.map((p) => <option key={p} value={p} />)}</datalist>
         </label>
         <label className={labelClass}>SKU or name<Input className="mt-1" placeholder="m6g.large" maxLength={200} required {...text('sku')} /></label>
         <label className={labelClass}>Region<Input className="mt-1" placeholder="eu-west-1" maxLength={100} {...text('region')} /></label>

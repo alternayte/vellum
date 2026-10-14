@@ -1,0 +1,26 @@
+{
+  "formatVersion" : "v1.0",
+  "disclaimer" : "This pricing list is for informational purposes only. All prices are subject to the additional terms included in the pricing pages on http://aws.amazon.com. All Free Tier prices are also subject to the terms included at https://aws.amazon.com/free/",
+  "publicationDate" : "2026-10-14T17:00:39Z",
+  "offers" : {
+    "comprehend" : {
+      "offerCode" : "comprehend",
+      "versionIndexUrl" : "/offers/v1.0/aws/comprehend/index.json",
+      "currentVersionUrl" : "/offers/v1.0/aws/comprehend/current/index.json",
+      "currentRegionIndexUrl" : "/offers/v1.0/aws/comprehend/current/region_index.json"
+    },
+    "AWSQueueService" : {
+      "offerCode" : "AWSQueueService",
+      "versionIndexUrl" : "/offers/v1.0/aws/AWSQueueService/index.json",
+      "currentVersionUrl" : "/offers/v1.0/aws/AWSQueueService/current/index.json",
+      "currentRegionIndexUrl" : "/offers/v1.0/aws/AWSQueueService/current/region_index.json"
+    },
+    "AmazonEC2" : {
+      "offerCode" : "AmazonEC2",
+      "versionIndexUrl" : "/offers/v1.0/aws/AmazonEC2/index.json",
+      "currentVersionUrl" : "/offers/v1.0/aws/AmazonEC2/current/index.json",
+      "currentRegionIndexUrl" : "/offers/v1.0/aws/AmazonEC2/current/region_index.json",
+      "savingsPlanVersionIndexUrl" : "/savingsPlan/v1.0/aws/AWSComputeSavingsPlan/current/region_index.json"
+    }
+  }
+}

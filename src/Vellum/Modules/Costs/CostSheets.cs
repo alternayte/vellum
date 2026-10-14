@@ -1,6 +1,7 @@
 using System.Collections.Immutable;
 using Deedbox;
 using Microsoft.EntityFrameworkCore;
+using Vellum.Modules.Costs.Prices;
 using Vellum.Modules.Modelling;
 using Vellum.Modules.Modelling.Model;
 using Vellum.Modules.Workspaces;
@@ -221,7 +222,7 @@ public static class CostSheets
         (request.Usage ?? []).Select(u => u.PriceRef).Append(request.PriceRef).OfType<Guid>();
 
     private static CostResource ToResource(ResourceRequest request, Guid id, string userId, TimeProvider time) => new(
-        id, request.ElementId, request.Name?.Trim()!, request.Category, request.Provider, request.Region?.Trim() ?? "", request.Sku?.Trim() ?? "",
+        id, request.ElementId, request.Name?.Trim()!, request.Category, request.Provider?.Trim()!, request.Region?.Trim() ?? "", request.Sku?.Trim() ?? "",
         request.Quantity, request.Unit?.Trim(), request.PriceRef,
         (request.Usage ?? []).Select(u => new UsageLine(u.Id ?? Guid.NewGuid(), u.Name?.Trim()!, u.AssumptionId, u.PriceRef)).ToImmutableList(),
         request.FactStatus ?? FactStatus.Declared.ToApiString(),
@@ -267,6 +268,19 @@ public static class CostSheets
         var decision = decide(state);
         if (decision is not Decision.Success { Value: var changes })
             return decision.ToHttpResult();
+        // The entries a resource now names are locked until the commit, so a delete of one of
+        // them waits and then sees that this sheet uses it. An entry that a delete removed
+        // after the check of the caller is refused here.
+        var named = changes
+            .SelectMany(change => change switch
+            {
+                CostChange.ResourceAdded e => [e.Resource],
+                CostChange.ResourceChanged e => [e.Resource],
+                _ => Array.Empty<CostResource>(),
+            })
+            .SelectMany(PriceUsage.Refs).ToHashSet();
+        if ((await PriceUsage.LockAsync(db, named, ct)).Count < named.Count)
+            return ResultExtensions.Invalid("priceRef", "The price entry was deleted from the price book. Pick another entry.");
         if (changes.Count > 0)
             await CostAccess.SaveSheetAsync(db, projectId, branch, state, version, changes, time.GetUtcNow(), ct);
         await transaction.CommitAsync(ct);

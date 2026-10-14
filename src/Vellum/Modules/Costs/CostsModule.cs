@@ -26,7 +26,11 @@ public static class CostsModule
         // The connection string is read when the context is first used, so configuration that
         // a test host overrides applies.
         services.AddOutboundClient<IAzureRetailPricesApi>();
+        services.AddOutboundClient<IAwsPriceListApi>();
+        services.AddOutboundClient<IGcpCloudBillingApi>();
         services.AddScoped<AzureRetailPrices>();
+        services.AddScoped<AwsPriceList>();
+        services.AddScoped<GcpCloudBilling>();
         services.AddScoped<EstimateReader>();
         services.AddScoped<IProjectRetention, CostRetention>();
         services.TryAddSingleton(TimeProvider.System);
@@ -66,9 +70,7 @@ public static class CostsModule
         costs.MapGet("/estimates/{estimateId:guid}", Estimates.Get).Produces<SavedEstimateDto>();
         costs.MapDelete("/estimates/{estimateId:guid}", Estimates.Delete).Produces(StatusCodes.Status204NoContent);
 
-        costs.MapGet("/prices", Pins.Prices).Produces<ProjectPricesDto>();
-        costs.MapPut("/pins/{priceId:guid}", Pins.Pin).Produces(StatusCodes.Status204NoContent);
-        costs.MapDelete("/pins/{priceId:guid}", Pins.Unpin).Produces(StatusCodes.Status204NoContent);
+        costs.MapGet("/prices", PriceBook.ForProject).Produces<ProjectPricesDto>();
 
         var prices = app.MapGroup("/api/workspaces/{workspaceId}/prices")
             .RequireAuthorization()
@@ -76,7 +78,12 @@ public static class CostsModule
 
         prices.MapGet("/", PriceBook.List).Produces<Page<PriceEntryDto>>();
         prices.MapPost("/", PriceBook.AddCustom).Produces<PriceEntryDto>(StatusCodes.Status201Created);
-        prices.MapDelete("/{priceId:guid}", PriceBook.Delete).Produces(StatusCodes.Status204NoContent);
+        prices.MapDelete("/{priceId:guid}", PriceBook.Delete)
+            .Produces(StatusCodes.Status204NoContent)
+            .Produces<ErrorResponse>(StatusCodes.Status409Conflict);
+        prices.MapPost("/csv", PriceCsv.Import)
+            .Produces<PriceCsvResult>(StatusCodes.Status201Created)
+            .Produces<ErrorResponse>(StatusCodes.Status400BadRequest);
 
         prices.MapGet("/azure/meters", AzurePriceEndpoints.Search)
             .RequireRateLimiting(PriceFetchPolicy)
@@ -87,6 +94,36 @@ public static class CostsModule
             .Produces<PriceEntryDto>(StatusCodes.Status201Created)
             .Produces<ErrorResponse>(StatusCodes.Status502BadGateway);
 
+        prices.MapGet("/aws/services", AwsPriceEndpoints.Services)
+            .RequireRateLimiting(PriceFetchPolicy)
+            .Produces<AwsServiceList>()
+            .Produces<ErrorResponse>(StatusCodes.Status502BadGateway);
+        prices.MapGet("/aws/regions", AwsPriceEndpoints.Regions)
+            .RequireRateLimiting(PriceFetchPolicy)
+            .Produces<AwsRegionList>()
+            .Produces<ErrorResponse>(StatusCodes.Status502BadGateway);
+        prices.MapGet("/aws/prices", AwsPriceEndpoints.Search)
+            .RequireRateLimiting(PriceFetchPolicy)
+            .Produces<AwsPricePage>()
+            .Produces<ErrorResponse>(StatusCodes.Status502BadGateway);
+        prices.MapPost("/aws", AwsPriceEndpoints.Import)
+            .RequireRateLimiting(PriceFetchPolicy)
+            .Produces<IReadOnlyList<PriceEntryDto>>(StatusCodes.Status201Created)
+            .Produces<ErrorResponse>(StatusCodes.Status502BadGateway);
+
+        prices.MapGet("/gcp/services", GcpPriceEndpoints.Services)
+            .RequireRateLimiting(PriceFetchPolicy)
+            .Produces<GcpServiceList>()
+            .Produces<ErrorResponse>(StatusCodes.Status502BadGateway);
+        prices.MapGet("/gcp/skus", GcpPriceEndpoints.Search)
+            .RequireRateLimiting(PriceFetchPolicy)
+            .Produces<GcpSkuPage>()
+            .Produces<ErrorResponse>(StatusCodes.Status502BadGateway);
+        prices.MapPost("/gcp", GcpPriceEndpoints.Import)
+            .RequireRateLimiting(PriceFetchPolicy)
+            .Produces<IReadOnlyList<PriceEntryDto>>(StatusCodes.Status201Created)
+            .Produces<ErrorResponse>(StatusCodes.Status502BadGateway);
+
         return app;
     }
 }
@@ -95,7 +132,8 @@ public static class CostsModule
 public sealed class CostRetention(AppDbContext db) : IProjectRetention
 {
     /// <summary>
-    /// Deletes the saved estimates, the pins and the cost sheets of a project. The sheet and
+    /// Deletes the saved estimates and the cost sheets of a project. The price entries they
+    /// named are then free to delete. The sheet and
     /// the saved estimates of a draft go earlier, when the draft is merged or abandoned (see
     /// <see cref="CostBranches.CloseAsync"/>). A delete that is cut short leaves rows that no
     /// request reaches: every cost endpoint resolves the project first.
@@ -104,7 +142,6 @@ public sealed class CostRetention(AppDbContext db) : IProjectRetention
     {
         var projectId = project.Id;
         await db.Estimates.Where(e => e.ProjectId == projectId).ExecuteDeleteAsync(ct);
-        await db.Pins.Where(p => p.ProjectId == projectId).ExecuteDeleteAsync(ct);
         await db.Sheets.Where(s => s.ProjectId == projectId).ExecuteDeleteAsync(ct);
     }
 }

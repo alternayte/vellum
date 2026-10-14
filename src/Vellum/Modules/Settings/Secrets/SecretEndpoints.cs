@@ -50,6 +50,7 @@ public static class ListSecrets
         var names = workspace.Effective.Ai.Providers.Select(p => SecretNames.AiApiKey(p.Id))
             .Append(SecretNames.GithubToken)
             .Append(SecretNames.WebhookSecret)
+            .Append(SecretNames.GcpApiKey)
             .Concat(stored.Keys.Order(StringComparer.Ordinal))
             .Distinct();
 
@@ -176,7 +177,7 @@ public static class DeleteSecret
 internal static class SecretErrors
 {
     public static IResult UnknownName() =>
-        Name($"Must be '{SecretNames.GithubToken}', '{SecretNames.WebhookSecret}' or 'ai:<provider id>:apiKey'.");
+        Name($"Must be '{SecretNames.GithubToken}', '{SecretNames.WebhookSecret}', '{SecretNames.GcpApiKey}' or 'ai:<provider id>:apiKey'.");
 
     public static IResult Name(string message) => Results.BadRequest(
         new ErrorResponse("validation_error", "Validation failed", Errors: [new FieldError("name", message)]));

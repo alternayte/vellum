@@ -1,0 +1,175 @@
+{
+  "formatVersion" : "v1.0",
+  "disclaimer" : "This pricing list is for informational purposes only. All prices are subject to the additional terms included in the pricing pages on http://aws.amazon.com. All Free Tier prices are also subject to the terms included at https://aws.amazon.com/free/",
+  "offerCode" : "AWSQueueService",
+  "version" : "20260911124607",
+  "publicationDate" : "2026-09-11T12:46:07Z",
+  "products" : {
+    "YZJ6HUUABH4W64YV" : {
+      "sku" : "YZJ6HUUABH4W64YV",
+      "productFamily" : "API Request",
+      "attributes" : {
+        "servicecode" : "AWSQueueService",
+        "location" : "EU (Ireland)",
+        "locationType" : "AWS Region",
+        "group" : "SQS-APIRequest-Tier1",
+        "groupDescription" : "Amazon SQS Requests",
+        "usagetype" : "EU-Requests-Fair-Tier1",
+        "operation" : "",
+        "queueType" : "Fair",
+        "regionCode" : "eu-west-1",
+        "servicename" : "Amazon Simple Queue Service"
+      }
+    },
+    "SSZJAF3K6XY544ES" : {
+      "sku" : "SSZJAF3K6XY544ES",
+      "productFamily" : "API Request",
+      "attributes" : {
+        "servicecode" : "AWSQueueService",
+        "location" : "EU (Ireland)",
+        "locationType" : "AWS Region",
+        "group" : "SQS-APIRequest-Tier1",
+        "groupDescription" : "Amazon SQS Requests",
+        "usagetype" : "EU-Requests-Tier1",
+        "operation" : "",
+        "messageDeliveryFrequency" : "At Least Once",
+        "messageDeliveryOrder" : "Not Guaranteed",
+        "queueType" : "Standard",
+        "regionCode" : "eu-west-1",
+        "servicename" : "Amazon Simple Queue Service"
+      }
+    },
+    "MNCJEPJRCSC9RFY2" : {
+      "sku" : "MNCJEPJRCSC9RFY2",
+      "productFamily" : "API Request",
+      "attributes" : {
+        "servicecode" : "AWSQueueService",
+        "location" : "Any",
+        "locationType" : "Other",
+        "group" : "SQS-APIRequest-Tier1",
+        "groupDescription" : "Amazon SQS Requests",
+        "usagetype" : "Global-Requests",
+        "operation" : "",
+        "regionCode" : "eu-west-1",
+        "servicename" : "Amazon Simple Queue Service"
+      }
+    }
+  },
+  "terms" : {
+    "OnDemand" : {
+      "MNCJEPJRCSC9RFY2" : {
+        "MNCJEPJRCSC9RFY2.A429C66SYZ" : {
+          "offerTermCode" : "A429C66SYZ",
+          "sku" : "MNCJEPJRCSC9RFY2",
+          "effectiveDate" : "2025-08-01T00:00:00Z",
+          "priceDimensions" : {
+            "MNCJEPJRCSC9RFY2.A429C66SYZ.SB2VSFF4TP" : {
+              "rateCode" : "MNCJEPJRCSC9RFY2.A429C66SYZ.SB2VSFF4TP",
+              "description" : "First 1,000,000 Amazon SQS Requests per month are free",
+              "beginRange" : "0",
+              "endRange" : "1000000",
+              "unit" : "Requests",
+              "pricePerUnit" : {
+                "USD" : "0.0000000000"
+              },
+              "appliesTo" : [ "YZJ6HUUABH4W64YV", "SSZJAF3K6XY544ES" ]
+            }
+          },
+          "termAttributes" : {
+            "Restriction" : "Limited SKU Usage"
+          }
+        }
+      },
+      "SSZJAF3K6XY544ES" : {
+        "SSZJAF3K6XY544ES.JRTCKXETXF" : {
+          "offerTermCode" : "JRTCKXETXF",
+          "sku" : "SSZJAF3K6XY544ES",
+          "effectiveDate" : "2025-08-01T00:00:00Z",
+          "priceDimensions" : {
+            "SSZJAF3K6XY544ES.JRTCKXETXF.VXGXCWQKTY" : {
+              "rateCode" : "SSZJAF3K6XY544ES.JRTCKXETXF.VXGXCWQKTY",
+              "description" : "$0.40 per million Amazon SQS standard requests in Tier1 in EU (Ireland)",
+              "beginRange" : "0",
+              "endRange" : "100000000000",
+              "unit" : "Requests",
+              "pricePerUnit" : {
+                "USD" : "0.0000004000"
+              },
+              "appliesTo" : [ ]
+            },
+            "SSZJAF3K6XY544ES.JRTCKXETXF.9JVYQWEJJY" : {
+              "rateCode" : "SSZJAF3K6XY544ES.JRTCKXETXF.9JVYQWEJJY",
+              "description" : "$0.30 per million Amazon SQS standard requests in Tier2 in EU (Ireland)",
+              "beginRange" : "100000000000",
+              "endRange" : "200000000000",
+              "unit" : "Requests",
+              "pricePerUnit" : {
+                "USD" : "0.0000003000"
+              },
+              "appliesTo" : [ ]
+            },
+            "SSZJAF3K6XY544ES.JRTCKXETXF.27HCEGFCXT" : {
+              "rateCode" : "SSZJAF3K6XY544ES.JRTCKXETXF.27HCEGFCXT",
+              "description" : "$0.24 per million Amazon SQS standard requests in Tier3 in EU (Ireland)",
+              "beginRange" : "200000000000",
+              "endRange" : "Inf",
+              "unit" : "Requests",
+              "pricePerUnit" : {
+                "USD" : "0.0000002400"
+              },
+              "appliesTo" : [ ]
+            }
+          },
+          "termAttributes" : { }
+        }
+      },
+      "YZJ6HUUABH4W64YV" : {
+        "YZJ6HUUABH4W64YV.JRTCKXETXF" : {
+          "offerTermCode" : "JRTCKXETXF",
+          "sku" : "YZJ6HUUABH4W64YV",
+          "effectiveDate" : "2025-08-01T00:00:00Z",
+          "priceDimensions" : {
+            "YZJ6HUUABH4W64YV.JRTCKXETXF.6YS6EN2CT7" : {
+              "rateCode" : "YZJ6HUUABH4W64YV.JRTCKXETXF.6YS6EN2CT7",
+              "description" : "$0.10 per million Amazon SQS fair queue requests in EU (Ireland)",
+              "beginRange" : "0",
+              "endRange" : "Inf",
+              "unit" : "Requests",
+              "pricePerUnit" : {
+                "USD" : "0.0000001000"
+              },
+              "appliesTo" : [ ]
+            }
+          },
+          "termAttributes" : { }
+        }
+      }
+    },
+    "Reserved" : {
+      "YZJ6HUUABH4W64YV" : {
+        "YZJ6HUUABH4W64YV.38NPMPTW36" : {
+          "offerTermCode" : "38NPMPTW36",
+          "sku" : "YZJ6HUUABH4W64YV",
+          "effectiveDate" : "2025-08-01T00:00:00Z",
+          "priceDimensions" : {
+            "YZJ6HUUABH4W64YV.38NPMPTW36.2TG2D8R56U" : {
+              "rateCode" : "YZJ6HUUABH4W64YV.38NPMPTW36.2TG2D8R56U",
+              "description" : "Upfront Fee",
+              "unit" : "Quantity",
+              "pricePerUnit" : {
+                "USD" : "99"
+              },
+              "appliesTo" : [ ]
+            }
+          },
+          "termAttributes" : {
+            "LeaseContractLength" : "1yr",
+            "OfferingClass" : "standard",
+            "PurchaseOption" : "All Upfront"
+          }
+        }
+      }
+    }
+  },
+  "attributesList" : { }
+}
