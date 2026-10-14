@@ -123,40 +123,25 @@ A publish step names a message. The app has no form for a message yet, so you cr
 
 ## Write the scenario
 
-A scenario is a JSON document. Its steps name elements and contracts by ID. The scenario editor lists each ID, and you can copy one with a click. In this tutorial the terminal writes the document for you, with the IDs of your project.
+A scenario is the steps of one behaviour, in order. You build it in the scenario editor. You select each element and each contract by its name.
 
-1. Write the document.
+1. In the app, reload the page. Select **Scenarios** in the left toolbar, then **New**.
+2. In **Name**, give `Place an order`.
+3. Below **Steps**, select **Call**. The editor adds a call step with the mark **Trigger**.
+4. In **Caller**, select `Customer`. In **Operation**, select `POST /orders`. The editor shows that Shop serves the operation, with its timeout of 1000 ms.
+5. In **Request**, give `{"sku": "apple", "qty": 2}`. In **Response**, give `{"orderId": "o-1"}`.
+6. At the top right of the step, change the step ID `call-1` to `place`. Press Enter.
+7. Below the call step, in the last **Add** row, select **Publish**. The **Add** rows inside the call add steps inside the call.
+8. In **Message**, select `OrderCreated`. The editor sets **Publisher** to `Shop`, the producer of the message.
+9. In **Channel**, select `order-events`. **Consumers** now lists **Billing on order-events** and **Warehouse on order-events**. Each subscription receives the message. You do not add steps for them in this tutorial.
+10. In **Payload**, give `{"orderId": "o-1"}`. Change the step ID to `announce`. Press Enter.
+11. Below **Expected results**, select **Step outcome**. In **Step**, select `place`. Keep **Ends** at **Succeeded**.
+12. Select **Event count**. In **Exactly**, give `2`. In **Events**, select **deliveries (Delivered)**. Keep **For** at **Any part**.
+13. Select **Save and play**.
 
-   <!-- snippet: live -->
-   ```sh
-   PLACE_ORDER=$(api GET operations | jq -r '.items[] | select(.name == "POST /orders") | .id')
-   ORDER_EVENTS=$(api GET channels | jq -r '.items[] | select(.name == "order-events") | .id')
-   BILLING_SUB=$(api GET subscriptions | jq -r --arg consumer "$BILLING" '.items[] | select(.consumerId == $consumer) | .id')
-   WAREHOUSE_SUB=$(api GET subscriptions | jq -r --arg consumer "$WAREHOUSE" '.items[] | select(.consumerId == $consumer) | .id')
-   jq -n --arg customer "$CUSTOMER" --arg shop "$SHOP" --arg place "$PLACE_ORDER" --arg channel "$ORDER_EVENTS" \
-     --arg message "$MESSAGE" --arg billing "$BILLING_SUB" --arg warehouse "$WAREHOUSE_SUB" '{
-     steps: [
-       {type: "call", id: "place", from: $customer, operation: $place,
-        request: {sku: "apple", qty: 2}, response: {orderId: "o-1"}, then: [], onError: []},
-       {type: "publish", id: "announce", from: $shop, channel: $channel, message: $message,
-        payload: {orderId: "o-1"}, headers: {}, handlers: {($billing): [], ($warehouse): []}}
-     ],
-     faults: [],
-     assertions: [
-       {type: "outcome", id: "order-accepted", step: "place", expected: "Succeeded"},
-       {type: "event-count", id: "both-consumers-get-the-event", kind: "Delivered", target: null, expected: 2}
-     ]
-   }' > place-an-order.json
-   cat place-an-order.json
-   ```
+The scenario has two steps. `place` is a call from the customer to `POST /orders`. `announce` publishes `OrderCreated` to `order-events`. The two expected results state what you expect: the call succeeds, and the trace has two deliveries. The editor gives them the IDs `expect-1` and `expect-2`.
 
-2. In the app, reload the page. Select **Scenarios** in the left toolbar, then **New**.
-3. In **Name**, give `Place an order`.
-4. Replace the text in **Document** with the content of `place-an-order.json`.
-5. Look at the lists below the document: **Elements**, **Operations**, **Channels**, **Messages** and **Handlers**. Each entry copies its ID. **Handlers** shows which subscriptions a publish to `order-events` reaches.
-6. Select **Save and play**.
-
-The document has two steps. `place` is a call from the customer to `POST /orders`. `announce` publishes `OrderCreated` to `order-events`. The two assertions state what you expect: the call succeeds, and the trace has two deliveries.
+Select **JSON** in the editor to see the same scenario as the server stores it. The steps refer to each part by its ID.
 
 ## Play the flow
 
@@ -182,16 +167,9 @@ Vellum did not call a system. It played what you declared: one operation, one ch
 
 Now ask a question: what happens to the message when Billing cannot handle it?
 
-1. In the terminal, add a fault to the document. The fault makes each attempt of the Billing subscription fail.
-
-   <!-- snippet: live -->
-   ```sh
-   jq --arg billing "$BILLING_SUB" '.faults = [{target: $billing, kind: "Error", failFirst: null}]' place-an-order.json > billing-fails.json
-   jq -c .faults billing-fails.json
-   ```
-
-2. In the app, select **Scenarios**. Select the edit button on the row **Place an order**.
-3. Replace the text in **Document** with the content of `billing-fails.json`. Select **Save and play**.
+1. Select **Scenarios**. Select the edit button on the row **Place an order**.
+2. Below **Failures to inject**, select **Add a failure**. In **Target**, select **Billing on order-events**. Keep **Kind** at **Error**. In **Fails**, select **every attempt**.
+3. Select **Save and play**.
 4. Select **Play**. The trace now has ten events. The first five are the same. Then:
 
    | Event | Text in the dock |
@@ -202,7 +180,7 @@ Now ask a question: what happens to the message when Billing cannot handle it?
    | 9 | Billing fails to handle the message (attempt 2) |
    | 10 | OrderCreated for Billing moves to order-events.dlq |
 
-5. Read the right side of the dock: **1 of 2 expectations fail**. Select that text. The failed expectation is `both-consumers-get-the-event`, with the reason "3 Delivered event(s); expected 2."
+5. Read the right side of the dock: **1 of 2 expectations fail**. Select that text. The failed expectation is `expect-2`, with the reason "3 Delivered event(s); expected 2."
 
 Read what the trace tells you:
 
