@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using Vellum.Modules.Modelling;
 using Vellum.Modules.Promises;
@@ -41,7 +42,9 @@ public static class StructurizrDsl
 
     private enum DslType { Person, SoftwareSystem, Container, Component }
 
-    public static string Write(string projectName, PinnedModel model, IEnumerable<ViewEntity> views)
+    public static string Write(
+        string projectName, PinnedModel model, IEnumerable<ViewEntity> views,
+        IReadOnlyDictionary<Guid, IReadOnlyList<LayoutPositionEntity>> positions)
     {
         var state = model.State;
         var ids = DiagramText.Identifiers(state.Elements.Values.Select(e => (e.Id.Value, e.Name)), "element", Reserved);
@@ -55,14 +58,32 @@ public static class StructurizrDsl
             .OrderBy(e => e.Name, StringComparer.Ordinal).ThenBy(e => e.Id.Value));
 
         var text = new StringBuilder();
-        text.Append("// Vellum model of project \"").Append(DiagramText.OneLine(projectName)).Append("\", Structurizr DSL workspace.\n");
-        text.Append("// From ").Append(ViewDiagram.PinText(model.Pin)).Append(".\n");
-        text.Append("// One-way export. It drops: ").Append(Dropped).Append(".\n");
         text.Append("workspace ").Append(Quote(projectName)).Append(' ').Append(Quote("Exported from Vellum")).Append(" {\n\n");
         text.Append("    model {\n");
+        // Vellum draws only the relationships it holds. Implied relationships would also make
+        // the file fail when two children of one parent point at the same element.
+        text.Append("        !impliedRelationships false\n\n");
 
         var types = new Dictionary<ElementId, DslType>();
         var dslParent = new Dictionary<ElementId, ElementId>();
+
+        // Structurizr wants a unique name among the people and software systems, among the
+        // containers of one software system and among the components of one container. A later
+        // sibling with a name already used gets " (2)", " (3)" …, in the order of writing.
+        var namesInScope = new Dictionary<Guid, HashSet<string>>(); // Guid.Empty: the people and software systems
+        var renames = new List<(string Identifier, string From, string To)>();
+        string UniqueName(ElementState e, ElementId? scope)
+        {
+            var key = scope?.Value ?? Guid.Empty;
+            if (!namesInScope.TryGetValue(key, out var used))
+                namesInScope[key] = used = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var name = DiagramText.OneLine(e.Name);
+            var candidate = name;
+            for (var n = 2; !used.Add(candidate); n++)
+                candidate = string.Create(CultureInfo.InvariantCulture, $"{name} ({n})");
+            if (candidate != name) renames.Add((ids[e.Id.Value], name, candidate));
+            return candidate;
+        }
 
         void Write(ElementState e, DslType type, ElementId? parent, int depth)
         {
@@ -70,7 +91,7 @@ public static class StructurizrDsl
             if (parent is { } p) dslParent[e.Id] = p;
             var indent = new string(' ', 4 * depth);
             text.Append(indent).Append(ids[e.Id.Value]).Append(" = ").Append(Keyword(type))
-                .Append(' ').Append(Quote(e.Name)).Append(' ').Append(Quote(e.Description));
+                .Append(' ').Append(Quote(UniqueName(e, parent))).Append(' ').Append(Quote(e.Description));
             if (type is DslType.Container or DslType.Component)
                 text.Append(' ').Append(Quote(e.Technology));
             text.Append(' ').Append(Quote(Tags(e)));
@@ -159,7 +180,18 @@ public static class StructurizrDsl
             .Append("        }\n");
         text.Append("    }\n");
         text.Append("}\n");
-        return text.ToString();
+
+        var header = new StringBuilder();
+        header.Append("// Vellum model of project \"").Append(DiagramText.OneLine(projectName)).Append("\", Structurizr DSL workspace.\n");
+        header.Append("// From ").Append(ViewDiagram.PinText(model.Pin)).Append(".\n");
+        foreach (var view in orderedViews)
+            header.Append("// View \"").Append(DiagramText.OneLine(view.Name)).Append("\" with layout ")
+                .Append(ViewDiagram.LayoutFingerprint(view, positions.GetValueOrDefault(view.Id) ?? [])).Append(".\n");
+        header.Append("// One-way export. It drops: ").Append(Dropped).Append(".\n");
+        foreach (var (identifier, from, to) in renames)
+            header.Append("// Renamed for unique names: ").Append(identifier).Append(" \"").Append(from)
+                .Append("\" is \"").Append(to).Append("\".\n");
+        return header.Append(text).ToString();
     }
 
     private static DslType? Nested(DslType parent, ElementKind child) => child == ElementKind.Actor ? null : parent switch
@@ -198,18 +230,16 @@ public static class StructurizrDsl
     }
 
     /// <summary>
-    /// A DSL string: in double quotes, on one line, with each backslash and double quote escaped by
-    /// a backslash. Nothing in it can end the string or start a new statement.
+    /// A DSL string: in double quotes and on one line. Structurizr knows one escape, <c>\"</c>, so
+    /// a double quote gets a backslash in front and a backslash stays as it is; a backslash at
+    /// the end becomes U+29F5 (reverse solidus operator), so it cannot escape the closing quote.
+    /// Structurizr replaces <c>${NAME}</c> with a constant or an environment variable, so every
+    /// <c>${</c> gets U+200B (zero width space) between its two characters.
     /// </summary>
     public static string Quote(string? text)
     {
-        var line = DiagramText.OneLine(text);
-        var builder = new StringBuilder(line.Length + 2).Append('"');
-        foreach (var c in line)
-        {
-            if (c is '"' or '\\') builder.Append('\\');
-            builder.Append(c);
-        }
-        return builder.Append('"').ToString();
+        var line = DiagramText.OneLine(text).Replace("${", "$\u200B{", StringComparison.Ordinal);
+        if (line.EndsWith('\\')) line = line[..^1] + "\u29F5";
+        return "\"" + line.Replace("\"", "\\\"", StringComparison.Ordinal) + "\"";
     }
 }

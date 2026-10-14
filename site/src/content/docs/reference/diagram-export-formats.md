@@ -41,6 +41,12 @@ An element with a saved position in the layout of the view is at that position. 
 
 The layout of a view is not part of a revision. An export of a revision uses the layout of the view now.
 
+## Layout fingerprint
+
+Each export names the layout it was drawn from as a layout fingerprint: `sha256:` and the SHA-256 of the view name, the root element ID and each saved position (element ID, x, y) in the order of the element IDs. The SVG has it in `<desc>`. The Mermaid file has it in the second comment line. The Structurizr DSL file has one comment line for each view.
+
+The same revision and the same layout fingerprint give the same bytes. When somebody renames the view, changes its root or moves an element, the fingerprint changes.
+
 ## SVG
 
 The SVG looks like the canvas in the dark theme: the cards, the frame of the root, the relationships and their labels.
@@ -54,14 +60,14 @@ The SVG looks like the canvas in the dark theme: the cards, the frame of the roo
 | Relationship | A path with an arrow. A behavioural relationship is teal and thicker. The line shape (curve, straight or step) is kept. |
 | Relationship label | A label card with the label and the technology |
 
-The same model and the same layout give the same bytes:
+The same revision and the same layout fingerprint give the same bytes:
 
 - the lists have a fixed order;
 - numbers have at most two decimals and use a full stop;
 - the file has no time, no random ID and no user name;
 - the fonts are named by family (`Space Grotesk`, `Inter`, `JetBrains Mono`) and are not in the file.
 
-The `<desc>` element of the file names the revision, or the stream and its version, and lists what the picture drops: the provenance of truth labels, element status, descriptions beyond two lines, tags, owners, elements on other levels, messages, contracts, schemas, scenarios, promises, costs and comments.
+The `<desc>` element of the file names the revision, or the stream and its version, and the layout fingerprint, and lists what the picture drops: the provenance of truth labels, element status, descriptions beyond two lines, tags, owners, elements on other levels, messages, contracts, schemas, scenarios, promises, costs and comments.
 
 Text goes into the file as XML text. The characters `&`, `<`, `>`, `"` and `'` become entities. A character that XML 1.0 does not allow becomes U+FFFD. A line break in a name becomes a space. A name such as `<script>` shows as text and is never markup.
 
@@ -81,7 +87,7 @@ A Mermaid export is a flowchart from top to bottom.
 
 A node label is the name, a line break (`<br/>`), then the kind and the technology.
 
-The first three lines are comments. They name the view and the revision, and list what the export drops: layout and positions, icons, truth labels and provenance, element status, descriptions, tags, owners, line shapes, elements on other levels, messages, contracts, schemas, scenarios, promises, costs and comments.
+The first three lines are comments. They name the view, the revision and the layout fingerprint, and list what the export drops: layout and positions, icons, truth labels and provenance, element status, descriptions, tags, owners, line shapes, elements on other levels, messages, contracts, schemas, scenarios, promises, costs and comments.
 
 A label is always in double quotes. In a label, each of these characters becomes a Mermaid entity code, such as `#quot;` or `#lt;`: `#`, `"`, `&`, `<`, `>`, `|`, the backtick, `[`, `]`, `(`, `)`, `{`, `}`, `;`, `%` and `\`. A name cannot close the label, add markup or start a directive. In a comment line, a space follows each `%`, so a name cannot form `%%{`.
 
@@ -104,11 +110,20 @@ The Structurizr DSL export is a workspace with the whole model and the views.
 
 Each view has `include *` and `autoLayout`. A view with another root is named in a comment and not written.
 
+The `model` block starts with `!impliedRelationships false`. Structurizr then shows only the relationships that Vellum holds.
+
+Structurizr needs a unique name among the people and software systems, among the containers of one software system and among the components of one container. Vellum does not. A later element with a name that is already used gets ` (2)`, then ` (3)`, in the order of the file. A header comment names each element that the export renamed.
+
 Structurizr cannot nest an actor, or an element inside a person or a component. Such an element moves to the top level with the elements inside it. A relationship between an element and its parent, and a second relationship with the same label between the same two elements, are not allowed in Structurizr. Each is named in a comment and not written.
 
-The first three lines are comments. They name the project and the revision, and list what the export drops: layout and positions, icons, line shapes, truth labels and provenance, element status, owners, stale marks, messages, contracts, schemas, scenarios, promises, obligations, decisions, documents, costs, comments, the technology of a person or a software system, and the nesting that Structurizr cannot express.
+The first lines are comments. They name the project, the revision and the layout fingerprint of each view, and list what the export drops: layout and positions, icons, line shapes, truth labels and provenance, element status, owners, stale marks, messages, contracts, schemas, scenarios, promises, obligations, decisions, documents, costs, comments, the technology of a person or a software system, and the nesting that Structurizr cannot express.
 
-A string is in double quotes on one line. A backslash and a double quote get a backslash in front. A line break becomes a space. A comma in a tag becomes a space.
+A string is in double quotes on one line. Structurizr knows one escape, `\"`:
+
+- A double quote gets a backslash in front.
+- A backslash stays as it is. A backslash at the end of a string becomes U+29F5 (⧵), so that it cannot escape the closing quote.
+- Structurizr replaces `${NAME}` with a constant or an environment variable. Each `${` gets U+200B (zero width space) between `$` and `{`, so a name such as `${HOME}` stays text.
+- A line break becomes a space. A comma in a tag becomes a space.
 
 ## Identifiers
 

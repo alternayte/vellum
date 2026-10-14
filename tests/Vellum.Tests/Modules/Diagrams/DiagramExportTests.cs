@@ -80,7 +80,7 @@ public class DiagramExportTests
         // A change to the renderer that changes the picture changes this hash. Look at the new
         // picture, then update the hash on purpose.
         var hash = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(first)));
-        Assert.Equal("7032acf93b1ee5e622777ae9298543cbead8d53ff29743151af82988a75a1259", hash);
+        Assert.Equal("05c0051605ff29aed2ebfc94091d9e64f9e21a8efb0f2af8dab047be8726a61d", hash);
 
         // The worker has no saved place: it stands on the fallback grid, at the left edge of the
         // placed cards and 80 below the lowest (260.25 + 128 + 80).
@@ -142,13 +142,43 @@ public class DiagramExportTests
         Assert.Contains("#lt;script#gt;", text);
     }
 
+    private static readonly Dictionary<Guid, IReadOnlyList<LayoutPositionEntity>> NoLayout = [];
+
     [Fact]
     public void Hostile_names_stay_inside_their_quotes_in_structurizr()
     {
-        var text = StructurizrDsl.Write(Script + "\n}", HostileModel(), [HostileView()]);
+        var text = StructurizrDsl.Write(Script + "\n}", HostileModel(), [HostileView()], NoLayout);
         AssertWellFormedDsl(text);
         Assert.Contains("\\\"hi\\\"", text);
-        Assert.Contains("back\\\\slash", text);
+        // Structurizr has no escape for a backslash: it stays single.
+        Assert.Contains("\"back\\slash\"", text);
+    }
+
+    [Fact]
+    public void Structurizr_strings_hold_no_substitution_no_closing_backslash_and_no_equal_sibling_names()
+    {
+        var model = Model(
+            [
+                Element(Shop, ElementKind.System, "Payments"),
+                Element(Customer, ElementKind.System, "payments"),
+                Element(Api, ElementKind.App, "${HOME} and $${PATH} and \\${USER}", Shop),
+                Element(Db, ElementKind.App, "Share\\", Shop),
+                Element(Worker, ElementKind.App, "Share\\", Shop),
+                Element(Parser, ElementKind.App, "Payments", Customer),
+            ],
+            [Relationship(1, Api, Db, "a"), Relationship(2, Worker, Db, "a")]);
+        var text = StructurizrDsl.Write("P", model, [], NoLayout);
+        AssertWellFormedDsl(text);
+
+        Assert.DoesNotContain("${", text, StringComparison.Ordinal);
+        Assert.Contains("$\u200B{HOME}", text);
+        Assert.Contains("\"Share\u29F5\"", text);
+        Assert.Contains("\"Share\\ (2)\"", text);
+        // People and software systems share one scope; a container of another system may repeat a name.
+        Assert.Contains("\"payments (2)\"", text);
+        Assert.Contains("= container \"Payments\"", text);
+        Assert.Contains("// Renamed for unique names: ", text);
+        Assert.Contains("!impliedRelationships false", text);
     }
 
     [Fact]
@@ -166,6 +196,16 @@ public class DiagramExportTests
         Assert.All(ids, id => Assert.Matches("^[a-z][a-z0-9_]*$", id));
         Assert.DoesNotContain("end", ids);
         Assert.DoesNotContain("subgraph", ids);
+    }
+
+    [Fact]
+    public void Many_equal_names_get_numbered_identifiers()
+    {
+        var items = Enumerable.Range(1, 3000).Select(i => (new Guid(i, 0, 0, new byte[8]), "Worker")).Append((Guid.NewGuid(), "worker_2"));
+        var ids = DiagramText.Identifiers(items, "element", new HashSet<string>());
+        Assert.Equal(3001, ids.Values.Distinct().Count());
+        Assert.Contains("worker_3000", ids.Values);
+        Assert.Contains("worker_2_2", ids.Values);
     }
 
     /// <summary>
@@ -188,7 +228,8 @@ public class DiagramExportTests
                 var c = line[i];
                 if (inString)
                 {
-                    if (c == '\\') i++;
+                    // Structurizr knows one escape: a backslash before a double quote.
+                    if (c == '\\' && i + 1 < line.Length && line[i + 1] == '"') i++;
                     else if (c == '"') inString = false;
                     continue;
                 }
@@ -263,6 +304,14 @@ public class DiagramExportEndpointTests(IntegrationFixture fixture) : IClassFixt
 
         Assert.Equal(first, await client.GetByteArrayAsync(pinned));
         Assert.Contains("Order intake", await client.GetStringAsync(Url($"views/{shop}/export/svg")));
+
+        // The layout is not part of the revision: the file names the layout it was drawn from.
+        var before = Regex.Match(Encoding.UTF8.GetString(first), "layout (sha256:[0-9a-f]{64})").Groups[1].Value;
+        Assert.NotEmpty(before);
+        await client.PutAsJsonAsync(Url($"views/{shop}/layout"), new { positions = new[] { new { elementId = Named("Orders API"), x = 40.0, y = 0.0 } } });
+        var moved = await client.GetStringAsync(pinned);
+        Assert.DoesNotContain(before, moved);
+        Assert.Matches("layout sha256:[0-9a-f]{64}", moved);
 
         var mermaid = await client.GetAsync(Url($"views/{shop}/export/mermaid?revisionId={revision}"));
         Assert.Equal(HttpStatusCode.OK, mermaid.StatusCode);

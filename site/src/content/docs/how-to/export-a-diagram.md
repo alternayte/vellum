@@ -56,6 +56,6 @@ An unknown view answers `404`. An unknown revision answers `400`.
 
 ## Get the same SVG again
 
-The SVG of a revision has the same bytes each time, while the layout of the view does not change. The layout of a view is not part of a revision. When somebody moves an element on the canvas, the next SVG of the same revision shows the new position.
+The layout of a view is not part of a revision. Each export names its layout fingerprint, a hash of the view name, the root element and the saved positions. The same revision and the same layout fingerprint give the same bytes. When somebody moves an element on the canvas, the next SVG of the same revision shows the new position and has a new fingerprint.
 
 To keep a diagram for a review or an audit, save the SVG file with the revision name.

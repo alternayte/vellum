@@ -85,7 +85,8 @@ public static class DiagramSvg
             $"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{N(width)}\" height=\"{N(height)}\" viewBox=\"{N(minX)} {N(minY)} {N(width)} {N(height)}\" font-family=\"{BodyFont}\">\n");
         svg.Append("<title>").Append(Xml(DiagramText.OneLine(diagram.ViewName))).Append("</title>\n");
         svg.Append("<desc>")
-            .Append(Xml($"Vellum view \"{DiagramText.OneLine(diagram.ViewName)}\", from {ViewDiagram.PinText(diagram.Pin)}. " +
+            .Append(Xml($"Vellum view \"{DiagramText.OneLine(diagram.ViewName)}\", from {ViewDiagram.PinText(diagram.Pin)}, " +
+                        $"with layout {diagram.Layout} (the layout is not part of a revision). " +
                         $"One-way export of a diagram. It does not show: {Dropped}."))
             .Append("</desc>\n");
         svg.Append("<defs>\n");

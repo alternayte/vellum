@@ -3,6 +3,7 @@ using System.Text;
 using Microsoft.EntityFrameworkCore;
 using Vellum.Modules.Identity.AgentTokens;
 using Vellum.Modules.Promises;
+using Vellum.Modules.Views;
 using Vellum.Modules.Workspaces;
 using Vellum.Shared;
 using static Vellum.Shared.ResultExtensions;
@@ -71,7 +72,11 @@ public static class DiagramsModule
 
         var projectName = await db.Projects.AsNoTracking().Where(p => p.Id == projectId).Select(p => p.Name).FirstAsync(ct);
         var views = await db.Views.AsNoTracking().Where(v => v.ProjectId == projectId).ToListAsync(ct);
-        return Results.Text(StructurizrDsl.Write(projectName, model, views), "text/plain", Encoding.UTF8);
+        var viewIds = views.Select(v => v.Id).ToList();
+        var positions = (await db.LayoutPositions.AsNoTracking().Where(p => viewIds.Contains(p.ViewId)).ToListAsync(ct))
+            .GroupBy(p => p.ViewId)
+            .ToDictionary(g => g.Key, g => (IReadOnlyList<LayoutPositionEntity>)[.. g]);
+        return Results.Text(StructurizrDsl.Write(projectName, model, views, positions), "text/plain", Encoding.UTF8);
     }
 
     private static async Task<(ViewDiagram? Diagram, IResult? Refusal)> LoadAsync(

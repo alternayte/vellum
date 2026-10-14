@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Security.Cryptography;
 using System.Text;
 using Vellum.Modules.Modelling;
 using Vellum.Modules.Promises;
@@ -19,7 +20,8 @@ public sealed record ViewDiagram(
     ElementState? Root,
     IReadOnlyList<DiagramElement> Elements,
     IReadOnlyList<RelationshipState> Relationships,
-    ModelPin Pin)
+    ModelPin Pin,
+    string Layout)
 {
     /// <summary>The height of every card on the canvas.</summary>
     public const double CardHeight = 128;
@@ -94,7 +96,21 @@ public sealed record ViewDiagram(
             .OrderBy(rel => rel.Id.Value)
             .ToList();
 
-        return new ViewDiagram(view.Name, root, shown, relationships, model.Pin);
+        return new ViewDiagram(view.Name, root, shown, relationships, model.Pin, LayoutFingerprint(view, placed.Values));
+    }
+
+    /// <summary>
+    /// The layout a diagram was drawn from, which a revision does not pin: <c>sha256:</c> and the
+    /// SHA-256 of the view name, the root element and each saved place (element ID, x, y) in
+    /// order of element ID. The same revision and the same fingerprint give the same bytes.
+    /// </summary>
+    public static string LayoutFingerprint(ViewEntity view, IEnumerable<LayoutPositionEntity> positions)
+    {
+        var text = new StringBuilder();
+        text.Append(view.Name).Append('\n').Append(view.RootElementId?.ToString() ?? "").Append('\n');
+        foreach (var p in positions.OrderBy(p => p.ElementId))
+            text.Append(p.ElementId).Append(',').Append(DiagramText.Number(p.X)).Append(',').Append(DiagramText.Number(p.Y)).Append('\n');
+        return "sha256:" + Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(text.ToString())));
     }
 
     private static double Finite(double value) => double.IsFinite(value) ? value : 0;
@@ -157,6 +173,7 @@ public static class DiagramText
     {
         taken ??= new HashSet<string>(StringComparer.Ordinal);
         var result = new Dictionary<Guid, string>();
+        var next = new Dictionary<string, int>(StringComparer.Ordinal);
         foreach (var (id, name) in items.OrderBy(i => i.Name, StringComparer.Ordinal).ThenBy(i => i.Id))
         {
             var stem = Sanitise(name);
@@ -164,8 +181,11 @@ public static class DiagramText
             else if (char.IsAsciiDigit(stem[0])) stem = $"{fallback}_{stem}";
             if (reserved.Contains(stem)) stem += "_";
             var candidate = stem;
-            for (var n = 2; taken.Contains(candidate) || reserved.Contains(candidate); n++)
-                candidate = string.Create(CultureInfo.InvariantCulture, $"{stem}_{n}");
+            // Each stem keeps its next number, so many equal names cost linear time.
+            var n = next.GetValueOrDefault(stem, 2);
+            while (taken.Contains(candidate) || reserved.Contains(candidate))
+                candidate = string.Create(CultureInfo.InvariantCulture, $"{stem}_{n++}");
+            next[stem] = n;
             taken.Add(candidate);
             result[id] = candidate;
         }

@@ -34,7 +34,8 @@ public static class MermaidView
     {
         var text = new StringBuilder();
         text.Append("%% Vellum view \"").Append(Comment(diagram.ViewName)).Append("\", Mermaid flowchart.\n");
-        text.Append("%% From ").Append(Comment(ViewDiagram.PinText(diagram.Pin))).Append(".\n");
+        text.Append("%% From ").Append(Comment(ViewDiagram.PinText(diagram.Pin))).Append(", with layout ").Append(diagram.Layout)
+            .Append(" (the layout is not part of a revision).\n");
         text.Append("%% One-way export. It drops: ").Append(Dropped).Append(".\n");
         text.Append("flowchart TB\n");
 
