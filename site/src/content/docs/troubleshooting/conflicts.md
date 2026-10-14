@@ -22,7 +22,9 @@ An error answer has these fields.
 |---|---|---|---|
 | `409` | `conflict` | A model write while another write ran | Load the data again, then send the change again. |
 | `409` | `conflict` | A new item with an ID that is in use | Use a new UUID. |
-| `409` | `conflict` | A revision, a variant or a member that exists | Use another name, or do nothing. |
+| `409` | `conflict` | A revision or a variant that exists | Use another name, or do nothing. |
+| `409` | `already_member` | An invitation of an address that a member has | Do nothing, or change the role. |
+| `409` | `invitation_closed` | An accept or a decline of a revoked, declined or expired invitation | Ask an owner to invite you again. |
 | `409` | `conflict` | A delete of an element or a schema that is in use | Remove the references first. |
 | `409` | `conflict` | Settings with an old `If-Match` | Read the settings again, apply the change, save. |
 | `428` | `precondition_required` | Settings with no `If-Match` | Send the version that you read. |
@@ -65,7 +67,8 @@ A related answer is `503` with the type `busy` and the title `Another write held
 | `A variant with this name already exists` | `POST /api/projects/{projectId}/variants` | Use another name. |
 | `Revision id is already in use`, `Variant id is already in use` | The ID belongs to another project | Make a new UUID. |
 | `A draft with this ID already exists.`, `A comment with this ID already exists.` | The ID exists with other content | Make a new UUID. |
-| `User is already a member` | `POST /api/workspaces/{workspaceId}/members` | No fix is necessary. To change the role, remove the member and add the member again. |
+| `This person is already a member` | `POST /api/workspaces/{workspaceId}/invitations` | No fix is necessary. To change the role, change it in the member list. |
+| `The invitation is revoked`, `declined` or `expired` | `POST /api/invitations/{invitationId}/accept` | Ask an owner to invite you again. |
 | `The prefix of this project is already set and cannot be changed` | `PUT /api/projects/{projectId}/promises/prefix` | No fix. Issued requirement IDs contain the prefix. |
 
 A create request with an ID and content that the project already has is not an error. Vellum answers with the stored item. You can send a create request again after a lost connection.
