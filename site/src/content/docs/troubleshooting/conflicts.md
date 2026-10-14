@@ -69,6 +69,7 @@ A related answer is `503` with the type `busy` and the title `Another write held
 | `A draft with this ID already exists.`, `A comment with this ID already exists.` | The ID exists with other content | Make a new UUID. |
 | `This person is already a member` | `POST /api/workspaces/{workspaceId}/invitations` | No fix is necessary. To change the role, change it in the member list. |
 | `The invitation is revoked`, `declined` or `expired` | `POST /api/invitations/{invitationId}/accept` | Ask an owner to invite you again. |
+| `Invitation not found` | `POST /api/invitations/{invitationId}/accept` | Open the whole, newest link, and sign in with the invited address. |
 | `The prefix of this project is already set and cannot be changed` | `PUT /api/projects/{projectId}/promises/prefix` | No fix. Issued requirement IDs contain the prefix. |
 
 A create request with an ID and content that the project already has is not an error. Vellum answers with the stored item. You can send a create request again after a lost connection.
