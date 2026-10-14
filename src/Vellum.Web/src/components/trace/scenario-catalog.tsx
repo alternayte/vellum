@@ -49,6 +49,8 @@ export interface StepEditing {
   reportJson: (key: string, invalid: boolean) => void
   /** What the step with this ID does, in one line. */
   stepSummary: (id: string) => string | undefined
+  /** The saved scenario whose steps take comment threads. Null for a scenario that is not saved yet. */
+  comments?: { projectId: string; scenarioId: string; scenarioName: string; savedStepIds: string[] } | null
 }
 
 export const StepEditingContext = createContext<StepEditing>({ allIds: [], rename: () => null, issues: {}, reportJson: () => {}, stepSummary: () => undefined })

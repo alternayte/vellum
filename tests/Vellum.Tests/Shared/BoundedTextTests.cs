@@ -143,14 +143,15 @@ public class BoundedTextEndpointTests(IntegrationFixture fixture) : IClassFixtur
             await AssertRefused(client.PatchAsJsonAsync(Url(projectId, $"schemas/{schema}"), new { description = bad }), "description");
             await AssertRefused(client.PostAsJsonAsync(Url(projectId, "revisions"), new { id = Guid.NewGuid(), name = $"r {bad.Length}", note = bad }), "note");
             await AssertRefused(client.PatchAsJsonAsync($"/api/projects/{projectId}", new { description = bad }), "description");
-            await AssertRefused(client.PostAsJsonAsync(Url(projectId, $"drafts/{draft.Id}/comments"), new { id = Guid.NewGuid(), body = bad }), "body");
+            await AssertRefused(client.PostAsJsonAsync(Url(projectId, "threads"), new { target = new { kind = "project", id = projectId }, draftId = draft.Id, body = bad }), "body");
         }
 
         var described = await client.PatchAsJsonAsync(Url(projectId, $"elements/{a}"), new { description = "line one\n\tline two" });
         Assert.Equal(HttpStatusCode.OK, described.StatusCode);
-        var comment = Guid.NewGuid();
-        await TestHost.Created(client.PostAsJsonAsync(Url(projectId, $"drafts/{draft.Id}/comments"), new { id = comment, body = "first\nsecond" }));
-        await AssertRefused(client.PatchAsJsonAsync(Url(projectId, $"drafts/{draft.Id}/comments/{comment}"), new { body = Nul }), "body");
+        var created = await TestHost.Created(client.PostAsJsonAsync(Url(projectId, "threads"), new { target = new { kind = "project", id = projectId }, draftId = draft.Id, body = "first\nsecond" }));
+        var thread = (await created.Content.ReadFromJsonAsync<Vellum.Modules.Comments.ThreadDto>())!;
+        Assert.Equal("first\nsecond", thread.Comments[0].Body);
+        await AssertRefused(client.PatchAsJsonAsync(Url(projectId, $"threads/{thread.Id}/comments/{thread.Comments[0].Id}"), new { body = Nul }), "body");
     }
 
     [Theory]

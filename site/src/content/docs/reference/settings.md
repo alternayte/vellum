@@ -122,9 +122,7 @@ These four values are what the form of a new stress profile shows first. `GET /a
 
 | JSON path | Type | Default | Allowed | UI | Effect |
 |---|---|---|---|---|---|
-| `notifications.webhookUrl` | string or `null` | `null` | `null`, empty, or a URL that obeys the [URL rules](#url-rules) | **Notifications** → **Webhook URL** | Stored and validated only. The secret `notifications:webhookSecret` is bound to its origin. No backend code sends a request to it. |
-
-Vellum does not send webhook notifications in this version.
+| `notifications.webhookUrl` | string or `null` | `null` | `null`, empty, or a URL that obeys the [URL rules](#url-rules) | **Notifications** → **Webhook URL** | Vellum sends the comment events `comment.created`, `comment.mentioned` and `comment.resolved` to it. The secret `notifications:webhookSecret` is bound to its origin and signs each request. See [Comment on a design](/how-to/comment-on-a-design/#send-comment-events-to-a-webhook). |
 
 ### `sharing`
 

@@ -66,7 +66,7 @@ public static class ChangeMemberRole
 
         if (MemberRoles.Parse(request.Role) is not { } role)
             return Results.BadRequest(new ErrorResponse("validation_error", "Invalid role",
-                Errors: [new FieldError("role", "Must be Owner, Editor, or Viewer")]));
+                Errors: [new FieldError("role", "Must be Owner, Editor, Commenter or Viewer")]));
 
         // The owner rows stay locked until the commit, so two changes that each leave one
         // owner take turns, and the workspace keeps an owner.

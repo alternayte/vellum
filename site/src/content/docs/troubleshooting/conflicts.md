@@ -66,7 +66,7 @@ A related answer is `503` with the type `busy` and the title `Another write held
 | `A revision with this name already exists` | `POST /api/projects/{projectId}/revisions` | Use another name. |
 | `A variant with this name already exists` | `POST /api/projects/{projectId}/variants` | Use another name. |
 | `Revision id is already in use`, `Variant id is already in use` | The ID belongs to another project | Make a new UUID. |
-| `A draft with this ID already exists.`, `A comment with this ID already exists.` | The ID exists with other content | Make a new UUID. |
+| `A draft with this ID already exists.`, `The ID is in use. Send a new ID.` | The ID exists with other content, for example a comment thread of another project | Make a new UUID. |
 | `This person is already a member` | `POST /api/workspaces/{workspaceId}/invitations` | No fix is necessary. To change the role, change it in the member list. |
 | `The invitation is revoked`, `declined` or `expired` | `POST /api/invitations/{invitationId}/accept` | Ask an owner to invite you again. |
 | `Invitation not found` | `POST /api/invitations/{invitationId}/accept` | Open the whole, newest link, and sign in with the invited address. |

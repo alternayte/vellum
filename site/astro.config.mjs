@@ -69,7 +69,7 @@ export default defineConfig({
             },
             {
               label: 'Promise and review',
-              items: ['how-to/declare-a-promise', 'how-to/review-a-design', 'how-to/record-a-decision'],
+              items: ['how-to/declare-a-promise', 'how-to/review-a-design', 'how-to/record-a-decision', 'how-to/comment-on-a-design'],
             },
             {
               label: 'Hand off to an agent',
@@ -101,6 +101,7 @@ export default defineConfig({
             'concepts/promises-and-evidence',
             'concepts/traces-are-declared',
             'concepts/findings-are-not-proof',
+            'concepts/comments-are-not-facts',
             'concepts/estimates-are-not-measurements',
             'concepts/what-an-agent-can-and-cannot-do',
             'concepts/what-leaves-your-instance',

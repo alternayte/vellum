@@ -24,19 +24,6 @@ public static class DraftsTables
             b.Property(d => d.CreatedAt).HasDefaultValueSql("now()");
             b.Property(d => d.BaseSnapshot).HasColumnType("jsonb");
         });
-
-        modelBuilder.Entity<CommentEntity>(b =>
-        {
-            b.ToTable("comments", Schema);
-            b.HasKey(c => c.Id);
-            b.HasIndex(c => c.DraftId);
-            b.Property(c => c.CreatedAt).HasDefaultValueSql("now()");
-            b.Property(c => c.UpdatedAt).HasDefaultValueSql("now()");
-            b.HasOne<DraftEntity>()
-                .WithMany()
-                .HasForeignKey(c => c.DraftId)
-                .OnDelete(DeleteBehavior.Cascade);
-        });
     }
 }
 
@@ -54,18 +41,6 @@ public class DraftEntity
     public DateTimeOffset? MergedAt { get; set; }
     public DateTimeOffset? AbandonedAt { get; set; }
     public string BaseSnapshot { get; set; } = null!;
-}
-
-public class CommentEntity
-{
-    public Guid Id { get; set; }
-    public Guid DraftId { get; set; }
-    public Guid? EntityId { get; set; }
-    public string? EntityType { get; set; }
-    public string Author { get; set; } = null!;
-    public string Body { get; set; } = null!;
-    public DateTimeOffset CreatedAt { get; set; }
-    public DateTimeOffset UpdatedAt { get; set; }
 }
 
 public enum DraftStatus

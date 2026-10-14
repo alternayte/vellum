@@ -5,7 +5,13 @@ import type { Message } from '@/hooks/use-messages'
 import type { Binding, Channel, Operation, Subscription } from '@/hooks/use-contracts'
 import type { ModelSelection, ReviewData } from '@/stores/draft-store'
 
-export type Role = 'Owner' | 'Editor' | 'Viewer'
+export type Role = 'Owner' | 'Editor' | 'Commenter' | 'Viewer'
+
+/** An Editor or an Owner changes the model. A Commenter and a Viewer read it only. */
+export const canEditModel = (role: Role | string | null | undefined): boolean => role === 'Editor' || role === 'Owner'
+
+/** A Commenter, an Editor or an Owner writes comments. A Viewer reads them only. */
+export const canComment = (role: Role | string | null | undefined): boolean => role === 'Commenter' || canEditModel(role)
 
 export interface ProjectDetail {
   id: string

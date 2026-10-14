@@ -7,6 +7,8 @@ import { useAuth } from '@/hooks/use-auth'
 import { useNavigate } from '@tanstack/react-router'
 import { Menu } from 'lucide-react'
 import { ProjectMenu } from './project-menu'
+import { canEditModel } from '@/lib/branches-api'
+import { InboxButton } from '@/components/comments/inbox-button'
 import { ShareButton } from '@/components/share/share-dialog'
 
 interface TopBarProps {
@@ -58,9 +60,14 @@ export function TopBar({ projectId, projectName, project, activeDoc }: TopBarPro
       {projectId && project && (
         <BranchSwitcher projectId={projectId} workspaceId={project.workspaceId} role={project.yourRole} />
       )}
-      {project?.yourRole === 'Viewer' && (
-        <span className="shrink-0 rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground" title="Your role in this workspace is Viewer. You can read the project and you cannot change it.">
-          Viewer<span className="max-sm:hidden"> · read-only</span>
+      {project && !canEditModel(project.yourRole) && (
+        <span
+          className="shrink-0 rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground"
+          title={project.yourRole === 'Commenter'
+            ? 'Your role in this workspace is Commenter. You can read the project and comment on it, and you cannot change the model.'
+            : 'Your role in this workspace is Viewer. You can read the project and you cannot change it.'}
+        >
+          {project.yourRole}<span className="max-sm:hidden"> · {project.yourRole === 'Commenter' ? 'comments only' : 'read-only'}</span>
         </span>
       )}
 
@@ -82,6 +89,8 @@ export function TopBar({ projectId, projectName, project, activeDoc }: TopBarPro
           ⌘K
         </kbd>
       </Button>
+
+      <InboxButton />
 
       <button
         className="flex h-7 w-7 items-center justify-center rounded-full bg-primary text-[10px] font-medium text-primary-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"

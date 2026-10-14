@@ -13,6 +13,7 @@ import { shownInline } from '@/lib/mutation-errors'
 
 const ROLES: { id: Role; can: string }[] = [
   { id: 'Viewer', can: 'Reads the projects, the models, the documents, the review and the estimates.' },
+  { id: 'Commenter', can: 'Does what a viewer does. Starts and answers comment threads, resolves own threads, raises a thread as an open question. Cannot change the model.' },
   { id: 'Editor', can: 'Does what a viewer does. Changes the models, the scenarios, the documents, the drafts, the variants and the cost sheets.' },
   { id: 'Owner', can: 'Does what an editor does. Invites and removes members, changes the settings and the secrets, approves promises and accepts decisions.' },
 ]
@@ -115,7 +116,7 @@ export function Members({ workspaceId, registrationOpen }: { workspaceId: string
                     <td className="px-3 py-2">
                       {isOwner ? (
                         <select
-                          className={cn(selectClass, 'w-28')}
+                          className={cn(selectClass, 'w-32')}
                           aria-label={`Role of ${nameOf(member)}`}
                           aria-invalid={failed ? true : undefined}
                           aria-describedby={failed ? `${id}-${member.userId}-error` : undefined}
@@ -212,7 +213,7 @@ export function Members({ workspaceId, registrationOpen }: { workspaceId: string
             </div>
             <div>
               <label htmlFor={`${id}-role`} className="mb-1 block text-xs font-medium text-muted-foreground">Role</label>
-              <select id={`${id}-role`} className={cn(selectClass, 'w-28')} value={role} onChange={(e) => setRole(e.target.value as Role)}>
+              <select id={`${id}-role`} className={cn(selectClass, 'w-32')} value={role} onChange={(e) => setRole(e.target.value as Role)}>
                 {ROLES.map((r) => <option key={r.id} value={r.id}>{r.id}</option>)}
               </select>
             </div>
@@ -249,7 +250,7 @@ export function Members({ workspaceId, registrationOpen }: { workspaceId: string
       <h3 className="mt-8 text-sm font-medium text-foreground">What a role can do</h3>
       <dl className="mt-2 max-w-prose space-y-1.5 text-xs">
         {ROLES.map((r) => (
-          <div key={r.id} className="grid grid-cols-[4.5rem_1fr] gap-2">
+          <div key={r.id} className="grid grid-cols-[5.5rem_1fr] gap-2">
             <dt className="font-medium text-foreground">{r.id}</dt>
             <dd className="leading-relaxed text-muted-foreground">{r.can}</dd>
           </div>

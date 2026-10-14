@@ -65,7 +65,8 @@ public class ProjectDeleteTests(SharedOutboundHost shared) : IClassFixture<Share
         await Post("variants", new { id = Guid.NewGuid(), name = "Variant", baseRevisionId = revision });
         var draft = await Post("drafts", new { id = Guid.NewGuid(), name = "Draft" });
         await TestHost.Created(owner.PostAsJsonAsync(Url($"elements?branchId={draft["streamId"]}"), new { id = Guid.NewGuid(), kind = "system", name = "On the draft" }));
-        await Post($"drafts/{draft["id"]}/comments", new { id = Guid.NewGuid(), body = "A comment" });
+        var thread = await Post("threads", new { target = new { kind = "project", id = projectId }, body = "A comment", draftId = draft["id"]!.GetValue<Guid>() });
+        await Post($"threads/{thread["id"]}/replies", new { body = "A reply" });
 
         // A view with a layout, a space and a doc.
         var view = Guid.NewGuid();
@@ -128,7 +129,7 @@ public class ProjectDeleteTests(SharedOutboundHost shared) : IClassFixture<Share
         var during = await CountAsync();
         var touched = during.Rows.Where(t => t.Value > before.Rows.GetValueOrDefault(t.Key)).Select(t => t.Key.Split('.')[0]).ToHashSet();
         Assert.Superset(
-            new HashSet<string> { "modelling", "drafts", "schemas", "trace", "views", "docs", "promises", "costs", "review", "stress", "loadtests", "ai", "identity" },
+            new HashSet<string> { "modelling", "drafts", "comments", "schemas", "trace", "views", "docs", "promises", "costs", "review", "stress", "loadtests", "ai", "identity" },
             touched);
         Assert.True(during.LiveStreams > before.LiveStreams);
 

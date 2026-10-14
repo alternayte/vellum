@@ -20,6 +20,7 @@ import {
   type FitViewOptions,
 } from '@xyflow/react'
 import { SearchOverlay } from './search-overlay'
+import { CommentMarkers, type CommentMarker } from './comment-markers'
 import { labelAction } from '@/lib/fact-labels'
 import { NodeContextMenu } from './context-menus/node-context-menu'
 import { EdgeContextMenu } from './context-menus/edge-context-menu'
@@ -134,6 +135,8 @@ interface CanvasViewProps {
    * add or delete, and it opens no menu that only writes.
    */
   readOnly?: boolean
+  /** The open comment threads of each element, message and relationship, drawn as badges over the canvas. */
+  commentMarkers?: Record<string, CommentMarker>
 }
 
 function minimapNodeColor(node: Node): string {
@@ -179,6 +182,7 @@ export function CanvasView(props: CanvasViewProps) {
         onNodeDoubleClick: props.onNodeDoubleClick, onFitViewReady: props.onFitViewReady,
         onViewportCenterReady: props.onViewportCenterReady, onSelectionChange: props.onSelectionChange,
         searchOpen: props.searchOpen, onSearchClose: props.onSearchClose, readOnly: true,
+        commentMarkers: props.commentMarkers,
       }
     : props
   return (
@@ -227,6 +231,7 @@ function CanvasViewInner({
   searchOpen,
   onSearchClose,
   readOnly = false,
+  commentMarkers,
 }: CanvasViewProps) {
   const { currentRootId, zoomLevel, setZoom, activeLens, setLens, expandedNodeIds, toggleExpand } = useCanvasStore()
   const { fitView, screenToFlowPosition, getViewport, setViewport, getInternalNode } = useReactFlow()
@@ -1037,6 +1042,7 @@ function CanvasViewInner({
         )}
         <TraceEdgeMarkers />
         <ImpactStepMarkers />
+        {commentMarkers && <CommentMarkers markers={commentMarkers} />}
         {canvasHighlight && highlight && (
           <Panel position="top-center" className="max-w-[calc(100%-1.5rem)] rounded-lg border border-border bg-card/95 px-3 py-1.5 text-xs shadow-md backdrop-blur">
             <div className="flex items-center gap-3">

@@ -23,7 +23,7 @@ export interface CanvasHighlight {
   steps?: HighlightStep[]
 }
 
-export type Flyout = 'files' | 'create' | 'catalog' | 'contracts' | 'scenarios' | 'import' | 'assistant' | 'promises' | 'review' | 'build' | 'stress' | 'costs' | 'search'
+export type Flyout = 'files' | 'create' | 'catalog' | 'contracts' | 'scenarios' | 'import' | 'assistant' | 'promises' | 'review' | 'build' | 'stress' | 'costs' | 'comments' | 'search'
 
 interface ShellState {
   activeFlyout: Flyout | null
@@ -39,6 +39,8 @@ interface ShellState {
   canvasHighlight: CanvasHighlight | null
   /** True from "New decision (ADR)" until the Review flyout opens the form of a new decision. */
   newDecisionRequested: boolean
+  /** The comment thread to bring into view and mark, from a canvas marker, the inbox or a link. */
+  focusThreadId: string | null
 
   openFlyout: (flyout: Flyout) => void
   closeFlyout: () => void
@@ -58,6 +60,8 @@ interface ShellState {
   /** Opens Review on its Decisions tab with the form of a new decision. */
   startDecision: () => void
   clearDecisionRequest: () => void
+  /** Brings a thread into view: in the detail panel of its target, or in the Comments flyout. */
+  focusThread: (threadId: string | null) => void
   reset: () => void
 }
 
@@ -73,6 +77,7 @@ export const useShellStore = create<ShellState>((set) => ({
   focusElementId: null,
   canvasHighlight: null,
   newDecisionRequested: false,
+  focusThreadId: null,
 
   openFlyout: (flyout) => set({ activeFlyout: flyout }),
   closeFlyout: () => set({ activeFlyout: null }),
@@ -122,6 +127,7 @@ export const useShellStore = create<ShellState>((set) => ({
   clearCanvasHighlight: () => set({ canvasHighlight: null }),
   startDecision: () => set({ activeFlyout: 'review', newDecisionRequested: true }),
   clearDecisionRequest: () => set({ newDecisionRequested: false }),
+  focusThread: (threadId) => set({ focusThreadId: threadId }),
 
   reset: () =>
     set({
@@ -136,5 +142,6 @@ export const useShellStore = create<ShellState>((set) => ({
       focusElementId: null,
       canvasHighlight: null,
       newDecisionRequested: false,
+      focusThreadId: null,
     }),
 }))

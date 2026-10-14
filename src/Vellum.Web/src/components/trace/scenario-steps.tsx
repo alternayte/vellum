@@ -1,5 +1,5 @@
 import { useContext, useEffect, useId, useState, type ReactNode } from 'react'
-import { ArrowDown, ArrowUp, GitBranch, Plus, Send, Split, Trash2, Database, PhoneOutgoing, X } from 'lucide-react'
+import { ArrowDown, ArrowUp, GitBranch, Plus, Send, Split, Trash2, Database, PhoneOutgoing, X, MessageSquare } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
@@ -10,6 +10,8 @@ import {
 import { selectClass } from './contract-parts'
 import { ReferencePicker } from './reference-picker'
 import { StepEditingContext, describeStep, useCatalog } from './scenario-catalog'
+import { TargetThreads } from '@/components/comments/target-threads'
+import { useOpenThreadCounts } from '@/components/comments/use-open-thread-counts'
 
 const KIND: Record<StepType, { label: string; color: string; icon: typeof Send }> = {
   call: { label: 'Call', color: 'var(--trace-request)', icon: PhoneOutgoing },
@@ -98,7 +100,8 @@ function StepCard({
   onRemove: () => void
 }) {
   const catalog = useCatalog()
-  const { issues } = useContext(StepEditingContext)
+  const { issues, comments } = useContext(StepEditingContext)
+  const [showComments, setShowComments] = useState(false)
   const kind = KIND[step.type]
   const Icon = kind.icon
   const problems = issues[step.id] ?? []
@@ -120,6 +123,9 @@ function StepCard({
           <span className="sr-only">Step {position}: </span>{describeStep(step, catalog)}
         </h4>
         <StepIdField id={step.id} />
+        {comments && comments.savedStepIds.includes(step.id) && (
+          <StepCommentsToggle projectId={comments.projectId} scenarioId={comments.scenarioId} stepId={step.id} open={showComments} onToggle={() => setShowComments((v) => !v)} />
+        )}
         <Button type="button" variant="ghost" size="icon" className="h-6 w-6" disabled={position === 1} onClick={() => onMove(-1)} aria-label={`Move step ${step.id} up`}>
           <ArrowUp className="h-3.5 w-3.5" />
         </Button>
@@ -145,7 +151,29 @@ function StepCard({
         {step.type === 'branch' && <BranchFields step={step} available={available} onChange={onChange} />}
       </div>
 
+      {showComments && comments && comments.savedStepIds.includes(step.id) && (
+        <div className="mt-2 border-t border-border pt-2">
+          <TargetThreads projectId={comments.projectId} kind="step" id={comments.scenarioId} stepId={step.id} name={`${comments.scenarioName} · ${step.id}`} />
+        </div>
+      )}
+
     </article>
+  )
+}
+
+/** Opens the comment threads of one saved step, with the number of open ones. */
+function StepCommentsToggle({ projectId, scenarioId, stepId, open, onToggle }: {
+  projectId: string; scenarioId: string; stepId: string; open: boolean; onToggle: () => void
+}) {
+  const count = useOpenThreadCounts(projectId)('step', scenarioId, stepId)
+  return (
+    <Button
+      type="button" variant={open ? 'secondary' : 'ghost'} size="sm" className="h-6 gap-1 px-1.5 text-[11px]"
+      aria-pressed={open} aria-label={`Comments on step ${stepId}${count > 0 ? `, ${count} open` : ''}`} onClick={onToggle}
+    >
+      <MessageSquare aria-hidden="true" className="h-3 w-3" />
+      {count > 0 && <span>{count}</span>}
+    </Button>
   )
 }
 

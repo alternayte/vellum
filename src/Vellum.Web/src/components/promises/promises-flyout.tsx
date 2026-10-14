@@ -7,6 +7,8 @@ import { fieldMessages, shownInline } from '@/lib/mutation-errors'
 import { describeCounts, isAgentActor, promisesApi } from '@/lib/promises-api'
 import type { ScenarioReference } from '@/components/trace/scenario-editor'
 import { PromiseDialog } from './promise-dialog'
+import { ThreadCount } from '@/components/comments/thread-count'
+import { useOpenThreadCounts } from '@/components/comments/use-open-thread-counts'
 
 interface PromisesFlyoutProps {
   projectId: string
@@ -25,6 +27,7 @@ export function PromisesFlyout({ projectId, references, scenarios, owners }: Pro
   const promises = useQuery({ queryKey: ['projects', projectId, 'promises'], queryFn: () => promisesApi.list(projectId) })
   const prefix = useQuery({ queryKey: ['projects', projectId, 'promises', 'prefix'], queryFn: () => promisesApi.prefix(projectId) })
   const [open, setOpen] = useState<string | 'new' | null>(null)
+  const threadCount = useOpenThreadCounts(projectId)
   const [newPrefix, setNewPrefix] = useState('')
   const [firstNumber, setFirstNumber] = useState('1')
   const setPrefix = useMutation({
@@ -103,6 +106,7 @@ export function PromisesFlyout({ projectId, references, scenarios, owners }: Pro
                 <p className="flex items-baseline gap-2">
                   <span className="shrink-0 font-mono text-xs text-foreground">{promise.requirementId}</span>
                   <span className="min-w-0 flex-1 truncate text-sm text-foreground">{promise.title}</span>
+                  <ThreadCount count={threadCount('promise', promise.id)} />
                 </p>
                 <p className="mt-1 flex flex-wrap items-center gap-x-2 text-[11px] text-muted-foreground">
                   <span className="rounded-full border border-border px-1.5">{promise.state}{promise.hasDraft && promise.state !== 'draft' ? ' · draft pending' : ''}</span>

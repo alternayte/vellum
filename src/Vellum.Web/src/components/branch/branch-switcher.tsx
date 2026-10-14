@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Check, ChevronDown, GitBranch, Lock } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { branchesApi, personName, type Role } from '@/lib/branches-api'
+import { branchesApi, canEditModel, personName, type Role } from '@/lib/branches-api'
 import { cn } from '@/lib/utils'
 import { useDraftStore, type ModelSelection } from '@/stores/draft-store'
 import { AbandonDraftDialog, CreateBranchDialog, type BranchKind } from './create-branch-dialog'
@@ -40,7 +40,7 @@ export function BranchSwitcher({ projectId, workspaceId, role }: Props) {
   const [popover, setPopover] = useState(false)
   const [open, setOpen] = useState<Open>(null)
   const trigger = useRef<HTMLButtonElement>(null)
-  const canEdit = role !== 'Viewer'
+  const canEdit = canEditModel(role)
 
   const key = ['projects', projectId]
   const drafts = useQuery({ queryKey: [...key, 'drafts', 'open'], queryFn: () => branchesApi.drafts(projectId) })

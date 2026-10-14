@@ -14,9 +14,7 @@ import { ARCHITECTURE_ICONS, defaultIconForKind, getIconComponent } from '@/lib/
 import { CONTAINMENT_RULES } from '@/lib/containment-rules'
 import { DiffDetail } from '@/components/review/diff-detail'
 import { ConflictResolver } from '@/components/review/conflict-resolver'
-import { CommentList } from '@/components/comments/comment-list'
-import { CommentInput } from '@/components/comments/comment-input'
-import { useComments } from '@/hooks/use-draft-comments'
+import { TargetThreads } from '@/components/comments/target-threads'
 import { ElementDocs } from '@/components/docs/element-docs'
 import type { Provenance } from '@/lib/fact-status'
 import { FactTruth } from './fact-truth'
@@ -98,15 +96,12 @@ export function DetailPanel({
 }: DetailPanelProps) {
   const { detailPanelOpen, selectedElementId, selectedRelationshipId, selectedMessageId, selectElement, selectRelationship, selectMessage } =
     useShellStore()
-  const { isReviewMode, reviewData, activeDraftId } = useDraftStore()
+  const { isReviewMode, reviewData } = useDraftStore()
   // Each control has its label tied to it by ID, so a screen reader names the field.
   const fieldId = useId()
   // The tab stays when the selection moves, so following a connection keeps the Connections tab.
   const [elementTab, setElementTab] = useState<ElementTab>('details')
   const idFor = (field: string) => `${fieldId}-${field}`
-
-  const { data: commentsData } = useComments(projectId, activeDraftId)
-  const comments = commentsData?.items ?? []
 
   const selectedElement = elements.find((e) => e.id === selectedElementId)
   const selectedRel = relationships.find((r) => r.id === selectedRelationshipId)
@@ -283,23 +278,6 @@ export function DetailPanel({
                 {!selectedConflict && !selectedChange && (
                   <p className="mt-4 text-xs text-muted-foreground">No changes to this element.</p>
                 )}
-                {activeDraftId && (
-                  <div className="mt-4 space-y-2">
-                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Comments</p>
-                    <CommentList
-                      projectId={projectId}
-                      draftId={activeDraftId}
-                      comments={comments}
-                      entityId={selectedElement.id}
-                    />
-                    <CommentInput
-                      projectId={projectId}
-                      draftId={activeDraftId}
-                      entityId={selectedElement.id}
-                      entityType="element"
-                    />
-                  </div>
-                )}
               </>
             ) : (
               <>
@@ -457,23 +435,6 @@ export function DetailPanel({
                 {!selectedConflict && !selectedChange && (
                   <p className="mt-4 text-xs text-muted-foreground">No changes to this relationship.</p>
                 )}
-                {activeDraftId && (
-                  <div className="mt-4 space-y-2">
-                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Comments</p>
-                    <CommentList
-                      projectId={projectId}
-                      draftId={activeDraftId}
-                      comments={comments}
-                      entityId={selectedRel.id}
-                    />
-                    <CommentInput
-                      projectId={projectId}
-                      draftId={activeDraftId}
-                      entityId={selectedRel.id}
-                      entityType="relationship"
-                    />
-                  </div>
-                )}
               </>
             ) : (
               <div className="mt-4 space-y-4 px-4 pb-4">
@@ -538,9 +499,31 @@ export function DetailPanel({
           </>
         )}
         </fieldset>
+        {/* Comments sit outside the read-only fieldset: a Commenter writes them on a model they cannot change. */}
+        {(() => {
+          const target = selectedMessage
+            ? { kind: 'message' as const, id: selectedMessage.id, name: selectedMessage.name }
+            : selectedElement
+              ? { kind: 'element' as const, id: selectedElement.id, name: selectedElement.name }
+              : selectedRel
+                ? { kind: 'relationship' as const, id: selectedRel.id, name: relationshipName(selectedRel, elements) }
+                : null
+          return target && (
+            <div key={target.id} className="border-t border-border px-4 py-4">
+              <TargetThreads projectId={projectId} kind={target.kind} id={target.id} name={target.name} />
+            </div>
+          )
+        })()}
       </SheetContent>
     </Sheet>
   )
+}
+
+/** The label of a relationship, or its two ends when it has none. */
+function relationshipName(rel: RelationshipData, elements: ElementData[]): string {
+  if (rel.label) return rel.label
+  const name = (id: string) => elements.find((e) => e.id === id)?.name ?? 'unknown'
+  return `${name(rel.fromId)} → ${name(rel.toId)}`
 }
 
 /** A field that reads as a value until it is hovered or edited. */

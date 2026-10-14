@@ -3,12 +3,8 @@ import { render, screen, fireEvent } from '@testing-library/react'
 import { DetailPanel } from '../../../src/components/shell/detail-panel'
 import { useShellStore } from '../../../src/stores/shell-store'
 
-vi.mock('../../../src/hooks/use-draft-comments', () => ({
-  useComments: () => ({ data: { items: [] } }),
-  useCreateComment: () => ({ mutate: vi.fn(), isPending: false }),
-  useUpdateComment: () => ({ mutate: vi.fn(), isPending: false }),
-  useDeleteComment: () => ({ mutate: vi.fn(), isPending: false }),
-}))
+// The comment threads read the server; this file tests the panel's own fields.
+vi.mock('../../../src/components/comments/target-threads', () => ({ TargetThreads: () => null }))
 vi.mock('../../../src/hooks/use-auth', () => ({
   useAuth: () => ({ user: null }),
 }))

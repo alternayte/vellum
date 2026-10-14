@@ -1,4 +1,6 @@
 import { useState } from 'react'
+import { ThreadCount } from '@/components/comments/thread-count'
+import { useOpenStepThreadCounts } from '@/components/comments/use-open-thread-counts'
 import { Pencil, Play, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useShellStore } from '@/stores/shell-store'
@@ -17,6 +19,7 @@ export function ScenariosFlyout({ projectId, branchId, references }: ScenariosFl
   const { data: scenarios = [], isLoading } = useScenarios(projectId)
   const run = useRunScenario(projectId, branchId)
   const closeFlyout = useShellStore((s) => s.closeFlyout)
+  const stepThreads = useOpenStepThreadCounts(projectId)
   const [editing, setEditing] = useState<{ scenario: ScenarioDocument; isNew: boolean } | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -64,6 +67,7 @@ export function ScenariosFlyout({ projectId, branchId, references }: ScenariosFl
           {scenarios.map((scenario) => (
             <li key={scenario.id} className="flex items-center gap-1 rounded-md px-1.5 py-1 hover:bg-muted">
               <span className="min-w-0 flex-1 truncate text-sm text-foreground">{scenario.name}</span>
+              <ThreadCount count={stepThreads(scenario.id)} />
               <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => edit(scenario.id)} aria-label={`Edit ${scenario.name}`}>
                 <Pencil className="h-3.5 w-3.5" />
               </Button>
