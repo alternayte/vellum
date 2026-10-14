@@ -194,12 +194,19 @@ public static class PromiseDecider
     /// whether the revision was a draft when it was made, and the stream decides that, not the
     /// caller: a revision that was approved between the check and this append is not a draft.
     /// </summary>
-    public static Decision RecordRun(PromiseState state, Guid projectId, VerificationRun run, int maxRuns)
+    public static Decision RecordRun(PromiseState state, Guid projectId, VerificationRun run, int maxRuns, int maxComparisonRuns)
     {
         if (!state.ExistsIn(projectId))
             return new Decision.NotFound(NotFoundMessage);
         if (state.Revision(run.PromiseRevision) is not { } revision || revision.Obligations.All(o => o.Id != run.ObligationId))
             return new Decision.NotFound("Obligation not found");
+        if (!PromiseState.CountsAsLatest(run))
+        {
+            return state.ComparisonRunsOf(run.PromiseRevision, run.ObligationId) >= maxComparisonRuns
+                ? new Decision.Conflict(
+                    $"{run.ObligationId} of revision {run.PromiseRevision} already has {maxComparisonRuns} runs against comparison scans, the most one obligation of one revision holds. Runs against the followed ref are not affected. Start a new revision to record more.")
+                : new Decision.Success([new PromiseEvent.VerificationRunRecorded(run with { Draft = revision.IsDraft ? true : null })]);
+        }
         if (state.RunsOf(run.PromiseRevision, run.ObligationId) >= maxRuns)
         {
             return new Decision.Conflict(

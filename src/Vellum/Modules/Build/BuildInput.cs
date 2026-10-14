@@ -1,6 +1,7 @@
 using Deedbox;
 using Microsoft.EntityFrameworkCore;
 using Vellum.Modules.Import;
+using Vellum.Modules.Import.Scans;
 using Vellum.Modules.Modelling.Model;
 using Vellum.Modules.Promises;
 using Vellum.Modules.Review;
@@ -267,8 +268,8 @@ public sealed record BuildInput(
             .Where(t => t.ProjectId == projectId)
             .Select(t => new { t.Host, t.Repository, t.RefName, t.CommitSha, t.ScanId })
             .ToListAsync(ct);
-        var snapshots = await importDb.Snapshots.AsNoTracking()
-            .Where(s => s.ProjectId == projectId)
+        // A pull request or a bare commit is never the newest state of a repository.
+        var snapshots = await ScanSnapshots.OfRefs(importDb, projectId).AsNoTracking()
             .OrderBy(s => s.CreatedAt).ThenBy(s => s.ScanId)
             .Select(s => new { s.Host, s.Repository, s.CommitSha, s.ScanId })
             .ToListAsync(ct);

@@ -337,6 +337,15 @@ public class ImpactReportTests(ImportHost import) : IClassFixture<ImportHost>
     }
 
     [Fact]
+    public void The_state_of_a_pull_request_is_one_of_four_words_and_never_the_text_of_GitHub()
+    {
+        static Vellum.Modules.Import.Scans.ScanPullRequest Pull(string state, bool merged) =>
+            new(1, "t", state, merged, "main", ImportScenario.Commit1, "b", ImportScenario.Commit2, "acme/orders", false);
+        Assert.Equal(["open", "closed", "merged", "unknown"],
+            new[] { Pull("open", false), Pull("closed", false), Pull("closed", true), Pull("**open** [x](https://evil.example)", false) }.Select(ImpactReport.PullState));
+    }
+
+    [Fact]
     public void The_markdown_is_cut_at_a_line_end_with_a_line_that_says_so()
     {
         var line = new string('x', 99) + "\n";

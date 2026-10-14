@@ -1,5 +1,6 @@
 using Vellum.Modules.Modelling.Model;
 using Vellum.Modules.Promises;
+using Vellum.Shared;
 
 namespace Vellum.Tests.Modules.Promises;
 
@@ -27,6 +28,27 @@ public class PromiseStateTests
         new PromiseEvent.PromiseCreated(Project, "ORD-001", 1, PromiseOrigin.Human, Content(), "u", At),
         new PromiseEvent.ObligationAdded(1, Plan(1), "u", At),
     ];
+
+    private static VerificationRun Run(string? scanKind) => new(
+        Guid.NewGuid(), "ORD-001/O1", 1, "hash", "u", At, null, "c0ffee", Guid.NewGuid(), "source", RunResult.Failed, "scope", [], [], "detail",
+        new RunInputs("hash", ScanKind: scanKind));
+
+    [Fact]
+    public void Runs_against_comparison_scans_are_counted_apart_and_never_use_up_the_runs_against_the_followed_ref()
+    {
+        var state = Fold(Draft());
+        for (var i = 0; i < 3; i++)
+            state = PromiseState.Evolve(state, new PromiseEvent.VerificationRunRecorded(Run("comparison")));
+        Assert.Equal((0, 3), (state.RunsOf(1, "ORD-001/O1"), state.ComparisonRunsOf(1, "ORD-001/O1")));
+
+        // One run against the followed ref is allowed, three comparison runs notwithstanding.
+        Assert.IsType<CommandResult<IReadOnlyList<object>>.Success>(PromiseDecider.RecordRun(state, Project, Run("tracking"), maxRuns: 1, maxComparisonRuns: 3));
+        // The comparison runs have their own bound.
+        Assert.IsType<CommandResult<IReadOnlyList<object>>.Conflict>(PromiseDecider.RecordRun(state, Project, Run("comparison"), maxRuns: 1, maxComparisonRuns: 3));
+        state = PromiseState.Evolve(state, new PromiseEvent.VerificationRunRecorded(Run("tracking")));
+        Assert.IsType<CommandResult<IReadOnlyList<object>>.Conflict>(PromiseDecider.RecordRun(state, Project, Run("tracking"), maxRuns: 1, maxComparisonRuns: 10));
+        Assert.IsType<CommandResult<IReadOnlyList<object>>.Success>(PromiseDecider.RecordRun(state, Project, Run("comparison"), maxRuns: 1, maxComparisonRuns: 10));
+    }
 
     [Fact]
     public void The_fold_checks_an_approval_against_the_content_it_names()

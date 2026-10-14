@@ -513,7 +513,9 @@ public class PromiseBindingTests(ImportHost import) : IClassFixture<ImportHost>
         Assert.Equal((0, 0, 0), await RowsAsync());
     }
 
-    private async Task<ImportScenario> WithGitHubAsync()
+    private Task<ImportScenario> WithGitHubAsync() => WithGitHubAsync(import);
+
+    internal static async Task<ImportScenario> WithGitHubAsync(ImportHost import)
     {
         var owner = await TestHost.SignInAsync(import.Host.Factory);
         var (workspaceId, projectId) = await TestHost.CreateProjectAsync(owner);
@@ -525,7 +527,7 @@ public class PromiseBindingTests(ImportHost import) : IClassFixture<ImportHost>
     }
 
     /// <summary>A promise that needs the transactional outbox in <c>acme/orders</c>, with its one generated source check, approved.</summary>
-    private static async Task<Guid> OutboxPromiseAsync(ImportScenario s, Guid? service = null, bool? requireUnconditional = null, string prefix = "ORD")
+    internal static async Task<Guid> OutboxPromiseAsync(ImportScenario s, Guid? service = null, bool? requireUnconditional = null, string prefix = "ORD")
     {
         var prefixResponse = await s.Owner.PutAsJsonAsync(Url(s.ProjectId, "/prefix"), new { prefix });
         Assert.True(prefixResponse.StatusCode is HttpStatusCode.OK or HttpStatusCode.Conflict);

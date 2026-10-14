@@ -149,8 +149,7 @@ public static class PromisesModule
             .Produces<ErrorResponse>(StatusCodes.Status403Forbidden)
             .Produces<ErrorResponse>(StatusCodes.Status404NotFound)
             .Produces<ErrorResponse>(StatusCodes.Status409Conflict)
-            .Produces<ErrorResponse>(StatusCodes.Status429TooManyRequests)
-            .AddEndpointFilter(CallerRate.Filter<PromiseRunRate>);
+            .Produces<ErrorResponse>(StatusCodes.Status429TooManyRequests);
 
         var gate = app.MapGroup("/api/projects/{projectId}/impact-gate")
             .RequireAuthorization()
@@ -172,7 +171,7 @@ public static class PromisesModule
 /// a promise stream, so one caller records a bounded number of them in a minute, whichever
 /// promise they are for.
 /// </summary>
-internal sealed class PromiseRunRate(PromiseLimits limits) : CallerRate(limits.RunsPerMinute);
+public sealed class PromiseRunRate(PromiseLimits limits) : CallerRate(limits.RunsPerMinute);
 
 /// <summary>
 /// The rate limit of draft writes: creating a promise, changing a draft, adding an obligation

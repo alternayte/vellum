@@ -217,11 +217,15 @@ public sealed class ImportHost : IDisposable
     /// <summary>An app whose own worker loop runs, as it does outside tests.</summary>
     internal static ImportHost WithWorker(IntegrationFixture fixture) => new(fixture, runWorker: true);
 
-    private ImportHost(IntegrationFixture fixture, bool runWorker)
+    /// <summary>An app with more services, such as smaller limits. The caller disposes it.</summary>
+    internal static ImportHost With(IntegrationFixture fixture, Action<IServiceCollection> configure) => new(fixture, runWorker: false, configure);
+
+    private ImportHost(IntegrationFixture fixture, bool runWorker, Action<IServiceCollection>? configure = null)
     {
         Fixture = fixture;
         Host = new OutboundHost(fixture, configure: services =>
         {
+            configure?.Invoke(services);
             services.AddSingleton<TimeProvider>(Time);
             services.AddSingleton(ScanWorkerOptions.Default with
             {

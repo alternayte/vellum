@@ -1,3 +1,4 @@
+using System.Globalization;
 using Deedbox;
 using Microsoft.EntityFrameworkCore;
 using Vellum.Modules.GitHub;
@@ -53,11 +54,15 @@ public static class ObligationWrites
     /// commit. A run against a comparison scan is for that scan only (see
     /// <see cref="PromiseState.CountsAsLatest"/>). An agent token with <c>propose</c> runs them
     /// for any scan; a token with only <c>scan-pull-request</c> runs them for a scan it started.
+    /// A check that already ran against a comparison scan with the same obligation is not run
+    /// again: the call returns that run, so a repeated call adds nothing. Each new run takes one
+    /// unit of the caller's run rate; when the rate is used up the call stops with 429, and a
+    /// later call goes on where it stopped.
     /// </summary>
     public static async Task<IResult> RunForScan(
         Guid projectId, Guid importId, HttpContext http,
         WorkspaceAuthorizationService auth, IEventStore store, PromisesDbContext db, ImportDbContext importDb,
-        PromiseLimits limits, TimeProvider time, CancellationToken ct)
+        PromiseLimits limits, PromiseRunRate rate, TimeProvider time, CancellationToken ct)
     {
         var userId = PromiseAccess.UserId(http.User);
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
@@ -87,16 +92,46 @@ public static class ObligationWrites
                 .Select(o => (p.Id, p.RequirementId, Revision: p.Revision!.Revision, Obligation: o)))
             .ToList();
 
+        // The snapshot, its facts and its files are read once for all checks.
+        var inputs = await SourcePatternCheck.ScanInputs.LoadAsync(importDb, projectId, scan, ct);
         var runs = new List<ScanCheckRunDto>();
-        foreach (var (promiseId, requirementId, revision, obligation) in checks.Take(MaxScanChecks))
+        var batch = checks.Take(MaxScanChecks).ToList();
+        foreach (var (promiseId, requirementId, revision, obligation) in batch)
         {
             var hash = PromiseViews.ObligationHash(obligation);
-            var outcome = await SourcePatternCheck.RunAsync(importDb, db, projectId, promiseId, obligation.Id, hash, obligation.Recipe.SourcePattern!, scan, ct);
+            if (inputs.IsComparison && await ExistingComparisonRunAsync(db, promiseId, revision, draft: false, obligation.Id, scan.Id, hash, ct) is { } existing)
+            {
+                runs.Add(new ScanCheckRunDto(promiseId, requirementId, revision, obligation.Id, obligation.Key, existing.Result, existing.Id, existing.Detail));
+                continue;
+            }
+            if (!rate.TryTake(http, out var seconds))
+            {
+                return CallerRate.Refusal(http, seconds, string.Create(CultureInfo.InvariantCulture,
+                    $"{runs.Count} of {batch.Count} checks ran before the run rate of this caller was used up. Call again in {seconds} seconds: the checks that ran against this scan are not run again."));
+            }
+            var outcome = await SourcePatternCheck.RunAsync(importDb, db, projectId, promiseId, obligation.Id, hash, obligation.Recipe.SourcePattern!, inputs, ct);
             var (run, refusal) = await RecordRunAsync(store, projectId, promiseId, revision, obligation, hash, outcome, userId, limits, time, ct);
             runs.Add(new ScanCheckRunDto(promiseId, requirementId, revision, obligation.Id, obligation.Key, run?.Result ?? "not-recorded", run?.Id,
                 run?.Detail ?? refusal));
         }
         return Results.Ok(new ScanChecksResponse(scan.Id, runs, Math.Max(0, checks.Count - MaxScanChecks)));
+    }
+
+    /// <summary>
+    /// The run of this obligation of this revision against this comparison scan, with the same
+    /// obligation hash and the same draft label, when one was recorded. Such a run is not
+    /// recorded twice: the snapshot of a scan does not change.
+    /// </summary>
+    private static async Task<VerificationRun?> ExistingComparisonRunAsync(
+        PromisesDbContext db, Guid promiseId, int revision, bool draft, string obligationId, Guid scanId, string obligationHash, CancellationToken ct)
+    {
+        var probe = System.Text.Json.JsonSerializer.Serialize(new { scanId, obligationHash, inputs = new { scanKind = Import.Scans.ScanKind.Comparison } });
+        var documents = await db.Runs.AsNoTracking()
+            .Where(r => r.PromiseId == promiseId && r.PromiseRevision == revision && r.ObligationId == obligationId && EF.Functions.JsonContains(r.Document, probe))
+            .OrderByDescending(r => r.Version)
+            .Select(r => r.Document)
+            .ToListAsync(ct);
+        return documents.Select(PromiseJson.Read<VerificationRun>).FirstOrDefault(r => (r.Draft == true) == draft);
     }
 
     public static async Task<IResult> Add(
@@ -242,7 +277,7 @@ public static class ObligationWrites
         var (found, refusal) = await FindAsync(db, projectId, promiseId, obligationKey, request.Revision, ct);
         if (found is not { } located)
             return refusal!;
-        var (revision, obligation) = located;
+        var (revision, obligation, isDraft) = located;
         var obligationHash = PromiseViews.ObligationHash(obligation);
 
         CheckOutcome outcome;
@@ -265,7 +300,11 @@ public static class ObligationWrites
                 var (scan, scanRefusal) = await SourcePatternCheck.FindScanAsync(importDb, projectId, recipe, scanId, ct);
                 if (scan is null)
                     return PromiseAccess.Invalid("scanId", scanRefusal!);
-                outcome = await SourcePatternCheck.RunAsync(importDb, db, projectId, promiseId, obligation.Id, obligationHash, recipe, scan, ct);
+                var inputs = await SourcePatternCheck.ScanInputs.LoadAsync(importDb, projectId, scan, ct);
+                if (inputs.IsComparison
+                    && await ExistingComparisonRunAsync(db, promiseId, revision, isDraft, obligation.Id, scan.Id, obligationHash, ct) is { } existing)
+                    return Results.Ok(existing);
+                outcome = await SourcePatternCheck.RunAsync(importDb, db, projectId, promiseId, obligation.Id, obligationHash, recipe, inputs, ct);
                 break;
 
             default:
@@ -302,7 +341,7 @@ public static class ObligationWrites
         var (found, refusal) = await FindAsync(db, projectId, promiseId, obligationKey, request.Revision, ct);
         if (found is not { } located)
             return refusal!;
-        var (revision, obligation) = located;
+        var (revision, obligation, _) = located;
         if (!ObligationKind.IsPlan(obligation.Kind))
         {
             return Results.Conflict(new ErrorResponse("not_a_test_plan",
@@ -318,7 +357,7 @@ public static class ObligationWrites
         return await RecordAsync(store, projectId, promiseId, revision, obligation, obligationHash, outcome, userId, limits, time, ct);
     }
 
-    private static async Task<((int Revision, Obligation Obligation)? Found, IResult? Refusal)> FindAsync(
+    private static async Task<((int Revision, Obligation Obligation, bool IsDraft)? Found, IResult? Refusal)> FindAsync(
         PromisesDbContext db, Guid projectId, Guid promiseId, string obligationKey, int? revisionNumber, CancellationToken ct)
     {
         var row = await db.Promises.AsNoTracking().FirstOrDefaultAsync(p => p.Id == promiseId && p.ProjectId == projectId, ct);
@@ -338,7 +377,7 @@ public static class ObligationWrites
         if (revision is null)
             return (null, Results.NotFound(new ErrorResponse("not_found", "Revision not found")));
         return revision.Find(obligationKey) is { } obligation
-            ? ((revision.Revision, obligation), null)
+            ? ((revision.Revision, obligation, revision.IsDraft), null)
             : (null, Results.NotFound(new ErrorResponse("not_found", "Obligation not found")));
     }
 
@@ -373,7 +412,7 @@ public static class ObligationWrites
         VerificationRun? recorded = null;
         var result = await PromiseAccess.DecideAsync(store, promiseId, state =>
         {
-            var decision = PromiseDecider.RecordRun(state, projectId, run, limits.MaxRunsPerObligation);
+            var decision = PromiseDecider.RecordRun(state, projectId, run, limits.MaxRunsPerObligation, limits.MaxComparisonRunsPerObligation);
             recorded = decision is CommandResult<IReadOnlyList<object>>.Success { Value: [PromiseEvent.VerificationRunRecorded stored] } ? stored.Run : null;
             return decision;
         }, ct);

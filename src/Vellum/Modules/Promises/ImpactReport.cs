@@ -293,7 +293,7 @@ public static class ImpactReport
 
         if (report.PullRequest is { } pull)
         {
-            md.Line(Md.Of($"Pull request #{pull.Number} {Md.Text(pull.Title ?? "no title")} ({Md.Raw(pull.Merged ? "merged" : pull.State)}): head {Md.Code(pull.HeadRef)} at {Md.Code(pull.HeadSha)}, base {Md.Code(pull.BaseRef)} at {Md.Code(pull.BaseSha)}{(pull.FromFork ? Md.Raw(", from another repository") : Md.Empty)}.")).Blank();
+            md.Line(Md.Of($"Pull request #{pull.Number} {Md.Text(pull.Title ?? "no title")} ({Md.Raw(PullState(pull))}): head {Md.Code(pull.HeadRef)} at {Md.Code(pull.HeadSha)}, base {Md.Code(pull.BaseRef)} at {Md.Code(pull.BaseSha)}{(pull.FromFork ? Md.Raw(", from another repository") : Md.Empty)}.")).Blank();
         }
         var completed = report.ScanCompletedAt?.UtcDateTime.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture) ?? "unknown";
         md.Line(Md.Of($"Scan {Md.Code(report.ScanId)}, a {Md.Raw(report.Kind)} scan of commit {Md.Code(report.Head.CommitSha ?? "none")}, completed {Md.Raw(completed)}. Compared with {(report.Base.ScanId is null ? Md.Raw("the model") : Md.Of($"ref {Md.Code(report.Base.Ref ?? "none")} at commit {Md.Code(report.Base.CommitSha ?? "none")}"))}.")).Blank();
@@ -373,6 +373,10 @@ public static class ImpactReport
 
         return Bounded(md.ToString());
     }
+
+    /// <summary>The state of a pull request in one of three words. GitHub's text is never written as it is.</summary>
+    internal static string PullState(ScanPullRequest pull) =>
+        pull.Merged ? "merged" : pull.State == "closed" ? "closed" : pull.State == "open" ? "open" : "unknown";
 
     private static void Omitted(Markdown md, int count, string one, string many)
     {

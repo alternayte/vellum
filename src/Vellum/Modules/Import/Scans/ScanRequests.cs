@@ -121,6 +121,16 @@ public static partial class ScanRequests
 
         if (!TryReadRepository(request.Repository, host, out var repository, out var repositoryError))
             return Invalid("repository", repositoryError);
+        // A token reads only a repository that the project already follows or holds facts of,
+        // not every repository that the GitHub credential of the workspace can read.
+        if (AgentPrincipal.IsAgent(user)
+            && !await db.TrackedRefs.AnyAsync(t => t.ProjectId == projectId && t.Host == host && t.Repository == repository, ct)
+            && !await db.FactLinks.AnyAsync(l => l.ProjectId == projectId && l.Host == host && l.Repository == repository, ct))
+        {
+            return Results.Json(new ErrorResponse(AgentBoundary.AgentNotAllowedError, "This agent token cannot do this",
+                "An agent token scans only a repository that the project follows. A person imports the repository first."),
+                statusCode: StatusCodes.Status403Forbidden);
+        }
         var reference = string.IsNullOrWhiteSpace(request.Ref) ? null : request.Ref;
         if (reference is not null && (TextRule.Line("ref", reference, 255) is not null || !IsRef(reference)))
             return Invalid("ref", "A ref is a branch, a tag or a commit SHA of at most 255 characters, with no white space.");

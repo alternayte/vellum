@@ -1,6 +1,7 @@
 using Deedbox;
 using Microsoft.EntityFrameworkCore;
 using Vellum.Modules.Import;
+using Vellum.Modules.Import.Scans;
 using Vellum.Modules.Modelling.Model;
 using Vellum.Modules.Schemas;
 using Vellum.Modules.Settings.Document;
@@ -160,8 +161,8 @@ public sealed class PromiseWorld
         var tracked = trackedRows.ToDictionary(
             t => RepositoryKey(t.Host, t.Repository), t => new TrackedCommit(t.RefName, t.CommitSha), StringComparer.Ordinal);
 
-        var snapshots = await importDb.Snapshots.AsNoTracking()
-            .Where(s => s.ProjectId == projectId)
+        // A pull request or a bare commit is never the newest state of a repository.
+        var snapshots = await ScanSnapshots.OfRefs(importDb, projectId).AsNoTracking()
             .OrderBy(s => s.CreatedAt).ThenBy(s => s.ScanId)
             .Select(s => new { s.Host, s.Repository, s.CommitSha })
             .ToListAsync(ct);

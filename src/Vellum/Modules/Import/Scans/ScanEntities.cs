@@ -132,6 +132,18 @@ public class ScanEntity
     public bool IsPullRequest() => PullRequestNumber is not null;
 }
 
+public static class ScanSnapshots
+{
+    /// <summary>
+    /// The snapshots of a project whose scans read a ref: no pull request and no bare commit.
+    /// Only such a snapshot can stand for the newest state of a repository; a pull request or
+    /// a commit follows no line of history. The database filters them.
+    /// </summary>
+    public static IQueryable<Proposals.SnapshotEntity> OfRefs(ImportDbContext db, Guid projectId) =>
+        db.Snapshots.Where(s => s.ProjectId == projectId && db.Scans.Any(c => c.Id == s.ScanId && c.PullRequestNumber == null
+            && !(c.RequestedRef != null && System.Text.RegularExpressions.Regex.IsMatch(c.RequestedRef, "^[0-9A-Fa-f]{40}$"))));
+}
+
 /// <summary>
 /// The provenance of a pull request scan: the pull request as GitHub described it when the
 /// scan pinned its head commit. Both SHAs are immutable; the title, the state and the

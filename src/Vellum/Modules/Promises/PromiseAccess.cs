@@ -13,7 +13,13 @@ namespace Vellum.Modules.Promises;
 /// <param name="MaxRunsPerObligation">The most runs one obligation of one revision holds. Every run is an event of the promise stream.</param>
 /// <param name="RunsPerMinute">The most runs and pieces of evidence one caller records in a minute.</param>
 /// <param name="DraftWritesPerMinute">The most draft writes (create a promise, change a draft, add an obligation, generate obligations) one caller makes in a minute.</param>
-public sealed record PromiseLimits(int MaxRunsPerObligation = 1_000, int RunsPerMinute = 120, int DraftWritesPerMinute = 120)
+/// <param name="MaxComparisonRunsPerObligation">
+/// The most runs against comparison scans one obligation of one revision holds. They are
+/// counted apart from <paramref name="MaxRunsPerObligation"/>, so pull request checks never use
+/// up the runs against the followed ref. A scan gets at most one run of an obligation.
+/// </param>
+public sealed record PromiseLimits(
+    int MaxRunsPerObligation = 1_000, int RunsPerMinute = 120, int DraftWritesPerMinute = 120, int MaxComparisonRunsPerObligation = 5_000)
 {
     public static readonly PromiseLimits Default = new();
 }

@@ -141,7 +141,8 @@ public sealed record PromiseState(
     int NextObligation,
     bool Deleted,
     ImmutableDictionary<string, int>? RunCounts = null,
-    bool AgentOnly = false)
+    bool AgentOnly = false,
+    ImmutableDictionary<string, int>? ComparisonRunCounts = null)
     : IState<PromiseState>
 {
     public static PromiseState Initial => new(null, null, 0, null, null, null, null, [], 1, false);
@@ -222,6 +223,14 @@ public sealed record PromiseState(
                 .ChangedBy(e.Actor, e.At))
             .TouchedBy(e.Actor),
 
+        // A run against a comparison scan is counted apart: it never uses up the runs against the followed ref.
+        PromiseEvent.VerificationRunRecorded e when !CountsAsLatest(e.Run) => state with
+        {
+            UpdatedAt = e.Run.At,
+            ComparisonRunCounts = (state.ComparisonRunCounts ?? ImmutableDictionary<string, int>.Empty)
+                .SetItem(RunKey(e.Run.PromiseRevision, e.Run.ObligationId), state.ComparisonRunsOf(e.Run.PromiseRevision, e.Run.ObligationId) + 1),
+        },
+
         PromiseEvent.VerificationRunRecorded e => state with
         {
             UpdatedAt = e.Run.At,
@@ -276,9 +285,13 @@ public sealed record PromiseState(
     public static string RunKey(int revision, string obligationId) =>
         string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{revision}:{obligationId}");
 
-    /// <summary>How many runs were recorded for an obligation of a revision.</summary>
+    /// <summary>How many runs that can be the newest result were recorded for an obligation of a revision.</summary>
     public int RunsOf(int revision, string obligationId) =>
         RunCounts is { } counts && counts.TryGetValue(RunKey(revision, obligationId), out var count) ? count : 0;
+
+    /// <summary>How many runs against comparison scans were recorded for an obligation of a revision.</summary>
+    public int ComparisonRunsOf(int revision, string obligationId) =>
+        ComparisonRunCounts is { } counts && counts.TryGetValue(RunKey(revision, obligationId), out var count) ? count : 0;
 
     /// <summary>True when the promise exists in <paramref name="projectId"/>. A promise of another project reads as not found.</summary>
     public bool ExistsIn(Guid projectId) => !Deleted && ProjectId == projectId && Revisions.Count > 0;
