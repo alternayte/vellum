@@ -52,7 +52,8 @@ You need the owner role. A person becomes a member only when they accept an invi
 
 Know these limits first.
 
-- Vellum sends no email. Tell the person that you invited them.
+- Vellum sends no email. Vellum gives you a link, and you send it to the person yourself, by a channel that you trust.
+- Only the link accepts the invitation. Vellum shows the link once. Vellum stores only a hash of the secret in the link, so nobody can show the link again.
 - The person needs an account on this instance with the email address that you invite. When registration is closed, a new person cannot create an account. See [Let a new person register](#let-a-new-person-register).
 - An invitation expires after 14 days.
 - One owner can make 10 invitations in one minute. A workspace can have 100 open invitations.
@@ -61,10 +62,14 @@ Know these limits first.
 2. Below **Invite a person**, enter the **Email address**.
 3. Select a **Role**: **Viewer**, **Editor** or **Owner**.
 4. Select **Invite**.
+5. Vellum shows the link of the invitation. Select **Copy**, then send the link to the person.
+6. Select **Done**.
+
+The link has the form `http://localhost:8080/invitations/<invitation-id>#secret=<secret>`. The secret is after `#`, so a browser does not send it to a server, and it is in no server log.
 
 The invitation shows below **Open invitations**, with the address, the role and the expiry date. The answer is the same for an address with an account and an address without one. The owner does not learn from the invitation whether a person has an account.
 
-When you invite an address that has an open invitation, Vellum renews that invitation: it takes the new role and a new expiry date.
+When you invite an address that has an open invitation, Vellum renews that invitation: it takes the new role, a new expiry date and a new link. The old link stops working. Do this also when you lose the link.
 
 If the request fails, the form shows **No invitation was made.** and the reason.
 
@@ -86,15 +91,19 @@ The person cannot accept a revoked invitation. To invite the person again, make 
 
 ## Accept or decline an invitation
 
-1. Sign in with the account that has the invited email address.
-2. Open `http://localhost:8080`. Above **Workspaces**, the box **You have an invitation** shows the workspace, the role, the owner who invited you and the expiry date.
-3. Select **Accept** or **Decline**.
+1. Open the link that the owner sent you.
+2. If you are not signed in, sign in with the account that has the invited email address. Vellum then opens the invitation again.
+3. The page **Invitation** shows the workspace, the role, the owner who invited you and the expiry date. Select **Accept** or **Decline**.
 
 When you accept, you become a member with the invited role, and the workspace shows below **Workspaces**. When you decline, the invitation closes.
 
-Only the account with the invited email address sees the invitation and can accept it. Vellum compares the address of the signed-in account with the invited address. Upper and lower case do not matter.
+Vellum needs two things to accept or decline: the secret of the link, and a signed-in account with the invited email address. Upper and lower case of the address do not matter. A person who registered an account with your address but has no link cannot accept or decline.
 
-You cannot accept an invitation that is revoked, declined or expired. The box then shows `The invitation is revoked.`, `The invitation is declined.` or `The invitation is expired.`. Ask an owner to invite you again.
+When the secret or the account is wrong, the page shows **Vellum found no invitation for this link and this account.** Vellum gives the same answer for a wrong secret, a wrong account and an unknown invitation. Check that you opened the whole link and that you signed in with the invited address. If the owner invited you again, only the newest link works.
+
+On the workspace list, the box **You have an invitation** shows each open invitation for your address. The box has no **Accept**: open the link to accept or decline.
+
+You cannot accept an invitation that is revoked, declined or expired. The page then shows `The invitation is revoked.`, `The invitation is declined.` or `The invitation is expired.`. Ask an owner to invite you again.
 
 ## Change a role
 
@@ -146,7 +155,7 @@ To invite a person, send the `email` and the `role`. The `role` is `Owner`, `Edi
 curl -X POST "http://localhost:8080/api/workspaces/<workspace-id>/invitations"   -b vellum.cookies   -H "Content-Type: application/json"   -d '{"email":"person@example.com","role":"Editor"}'
 ```
 
-The answer has `id`, `workspaceId`, `email`, `role`, `status`, `createdAt` and `expiresAt`. The `status` is `pending`.
+The answer has `id`, `workspaceId`, `email`, `role`, `status`, `createdAt`, `expiresAt`, `secret` and `path`. The `status` is `pending`. `secret` is 256 random bits in base64url. `path` is the link in the app, `/invitations/<id>#secret=<secret>`: put the address of your instance in front of it. This answer is the only place where the secret appears. A renewal gives a new secret.
 
 | Status | Text | Cause |
 |---|---|---|
@@ -164,16 +173,24 @@ The answer has `id`, `workspaceId`, `email`, `role`, `status`, `createdAt` and `
 curl -X DELETE "http://localhost:8080/api/workspaces/<workspace-id>/invitations/<invitation-id>"   -b vellum.cookies
 ```
 
-The invited person uses these calls:
+The invited person uses these calls. Each of `open`, `accept` and `decline` takes the secret in the body, `{"secret":"<secret>"}`, never in the URL.
 
-- `GET /api/invitations` gives the open invitations for the email address of the signed-in account. Each has `id`, `workspaceId`, `workspaceName`, `role`, `invitedBy`, `createdAt` and `expiresAt`.
+- `GET /api/invitations` gives the open invitations for the email address of the signed-in account. Each has `id`, `workspaceId`, `workspaceName`, `role`, `invitedBy`, `status`, `createdAt` and `expiresAt`. It needs no secret and lets you do nothing.
+- `POST /api/invitations/{invitationId}/open` gives the same fields for one invitation. It changes nothing.
 - `POST /api/invitations/{invitationId}/accept` makes the membership. The answer is `200` with the membership. A second accept gives the same answer.
 - `POST /api/invitations/{invitationId}/decline` closes the invitation. The status is `204`.
 
+```sh
+curl -X POST "http://localhost:8080/api/invitations/<invitation-id>/accept"   -b vellum.cookies   -H "Content-Type: application/json"   -d '{"secret":"<secret>"}'
+```
+
 | Status | Type | Cause |
 |---|---|---|
-| `404` | `not_found` | No invitation for the address of your account has this ID. |
+| `404` | `not_found` | The secret is missing or wrong, the signed-in account does not have the invited address, or no invitation has this ID. Vellum does not say which. |
 | `409` | `invitation_closed` | The invitation is revoked, declined or expired. |
+| `429` | `rate_limited` | You made 20 of these calls in the last minute. |
+
+Decline needs the secret too. Without it, an account that registered with the invited address could close the invitation before the person who got the link sees it.
 
 To change a role, send the new role.
 

@@ -177,8 +177,8 @@ internal static class TestHost
     {
         var me = await member.GetFromJsonAsync<UserInfoResponse>("/api/auth/me");
         var invited = await Created(owner.PostAsJsonAsync($"/api/workspaces/{workspaceId}/invitations", new { email = me!.Email, role }));
-        var invitation = (await invited.Content.ReadFromJsonAsync<InvitationDto>())!;
-        var accepted = await member.PostAsync($"/api/invitations/{invitation.Id}/accept", null);
+        var invitation = (await invited.Content.ReadFromJsonAsync<IssuedInvitationDto>())!;
+        var accepted = await member.PostAsJsonAsync($"/api/invitations/{invitation.Id}/accept", new { secret = invitation.Secret });
         Assert.True(accepted.StatusCode == HttpStatusCode.OK, await accepted.Content.ReadAsStringAsync());
     }
 

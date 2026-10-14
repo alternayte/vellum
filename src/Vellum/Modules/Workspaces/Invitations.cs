@@ -1,5 +1,8 @@
+using System.Buffers.Text;
 using System.Net.Mail;
 using System.Security.Claims;
+using System.Security.Cryptography;
+using System.Text;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Vellum.Modules.Identity;
@@ -15,14 +18,31 @@ public sealed record CreateInvitationRequest(string Email, string Role);
 /// <summary>An invitation as an owner of its workspace reads it.</summary>
 public sealed record InvitationDto(Guid Id, Guid WorkspaceId, string Email, string Role, string Status, DateTimeOffset CreatedAt, DateTimeOffset ExpiresAt);
 
-/// <summary>An invitation as the invited person reads it: the workspace, the role and who sent it.</summary>
-public sealed record MyInvitationDto(Guid Id, Guid WorkspaceId, string WorkspaceName, string Role, string? InvitedBy, DateTimeOffset CreatedAt, DateTimeOffset ExpiresAt);
+/// <summary>
+/// A new or renewed invitation, with its secret. This is the only answer that holds the
+/// secret: the database keeps a hash of it. <paramref name="Path"/> is the link in the app,
+/// with the secret in the fragment, so a browser that opens it never sends the secret to a
+/// server.
+/// </summary>
+public sealed record IssuedInvitationDto(Guid Id, Guid WorkspaceId, string Email, string Role, string Status, DateTimeOffset CreatedAt, DateTimeOffset ExpiresAt, string Secret, string Path);
 
-/// <summary>The rate of invitations for one caller. Tests replace it.</summary>
-public sealed record InvitationLimits(int PerMinute = 10)
+/// <summary>An invitation as the invited person reads it: the workspace, the role and who sent it.</summary>
+public sealed record MyInvitationDto(Guid Id, Guid WorkspaceId, string WorkspaceName, string Role, string? InvitedBy, string Status, DateTimeOffset CreatedAt, DateTimeOffset ExpiresAt);
+
+/// <summary>The secret of the invitation link, in the body so it is in no URL and no request log.</summary>
+public sealed record InvitationSecretRequest(string? Secret);
+
+/// <summary>The rates of invitations and of answers to them for one caller. Tests replace it.</summary>
+public sealed record InvitationLimits(int PerMinute = 10, int ResponsesPerMinute = 20)
 {
     public static readonly InvitationLimits Default = new();
 }
+
+/// <summary>
+/// The window of opening, accepting and declining with a secret. Each attempt is a guess of
+/// the secret, so one caller makes a bounded number of them in a minute.
+/// </summary>
+internal sealed class InvitationResponseRate(InvitationLimits limits) : CallerRate(limits.ResponsesPerMinute);
 
 /// <summary>
 /// The window of invitation creation. Each invitation is a row and an audit entry, so one
@@ -49,6 +69,30 @@ public static class InvitationRules
             .FromSql($"SELECT * FROM workspaces.invitations WHERE id = {invitationId} FOR UPDATE")
             .ToListAsync(ct))
         .FirstOrDefault();
+
+    public const int MaxSecretLength = 128;
+
+    /// <summary>256 bits from the system's random number generator, base64url without padding.</summary>
+    internal static string NewSecret() => Base64Url.EncodeToString(RandomNumberGenerator.GetBytes(32));
+
+    internal static byte[] Hash(string secret) => SHA256.HashData(Encoding.UTF8.GetBytes(secret));
+
+    /// <summary>
+    /// Whether <paramref name="secret"/> is the secret of the invitation. The hashes are
+    /// compared in constant time. The secret has 256 bits, so a plain hash is enough: no
+    /// guess finds it, and the hash in the database gives nothing to a reader of it.
+    /// </summary>
+    internal static bool SecretMatches(InvitationEntity invitation, string? secret)
+    {
+        var usable = secret is { Length: > 0 and <= MaxSecretLength };
+        var given = Hash(usable ? secret! : "");
+        var stored = invitation.SecretHash is { Length: 32 } hash ? hash : new byte[32];
+        return CryptographicOperations.FixedTimeEquals(stored, given) & usable & invitation.SecretHash is { Length: 32 };
+    }
+
+    internal static IssuedInvitationDto Issued(InvitationEntity i, string secret, DateTimeOffset now) =>
+        new(i.Id, i.WorkspaceId, i.Email, MemberRoles.Canonical(i.Role), StatusAt(i, now), i.CreatedAt, i.ExpiresAt,
+            secret, $"/invitations/{i.Id}#secret={secret}");
 
     internal static IResult NotFound() => Results.NotFound(new ErrorResponse("not_found", "Invitation not found"));
 
@@ -130,7 +174,10 @@ public static class CreateInvitation
             db.Invitations.Add(invitation);
         }
 
-        // A second invitation of the same address renews the open one: the new role, a new expiry.
+        // A second invitation of the same address renews the open one: the new role, a new
+        // expiry and a new secret. The link with the old secret stops working.
+        var secret = InvitationRules.NewSecret();
+        invitation.SecretHash = InvitationRules.Hash(secret);
         invitation.Email = email;
         invitation.Role = role.ToString();
         invitation.InvitedBy = userId;
@@ -140,7 +187,7 @@ public static class CreateInvitation
             $"invitation:{invitation.Id} role:{invitation.Role.ToLowerInvariant()}", ct);
         await transaction.CommitAsync(ct);
 
-        var dto = InvitationRules.ToDto(invitation, now);
+        var dto = InvitationRules.Issued(invitation, secret, now);
         return renewed
             ? Results.Ok(dto)
             : Results.Created($"/api/workspaces/{workspaceId}/invitations/{invitation.Id}", dto);
@@ -212,8 +259,10 @@ public static class RevokeInvitation
 
 /// <summary>
 /// The invitations of the signed-in person: those for the email address of the account.
-/// Vellum sends no email, so the address on the account is what an invitation is matched
-/// to. An invitation for any other address is not found for this person, whatever its state.
+/// Vellum sends no email, so the owner sends the link with its secret. The list shows that
+/// an invitation exists; opening, accepting and declining need the secret of the link and
+/// the signed-in account of the invited address. A wrong or missing secret, another
+/// account and an unknown ID all get the same 404, so no answer tells which part was wrong.
 /// </summary>
 public static class MyInvitations
 {
@@ -234,15 +283,27 @@ public static class MyInvitations
             .Join(db.Workspaces, i => i.WorkspaceId, w => w.Id, (i, w) => new { Invitation = i, WorkspaceName = w.Name })
             .OrderBy(r => r.Invitation.CreatedAt)
             .ToListAsync(ct);
-        var inviterIds = rows.Select(r => r.Invitation.InvitedBy).Distinct().ToList();
-        var inviters = await identity.Users.AsNoTracking()
-            .Where(u => inviterIds.Contains(u.Id))
-            .Select(u => new { u.Id, Name = u.DisplayName ?? u.Email })
-            .ToDictionaryAsync(u => u.Id, u => u.Name, ct);
+        return Results.Ok(await ToDtosAsync(rows.Select(r => (r.Invitation, r.WorkspaceName)).ToList(), identity, now, ct));
+    }
 
-        return Results.Ok(rows.Select(r => new MyInvitationDto(
-            r.Invitation.Id, r.Invitation.WorkspaceId, r.WorkspaceName, MemberRoles.Canonical(r.Invitation.Role),
-            inviters.GetValueOrDefault(r.Invitation.InvitedBy), r.Invitation.CreatedAt, r.Invitation.ExpiresAt)).ToList());
+    /// <summary>The invitation of a link, for the screen that offers Accept and Decline. It changes nothing.</summary>
+    public static async Task<IResult> Open(
+        Guid invitationId,
+        InvitationSecretRequest? request,
+        ClaimsPrincipal user,
+        WorkspacesDbContext db,
+        AppIdentityDbContext identity,
+        TimeProvider time,
+        CancellationToken ct)
+    {
+        var email = await EmailOfAsync(user, identity, ct);
+        var invitation = await db.Invitations.AsNoTracking().FirstOrDefaultAsync(i => i.Id == invitationId, ct);
+        if (invitation is null || !IsFor(invitation, email, request?.Secret))
+            return InvitationRules.NotFound();
+
+        var workspaceName = await db.Workspaces.Where(w => w.Id == invitation.WorkspaceId).Select(w => w.Name).FirstAsync(ct);
+        var dtos = await ToDtosAsync([(invitation, workspaceName)], identity, time.GetUtcNow(), ct);
+        return Results.Ok(dtos[0]);
     }
 
     /// <summary>
@@ -252,6 +313,7 @@ public static class MyInvitations
     /// </summary>
     public static async Task<IResult> Accept(
         Guid invitationId,
+        InvitationSecretRequest? request,
         ClaimsPrincipal user,
         WorkspacesDbContext db,
         AppIdentityDbContext identity,
@@ -263,7 +325,7 @@ public static class MyInvitations
 
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         var invitation = await InvitationRules.LockAsync(db, invitationId, ct);
-        if (invitation is null || email is null || invitation.NormalizedEmail != email)
+        if (invitation is null || !IsFor(invitation, email, request?.Secret))
             return InvitationRules.NotFound();
 
         var membership = await db.Memberships
@@ -299,8 +361,14 @@ public static class MyInvitations
         return Results.Ok(ToDto(membership));
     }
 
+    /// <summary>
+    /// Closes the invitation. It needs the secret as an accept does: an account that only has
+    /// the address (one that registered with an address it does not own) can then neither
+    /// accept nor close the invitation of the person who got the link.
+    /// </summary>
     public static async Task<IResult> Decline(
         Guid invitationId,
+        InvitationSecretRequest? request,
         ClaimsPrincipal user,
         WorkspacesDbContext db,
         AppIdentityDbContext identity,
@@ -312,10 +380,11 @@ public static class MyInvitations
 
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         var invitation = await InvitationRules.LockAsync(db, invitationId, ct);
-        if (invitation is null || email is null || invitation.NormalizedEmail != email)
+        if (invitation is null || !IsFor(invitation, email, request?.Secret))
             return InvitationRules.NotFound();
 
-        var status = InvitationRules.StatusAt(invitation, time.GetUtcNow());
+        var now = time.GetUtcNow();
+        var status = InvitationRules.StatusAt(invitation, now);
         if (status == InvitationStatus.Declined)
             return Results.NoContent();
         if (status != InvitationStatus.Pending)
@@ -323,12 +392,30 @@ public static class MyInvitations
 
         invitation.Status = InvitationStatus.Declined;
         invitation.RespondedBy = userId;
-        invitation.RespondedAt = time.GetUtcNow();
+        invitation.RespondedAt = now;
         await db.SaveChangesAsync(ct);
         await AuditLog.AppendAsync(db, invitation.WorkspaceId, userId, AuditLog.InvitationDeclined,
             $"invitation:{invitation.Id} role:{invitation.Role.ToLowerInvariant()}", ct);
         await transaction.CommitAsync(ct);
         return Results.NoContent();
+    }
+
+    /// <summary>Both checks run whatever the other gives, so the time of the answer does not tell which one failed.</summary>
+    private static bool IsFor(InvitationEntity invitation, string? email, string? secret) =>
+        InvitationRules.SecretMatches(invitation, secret) & (email is not null && invitation.NormalizedEmail == email);
+
+    private static async Task<List<MyInvitationDto>> ToDtosAsync(
+        List<(InvitationEntity Invitation, string WorkspaceName)> rows, AppIdentityDbContext identity, DateTimeOffset now, CancellationToken ct)
+    {
+        var inviterIds = rows.Select(r => r.Invitation.InvitedBy).Distinct().ToList();
+        var inviters = await identity.Users.AsNoTracking()
+            .Where(u => inviterIds.Contains(u.Id))
+            .Select(u => new { u.Id, Name = u.DisplayName ?? u.Email })
+            .ToDictionaryAsync(u => u.Id, u => u.Name, ct);
+        return rows.Select(r => new MyInvitationDto(
+            r.Invitation.Id, r.Invitation.WorkspaceId, r.WorkspaceName, MemberRoles.Canonical(r.Invitation.Role),
+            inviters.GetValueOrDefault(r.Invitation.InvitedBy), InvitationRules.StatusAt(r.Invitation, now),
+            r.Invitation.CreatedAt, r.Invitation.ExpiresAt)).ToList();
     }
 
     /// <summary>The normalized email address of the signed-in account, read from the account and not from a claim.</summary>

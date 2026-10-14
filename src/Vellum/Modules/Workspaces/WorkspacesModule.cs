@@ -18,6 +18,7 @@ public static class WorkspacesModule
         services.TryAddSingleton(TimeProvider.System);
         services.TryAddSingleton(InvitationLimits.Default);
         services.TryAddSingleton<InvitationRate>();
+        services.TryAddSingleton<InvitationResponseRate>();
 
         return services;
     }

@@ -24,8 +24,8 @@ public static class WorkspaceEndpoints
         var invitations = group.MapGroup("/{workspaceId}/invitations").WithTags("Members").RequireHuman();
         invitations.MapGet("/", ListInvitations.Handle).Produces<List<InvitationDto>>();
         invitations.MapPost("/", CreateInvitation.Handle).WithBodyLimit(RequestBodyLimit.Default)
-            .Produces<InvitationDto>(StatusCodes.Status201Created)
-            .Produces<InvitationDto>()
+            .Produces<IssuedInvitationDto>(StatusCodes.Status201Created)
+            .Produces<IssuedInvitationDto>()
             .Produces<ErrorResponse>(StatusCodes.Status409Conflict)
             .Produces<ErrorResponse>(StatusCodes.Status429TooManyRequests)
             .AddEndpointFilter(CallerRate.Filter<InvitationRate>);
@@ -34,8 +34,13 @@ public static class WorkspaceEndpoints
         // The invitations of the signed-in person, in any workspace.
         var mine = app.MapGroup("/api/invitations").WithTags("Members").RequireHuman();
         mine.MapGet("/", MyInvitations.List).Produces<List<MyInvitationDto>>();
-        mine.MapPost("/{invitationId:guid}/accept", MyInvitations.Accept).Produces<MembershipDto>();
-        mine.MapPost("/{invitationId:guid}/decline", MyInvitations.Decline);
+        // The secret of the link is in the body of each of these, never in the URL.
+        var answers = mine.MapGroup("/{invitationId:guid}")
+            .WithBodyLimit(RequestBodyLimit.Default)
+            .AddEndpointFilter(CallerRate.Filter<InvitationResponseRate>);
+        answers.MapPost("/open", MyInvitations.Open).Produces<MyInvitationDto>();
+        answers.MapPost("/accept", MyInvitations.Accept).Produces<MembershipDto>();
+        answers.MapPost("/decline", MyInvitations.Decline);
 
         var projects = group.MapGroup("/{workspaceId}/projects").WithTags("Projects");
         projects.MapPost("/", CreateProject.Handle);

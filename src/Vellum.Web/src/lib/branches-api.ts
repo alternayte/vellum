@@ -101,6 +101,13 @@ export interface Invitation {
   expiresAt: string
 }
 
+/** A new or renewed invitation. The only answer that holds the secret of its link. */
+export interface IssuedInvitation extends Invitation {
+  secret: string
+  /** The link in the app, with the secret in the fragment: `/invitations/{id}#secret=…`. */
+  path: string
+}
+
 /** An open invitation for the signed-in person. */
 export interface MyInvitation {
   id: string
@@ -109,6 +116,7 @@ export interface MyInvitation {
   role: Role
   /** The name of the owner who sent it. Null when that account does not exist any more. */
   invitedBy: string | null
+  status: Invitation['status']
   createdAt: string
   expiresAt: string
 }
@@ -170,12 +178,17 @@ export const branchesApi = {
   invitations: (workspaceId: string) => api<Invitation[]>('GET', `/api/workspaces/${workspaceId}/invitations`),
   /** The answer is the same whether the address has an account here or not. */
   invite: (workspaceId: string, email: string, role: Role) =>
-    api<Invitation>('POST', `/api/workspaces/${workspaceId}/invitations`, { email, role }),
+    api<IssuedInvitation>('POST', `/api/workspaces/${workspaceId}/invitations`, { email, role }),
   revokeInvitation: (workspaceId: string, invitationId: string) =>
     api<void>('DELETE', `/api/workspaces/${workspaceId}/invitations/${invitationId}`),
   myInvitations: () => api<MyInvitation[]>('GET', '/api/invitations'),
-  acceptInvitation: (invitationId: string) => api<unknown>('POST', `/api/invitations/${invitationId}/accept`),
-  declineInvitation: (invitationId: string) => api<void>('POST', `/api/invitations/${invitationId}/decline`),
+  /** The secret goes in the body: it is in no URL that a server or a proxy logs. */
+  openInvitation: (invitationId: string, secret: string) =>
+    api<MyInvitation>('POST', `/api/invitations/${invitationId}/open`, { secret }),
+  acceptInvitation: (invitationId: string, secret: string) =>
+    api<unknown>('POST', `/api/invitations/${invitationId}/accept`, { secret }),
+  declineInvitation: (invitationId: string, secret: string) =>
+    api<void>('POST', `/api/invitations/${invitationId}/decline`, { secret }),
   changeRole: (workspaceId: string, userId: string, role: Role) =>
     api<unknown>('PATCH', `/api/workspaces/${workspaceId}/members/${userId}`, { role }),
   removeMember: (workspaceId: string, userId: string) =>

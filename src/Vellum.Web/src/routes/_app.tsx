@@ -1,7 +1,10 @@
 import { createFileRoute, Outlet, redirect } from '@tanstack/react-router'
+import { captureInvitationLink } from '@/lib/invitation-link'
 
 export const Route = createFileRoute('/_app')({
   beforeLoad: async () => {
+    // An invitation link keeps its secret through the sign-in that may follow.
+    captureInvitationLink()
     // A network-level failure (DNS, CORS, offline) throws here and reaches the error boundary.
     const response = await fetch('/api/auth/me')
     if (response.status === 401 || response.status === 403) {
