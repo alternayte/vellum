@@ -342,7 +342,7 @@ public static class ModellingEndpoints
         {
             var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
             await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
-            return await ImportModel.Handle(projectId, request, dryRun == true, expectedVersion, workspacesDb, ct);
+            return await ImportModel.Handle(projectId, userId, request, dryRun == true, expectedVersion, workspacesDb, ct);
         })
         .Produces<ImportResult>()
         .WithMetadata(new RequestBodyLimit(

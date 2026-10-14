@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text.Json;
 using Deedbox;
 using Microsoft.EntityFrameworkCore;
+using Vellum.Modules.Drafts;
 using Vellum.Shared;
 using Vellum.Modules.Modelling.Model;
 using Vellum.Modules.Schemas;
@@ -55,6 +56,7 @@ public static class ImportModel
 
     public static async Task<IResult> Handle(
         Guid projectId,
+        string userId,
         HttpRequest request,
         bool dryRun,
         long? expectedVersion,
@@ -153,7 +155,7 @@ public static class ImportModel
         // The whole import is one unit. A unit that fails with DBX038 or a deadlock wrote
         // nothing and runs again.
         return await SharedTransaction.RunAsync(request.HttpContext.RequestServices,
-            services => ImportAsync(services, projectId, project.StreamId, doc, dryRun, expectedVersion, ct), ct);
+            services => ImportAsync(services, projectId, userId, project.StreamId, doc, dryRun, expectedVersion, ct), ct);
     }
 
     /// <summary>
@@ -196,7 +198,7 @@ public static class ImportModel
     }
 
     private static async Task<IResult> ImportAsync(
-        IServiceProvider services, Guid projectId, Guid modelStreamId, ModelExportDocument doc,
+        IServiceProvider services, Guid projectId, string userId, Guid modelStreamId, ModelExportDocument doc,
         bool dryRun, long? expectedVersion, CancellationToken ct)
     {
         var modellingDb = services.GetRequiredService<ModellingDbContext>();
@@ -218,7 +220,7 @@ public static class ImportModel
         // the two is written is known only when both are read, so both are locked.
         var state = ModelState.Initial;
         long version = 0;
-        var schemaStreams = new Dictionary<Guid, (SchemaState State, long Version)>();
+        var schemaStreams = new Dictionary<Guid, (SchemaState State, long Version, Guid? Owner)>();
         var lockIds = doc.Schemas.SelectMany(s => new[] { s.Id, SchemaIdIn(projectId, s.Id) }).Append(modelStreamId).Distinct().Order();
         foreach (var streamId in lockIds)
         {
@@ -230,7 +232,23 @@ public static class ImportModel
             else
             {
                 var schema = await store.Execute<SchemaState>(StreamId.From(streamId), _ => [], ct);
-                schemaStreams[streamId] = (schema.State, schema.Version);
+                schemaStreams[streamId] = (schema.State, schema.Version, await OwnerAsync(services, store, streamId, schema.State, schema.Version, ct));
+            }
+        }
+
+        // A preview must not tell whether an ID is in use in a project the caller cannot read:
+        // otherwise it answers that question for any ID and writes nothing. It decides against
+        // the streams as the caller may see them, so such a stream reads as an unused ID. The
+        // import itself decides against the streams as they are, and never writes into one of
+        // them (see `schemaTargets`).
+        if (dryRun)
+        {
+            var foreignOwners = schemaStreams.Values.Select(s => s.Owner).OfType<Guid>().Where(o => o != projectId).ToHashSet();
+            var readable = await ReadableProjectsAsync(services, userId, foreignOwners, ct);
+            foreach (var (id, stream) in schemaStreams.ToList())
+            {
+                if (stream.Owner is { } owner && owner != projectId && !readable.Contains(owner))
+                    schemaStreams[id] = (SchemaState.Initial, 0, null);
             }
         }
 
@@ -248,16 +266,18 @@ public static class ImportModel
             items.Add(new ImportItem(kind, id, name, Refused, reason));
 
         // Where each schema of the document is written. A schema keeps its ID unless the ID
-        // belongs to another project; then it takes the ID that this project gives it, and so
-        // does every reference to it. A schema that was imported that way before is found
-        // under that ID again, whatever happened to the schema of the other project since.
+        // is in use for anything but a schema of this project (a schema of another project,
+        // deleted or not, or a model, draft or variant stream); then it takes the ID that this
+        // project gives it, and so does every reference to it. A schema that was imported that
+        // way before is found under that ID again, whatever happened to the other stream since.
+        bool Writable(Guid streamId) => schemaStreams[streamId] is var s
+            && (s.Owner is null || (s.Owner == projectId && (s.State.Schema is not null || s.State.Deleted)));
         var schemaTargets = new Dictionary<Guid, Guid>();
         foreach (var schema in doc.Schemas)
         {
             var mapped = SchemaIdIn(projectId, schema.Id);
-            var own = schemaStreams[schema.Id].State.Schema;
             schemaTargets[schema.Id] =
-                schemaStreams[mapped].State.Schema?.ProjectId == projectId || (own is not null && own.ProjectId != projectId)
+                (schemaStreams[mapped].Owner == projectId && Writable(mapped)) || !Writable(schema.Id)
                     ? mapped
                     : schema.Id;
         }
@@ -510,7 +530,7 @@ public static class ImportModel
         {
             var target = schemaTargets[schema.Id];
             Guid? importedAs = target == schema.Id ? null : target;
-            var (schemaState, schemaVersion) = schemaStreams[target];
+            var (schemaState, schemaVersion, _) = schemaStreams[target];
 
             // Two entries of the document that end in one stream: one names the ID that the other gets in this project.
             if (!written.Add(target))
@@ -519,15 +539,17 @@ public static class ImportModel
                 continue;
             }
 
+            // The ID that this project gives the schema is in use too. Only a stream made to take
+            // that ID gets here; the import never writes into it.
+            if (!Writable(target))
+            {
+                Refuse("schema", schema.Id, schema.Name, "this ID belongs to another project");
+                continue;
+            }
+
             CommandResult<IReadOnlyList<object>> decision;
             if (schemaState.Schema is not null)
             {
-                if (schemaState.Schema.ProjectId != projectId)
-                {
-                    Refuse("schema", schema.Id, schema.Name, "this ID belongs to another project");
-                    continue;
-                }
-
                 decision = SchemaDecider.Update(schemaState, new UpdateSchemaCommand(target,
                     Name: schema.Name, SetName: true,
                     Description: schema.Description, SetDescription: true,
@@ -584,6 +606,48 @@ public static class ImportModel
 
         await transaction.CommitAsync(ct);
         return Results.Ok(result with { Applied = true });
+    }
+
+    /// <summary>
+    /// The project that a stream belongs to: the project of its schema, also of a deleted one,
+    /// or the project of the model, draft or variant that has the stream, also before its
+    /// first event. <see cref="Guid.Empty"/> for any other stream that holds events. Null for
+    /// a stream that nothing uses.
+    /// </summary>
+    private static async Task<Guid?> OwnerAsync(
+        IServiceProvider services, IEventStore store, Guid streamId, SchemaState state, long version, CancellationToken ct)
+    {
+        if (state.Schema is { } schema)
+            return schema.ProjectId;
+
+        var branchOwner =
+            await services.GetRequiredService<WorkspacesDbContext>().Projects.AsNoTracking()
+                .Where(p => p.StreamId == streamId).Select(p => (Guid?)p.Id).FirstOrDefaultAsync(ct)
+            ?? await services.GetRequiredService<DraftsDbContext>().Drafts.AsNoTracking()
+                .Where(d => d.StreamId == streamId).Select(d => (Guid?)d.ProjectId).FirstOrDefaultAsync(ct)
+            ?? await services.GetRequiredService<ModellingDbContext>().Variants.AsNoTracking()
+                .Where(v => v.StreamId == streamId).Select(v => (Guid?)v.ProjectId).FirstOrDefaultAsync(ct);
+        if (branchOwner is not null)
+            return branchOwner;
+        if (version == 0)
+            return null;
+
+        var first = await store.ReadStream(StreamId.From(streamId), 0, 1, ct);
+        return first.Count > 0 && first[0].Event is SchemaEvent.SchemaCreated created ? created.ProjectId : Guid.Empty;
+    }
+
+    /// <summary>The projects of <paramref name="projectIds"/> in a workspace that <paramref name="userId"/> is a member of.</summary>
+    private static async Task<HashSet<Guid>> ReadableProjectsAsync(
+        IServiceProvider services, string userId, IReadOnlyCollection<Guid> projectIds, CancellationToken ct)
+    {
+        if (projectIds.Count == 0)
+            return [];
+
+        var db = services.GetRequiredService<WorkspacesDbContext>();
+        return [.. await db.Projects.AsNoTracking()
+            .Where(p => projectIds.Contains(p.Id) && db.Memberships.Any(m => m.WorkspaceId == p.WorkspaceId && m.UserId == userId))
+            .Select(p => p.Id)
+            .ToListAsync(ct)];
     }
 
     /// <summary>"Element {id}: {reason}", the text an import has always given for a refused entry.</summary>

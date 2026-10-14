@@ -516,6 +516,65 @@ public class ExportImportTests
     }
 
     [Fact]
+    public async Task A_preview_does_not_tell_whether_an_ID_is_in_use_in_a_project_the_caller_cannot_read()
+    {
+        using var factory = TestHost.Create(_fixture);
+
+        // The owner's project: a schema, a deleted schema and the model stream.
+        using var owner = await TestHost.SignInAsync(factory);
+        var (_, theirs) = await TestHost.CreateProjectAsync(owner);
+        var (live, deleted) = (Guid.NewGuid(), Guid.NewGuid());
+        foreach (var id in new[] { live, deleted })
+        {
+            await TestHost.Created(owner.PostAsJsonAsync($"/api/projects/{theirs}/schemas",
+                new { id, name = "Secret", content = "{\"type\":\"object\"}" }));
+        }
+        Assert.Equal(HttpStatusCode.NoContent, (await owner.DeleteAsync($"/api/projects/{theirs}/schemas/{deleted}")).StatusCode);
+        var modelStream = (await owner.GetFromJsonAsync<JsonElement>($"/api/projects/{theirs}")).GetProperty("streamId").GetGuid();
+        var exportBefore = await owner.GetStringAsync($"/api/projects/{theirs}/export");
+        var liveBefore = await owner.GetStringAsync($"/api/projects/{theirs}/schemas/{live}");
+
+        using var stranger = await TestHost.SignInAsync(factory);
+        var (_, mine) = await TestHost.CreateProjectAsync(stranger);
+
+        static object Document(params Guid[] schemaIds) => new
+        {
+            elements = Array.Empty<object>(),
+            schemas = schemaIds.Select(id => new { id, name = "Probe", content = "{\"type\":\"object\"}" }).ToArray(),
+        };
+        async Task<ImportResult> Post(object document, string query)
+        {
+            var response = await stranger.PostAsJsonAsync($"/api/projects/{mine}/import{query}", document);
+            Assert.True(response.StatusCode == HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+            return (await response.Content.ReadFromJsonAsync<ImportResult>())!;
+        }
+        // The answer with the probed IDs left out.
+        static string Shape(ImportResult result) => JsonSerializer.Serialize(result with
+        {
+            Items = [.. result.Items.Select(i => i with { Id = Guid.Empty, ImportedAs = i.ImportedAs is null ? null : Guid.Empty })],
+        });
+
+        // Each ID in use, alone and next to the ID this project would give it, previews as an unused ID.
+        var unused = Guid.NewGuid();
+        var expected = Shape(await Post(Document(unused), "?dryRun=true"));
+        var expectedPair = Shape(await Post(Document(unused, ImportModel.SchemaIdIn(mine, unused)), "?dryRun=true"));
+        foreach (var probe in new[] { live, deleted, modelStream })
+        {
+            Assert.Equal(expected, Shape(await Post(Document(probe), "?dryRun=true")));
+            Assert.Equal(expectedPair, Shape(await Post(Document(probe, ImportModel.SchemaIdIn(mine, probe)), "?dryRun=true")));
+        }
+
+        // The import writes into none of those streams: each schema takes the ID this project gives it.
+        var imported = await Post(Document(live, deleted, modelStream), "");
+        Assert.True(imported.Applied);
+        Assert.All(imported.Items, i => Assert.Equal(ImportModel.SchemaIdIn(mine, i.Id), i.ImportedAs));
+
+        Assert.Equal(exportBefore, await owner.GetStringAsync($"/api/projects/{theirs}/export"));
+        Assert.Equal(liveBefore, await owner.GetStringAsync($"/api/projects/{theirs}/schemas/{live}"));
+        Assert.Equal(HttpStatusCode.NotFound, (await owner.GetAsync($"/api/projects/{theirs}/schemas/{deleted}")).StatusCode);
+    }
+
+    [Fact]
     public async Task A_refused_import_names_every_refused_entry_and_writes_nothing()
     {
         using var factory = CreateFactory();

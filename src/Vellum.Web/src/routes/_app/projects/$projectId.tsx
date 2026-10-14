@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, Link } from '@tanstack/react-router'
 import { TopBar } from '@/components/shell/top-bar'
 import { DetailPanel } from '@/components/shell/detail-panel'
 import { LeftToolbar } from '@/components/shell/left-toolbar'
@@ -28,7 +28,7 @@ import { useTraceStore } from '@/stores/trace-store'
 import type { ScenarioReference } from '@/components/trace/scenario-editor'
 import { useAddElement, useUpdateElement, useRemoveElement } from '@/hooks/use-elements'
 import { useAddRelationship, useUpdateRelationship, useRemoveRelationship } from '@/hooks/use-relationships'
-import { refuseWrite, useModel, useProject, writeGuard } from '@/hooks/use-model'
+import { isProjectRefusal, refuseWrite, useModel, useProject, writeGuard } from '@/hooks/use-model'
 import { useViews, useView, useCreateView, useSaveLayout } from '@/hooks/use-views'
 import { useDocs, useCreateDoc } from '@/hooks/use-docs'
 import { patchApiProjectsByProjectIdDocsByDocId } from '@/api/generated'
@@ -44,10 +44,47 @@ import { canContain, pathTo, validKindsForContext } from '@/lib/containment-rule
 import { isPlainShortcut } from '@/lib/shortcuts'
 import { buildDuplicateSet } from '@/lib/duplicate'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Button } from '@/components/ui/button'
 
 export const Route = createFileRoute('/_app/projects/$projectId')({
-  component: ProjectWorkspace,
+  component: ProjectPage,
 })
+
+// The workbench opens only on a project that the person can read. Before that nothing of it
+// runs, so an unknown ID reads no model and creates no view.
+function ProjectPage() {
+  const { projectId } = Route.useParams()
+  const { data: project, error } = useProject(projectId)
+
+  if (error) {
+    const refused = isProjectRefusal(error)
+    return (
+      <main className="flex h-screen items-center justify-center bg-background px-4">
+        <div className="max-w-sm text-center" role="alert">
+          <h1 className="text-base font-semibold">{refused ? 'Project not found or you have no access' : 'The project did not load'}</h1>
+          <p className="mt-2 text-sm text-muted-foreground">
+            {refused
+              ? 'No project with this address exists in a workspace you are a member of.'
+              : error.message}
+          </p>
+          <Button asChild size="sm" className="mt-4">
+            <Link to="/">Back to projects</Link>
+          </Button>
+        </div>
+      </main>
+    )
+  }
+
+  if (!project) {
+    return (
+      <div className="flex h-screen items-center justify-center" aria-busy="true">
+        <Skeleton className="h-8 w-48" />
+      </div>
+    )
+  }
+
+  return <ProjectWorkspace />
+}
 
 function ProjectWorkspace() {
   const { projectId } = Route.useParams()

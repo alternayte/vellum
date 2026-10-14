@@ -1,10 +1,13 @@
 using System.Security.Claims;
+using Microsoft.EntityFrameworkCore;
+using Vellum.Modules.Drafts;
 using Vellum.Modules.Modelling.Contracts;
 using Vellum.Modules.Modelling.Elements;
 using Vellum.Modules.Modelling.Messages;
 using Vellum.Modules.Modelling.Model;
 using Vellum.Modules.Modelling.Relationships;
 using Vellum.Modules.Promises;
+using Vellum.Modules.Workspaces;
 using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Shared;
 
@@ -156,12 +159,21 @@ public static class PinnedModelRead
             branchId = id;
         }
 
+        // The refusals of the resolver name its own parameters, so a side is checked here and
+        // a refusal names the side.
+        if (revisionId is { } revision && !await services.GetRequiredService<ModellingDbContext>().Revisions
+                .AnyAsync(r => r.Id == revision && r.ProjectId == projectId, ct))
+            return (null, Invalid(field, "No revision with this ID exists in the project"));
+        if (branchId is { } branch && !(await ModelBranches.OpenAsync(projectId,
+                services.GetRequiredService<WorkspacesDbContext>(), services.GetRequiredService<DraftsDbContext>(),
+                services.GetRequiredService<ModellingDbContext>(), ct)).Any(b => b.StreamId == branch))
+            return (null, Invalid(field, "No open draft or variant with this stream ID exists in the project"));
+
         return await PinnedModel.ResolveAsync(services, projectId, revisionId, branchId, ct);
     }
 
-    private static IResult Invalid(string field) =>
-        Results.BadRequest(new ErrorResponse("validation_error", "Validation failed",
-            Errors: [new FieldError(field, "Must be main, the stream ID of an open draft or variant, or revision: and the ID of a revision")]));
+    private static IResult Invalid(string field, string message = "Must be main, the stream ID of an open draft or variant, or revision: and the ID of a revision") =>
+        Results.BadRequest(new ErrorResponse("validation_error", "Validation failed", Errors: [new FieldError(field, message)]));
 
     private static ElementDto ToDto(ElementState e) => new(
         e.Id, e.Kind.ToString().ToLowerInvariant(), e.Name, e.Description, e.Technology, e.OwnerId,
