@@ -15,6 +15,7 @@ An agent reads the model, runs the review, exports a specification, and records 
    - `read`: read the model, the contracts, the scenarios, the promises, the decisions and the open questions, and run the review.
    - `propose`: write draft promises and obligations, proposed decisions, questions and draft proposals. Run checks. Record evidence.
    - `export`: export the SDD, the bundle and the brief, and check a bundle.
+   - `scan-pull-request`: start a scan of a pull request, for CI. See [Report impact in pull request CI](/how-to/report-impact-in-pull-request-ci/).
 4. Select **Create token**.
 5. Select **Copy**. Vellum shows the token one time only.
 

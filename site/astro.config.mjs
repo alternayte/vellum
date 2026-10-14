@@ -60,7 +60,7 @@ export default defineConfig({
             },
             {
               label: 'Import from a repository',
-              items: ['how-to/connect-github', 'how-to/import-a-repository', 'how-to/check-change-impact'],
+              items: ['how-to/connect-github', 'how-to/import-a-repository', 'how-to/check-change-impact', 'how-to/report-impact-in-pull-request-ci'],
             },
             {
               label: 'Use the assistant',

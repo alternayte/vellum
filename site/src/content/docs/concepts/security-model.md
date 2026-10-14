@@ -81,7 +81,7 @@ A coding agent authenticates with a bearer token that starts with `vlm_agt_`. Ve
 A token is a weaker identity than the user who made it.
 
 - It works in one workspace. An owner can restrict it to one project.
-- It has scopes: `read`, `propose`, `export`.
+- It has scopes: `read`, `propose`, `export`, `scan-pull-request`.
 - It acts for the user who created it and has no more access than that user has today. When that user leaves the workspace, the token stops.
 - It is refused on each endpoint that does not explicitly accept tokens. The default for a new endpoint is refusal.
 - It cannot call an endpoint that is for a person only, with any scope. The answer is `403` with the type `human_only`.

@@ -13,7 +13,7 @@ These parts of change impact are not available.
 
 - A scan does not accept a pull request address. Give the repository and the pull request number.
 - A scan does not accept a base commit and a head commit. It reads one commit and compares its contracts with the model. It compares its source patterns with the snapshot that the model follows, not with the base commit of a pull request.
-- Vellum writes nothing to GitHub. It posts no report to a pull request, sets no commit status and blocks no merge in CI.
+- Vellum writes nothing to GitHub. It posts no report to a pull request and sets no commit status. A CI job can read the report and fail on an opt-in gate: see [Report impact in pull request CI](/how-to/report-impact-in-pull-request-ci/).
 
 ## Scan the other ref
 
@@ -25,7 +25,7 @@ These parts of change impact are not available.
 
 The scan list shows the ref, the commit and the word **comparison**.
 
-The request is `POST /api/projects/{projectId}/imports`. The `curl` examples use the session cookie of a signed-in person in the file `vellum.cookies`. [Use the HTTP API](/how-to/use-the-http-api/) shows how to sign in. An agent token cannot make these calls: these endpoints are not open to agent tokens and answer `403`.
+The request is `POST /api/projects/{projectId}/imports`. The `curl` examples use the session cookie of a signed-in person in the file `vellum.cookies`. [Use the HTTP API](/how-to/use-the-http-api/) shows how to sign in. An agent token cannot scan a branch, a tag or a commit: the answer is `403`. A token with the `scan-pull-request` scope can scan a pull request.
 
 ```sh
 curl -X POST "http://localhost:8080/api/projects/<project-id>/imports" \
@@ -172,6 +172,27 @@ A promise has one more label.
 The report reads the source. It runs no check and it changes nothing. A promise that names nothing that changed is not in the report.
 
 The request is `GET /api/projects/{projectId}/imports/{importId}/impact`.
+
+### Copy the compact report
+
+Select **Copy report**. The clipboard holds the compact report as Markdown, as a CI job reads it. It holds the gate verdict, the changes with their source references, the affected steps, the promises with the results of their checks against this scan, and the unknowns. Long lists are cut, with a line that says how many entries are not shown.
+
+The request is `GET /api/projects/{projectId}/imports/{importId}/impact/report`. Send `Accept: application/json` for JSON.
+
+### Set the gate policy
+
+The **Gate** box at the top of the dialog shows the policy of the project and its verdict on this scan. You need the owner role to change the policy. The audit log of the workspace records each change.
+
+| Policy | Verdict |
+|---|---|
+| **Off: never fails** | `off`. The default. |
+| **Fail on a broken approved promise** | `fail` when an approved promise is **Broken**: a deterministic check of it failed against this scan. Else `pass`. |
+
+**At risk**, **Possibly affected** and **Unknown** never fail the gate. A draft promise never fails the gate.
+
+A source pattern check cannot fail against a comparison scan. The verdict of a pull request scan is therefore `pass` or `off`.
+
+The requests are `GET` and `PUT /api/projects/{projectId}/impact-gate`, with the body `{"policy":"fail-on-broken"}`.
 
 ## Example: a pull request that removes the outbox
 
