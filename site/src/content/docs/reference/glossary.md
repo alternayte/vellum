@@ -29,7 +29,7 @@ Each entry gives the meaning of a term in Vellum and the page that defines it.
 
 **Channel**: A contract for messaging: a topic, a queue or an exchange. See [Model document format](/reference/model-document-format/#channel).
 
-**Comparison scan**: A repository scan of a ref that the model does not follow, or of a bare commit. You can read its proposals and you cannot accept them. It writes nothing to the model and marks no fact stale. See [Check change impact](/how-to/check-change-impact/).
+**Comparison scan**: A repository scan of a ref that the model does not follow, of a bare commit, or of the head commit of a pull request. You can read its proposals and you cannot accept them. It writes nothing to the model and marks no fact stale. See [Check change impact](/how-to/check-change-impact/).
 
 **Component**: An element kind: a part inside an app. Its parent is an app. See [Model a system](/how-to/model-a-system/#know-the-element-kinds).
 

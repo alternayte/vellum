@@ -65,8 +65,18 @@ public sealed record ImpactChangeDto(
 /// <param name="ChangeId">The <see cref="ImpactChangeDto.Id"/> the reason stands on.</param>
 public sealed record ImpactReasonDto(string Certainty, string ChangeId, string Text);
 
+/// <summary>One affected step of a flow, with the reasons that reach it. Each reason names the change, whose evidence the report holds.</summary>
+/// <param name="StepId">The ID of the step in the scenario, or <c>assertion:&lt;id&gt;</c> or <c>fault</c>.</param>
+/// <param name="Kind"><c>call</c>, <c>publish</c>, <c>write</c>, <c>parallel</c>, <c>branch</c>, <c>assertion</c> or <c>fault</c>.</param>
+/// <param name="Label">What the step calls, publishes or writes to, by its name in the model. Null when it has none.</param>
+/// <param name="Certainty"><c>definite</c> only when a reason stands on a contract diff or source lines that name what the step names.</param>
+public sealed record ImpactStepDto(string StepId, string Kind, string? Label, string Certainty, IReadOnlyList<ImpactReasonDto> Reasons);
+
 /// <param name="StepIds">The steps that name what changed, and <c>assertion:&lt;id&gt;</c> or <c>fault</c> entries.</param>
-public sealed record ImpactFlowDto(Guid ScenarioId, string Name, IReadOnlyList<string> StepIds, string Certainty, IReadOnlyList<ImpactReasonDto> Reasons);
+/// <param name="Steps">The same steps in the order the scenario writes them, each with its own certainty and reasons.</param>
+public sealed record ImpactFlowDto(
+    Guid ScenarioId, string Name, IReadOnlyList<string> StepIds, string Certainty, IReadOnlyList<ImpactReasonDto> Reasons,
+    IReadOnlyList<ImpactStepDto> Steps);
 
 /// <summary>A source pattern check of the promise and its result against this scan.</summary>
 /// <param name="Result">The result of the newest run of the obligation that read this scan, whatever ran after it against other scans. Else <c>not-run</c>.</param>
@@ -91,11 +101,12 @@ internal sealed record ImpactInputs(
 /// <param name="Kind"><c>tracking</c> or <c>comparison</c>.</param>
 /// <param name="Limits">What the report does not show, as sentences.</param>
 /// <param name="PromisesNotAffected">The promises of the project that the report gives no reason for.</param>
+/// <param name="PullRequest">For a scan of a pull request: the pull request with its base and head commits. The head is the commit the scan read.</param>
 public sealed record ChangeImpactDto(
     Guid ScanId, string Repository, string Kind, ImpactSideDto Base, ImpactSideDto Head,
     IReadOnlyList<string> Limits,
     IReadOnlyList<ImpactChangeDto> Changes, IReadOnlyList<ImpactFlowDto> Flows, IReadOnlyList<ImpactPromiseDto> Promises,
-    int PromisesNotAffected);
+    int PromisesNotAffected, ScanPullRequest? PullRequest);
 
 /// <summary>
 /// The change impact of one completed scan (SDD §8, capability 2). It reads and writes nothing.
@@ -107,9 +118,11 @@ public sealed record ChangeImpactDto(
 /// gone is <c>definite</c> only when the scan read every file where the base found it, else
 /// <c>unknown</c>. A pattern that is new is <c>definite</c> only when the base scan read every
 /// file where this scan finds it, else <c>unknown</c>.</item>
-/// <item>Flows: a scenario with a step that names a removed or changed contract is
-/// <c>definite</c> (<see cref="ProposalImpact"/>). A scenario that runs in the service of a
-/// changed pattern is <c>possible</c>: nothing says which step needs the pattern.</item>
+/// <item>Flows and their steps: a step that names a removed or changed contract is
+/// <c>definite</c> (<see cref="ProposalImpact"/>). A step that runs in or against the
+/// service of a changed pattern, or the element that owns a changed contract, is
+/// <c>possible</c>: nothing says that the step needs what changed. It is <c>unknown</c>
+/// when the change itself is. A flow is as sure as its surest step.</item>
 /// <item>Promises: a promise that requires a changed pattern, or links a changed contract,
 /// has the certainty of that change. A promise reached only through an affected scenario is
 /// <c>possible</c>. A promise with no reason is not in the report.</item>
@@ -192,13 +205,26 @@ public static class ChangeImpact
             limits.Add("This scan is partial. A limit stopped it before every file was read, so it proposes no removals and a missing item proves nothing.");
 
         var changes = new List<ImpactChangeDto>();
-        var flowReasons = new Dictionary<Guid, (string Name, SortedSet<string> Steps, List<ImpactReasonDto> Reasons)>();
-        void AddFlow(ImpactScenarioDto scenario, ImpactReasonDto reason)
+        var flowReasons = new Dictionary<Guid, (string Name, Dictionary<string, List<ImpactReasonDto>> Steps, List<ImpactReasonDto> Reasons)>();
+        // One reason of one change for the steps it reaches. A step that a change already
+        // reaches gets no second reason of the same change: the first is the surer one.
+        void AddFlow(ImpactScenarioDto scenario, string certainty, string changeId, Func<IReadOnlyList<string>, string> text)
         {
             if (!flowReasons.TryGetValue(scenario.Id, out var flow))
-                flowReasons[scenario.Id] = flow = (scenario.Name, new SortedSet<string>(StringComparer.Ordinal), []);
-            flow.Steps.UnionWith(scenario.StepIds);
+                flowReasons[scenario.Id] = flow = (scenario.Name, new Dictionary<string, List<ImpactReasonDto>>(StringComparer.Ordinal), []);
+            var reached = scenario.StepIds
+                .Where(step => !flow.Steps.TryGetValue(step, out var had) || had.All(r => r.ChangeId != changeId))
+                .ToList();
+            if (reached.Count == 0)
+                return;
+            var reason = new ImpactReasonDto(certainty, changeId, text(reached));
             flow.Reasons.Add(reason);
+            foreach (var step in reached)
+            {
+                if (!flow.Steps.TryGetValue(step, out var list))
+                    flow.Steps[step] = list = [];
+                list.Add(reason);
+            }
         }
 
         // 1a. Contract changes: the proposals of the scan.
@@ -252,8 +278,8 @@ public static class ChangeImpact
             var verb = proposal.Action == ProposalAction.Remove ? "removes" : "changes";
             foreach (var scenario in scenarios.Of(proposal.Action, proposal.EntityKind, proposal.EntityId, changedFields[id]).Scenarios)
             {
-                AddFlow(scenario, new ImpactReasonDto(ImpactCertainty.Definite, id,
-                    $"{Steps(scenario.StepIds)} {(scenario.StepIds.Count == 1 ? "names" : "name")} the {proposal.EntityKind} '{proposal.Name}', which this change {verb}."));
+                AddFlow(scenario, ImpactCertainty.Definite, id, steps =>
+                    $"{Steps(steps)} {(steps.Count == 1 ? "names" : "name")} the {proposal.EntityKind} '{proposal.Name}', which this change {verb}.");
             }
         }
 
@@ -334,25 +360,51 @@ public static class ChangeImpact
             }
         }
 
-        // 2. Flows of a service whose pattern changed: possible, never definite.
-        foreach (var change in changes.Where(c => c is { Kind: "source-pattern", ElementId: not null } && c.Action != ProposalAction.Add))
+        // 2. Steps that run in or against an affected element: the service of a changed
+        // pattern, or the element that owns a changed contract. Possible, never definite.
+        HashSet<Guid> ServiceTargets(Guid service)
         {
-            var service = change.ElementId!.Value;
             var targets = new HashSet<Guid> { service };
             targets.UnionWith(model.Operations.Values.Where(o => o.OwnerId.Value == service).Select(o => o.Id.Value));
             targets.UnionWith(model.Subscriptions.Values.Where(s => s.ConsumerId.Value == service).Select(s => s.Id.Value));
             targets.UnionWith(model.Messages.Values.Where(m => m.ProducerId.Value == service).Select(m => m.Id.Value));
+            return targets;
+        }
+        foreach (var change in changes.Where(c => c is { Kind: "source-pattern", ElementId: not null } && c.Action != ProposalAction.Add))
+        {
+            var service = change.ElementId!.Value;
             var name = model.Elements[service].Name;
-            foreach (var scenario in scenarios.Naming(targets))
+            foreach (var scenario in scenarios.Naming(ServiceTargets(service)))
             {
-                AddFlow(scenario, new ImpactReasonDto(
-                    change.Certainty == ImpactCertainty.Definite ? ImpactCertainty.Possible : ImpactCertainty.Unknown, change.Id,
-                    $"{Steps(scenario.StepIds)} {(scenario.StepIds.Count == 1 ? "runs" : "run")} in or against '{name}', the service of the pattern '{change.Pattern}'. Nothing shows which step needs the pattern."));
+                AddFlow(scenario, change.Certainty == ImpactCertainty.Definite ? ImpactCertainty.Possible : ImpactCertainty.Unknown, change.Id, steps =>
+                    $"{Steps(steps)} {(steps.Count == 1 ? "runs" : "run")} in or against '{name}', the service of the pattern '{change.Pattern}'. Nothing shows which step needs the pattern.");
+            }
+        }
+        foreach (var change in changes.Where(c => c.Kind == "contract" && c.Action is ProposalAction.Change or ProposalAction.Remove or ProposalAction.Conflict))
+        {
+            var owners = new HashSet<Guid>();
+            if (change.ElementId is { } owner)
+                owners.Add(owner);
+            // A schema has no owner. The producers of the messages that use it run what changed.
+            if (change.EntityKind == EntityKinds.Schema && change.EntityId is { } schema)
+                owners.UnionWith(model.Messages.Values.Where(m => m.SchemaId?.Value == schema).Select(m => m.ProducerId.Value));
+            var verb = change.Action == ProposalAction.Remove ? "removes" : "changes";
+            foreach (var element in owners.Where(e => model.Elements.ContainsKey(e)).Order())
+            {
+                var name = model.Elements[element].Name;
+                foreach (var scenario in scenarios.Naming(ServiceTargets(element)))
+                {
+                    AddFlow(scenario, ImpactCertainty.Possible, change.Id, steps =>
+                        $"{Steps(steps)} {(steps.Count == 1 ? "runs" : "run")} in or against '{name}', where this change {verb} the {change.EntityKind} '{change.Name}'. Nothing shows that {(steps.Count == 1 ? "the step uses" : "the steps use")} it.");
+                }
             }
         }
 
         var flows = flowReasons
-            .Select(f => new ImpactFlowDto(f.Key, f.Value.Name, [.. f.Value.Steps], ImpactCertainty.Strongest(f.Value.Reasons.Select(r => r.Certainty)), f.Value.Reasons))
+            .Select(f => new ImpactFlowDto(
+                f.Key, f.Value.Name, [.. f.Value.Steps.Keys.Order(StringComparer.Ordinal)],
+                ImpactCertainty.Strongest(f.Value.Reasons.Select(r => r.Certainty)), f.Value.Reasons,
+                FlowSteps(scenarios.StepsOf(f.Key), f.Value.Steps)))
             .OrderBy(f => f.Name, StringComparer.Ordinal).ThenBy(f => f.ScenarioId)
             .ToList();
 
@@ -458,11 +510,42 @@ public static class ChangeImpact
                 certain, reasons, checks));
         }
 
+        var pullRequest = ScanPullRequest.FromJson(scan.PullRequest);
+        if (pullRequest is not null && baseScan?.CommitSha != pullRequest.BaseSha)
+        {
+            limits.Add(baseScan is null
+                ? $"The base commit of pull request #{pullRequest.Number} is {Short(pullRequest.BaseSha)}. No snapshot of it, or of any other commit, exists here. Contract changes are compared with the model."
+                : $"The base commit of pull request #{pullRequest.Number} is {Short(pullRequest.BaseSha)}. The report compares source patterns with the snapshot of commit {Short(baseScan.CommitSha)}, the one the model follows, and contract changes with the model. A change made on the base branch after that snapshot shows here as a change of the pull request.");
+        }
+
         return (new ChangeImpactDto(
             scan.Id, scan.Repository, kind.Kind,
             new ImpactSideDto(baseScan?.Id, baseScan?.ResolvedRef ?? tracked?.RefName, baseScan?.CommitSha),
             new ImpactSideDto(scan.Id, scan.ResolvedRef, head.CommitSha),
-            limits, changes, flows, promises, all.Count - promises.Count), null);
+            limits, changes, flows, promises, all.Count - promises.Count, pullRequest), null);
+    }
+
+    /// <summary>
+    /// The affected steps of one flow in the order the scenario writes them, then its
+    /// assertions and its faults. A step is as sure as its surest reason.
+    /// </summary>
+    private static List<ImpactStepDto> FlowSteps(
+        IReadOnlyList<(string Id, string Kind, string? Label)> written, Dictionary<string, List<ImpactReasonDto>> affected)
+    {
+        var steps = new List<ImpactStepDto>();
+        foreach (var (id, kind, label) in written)
+        {
+            if (affected.TryGetValue(id, out var reasons))
+                steps.Add(new ImpactStepDto(id, kind, label, ImpactCertainty.Strongest(reasons.Select(r => r.Certainty)), reasons));
+        }
+        var listed = written.Select(w => w.Id).ToHashSet(StringComparer.Ordinal);
+        foreach (var (id, reasons) in affected.Where(a => !listed.Contains(a.Key)).OrderBy(a => a.Key, StringComparer.Ordinal))
+        {
+            var kind = id == "fault" ? "fault" : id.StartsWith("assertion:", StringComparison.Ordinal) ? "assertion" : "step";
+            steps.Add(new ImpactStepDto(id, kind, kind == "assertion" ? id["assertion:".Length..] : null,
+                ImpactCertainty.Strongest(reasons.Select(r => r.Certainty)), reasons));
+        }
+        return steps;
     }
 
     private sealed record RunRow(Guid PromiseId, int PromiseRevision, string ObligationId, long Version, string Document);

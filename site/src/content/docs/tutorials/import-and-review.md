@@ -21,6 +21,8 @@ Vellum reads repositories through the GitHub REST API. The script `examples/gith
 | `main` | `tests/Vellum.Tests/Fixtures/Repos/orders` | The system with a transactional outbox. |
 | `remove-outbox` | `tests/Vellum.Tests/Fixtures/Repos/orders-outbox-removed` | A change that removes the outbox and gives one field of `OrderCreated` a new name. |
 
+The stand-in also serves pull request #1, **Remove the outbox**, from `remove-outbox` into `main`.
+
 To scan a repository on GitHub in place of the fixture, do not do the next two sections. Give `owner/name` of a public repository in the import form. [Connect GitHub](/how-to/connect-github/) shows how to read a private repository.
 
 ## Start the stand-in
@@ -67,7 +69,7 @@ When you complete the tutorials, put the value `https://api.github.com` back.
 2. Open the project.
 3. Select **Import from GitHub** in the left toolbar.
 4. In **Repository**, give `acme/orders`.
-5. In **Branch, tag or commit**, give `main`.
+5. In **Read**, select **Branch**. In **Branch or tag**, give `main`.
 6. Leave **Only these folders** empty.
 7. Select **Scan repository**.
 

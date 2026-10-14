@@ -1,21 +1,19 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Crosshair, FileText } from 'lucide-react'
+import { Crosshair, FileText, Play } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { BriefDialog } from '@/components/build/brief-dialog'
+import { fetchScenario, useRunScenario } from '@/hooks/use-scenarios'
 import { shownInline } from '@/lib/mutation-errors'
-import { importApi, type ChangeImpact, type ImpactCertainty, type ImpactChange, type ImpactPromise, type ImpactReason, type ScanSummary } from '@/lib/import-api'
+import { prefersReducedMotion } from '@/lib/utils'
+import { importApi, pullRequestState, scanSubject, type ChangeImpact, type ImpactCertainty, type ImpactChange, type ImpactFlow, type ImpactPromise, type ImpactReason, type ImpactStep, type ScanSummary } from '@/lib/import-api'
+import { CERTAINTY, flowStepImpact, strongest } from '@/lib/impact'
 import { RESULT_COLOR, RESULT_LABEL, promisesApi } from '@/lib/promises-api'
-import { promiseElementIds, scenarioElementIds } from '@/lib/scenario-parts'
-import { useShellStore } from '@/stores/shell-store'
+import { promiseElementIds, scenarioSteps, stepEnds } from '@/lib/scenario-parts'
+import { useShellStore, type CanvasHighlight, type HighlightStep } from '@/stores/shell-store'
+import { useTraceStore } from '@/stores/trace-store'
 import { SourceLines } from './proposal-review'
-
-const CERTAINTY: Record<ImpactCertainty, { label: string; meaning: string; className: string }> = {
-  definite: { label: 'Definite', meaning: 'It stands on a contract diff or on source lines that this report cites.', className: 'border-foreground/70 text-foreground' },
-  possible: { label: 'Possible', meaning: 'It is reached only through a flow or a service. Nothing shows that it depends on the change.', className: 'border-dashed border-[var(--trace-retry)] text-[var(--trace-retry)]' },
-  unknown: { label: 'Unknown', meaning: 'The scan did not look where the answer is.', className: 'border-dotted border-muted-foreground text-muted-foreground' },
-}
 
 const STANDING: Record<ImpactPromise['standing'], { label: string; color: string; meaning: string }> = {
   broken: { label: 'Broken', color: 'var(--trace-failure)', meaning: 'A check of this promise failed against this scan.' },
@@ -56,6 +54,36 @@ function Reasons({ reasons }: { reasons: ImpactReason[] }) {
  * marked definite, possible or unknown. The report is a statement about the source. It is
  * not a result of a check, and it changes nothing.
  */
+/**
+ * An affected flow as the canvas shows it: each affected step from where it starts to what
+ * it reaches, in the certainty of the step, and each element in the certainty of the surest
+ * step or change that reaches it.
+ */
+async function flowHighlight(projectId: string, impact: ChangeImpact, flow: ImpactFlow, owners: Record<string, string>): Promise<CanvasHighlight> {
+  const parts = new Map(scenarioSteps((await fetchScenario(projectId, flow.scenarioId)).steps).map((p) => [p.id, p]))
+  const steps: HighlightStep[] = []
+  const marks: Record<string, ImpactCertainty[]> = {}
+  const mark = (id: string | null | undefined, certainty: ImpactCertainty) => { if (id) (marks[id] ??= []).push(certainty) }
+  flow.steps.forEach((step, i) => {
+    const part = parts.get(step.stepId)
+    if (!part) return
+    const ends = stepEnds(part, owners)
+    steps.push({ stepId: step.stepId, order: i + 1, label: step.label, certainty: step.certainty, fromId: ends.fromId, toIds: ends.toIds, messageId: part.messageId })
+    mark(ends.fromId, step.certainty)
+    ends.toIds.forEach((id) => mark(id, step.certainty))
+  })
+  for (const reason of flow.reasons) {
+    const change = impact.changes.find((c) => c.id === reason.changeId)
+    mark(change?.elementId, change?.certainty ?? 'unknown')
+  }
+  return {
+    title: `Affected flow · ${flow.name}`,
+    elementIds: Object.keys(marks),
+    marks: Object.fromEntries(Object.entries(marks).map(([id, values]) => [id, strongest(values)])),
+    steps,
+  }
+}
+
 export function ImpactDialog({ projectId, scan, owners, onClose }: {
   projectId: string
   scan: ScanSummary
@@ -74,6 +102,7 @@ export function ImpactDialog({ projectId, scan, owners, onClose }: {
     onSuccess: (highlight) => { useShellStore.getState().showOnCanvas(highlight); onClose() },
     onError: shownInline,
   })
+  const play = useRunScenario(projectId)
   const run = useMutation({
     mutationFn: ({ promise, check }: { promise: ImpactPromise; check: string }) =>
       // A draft is run by its number. That run is labelled as a draft run and does not count after approval.
@@ -84,17 +113,40 @@ export function ImpactDialog({ projectId, scan, owners, onClose }: {
     },
     onError: shownInline,
   })
-  const failure = show.error ?? run.error
+  const showFlow = useMutation({
+    mutationFn: ({ impact, flow }: { impact: ChangeImpact; flow: ImpactFlow }) => flowHighlight(projectId, impact, flow, owners),
+    onSuccess: (highlight) => { useShellStore.getState().showOnCanvas(highlight); onClose() },
+    onError: shownInline,
+  })
+  const failure = show.error ?? showFlow.error ?? run.error ?? play.error
+  const ref = scanSubject(scan)
 
-  const elementsOf = (impact: ChangeImpact, changeIds: string[]) =>
-    impact.changes.filter((c) => changeIds.includes(c.id)).map((c) => c.elementId).filter((id): id is string => id !== null)
-  const ref = scan.ref ?? scan.trackedRef ?? short(scan.commitSha)
+  const playFlow = (impact: ChangeImpact, flow: ImpactFlow) =>
+    play.mutate(flow.scenarioId, {
+      onSuccess: (result) => {
+        useTraceStore.getState().load(result, flow.scenarioId, { change: `${ref} on ${scan.repository}`, steps: flowStepImpact(impact, flow) })
+        useShellStore.getState().clearCanvasHighlight()
+        useShellStore.getState().closeFlyout()
+        onClose()
+      },
+    })
 
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose() }}>
       <DialogContent className="flex max-h-[92vh] flex-col gap-3 sm:max-w-4xl">
         <DialogHeader className="pr-8">
           <DialogTitle>Impact of <span className="font-mono">{ref}</span> on {scan.repository}</DialogTitle>
+          {impact?.pullRequest && (
+            <p className="text-sm text-foreground">
+              {/* The title is repository text, shown as text. */}
+              <span className="font-mono">#{impact.pullRequest.number}</span> {impact.pullRequest.title ?? 'No title'}
+              <span className="ml-2 rounded-full border border-border px-1.5 text-[11px] text-muted-foreground">{pullRequestState(impact.pullRequest)}</span>
+              <span className="block font-mono text-[11px] text-muted-foreground">
+                {impact.pullRequest.headRef} {short(impact.pullRequest.headSha)} → {impact.pullRequest.baseRef} {short(impact.pullRequest.baseSha)}
+                {impact.pullRequest.fromFork && ` · from ${impact.pullRequest.headRepository ?? 'a deleted fork'}`}
+              </span>
+            </p>
+          )}
           <DialogDescription>
             {impact
               ? <>Commit <span className="font-mono">{short(impact.head.commitSha)}</span> compared with {impact.base.scanId ? <><span className="font-mono">{impact.base.ref ?? 'a commit'}</span> at <span className="font-mono">{short(impact.base.commitSha)}</span></> : 'the model'}. The report reads the source. It runs no check and changes nothing.</>
@@ -126,7 +178,7 @@ export function ImpactDialog({ projectId, scan, owners, onClose }: {
               {impact.changes.length === 0 && <p className="mt-1 text-xs text-muted-foreground">The source matches the model, and its source patterns match those of the base. Nothing is affected.</p>}
               <ul className="mt-1.5 space-y-1.5">
                 {impact.changes.map((change) => (
-                  <Change key={change.id} projectId={projectId} change={change} scanId={change.kind === 'source-pattern' && change.action === 'remove' ? (impact.base.scanId ?? scan.id) : scan.id} />
+                  <Change key={change.id} anchor={changeAnchor(change.id)} projectId={projectId} change={change} scanId={change.kind === 'source-pattern' && change.action === 'remove' ? (impact.base.scanId ?? scan.id) : scan.id} />
                 ))}
               </ul>
             </section>
@@ -141,19 +193,27 @@ export function ImpactDialog({ projectId, scan, owners, onClose }: {
                       <span className="min-w-0 flex-1 basis-40 text-sm text-foreground">{flow.name}</span>
                       <Certainty value={flow.certainty} />
                       <Button
-                        variant="ghost" size="sm" className="h-6 gap-1 px-1.5 text-xs" disabled={show.isPending}
-                        onClick={() => show.mutate({
-                          title: `Affected flow · ${flow.name}`,
-                          ids: async () => [
-                            ...await scenarioElementIds(projectId, flow.scenarioId, flow.stepIds.filter((s) => s !== 'fault' && !s.startsWith('assertion:')), owners),
-                            ...elementsOf(impact, flow.reasons.map((r) => r.changeId)),
-                          ],
-                        })}
+                        variant="ghost" size="sm" className="h-6 gap-1 px-1.5 text-xs" disabled={showFlow.isPending}
+                        title="Draw the affected steps on the canvas, each in its certainty"
+                        onClick={() => showFlow.mutate({ impact, flow })}
                       >
                         <Crosshair className="h-3 w-3" /> Show on canvas
                       </Button>
+                      <Button
+                        variant="ghost" size="sm" className="h-6 gap-1 px-1.5 text-xs" disabled={play.isPending}
+                        title="Play the flow. The trace marks each affected step."
+                        onClick={() => playFlow(impact, flow)}
+                      >
+                        <Play className="h-3 w-3" /> Play
+                      </Button>
                     </div>
-                    <Reasons reasons={flow.reasons} />
+                    <FlowSteps impact={impact} steps={flow.steps} />
+                    <details className="mt-1.5 text-xs">
+                      <summary className="cursor-pointer rounded text-muted-foreground focus-visible:outline-2 focus-visible:outline-primary">
+                        {flow.reasons.length} {flow.reasons.length === 1 ? 'reason' : 'reasons'} for the flow
+                      </summary>
+                      <Reasons reasons={flow.reasons} />
+                    </details>
                   </li>
                 ))}
               </ul>
@@ -235,11 +295,77 @@ export function ImpactDialog({ projectId, scan, owners, onClose }: {
   )
 }
 
-function Change({ projectId, change, scanId }: { projectId: string; change: ImpactChange; scanId: string }) {
+/** The ID of a change's entry in the report, so a step can link to the change and its evidence. */
+const changeAnchor = (changeId: string) => `impact-change-${changeId.replace(/[^a-zA-Z0-9_-]/g, '-')}`
+
+/**
+ * The affected steps of a flow in the order the scenario writes them. Each names its
+ * certainty and the changes it stands on, with a link to each change and its source lines.
+ */
+function FlowSteps({ impact, steps }: { impact: ChangeImpact; steps: ImpactStep[] }) {
+  const changes = new Map(impact.changes.map((c) => [c.id, c]))
+  return (
+    <ol aria-label="Affected steps" className="mt-2 space-y-1 border-l border-border pl-3">
+      {steps.map((step) => {
+        const byChange = new Map<string, ImpactCertainty>()
+        for (const reason of step.reasons) byChange.set(reason.changeId, strongest([reason.certainty, byChange.get(reason.changeId) ?? 'unknown']))
+        return (
+          <li key={step.stepId} className="text-xs">
+            <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+              <span
+                aria-hidden="true" className="h-0 w-4 shrink-0 self-center border-t-2"
+                style={{ borderColor: CERTAINTY[step.certainty].color, borderTopStyle: CERTAINTY[step.certainty].line }}
+              />
+              <span className="font-mono text-[11px] text-foreground">{step.stepId}</span>
+              <span className="text-muted-foreground">{step.kind}{step.label ? ` · ${step.label}` : ''}</span>
+              <Certainty value={step.certainty} />
+            </div>
+            <ul className="ml-6 mt-0.5 space-y-0.5">
+              {[...byChange].map(([changeId, certainty]) => {
+                const change = changes.get(changeId)
+                const evidence = change?.evidence[0]
+                return (
+                  <li key={changeId} className="text-muted-foreground">
+                    <span style={{ color: CERTAINTY[certainty].color }}>{CERTAINTY[certainty].label}</span>
+                    {' through '}
+                    <button
+                      type="button"
+                      className="text-left text-foreground underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-primary"
+                      onClick={() => {
+                        // The change's entry holds its diff and source lines. It opens and takes the focus.
+                        const entry = document.getElementById(changeAnchor(changeId))
+                        entry?.querySelector('details')?.setAttribute('open', '')
+                        entry?.scrollIntoView({ block: 'center', behavior: prefersReducedMotion() ? 'auto' : 'smooth' })
+                        entry?.focus({ preventScroll: true })
+                      }}
+                    >
+                      {change ? `${(ACTION[change.action] ?? ACTION.change).label.toLowerCase()} ${change.kind === 'source-pattern' ? 'pattern' : change.entityKind} ${change.name}` : changeId}
+                    </button>
+                    {evidence && (
+                      <>
+                        {' · '}
+                        <a href={evidence.url} target="_blank" rel="noreferrer noopener" className="font-mono underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-primary" title={evidence.pointer}>
+                          {evidence.path}:{evidence.startLine}
+                        </a>
+                      </>
+                    )}
+                    {!evidence && ' · no source lines'}
+                  </li>
+                )
+              })}
+            </ul>
+          </li>
+        )
+      })}
+    </ol>
+  )
+}
+
+function Change({ projectId, change, scanId, anchor }: { projectId: string; change: ImpactChange; scanId: string; anchor: string }) {
   const [open, setOpen] = useState(false)
   const action = ACTION[change.action] ?? ACTION.change
   return (
-    <li className="rounded-md border border-border px-3 py-2">
+    <li id={anchor} tabIndex={-1} className="scroll-mt-2 rounded-md border border-border px-3 py-2 focus:border-primary focus:outline-none">
       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
         <span className="flex h-4 w-4 shrink-0 items-center justify-center self-center rounded border font-mono text-[11px]" style={{ borderColor: action.color, color: action.color }} aria-hidden="true">{action.sign}</span>
         <span className="text-xs font-medium" style={{ color: action.color }}>{action.label}</span>

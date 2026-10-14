@@ -38,6 +38,7 @@ public class ImportDbContext(DbContextOptions<ImportDbContext> options) : DbCont
             b.Property(s => s.Limits).HasColumnType("jsonb");
             b.Property(s => s.Notes).HasColumnType("jsonb");
             b.Property(s => s.Coverage).HasColumnType("jsonb");
+            b.Property(s => s.PullRequest).HasColumnType("jsonb");
             // The fencing token: a run that lost the scan names an old token, and its save fails.
             b.Property(s => s.LeaseToken).IsConcurrencyToken();
             b.HasIndex(s => new { s.ProjectId, s.CreatedAt, s.Id });

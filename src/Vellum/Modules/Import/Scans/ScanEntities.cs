@@ -58,6 +58,10 @@ public class ScanEntity
     public string? ResolvedRef { get; set; }
     /// <summary>Set once, when the ref is resolved. Every later read of the scan uses it.</summary>
     public string? CommitSha { get; set; }
+    /// <summary>The number of the pull request the caller asked for. Such a scan reads the head commit of the pull request and names no ref.</summary>
+    public int? PullRequestNumber { get; set; }
+    /// <summary>A JSON <see cref="ScanPullRequest"/>: what GitHub said of the pull request when the scan pinned its head commit. Null until then.</summary>
+    public string? PullRequest { get; set; }
     public bool? RepositoryIsPrivate { get; set; }
     public string[] IncludePaths { get; set; } = [];
     public string[] ExcludePaths { get; set; } = [];
@@ -123,6 +127,29 @@ public class ScanEntity
 
     /// <summary>True when the caller asked for a commit SHA and no ref: such a scan follows no line of history.</summary>
     public bool IsBareCommit() => RequestedRef is { Length: 40 } requested && requested.All(char.IsAsciiHexDigit);
+
+    /// <summary>True for a scan of the head commit of a pull request. Like a bare commit, it follows no line of history.</summary>
+    public bool IsPullRequest() => PullRequestNumber is not null;
+}
+
+/// <summary>
+/// The provenance of a pull request scan: the pull request as GitHub described it when the
+/// scan pinned its head commit. Both SHAs are immutable; the title, the state and the
+/// names are untrusted text, shown as text. The scan reads <see cref="HeadSha"/> and writes
+/// nothing to GitHub.
+/// </summary>
+/// <param name="State"><c>open</c> or <c>closed</c>. A merged pull request is closed and has <paramref name="Merged"/> set.</param>
+/// <param name="HeadRepository">The <c>owner/name</c> of the head repository. Null when GitHub names none (a deleted fork).</param>
+/// <param name="FromFork">True when the head repository is not the repository of the scan. The scan then read the head commit through the repository of the scan.</param>
+public sealed record ScanPullRequest(
+    int Number, string? Title, string State, bool Merged, string BaseRef, string BaseSha, string HeadRef, string HeadSha,
+    string? HeadRepository, bool FromFork)
+{
+    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
+
+    public string ToJson() => JsonSerializer.Serialize(this, Json);
+
+    public static ScanPullRequest? FromJson(string? json) => json is null ? null : JsonSerializer.Deserialize<ScanPullRequest>(json, Json);
 }
 
 /// <summary>
@@ -310,6 +337,9 @@ public static class ScanNotes
         CoverageGap.ShaMismatch => "The bytes GitHub returned are not the file of this commit. They were not used.",
         CoverageGap.CredentialDense => "Many lines of the file look like credentials. It was not kept.",
         CoverageGap.FactRefused => "A fact of this file holds a control character or is longer than a fact may be. It was left out.",
+        "pull-request-fork" => "The pull request comes from another repository. GitHub serves its head commit through this repository, and the scan read it from here.",
+        "pull-request-closed" => "The pull request is closed. The scan read its head commit as it was when the pull request closed.",
+        "pull-request-merged" => "The pull request is merged. The scan read its head commit, which is not the merge commit.",
         "relink-needs-review" => "The extraction rules changed, and an accepted fact could not be matched to a new one by the exact rule. Review its relink proposal.",
         _ when code.StartsWith("limit:", StringComparison.Ordinal) => "A bound of the extraction was reached. Part of this file was left out.",
         _ when code.StartsWith("extractor-failure", StringComparison.Ordinal) => "An extractor failed. Its facts are missing from this scan.",

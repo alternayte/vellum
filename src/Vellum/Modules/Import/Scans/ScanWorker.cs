@@ -300,15 +300,33 @@ public sealed class ScanWorker(
         {
             var asked = scan.Repository.Split('/');
             var repository = Read(await github.GetRepositoryAsync(asked[0], asked[1], ct), github, "repository", null);
-            var requested = scan.RequestedRef;
-            if (requested is null)
+            if (scan.PullRequestNumber is { } number)
             {
-                var settings = await services.GetRequiredService<SettingsResolver>().GetWorkspaceAsync(scan.WorkspaceId, ct);
-                requested = settings.Effective.Github.DefaultRef is { Length: > 0 } configured ? configured : null;
+                var pull = await PinPullRequestAsync(github, asked[0], asked[1], repository, number, ct);
+                scan.CommitSha = pull.HeadSha;
+                scan.ResolvedRef = null;
+                scan.PullRequest = pull.ToJson();
+                var pullNotes = ScanNotes.Read(scan.Notes);
+                if (pull.FromFork)
+                    pullNotes.Add(ScanNotes.Of("pull-request-fork", ""));
+                if (pull.Merged)
+                    pullNotes.Add(ScanNotes.Of("pull-request-merged", ""));
+                else if (pull.State == "closed")
+                    pullNotes.Add(ScanNotes.Of("pull-request-closed", ""));
+                scan.Notes = ScanNotes.Write(pullNotes);
             }
-            var reference = requested ?? repository.DefaultBranch;
-            scan.CommitSha = Read(await github.ResolveRefAsync(asked[0], asked[1], reference, ct), github, "ref", requested);
-            scan.ResolvedRef = scan.IsBareCommit() ? null : reference;
+            else
+            {
+                var requested = scan.RequestedRef;
+                if (requested is null)
+                {
+                    var settings = await services.GetRequiredService<SettingsResolver>().GetWorkspaceAsync(scan.WorkspaceId, ct);
+                    requested = settings.Effective.Github.DefaultRef is { Length: > 0 } configured ? configured : null;
+                }
+                var reference = requested ?? repository.DefaultBranch;
+                scan.CommitSha = Read(await github.ResolveRefAsync(asked[0], asked[1], reference, ct), github, "ref", requested);
+                scan.ResolvedRef = scan.IsBareCommit() ? null : reference;
+            }
             scan.RepositoryIsPrivate = repository.IsPrivate;
             scan.RepositoryId = repository.Id;
             scan.RepositoryName = repository.FullName;
@@ -590,6 +608,36 @@ public sealed class ScanWorker(
         var acrossFiles = cuts.Count == 0 || cuts.Any(n =>
             n.Path.Length == 0 || n.Reason is "limit:facts" or "limit:files" or "limit:total-bytes" or "limit:notes");
         return acrossFiles ? CoverageGap.Limit : null;
+    }
+
+    /// <summary>
+    /// Reads the pull request and returns its provenance. The scan reads the head commit
+    /// through the repository of the scan, as every other read of it does. For a pull request
+    /// from another repository (a fork, or a fork that was deleted) that works only when
+    /// GitHub serves the head commit here, which it does for the pull request refs it keeps.
+    /// When it does not, the scan stops: Vellum reads no other repository.
+    /// </summary>
+    private static async Task<ScanPullRequest> PinPullRequestAsync(
+        GitHubConnection github, string owner, string name, GitHubRepository repository, int number, CancellationToken ct)
+    {
+        var read = await github.GetPullRequestAsync(owner, name, number, ct);
+        if (read.Failure is GitHubFailure.NotFound)
+            throw ScanStop.Failed(ScanFailures.PullRequestNotFound(number, github.HasToken));
+        var pull = Read(read, github, "pull-request", null);
+
+        var fromFork = pull.HeadRepository is null || !string.Equals(pull.HeadRepository, repository.FullName, StringComparison.OrdinalIgnoreCase);
+        if (fromFork)
+        {
+            var served = await github.ResolveRefAsync(owner, name, pull.HeadSha, ct);
+            if (served.Failure is GitHubFailure.RateLimited)
+                Read(served, github, "ref", null);
+            if (served.Failure is not null || served.Value != pull.HeadSha)
+                throw ScanStop.Failed(ScanFailures.PullRequestHeadUnreadable(number));
+        }
+
+        return new ScanPullRequest(
+            pull.Number, pull.Title, pull.State, pull.Merged, pull.BaseRef, pull.BaseSha, pull.HeadRef, pull.HeadSha,
+            pull.HeadRepository, fromFork);
     }
 
     private static T Read<T>(GitHubResult<T> result, GitHubConnection github, string stage, string? reference)

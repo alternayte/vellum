@@ -66,6 +66,13 @@ internal static class ScanFailures
     public static readonly ScanError RateLimitNeverCleared = new("rate_limited",
         "GitHub's rate limit stayed used up through many retries. Resume the scan later. A workspace token (github:token) has a higher limit than anonymous access.");
 
+    public static ScanError PullRequestNotFound(int number, bool hasToken) => new("pull_request_not_found", hasToken
+        ? string.Create(CultureInfo.InvariantCulture, $"The repository has no pull request #{number} that the workspace's token can see. Start a new scan with another number.")
+        : string.Create(CultureInfo.InvariantCulture, $"The repository has no pull request #{number} that anonymous access can see. Check the number. If the repository is private, save a token in the workspace secrets (github:token)."));
+
+    public static ScanError PullRequestHeadUnreadable(int number) => new("pull_request_head_unreadable",
+        string.Create(CultureInfo.InvariantCulture, $"Pull request #{number} comes from another repository, and GitHub does not serve its head commit through this repository. Vellum reads only the repository of the scan, so nothing was read. Push the branch to this repository and scan it as a ref."));
+
     public static ScanError NotConnected(GitHubFailure failure) => Describe(failure, hasToken: false, stage: "connect", reference: null);
 
     /// <param name="stage"><c>repository</c>, <c>ref</c>, <c>tree</c> or <c>blob</c>: what was being read.</param>

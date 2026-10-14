@@ -636,6 +636,14 @@ namespace Vellum.Modules.Import.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("project_id");
 
+                    b.Property<string>("PullRequest")
+                        .HasColumnType("jsonb")
+                        .HasColumnName("pull_request");
+
+                    b.Property<int?>("PullRequestNumber")
+                        .HasColumnType("integer")
+                        .HasColumnName("pull_request_number");
+
                     b.Property<int>("Relinked")
                         .HasColumnType("integer")
                         .HasColumnName("relinked");

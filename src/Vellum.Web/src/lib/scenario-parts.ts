@@ -11,6 +11,10 @@ export interface ScenarioStepParts {
   contractIds: string[]
   /** The message of a publish step. */
   messageId: string | null
+  /** The element the step starts in: the caller, the publisher or the writer. */
+  fromId: string | null
+  /** What the step reaches: the operation of a call, the subscriptions of a publish, the store of a write. */
+  targetIds: string[]
 }
 
 const text = (value: unknown): string | null => (typeof value === 'string' && value.length > 0 ? value : null)
@@ -32,6 +36,8 @@ export function scenarioSteps(steps: unknown[]): ScenarioStepParts[] {
           elementIds: [step.from, step.by, step.store].map(text).filter((x): x is string => x !== null),
           contractIds: [step.operation, step.channel, ...Object.keys(handlers)].map(text).filter((x): x is string => x !== null),
           messageId: text(step.message),
+          fromId: text(step.from) ?? text(step.by),
+          targetIds: [step.operation, step.store, ...Object.keys(handlers)].map(text).filter((x): x is string => x !== null),
         })
       }
       walk(list(step.then))
@@ -43,6 +49,14 @@ export function scenarioSteps(steps: unknown[]): ScenarioStepParts[] {
   }
   walk(steps)
   return found
+}
+
+/**
+ * The two ends of a step on the canvas: the element it starts in and the elements it
+ * reaches. A contract (an operation, a subscription) shows as the element that owns it.
+ */
+export function stepEnds(step: ScenarioStepParts, owners: Record<string, string>): { fromId: string | null; toIds: string[] } {
+  return { fromId: step.fromId, toIds: unique(step.targetIds.map((id) => owners[id] ?? id)) }
 }
 
 /**

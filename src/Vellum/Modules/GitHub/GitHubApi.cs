@@ -116,6 +116,7 @@ internal sealed record ChangedFileDto(
 
 internal sealed record PullRequestDto(
     [property: JsonPropertyName("number")] int Number,
+    [property: JsonPropertyName("title")] string? Title,
     [property: JsonPropertyName("state")] string? State,
     [property: JsonPropertyName("merged")] bool Merged,
     [property: JsonPropertyName("base")] PullSideDto? Base,

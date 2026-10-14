@@ -41,6 +41,9 @@ import { prefersReducedMotion } from '@/lib/utils'
 import { traceEdgeLabel, traceFamily } from '@/lib/trace'
 import { currentTraceEvent, useTraceStore } from '@/stores/trace-store'
 import { TraceEdgeMarkers } from './edges/trace-edge'
+import { ImpactStepMarkers } from './edges/impact-step-edge'
+import { CERTAINTY, strongest } from '@/lib/impact'
+import type { ImpactCertainty } from '@/lib/import-api'
 
 interface ElementModel {
   id: string
@@ -508,8 +511,51 @@ function CanvasViewInner({
   const highlight = useMemo(() => {
     if (!canvasHighlight) return null
     const shown = canvasHighlight.elementIds.map(onCanvas)
-    return { nodeIds: new Set(shown.filter((id): id is string => id !== null)), elsewhere: shown.filter((id) => id === null).length }
-  }, [canvasHighlight, onCanvas])
+    // An affected flow rings each part in the certainty of the surest step or change that reaches it.
+    const nodeIds = new Set(shown.filter((id): id is string => id !== null))
+    const marks = new Map<string, ImpactCertainty>()
+    const mark = (node: string, certainty: ImpactCertainty) => marks.set(node, marks.has(node) ? strongest([certainty, marks.get(node)!]) : certainty)
+    for (const [id, certainty] of Object.entries(canvasHighlight.marks ?? {})) {
+      const node = onCanvas(id)
+      if (node) mark(node, certainty)
+    }
+    // Each affected step from where it starts to what it reaches. Steps between the same two
+    // parts share one edge, as surest of them. A publish step with no handler goes to the
+    // consumers of its message.
+    const pairs = new Map<string, { source: string; target: string; certainty: ImpactCertainty; labels: string[] }>()
+    let undrawn = 0
+    for (const step of canvasHighlight.steps ?? []) {
+      const source = onCanvas(step.fromId)
+      const targets = step.toIds.length > 0 ? step.toIds : (messages?.find((m) => m.id === step.messageId)?.consumerIds ?? [])
+      let drawn = false
+      for (const target of new Set(targets.map(onCanvas))) {
+        if (!source || !target || source === target) continue
+        const key = `${source}>${target}`
+        const pair = pairs.get(key) ?? { source, target, certainty: step.certainty, labels: [] }
+        pair.certainty = strongest([pair.certainty, step.certainty])
+        pair.labels.push(`${step.order}. ${step.label ?? step.stepId}`)
+        pairs.set(key, pair)
+        // Both ends of a drawn step are ringed, the consumers of a message too.
+        for (const end of [source, target]) {
+          nodeIds.add(end)
+          mark(end, step.certainty)
+        }
+        drawn = true
+      }
+      if (!drawn) undrawn++
+    }
+    const stepEdges: Edge[] = [...pairs.entries()].map(([key, pair]) => ({
+      id: `impact-step-${key}`,
+      source: pair.source,
+      target: pair.target,
+      type: 'impact-step-edge',
+      selectable: false,
+      focusable: false,
+      zIndex: 999,
+      data: { certainty: pair.certainty, label: [...new Set(pair.labels)].join(' · ') },
+    }))
+    return { nodeIds, elsewhere: shown.filter((id) => id === null).length, marks, stepEdges, undrawn }
+  }, [canvasHighlight, onCanvas, messages])
   useEffect(() => {
     if (highlight && highlight.nodeIds.size > 0) fitView({ nodes: [...highlight.nodeIds].map((id) => ({ id })), ...(highlight.nodeIds.size === 1 ? fitOne() : fitAll()) })
   // Only a new highlight moves the viewport, not a change of the model under it.
@@ -528,15 +574,21 @@ function CanvasViewInner({
       )
     }
     if (!highlight) return all
-    return all.map((n) =>
-      highlight.nodeIds.has(n.id)
-        ? { ...n, className: 'vellum-trace-node', style: { ...n.style, '--vellum-trace': 'var(--primary)' } }
-        : { ...n, className: 'vellum-dimmed-node' },
-    )
+    return all.map((n) => {
+      if (!highlight.nodeIds.has(n.id)) return { ...n, className: 'vellum-dimmed-node' }
+      const mark = highlight.marks.get(n.id)
+      return {
+        ...n,
+        className: 'vellum-trace-node',
+        style: { ...n.style, '--vellum-trace': mark ? CERTAINTY[mark].color : 'var(--primary)', '--vellum-ring-style': mark ? CERTAINTY[mark].line : 'solid' },
+      }
+    })
   }, [nodes, messageNodes, traceOverlay, highlight])
   const derivedEdges = useMemo(
-    () => (traceOverlay?.edge ? [...edges, ...messageEdges, traceOverlay.edge] : [...edges, ...messageEdges]),
-    [edges, messageEdges, traceOverlay],
+    () => (traceOverlay?.edge
+      ? [...edges, ...messageEdges, traceOverlay.edge]
+      : [...edges, ...messageEdges, ...(highlight?.stepEdges ?? [])]),
+    [edges, messageEdges, traceOverlay, highlight],
   )
 
   // Local state that React Flow controls — synced from derived data,
@@ -826,17 +878,37 @@ function CanvasViewInner({
           />
         )}
         <TraceEdgeMarkers />
+        <ImpactStepMarkers />
         {canvasHighlight && highlight && (
-          <Panel position="top-center" className="flex max-w-[calc(100%-1.5rem)] items-center gap-3 rounded-lg border border-border bg-card/95 px-3 py-1.5 text-xs shadow-md backdrop-blur">
-            <p role="status" className="min-w-0 text-muted-foreground">
-              <span className="block truncate text-foreground">{canvasHighlight.title}</span>
-              {highlight.nodeIds.size === 0
-                ? 'No part of it is on this level of the canvas.'
-                : `${highlight.nodeIds.size} ${highlight.nodeIds.size === 1 ? 'part is' : 'parts are'} ringed.${highlight.elsewhere > 0 ? ` ${highlight.elsewhere} more ${highlight.elsewhere === 1 ? 'is' : 'are'} not on this level.` : ''}`}
-            </p>
-            <button type="button" className="shrink-0 rounded px-1.5 py-0.5 text-foreground hover:bg-muted focus-visible:outline-2 focus-visible:outline-primary" onClick={clearCanvasHighlight}>
-              Clear
-            </button>
+          <Panel position="top-center" className="max-w-[calc(100%-1.5rem)] rounded-lg border border-border bg-card/95 px-3 py-1.5 text-xs shadow-md backdrop-blur">
+            <div className="flex items-center gap-3">
+              <p role="status" className="min-w-0 text-muted-foreground">
+                <span className="block truncate text-foreground">{canvasHighlight.title}</span>
+                {highlight.nodeIds.size === 0
+                  ? 'No part of it is on this level of the canvas.'
+                  : `${highlight.nodeIds.size} ${highlight.nodeIds.size === 1 ? 'part is' : 'parts are'} ringed.${highlight.elsewhere > 0 ? ` ${highlight.elsewhere} more ${highlight.elsewhere === 1 ? 'is' : 'are'} not on this level.` : ''}`}
+              </p>
+              <button type="button" className="shrink-0 rounded px-1.5 py-0.5 text-foreground hover:bg-muted focus-visible:outline-2 focus-visible:outline-primary" onClick={clearCanvasHighlight}>
+                Clear
+              </button>
+            </div>
+            {canvasHighlight.steps && canvasHighlight.steps.length > 0 && (
+              <ol aria-label="Affected steps" className="mt-1.5 max-h-36 space-y-0.5 overflow-y-auto border-t border-border pt-1.5">
+                {canvasHighlight.steps.map((step) => (
+                  <li key={step.stepId} className="flex items-center gap-2">
+                    <span aria-hidden="true" className="h-0 w-4 shrink-0 border-t-2" style={{ borderColor: CERTAINTY[step.certainty].color, borderTopStyle: CERTAINTY[step.certainty].line }} />
+                    <span className="font-mono text-[11px] text-muted-foreground">{step.order}.</span>
+                    <span className="min-w-0 truncate text-foreground">{step.label ?? step.stepId}</span>
+                    <span className="ml-auto shrink-0 pl-2" style={{ color: CERTAINTY[step.certainty].color }}>{CERTAINTY[step.certainty].label}</span>
+                  </li>
+                ))}
+                {highlight.undrawn > 0 && (
+                  <li className="text-muted-foreground">
+                    {highlight.undrawn} {highlight.undrawn === 1 ? 'step has' : 'steps have'} no second part on this level, so {highlight.undrawn === 1 ? 'it is' : 'they are'} not drawn.
+                  </li>
+                )}
+              </ol>
+            )}
           </Panel>
         )}
         <MiniMap
