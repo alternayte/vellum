@@ -34,7 +34,7 @@ public static class ModellingEndpoints
             ICommandHandler<AddElementCommandEnvelope, CommandResult<ElementDto>> handler,
             CancellationToken ct) =>
         {
-            var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            var userId = user.UserId();
             await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
             var proj = await db.Projects.AsNoTracking().FirstAsync(p => p.Id == projectId, ct);
             var (streamId, refusal) = await ModelBranches.ResolveAsync(branchId, projectId, proj.StreamId, db, forWrite: true, ct);
@@ -52,7 +52,7 @@ public static class ModellingEndpoints
             ClaimsPrincipal user, AppDbContext db,
             WorkspaceAuthorizationService auth, CancellationToken ct) =>
         {
-            var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            var userId = user.UserId();
             await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Viewer, ct);
             var proj = await db.Projects.AsNoTracking().FirstAsync(p => p.Id == projectId, ct);
             var (streamId, refusal) = await ModelBranches.ResolveAsync(branchId, projectId, proj.StreamId, db, forWrite: false, ct);
@@ -66,7 +66,7 @@ public static class ModellingEndpoints
             ClaimsPrincipal user, AppDbContext db,
             WorkspaceAuthorizationService auth, CancellationToken ct) =>
         {
-            var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            var userId = user.UserId();
             await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Viewer, ct);
             var proj = await db.Projects.AsNoTracking().FirstAsync(p => p.Id == projectId, ct);
             var (streamId, refusal) = await ModelBranches.ResolveAsync(branchId, projectId, proj.StreamId, db, forWrite: false, ct);
@@ -84,7 +84,7 @@ public static class ModellingEndpoints
             ICommandHandler<UpdateElementCommandEnvelope, CommandResult<ElementDto>> handler,
             CancellationToken ct) =>
         {
-            var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            var userId = user.UserId();
             await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
             var proj = await db.Projects.AsNoTracking().FirstAsync(p => p.Id == projectId, ct);
             var (streamId, refusal) = await ModelBranches.ResolveAsync(branchId, projectId, proj.StreamId, db, forWrite: true, ct);
@@ -103,7 +103,7 @@ public static class ModellingEndpoints
             ICommandHandler<RemoveElementCommandEnvelope, CommandResult> handler,
             CancellationToken ct) =>
         {
-            var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            var userId = user.UserId();
             await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
             var proj = await db.Projects.AsNoTracking().FirstAsync(p => p.Id == projectId, ct);
             var (streamId, refusal) = await ModelBranches.ResolveAsync(branchId, projectId, proj.StreamId, db, forWrite: true, ct);
@@ -125,7 +125,7 @@ public static class ModellingEndpoints
             ICommandHandler<AddRelationshipCommandEnvelope, CommandResult<RelationshipDto>> handler,
             CancellationToken ct) =>
         {
-            var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            var userId = user.UserId();
             await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
             var proj = await db.Projects.AsNoTracking().FirstAsync(p => p.Id == projectId, ct);
             var (streamId, refusal) = await ModelBranches.ResolveAsync(branchId, projectId, proj.StreamId, db, forWrite: true, ct);
@@ -143,7 +143,7 @@ public static class ModellingEndpoints
             ClaimsPrincipal user, AppDbContext db,
             WorkspaceAuthorizationService auth, CancellationToken ct) =>
         {
-            var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            var userId = user.UserId();
             await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Viewer, ct);
             var proj = await db.Projects.AsNoTracking().FirstAsync(p => p.Id == projectId, ct);
             var (streamId, refusal) = await ModelBranches.ResolveAsync(branchId, projectId, proj.StreamId, db, forWrite: false, ct);
@@ -157,7 +157,7 @@ public static class ModellingEndpoints
             ClaimsPrincipal user, AppDbContext db,
             WorkspaceAuthorizationService auth, CancellationToken ct) =>
         {
-            var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            var userId = user.UserId();
             await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Viewer, ct);
             var proj = await db.Projects.AsNoTracking().FirstAsync(p => p.Id == projectId, ct);
             var (streamId, refusal) = await ModelBranches.ResolveAsync(branchId, projectId, proj.StreamId, db, forWrite: false, ct);
@@ -175,7 +175,7 @@ public static class ModellingEndpoints
             ICommandHandler<UpdateRelationshipCommandEnvelope, CommandResult<RelationshipDto>> handler,
             CancellationToken ct) =>
         {
-            var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            var userId = user.UserId();
             await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
             var proj = await db.Projects.AsNoTracking().FirstAsync(p => p.Id == projectId, ct);
             var (streamId, refusal) = await ModelBranches.ResolveAsync(branchId, projectId, proj.StreamId, db, forWrite: true, ct);
@@ -194,7 +194,7 @@ public static class ModellingEndpoints
             ICommandHandler<RemoveRelationshipCommandEnvelope, CommandResult> handler,
             CancellationToken ct) =>
         {
-            var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            var userId = user.UserId();
             await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
             var proj = await db.Projects.AsNoTracking().FirstAsync(p => p.Id == projectId, ct);
             var (streamId, refusal) = await ModelBranches.ResolveAsync(branchId, projectId, proj.StreamId, db, forWrite: true, ct);
@@ -214,7 +214,7 @@ public static class ModellingEndpoints
             ICommandHandler<AddMessageCommandEnvelope, CommandResult<MessageDto>> handler,
             CancellationToken ct) =>
         {
-            var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            var userId = user.UserId();
             await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
             var proj = await db.Projects.AsNoTracking().FirstAsync(p => p.Id == projectId, ct);
             var (streamId, refusal) = await ModelBranches.ResolveAsync(branchId, projectId, proj.StreamId, db, forWrite: true, ct);
@@ -230,7 +230,7 @@ public static class ModellingEndpoints
             Guid? producerId, string? cursor, int? limit,
             ClaimsPrincipal user, AppDbContext db, WorkspaceAuthorizationService auth, CancellationToken ct) =>
         {
-            var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            var userId = user.UserId();
             await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Viewer, ct);
             var proj = await db.Projects.AsNoTracking().FirstAsync(p => p.Id == projectId, ct);
             var (streamId, refusal) = await ModelBranches.ResolveAsync(branchId, projectId, proj.StreamId, db, forWrite: false, ct);
@@ -243,7 +243,7 @@ public static class ModellingEndpoints
             Guid projectId, Guid messageId, Guid? branchId,
             ClaimsPrincipal user, AppDbContext db, WorkspaceAuthorizationService auth, CancellationToken ct) =>
         {
-            var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            var userId = user.UserId();
             await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Viewer, ct);
             var proj = await db.Projects.AsNoTracking().FirstAsync(p => p.Id == projectId, ct);
             var (streamId, refusal) = await ModelBranches.ResolveAsync(branchId, projectId, proj.StreamId, db, forWrite: false, ct);
@@ -259,7 +259,7 @@ public static class ModellingEndpoints
             ICommandHandler<UpdateMessageCommandEnvelope, CommandResult<MessageDto>> handler,
             CancellationToken ct) =>
         {
-            var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            var userId = user.UserId();
             await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
             var proj = await db.Projects.AsNoTracking().FirstAsync(p => p.Id == projectId, ct);
             var (streamId, refusal) = await ModelBranches.ResolveAsync(branchId, projectId, proj.StreamId, db, forWrite: true, ct);
@@ -276,7 +276,7 @@ public static class ModellingEndpoints
             ICommandHandler<RemoveMessageCommandEnvelope, CommandResult> handler,
             CancellationToken ct) =>
         {
-            var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            var userId = user.UserId();
             await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
             var proj = await db.Projects.AsNoTracking().FirstAsync(p => p.Id == projectId, ct);
             var (streamId, refusal) = await ModelBranches.ResolveAsync(branchId, projectId, proj.StreamId, db, forWrite: true, ct);
@@ -296,7 +296,7 @@ public static class ModellingEndpoints
             IEventStore store,
             CancellationToken ct) =>
         {
-            var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            var userId = user.UserId();
             await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Viewer, ct);
             return await ExportModel.Handle(projectId, format ?? "json", db, store, ct);
         }).WithTags("Export");
@@ -311,7 +311,7 @@ public static class ModellingEndpoints
             AppDbContext db,
             CancellationToken ct) =>
         {
-            var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            var userId = user.UserId();
             await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
             return await ImportModel.Handle(projectId, userId, request, dryRun == true, expectedVersion, db, ct);
         })

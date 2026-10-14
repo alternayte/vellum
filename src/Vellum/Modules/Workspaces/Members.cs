@@ -29,7 +29,7 @@ public static class ListMembers
         WorkspaceAuthorizationService auth,
         CancellationToken ct)
     {
-        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var userId = user.UserId();
         await auth.RequireRoleAsync(workspaceId, userId, WorkspaceRole.Viewer, ct);
 
         var memberships = await db.Memberships.AsNoTracking()
@@ -63,7 +63,7 @@ public static class ChangeMemberRole
         TimeProvider time,
         CancellationToken ct)
     {
-        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var userId = user.UserId();
         await auth.RequireRoleAsync(workspaceId, userId, WorkspaceRole.Owner, ct);
 
         if (MemberRoles.Parse(request.Role) is not { } role)

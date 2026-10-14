@@ -38,7 +38,7 @@ public static class GetWorkspaceSettings
         SettingsResolver settings,
         CancellationToken ct)
     {
-        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var userId = user.UserId();
         await auth.RequireRoleAsync(workspaceId, userId, WorkspaceRole.Viewer, ct);
 
         var workspace = await settings.GetWorkspaceAsync(workspaceId, ct);
@@ -63,7 +63,7 @@ public static class UpdateWorkspaceSettings
         SettingsValidator validator,
         CancellationToken ct)
     {
-        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var userId = user.UserId();
         await auth.RequireRoleAsync(workspaceId, userId, WorkspaceRole.Owner, ct);
 
         if (SettingsVersion.ReadIfMatch(http.Request, out var refusal) is not { } expected)

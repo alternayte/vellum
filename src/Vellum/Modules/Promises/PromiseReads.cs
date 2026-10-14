@@ -53,7 +53,7 @@ public static class PromiseReads
         Guid projectId, string? cursor, int? limit,
         ClaimsPrincipal user, WorkspaceAuthorizationService auth, AppDbContext db, IServiceProvider services, CancellationToken ct)
     {
-        await auth.RequireProjectRoleAsync(projectId, PromiseAccess.UserId(user), WorkspaceRole.Viewer, ct);
+        await auth.RequireProjectRoleAsync(projectId, user.UserId(), WorkspaceRole.Viewer, ct);
 
         var pageSize = Math.Clamp(limit ?? 50, 1, 200);
         var query = db.Promises.AsNoTracking().Where(p => p.ProjectId == projectId);
@@ -82,7 +82,7 @@ public static class PromiseReads
         Guid projectId, Guid promiseId,
         ClaimsPrincipal user, WorkspaceAuthorizationService auth, PromiseReader reader, CancellationToken ct)
     {
-        await auth.RequireProjectRoleAsync(projectId, PromiseAccess.UserId(user), WorkspaceRole.Viewer, ct);
+        await auth.RequireProjectRoleAsync(projectId, user.UserId(), WorkspaceRole.Viewer, ct);
         return await reader.GetAsync(projectId, promiseId, ct) is { } promise ? Results.Ok(promise) : PromiseAccess.NotFound();
     }
 
@@ -91,7 +91,7 @@ public static class PromiseReads
         Guid projectId, Guid promiseId, string? cursor, int? limit, string? obligation,
         ClaimsPrincipal user, WorkspaceAuthorizationService auth, AppDbContext db, CancellationToken ct)
     {
-        await auth.RequireProjectRoleAsync(projectId, PromiseAccess.UserId(user), WorkspaceRole.Viewer, ct);
+        await auth.RequireProjectRoleAsync(projectId, user.UserId(), WorkspaceRole.Viewer, ct);
         if (!await db.Promises.AsNoTracking().AnyAsync(p => p.Id == promiseId && p.ProjectId == projectId, ct))
             return PromiseAccess.NotFound();
 
@@ -121,7 +121,7 @@ public static class PromiseReads
     public static async Task<IResult> Prefix(
         Guid projectId, ClaimsPrincipal user, WorkspaceAuthorizationService auth, AppDbContext db, CancellationToken ct)
     {
-        await auth.RequireProjectRoleAsync(projectId, PromiseAccess.UserId(user), WorkspaceRole.Viewer, ct);
+        await auth.RequireProjectRoleAsync(projectId, user.UserId(), WorkspaceRole.Viewer, ct);
         var numbering = await db.Numbering.AsNoTracking().FirstOrDefaultAsync(n => n.ProjectId == projectId, ct);
         return Results.Ok(new PrefixDto(numbering?.Prefix, numbering?.NextNumber));
     }

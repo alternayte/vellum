@@ -32,7 +32,7 @@ public static class SaveScenario
         IOptions<JsonOptions> json,
         CancellationToken ct)
     {
-        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var userId = user.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
 
         var (document, error) = await ReadAsync(http.Request, json.Value.SerializerOptions, ct);
@@ -113,7 +113,7 @@ public static class SaveScenario
         IOptions<JsonOptions> json,
         CancellationToken ct)
     {
-        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var userId = user.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
 
         var (document, error) = await ReadAsync(http.Request, json.Value.SerializerOptions, ct);

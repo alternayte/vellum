@@ -18,7 +18,7 @@ public static class GetProject
         WorkspaceAuthorizationService auth,
         CancellationToken ct)
     {
-        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var userId = user.UserId();
         var project = await db.Projects.AsNoTracking().FirstOrDefaultAsync(p => p.Id == projectId, ct);
         // A project of a workspace the caller is no member of reads as a project that does not exist.
         if (project is null || await auth.GetRoleAsync(project.WorkspaceId, userId, ct) is not { } role)

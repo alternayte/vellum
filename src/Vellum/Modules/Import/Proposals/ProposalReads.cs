@@ -57,7 +57,7 @@ public static class ProposalReads
         string? cursor, int? limit, ClaimsPrincipal user, HttpContext http,
         WorkspaceAuthorizationService auth, AppDbContext db, CancellationToken ct)
     {
-        await auth.RequireProjectRoleAsync(projectId, user.FindFirstValue(ClaimTypes.NameIdentifier)!, WorkspaceRole.Viewer, ct);
+        await auth.RequireProjectRoleAsync(projectId, user.UserId(), WorkspaceRole.Viewer, ct);
         var scan = await db.Scans.AsNoTracking().FirstOrDefaultAsync(s => s.Id == importId && s.ProjectId == projectId, ct);
         if (scan is null)
             return ScanRequests.NotFound();
@@ -103,7 +103,7 @@ public static class ProposalReads
         Guid projectId, Guid importId, Guid proposalId, ClaimsPrincipal user, HttpContext http,
         WorkspaceAuthorizationService auth, AppDbContext db, CancellationToken ct)
     {
-        await auth.RequireProjectRoleAsync(projectId, user.FindFirstValue(ClaimTypes.NameIdentifier)!, WorkspaceRole.Viewer, ct);
+        await auth.RequireProjectRoleAsync(projectId, user.UserId(), WorkspaceRole.Viewer, ct);
         var scan = await db.Scans.AsNoTracking().FirstOrDefaultAsync(s => s.Id == importId && s.ProjectId == projectId, ct);
         if (scan is null)
             return ScanRequests.NotFound();
@@ -215,7 +215,7 @@ public static class ProposalReads
         Guid projectId, Guid importId, string? factKey, string? cursor, int? limit, ClaimsPrincipal user,
         WorkspaceAuthorizationService auth, AppDbContext db, CancellationToken ct)
     {
-        await auth.RequireProjectRoleAsync(projectId, user.FindFirstValue(ClaimTypes.NameIdentifier)!, WorkspaceRole.Viewer, ct);
+        await auth.RequireProjectRoleAsync(projectId, user.UserId(), WorkspaceRole.Viewer, ct);
         var scan = await db.Scans.AsNoTracking().FirstOrDefaultAsync(s => s.Id == importId && s.ProjectId == projectId, ct);
         if (scan is null)
             return ScanRequests.NotFound();

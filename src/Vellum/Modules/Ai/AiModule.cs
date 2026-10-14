@@ -69,7 +69,7 @@ public static class TestAiProvider
         AiClient ai,
         CancellationToken ct)
     {
-        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var userId = user.UserId();
         await auth.RequireRoleAsync(workspaceId, userId, WorkspaceRole.Owner, ct);
 
         return await ai.TestProviderAsync(workspaceId, providerId, userId, ct) is { } test

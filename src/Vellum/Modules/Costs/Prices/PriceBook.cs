@@ -103,7 +103,7 @@ public static class PriceBook
         Guid workspaceId, string? cursor, int? limit,
         ClaimsPrincipal user, WorkspaceAuthorizationService auth, AppDbContext db, CancellationToken ct)
     {
-        await auth.RequireRoleAsync(workspaceId, UserId(user), WorkspaceRole.Viewer, ct);
+        await auth.RequireRoleAsync(workspaceId, user.UserId(), WorkspaceRole.Viewer, ct);
 
         var pageSize = Math.Clamp(limit ?? 50, 1, 200);
         var query = db.PriceEntries.AsNoTracking().Where(p => p.WorkspaceId == workspaceId);
@@ -125,7 +125,7 @@ public static class PriceBook
         Guid workspaceId, CustomPriceRequest request,
         ClaimsPrincipal user, WorkspaceAuthorizationService auth, AppDbContext db, TimeProvider time, CancellationToken ct)
     {
-        var userId = UserId(user);
+        var userId = user.UserId();
         await auth.RequireRoleAsync(workspaceId, userId, WorkspaceRole.Owner, ct);
         if (PriceRules.Check(request) is { Count: > 0 } errors)
             return Invalid(errors);
@@ -153,7 +153,7 @@ public static class PriceBook
         Guid workspaceId, Guid priceId,
         ClaimsPrincipal user, WorkspaceAuthorizationService auth, AppDbContext db, CancellationToken ct)
     {
-        var userId = UserId(user);
+        var userId = user.UserId();
         await auth.RequireRoleAsync(workspaceId, userId, WorkspaceRole.Owner, ct);
 
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
@@ -196,8 +196,6 @@ public static class PriceBook
         await transaction.CommitAsync(ct);
         return Results.Created($"/api/workspaces/{entry.WorkspaceId}/prices/{entry.Id}", PriceEntryDto.From(entry));
     }
-
-    internal static string UserId(ClaimsPrincipal user) => user.FindFirstValue(ClaimTypes.NameIdentifier)!;
 
     internal static IResult Invalid(IReadOnlyList<ValidationError> errors) =>
         Results.BadRequest(new ErrorResponse("validation_error", "Validation failed",

@@ -145,7 +145,7 @@ public static class ChangeImpact
         Guid projectId, Guid importId, ClaimsPrincipal user, HttpContext http,
         WorkspaceAuthorizationService auth, CancellationToken ct)
     {
-        await auth.RequireProjectRoleAsync(projectId, PromiseAccess.UserId(user), WorkspaceRole.Viewer, ct);
+        await auth.RequireProjectRoleAsync(projectId, user.UserId(), WorkspaceRole.Viewer, ct);
         var (impact, refusal) = await ComputeAsync(http.RequestServices, projectId, importId, ct);
         return impact is null ? refusal! : Results.Ok(impact);
     }

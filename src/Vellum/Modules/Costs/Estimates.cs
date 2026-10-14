@@ -142,7 +142,7 @@ public static class Estimates
         Guid projectId, string? left, string? right, DateOnly? asOf,
         HttpContext http, WorkspaceAuthorizationService auth, EstimateReader reader, TimeProvider time, CancellationToken ct)
     {
-        await auth.RequireProjectRoleAsync(projectId, PriceBook.UserId(http.User), WorkspaceRole.Viewer, ct);
+        await auth.RequireProjectRoleAsync(projectId, http.User.UserId(), WorkspaceRole.Viewer, ct);
 
         var (leftBranch, leftRefusal) = await CostSheets.ResolveSideAsync(http.RequestServices, projectId, left, "left", ct);
         if (leftRefusal is not null)
@@ -256,7 +256,7 @@ public static class Pins
     public static async Task<IResult> Prices(
         Guid projectId, ClaimsPrincipal user, WorkspaceAuthorizationService auth, AppDbContext db, CancellationToken ct)
     {
-        await auth.RequireProjectRoleAsync(projectId, PriceBook.UserId(user), WorkspaceRole.Viewer, ct);
+        await auth.RequireProjectRoleAsync(projectId, user.UserId(), WorkspaceRole.Viewer, ct);
         var workspaceId = await auth.GetProjectWorkspaceIdAsync(projectId, ct);
 
         var entries = await db.PriceEntries.AsNoTracking()
@@ -271,7 +271,7 @@ public static class Pins
     public static async Task<IResult> Pin(
         Guid projectId, Guid priceId, ClaimsPrincipal user, WorkspaceAuthorizationService auth, AppDbContext db, TimeProvider time, CancellationToken ct)
     {
-        var userId = PriceBook.UserId(user);
+        var userId = user.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
         var workspaceId = await auth.GetProjectWorkspaceIdAsync(projectId, ct);
 
@@ -295,7 +295,7 @@ public static class Pins
     public static async Task<IResult> Unpin(
         Guid projectId, Guid priceId, ClaimsPrincipal user, WorkspaceAuthorizationService auth, AppDbContext db, CancellationToken ct)
     {
-        await auth.RequireProjectRoleAsync(projectId, PriceBook.UserId(user), WorkspaceRole.Editor, ct);
+        await auth.RequireProjectRoleAsync(projectId, user.UserId(), WorkspaceRole.Editor, ct);
         await db.Pins.Where(p => p.ProjectId == projectId && p.PriceEntryId == priceId).ExecuteDeleteAsync(ct);
         return Results.NoContent();
     }

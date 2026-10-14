@@ -100,7 +100,7 @@ public static partial class ScanRequests
         WorkspaceAuthorizationService auth, SettingsResolver settings, AppDbContext db,
         ScanSignal signal, TimeProvider time, CancellationToken ct)
     {
-        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var userId = user.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
         // A token scans a pull request, which is always a comparison: it writes nothing to the
         // model, marks no fact stale and cannot become the tracked ref. A scan of a ref can.
@@ -209,7 +209,7 @@ public static partial class ScanRequests
         Guid projectId, string? cursor, int? limit, ClaimsPrincipal user,
         WorkspaceAuthorizationService auth, AppDbContext db, CancellationToken ct)
     {
-        await auth.RequireProjectRoleAsync(projectId, user.FindFirstValue(ClaimTypes.NameIdentifier)!, WorkspaceRole.Viewer, ct);
+        await auth.RequireProjectRoleAsync(projectId, user.UserId(), WorkspaceRole.Viewer, ct);
         var pageSize = Math.Clamp(limit ?? 50, 1, 200);
 
         // Newest first. The cursor holds the creation time of the last row as ticks.
@@ -239,7 +239,7 @@ public static partial class ScanRequests
         Guid projectId, Guid importId, ClaimsPrincipal user,
         WorkspaceAuthorizationService auth, AppDbContext db, CancellationToken ct)
     {
-        await auth.RequireProjectRoleAsync(projectId, user.FindFirstValue(ClaimTypes.NameIdentifier)!, WorkspaceRole.Viewer, ct);
+        await auth.RequireProjectRoleAsync(projectId, user.UserId(), WorkspaceRole.Viewer, ct);
         var scan = await db.Scans.AsNoTracking().FirstOrDefaultAsync(s => s.Id == importId && s.ProjectId == projectId, ct);
         return scan is null ? NotFound() : Results.Ok(await DetailAsync(db, scan, ct));
     }
@@ -269,7 +269,7 @@ public static partial class ScanRequests
         Guid projectId, Guid importId, ClaimsPrincipal user,
         WorkspaceAuthorizationService auth, AppDbContext db, TimeProvider time, CancellationToken ct)
     {
-        await auth.RequireProjectRoleAsync(projectId, user.FindFirstValue(ClaimTypes.NameIdentifier)!, WorkspaceRole.Editor, ct);
+        await auth.RequireProjectRoleAsync(projectId, user.UserId(), WorkspaceRole.Editor, ct);
         var now = time.GetUtcNow();
 
         var idle = await db.Scans
@@ -312,7 +312,7 @@ public static partial class ScanRequests
         WorkspaceAuthorizationService auth, SettingsResolver settings, AppDbContext db,
         ScanSignal signal, TimeProvider time, CancellationToken ct)
     {
-        await auth.RequireProjectRoleAsync(projectId, user.FindFirstValue(ClaimTypes.NameIdentifier)!, WorkspaceRole.Editor, ct);
+        await auth.RequireProjectRoleAsync(projectId, user.UserId(), WorkspaceRole.Editor, ct);
         var now = time.GetUtcNow();
 
         var scan = await db.Scans.AsNoTracking().FirstOrDefaultAsync(s => s.Id == importId && s.ProjectId == projectId, ct);
@@ -402,7 +402,7 @@ public static partial class ScanRequests
         Guid projectId, Guid importId, ClaimsPrincipal user, HttpContext http,
         WorkspaceAuthorizationService auth, AppDbContext db, TimeProvider time, CancellationToken ct)
     {
-        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var userId = user.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
 
         var scan = await db.Scans.AsNoTracking().FirstOrDefaultAsync(s => s.Id == importId && s.ProjectId == projectId, ct);

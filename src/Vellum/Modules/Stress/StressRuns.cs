@@ -144,7 +144,7 @@ public static class StressRuns
         Guid projectId, Guid profileId, ClaimsPrincipal user, WorkspaceAuthorizationService auth,
         AppDbContext db, IEventStore store, CancellationToken ct)
     {
-        await auth.RequireProjectRoleAsync(projectId, StressAccess.UserId(user), WorkspaceRole.Viewer, ct);
+        await auth.RequireProjectRoleAsync(projectId, user.UserId(), WorkspaceRole.Viewer, ct);
 
         var profile = await db.Profiles.AsNoTracking()
             .Where(p => p.Id == profileId && p.ProjectId == projectId).Select(p => new { p.Version }).FirstOrDefaultAsync(ct);
@@ -174,7 +174,7 @@ public static class StressRuns
         Guid projectId, Guid runId, ClaimsPrincipal user, WorkspaceAuthorizationService auth,
         AppDbContext db, IEventStore store, CancellationToken ct)
     {
-        await auth.RequireProjectRoleAsync(projectId, StressAccess.UserId(user), WorkspaceRole.Viewer, ct);
+        await auth.RequireProjectRoleAsync(projectId, user.UserId(), WorkspaceRole.Viewer, ct);
 
         return await ReadAsync(db, store, projectId, runId, ct) is { } run ? Results.Ok(run) : StressAccess.NotFound("Stress run");
     }
@@ -182,7 +182,7 @@ public static class StressRuns
     public static async Task<IResult> Delete(
         Guid projectId, Guid runId, ClaimsPrincipal user, WorkspaceAuthorizationService auth, AppDbContext db, CancellationToken ct)
     {
-        await auth.RequireProjectRoleAsync(projectId, StressAccess.UserId(user), WorkspaceRole.Editor, ct);
+        await auth.RequireProjectRoleAsync(projectId, user.UserId(), WorkspaceRole.Editor, ct);
 
         var deleted = await db.StressRuns.Where(r => r.Id == runId && r.ProjectId == projectId).ExecuteDeleteAsync(ct);
         return deleted == 0 ? StressAccess.NotFound("Stress run") : Results.NoContent();

@@ -35,7 +35,7 @@ public static class GetAiUsage
         AppDbContext db,
         CancellationToken ct)
     {
-        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var userId = user.UserId();
         await auth.RequireRoleAsync(workspaceId, userId, WorkspaceRole.Viewer, ct);
 
         // Without a range: the current calendar month in UTC, which is the budget period.

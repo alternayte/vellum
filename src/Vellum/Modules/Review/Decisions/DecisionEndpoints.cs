@@ -69,7 +69,7 @@ public static class DecisionEndpoints
     public static async Task<IResult> List(
         Guid projectId, HttpContext http, WorkspaceAuthorizationService auth, AppDbContext db, CancellationToken ct)
     {
-        await auth.RequireProjectRoleAsync(projectId, ReviewAccess.UserId(http.User), WorkspaceRole.Viewer, ct);
+        await auth.RequireProjectRoleAsync(projectId, http.User.UserId(), WorkspaceRole.Viewer, ct);
         var book = new DecisionBook(await DecisionReads.CurrentAsync(db, projectId, ct));
         return Results.Ok(new Page<DecisionDto>([.. book.All.Select(d => DecisionDto.From(book, d))], null));
     }
@@ -77,14 +77,14 @@ public static class DecisionEndpoints
     public static async Task<IResult> Get(
         Guid projectId, Guid decisionId, HttpContext http, WorkspaceAuthorizationService auth, AppDbContext db, CancellationToken ct)
     {
-        await auth.RequireProjectRoleAsync(projectId, ReviewAccess.UserId(http.User), WorkspaceRole.Viewer, ct);
+        await auth.RequireProjectRoleAsync(projectId, http.User.UserId(), WorkspaceRole.Viewer, ct);
         return await ReadAsync(db, projectId, decisionId, ct) is { } decision ? Results.Ok(decision) : ReviewAccess.NotFound("Decision");
     }
 
     public static async Task<IResult> Create(
         Guid projectId, HttpContext http, WorkspaceAuthorizationService auth, TimeProvider time, CancellationToken ct)
     {
-        var userId = ReviewAccess.UserId(http.User);
+        var userId = http.User.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
         var (request, error) = await PromiseAccess.ReadAsync<DecisionRequest>(http);
         if (request is null)
@@ -138,7 +138,7 @@ public static class DecisionEndpoints
     public static async Task<IResult> Update(
         Guid projectId, Guid decisionId, HttpContext http, WorkspaceAuthorizationService auth, IEventStore store, AppDbContext db, TimeProvider time, CancellationToken ct)
     {
-        var userId = ReviewAccess.UserId(http.User);
+        var userId = http.User.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
         var (request, error) = await PromiseAccess.ReadAsync<DecisionRequest>(http);
         if (request is null)
@@ -168,7 +168,7 @@ public static class DecisionEndpoints
     public static async Task<IResult> Accept(
         Guid projectId, Guid decisionId, HttpContext http, WorkspaceAuthorizationService auth, IEventStore store, AppDbContext db, TimeProvider time, CancellationToken ct)
     {
-        var userId = ReviewAccess.UserId(http.User);
+        var userId = http.User.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Owner, ct);
         var (request, error) = await PromiseAccess.ReadAsync<AcceptDecisionRequest>(http);
         if (request is null)
@@ -209,7 +209,7 @@ public static class DecisionEndpoints
     public static async Task<IResult> Reject(
         Guid projectId, Guid decisionId, HttpContext http, WorkspaceAuthorizationService auth, IEventStore store, AppDbContext db, TimeProvider time, CancellationToken ct)
     {
-        var userId = ReviewAccess.UserId(http.User);
+        var userId = http.User.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Owner, ct);
         var (request, error) = await PromiseAccess.ReadAsync<RejectDecisionRequest>(http);
         if (request is null)
@@ -230,7 +230,7 @@ public static class DecisionEndpoints
     public static async Task<IResult> Delete(
         Guid projectId, Guid decisionId, HttpContext http, WorkspaceAuthorizationService auth, IEventStore store, TimeProvider time, CancellationToken ct)
     {
-        var userId = ReviewAccess.UserId(http.User);
+        var userId = http.User.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
         var now = time.GetUtcNow();
         var result = await DecideAsync(store, decisionId, state => DecisionDecider.Delete(state, projectId, userId, now), ct);
@@ -241,7 +241,7 @@ public static class DecisionEndpoints
     public static async Task<IResult> Export(
         Guid projectId, Guid decisionId, HttpContext http, WorkspaceAuthorizationService auth, AppDbContext db, CancellationToken ct)
     {
-        await auth.RequireProjectRoleAsync(projectId, ReviewAccess.UserId(http.User), WorkspaceRole.Viewer, ct);
+        await auth.RequireProjectRoleAsync(projectId, http.User.UserId(), WorkspaceRole.Viewer, ct);
         var book = new DecisionBook(await DecisionReads.CurrentAsync(db, projectId, ct));
         if (book.All.FirstOrDefault(d => d.Id == decisionId) is not { } decision)
             return ReviewAccess.NotFound("Decision");
@@ -253,7 +253,7 @@ public static class DecisionEndpoints
     public static async Task<IResult> ExportAll(
         Guid projectId, HttpContext http, WorkspaceAuthorizationService auth, AppDbContext db, CancellationToken ct)
     {
-        await auth.RequireProjectRoleAsync(projectId, ReviewAccess.UserId(http.User), WorkspaceRole.Viewer, ct);
+        await auth.RequireProjectRoleAsync(projectId, http.User.UserId(), WorkspaceRole.Viewer, ct);
         var book = new DecisionBook(await DecisionReads.CurrentAsync(db, projectId, ct));
         var projectName = await db.Projects.AsNoTracking().Where(p => p.Id == projectId).Select(p => p.Name).FirstAsync(ct);
         var text = DecisionDocuments.MarkdownAll(book, projectName, await NamesAsync(http.RequestServices, projectId, ct));

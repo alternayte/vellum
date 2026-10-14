@@ -21,7 +21,7 @@ public static class AzurePriceEndpoints
         Guid workspaceId, string? serviceName, string? region, string? skuName, string? meterName, string? currency,
         ClaimsPrincipal user, WorkspaceAuthorizationService auth, AzureRetailPrices azure, SettingsResolver settings, CancellationToken ct)
     {
-        await auth.RequireRoleAsync(workspaceId, PriceBook.UserId(user), WorkspaceRole.Owner, ct);
+        await auth.RequireRoleAsync(workspaceId, user.UserId(), WorkspaceRole.Owner, ct);
 
         // Without a currency the search uses the currency of the workspace.
         currency ??= (await settings.GetWorkspaceAsync(workspaceId, ct)).Effective.Cost.Currency;
@@ -52,7 +52,7 @@ public static class AzurePriceEndpoints
         Guid workspaceId, AzureImportRequest request,
         ClaimsPrincipal user, WorkspaceAuthorizationService auth, AzureRetailPrices azure, AppDbContext db, TimeProvider time, CancellationToken ct)
     {
-        var userId = PriceBook.UserId(user);
+        var userId = user.UserId();
         await auth.RequireRoleAsync(workspaceId, userId, WorkspaceRole.Owner, ct);
 
         var errors = new List<ValidationError>();

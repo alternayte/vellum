@@ -45,7 +45,7 @@ public static class SourceWindow
         Guid projectId, Guid importId, string? path, int? startLine, int? endLine, ClaimsPrincipal user,
         WorkspaceAuthorizationService auth, AppDbContext db, CancellationToken ct)
     {
-        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var userId = user.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Viewer, ct);
         var scan = await db.Scans.AsNoTracking().FirstOrDefaultAsync(s => s.Id == importId && s.ProjectId == projectId, ct);
         if (scan is null)

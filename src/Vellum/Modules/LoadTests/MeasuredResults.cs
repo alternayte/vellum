@@ -103,7 +103,7 @@ public static class MeasuredResults
     public static async Task<IResult> Import(
         Guid projectId, HttpContext http, WorkspaceAuthorizationService auth, AppDbContext db, IEventStore store, TimeProvider time, CancellationToken ct)
     {
-        var userId = Targets.UserId(http.User);
+        var userId = http.User.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
 
         using var buffer = new MemoryStream();
@@ -272,7 +272,7 @@ public static class MeasuredResults
     public static async Task<IResult> List(
         Guid projectId, ClaimsPrincipal user, WorkspaceAuthorizationService auth, AppDbContext db, IEventStore store, CancellationToken ct)
     {
-        await auth.RequireProjectRoleAsync(projectId, Targets.UserId(user), WorkspaceRole.Viewer, ct);
+        await auth.RequireProjectRoleAsync(projectId, user.UserId(), WorkspaceRole.Viewer, ct);
 
         // At most MaxResultsPerProject rows, so the newest come first in memory.
         var rows = (await Rows(db, db.Results.Where(r => r.ProjectId == projectId)).ToListAsync(ct))
@@ -287,7 +287,7 @@ public static class MeasuredResults
     public static async Task<IResult> Get(
         Guid projectId, Guid resultId, ClaimsPrincipal user, WorkspaceAuthorizationService auth, AppDbContext db, IEventStore store, CancellationToken ct)
     {
-        await auth.RequireProjectRoleAsync(projectId, Targets.UserId(user), WorkspaceRole.Viewer, ct);
+        await auth.RequireProjectRoleAsync(projectId, user.UserId(), WorkspaceRole.Viewer, ct);
         return await ReadAsync(db, store, projectId, resultId, ct) is { } result ? Results.Ok(result) : Targets.NotFound("Measured result");
     }
 
@@ -298,7 +298,7 @@ public static class MeasuredResults
     public static async Task<IResult> Delete(
         Guid projectId, Guid resultId, ClaimsPrincipal user, WorkspaceAuthorizationService auth, AppDbContext db, CancellationToken ct)
     {
-        await auth.RequireProjectRoleAsync(projectId, Targets.UserId(user), WorkspaceRole.Editor, ct);
+        await auth.RequireProjectRoleAsync(projectId, user.UserId(), WorkspaceRole.Editor, ct);
 
         // The check and the delete are one unit. A save of a profile that names a result takes the same lock,
         // so no profile starts to name this result between the two.

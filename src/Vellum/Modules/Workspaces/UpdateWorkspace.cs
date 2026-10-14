@@ -16,7 +16,7 @@ public static class UpdateWorkspace
         WorkspaceAuthorizationService auth,
         CancellationToken ct)
     {
-        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var userId = user.UserId();
         await auth.RequireRoleAsync(id, userId, WorkspaceRole.Owner, ct);
 
         if (WorkspaceText.Refusal(request.Name, nameRequired: false) is { } refusal)

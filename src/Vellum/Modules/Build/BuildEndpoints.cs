@@ -137,7 +137,7 @@ public static partial class BuildModule
         Guid projectId, ExportRequest request, HttpContext http,
         WorkspaceAuthorizationService auth, BuildLimits limits, Bootstrap bootstrap, CancellationToken ct)
     {
-        await auth.RequireProjectRoleAsync(projectId, UserId(http.User), WorkspaceRole.Viewer, ct);
+        await auth.RequireProjectRoleAsync(projectId, http.User.UserId(), WorkspaceRole.Viewer, ct);
         if (request.Format is not ("bundle" or "sdd"))
             return Invalid("format", "The format is bundle or sdd");
 
@@ -209,7 +209,7 @@ public static partial class BuildModule
         Guid projectId, Guid? revisionId, Guid? branchId, ClaimsPrincipal user, HttpContext http,
         WorkspaceAuthorizationService auth, BuildLimits limits, CancellationToken ct)
     {
-        await auth.RequireProjectRoleAsync(projectId, UserId(user), WorkspaceRole.Viewer, ct);
+        await auth.RequireProjectRoleAsync(projectId, user.UserId(), WorkspaceRole.Viewer, ct);
         var (bundle, refusal) = await BuildAsync(http.RequestServices, projectId, revisionId, branchId, limits, ct);
         return bundle is null ? refusal! : Results.Ok(bundle.Manifest);
     }
@@ -218,7 +218,7 @@ public static partial class BuildModule
         Guid projectId, BriefRequest request, HttpContext http,
         WorkspaceAuthorizationService auth, BuildLimits limits, CancellationToken ct)
     {
-        await auth.RequireProjectRoleAsync(projectId, UserId(http.User), WorkspaceRole.Viewer, ct);
+        await auth.RequireProjectRoleAsync(projectId, http.User.UserId(), WorkspaceRole.Viewer, ct);
         var selection = new BriefSelection(
             [.. (request.PromiseIds ?? []).Distinct()], [.. (request.ScenarioIds ?? []).Distinct()], [.. (request.ElementIds ?? []).Distinct()]);
         if (request.ChangeScanId is null && selection.PromiseIds.Count + selection.ScenarioIds.Count + selection.ElementIds.Count == 0)
@@ -311,7 +311,7 @@ public static partial class BuildModule
     private static async Task<IResult> Verify(
         Guid projectId, HttpContext http, WorkspaceAuthorizationService auth, BuildLimits limits, Bootstrap bootstrap, CancellationToken ct)
     {
-        await auth.RequireProjectRoleAsync(projectId, UserId(http.User), WorkspaceRole.Viewer, ct);
+        await auth.RequireProjectRoleAsync(projectId, http.User.UserId(), WorkspaceRole.Viewer, ct);
 
         var isZip = http.Request.ContentType?.StartsWith("application/zip", StringComparison.OrdinalIgnoreCase) == true;
         using var body = new MemoryStream();
@@ -674,8 +674,6 @@ public static partial class BuildModule
             return (null, TooLarge(tooLarge));
         }
     }
-
-    private static string UserId(ClaimsPrincipal user) => user.FindFirstValue(ClaimTypes.NameIdentifier)!;
 
     private static IResult TooLarge(BundleTooLargeException tooLarge) => Results.Json(
         new ErrorResponse("bundle_too_large", tooLarge.Message), statusCode: StatusCodes.Status413PayloadTooLarge);

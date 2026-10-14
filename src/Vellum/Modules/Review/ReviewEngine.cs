@@ -108,8 +108,6 @@ internal static class ReviewEngine
 /// <summary>What the review handlers share.</summary>
 internal static class ReviewAccess
 {
-    public static string UserId(ClaimsPrincipal user) => user.FindFirstValue(ClaimTypes.NameIdentifier)!;
-
     public static IResult Invalid(string field, string message) =>
         Results.BadRequest(new ErrorResponse("validation_error", "Validation failed", Errors: [new FieldError(field, message)]));
 

@@ -141,7 +141,7 @@ internal static class DesignAccess
     public static async Task<(Guid WorkspaceId, string UserId)> RequireAsync(
         HttpContext http, Guid projectId, WorkspaceRole role, CancellationToken ct)
     {
-        var userId = http.User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var userId = http.User.UserId();
         var auth = http.RequestServices.GetRequiredService<WorkspaceAuthorizationService>();
         await auth.RequireProjectRoleAsync(projectId, userId, role, ct);
         return (await auth.GetProjectWorkspaceIdAsync(projectId, ct), userId);

@@ -18,7 +18,7 @@ public static class CreateProject
         WorkspaceAuthorizationService auth,
         CancellationToken ct)
     {
-        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var userId = user.UserId();
         await auth.RequireRoleAsync(workspaceId, userId, WorkspaceRole.Editor, ct);
 
         if (WorkspaceText.Refusal(request.Name, nameRequired: true, request.Description) is { } refusal)

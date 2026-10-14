@@ -44,7 +44,7 @@ public static class PromiseWrites
     public static async Task<IResult> SetPrefix(
         Guid projectId, HttpContext http, WorkspaceAuthorizationService auth, AppDbContext db, CancellationToken ct)
     {
-        await auth.RequireProjectRoleAsync(projectId, PromiseAccess.UserId(http.User), WorkspaceRole.Owner, ct);
+        await auth.RequireProjectRoleAsync(projectId, http.User.UserId(), WorkspaceRole.Owner, ct);
         var (request, error) = await PromiseAccess.ReadAsync<SetPrefixRequest>(http);
         if (request is null)
             return error!;
@@ -65,7 +65,7 @@ public static class PromiseWrites
     public static async Task<IResult> Create(
         Guid projectId, HttpContext http, WorkspaceAuthorizationService auth, PromiseReader reader, TimeProvider time, CancellationToken ct)
     {
-        var userId = PromiseAccess.UserId(http.User);
+        var userId = http.User.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
         var (request, error) = await PromiseAccess.ReadAsync<PromiseRequest>(http);
         if (request is null)
@@ -129,7 +129,7 @@ public static class PromiseWrites
         Guid projectId, Guid promiseId, HttpContext http,
         WorkspaceAuthorizationService auth, IEventStore store, PromiseReader reader, TimeProvider time, CancellationToken ct)
     {
-        var userId = PromiseAccess.UserId(http.User);
+        var userId = http.User.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
         var (request, error) = await PromiseAccess.ReadAsync<PromiseRequest>(http);
         if (request is null)
@@ -146,7 +146,7 @@ public static class PromiseWrites
         Guid projectId, Guid promiseId, HttpContext http,
         WorkspaceAuthorizationService auth, IEventStore store, PromiseReader reader, TimeProvider time, CancellationToken ct)
     {
-        var userId = PromiseAccess.UserId(http.User);
+        var userId = http.User.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
         var (request, error) = await PromiseAccess.ReadAsync<ReviseRequest>(http, allowEmpty: true);
         if (error is not null)
@@ -171,7 +171,7 @@ public static class PromiseWrites
         Guid projectId, Guid promiseId, HttpContext http,
         WorkspaceAuthorizationService auth, IEventStore store, AppDbContext db, PromiseReader reader, TimeProvider time, CancellationToken ct)
     {
-        var userId = PromiseAccess.UserId(http.User);
+        var userId = http.User.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Owner, ct);
         var (request, error) = await PromiseAccess.ReadAsync<ApproveRequest>(http);
         if (request is null)
@@ -217,7 +217,7 @@ public static class PromiseWrites
         Guid projectId, Guid promiseId, HttpContext http,
         WorkspaceAuthorizationService auth, IEventStore store, TimeProvider time, CancellationToken ct)
     {
-        var userId = PromiseAccess.UserId(http.User);
+        var userId = http.User.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
 
         var now = time.GetUtcNow();

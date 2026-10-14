@@ -89,7 +89,7 @@ public static class Comparisons
         Guid projectId, Guid resultId, Guid runId, ClaimsPrincipal user, WorkspaceAuthorizationService auth,
         AppDbContext db, IEventStore store, CancellationToken ct)
     {
-        await auth.RequireProjectRoleAsync(projectId, Targets.UserId(user), WorkspaceRole.Viewer, ct);
+        await auth.RequireProjectRoleAsync(projectId, user.UserId(), WorkspaceRole.Viewer, ct);
 
         if (await MeasuredResults.ReadWithPlanAsync(db, store, projectId, resultId, ct) is not var (measured, plan))
             return Targets.NotFound("Measured result");
@@ -204,7 +204,7 @@ public static class Comparisons
         Guid projectId, Guid baseline, Guid candidate, ClaimsPrincipal user, WorkspaceAuthorizationService auth,
         AppDbContext db, IEventStore store, CancellationToken ct)
     {
-        await auth.RequireProjectRoleAsync(projectId, Targets.UserId(user), WorkspaceRole.Viewer, ct);
+        await auth.RequireProjectRoleAsync(projectId, user.UserId(), WorkspaceRole.Viewer, ct);
 
         if (await MeasuredResults.ReadAsync(db, store, projectId, baseline, ct) is not { } before
             || await MeasuredResults.ReadAsync(db, store, projectId, candidate, ct) is not { } after)

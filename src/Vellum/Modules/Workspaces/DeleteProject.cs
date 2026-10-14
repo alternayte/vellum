@@ -22,7 +22,7 @@ public static class DeleteProject
         WorkspaceAuthorizationService auth,
         CancellationToken ct)
     {
-        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var userId = user.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Owner, ct);
 
         var project = await db.Projects.FindAsync([projectId], ct);

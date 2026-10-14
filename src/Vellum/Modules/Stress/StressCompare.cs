@@ -33,7 +33,7 @@ public static class StressCompare
         Guid projectId, Guid left, Guid right, ClaimsPrincipal user, WorkspaceAuthorizationService auth,
         AppDbContext db, IEventStore store, CancellationToken ct)
     {
-        await auth.RequireProjectRoleAsync(projectId, StressAccess.UserId(user), WorkspaceRole.Viewer, ct);
+        await auth.RequireProjectRoleAsync(projectId, user.UserId(), WorkspaceRole.Viewer, ct);
 
         if (await StressRuns.ReadAsync(db, store, projectId, left, ct) is not { } a
             || await StressRuns.ReadAsync(db, store, projectId, right, ct) is not { } b)

@@ -22,7 +22,7 @@ public sealed class InstanceAuthorization(AppDbContext db)
     /// <returns>The user ID of the admin.</returns>
     public async Task<string> RequireAdminAsync(ClaimsPrincipal user, CancellationToken ct = default)
     {
-        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var userId = user.UserId();
         if (!await IsAdminAsync(userId, ct))
             throw new UnauthorizedAccessException("Requires the instance admin role");
         return userId;
@@ -56,7 +56,7 @@ public static class GetInstance
         SettingsResolver settings,
         CancellationToken ct)
     {
-        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var userId = user.UserId();
         var instance = await settings.GetInstanceAsync(ct);
         return Results.Ok(new InstanceInfoResponse(
             bootstrap.ProfileName, Version, await auth.IsAdminAsync(userId, ct), instance.Policy.AllowSelfRegistration));

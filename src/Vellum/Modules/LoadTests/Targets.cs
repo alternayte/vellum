@@ -271,8 +271,6 @@ public static class Targets
     internal static Task LockProjectAsync(Microsoft.EntityFrameworkCore.Infrastructure.DatabaseFacade database, Guid projectId, CancellationToken ct) =>
         database.ExecuteSqlAsync($"SELECT pg_advisory_xact_lock({LockSpace}, hashtext({projectId.ToString()}))", ct);
 
-    internal static string UserId(ClaimsPrincipal user) => user.FindFirstValue(ClaimTypes.NameIdentifier)!;
-
     internal static IResult NotFound(string what) => Results.NotFound(new ErrorResponse("not_found", $"{what} not found"));
 
     internal static TargetDto Dto(Guid id, TargetState state, long version) => new(
@@ -295,7 +293,7 @@ public static class Targets
     public static async Task<IResult> List(
         Guid projectId, ClaimsPrincipal user, WorkspaceAuthorizationService auth, AppDbContext db, CancellationToken ct)
     {
-        await auth.RequireProjectRoleAsync(projectId, UserId(user), WorkspaceRole.Viewer, ct);
+        await auth.RequireProjectRoleAsync(projectId, user.UserId(), WorkspaceRole.Viewer, ct);
 
         var rows = await db.Targets.AsNoTracking().Where(t => t.ProjectId == projectId && !t.Removed)
             .OrderBy(t => t.Name).ThenBy(t => t.Id).ToListAsync(ct);
@@ -305,7 +303,7 @@ public static class Targets
     public static async Task<IResult> Add(
         Guid projectId, TargetRequest request, HttpContext http, WorkspaceAuthorizationService auth, TimeProvider time, CancellationToken ct)
     {
-        var userId = UserId(http.User);
+        var userId = http.User.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
 
         var targetId = Guid.NewGuid();
@@ -319,7 +317,7 @@ public static class Targets
     public static async Task<IResult> Change(
         Guid projectId, Guid targetId, TargetRequest request, HttpContext http, WorkspaceAuthorizationService auth, TimeProvider time, CancellationToken ct)
     {
-        var userId = UserId(http.User);
+        var userId = http.User.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
         return (await WriteAsync(http, projectId, targetId, checkPlace: false,
             state => TargetDecider.Change(state, projectId, request.Name, request.BaseUrl, request.Environment, userId, time.GetUtcNow()), ct)).ToHttpResult();
@@ -329,7 +327,7 @@ public static class Targets
     public static async Task<IResult> Authorise(
         Guid projectId, Guid targetId, AuthoriseTargetRequest request, HttpContext http, WorkspaceAuthorizationService auth, TimeProvider time, CancellationToken ct)
     {
-        var userId = UserId(http.User);
+        var userId = http.User.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Owner, ct);
         if (request.Version is not { } version)
             return new CommandResult<TargetDto>.Conflict(AuthoriseConflict("version")).ToHttpResult();
@@ -340,7 +338,7 @@ public static class Targets
     public static async Task<IResult> Revoke(
         Guid projectId, Guid targetId, HttpContext http, WorkspaceAuthorizationService auth, TimeProvider time, CancellationToken ct)
     {
-        var userId = UserId(http.User);
+        var userId = http.User.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Owner, ct);
         return (await WriteAsync(http, projectId, targetId, checkPlace: false,
             state => TargetDecider.Revoke(state, projectId, userId, time.GetUtcNow()), ct)).ToHttpResult();
@@ -349,7 +347,7 @@ public static class Targets
     public static async Task<IResult> SetOverride(
         Guid projectId, Guid targetId, TargetOverrideRequest request, HttpContext http, WorkspaceAuthorizationService auth, TimeProvider time, CancellationToken ct)
     {
-        var userId = UserId(http.User);
+        var userId = http.User.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Owner, ct);
         return (await WriteAsync(http, projectId, targetId, checkPlace: false,
             state => TargetDecider.SetOverride(
@@ -360,7 +358,7 @@ public static class Targets
     public static async Task<IResult> Remove(
         Guid projectId, Guid targetId, HttpContext http, WorkspaceAuthorizationService auth, TimeProvider time, CancellationToken ct)
     {
-        var userId = UserId(http.User);
+        var userId = http.User.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
         var result = await WriteAsync(http, projectId, targetId, checkPlace: false,
             state => TargetDecider.Remove(state, projectId, userId, time.GetUtcNow()), ct);
@@ -374,7 +372,7 @@ public static class Targets
     private static async Task<CommandResult<TargetDto>> WriteAsync(
         HttpContext http, Guid projectId, Guid targetId, bool checkPlace, Func<TargetState, Decision> decide, CancellationToken ct, long? readVersion = null)
     {
-        var userId = UserId(http.User);
+        var userId = http.User.UserId();
         var workspaceId = await http.RequestServices.GetRequiredService<WorkspaceAuthorizationService>().GetProjectWorkspaceIdAsync(projectId, ct);
 
         return await SharedTransaction.RunAsync<CommandResult<TargetDto>>(http.RequestServices, async services =>

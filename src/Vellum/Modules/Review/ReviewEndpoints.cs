@@ -71,7 +71,7 @@ public static class ReviewEndpoints
     public static async Task<IResult> Findings(
         Guid projectId, Guid? revisionId, Guid? branchId, HttpContext http, WorkspaceAuthorizationService auth, CancellationToken ct)
     {
-        await auth.RequireProjectRoleAsync(projectId, ReviewAccess.UserId(http.User), WorkspaceRole.Viewer, ct);
+        await auth.RequireProjectRoleAsync(projectId, http.User.UserId(), WorkspaceRole.Viewer, ct);
         var (state, refusal) = await ReviewEngine.LoadAsync(http.RequestServices, projectId, revisionId, branchId, ct);
         return state is null ? refusal! : Results.Ok(FindingsResponse.Of(state));
     }
@@ -79,7 +79,7 @@ public static class ReviewEndpoints
     public static async Task<IResult> SaveSnapshot(
         Guid projectId, HttpContext http, WorkspaceAuthorizationService auth, AppDbContext db, TimeProvider time, CancellationToken ct)
     {
-        var userId = ReviewAccess.UserId(http.User);
+        var userId = http.User.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
         var (request, error) = await PromiseAccess.ReadAsync<SaveSnapshotRequest>(http, allowEmpty: true);
         if (error is not null)
@@ -109,7 +109,7 @@ public static class ReviewEndpoints
     public static async Task<IResult> ListSnapshots(
         Guid projectId, HttpContext http, WorkspaceAuthorizationService auth, AppDbContext db, CancellationToken ct)
     {
-        await auth.RequireProjectRoleAsync(projectId, ReviewAccess.UserId(http.User), WorkspaceRole.Viewer, ct);
+        await auth.RequireProjectRoleAsync(projectId, http.User.UserId(), WorkspaceRole.Viewer, ct);
         var rows = await db.ReviewSnapshots.AsNoTracking().Where(s => s.ProjectId == projectId)
             .OrderByDescending(s => s.CreatedAt).ThenBy(s => s.Id)
             .Select(s => new SnapshotSummary(s.Id, s.Branch, s.ModelVersion, s.RevisionId, s.InputsFingerprint, s.RuleSetVersion, s.Hash, s.Note, s.CreatedBy, s.CreatedAt))
@@ -120,7 +120,7 @@ public static class ReviewEndpoints
     public static async Task<IResult> GetSnapshot(
         Guid projectId, Guid snapshotId, HttpContext http, WorkspaceAuthorizationService auth, AppDbContext db, CancellationToken ct)
     {
-        await auth.RequireProjectRoleAsync(projectId, ReviewAccess.UserId(http.User), WorkspaceRole.Viewer, ct);
+        await auth.RequireProjectRoleAsync(projectId, http.User.UserId(), WorkspaceRole.Viewer, ct);
         return await db.ReviewSnapshots.AsNoTracking().FirstOrDefaultAsync(s => s.Id == snapshotId && s.ProjectId == projectId, ct) is { } row
             ? Results.Ok(ToDto(row))
             : ReviewAccess.NotFound("Snapshot");
@@ -129,7 +129,7 @@ public static class ReviewEndpoints
     public static async Task<IResult> DeleteSnapshot(
         Guid projectId, Guid snapshotId, HttpContext http, WorkspaceAuthorizationService auth, AppDbContext db, CancellationToken ct)
     {
-        await auth.RequireProjectRoleAsync(projectId, ReviewAccess.UserId(http.User), WorkspaceRole.Editor, ct);
+        await auth.RequireProjectRoleAsync(projectId, http.User.UserId(), WorkspaceRole.Editor, ct);
         return await db.ReviewSnapshots.Where(s => s.Id == snapshotId && s.ProjectId == projectId).ExecuteDeleteAsync(ct) == 1
             ? Results.NoContent()
             : ReviewAccess.NotFound("Snapshot");
@@ -155,7 +155,7 @@ public static class ReviewEndpoints
     public static async Task<IResult> SetDisposition(
         Guid projectId, HttpContext http, WorkspaceAuthorizationService auth, IEventStore store, AppDbContext db, TimeProvider time, CancellationToken ct)
     {
-        var userId = ReviewAccess.UserId(http.User);
+        var userId = http.User.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
         var (request, error) = await PromiseAccess.ReadAsync<SetDispositionRequest>(http);
         if (request is null)

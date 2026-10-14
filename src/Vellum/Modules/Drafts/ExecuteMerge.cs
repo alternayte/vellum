@@ -30,7 +30,7 @@ public static class ExecuteMerge
         WorkspaceAuthorizationService auth,
         CancellationToken ct)
     {
-        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var userId = user.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
 
         // The merge events, the read-model rows, the merged cost sheet and the draft status

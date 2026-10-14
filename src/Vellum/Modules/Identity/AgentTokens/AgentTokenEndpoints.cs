@@ -52,7 +52,7 @@ public static class AgentTokenEndpoints
         AppDbContext db, WorkspaceAuthorizationService auth,
         Bootstrap bootstrap, TimeProvider time, CancellationToken ct)
     {
-        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var userId = user.UserId();
         await auth.RequireRoleAsync(workspaceId, userId, WorkspaceRole.Owner, ct);
 
         var name = request.Name?.Trim();
@@ -140,7 +140,7 @@ public static class AgentTokenEndpoints
     private static async Task<IResult> List(
         Guid workspaceId, ClaimsPrincipal user, AppDbContext db, WorkspaceAuthorizationService auth, CancellationToken ct)
     {
-        await auth.RequireRoleAsync(workspaceId, user.FindFirstValue(ClaimTypes.NameIdentifier)!, WorkspaceRole.Owner, ct);
+        await auth.RequireRoleAsync(workspaceId, user.UserId(), WorkspaceRole.Owner, ct);
 
         var rows = await db.AgentTokens.AsNoTracking()
             .Where(t => t.WorkspaceId == workspaceId)
@@ -161,7 +161,7 @@ public static class AgentTokenEndpoints
         Guid workspaceId, Guid tokenId, ClaimsPrincipal user,
         AppDbContext db, WorkspaceAuthorizationService auth, TimeProvider time, CancellationToken ct)
     {
-        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var userId = user.UserId();
         await auth.RequireRoleAsync(workspaceId, userId, WorkspaceRole.Owner, ct);
 
         if (!await db.AgentTokens.AnyAsync(t => t.Id == tokenId && t.WorkspaceId == workspaceId, ct))

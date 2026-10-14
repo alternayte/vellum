@@ -22,7 +22,7 @@ public static class SchemaEndpoints
             ICommandHandler<CreateSchemaCommandEnvelope, CommandResult<SchemaDto>> handler,
             CancellationToken ct) =>
         {
-            var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            var userId = user.UserId();
             await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
             return (await handler.HandleAsync(
                 new CreateSchemaCommandEnvelope(projectId, request), ct))
@@ -36,7 +36,7 @@ public static class SchemaEndpoints
             WorkspaceAuthorizationService auth,
             AppDbContext db, CancellationToken ct) =>
         {
-            var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            var userId = user.UserId();
             await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Viewer, ct);
             return await ListSchemas.Handle(projectId, cursor, limit, db, ct);
         }).AllowAgent(AgentScope.Read);
@@ -47,7 +47,7 @@ public static class SchemaEndpoints
             WorkspaceAuthorizationService auth,
             AppDbContext db, CancellationToken ct) =>
         {
-            var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            var userId = user.UserId();
             await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Viewer, ct);
             return await GetSchema.Handle(projectId, schemaId, db, ct);
         }).AllowAgent(AgentScope.Read);
@@ -60,7 +60,7 @@ public static class SchemaEndpoints
             ICommandHandler<UpdateSchemaCommandEnvelope, CommandResult<SchemaDto>> handler,
             CancellationToken ct) =>
         {
-            var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            var userId = user.UserId();
             await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
             return (await handler.HandleAsync(
                 new UpdateSchemaCommandEnvelope(projectId, schemaId, request), ct))
@@ -74,7 +74,7 @@ public static class SchemaEndpoints
             ICommandHandler<DeleteSchemaCommandEnvelope, CommandResult> handler,
             CancellationToken ct) =>
         {
-            var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            var userId = user.UserId();
             await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
             return (await handler.HandleAsync(
                 new DeleteSchemaCommandEnvelope(projectId, schemaId), ct))

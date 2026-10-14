@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Shared.Outbound;
+using Vellum.Shared;
 
 namespace Vellum.Modules.GitHub;
 
@@ -53,7 +54,7 @@ public static class GetGitHubCredential
         GitHubReader reader,
         CancellationToken ct)
     {
-        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var userId = user.UserId();
         await auth.RequireRoleAsync(workspaceId, userId, WorkspaceRole.Owner, ct);
 
         if (await reader.DescribeCredentialAsync(workspaceId, ct) is not { } credential)
@@ -75,7 +76,7 @@ public static class TestGitHubConnection
         GitHubReader reader,
         CancellationToken ct)
     {
-        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var userId = user.UserId();
         await auth.RequireRoleAsync(workspaceId, userId, WorkspaceRole.Owner, ct);
 
         var connection = await reader.ConnectAsync(workspaceId, ct);

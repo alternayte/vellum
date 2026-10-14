@@ -115,7 +115,7 @@ public static class ImpactReport
         Guid projectId, Guid importId, ClaimsPrincipal user, HttpContext http,
         WorkspaceAuthorizationService auth, CancellationToken ct)
     {
-        await auth.RequireProjectRoleAsync(projectId, PromiseAccess.UserId(user), WorkspaceRole.Viewer, ct);
+        await auth.RequireProjectRoleAsync(projectId, user.UserId(), WorkspaceRole.Viewer, ct);
         var (report, refusal) = await ComputeAsync(http.RequestServices, projectId, importId, ct);
         if (report is null)
             return refusal!;
@@ -409,7 +409,7 @@ public static class ImpactGate
     public static async Task<IResult> Get(
         Guid projectId, HttpContext http, WorkspaceAuthorizationService auth, AppDbContext db, CancellationToken ct)
     {
-        var userId = PromiseAccess.UserId(http.User);
+        var userId = http.User.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Viewer, ct);
         var row = await db.ImpactGates.AsNoTracking().FirstOrDefaultAsync(g => g.ProjectId == projectId, ct);
         var role = await auth.GetRoleAsync(await auth.GetProjectWorkspaceIdAsync(projectId, ct), userId, ct);
@@ -421,7 +421,7 @@ public static class ImpactGate
     public static async Task<IResult> Set(
         Guid projectId, HttpContext http, WorkspaceAuthorizationService auth, AppDbContext db, TimeProvider time, CancellationToken ct)
     {
-        var userId = PromiseAccess.UserId(http.User);
+        var userId = http.User.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Owner, ct);
         var (request, error) = await PromiseAccess.ReadAsync<SetImpactGateRequest>(http);
         if (request is null)

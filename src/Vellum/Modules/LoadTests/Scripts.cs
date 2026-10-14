@@ -132,7 +132,7 @@ public static class Scripts
     public static async Task<IResult> List(
         Guid projectId, ClaimsPrincipal user, WorkspaceAuthorizationService auth, AppDbContext db, CancellationToken ct)
     {
-        await auth.RequireProjectRoleAsync(projectId, Targets.UserId(user), WorkspaceRole.Viewer, ct);
+        await auth.RequireProjectRoleAsync(projectId, user.UserId(), WorkspaceRole.Viewer, ct);
 
         // Without the text of the scripts: a list does not read them.
         var rows = await db.Scripts.AsNoTracking().Where(s => s.ProjectId == projectId)
@@ -151,7 +151,7 @@ public static class Scripts
     public static async Task<IResult> Get(
         Guid projectId, Guid scriptId, ClaimsPrincipal user, WorkspaceAuthorizationService auth, AppDbContext db, CancellationToken ct)
     {
-        await auth.RequireProjectRoleAsync(projectId, Targets.UserId(user), WorkspaceRole.Viewer, ct);
+        await auth.RequireProjectRoleAsync(projectId, user.UserId(), WorkspaceRole.Viewer, ct);
 
         var row = await db.Scripts.AsNoTracking().FirstOrDefaultAsync(s => s.Id == scriptId && s.ProjectId == projectId, ct);
         return row is null ? Targets.NotFound("Script") : Results.Ok(Dto(row, withContent: true));

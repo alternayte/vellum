@@ -61,7 +61,7 @@ public static class DecideProposals
         WorkspaceAuthorizationService auth, AppDbContext db,
         TimeProvider time, CancellationToken ct)
     {
-        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var userId = user.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
 
         var accept = (request.Accept ?? []).Distinct().ToArray();

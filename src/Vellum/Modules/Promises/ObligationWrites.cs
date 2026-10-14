@@ -64,7 +64,7 @@ public static class ObligationWrites
         WorkspaceAuthorizationService auth, IEventStore store, AppDbContext db,
         PromiseLimits limits, PromiseRunRate rate, TimeProvider time, CancellationToken ct)
     {
-        var userId = PromiseAccess.UserId(http.User);
+        var userId = http.User.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
         var scan = await db.Scans.AsNoTracking().FirstOrDefaultAsync(s => s.Id == importId && s.ProjectId == projectId, ct);
         if (scan is null)
@@ -138,7 +138,7 @@ public static class ObligationWrites
         Guid projectId, Guid promiseId, HttpContext http,
         WorkspaceAuthorizationService auth, IEventStore store, PromiseReader reader, TimeProvider time, CancellationToken ct)
     {
-        var userId = PromiseAccess.UserId(http.User);
+        var userId = http.User.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
         var (request, error) = await PromiseAccess.ReadAsync<ObligationRequest>(http);
         if (request is null)
@@ -168,7 +168,7 @@ public static class ObligationWrites
         Guid projectId, Guid promiseId, string obligationKey, HttpContext http,
         WorkspaceAuthorizationService auth, IEventStore store, PromiseReader reader, TimeProvider time, CancellationToken ct)
     {
-        var userId = PromiseAccess.UserId(http.User);
+        var userId = http.User.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
         var (request, error) = await PromiseAccess.ReadAsync<ObligationRequest>(http);
         if (request is null)
@@ -206,7 +206,7 @@ public static class ObligationWrites
         Guid projectId, Guid promiseId, string obligationKey, HttpContext http,
         WorkspaceAuthorizationService auth, IEventStore store, PromiseReader reader, TimeProvider time, CancellationToken ct)
     {
-        var userId = PromiseAccess.UserId(http.User);
+        var userId = http.User.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
 
         var now = time.GetUtcNow();
@@ -229,7 +229,7 @@ public static class ObligationWrites
         Guid projectId, Guid promiseId, HttpContext http,
         WorkspaceAuthorizationService auth, IEventStore store, AppDbContext db, PromiseReader reader, TimeProvider time, CancellationToken ct)
     {
-        var userId = PromiseAccess.UserId(http.User);
+        var userId = http.User.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
 
         var row = await db.Promises.AsNoTracking().FirstOrDefaultAsync(p => p.Id == promiseId && p.ProjectId == projectId, ct);
@@ -267,7 +267,7 @@ public static class ObligationWrites
         WorkspaceAuthorizationService auth, IEventStore store, AppDbContext db,
         PromiseLimits limits, TimeProvider time, CancellationToken ct)
     {
-        var userId = PromiseAccess.UserId(http.User);
+        var userId = http.User.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
         var (body, error) = await PromiseAccess.ReadAsync<RunObligationRequest>(http, allowEmpty: true);
         if (error is not null)
@@ -327,7 +327,7 @@ public static class ObligationWrites
         WorkspaceAuthorizationService auth, IEventStore store, AppDbContext db,
         GitHubReader gitHub, SettingsResolver settings, PromiseLimits limits, TimeProvider time, CancellationToken ct)
     {
-        var userId = PromiseAccess.UserId(http.User);
+        var userId = http.User.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
         var (request, error) = await PromiseAccess.ReadAsync<RecordEvidenceRequest>(http);
         if (request is null)

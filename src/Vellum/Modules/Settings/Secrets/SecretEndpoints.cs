@@ -39,7 +39,7 @@ public static class ListSecrets
         Bootstrap bootstrap,
         CancellationToken ct)
     {
-        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var userId = user.UserId();
         await auth.RequireRoleAsync(workspaceId, userId, WorkspaceRole.Owner, ct);
 
         var workspace = await settings.GetWorkspaceAsync(workspaceId, ct);
@@ -85,7 +85,7 @@ public static class SetSecret
         Bootstrap bootstrap,
         CancellationToken ct)
     {
-        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var userId = user.UserId();
         await auth.RequireRoleAsync(workspaceId, userId, WorkspaceRole.Owner, ct);
 
         if (SecretNames.Normalize(name) is not { } secretName)
@@ -154,7 +154,7 @@ public static class DeleteSecret
         AppDbContext db,
         CancellationToken ct)
     {
-        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var userId = user.UserId();
         await auth.RequireRoleAsync(workspaceId, userId, WorkspaceRole.Owner, ct);
 
         if (SecretNames.Normalize(name) is not { } secretName)

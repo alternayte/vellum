@@ -42,7 +42,7 @@ public static class Questions
     public static async Task<IResult> List(
         Guid projectId, HttpContext http, WorkspaceAuthorizationService auth, AppDbContext db, CancellationToken ct)
     {
-        await auth.RequireProjectRoleAsync(projectId, ReviewAccess.UserId(http.User), WorkspaceRole.Viewer, ct);
+        await auth.RequireProjectRoleAsync(projectId, http.User.UserId(), WorkspaceRole.Viewer, ct);
         var rows = await db.Questions.AsNoTracking().Where(q => q.ProjectId == projectId)
             .OrderBy(q => q.CreatedAt).ThenBy(q => q.Id).ToListAsync(ct);
         return Results.Ok(new Page<QuestionDto>([.. rows.Select(ToDto)], null));
@@ -51,7 +51,7 @@ public static class Questions
     public static async Task<IResult> Create(
         Guid projectId, HttpContext http, WorkspaceAuthorizationService auth, AppDbContext db, TimeProvider time, CancellationToken ct)
     {
-        var userId = ReviewAccess.UserId(http.User);
+        var userId = http.User.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
         var (request, error) = await PromiseAccess.ReadAsync<QuestionRequest>(http);
         if (request is null)
@@ -72,7 +72,7 @@ public static class Questions
     public static async Task<IResult> Keep(
         Guid projectId, HttpContext http, WorkspaceAuthorizationService auth, AppDbContext db, TimeProvider time, CancellationToken ct)
     {
-        var userId = ReviewAccess.UserId(http.User);
+        var userId = http.User.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
         var (request, error) = await PromiseAccess.ReadAsync<KeepQuestionRequest>(http);
         if (request is null)
@@ -122,7 +122,7 @@ public static class Questions
     public static async Task<IResult> Answer(
         Guid projectId, Guid questionId, HttpContext http, WorkspaceAuthorizationService auth, AppDbContext db, TimeProvider time, CancellationToken ct)
     {
-        var userId = ReviewAccess.UserId(http.User);
+        var userId = http.User.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
         var (request, error) = await PromiseAccess.ReadAsync<AnswerQuestionRequest>(http);
         if (request is null)
@@ -138,7 +138,7 @@ public static class Questions
     public static async Task<IResult> Drop(
         Guid projectId, Guid questionId, HttpContext http, WorkspaceAuthorizationService auth, AppDbContext db, TimeProvider time, CancellationToken ct)
     {
-        var userId = ReviewAccess.UserId(http.User);
+        var userId = http.User.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
         return await CloseAsync(db, projectId, questionId, QuestionStatus.Dropped, null, userId, time.GetUtcNow(), ct);
     }
@@ -166,7 +166,7 @@ public static class Questions
     public static async Task<IResult> Delete(
         Guid projectId, Guid questionId, HttpContext http, WorkspaceAuthorizationService auth, AppDbContext db, CancellationToken ct)
     {
-        await auth.RequireProjectRoleAsync(projectId, ReviewAccess.UserId(http.User), WorkspaceRole.Editor, ct);
+        await auth.RequireProjectRoleAsync(projectId, http.User.UserId(), WorkspaceRole.Editor, ct);
         return await db.Questions.Where(q => q.Id == questionId && q.ProjectId == projectId).ExecuteDeleteAsync(ct) == 1
             ? Results.NoContent()
             : ReviewAccess.NotFound("Question");

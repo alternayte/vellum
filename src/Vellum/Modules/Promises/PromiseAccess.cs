@@ -42,8 +42,6 @@ internal readonly record struct PromiseWrite(CommandResult<PromiseState> Result,
 /// <summary>What the promise handlers share: who calls, how a body is read and how a promise stream is reached.</summary>
 internal static class PromiseAccess
 {
-    public static string UserId(ClaimsPrincipal user) => user.FindFirstValue(ClaimTypes.NameIdentifier)!;
-
     /// <summary>
     /// Who makes the call, for the events: <c>agent-token:&lt;id&gt;</c> for an agent token,
     /// else <c>user:&lt;id&gt;</c>. It comes from the authentication scheme, never from the body.

@@ -18,7 +18,7 @@ public static class CreateWorkspace
         AppDbContext db,
         CancellationToken ct)
     {
-        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var userId = user.UserId();
 
         if (WorkspaceText.Refusal(request.Name, nameRequired: true) is { } refusal)
             return refusal;

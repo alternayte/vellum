@@ -19,7 +19,7 @@ public static class ModelBranches
         Func<Guid, string, Task<IResult>> run, CancellationToken ct)
     {
         var services = http.RequestServices;
-        var userId = http.User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var userId = http.User.UserId();
         await services.GetRequiredService<WorkspaceAuthorizationService>()
             .RequireProjectRoleAsync(projectId, userId, role, ct);
 

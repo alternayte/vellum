@@ -11,7 +11,7 @@ public static class ListWorkspaces
         AppDbContext db,
         CancellationToken ct)
     {
-        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var userId = user.UserId();
 
         var workspaceIds = await db.Memberships
             .AsNoTracking()

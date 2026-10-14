@@ -37,7 +37,7 @@ public static class StressProfiles
     public static async Task<IResult> List(
         Guid projectId, ClaimsPrincipal user, WorkspaceAuthorizationService auth, AppDbContext db, CancellationToken ct)
     {
-        await auth.RequireProjectRoleAsync(projectId, StressAccess.UserId(user), WorkspaceRole.Viewer, ct);
+        await auth.RequireProjectRoleAsync(projectId, user.UserId(), WorkspaceRole.Viewer, ct);
 
         var items = await db.Profiles.AsNoTracking()
             .Where(p => p.ProjectId == projectId)
@@ -52,7 +52,7 @@ public static class StressProfiles
         Guid projectId, Guid profileId, ClaimsPrincipal user, WorkspaceAuthorizationService auth,
         AppDbContext db, IEventStore store, CancellationToken ct)
     {
-        await auth.RequireProjectRoleAsync(projectId, StressAccess.UserId(user), WorkspaceRole.Viewer, ct);
+        await auth.RequireProjectRoleAsync(projectId, user.UserId(), WorkspaceRole.Viewer, ct);
 
         var row = await db.Profiles.AsNoTracking().FirstOrDefaultAsync(p => p.Id == profileId && p.ProjectId == projectId, ct);
         return row is null ? StressAccess.NotFound("Stress profile") : Results.Ok(await DtoAsync(row, db, store, ct));
@@ -77,7 +77,7 @@ public static class StressProfiles
     public static async Task<IResult> Defaults(
         Guid projectId, ClaimsPrincipal user, WorkspaceAuthorizationService auth, SettingsResolver settings, StressLimits limits, CancellationToken ct)
     {
-        await auth.RequireProjectRoleAsync(projectId, StressAccess.UserId(user), WorkspaceRole.Viewer, ct);
+        await auth.RequireProjectRoleAsync(projectId, user.UserId(), WorkspaceRole.Viewer, ct);
 
         var simulation = (await settings.GetWorkspaceAsync(await auth.GetProjectWorkspaceIdAsync(projectId, ct), ct)).Effective.Simulation;
         var duration = Math.Min(simulation.DurationSeconds, limits.MaxDurationSeconds);
@@ -92,7 +92,7 @@ public static class StressProfiles
         Guid projectId, HttpContext http, ClaimsPrincipal user, WorkspaceAuthorizationService auth,
         AppDbContext db, IEventStore store, StressLimits limits, StressRunPolicy policy, TimeProvider time, CancellationToken ct)
     {
-        var userId = StressAccess.UserId(user);
+        var userId = user.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
 
         var (sent, error) = await StressAccess.ReadAsync<StressProfile>(http);
@@ -128,7 +128,7 @@ public static class StressProfiles
         Guid projectId, Guid profileId, HttpContext http, ClaimsPrincipal user, WorkspaceAuthorizationService auth,
         AppDbContext db, IEventStore store, StressLimits limits, TimeProvider time, CancellationToken ct)
     {
-        var userId = StressAccess.UserId(user);
+        var userId = user.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
 
         var (sent, error) = await StressAccess.ReadAsync<StressProfile>(http);
@@ -166,7 +166,7 @@ public static class StressProfiles
     public static async Task<IResult> Delete(
         Guid projectId, Guid profileId, ClaimsPrincipal user, WorkspaceAuthorizationService auth, AppDbContext db, CancellationToken ct)
     {
-        await auth.RequireProjectRoleAsync(projectId, StressAccess.UserId(user), WorkspaceRole.Editor, ct);
+        await auth.RequireProjectRoleAsync(projectId, user.UserId(), WorkspaceRole.Editor, ct);
 
         var deleted = await db.Profiles.Where(p => p.Id == profileId && p.ProjectId == projectId).ExecuteDeleteAsync(ct);
         return deleted == 0 ? StressAccess.NotFound("Stress profile") : Results.NoContent();

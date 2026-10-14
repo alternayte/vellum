@@ -53,7 +53,7 @@ public static class PinnedModelRead
         Guid projectId, Guid revisionId, ClaimsPrincipal user, HttpContext http,
         AppDbContext db, WorkspaceAuthorizationService auth, CancellationToken ct)
     {
-        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var userId = user.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Viewer, ct);
 
         var revision = await db.Revisions.FindAsync([revisionId], ct);
@@ -80,7 +80,7 @@ public static class PinnedModelRead
         Guid projectId, string? left, string? right, ClaimsPrincipal user, HttpContext http,
         WorkspaceAuthorizationService auth, CancellationToken ct)
     {
-        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var userId = user.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Viewer, ct);
 
         var (a, refusalLeft) = await SideAsync(http.RequestServices, projectId, left, "left", ct);

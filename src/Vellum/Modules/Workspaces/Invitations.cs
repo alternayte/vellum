@@ -163,7 +163,7 @@ public static class CreateInvitation
         TimeProvider time,
         CancellationToken ct)
     {
-        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var userId = user.UserId();
         await auth.RequireRoleAsync(workspaceId, userId, WorkspaceRole.Owner, ct);
 
         if (MemberRoles.Parse(request.Role) is not { } role)
@@ -245,7 +245,7 @@ public static class ListInvitations
         TimeProvider time,
         CancellationToken ct)
     {
-        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var userId = user.UserId();
         await auth.RequireRoleAsync(workspaceId, userId, WorkspaceRole.Owner, ct);
 
         var now = InvitationRules.Now(time);
@@ -268,7 +268,7 @@ public static class RevokeInvitation
         TimeProvider time,
         CancellationToken ct)
     {
-        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var userId = user.UserId();
         await auth.RequireRoleAsync(workspaceId, userId, WorkspaceRole.Owner, ct);
 
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
@@ -357,7 +357,7 @@ public static class MyInvitations
         TimeProvider time,
         CancellationToken ct)
     {
-        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var userId = user.UserId();
         var email = await EmailOfAsync(user, db, ct);
 
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
@@ -418,7 +418,7 @@ public static class MyInvitations
         TimeProvider time,
         CancellationToken ct)
     {
-        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var userId = user.UserId();
         var email = await EmailOfAsync(user, db, ct);
 
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
@@ -464,7 +464,7 @@ public static class MyInvitations
     /// <summary>The normalized email address of the signed-in account, read from the account and not from a claim.</summary>
     private static async Task<string?> EmailOfAsync(ClaimsPrincipal user, AppDbContext identity, CancellationToken ct)
     {
-        var userId = user.FindFirstValue(ClaimTypes.NameIdentifier)!;
+        var userId = user.UserId();
         return await identity.Users.AsNoTracking().Where(u => u.Id == userId).Select(u => u.NormalizedEmail).FirstOrDefaultAsync(ct);
     }
 
