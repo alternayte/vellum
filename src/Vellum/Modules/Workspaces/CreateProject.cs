@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Vellum.Modules.Workspaces.Authorization;
 using Vellum.Modules.Workspaces.Entities;
+using Vellum.Shared;
 
 namespace Vellum.Modules.Workspaces;
 
@@ -22,6 +23,9 @@ public static class CreateProject
 
         if (WorkspaceText.Refusal(request.Name, nameRequired: true, request.Description) is { } refusal)
             return refusal;
+        if (request.Id == Guid.Empty)
+            return Results.BadRequest(new ErrorResponse("validation_error", "Validation failed",
+                Errors: [new FieldError("id", "An ID is required")]));
 
         var existing = await db.Projects.FindAsync([request.Id], ct);
         if (existing is not null)

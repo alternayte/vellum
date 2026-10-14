@@ -22,6 +22,11 @@ public static class CreateWorkspace
 
         if (WorkspaceText.Refusal(request.Name, nameRequired: true) is { } refusal)
             return refusal;
+        // The client chooses the ID, so a retry finds the same workspace. Without one, the
+        // membership would point at no workspace.
+        if (request.Id == Guid.Empty)
+            return Results.BadRequest(new ErrorResponse("validation_error", "Validation failed",
+                Errors: [new FieldError("id", "An ID is required")]));
 
         var existing = await db.Workspaces.FindAsync([request.Id], ct);
         if (existing is not null)

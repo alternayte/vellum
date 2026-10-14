@@ -91,6 +91,21 @@ public class WorkspaceEndpointTests
     }
 
     [Fact]
+    public async Task A_workspace_or_project_without_an_id_is_refused()
+    {
+        using var factory = CreateFactory();
+        using var client = await CreateAuthenticatedClientAsync(factory);
+
+        var workspace = await client.PostAsJsonAsync("/api/workspaces", new { name = "No ID" });
+        Assert.Equal(HttpStatusCode.BadRequest, workspace.StatusCode);
+
+        var workspaceId = Guid.NewGuid();
+        await client.PostAsJsonAsync("/api/workspaces", new { id = workspaceId, name = "Test WS" });
+        var project = await client.PostAsJsonAsync($"/api/workspaces/{workspaceId}/projects", new { name = "No ID" });
+        Assert.Equal(HttpStatusCode.BadRequest, project.StatusCode);
+    }
+
+    [Fact]
     public async Task Unauthenticated_workspace_request_returns_401()
     {
         using var factory = CreateFactory();
