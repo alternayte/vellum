@@ -97,4 +97,38 @@ describe('NodeContextMenu', () => {
     )
     expect(screen.getByText('Collapse')).toBeTruthy()
   })
+
+  it('is a menu of menu items that the arrow keys move through and Escape closes', () => {
+    const onClose = vi.fn()
+    render(
+      <NodeContextMenu
+        open={true}
+        position={{ x: 100, y: 100 }}
+        hasChildren={false}
+        isExpanded={false}
+        childKinds={[]}
+        canExpand
+        onAddChild={vi.fn()}
+        onClose={onClose}
+        onEditDetails={vi.fn()}
+        onExpand={vi.fn()}
+        onDrillInto={vi.fn()}
+        onDuplicate={vi.fn()}
+        onDelete={vi.fn()}
+      />
+    )
+    const menu = screen.getByRole('menu', { name: 'Element' })
+    expect(screen.getAllByRole('menuitem').map((item) => item.textContent)).toEqual(['Edit details', 'Duplicate', 'Delete'])
+    expect(document.activeElement?.textContent).toBe('Edit details')
+    fireEvent.keyDown(menu, { key: 'ArrowDown' })
+    expect(document.activeElement?.textContent).toBe('Duplicate')
+    fireEvent.keyDown(menu, { key: 'ArrowUp' })
+    fireEvent.keyDown(menu, { key: 'ArrowUp' })
+    expect(document.activeElement?.textContent).toBe('Delete')
+    fireEvent.keyDown(menu, { key: 'Home' })
+    fireEvent.keyDown(menu, { key: 'd' })
+    expect(document.activeElement?.textContent).toBe('Duplicate')
+    fireEvent.keyDown(menu, { key: 'Escape' })
+    expect(onClose).toHaveBeenCalled()
+  })
 })

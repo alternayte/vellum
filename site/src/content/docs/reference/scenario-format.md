@@ -3,7 +3,7 @@ title: Scenario format
 description: Every field of a scenario document, and the limits of one playback.
 ---
 
-This page lists the fields of a scenario document.
+This page lists the fields of a scenario document. The scenario editor in the app writes this document for you: you select each part by its name. The **JSON** view of the editor shows the document. See [Trace a scenario](/how-to/trace-a-scenario/#write-the-scenario).
 
 ```json
 {

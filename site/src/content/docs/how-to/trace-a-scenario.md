@@ -1,6 +1,6 @@
 ---
 title: Trace a scenario
-description: Declare contracts, write a scenario and play it on the canvas.
+description: Declare contracts, build a scenario from the model and play it on the canvas.
 ---
 
 This guide shows you how to play one behaviour of your system on the canvas. You need the editor role to add a contract and to save a scenario. A viewer can play a saved scenario.
@@ -26,13 +26,57 @@ Vellum refuses to remove an element, a channel or a schema that a contract uses.
 
 ## Write the scenario
 
+The scenario editor builds the scenario from the parts of the model. You select each part by its name. You do not type an ID.
+
 1. Open **Scenarios** in the left toolbar.
 2. Select **New**.
 3. Give the scenario a name in **Name**.
-4. Write the steps in **Document**. Select an entry in the reference list to copy its ID. The group **Handlers** lists, for each channel, the subscriptions that a publish to that channel can reach.
-5. Select **Save and play**. **Save** saves the scenario and does not play it.
+4. Below **Steps**, select the type of the first step. The first step is the trigger of the scenario. The editor marks it **Trigger**.
+5. Fill in the fields of the step. A field with an arrow is a list of the parts of the model. Type part of a name to filter the list. Use the arrow keys and Enter, or select an entry with the pointer.
+6. Add the next steps in the order that they occur. To change the order, use the up and down arrows of a step.
+7. Select **Save and play**.
 
-The [scenario format](/reference/scenario-format/) lists every step type and every limit. **Format reference** in the editor shows a short form of it.
+![The scenario editor. The first step is a call with the mark Trigger: the caller Customer calls the operation POST /orders. Below the call fields are the request and the response as JSON, the timeout and the retries of the operation, and the two step lists of the call. The second step publishes OrderCreated to order-events.](../../../assets/screenshots/scenario-editor-steps.png)
+
+### Step types
+
+| Type | Fields | Step lists in the step |
+|---|---|---|
+| **Call** | **Caller** (an element), **Operation**, **Request**, **Response** | **Inside the callee, before it responds**: the steps that the callee runs. **When every attempt fails**: the steps that the caller runs to handle the failure. |
+| **Publish** | **Message**, **Publisher**, **Channel**, **Routing key (optional)**, **Payload**, **Headers** | **Consumers** lists each subscription that the channel and its bindings reach. Select **Add steps** to give the steps that this consumer runs. |
+| **Write** | **Writer** (an element), **Data store**, **Dataset**, **Change** | None. |
+| **Parallel** | None | One list for each branch. Select **Add branch** for one more branch. All branches start at the same time. |
+| **Branch** | **When step**, **Is** (**Succeeded**, **Failed** or **Skipped**) | **Then** runs when the step has that outcome. **Else** runs when it does not. |
+
+- **Request**, **Response**, **Payload** and **Change** are JSON. Leave a field empty for no value. When the operation or the message has a schema, the editor shows its name above the field. The field shows an error when the text is not valid JSON. You cannot save while a field has an error.
+- When you select a **Message**, the editor sets **Publisher** to the producer of the message. You can select a different publisher.
+- **When step** lists only the steps that end before the branch starts. It does not list a step of another parallel branch or a step of a consumer.
+- The timeout and the retries of a call belong to the operation. The retries and the dead-letter channel of a delivery belong to the subscription. The editor shows these values below the step. Change them in **Contracts**.
+- Each step has an ID, for example `call-1`. A branch and an expected result refer to a step by its ID. To change the ID, edit it at the top right of the step and press Enter. The editor also changes each branch and each expected result that uses the old ID.
+
+### Failures to inject
+
+1. Below **Failures to inject**, select **Add a failure**.
+2. In **Target**, select an operation, a channel, a subscription or an element. A failure on an element makes everything that the element serves fail.
+3. In **Kind**, select **Error**, **Timeout** or **Outage**. **Timeout** applies only to an operation that has a timeout.
+4. In **Fails**, select **the first** and give a number of attempts, or select **every attempt**.
+
+One target takes one failure. The list of targets does not show a target that already has a failure.
+
+### Expected results
+
+- Select **Step outcome** to state the outcome of one step: **Succeeded**, **Failed** or **Skipped**.
+- Select **Event count** to state how many events of one kind the trace has. In **For**, select a part to count only the events of that part. **Any part** counts all of them. The count includes retried attempts.
+
+### Save and check
+
+**Save** saves the scenario and then plays it one time to check it. **Save and play** does the same, and then opens the trace.
+
+The server checks each reference, payload and schema. When it finds a problem, the editor stays open. It shows each problem at the top of the step that has the problem, and the other problems above the steps. The scenario is saved, but it does not play until you correct the problems.
+
+### The JSON view
+
+Select **JSON** to see the document that the server stores. The steps refer to the parts of the model by ID. A change in the JSON view shows in **Steps**. When the JSON is not valid, the editor shows the error and you cannot go back to **Steps** until you correct it. The [scenario format](/reference/scenario-format/) lists every field and every limit.
 
 To play a saved scenario, select the play button on its row in **Scenarios**. To change it, select the edit button on its row.
 
@@ -55,19 +99,15 @@ The dock always shows the line "Declared behaviour, not a measurement".
 
 ## Read the result
 
-Select the expectation count in the dock to see each expectation and why it holds or fails.
+Select the expectation count in the dock to see each expected result and why it holds or fails.
 
-If the scenario has an invalid reference or payload, the dock says "This scenario cannot play", lists each problem and plays nothing.
+If the scenario has an invalid reference or payload, the dock says "This scenario cannot play", lists each problem and plays nothing. The editor shows the same problems at the steps when you save.
 
 ## Inject a failure
 
-Add a fault to the `faults` list of the scenario:
+Add the failure in **Failures to inject** of the scenario editor. See [Failures to inject](#failures-to-inject). Then select **Save and play**.
 
-```json
-{ "target": "<operation, channel, subscription or element ID>", "kind": "Error", "failFirst": 1 }
-```
-
-`kind` is `Error`, `Timeout` or `Outage`. `failFirst` is the number of attempts that fail. `null` fails every attempt. `Timeout` is valid only for an operation that declares a timeout. One target takes one fault.
+![The lower part of the scenario editor. Failures to inject has one failure: the target Billing on order-events, the kind Error, and Fails set to every attempt. Expected results has a step outcome (place ends Succeeded) and an event count (exactly 2 deliveries for any part).](../../../assets/screenshots/scenario-editor-failure.png)
 
 ![The trace dock at event 3 of 12 of a scenario with an outage of the channel order-events. The event reads: Orders.Api cannot publish OrderCreated to order-events, the channel is unavailable. The payload of the message is at the right. The canvas rings Orders.Api in red.](../../../assets/screenshots/trace-dock-playback.png)
 

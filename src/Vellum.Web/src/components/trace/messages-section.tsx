@@ -4,7 +4,7 @@ import { Input } from '@/components/ui/input'
 import { useMessageMutations, type Message, type MessageFields } from '@/hooks/use-messages'
 import type { Schema } from '@/hooks/use-schemas'
 import { NO_FAILURE, formFailure, type FormFailure } from '@/hooks/use-contracts'
-import { Field, FormError, Row, SchemaOptions, Section, selectClass, type NamedElement } from './contract-parts'
+import { Field, FormError, Row, SchemaSelect, Section, selectClass, type NamedElement } from './contract-parts'
 
 const SHOWN_FIELDS = ['name', 'description', 'producerId', 'consumerIds', 'schemaId', 'tags']
 
@@ -12,13 +12,15 @@ interface MessageFormProps {
   message?: Message
   elements: NamedElement[]
   schemas: Schema[]
+  /** True while the schema list has not loaded. */
+  schemasLoading: boolean
   failure: FormFailure
   pending: boolean
   onSubmit: (fields: MessageFields) => void
   onCancel?: () => void
 }
 
-function MessageForm({ message, elements, schemas, failure, pending, onSubmit, onCancel }: MessageFormProps) {
+function MessageForm({ message, elements, schemas, schemasLoading, failure, pending, onSubmit, onCancel }: MessageFormProps) {
   const submit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     const form = new FormData(e.currentTarget)
@@ -49,12 +51,10 @@ function MessageForm({ message, elements, schemas, failure, pending, onSubmit, o
       </Field>
       <Field label="Schema" error={failure.fields.schemaId}>
         {(invalid) => (
-          <select name="schemaId" className={selectClass} defaultValue={message?.schemaId ?? ''} {...invalid}>
-            <SchemaOptions schemas={schemas} />
-          </select>
+          <SchemaSelect name="schemaId" initial={message?.schemaId} schemas={schemas} loading={schemasLoading} {...invalid} />
         )}
       </Field>
-      {schemas.length === 0 && (
+      {!schemasLoading && schemas.length === 0 && (
         <p className="text-[11px] leading-relaxed text-muted-foreground">No schema exists yet. Add one under Schemas, then choose it here.</p>
       )}
       <fieldset>
@@ -87,12 +87,13 @@ interface MessagesSectionProps {
   messages: Message[]
   elements: NamedElement[]
   schemas: Schema[]
+  schemasLoading: boolean
 }
 
 /** The form that is open: a new message, or the message with this ID. */
 type Open = { kind: 'new' } | { kind: 'edit'; id: string } | null
 
-export function MessagesSection({ projectId, branchId, messages, elements, schemas }: MessagesSectionProps) {
+export function MessagesSection({ projectId, branchId, messages, elements, schemas, schemasLoading }: MessagesSectionProps) {
   const { addMessage, updateMessage, removeMessage } = useMessageMutations(projectId, branchId)
   const [open, setOpen] = useState<Open>(null)
   const [failure, setFailure] = useState<FormFailure>(NO_FAILURE)
@@ -117,7 +118,7 @@ export function MessagesSection({ projectId, branchId, messages, elements, schem
     >
       {open?.kind === 'new' && (
         <MessageForm
-          elements={elements} schemas={schemas} failure={failure} pending={addMessage.isPending}
+          elements={elements} schemas={schemas} schemasLoading={schemasLoading} failure={failure} pending={addMessage.isPending}
           onSubmit={(fields) => addMessage.mutate(fields, done)}
         />
       )}
@@ -125,7 +126,7 @@ export function MessagesSection({ projectId, branchId, messages, elements, schem
         {messages.map((message) => open?.kind === 'edit' && open.id === message.id ? (
           <li key={message.id} className="rounded-md border border-border px-2 pb-2">
             <MessageForm
-              message={message} elements={elements} schemas={schemas} failure={failure} pending={updateMessage.isPending}
+              message={message} elements={elements} schemas={schemas} schemasLoading={schemasLoading} failure={failure} pending={updateMessage.isPending}
               onSubmit={(fields) => updateMessage.mutate({ id: message.id, ...fields }, done)}
               onCancel={() => show(null)}
             />

@@ -1,3 +1,4 @@
+import { useId } from 'react'
 import { useShellStore } from '@/stores/shell-store'
 import { useDraftStore } from '@/stores/draft-store'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
@@ -86,6 +87,9 @@ export function DetailPanel({
   const { detailPanelOpen, selectedElementId, selectedRelationshipId, selectedMessageId, selectElement, selectRelationship, selectMessage } =
     useShellStore()
   const { isReviewMode, reviewData, activeDraftId } = useDraftStore()
+  // Each control has its label tied to it by ID, so a screen reader names the field.
+  const fieldId = useId()
+  const idFor = (field: string) => `${fieldId}-${field}`
 
   const { data: commentsData } = useComments(projectId, activeDraftId)
   const comments = commentsData?.items ?? []
@@ -140,13 +144,13 @@ export function DetailPanel({
             <div className="mt-4 space-y-4 px-4 pb-4">
               {selectedMessage.description && (
                 <div>
-                  <label className="mb-1 block text-xs text-muted-foreground">Description</label>
+                  <p className="mb-1 block text-xs text-muted-foreground">Description</p>
                   <p className="text-sm text-foreground">{selectedMessage.description}</p>
                 </div>
               )}
 
               <div>
-                <label className="mb-1 block text-xs text-muted-foreground">Producer</label>
+                <p className="mb-1 block text-xs text-muted-foreground">Producer</p>
                 {producer ? (
                   <Button
                     variant="ghost"
@@ -163,7 +167,7 @@ export function DetailPanel({
 
               {consumers.length > 0 && (
                 <div>
-                  <label className="mb-1 block text-xs text-muted-foreground">Consumers</label>
+                  <p className="mb-1 block text-xs text-muted-foreground">Consumers</p>
                   <div className="flex flex-col gap-1">
                     {consumers.map((c) => (
                       <Button
@@ -182,7 +186,7 @@ export function DetailPanel({
 
               {attachedSchema && (
                 <div>
-                  <label className="mb-1 block text-xs text-muted-foreground">Schema</label>
+                  <p className="mb-1 block text-xs text-muted-foreground">Schema</p>
                   <div className="rounded border border-border bg-background p-2">
                     <p className="font-mono text-xs font-medium text-foreground">
                       {attachedSchema.name}
@@ -205,7 +209,7 @@ export function DetailPanel({
 
               {selectedMessage.tags.length > 0 && (
                 <div>
-                  <label className="mb-1 block text-xs text-muted-foreground">Tags</label>
+                  <p className="mb-1 block text-xs text-muted-foreground">Tags</p>
                   <div className="flex flex-wrap gap-1">
                     {selectedMessage.tags.map((tag) => (
                       <Badge key={tag} variant="secondary" className="text-xs">
@@ -262,15 +266,17 @@ export function DetailPanel({
             ) : (
               <div className="mt-4 space-y-4 px-4 pb-4">
                 <div>
-                  <label className="mb-1 block text-xs text-muted-foreground">Name</label>
+                  <label htmlFor={idFor('element-name')} className="mb-1 block text-xs text-muted-foreground">Name</label>
                   <Input
+                    id={idFor('element-name')}
                     defaultValue={selectedElement.name}
                     onBlur={(e) => onUpdateElement?.(selectedElement.id, { name: e.target.value })}
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs text-muted-foreground">Description</label>
+                  <label htmlFor={idFor('element-description')} className="mb-1 block text-xs text-muted-foreground">Description</label>
                   <Textarea
+                    id={idFor('element-description')}
                     defaultValue={selectedElement.description ?? ''}
                     onBlur={(e) =>
                       onUpdateElement?.(selectedElement.id, { description: e.target.value || null })
@@ -279,8 +285,9 @@ export function DetailPanel({
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs text-muted-foreground">Technology</label>
+                  <label htmlFor={idFor('element-technology')} className="mb-1 block text-xs text-muted-foreground">Technology</label>
                   <Input
+                    id={idFor('element-technology')}
                     defaultValue={selectedElement.technology ?? ''}
                     onBlur={(e) =>
                       onUpdateElement?.(selectedElement.id, { technology: e.target.value || null })
@@ -288,8 +295,9 @@ export function DetailPanel({
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs text-muted-foreground">Status</label>
+                  <label htmlFor={idFor('element-status')} className="mb-1 block text-xs text-muted-foreground">Status</label>
                   <select
+                    id={idFor('element-status')}
                     defaultValue={selectedElement.status}
                     onChange={(e) => onUpdateElement?.(selectedElement.id, { status: e.target.value })}
                     className="w-full rounded border border-input bg-background px-3 py-2 text-sm"
@@ -300,8 +308,8 @@ export function DetailPanel({
                   </select>
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs text-muted-foreground">Icon</label>
-                  <div className="grid grid-cols-6 gap-1">
+                  <p id={idFor('element-icon')} className="mb-1 block text-xs text-muted-foreground">Icon</p>
+                  <div role="group" aria-labelledby={idFor('element-icon')} className="grid grid-cols-6 gap-1">
                     {ARCHITECTURE_ICONS.map((entry) => {
                       const Icon = entry.icon
                       const isActive = (selectedElement.icon ?? defaultIconForKind(selectedElement.kind)) === entry.name
@@ -311,7 +319,10 @@ export function DetailPanel({
                           className={`flex h-8 w-8 items-center justify-center rounded border text-muted-foreground hover:bg-accent ${
                             isActive ? 'border-primary bg-accent text-foreground' : 'border-transparent'
                           }`}
+                          type="button"
                           title={entry.name}
+                          aria-label={entry.name}
+                          aria-pressed={isActive}
                           onClick={() => onUpdateElement?.(selectedElement.id, { icon: entry.name })}
                         >
                           <Icon className="h-4 w-4" />
@@ -321,7 +332,7 @@ export function DetailPanel({
                   </div>
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs text-muted-foreground">Tags</label>
+                  <p className="mb-1 block text-xs text-muted-foreground">Tags</p>
                   <div className="flex flex-wrap gap-1">
                     {selectedElement.tags.map((tag) => (
                       <Badge key={tag} variant="secondary" className="text-xs">
@@ -428,16 +439,17 @@ export function DetailPanel({
             ) : (
               <div className="mt-4 space-y-4 px-4 pb-4">
                 <div>
-                  <label className="mb-1 block text-xs text-muted-foreground">From</label>
+                  <p className="mb-1 block text-xs text-muted-foreground">From</p>
                   <p className="text-sm">{elements.find((e) => e.id === selectedRel.fromId)?.name ?? 'Unknown'}</p>
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs text-muted-foreground">To</label>
+                  <p className="mb-1 block text-xs text-muted-foreground">To</p>
                   <p className="text-sm">{elements.find((e) => e.id === selectedRel.toId)?.name ?? 'Unknown'}</p>
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs text-muted-foreground">Label</label>
+                  <label htmlFor={idFor('relationship-label')} className="mb-1 block text-xs text-muted-foreground">Label</label>
                   <Input
+                    id={idFor('relationship-label')}
                     defaultValue={selectedRel.label ?? ''}
                     onBlur={(e) =>
                       onUpdateRelationship?.(selectedRel.id, { label: e.target.value || null })
@@ -445,8 +457,9 @@ export function DetailPanel({
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs text-muted-foreground">Technology</label>
+                  <label htmlFor={idFor('relationship-technology')} className="mb-1 block text-xs text-muted-foreground">Technology</label>
                   <Input
+                    id={idFor('relationship-technology')}
                     defaultValue={selectedRel.technology ?? ''}
                     onBlur={(e) =>
                       onUpdateRelationship?.(selectedRel.id, { technology: e.target.value || null })
@@ -454,8 +467,9 @@ export function DetailPanel({
                   />
                 </div>
                 <div>
-                  <label className="mb-1 block text-xs text-muted-foreground">Line Style</label>
+                  <label htmlFor={idFor('relationship-line')} className="mb-1 block text-xs text-muted-foreground">Line Style</label>
                   <select
+                    id={idFor('relationship-line')}
                     defaultValue={selectedRel.lineShape ?? 'bezier'}
                     onChange={(e) => onUpdateRelationship?.(selectedRel.id, { lineShape: e.target.value })}
                     className="w-full rounded border border-input bg-background px-3 py-2 text-sm"
