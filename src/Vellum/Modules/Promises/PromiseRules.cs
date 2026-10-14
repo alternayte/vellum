@@ -265,7 +265,7 @@ public static partial class PromiseRules
                 errors.AddRange(CheckPattern("recipe.sourcePattern", source.Repository, source.Pattern, source.Service, known));
                 break;
 
-            case var kind when ObligationKind.IsPlan(kind) && recipe.Plan is { } plan && parts == 1:
+            case { } kind when ObligationKind.IsPlan(kind) && recipe.Plan is { } plan && parts == 1:
                 Add(PlanList("recipe.plan.steps", plan.Steps, required: true));
                 Add(PlanList("recipe.plan.inputs", plan.Inputs, required: false));
                 Add(PlanList("recipe.plan.expectedObservations", plan.ExpectedObservations, required: true));
@@ -284,7 +284,7 @@ public static partial class PromiseRules
             case ObligationKind.SourcePatternCheck:
                 errors.Add(new("recipe", "A source-pattern-check needs recipe.sourcePattern and no other typed part"));
                 break;
-            case var kind when ObligationKind.IsPlan(kind):
+            case { } kind when ObligationKind.IsPlan(kind):
                 errors.Add(new("recipe", $"A {kind} needs recipe.plan and no other typed part"));
                 break;
 

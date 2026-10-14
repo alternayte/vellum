@@ -49,8 +49,9 @@ jobs:
       - name: Restore
         run: dotnet restore Vellum.slnx
 
+      # A compiler warning fails the build here; the test shards do not repeat the check.
       - name: Build
-        run: dotnet build Vellum.slnx --no-restore
+        run: dotnet build Vellum.slnx --no-restore -warnaserror
 
       # The build of the API writes its OpenAPI document. The web client and the HTTP API
       # reference of the docs are generated from the committed copy, so the two must be equal.

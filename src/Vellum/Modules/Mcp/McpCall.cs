@@ -72,7 +72,7 @@ public sealed class McpCall(IServiceProvider services, AgentEndpoints endpoints,
         var http = new DefaultHttpContext { RequestServices = services, User = User, RequestAborted = Aborted };
         http.SetEndpoint(endpoint);
         http.Request.Method = route.Method;
-        http.Request.RouteValues = new RouteValueDictionary(values) { ["projectId"] = Project.Id.ToString() };
+        http.Request.RouteValues = new RouteValueDictionary(values?.Select(v => KeyValuePair.Create(v.Key, (string?)v.Value))) { ["projectId"] = Project.Id.ToString() };
         http.Request.Path = "/" + string.Join('/', route.Pattern.Trim('/').Split('/').Select(part =>
             part.StartsWith('{') ? Uri.EscapeDataString(http.Request.RouteValues[part.Trim('{', '}').Split(':')[0]]?.ToString() ?? "") : part));
         http.Request.QueryString = QueryString.Create((query ?? new Dictionary<string, string?>()).Where(q => q.Value is not null));

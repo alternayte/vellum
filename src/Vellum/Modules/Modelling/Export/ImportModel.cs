@@ -505,7 +505,7 @@ public static class ImportModel
             });
         }
 
-        foreach (var binding in doc.Bindings)
+        foreach (var binding in doc.Bindings ?? [])
         {
             BindingId id = binding.Id;
             Entry("binding", binding.Id, binding.RoutingKey, s => s.Bindings.GetValueOrDefault(id), () =>

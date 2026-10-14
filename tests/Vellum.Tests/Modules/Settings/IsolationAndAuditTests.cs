@@ -147,7 +147,7 @@ public class IsolationAndAuditTests : IClassFixture<IntegrationFixture>
         Assert.Equal(
             [ownerId, memberId, ownerId, ownerId, ownerId, ownerId, ownerId],
             workspaceEntries.Select(e => (string)e!["actorId"]!));
-        Assert.All(workspaceEntries, e => Assert.Equal(["action", "actorId", "at", "target"], e.AsObject().Select(p => p.Key).Order()));
+        Assert.All(workspaceEntries, e => Assert.Equal(["action", "actorId", "at", "target"], e!.AsObject().Select(p => p.Key).Order()));
         Assert.DoesNotContain(memberInfo.Email, body);
         var times = entries.Select(e => (DateTimeOffset)e!["at"]!).ToList();
         Assert.Equal(times.OrderByDescending(t => t), times);
