@@ -217,6 +217,7 @@ function CanvasViewInner({
     flowPosition: { x: number; y: number }
     screenPosition: { x: number; y: number }
     sourceNodeId: string | null
+    rootId: string | null
   } | null>(null)
   const [searchMatchIds, setSearchMatchIds] = useState<string[]>([])
   const { selectElement, selectRelationship, selectMessage, focusElementId, clearFocusElement } = useShellStore()
@@ -719,9 +720,10 @@ function CanvasViewInner({
         flowPosition: flowPos,
         screenPosition: { x: clientX, y: clientY },
         sourceNodeId,
+        rootId: currentRootId,
       })
     },
-    [screenToFlowPosition, readOnly],
+    [screenToFlowPosition, readOnly, currentRootId],
   )
 
   const handlePaneDoubleClick = useCallback(
@@ -737,13 +739,13 @@ function CanvasViewInner({
         flowPosition: flowPos,
         screenPosition: { x: event.clientX, y: event.clientY },
         sourceNodeId: null,
+        rootId: currentRootId,
       })
     },
-    [screenToFlowPosition, readOnly],
+    [screenToFlowPosition, readOnly, currentRootId],
   )
 
-  // The menu belongs to the level and the spot where it opened.
-  useEffect(() => setCreatePopover(null), [currentRootId])
+  // The menu belongs to the level and the spot where it opened: it shows only on that level.
   useEffect(() => {
     if (!createPopover) return
     const close = (event: KeyboardEvent) => { if (event.key === 'Escape') setCreatePopover(null) }
@@ -1012,7 +1014,7 @@ function CanvasViewInner({
         />
       )}
 
-      {createPopover && (
+      {createPopover && createPopover.rootId === currentRootId && (
         <CreatePopover
           open
           sourceKind={
