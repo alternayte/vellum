@@ -215,7 +215,7 @@ You cannot resume a waiting scan. Resume applies to a failed or a cancelled scan
 
 | Status | Type | Cause |
 |---|---|---|
-| `409` | `scan_not_resumable` | The scan is not failed or cancelled. |
+| `409` | `scan_not_resumable` | The scan is not failed or cancelled, or it failed in a way that a resume meets again: `tree_truncated`, `too_large`, `project_not_found`, `ref_not_found`, `commit_not_found`, `pull_request_not_found` or `pull_request_head_unreadable`. Start a new scan. The scan has `canResume: false`, and the app shows no **Resume** on it. |
 | `409` | `scan_expired` | The scan stopped too long ago and its files are no longer kept. Start a new scan. |
 | `409` | `resume_limit_reached` | The scan was resumed the maximum number of times and stopped each time. Start a new scan. |
 | `409` | `scan_in_progress` | Another scan of this repository is queued or running for the project. |

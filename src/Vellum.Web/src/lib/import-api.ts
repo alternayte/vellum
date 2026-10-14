@@ -53,6 +53,8 @@ export interface ScanSummary {
   pullRequestNumber: number | null
   /** Null until the scan read the pull request. */
   pullRequest: ScanPullRequest | null
+  /** True for a failed or cancelled scan that a resume can carry on. False when a resume would meet the same failure. */
+  canResume: boolean
 }
 
 export interface ScanNote {

@@ -1,3 +1,4 @@
+using System.Collections.Frozen;
 using System.Globalization;
 using Vellum.Modules.GitHub;
 
@@ -37,6 +38,20 @@ internal sealed class ScanStop : Exception
 internal static class ScanFailures
 {
     public const string ResumeHint = " Then resume the scan.";
+
+    /// <summary>
+    /// The codes of a failure that a resume cannot cure: the scan would ask the same of GitHub
+    /// or of the project and get the same answer. Each message says to start a new scan.
+    /// </summary>
+    public static readonly FrozenSet<string> Final = FrozenSet.ToFrozenSet(
+    [
+        "tree_truncated", "too_large", "project_not_found", "ref_not_found", "commit_not_found",
+        "pull_request_not_found", "pull_request_head_unreadable",
+    ], StringComparer.Ordinal);
+
+    /// <summary>True for a failed or cancelled scan whose failure a resume can cure.</summary>
+    public static bool CanResume(string status, string? errorCode) =>
+        status is ScanStatus.Failed or ScanStatus.Cancelled && (errorCode is null || !Final.Contains(errorCode));
 
     public static readonly ScanError TreeTruncated = new("tree_truncated",
         "GitHub cut the file list of this repository, because it is too large for one request. No file was read, so this scan has no result. " +

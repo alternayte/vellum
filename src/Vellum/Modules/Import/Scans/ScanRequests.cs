@@ -64,13 +64,14 @@ public sealed record ScanCoverageDto(int FilesListed, int FilesExtracted, Linked
 /// <param name="RetryAt">When a scan that waits starts again.</param>
 /// <param name="PullRequestNumber">The pull request the caller asked for, or null for a scan of a ref.</param>
 /// <param name="PullRequest">The pull request as GitHub described it when the scan pinned the head commit. Null until then.</param>
+/// <param name="CanResume">True for a failed or cancelled scan that a resume can carry on. False when the failure is one that a resume meets again: start a new scan.</param>
 public sealed record ScanDto(
     Guid Id, string Repository, string? RepositoryName, string? Ref, string? ResolvedRef, string? CommitSha, string Status, bool IsComplete,
     string Kind, string? TrackedRef, bool CanDecide, string? CanDecideReason,
     ScanCoverageDto Coverage, int Relinked, int NeedsReview,
     ScanProgressDto Progress, ProposalCountsDto ProposalCounts, ScanError? Error,
     DateTimeOffset? RetryAt, string RequestedBy, DateTimeOffset CreatedAt, DateTimeOffset? CompletedAt,
-    int? PullRequestNumber, ScanPullRequest? PullRequest);
+    int? PullRequestNumber, ScanPullRequest? PullRequest, bool CanResume);
 
 public sealed record ScanDetailDto(
     Guid Id, string Repository, string? RepositoryName, string? Ref, string? ResolvedRef, string? CommitSha, string Status, bool IsComplete,
@@ -78,7 +79,7 @@ public sealed record ScanDetailDto(
     ScanCoverageDto Coverage, int Relinked, int NeedsReview,
     ScanProgressDto Progress, ProposalCountsDto ProposalCounts, ScanError? Error,
     DateTimeOffset? RetryAt, string RequestedBy, DateTimeOffset CreatedAt, DateTimeOffset? CompletedAt,
-    int? PullRequestNumber, ScanPullRequest? PullRequest,
+    int? PullRequestNumber, ScanPullRequest? PullRequest, bool CanResume,
     IReadOnlyList<ScanNote> Notes, IReadOnlyList<RuleVersion> RuleVersions,
     string? TrackedBy, DateTimeOffset? TrackedAt);
 
@@ -254,7 +255,7 @@ public static partial class ScanRequests
             dto.Id, dto.Repository, dto.RepositoryName, dto.Ref, dto.ResolvedRef, dto.CommitSha, dto.Status, dto.IsComplete,
             dto.Kind, dto.TrackedRef, dto.CanDecide, dto.CanDecideReason, dto.Coverage, dto.Relinked, dto.NeedsReview,
             dto.Progress, dto.ProposalCounts, dto.Error, dto.RetryAt, dto.RequestedBy, dto.CreatedAt, dto.CompletedAt,
-            dto.PullRequestNumber, dto.PullRequest,
+            dto.PullRequestNumber, dto.PullRequest, dto.CanResume,
             ScanNotes.Read(scan.Notes),
             rules is null ? [] : System.Text.Json.JsonSerializer.Deserialize<List<RuleVersion>>(rules, System.Text.Json.JsonSerializerOptions.Web) ?? [],
             scan.TrackedBy, scan.TrackedAt);
@@ -294,8 +295,10 @@ public static partial class ScanRequests
 
     /// <summary>
     /// A failed or cancelled scan goes back to the queue with its checkpoint: the same
-    /// commit, the blobs it has. Three rules bound it:
+    /// commit, the blobs it has. These rules bound it:
     /// <list type="bullet">
+    /// <item>A scan whose failure is in <see cref="ScanFailures.Final"/> is not resumed: a
+    /// resume would meet the same failure.</item>
     /// <item>A scan that stopped longer ago than <see cref="ImportRetention.ResumableFor"/>
     /// is expired: its blobs are no longer kept, so it is not resumed.</item>
     /// <item>A scan is resumed by hand at most <see cref="MaxManualResumes"/> times. Each
@@ -317,6 +320,11 @@ public static partial class ScanRequests
             return NotFound();
         if (scan.Status is not (ScanStatus.Failed or ScanStatus.Cancelled))
             return Results.Conflict(new ErrorResponse("scan_not_resumable", "Only a failed or cancelled scan can be resumed."));
+        if (!ScanFailures.CanResume(scan.Status, scan.ErrorCode))
+        {
+            return Results.Conflict(new ErrorResponse("scan_not_resumable",
+                "A resume meets the same failure again: it asks GitHub and the project the same questions. Start a new scan."));
+        }
         if (ImportRetention.IsExpired(scan, now))
         {
             return Results.Conflict(new ErrorResponse("scan_expired", string.Create(CultureInfo.InvariantCulture,
@@ -362,6 +370,11 @@ public static partial class ScanRequests
         }
         if (resumed == 0)
             return Results.Conflict(new ErrorResponse("scan_not_resumable", "Only a failed or cancelled scan can be resumed."));
+        if (!ScanFailures.CanResume(scan.Status, scan.ErrorCode))
+        {
+            return Results.Conflict(new ErrorResponse("scan_not_resumable",
+                "A resume meets the same failure again: it asks GitHub and the project the same questions. Start a new scan."));
+        }
 
         await transaction.CommitAsync(ct);
         signal.Notify();
@@ -588,7 +601,7 @@ public static partial class ScanRequests
             counts ?? new ProposalCountsDto(0, 0, 0),
             scan.ErrorCode is null ? null : new ScanError(scan.ErrorCode, scan.ErrorMessage ?? ""),
             scan.RetryAt, scan.RequestedBy, scan.CreatedAt, scan.CompletedAt,
-            scan.PullRequestNumber, ScanPullRequest.FromJson(scan.PullRequest));
+            scan.PullRequestNumber, ScanPullRequest.FromJson(scan.PullRequest), ScanFailures.CanResume(scan.Status, scan.ErrorCode));
     }
 
     private static IResult Invalid(string field, string message) =>

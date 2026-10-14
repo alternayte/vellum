@@ -124,6 +124,13 @@ public class PullRequestScanTests(ImportHost import) : IClassFixture<ImportHost>
         Assert.Contains("no pull request #41", scan["error"]!["message"]!.GetValue<string>());
         Assert.DoesNotContain(s.GitHub.Requests, r => r.StartsWith("tree:", StringComparison.Ordinal));
         Assert.Empty(s.GitHub.BlobRequests);
+
+        // A resume would ask for the same pull request again. The scan says so, and a resume is refused.
+        Assert.False(scan["canResume"]!.GetValue<bool>());
+        var resume = await s.Owner.PostAsync(s.Url($"/{scan.Id()}/resume"), null);
+        Assert.Equal(HttpStatusCode.Conflict, resume.StatusCode);
+        Assert.Equal("scan_not_resumable", (await resume.Content.ReadFromJsonAsync<JsonObject>())!.Text("type"));
+        Assert.Equal("failed", (await s.GetAsync(scan.Id())).Text("status"));
     }
 
     [Fact]

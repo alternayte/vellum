@@ -25669,6 +25669,7 @@
           "completedAt",
           "pullRequestNumber",
           "pullRequest",
+          "canResume",
           "notes",
           "ruleVersions",
           "trackedBy",
@@ -25806,6 +25807,9 @@
               }
             ]
           },
+          "canResume": {
+            "type": "boolean"
+          },
           "notes": {
             "type": "array",
             "items": {
@@ -25858,7 +25862,8 @@
           "createdAt",
           "completedAt",
           "pullRequestNumber",
-          "pullRequest"
+          "pullRequest",
+          "canResume"
         ],
         "type": "object",
         "properties": {
@@ -25991,6 +25996,9 @@
                 "$ref": "#/components/schemas/ScanPullRequest"
               }
             ]
+          },
+          "canResume": {
+            "type": "boolean"
           }
         }
       },

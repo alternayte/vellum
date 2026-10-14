@@ -33,7 +33,7 @@ The list shows each scan and its state.
 | Scan complete | Vellum read every file in its limits. |
 | Partial scan | A limit stopped the scan before it read every file. |
 | Cancelled | You stopped the scan. Select **Resume** to continue from the files already read. |
-| A failure message | The scan failed. The line says why and what to do. Select **Resume** to continue from the files already read. |
+| A failure message | The scan failed. The line says why and what to do. When a resume can help, select **Resume** to continue from the files already read. A failure that a resume meets again, for example a pull request that does not exist, has no **Resume**: start a new scan. |
 
 You can resume one scan 3 times. A scan that stopped more than 7 days ago cannot be resumed. Start a new scan.
 

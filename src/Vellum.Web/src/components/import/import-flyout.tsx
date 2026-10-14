@@ -195,7 +195,7 @@ export function ImportFlyout({ projectId, owners }: {
                     <Square className="h-3 w-3" /> Cancel
                   </Button>
                 )}
-                {(scan.status === 'failed' || scan.status === 'cancelled') && (
+                {scan.canResume && (
                   <Button size="sm" variant="ghost" className="h-6 gap-1 px-2 text-xs" onClick={() => resume.mutate(scan.id)} disabled={resume.isPending}>
                     <RotateCw className="h-3 w-3" /> Resume
                   </Button>
