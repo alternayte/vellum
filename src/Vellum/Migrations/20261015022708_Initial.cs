@@ -92,7 +92,7 @@ namespace Vellum.Migrations
                 .Annotation("Npgsql:Enum:comments.thread_status", "open,resolved")
                 .Annotation("Npgsql:Enum:costs.price_source_kind", "custom,fetched")
                 .Annotation("Npgsql:Enum:drafts.draft_status", "abandoned,merged,open")
-                .Annotation("Npgsql:Enum:identity.agent_scope", "export,propose,read,scan_pull_request")
+                .Annotation("Npgsql:Enum:identity.agent_scope", "export,propose,push,read,scan_pull_request")
                 .Annotation("Npgsql:Enum:import.coverage_gap", "failed,limit,scope,withheld")
                 .Annotation("Npgsql:Enum:import.entity_kind", "binding,channel,element,message,operation,relationship,schema,subscription")
                 .Annotation("Npgsql:Enum:import.fact_disposition", "blocked,evidence_only,folded,mapped")
@@ -340,6 +340,7 @@ namespace Vellum.Migrations
                     provenance_accepted_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
                     provenance_accepted_at_version = table.Column<long>(type: "bigint", nullable: true),
                     provenance_accepted_on_branch = table.Column<Guid>(type: "uuid", nullable: true),
+                    provenance_content_not_held = table.Column<bool>(type: "boolean", nullable: false),
                     stale_since_revision = table.Column<string>(type: "text", nullable: true),
                     stale_reason = table.Column<string>(type: "text", nullable: true)
                 },
@@ -509,6 +510,7 @@ namespace Vellum.Migrations
                     provenance_accepted_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
                     provenance_accepted_at_version = table.Column<long>(type: "bigint", nullable: true),
                     provenance_accepted_on_branch = table.Column<Guid>(type: "uuid", nullable: true),
+                    provenance_content_not_held = table.Column<bool>(type: "boolean", nullable: false),
                     stale_since_revision = table.Column<string>(type: "text", nullable: true),
                     stale_reason = table.Column<string>(type: "text", nullable: true)
                 },
@@ -706,6 +708,7 @@ namespace Vellum.Migrations
                     provenance_accepted_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
                     provenance_accepted_at_version = table.Column<long>(type: "bigint", nullable: true),
                     provenance_accepted_on_branch = table.Column<Guid>(type: "uuid", nullable: true),
+                    provenance_content_not_held = table.Column<bool>(type: "boolean", nullable: false),
                     stale_since_revision = table.Column<string>(type: "text", nullable: true),
                     stale_reason = table.Column<string>(type: "text", nullable: true)
                 },
@@ -1369,7 +1372,9 @@ namespace Vellum.Migrations
                     lease_token = table.Column<long>(type: "bigint", nullable: false),
                     cancel_requested = table.Column<bool>(type: "boolean", nullable: false),
                     tracked_by = table.Column<string>(type: "text", nullable: true),
-                    tracked_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true)
+                    tracked_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
+                    content_not_held = table.Column<bool>(type: "boolean", nullable: false),
+                    reported_commit_sha = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: true)
                 },
                 constraints: table =>
                 {

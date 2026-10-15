@@ -166,6 +166,20 @@ public static class ImportModule
             .Produces<List<SourceBindingDto>>()
             .Produces<ErrorResponse>(StatusCodes.Status404NotFound);
 
+        // vellum scan: the rules and limits first, then the push. Only an agent token with the push scope.
+        sources.MapGet("/push", AgentPush.Settings).RequireAgent().AllowAgent(AgentScope.Push)
+            .Produces<AgentPushSettings>()
+            .Produces<ErrorResponse>(StatusCodes.Status403Forbidden);
+
+        sources.MapPost("/push", AgentPush.Push).RequireAgent().AllowAgent(AgentScope.Push)
+            .WithBodyLimit(AgentPush.MaxBodyBytes)
+            .Produces<AgentPushResponse>(StatusCodes.Status201Created)
+            .Produces<ErrorResponse>(StatusCodes.Status400BadRequest)
+            .Produces<ErrorResponse>(StatusCodes.Status403Forbidden)
+            .Produces<ErrorResponse>(StatusCodes.Status409Conflict)
+            .Produces<ErrorResponse>(StatusCodes.Status413PayloadTooLarge)
+            .Produces<ErrorResponse>(StatusCodes.Status429TooManyRequests);
+
         sources.MapPost("/{sourceId}/accept", SourceRequests.AcceptAll).RequireHuman()
             .Produces<DecideProposalsResponse>()
             .Produces<ErrorResponse>(StatusCodes.Status404NotFound)

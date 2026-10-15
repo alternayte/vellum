@@ -341,7 +341,7 @@ function EventImpact({ step }: { step: StepImpact }) {
               {evidence && (
                 <>
                   {' · '}
-                  <a href={evidence.url} target="_blank" rel="noreferrer noopener" title={evidence.pointer} className="font-mono underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-primary">
+                  <a href={evidence.url ?? undefined} target="_blank" rel="noreferrer noopener" title={evidence.pointer} className="font-mono underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-primary">
                     {evidence.path}:{evidence.startLine}
                   </a>
                 </>

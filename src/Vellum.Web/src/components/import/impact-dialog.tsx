@@ -280,7 +280,7 @@ export function ImpactDialog({ projectId, scan, owners, onClose }: {
               {impact.changes.length === 0 && <p className="mt-1 text-xs text-muted-foreground">The source matches the model, and its source patterns match those of the base. Nothing is affected.</p>}
               <ul className="mt-1.5 space-y-1.5">
                 {impact.changes.map((change) => (
-                  <Change key={change.id} anchor={changeAnchor(change.id)} projectId={projectId} change={change} scanId={change.kind === 'source-pattern' && change.action === 'remove' ? (impact.base.scanId ?? scan.id) : scan.id} />
+                  <Change key={change.id} anchor={changeAnchor(change.id)} projectId={projectId} change={change} contentHeld={scan.contentHeld} scanId={change.kind === 'source-pattern' && change.action === 'remove' ? (impact.base.scanId ?? scan.id) : scan.id} />
                 ))}
               </ul>
             </section>
@@ -455,7 +455,7 @@ function FlowSteps({ impact, steps }: { impact: ChangeImpact; steps: ImpactStep[
                     {evidence && (
                       <>
                         {' · '}
-                        <a href={evidence.url} target="_blank" rel="noreferrer noopener" className="font-mono underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-primary" title={evidence.pointer}>
+                        <a href={evidence.url ?? undefined} target="_blank" rel="noreferrer noopener" className="font-mono underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-primary" title={evidence.pointer}>
                           {evidence.path}:{evidence.startLine}
                         </a>
                       </>
@@ -472,7 +472,7 @@ function FlowSteps({ impact, steps }: { impact: ChangeImpact; steps: ImpactStep[
   )
 }
 
-function Change({ projectId, change, scanId, anchor }: { projectId: string; change: ImpactChange; scanId: string; anchor: string }) {
+function Change({ projectId, change, scanId, contentHeld, anchor }: { projectId: string; change: ImpactChange; scanId: string; contentHeld: boolean; anchor: string }) {
   const [open, setOpen] = useState(false)
   const action = ACTION[change.action] ?? ACTION.change
   return (
@@ -507,7 +507,7 @@ function Change({ projectId, change, scanId, anchor }: { projectId: string; chan
                   ))}
                 </div>
               ))}
-              {change.evidence.map((evidence) => <SourceLines key={evidence.pointer} projectId={projectId} scanId={scanId} evidence={evidence} />)}
+              {change.evidence.map((evidence) => <SourceLines key={evidence.pointer} projectId={projectId} scanId={scanId} contentHeld={contentHeld} evidence={evidence} />)}
             </div>
           )}
         </details>

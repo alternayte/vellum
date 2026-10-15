@@ -47,12 +47,16 @@ internal static class ScanFailures
     public static readonly FrozenSet<string> Final = FrozenSet.ToFrozenSet(
     [
         "tree_truncated", "too_large", "project_not_found", "ref_not_found", "commit_not_found",
-        "pull_request_not_found", "pull_request_head_unreadable",
+        "pull_request_not_found", "pull_request_head_unreadable", "push_interrupted",
     ], StringComparer.Ordinal);
 
     /// <summary>True for a failed or cancelled scan whose failure a resume can cure.</summary>
     public static bool CanResume(ScanStatus status, string? errorCode) =>
         status is ScanStatus.Failed or ScanStatus.Cancelled && (errorCode is null || !Final.Contains(errorCode));
+
+    /// <summary>A push of <c>vellum scan</c> whose request ended before its Snapshot was written. The instance holds no file of it to go on with.</summary>
+    public static readonly ScanError PushInterrupted = new("push_interrupted",
+        "The push stopped before its Snapshot was written. Run vellum scan again.");
 
     public static readonly ScanError TreeTruncated = new("tree_truncated",
         "GitHub cut the file list of this repository, because it is too large for one request. No file was read, so this scan has no result. " +

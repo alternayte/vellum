@@ -13,7 +13,8 @@ namespace Vellum.Modules.Import.Proposals;
 
 /// <param name="Pointer">The form stored on a fact: <c>github.com/acme/orders@&lt;sha&gt;:src/Api/Program.cs:41-44</c>.</param>
 /// <param name="Url">The permanent link to the lines at the commit.</param>
-public sealed record EvidenceDto(string Path, int StartLine, int EndLine, string Rule, string Pointer, string Url);
+/// <param name="Url">The page that shows the lines on the git host. Null when the Source has no such page (an agent-push Source).</param>
+public sealed record EvidenceDto(string Path, int StartLine, int EndLine, string Rule, string Pointer, string? Url);
 
 public sealed record ProposalChangeDto(string Field, string? From, string? To);
 

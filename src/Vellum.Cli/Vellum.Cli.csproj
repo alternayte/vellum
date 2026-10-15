@@ -1,0 +1,47 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    `vellum scan <dir>...`: runs the extractors of the server on a machine that holds the code
+    and pushes the manifest, the facts and the citations, never file content. The extraction,
+    the scope rules, the content clearance, the manifest and the push contract are the server's
+    own source files, compiled in here: there is one copy of each. `just cli` publishes it as a
+    single self-contained file.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>Vellum.Cli</RootNamespace>
+    <!-- The extractors read text the same way under every culture; no ICU is needed on the machine. -->
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <!-- FileIdentity calls the runtime's own stat functions. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Refit" Version="16.3.0" />
+    <PackageReference Include="Refit.HttpClientFactory" Version="16.3.0" />
+    <!-- The request builder Refit uses for these interfaces, as in the server. Without it the client throws at its first use. -->
+    <PackageReference Include="Refit.Reflection" Version="16.3.0" />
+    <PackageReference Include="YamlDotNet" Version="18.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="../Vellum/Modules/Import/Extraction/**/*.cs" Link="Shared/Extraction/%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="../Vellum/Modules/Import/Scans/ScanScope.cs" Link="Shared/Scans/ScanScope.cs" />
+    <Compile Include="../Vellum/Modules/Import/Scans/ScanValues.cs" Link="Shared/Scans/ScanValues.cs" />
+    <Compile Include="../Vellum/Modules/Import/Scans/ContentClearance.cs" Link="Shared/Scans/ContentClearance.cs" />
+    <Compile Include="../Vellum/Modules/Import/Scans/ScanExtraction.cs" Link="Shared/Scans/ScanExtraction.cs" />
+    <Compile Include="../Vellum/Modules/Import/Sources/SnapshotManifest.cs" Link="Shared/Sources/SnapshotManifest.cs" />
+    <Compile Include="../Vellum/Modules/Import/Sources/AgentPushContract.cs" Link="Shared/Sources/AgentPushContract.cs" />
+    <Compile Include="../Vellum/Shared/TextRule.cs" Link="Shared/TextRule.cs" />
+    <Compile Include="../Vellum/Shared/CommandResult.cs" Link="Shared/CommandResult.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Vellum.Tests" />
+  </ItemGroup>
+
+</Project>

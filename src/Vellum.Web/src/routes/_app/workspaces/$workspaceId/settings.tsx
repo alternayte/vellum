@@ -488,6 +488,7 @@ const AGENT_SCOPES: { id: string; label: string; hint: string }[] = [
   { id: 'propose', label: 'Propose', hint: 'Write promise drafts and record check results. A person approves.' },
   { id: 'export', label: 'Export', hint: 'Generate the SDD and the bundle.' },
   { id: 'scan-pull-request', label: 'Scan pull requests', hint: 'Start a scan of a pull request for CI. No other scan. Add Read to read the report.' },
+  { id: 'push', label: 'Push evidence', hint: 'vellum scan pushes a manifest, facts and citations from a laptop or CI. No file content. A person still accepts every proposal.' },
 ]
 
 /**

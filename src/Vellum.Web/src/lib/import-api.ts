@@ -57,6 +57,10 @@ export interface ScanSummary {
   canResume: boolean
   /** The Source the scan reads. */
   sourceId: string
+  /** False for a push of `vellum scan`: Vellum holds the manifest, the facts and the citations, and no file content. */
+  contentHeld: boolean
+  /** For a push: the commit that `.git/HEAD` named on the machine that pushed. Reported, not verified. */
+  reportedCommitSha: string | null
 }
 
 export interface ScanNote {
@@ -104,7 +108,8 @@ export interface ProposalEvidence {
   endLine: number
   rule: string
   pointer: string
-  url: string
+  /** The lines on the git host. Null for an agent-push Source: it has no web page. */
+  url: string | null
 }
 
 export interface Proposal {
@@ -191,7 +196,17 @@ export interface SourceSnapshot {
   facts: number
   isComplete: boolean
   createdAt: string
+  /** False for a push of `vellum scan`: no file content is held. */
+  contentHeld: boolean
+  /** For a push: the commit `.git/HEAD` named on the machine that pushed. Reported, not verified. */
+  reportedCommitSha: string | null
+  /** For a push: the agent token that pushed it, as `agent-token:<id>`. */
+  pushedBy: string | null
 }
+
+/** Why nothing that needs file content works for a pushed Snapshot. One sentence, shown wherever such a feature would be. */
+export const CONTENT_NOT_HELD =
+  'Content not held: vellum scan pushed this Snapshot from the machine that holds the code. Vellum has its manifest, facts and citations, and no file content, so it cannot show source lines.'
 
 /** The pending proposals of a Source: those of its newest completed tracking scan. */
 export interface SourceReview {

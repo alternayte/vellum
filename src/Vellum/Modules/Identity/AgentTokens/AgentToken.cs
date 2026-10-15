@@ -10,7 +10,8 @@ namespace Vellum.Modules.Identity.AgentTokens;
 /// What an agent token may do. <see cref="Read"/> reads the model, the promises, the scans
 /// and their impact reports, <see cref="Propose"/> writes drafts, obligations, runs and
 /// evidence, <see cref="Export"/> uses the build endpoints, <see cref="ScanPullRequest"/>
-/// starts a scan of a pull request and no other scan. No scope approves, accepts a proposal,
+/// starts a scan of a pull request and no other scan, <see cref="Push"/> pushes the manifest,
+/// facts and citations of <c>vellum scan</c> as a Snapshot. No scope approves, accepts a proposal,
 /// changes settings or changes members: those are for a person
 /// (<see cref="AgentBoundary.RequireHuman{TBuilder}"/>).
 /// </summary>
@@ -21,6 +22,11 @@ public enum AgentScope
     Export,
     /// <summary>A scan of a pull request is a comparison: it changes nothing in the model and cannot become the tracked ref.</summary>
     ScanPullRequest,
+    /// <summary>
+    /// A push of <c>vellum scan</c>: a Snapshot of an agent-push Source and its proposals. It
+    /// accepts nothing, and it changes the model only as a scan does, with stale marks.
+    /// </summary>
+    Push,
 }
 
 public static class AgentScopes
@@ -31,6 +37,7 @@ public static class AgentScopes
         AgentScope.Propose => "propose",
         AgentScope.Export => "export",
         AgentScope.ScanPullRequest => "scan-pull-request",
+        AgentScope.Push => "push",
         _ => throw new ArgumentOutOfRangeException(nameof(scope)),
     };
 

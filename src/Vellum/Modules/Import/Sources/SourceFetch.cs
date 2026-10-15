@@ -21,6 +21,9 @@ internal static class SourceFetch
     public static Task RunAsync(FetchContext context, CancellationToken ct) => context.Source.Kind switch
     {
         SourceKind.Github => GitHubFetch.RunAsync(context, ct),
+        // A push carries its Snapshot in its request. A worker meets one only when that request
+        // died before it completed the scan, and it has nothing to fetch.
+        SourceKind.AgentPush => throw ScanStop.Failed(ScanFailures.PushInterrupted),
         SourceKind.Traces => Runtime.RuntimeFetch.TracesAsync(context, ct),
         SourceKind.Newrelic => Runtime.RuntimeFetch.NewRelicAsync(context, ct),
         _ => throw ScanStop.Failed(new ScanError("source_kind_unavailable",
@@ -58,11 +61,13 @@ internal sealed class FetchContext(
     /// </summary>
     public async Task ListAsync(IReadOnlyList<GitHubTreeEntry> entries, CancellationToken ct)
     {
-        var selection = ScanScope.Select(entries, limits, scan.IncludePaths, scan.ExcludePaths);
+        var selection = ScanScope.Select(
+            [.. entries.Where(e => e.Type == "blob").Select(e => new ListingEntry(e.Path, e.Sha, e.Size ?? 0))],
+            limits, scan.IncludePaths, scan.ExcludePaths);
         var rows = selection.Files.Select(file => new ScanFileEntity
         {
             ScanId = scan.Id, Path = file.Entry.Path, PathHash = KeyHash.Of(file.Entry.Path),
-            BlobSha = file.Entry.Sha, Size = file.Entry.Size ?? 0,
+            BlobSha = file.Entry.Sha, Size = file.Entry.Size,
             State = file.Reason is null ? ScanFileState.Pending : ScanFileState.Skipped, Reason = file.Reason,
         }).ToList();
         db.ScanFiles.AddRange(rows);

@@ -32,6 +32,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Vellum\Vellum.csproj" />
+    <!-- The CLI compiles the server's extraction files too, so its types live under the alias "cli". -->
+    <ProjectReference Include="..\..\src\Vellum.Cli\Vellum.Cli.csproj" Aliases="cli" />
   </ItemGroup>
 
 </Project>
