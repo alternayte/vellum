@@ -127,6 +127,24 @@ export function DecisionDialog({ projectId, branchId, revision = null, decision:
         </DialogHeader>
 
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto pr-1">
+          {decision?.source && (
+            <section aria-label="Where this decision was read" className="rounded-md border border-border px-3 py-2 text-xs">
+              <p className="text-foreground">
+                Read from an ADR file · <span className="rounded-full border border-border px-1.5 font-mono text-[10px]">{decision.source.factStatus}</span>
+              </p>
+              <p className="mt-1 break-all font-mono text-[10px] text-muted-foreground">{decision.source.citation}</p>
+              {(decision.source.recordedStatus || decision.source.recordedDate) && (
+                <p className="mt-1 text-muted-foreground">
+                  The file records{decision.source.recordedStatus ? ` status “${decision.source.recordedStatus}”` : ''}{decision.source.recordedDate ? ` dated ${decision.source.recordedDate}` : ''}. In Vellum the decision stays {decision.status} until an owner decides.
+                </p>
+              )}
+              {decision.source.sections.length > 0 && (
+                <ul className="mt-1 space-y-0.5 font-mono text-[10px] text-muted-foreground">
+                  {decision.source.sections.map((s) => <li key={s.name}>{s.name}: {s.citation.slice(s.citation.lastIndexOf(':', s.citation.lastIndexOf(':') - 1) + 1)}</li>)}
+                </ul>
+              )}
+            </section>
+          )}
           <label className="block text-xs font-medium text-muted-foreground">
             Title
             <Input className="mt-1" value={form.title} onChange={(e) => set('title', e.target.value)} disabled={!editable} placeholder="Billing consumes OrderCreated through a queue" />

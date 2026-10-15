@@ -3,7 +3,7 @@ import { describeScan, withDependencies, type Proposal, type ScanSummary } from 
 
 const proposal = (id: string, dependsOn: string[] = [], status: Proposal['status'] = 'pending'): Proposal => ({
   id, action: 'add', entityKind: 'operation', entityId: id, factKey: id, name: id, proposed: null, current: null,
-  changes: [], evidence: [], dependsOn, status, partial: false, canDecide: true, canDecideReason: null, impact: null, truncated: false, otherSources: [], sourceId: 'src',
+  changes: [], evidence: [], dependsOn, status, partial: false, canDecide: true, canDecideReason: null, impact: null, truncated: false, otherSources: [], sourceId: 'src', factStatus: 'observed-in-source',
 })
 
 const scan = (extra: Partial<ScanSummary>): ScanSummary => ({

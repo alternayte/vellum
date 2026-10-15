@@ -455,7 +455,7 @@ function FlowSteps({ impact, steps }: { impact: ChangeImpact; steps: ImpactStep[
                     {evidence && (
                       <>
                         {' · '}
-                        <a href={evidence.url} target="_blank" rel="noreferrer noopener" className="font-mono underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-primary" title={evidence.pointer}>
+                        <a href={evidence.url ?? undefined} target="_blank" rel="noreferrer noopener" className="font-mono underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-primary" title={evidence.pointer}>
                           {evidence.path}:{evidence.startLine}
                         </a>
                       </>

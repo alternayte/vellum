@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ChevronDown, ChevronRight, GitBranch, RotateCw } from 'lucide-react'
+import { ChevronDown, ChevronRight, FileText, GitBranch, RotateCw } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
@@ -29,9 +29,11 @@ function short(value: string | null | undefined, length = 10): string {
 }
 
 /** The list of Sources on the import screen: each with its newest Snapshot and what waits for a decision. */
-export function SourcesList({ projectId, onReview }: {
+export function SourcesList({ projectId, onReview, onProse }: {
   projectId: string
   onReview: (source: SourceSummary) => void
+  /** Opens the prose import for a document of the Source. */
+  onProse?: (source: SourceSummary) => void
 }) {
   const queryClient = useQueryClient()
   const sources = useSources(projectId)
@@ -77,14 +79,25 @@ export function SourcesList({ projectId, onReview }: {
               {source.review.scanId && source.review.pending > 0 && (
                 <Button size="sm" variant="secondary" className="h-6 px-2 text-xs" onClick={() => onReview(source)}>Review</Button>
               )}
-              <Button
-                size="sm" variant="ghost" className="h-6 gap-1 px-2 text-xs"
-                disabled={scan.isPending || (source.latestScan !== null && isActive(source.latestScan.status))}
-                title="Scan the default ref of this Source again"
-                onClick={() => scan.mutate(source.id)}
-              >
-                <RotateCw className="h-3 w-3" /> Scan again
-              </Button>
+              {source.kind !== 'model-file' && (
+                <Button
+                  size="sm" variant="ghost" className="h-6 gap-1 px-2 text-xs"
+                  disabled={scan.isPending || (source.latestScan !== null && isActive(source.latestScan.status))}
+                  title="Scan the default ref of this Source again"
+                  onClick={() => scan.mutate(source.id)}
+                >
+                  <RotateCw className="h-3 w-3" /> Scan again
+                </Button>
+              )}
+              {onProse && source.latestSnapshot && (
+                <Button
+                  size="sm" variant="ghost" className="h-6 gap-1 px-2 text-xs"
+                  title="Ask the AI to propose what a README or design document of this Source describes"
+                  onClick={() => onProse(source)}
+                >
+                  <FileText className="h-3 w-3" /> Propose from a document
+                </Button>
+              )}
             </div>
           </li>
         ))}

@@ -185,6 +185,12 @@ export function ProposalReview({ projectId, scan, sourceName, onClose }: {
                             <span className="text-xs font-medium" style={{ color: action.color }}>{action.label}</span>
                             <span className={cn('min-w-0 truncate text-sm', isPending ? 'text-foreground' : 'text-muted-foreground')}>{proposal.name}</span>
                             {!isPending && <span className="rounded-full border border-border px-1.5 text-[10px] text-muted-foreground">{proposal.status}</span>}
+                            <span
+                              className="shrink-0 rounded-full border border-border px-1.5 font-mono text-[10px] text-muted-foreground"
+                              title={proposal.factStatus === 'declared' ? 'A model file states this. Accepted, it is a declared fact.' : 'The source code shows this. Accepted, it is an observed-in-source fact.'}
+                            >
+                              {proposal.factStatus}
+                            </span>
                             <span className="ml-auto shrink-0 font-mono text-[10px] text-muted-foreground">
                               {proposal.evidence[0] ? `${proposal.evidence[0].path}:${proposal.evidence[0].startLine}` : 'no source line'}
                             </span>
@@ -367,9 +373,11 @@ export function SourceLines({ projectId, scanId, evidence }: { projectId: string
       <figcaption className="flex items-center gap-2 border-b border-border bg-muted/40 px-2 py-1 font-mono text-[10px] text-muted-foreground">
         <span className="min-w-0 flex-1 truncate">{evidence.path}:{evidence.startLine}-{evidence.endLine}</span>
         <span className="shrink-0">{evidence.rule}</span>
-        <a href={evidence.url} target="_blank" rel="noreferrer noopener" className="flex shrink-0 items-center gap-1 rounded text-foreground hover:underline focus-visible:outline-2 focus-visible:outline-primary">
-          GitHub <ExternalLink className="h-3 w-3" />
-        </a>
+        {evidence.url && (
+          <a href={evidence.url} target="_blank" rel="noreferrer noopener" className="flex shrink-0 items-center gap-1 rounded text-foreground hover:underline focus-visible:outline-2 focus-visible:outline-primary">
+            GitHub <ExternalLink className="h-3 w-3" />
+          </a>
+        )}
       </figcaption>
       {source.isError ? (
         <p className="px-2 py-1.5 text-xs text-muted-foreground">These lines are not stored. Open them on GitHub.</p>
@@ -460,7 +468,7 @@ function FactsWithoutProposal({ projectId, scanId }: { projectId: string; scanId
                   {Object.entries(fact.attributes).map(([key, value]) => `${key}: ${value}`).join(' · ')}
                 </p>
               )}
-              {fact.evidence[0] && (
+              {fact.evidence[0]?.url && (
                 <a href={fact.evidence[0].url} target="_blank" rel="noreferrer noopener" className="mt-0.5 inline-flex items-center gap-1 text-[11px] text-foreground hover:underline focus-visible:outline-2 focus-visible:outline-primary">
                   Open on GitHub <ExternalLink className="h-3 w-3" />
                 </a>

@@ -9,6 +9,7 @@ import { describeScan, importApi, isActive, pullRequestState, scanSubject, type 
 import { ProposalReview } from './proposal-review'
 import { ImpactDialog } from './impact-dialog'
 import { SourcesList, SourcesReview } from './sources-review'
+import { DocumentProposalDialog, ModelFileUpload } from './model-files'
 import { sourcesKey } from '@/hooks/use-sources'
 
 const STATUS_COLOR: Record<ScanSummary['status'], string> = {
@@ -34,11 +35,14 @@ const TARGETS: { value: Target; label: string; field: string; placeholder: strin
  * found. Each completed scan is a Snapshot of its Source. Nothing reaches the model until a
  * person accepts it in the review.
  */
-export function ImportFlyout({ projectId, owners }: {
+export function ImportFlyout({ projectId, owners, labels = {} }: {
   projectId: string
   /** The element that owns an operation, a subscription or a message: what the canvas shows for it. */
   owners: Record<string, string>
+  /** Names of the things of the model by ID, for a proposal read from a document. */
+  labels?: Record<string, string>
 }) {
+  const [proseOf, setProseOf] = useState<SourceSummary | null>(null)
   const queryClient = useQueryClient()
   const [repository, setRepository] = useState('')
   const [target, setTarget] = useState<Target>('ref')
@@ -157,12 +161,13 @@ export function ImportFlyout({ projectId, owners }: {
       {failure && <p role="alert" className="border-b border-border px-3 py-2 text-xs text-[var(--trace-failure)]">{failure.message}</p>}
 
       <div className="flex-1 overflow-y-auto">
+        <ModelFileUpload projectId={projectId} onUploaded={() => void refresh()} />
         <section aria-labelledby="import-sources" className="border-b border-border pt-2">
           <div className="flex items-center gap-2 px-3 pb-1.5">
             <h3 id="import-sources" className="flex-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Sources</h3>
             <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" onClick={() => setBySource(true)}>Proposals by Source</Button>
           </div>
-          <SourcesList projectId={projectId} onReview={(source) => openScan(source.review.scanId!, source)} />
+          <SourcesList projectId={projectId} onReview={(source) => openScan(source.review.scanId!, source)} onProse={setProseOf} />
           {opening && <p role="status" className="px-3 pb-2 text-xs text-muted-foreground">Opening the review…</p>}
         </section>
         <h3 className="px-3 pb-1 pt-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Scans</h3>
@@ -238,6 +243,7 @@ export function ImportFlyout({ projectId, owners }: {
         </div>
       </div>
 
+      {proseOf && <DocumentProposalDialog projectId={projectId} source={proseOf} labels={labels} onClose={() => setProseOf(null)} />}
       {impactOf && <ImpactDialog projectId={projectId} scan={impactOf} owners={owners} onClose={() => setImpactOf(null)} />}
       {bySource && !reviewing && (
         <SourcesReview projectId={projectId} onOpenScan={(scanId, source) => openScan(scanId, source)} onClose={() => { setBySource(false); refresh() }} />
