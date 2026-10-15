@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
-import { ARCHIVE_ACCEPT, KIND_INFO, formatBytes, isGitHost, sourcesApi, uploadCap, type AddableKind, type SourceSummary } from '@/lib/import-api'
+import { ARCHIVE_ACCEPT, KIND_INFO, errorText, formatBytes, isGitHost, sourcesApi, uploadCap, type AddableKind, type SourceSummary } from '@/lib/import-api'
 import { sourcesKey } from '@/hooks/use-sources'
 import { useArchiveUpload } from '@/hooks/use-archive-upload'
 import { UploadProgress } from './archive-upload'
@@ -100,7 +100,7 @@ export function AddSourceDialog({ projectId, onClose }: { projectId: string; onC
             </DialogFooter>
           </>
         ) : kinds.data && (
-          <form onSubmit={submit} className="space-y-3">
+          <form onSubmit={submit} className="min-w-0 space-y-3">
             <fieldset>
               <legend className={labelClass}>Kind</legend>
               <div role="radiogroup" aria-label="Kind of Source" className="mt-1 grid grid-cols-2 gap-1.5 sm:grid-cols-3">
@@ -153,7 +153,7 @@ export function AddSourceDialog({ projectId, onClose }: { projectId: string; onC
               <label className={labelClass}>
                 Folder
                 <div className="mt-1 flex min-w-0 items-center rounded-lg border border-input focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/50">
-                  <span className="max-w-[55%] shrink-0 truncate border-r border-input px-2 py-1 font-mono text-xs text-muted-foreground" title={info?.where ?? undefined}>
+                  <span className="min-w-0 max-w-[55%] truncate border-r border-input px-2 py-1 font-mono text-xs text-muted-foreground" title={info?.where ?? undefined}>
                     {info?.where ?? ''}/
                   </span>
                   <input
@@ -193,7 +193,7 @@ export function AddSourceDialog({ projectId, onClose }: { projectId: string; onC
               </label>
             )}
 
-            {add.isError && <p role="alert" className="text-xs text-destructive">{add.error.message}</p>}
+            {add.isError && <p role="alert" className="text-xs text-destructive">{errorText(add.error)}</p>}
             {created && kind === 'archive' && add.isError && (
               <p className="text-[11px] text-muted-foreground">The Source {created.name} exists. Choose another file to upload to it.</p>
             )}

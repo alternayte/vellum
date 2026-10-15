@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input'
 import { selectClass } from '@/components/settings/fields'
 import { cn } from '@/lib/utils'
 import { shownInline } from '@/lib/mutation-errors'
-import { KIND_INFO, isGitHost, sourcesApi, type BulkAddItem, type GitHostKind } from '@/lib/import-api'
+import { KIND_INFO, errorText, isGitHost, sourcesApi, type BulkAddItem, type GitHostKind } from '@/lib/import-api'
 import { sourcesKey } from '@/hooks/use-sources'
 
 /** The most repositories one bulk add takes. */
@@ -167,7 +167,7 @@ export function BulkAddDialog({ projectId, onClose }: { projectId: string; onClo
             {selected.size > MAX_REPOSITORIES && (
               <p role="alert" className="text-xs text-destructive">Choose at most {MAX_REPOSITORIES} repositories at a time. {selected.size} are selected.</p>
             )}
-            {add.isError && <p role="alert" className="text-xs text-destructive">{add.error.message}</p>}
+            {add.isError && <p role="alert" className="text-xs text-destructive">{errorText(add.error)}</p>}
 
             <DialogFooter>
               <Button type="button" variant="ghost" disabled={add.isPending} onClick={onClose}>Cancel</Button>

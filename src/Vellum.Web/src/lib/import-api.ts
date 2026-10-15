@@ -462,6 +462,11 @@ export function revisionLabel(kind: string): 'commit' | 'Snapshot' {
   return isGitHost(kind) ? 'commit' : 'Snapshot'
 }
 
+/** The sentence to show for a refused request: the field rule when the server named one, else the error. */
+export function errorText(error: Error): string {
+  return error instanceof ApiError && error.fields.length > 0 ? error.fields.map((f) => f.message).join(' ') : error.message
+}
+
 /** A byte count in the largest unit that keeps it at or above 1. */
 export function formatBytes(bytes: number): string {
   const units = ['bytes', 'KB', 'MB', 'GB', 'TB']
