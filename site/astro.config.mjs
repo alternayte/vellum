@@ -61,7 +61,15 @@ export default defineConfig({
             },
             {
               label: 'Import from a repository',
-              items: ['how-to/connect-github', 'how-to/import-a-repository', 'how-to/check-change-impact', 'how-to/report-impact-in-pull-request-ci'],
+              items: [
+                'how-to/connect-github',
+                'how-to/import-a-repository',
+                'how-to/import-a-model-file',
+                'how-to/import-existing-adrs',
+                'how-to/propose-from-design-docs',
+                'how-to/check-change-impact',
+                'how-to/report-impact-in-pull-request-ci',
+              ],
             },
             {
               label: 'Use the assistant',
@@ -125,6 +133,7 @@ export default defineConfig({
             'reference/promises-and-evidence',
             'reference/review-rules',
             'reference/extraction-rules',
+            'reference/model-file-mappings',
             'reference/cost-model',
             'reference/stress-model',
             'reference/k6-results-and-targets',
