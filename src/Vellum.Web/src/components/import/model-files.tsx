@@ -28,9 +28,11 @@ export function ModelFileUpload({ projectId, onUploaded }: { projectId: string; 
   const [file, setFile] = useState<File | null>(null)
   const [path, setPath] = useState('')
   const [tooLarge, setTooLarge] = useState(false)
+  // A new key clears the file input after an upload.
+  const [round, setRound] = useState(0)
   const upload = useMutation({
     mutationFn: async () => sourcesApi.upload(projectId, path.trim(), await file!.text()),
-    onSuccess: () => { setFile(null); setPath(''); onUploaded() },
+    onSuccess: () => { setFile(null); setPath(''); setRound((n) => n + 1); onUploaded() },
     onError: shownInline,
   })
 
@@ -51,6 +53,7 @@ export function ModelFileUpload({ projectId, onUploaded }: { projectId: string; 
       <label className="block text-[11px] font-medium text-muted-foreground">
         File
         <input
+          key={round}
           type="file" accept=".dsl,.json,.yaml,.yml,.md,.markdown,.txt"
           onChange={(e) => choose(e.target.files?.[0] ?? null)}
           className="mt-1 block w-full text-xs text-foreground file:mr-2 file:rounded file:border file:border-border file:bg-muted file:px-2 file:py-1 file:text-xs file:text-foreground"
@@ -138,13 +141,23 @@ export function DocumentProposalDialog({ projectId, source, labels, onClose }: {
           </label>
           {unavailable && (
             <div className="space-y-1">
-              {notSetUp && (
-                <p role="alert" className="text-xs text-foreground">
-                  This Source needs an AI provider to read prose
-                  {unavailable.reason.setting ? `, and the setting ${unavailable.reason.setting} must allow private content to be sent to it` : ''}. An owner sets this in the workspace settings. Model files and ADRs need no AI.
-                </p>
+              {notSetUp ? (
+                <div role="alert" className="rounded-md border border-border px-3 py-2 text-xs">
+                  <p className="font-medium text-foreground">
+                    {unavailable.reason.setting
+                      ? 'This document is private content, and the workspace does not allow it to be sent to an AI provider.'
+                      : 'This Source needs an AI provider to read prose.'}
+                  </p>
+                  <p className="mt-1 leading-relaxed text-muted-foreground">
+                    {unavailable.reason.setting
+                      ? `An owner can allow it with the setting ${unavailable.reason.setting}. Nothing was sent.`
+                      : 'An owner sets one in the workspace settings. Nothing was sent.'}
+                    {' '}Model files and ADRs need no AI.
+                  </p>
+                </div>
+              ) : (
+                <UnavailableNote state={unavailable} />
               )}
-              <UnavailableNote state={unavailable} />
             </div>
           )}
           {propose.error && <p role="alert" className="text-xs text-[var(--trace-failure)]">{propose.error.message}</p>}

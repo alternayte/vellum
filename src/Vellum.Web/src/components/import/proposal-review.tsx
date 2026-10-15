@@ -117,7 +117,7 @@ export function ProposalReview({ projectId, scan, sourceName, onClose }: {
         <DialogHeader>
           <DialogTitle>Review {scan.repository}</DialogTitle>
           <DialogDescription>
-            Read at commit <span className="font-mono">{scan.commitSha?.slice(0, 10)}</span>. Each proposal states what the source shows at the cited lines, and nothing more.
+            Read at {scan.commitSha && /^[0-9a-f]{40}$/.test(scan.commitSha) ? 'commit' : 'Snapshot'} <span className="font-mono">{scan.commitSha?.slice(0, 10)}</span>. Each proposal states what the source shows at the cited lines, and nothing more.
           </DialogDescription>
         </DialogHeader>
 

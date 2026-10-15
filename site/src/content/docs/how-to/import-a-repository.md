@@ -11,7 +11,7 @@ A repository is a **Source** of the project, and each completed scan is a **Snap
 
 ## Start a scan
 
-1. Open the project and select **Import from GitHub** in the left toolbar.
+1. Open the project and select **Import** in the left toolbar.
 2. In **Repository**, give the repository as `owner/name` or as its GitHub URL. The URL must be on the GitHub host of the workspace.
 3. In **Read**, select **Branch** and give a branch or a tag in **Branch or tag**, or select **Commit SHA** and give a full commit SHA. Leave **Branch or tag** empty to use the **Default ref** of the workspace settings. If that setting is empty, Vellum uses the default branch of the repository. To read a pull request, see [Check the impact of a change](/how-to/check-change-impact/#scan-a-pull-request).
 4. To read only a part of the repository, give its folders in **Only these folders**. Separate the folders with commas. Leave the field empty to read all folders. One scan takes at most 50 paths.

@@ -24,6 +24,11 @@ const ORDER: Proposal['action'][] = ['bind', 'conflict', 'relink', 'remove', 'ch
 /** How many rows of one Source the grouped view lists before it points to the full review. */
 const SHOWN = 40
 
+/** An uploaded Markdown or text document that is not an ADR: only the AI path reads it. */
+function isProse(path: string): boolean {
+  return /\.(md|markdown|txt)$/i.test(path) && !/(^|\/)(docs?\/adr|docs\/decisions)\/[^/]+$/i.test(path)
+}
+
 function short(value: string | null | undefined, length = 10): string {
   return value ? value.slice(0, length) : ''
 }
@@ -89,7 +94,7 @@ export function SourcesList({ projectId, onReview, onProse }: {
                   <RotateCw className="h-3 w-3" /> Scan again
                 </Button>
               )}
-              {onProse && source.latestSnapshot && (
+              {onProse && source.latestSnapshot && (source.kind !== 'model-file' || isProse(source.locator)) && (
                 <Button
                   size="sm" variant="ghost" className="h-6 gap-1 px-2 text-xs"
                   title="Ask the AI to propose what a README or design document of this Source describes"

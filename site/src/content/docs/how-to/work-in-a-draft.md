@@ -47,7 +47,7 @@ These parts do not follow the draft. Each of them says so in a note at the top o
 |---|---|
 | **Project files** | Views and documents belong to the project. The model document is the document of main. |
 | **Create new** | A diagram and a document belong to the project. |
-| **Import from GitHub** | An import reads main and its proposals change main. |
+| **Import** | An import reads main and its proposals change main. |
 | **Promises** | Promises belong to the project. A check that you run in the panel plays on main. |
 | **Build** | The build export and Build Ready read main. |
 
