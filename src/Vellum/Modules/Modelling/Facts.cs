@@ -25,7 +25,8 @@ public enum FactStatus
 /// of the model stream that the acceptance read, and that stream. Both are null for a fact
 /// that was accepted before they were recorded, or by an import or a proposal.
 /// <paramref name="ContentNotHeld"/> is true for a fact accepted from a push of <c>vellum scan</c>:
-/// the evidence was read on the machine that pushed, and Vellum holds no line of it.
+/// the evidence was read on the machine that pushed, and Vellum holds no line of it. Null means
+/// false: events stored before the field existed do not carry it.
 /// </summary>
 public sealed record Provenance(
     string? Source = null,
@@ -35,7 +36,7 @@ public sealed record Provenance(
     DateTimeOffset? AcceptedAt = null,
     long? AcceptedAtVersion = null,
     Guid? AcceptedOnBranch = null,
-    bool ContentNotHeld = false);
+    bool? ContentNotHeld = null);
 
 /// <summary>
 /// A mark on an accepted fact whose evidence a complete repository scan no longer finds. It
@@ -108,7 +109,7 @@ public static class ProvenanceMapper
             : new ProvenanceDto(
                 provenance.Source, provenance.Revision, provenance.Confidence,
                 provenance.AcceptedBy, provenance.AcceptedAt, provenance.AcceptedAtVersion, provenance.AcceptedOnBranch,
-                provenance.ContentNotHeld);
+                provenance.ContentNotHeld ?? false);
 
     public static ProvenanceDto? ToDto(
         string? source, string? revision, double? confidence, Guid? acceptedBy, DateTimeOffset? acceptedAt,
