@@ -46,7 +46,7 @@ public class SourceReviewTests(ImportHost import) : IClassFixture<ImportHost>
     }
 
     [Fact]
-    public async Task A_name_match_with_any_entity_of_another_Source_is_a_question_or_a_conflict_and_never_a_change()
+    public async Task A_name_match_with_any_entity_of_another_Source_names_that_Source_and_bulk_accept_leaves_it_to_a_person()
     {
         var (s, _, b) = await TwoSourcesAsync();
         var scanB = b["review"]!["scanId"]!.GetValue<Guid>();
@@ -56,7 +56,7 @@ public class SourceReviewTests(ImportHost import) : IClassFixture<ImportHost>
             .ToHashSet();
         var onA = (await s.ProposalsAsync(scanB)).Where(p => taken.Contains(p.Text("entityId")!)).ToList();
         Assert.NotEmpty(onA);
-        Assert.All(onA, p => Assert.Equal("conflict", p.Text("action")));
+        Assert.All(onA, p => Assert.NotEmpty(p["otherSources"]!.AsArray()));
 
         var source = (await SourcesAsync(s)).Single("id", b.Text("id")!);
         var bulk = await AcceptAllAsync(s, source.Id());

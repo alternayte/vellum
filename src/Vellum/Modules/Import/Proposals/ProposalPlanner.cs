@@ -207,7 +207,6 @@ internal static class ProposalPlanner
             var linked = entity is not null;
             var isElement = candidate.EntityKind == EntityKinds.Element;
             ModelEntity? sameAs = null;
-            var matchedByName = false;
             // A key that a person bound to an element targets that element.
             if (entity is null && blocked is null && isElement
                 && input.Model.BoundElement(input.SourceId, FactMapping.ExternalKey(candidate.FactKey)) is { } boundId
@@ -239,14 +238,12 @@ internal static class ProposalPlanner
                 if (count == 1)
                 {
                     // An element is never taken by its name: a person is asked "same as?".
-                    // Any other entity is, as a proposal; across Sources it is a conflict.
+                    // Any other entity is, as a proposal that names the other Sources; bulk
+                    // accept leaves such a proposal to a person.
                     if (isElement)
                         sameAs = only;
                     else
-                    {
                         entity = only;
-                        matchedByName = true;
-                    }
                 }
             }
 
@@ -375,12 +372,10 @@ internal static class ProposalPlanner
             // Another Source holds the entity with other values: the Sources disagree, and the
             // review lists every side. Accepting this one is a person's choice, never a default.
             var others = input.OthersOf(candidate.EntityKind, entity.Id);
-            // An entity that another Source holds and that this fact matches by name alone is
-            // a conflict even where the values agree: linking it is a person's choice. A
-            // hand-made declared entity is a person's word, so a model file that differs from
-            // it is a conflict too: the match by name makes it "the same", not the link.
-            var action = (matchedByName && others.Count > 0)
-                || (modelChanges > 0 && (status != sourceLabel || (!linked && sourceLabel != ObservedInSource) || editedSince || others.Count > 0))
+            // Values that agree are no conflict, also across Sources: the proposal names the
+            // other Sources, and bulk accept leaves it to a person. A hand-made declared entity
+            // is a person's word, so a model file that differs from it is a conflict.
+            var action = (modelChanges > 0 && (status != sourceLabel || (!linked && sourceLabel != ObservedInSource) || editedSince || others.Count > 0))
                 ? ProposalAction.Conflict
                 : ProposalAction.Change;
 

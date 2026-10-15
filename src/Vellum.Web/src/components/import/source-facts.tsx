@@ -1,4 +1,4 @@
-import { sourceSides, type Proposal } from '@/lib/import-api'
+import { sideValue, sourceSides, type Proposal, type SourceDisagreement } from '@/lib/import-api'
 
 function text(value: unknown): string {
   if (value === null || value === undefined || value === '') return 'empty'
@@ -33,16 +33,16 @@ export function SourceSides({ proposal, sourceName }: { proposal: Proposal; sour
         </thead>
         <tbody>
           {fields.map((field) => {
-            const values = [here[field], ...proposal.otherSources.map((o) => o.values[field])]
+            const values = [here[field], ...proposal.otherSources.map((o) => o.values[field])].map((v) => sideValue(v, field, here, model))
             const disagree = new Set(values.map((v) => text(v))).size > 1
             return (
               <tr key={field} className="border-b border-border align-top last:border-b-0">
                 <th scope="row" className="break-words px-2 py-1 font-mono font-normal text-muted-foreground">{field}</th>
-                <td className="break-all px-2 py-1 text-muted-foreground">{text(model[field])}</td>
-                <td className="break-all px-2 py-1 text-foreground" style={disagree ? { color: 'var(--trace-event)' } : undefined}>{text(here[field])}</td>
+                <td className="break-all px-2 py-1 text-muted-foreground">{text(sideValue(model[field], field, model, here))}</td>
+                <td className="break-all px-2 py-1 text-foreground" style={disagree ? { color: 'var(--trace-event)' } : undefined}>{text(sideValue(here[field], field, here, model))}</td>
                 {proposal.otherSources.map((other) => (
                   <td key={other.sourceId + other.source} className="break-all px-2 py-1 text-foreground" style={disagree ? { color: 'var(--trace-event)' } : undefined}>
-                    {text(other.values[field])}
+                    {text(sideValue(other.values[field], field, here, model))}
                   </td>
                 ))}
               </tr>
@@ -89,5 +89,45 @@ export function BindQuestion({ proposal, sourceName, answer, onAnswer }: {
         </label>
       </div>
     </fieldset>
+  )
+}
+
+/**
+ * Dependencies that one Source declares and another Source does not see, each side by side:
+ * the declaration with its citation, and the Source that observes the start and has no such
+ * edge. It is listed for a person to judge; it does not stop an accept.
+ */
+export function UnconfirmedDependencies({ items }: { items: SourceDisagreement[] }) {
+  if (items.length === 0) return null
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full min-w-[28rem] table-fixed text-left text-xs">
+        <thead className="text-[10px] uppercase tracking-wider text-muted-foreground">
+          <tr className="border-b border-border">
+            <th scope="col" className="px-2 py-1 font-medium">Dependency</th>
+            <th scope="col" className="px-2 py-1 font-medium">Declared by</th>
+            <th scope="col" className="px-2 py-1 font-medium">Not seen by</th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((d) => (
+            <tr key={`${d.fromId}-${d.toId}-${d.declaredBySourceId}-${d.unconfirmedBySourceId}`} className="border-b border-border align-top last:border-b-0">
+              <td className="break-words px-2 py-1 text-foreground">
+                {d.fromName} → {d.toName}{d.label ? <span className="text-muted-foreground">: {d.label}</span> : null}
+                {d.relationshipId === null && <span className="ml-1.5 text-[10px] text-muted-foreground">(not accepted yet)</span>}
+              </td>
+              <td className="break-all px-2 py-1">
+                <span className="text-foreground">{d.declaredBy}</span>
+                <span className="block font-mono text-[10px] text-muted-foreground">declared{d.citation ? ` · ${d.citation}` : ''}</span>
+              </td>
+              <td className="break-all px-2 py-1" style={{ color: 'var(--trace-event)' }}>
+                {d.unconfirmedBy}
+                <span className="block font-mono text-[10px] text-muted-foreground">{d.unconfirmedLabel} · sees {d.fromName}, no such edge</span>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   )
 }

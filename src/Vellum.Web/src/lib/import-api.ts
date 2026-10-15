@@ -231,6 +231,24 @@ export interface SourceReview {
   relinks: number
   /** What "accept all from this Source" would accept. */
   acceptable: number
+  /** Dependencies this Source declares that another Source does not see, or that it does not see while another declares them. */
+  unconfirmed: number
+}
+
+/** A dependency one Source declares and another Source, which observes or measures its start, does not see. Not a refusal: it can be accepted. */
+export interface SourceDisagreement {
+  relationshipId: string | null
+  fromId: string
+  fromName: string
+  toId: string
+  toName: string
+  label: string | null
+  declaredBySourceId: string
+  declaredBy: string
+  citation: string | null
+  unconfirmedBySourceId: string
+  unconfirmedBy: string
+  unconfirmedLabel: string
 }
 
 export interface SourceSummary {
@@ -245,6 +263,7 @@ export interface SourceSummary {
   latestScan: ScanSummary | null
   latestSnapshot: SourceSnapshot | null
   review: SourceReview
+  disagreements: SourceDisagreement[] | null
   /** What a `traces` or `newrelic` Source reads. Null for the other kinds. The key itself is never sent back. */
   connection: RuntimeConnection | null
 }
@@ -627,7 +646,8 @@ export const sourcesApi = {
 export function describeReview(source: SourceSummary): string {
   const r = source.review
   if (!source.latestSnapshot) return source.latestScan ? 'No Snapshot yet' : 'Not scanned yet'
-  if (r.pending === 0) return 'Nothing waits for a decision'
+  const unconfirmed = r.unconfirmed > 0 ? `${r.unconfirmed} ${r.unconfirmed === 1 ? 'dependency' : 'dependencies'} not seen by another Source` : null
+  if (r.pending === 0) return unconfirmed ?? 'Nothing waits for a decision'
   return [
     `${r.pending} pending`,
     r.bindQuestions > 0 && `${r.bindQuestions} “same as?”`,
@@ -650,8 +670,26 @@ export function sourceSides(proposal: Pick<Proposal, 'proposed' | 'current' | 'o
       if (field in here && JSON.stringify(here[field] ?? null) !== JSON.stringify(value ?? null)) compared.add(field)
     }
   }
-  if (compared.size === 0) for (const field of ['name', 'technology']) if (field in here) compared.add(field)
+  // Values that agree still show every side: each field the scan states, by its readable name.
+  if (compared.size === 0) {
+    for (const field of Object.keys(here)) {
+      if (field === 'observed' || field === 'factStatus') continue
+      if (field.endsWith('Name') && field !== 'name' && `${field.slice(0, -4)}Id` in here) continue
+      compared.add(field)
+    }
+  }
   return { fields: [...compared].sort(), model, here }
+}
+
+/**
+ * A value of one side, readable: an ID shows the name that the scan or the model gives it
+ * (`ownerId` next to `ownerName`), so a relationship shows its ends by name.
+ */
+export function sideValue(value: unknown, field: string, ...named: Record<string, unknown>[]): unknown {
+  if (!field.endsWith('Id') || typeof value !== 'string') return value
+  const nameField = `${field.slice(0, -2)}Name`
+  for (const record of named) if (record[field] === value && typeof record[nameField] === 'string') return record[nameField]
+  return value
 }
 
 /** What a scan read, in words: the pull request, the ref, or the commit. */

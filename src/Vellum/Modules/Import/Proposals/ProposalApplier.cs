@@ -20,12 +20,20 @@ namespace Vellum.Modules.Import.Proposals;
 internal sealed class ProposalApplier(
     ModelState state, Dictionary<Guid, (SchemaState State, long Version)> schemas,
     Guid projectId, string repository, string commitSha, Guid acceptedBy, DateTimeOffset acceptedAt, Guid sourceId,
-    bool contentNotHeld = false)
+    bool contentNotHeld = false, IReadOnlySet<string>? notSame = null)
 {
+    /// <summary>The start of the reason that refuses an element addition whose name an element of the model took since the plan.</summary>
+    public const string NameTaken = "The model has an element of this kind named";
+
+    private static readonly HashSet<string> EmptySet = [];
+
     public const string ChangedSinceScan =
         "The model changed after this scan completed, so the proposal no longer describes it. Scan the repository again.";
 
     public ModelState State { get; private set; } = state;
+
+    /// <summary>The model as the decision found it, before any of its proposals.</summary>
+    private readonly ModelState _atStart = state;
     public List<object> ModelEvents { get; } = [];
     /// <summary>The events for each schema stream, with the version the stream was locked at.</summary>
     public List<(Guid SchemaId, long Version, IReadOnlyList<object> Events)> SchemaAppends { get; } = [];
@@ -72,6 +80,16 @@ internal sealed class ProposalApplier(
             // added and never compared later: they are the intent of whoever wrote them.
             var tags = (Text(proposed, Field.Tags) ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
                 .Distinct(StringComparer.Ordinal).Take(TextRule.MaxTags).ToArray();
+            // The plan asks "same as?" for an element whose name one element of the model has.
+            // An addition whose name such an element took since the plan would be a second copy.
+            var addedName = Text(proposed, Field.Name) ?? "";
+            var sameName = _atStart.Elements.Values.Count(e => e.Kind == kind
+                && ModelIndex.NormalName(e.Name) == ModelIndex.NormalName(addedName)
+                && !e.Bindings.Any(b => b.SourceId == sourceId)
+                // A person said this fact is not that element: the addition is their answer.
+                && !(notSame ?? EmptySet).Contains(ProposalPlanner.BindFingerprint(FactMapping.KeyOf(p.Subject, p.FactKey), e.Id)));
+            if (sameName == 1)
+                return $"{NameTaken} '{addedName}' since this scan was planned. The scan is planned again: answer whether it is the same element.";
             return Run(p, ModelDecider.AddElement(State, new AddElementCommand(
                     id, kind, Text(proposed, Field.Name) ?? "", Text(proposed, Field.Description), Text(proposed, Field.Technology), null,
                     ElementStatus.Current, Id(proposed, Field.ParentId) is { } parent ? new ElementId(parent) : null, tags))

@@ -12,7 +12,7 @@ import {
   type DecisionResult, type Proposal, type ScanStatus, type ScanSummary, type SourceSnapshot, type SourceSummary,
 } from '@/lib/import-api'
 import { sourcesKey, useSources } from '@/hooks/use-sources'
-import { SourceSides } from './source-facts'
+import { SourceSides, UnconfirmedDependencies } from './source-facts'
 import { useArchiveUpload } from '@/hooks/use-archive-upload'
 import { UploadProgress } from './archive-upload'
 
@@ -352,7 +352,7 @@ export function SourcesReview({ projectId, onOpenScan, onClose }: {
   onClose: () => void
 }) {
   const sources = useSources(projectId)
-  const waiting = (sources.data ?? []).filter((s) => s.review.scanId && s.review.pending > 0)
+  const waiting = (sources.data ?? []).filter((s) => (s.review.scanId && s.review.pending > 0) || (s.disagreements?.length ?? 0) > 0)
   return (
     <Dialog open onOpenChange={(open) => { if (!open) onClose() }}>
       <DialogContent className="flex max-h-[90vh] flex-col gap-3 sm:max-w-4xl">
@@ -365,9 +365,9 @@ export function SourcesReview({ projectId, onOpenScan, onClose }: {
         <div className="min-h-0 flex-1 space-y-3 overflow-y-auto">
           {sources.isLoading && <p className="text-sm text-muted-foreground">Loading Sources…</p>}
           {sources.isError && <p role="alert" className="text-sm text-destructive">{sources.error.message}</p>}
-          {sources.data && waiting.length === 0 && <p className="text-sm text-muted-foreground">No Source has a proposal that waits for a decision.</p>}
+          {sources.data && waiting.length === 0 && <p className="text-sm text-muted-foreground">No Source has a proposal that waits for a decision or a dependency another Source does not see.</p>}
           {waiting.map((source) => (
-            <SourceGroup key={source.id} projectId={projectId} source={source} onOpenScan={() => onOpenScan(source.review.scanId!, source)} />
+            <SourceGroup key={source.id} projectId={projectId} source={source} onOpenScan={() => { if (source.review.scanId) onOpenScan(source.review.scanId, source) }} />
           ))}
         </div>
         <div className="flex justify-end">
@@ -380,10 +380,11 @@ export function SourcesReview({ projectId, onOpenScan, onClose }: {
 
 function SourceGroup({ projectId, source, onOpenScan }: { projectId: string; source: SourceSummary; onOpenScan: () => void }) {
   const queryClient = useQueryClient()
-  const scanId = source.review.scanId!
+  const scanId = source.review.scanId ?? ''
   const proposals = useQuery({
     queryKey: ['projects', projectId, 'imports', scanId, 'proposals'],
     queryFn: () => importApi.proposals(projectId, scanId),
+    enabled: scanId !== '' && source.review.pending > 0,
   })
   const [open, setOpen] = useState<string | null>(null)
   const [result, setResult] = useState<DecisionResult | null>(null)
@@ -461,6 +462,12 @@ function SourceGroup({ projectId, source, onOpenScan }: { projectId: string; sou
         </p>
       )}
 
+      {(source.disagreements?.length ?? 0) > 0 && (
+        <div className="border-b border-border px-3 py-2">
+          <p className="mb-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Dependencies another Source does not see</p>
+          <UnconfirmedDependencies items={source.disagreements!} />
+        </div>
+      )}
       {proposals.isLoading && <p className="px-3 py-2 text-xs text-muted-foreground">Loading proposals…</p>}
       {proposals.isError && <p role="alert" className="px-3 py-2 text-xs text-destructive">{proposals.error.message}</p>}
       <ul>

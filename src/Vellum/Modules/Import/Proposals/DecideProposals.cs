@@ -38,7 +38,7 @@ public sealed record DecisionFailure(Guid Id, string Reason);
 /// </summary>
 /// <param name="Answered">The <c>bind</c> questions answered.</param>
 /// <param name="Replanned">
-/// True when answers were given and the pending proposals of the scan were planned again.
+/// True when the pending proposals of this scan were planned again: answers were given, or an addition was refused because an element took its name since the plan.
 /// False when the model changed each time the plan was tried: scan the Source again.
 /// </param>
 public sealed record DecideProposalsResponse(Guid[] Accepted, Guid[] Rejected, DecisionFailure[] Failed, Guid[] Relinked, Guid[] Answered, bool Replanned);
@@ -130,19 +130,45 @@ public static class DecideProposals
         var now = time.GetUtcNow();
         var result = await SharedTransaction.RunAsync(http.RequestServices, services =>
             ApplyAsync(services, scan, project.StreamId, schemaIds, accept, reject, relink, bind, decision.AcknowledgeImpact, userId, now, ct), ct);
-        if (bind.Length == 0 || result is not Microsoft.AspNetCore.Http.HttpResults.Ok<DecideProposalsResponse> { Value: { Failed.Length: 0 } done })
+        if (result is not Microsoft.AspNetCore.Http.HttpResults.Ok<DecideProposalsResponse> { Value: { } done })
             return result;
 
-        // The answers change what the scan's facts point at. Its pending proposals are
-        // planned again from its stored Snapshot; the decided ones stay as they are.
+        // What a decision changes can change what other proposals point at. Answers change
+        // this scan's facts; an accept adds elements and bindings that the pending proposals of
+        // every other Source must see, or two Sources add one thing twice. An addition refused
+        // because its name was taken since the plan becomes a question. Each re-plan reads the
+        // stored Snapshot and takes the stream lock; decided proposals stay as they are.
+        var succeeded = done.Failed.Length == 0;
+        var planSelf = (succeeded && bind.Length > 0) || done.Failed.Any(f => f.Reason.StartsWith(ProposalApplier.NameTaken, StringComparison.Ordinal));
+        var planOthers = succeeded && (done.Accepted.Length > 0 || done.Answered.Length > 0);
+        if (!planSelf && !planOthers)
+            return result;
+
         http.RequestServices.GetRequiredService<DeedboxContext>().Metadata = new EventMetadata
         {
             Actor = "system:import-scan",
             CorrelationId = scan.Id.ToString(),
         };
+        var replanned = false;
+        if (planSelf)
+            replanned = await PlanAgainAsync(http.RequestServices, db, scan, time, ct) == SnapshotOutcome.Written;
+        if (planOthers)
+        {
+            var others = await db.Sources.AsNoTracking().Where(s => s.ProjectId == projectId && s.Id != scan.SourceId).ToListAsync(ct);
+            foreach (var other in others)
+            {
+                if (await Sources.SourceRequests.ReviewScanAsync(db, other, ct) is { } review
+                    && await db.ImportProposals.AnyAsync(p => p.ScanId == review.Id && p.Status == ProposalStatus.Pending, ct))
+                    await PlanAgainAsync(http.RequestServices, db, review, time, ct);
+            }
+        }
+        return Results.Ok(done with { Replanned = replanned });
+    }
+
+    private static async Task<SnapshotOutcome> PlanAgainAsync(IServiceProvider services, AppDbContext db, ScanEntity scan, TimeProvider time, CancellationToken ct)
+    {
         var input = await ScanRequests.StoredInputAsync(db, scan, ct);
-        var outcome = await SnapshotWriter.WriteAsync(http.RequestServices, scan, WriteMode.PlanAgain(), input, time.GetUtcNow(), ct);
-        return Results.Ok(done with { Replanned = outcome == SnapshotOutcome.Written });
+        return await SnapshotWriter.WriteAsync(services, scan, WriteMode.PlanAgain(), input, time.GetUtcNow(), ct);
     }
 
     private static async Task<IResult> ApplyAsync(
@@ -262,7 +288,11 @@ public static class DecideProposals
         }
 
         var repository = $"{scan.Host}/{scan.Repository}";
-        var applier = new ProposalApplier(model, schemas, scan.ProjectId, repository, scan.CommitSha!, Guid.Parse(userId), now, scan.SourceId, scan.ContentNotHeld);
+        // The "not the same" answers of this Source: an addition that follows one is not a copy.
+        var notSame = (await db.Rejections.AsNoTracking()
+            .Where(r => r.ProjectId == scan.ProjectId && r.Host == scan.Host && r.Repository == scan.Repository)
+            .Select(r => r.Fingerprint).ToListAsync(ct)).ToHashSet(StringComparer.Ordinal);
+        var applier = new ProposalApplier(model, schemas, scan.ProjectId, repository, scan.CommitSha!, Guid.Parse(userId), now, scan.SourceId, scan.ContentNotHeld, notSame);
         foreach (var proposal in InDependencyOrder(accepted).Where(p => !UnlinksOnly(p)))
         {
             if (applier.Apply(proposal) is { } reason)

@@ -103,11 +103,17 @@ Until you answer, Vellum proposes nothing for the fact and for the facts that de
 
 ## Conflicts between Sources
 
-When a scan finds an entity that another Source holds, such as a channel or a message with the same name, the proposal is a conflict, also when the values agree. The review shows the value in the model, the value of this scan and the value of each other Source, with the truth label and the citation of each. No Source wins by itself.
+When a scan finds an entity that another Source holds, such as a channel or a message with the same name, the proposal names the other Source. When the values differ, the proposal is a conflict. The review shows the value in the model, the value of this scan and the value of each other Source, with the truth label and the citation of each. No Source wins by itself.
 
 When a scan of one Source no longer finds an entity that another Source still holds, the removal it proposes removes the fact of that Source only. The entity stays in the model.
 
 **Accept all from this Source** never accepts a conflict, a question, a proposal that another Source holds, or a change of a truth label.
+
+When you accept a proposal, Vellum plans the pending proposals of every other Source again. An addition of another Source whose element you just accepted becomes a "same as?" question. Vellum also refuses an addition when an element of that kind and name came into the model after the scan was planned, and asks the question instead.
+
+## Dependencies that another Source does not see
+
+A model file can declare a dependency, for example `Orders → Orders DB` in a Backstage catalog. When another Source observes or measures the element the dependency starts at, and has no such edge from it, **Proposals by Source** lists the dependency for both Sources, under **Dependencies another Source does not see**. The list shows the declaration with its citation and the Source that does not see it. It does not stop you from accepting the dependency.
 
 ## See also
 
