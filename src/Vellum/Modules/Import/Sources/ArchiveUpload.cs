@@ -55,6 +55,20 @@ public static class ArchiveUpload
 
         var folder = Path.Combine(bootstrap.DataDirectory, "uploads");
         Directory.CreateDirectory(folder);
+        DeleteStale(folder, time.GetUtcNow());
+        if (!HasRoom(folder, cap))
+        {
+            return Results.Json(new ErrorResponse("archive_no_space",
+                "The server has too little free disk space to take an upload of this size now. Try again later, or ask the operator."),
+                statusCode: StatusCodes.Status503ServiceUnavailable);
+        }
+        using var slot = UploadSlot.Take(source.WorkspaceId);
+        if (slot is null)
+        {
+            return Results.Json(new ErrorResponse("archive_upload_busy",
+                $"This workspace already has {UploadSlot.MaxPerWorkspace} uploads in progress. Wait for one to end, then upload again."),
+                statusCode: StatusCodes.Status429TooManyRequests);
+        }
         await using var spool = new FileStream(Path.Combine(folder, $"{Guid.NewGuid():N}.upload"), new FileStreamOptions
         {
             Mode = FileMode.CreateNew, Access = FileAccess.ReadWrite, Share = FileShare.None,
@@ -124,6 +138,59 @@ public static class ArchiveUpload
             await spool.WriteAsync(buffer.AsMemory(0, read), ct);
         }
         await spool.FlushAsync(ct);
+    }
+
+    /// <summary>An upload file is deleted when its request ends. One that a crash left behind is deleted by the next upload after an hour.</summary>
+    public static readonly TimeSpan StaleAfter = TimeSpan.FromHours(1);
+
+    internal static void DeleteStale(string folder, DateTimeOffset now)
+    {
+        foreach (var file in new DirectoryInfo(folder).EnumerateFiles("*.upload"))
+        {
+            try
+            {
+                if (file.LastWriteTimeUtc < (now - StaleAfter).UtcDateTime)
+                    file.Delete();
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // Another request holds it, or it is gone already.
+            }
+        }
+    }
+
+    /// <summary>True when the disk of the upload folder has room for an upload of <paramref name="cap"/> bytes, or when the platform does not say.</summary>
+    private static bool HasRoom(string folder, long cap)
+    {
+        try
+        {
+            return new DriveInfo(folder).AvailableFreeSpace > cap;
+        }
+        catch (Exception ex) when (ex is IOException or ArgumentException or UnauthorizedAccessException)
+        {
+            return true;
+        }
+    }
+
+    /// <summary>Bounds how many uploads of one workspace this process spools at the same time.</summary>
+    internal sealed class UploadSlot : IDisposable
+    {
+        public const int MaxPerWorkspace = 2;
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<Guid, int> Running = new();
+        private readonly Guid _workspaceId;
+
+        private UploadSlot(Guid workspaceId) => _workspaceId = workspaceId;
+
+        public static UploadSlot? Take(Guid workspaceId)
+        {
+            var count = Running.AddOrUpdate(workspaceId, 1, (_, n) => n + 1);
+            if (count <= MaxPerWorkspace)
+                return new UploadSlot(workspaceId);
+            Running.AddOrUpdate(workspaceId, 0, (_, n) => n - 1);
+            return null;
+        }
+
+        public void Dispose() => Running.AddOrUpdate(_workspaceId, 0, (_, n) => n - 1);
     }
 
     private static IResult Refuse(ArchiveRefused refused, int status) =>

@@ -20,9 +20,9 @@ namespace Vellum.Modules.Import.Scans;
 /// <param name="MaxInternalFailures">How many runs in a row an unexpected error may stop before the scan fails with <c>internal_error</c>.</param>
 /// <param name="RetentionInterval">How often the worker applies <see cref="ImportRetention"/>.</param>
 /// <param name="MaxRunningPerHost">
-/// How many scans of Sources on one git host run at the same time, across all instances and
-/// workspaces. A bulk add queues many scans of one host; this keeps them from using up the
-/// host's rate limit together. Directory and archive scans read no host and are not counted.
+/// How many scans of Sources on one git host run at the same time in one workspace, across all
+/// instances. A bulk add queues many scans of one host; this keeps them from using up the
+/// workspace's rate limit at the host together, and one workspace does not hold up another. Directory and archive scans read no host and are not counted.
 /// </param>
 public sealed record ScanWorkerOptions(
     bool Enabled, TimeSpan PollInterval, TimeSpan LeaseDuration, TimeSpan WatchInterval, int MaxAttempts = 50,
@@ -144,6 +144,9 @@ public sealed class ScanWorker(
             WHERE status = 'running' AND lease_expires_at < now() AND crashes >= 1
             """, ct);
 
+        // Claims take turns, so the count of running scans per host that a claim reads is exact.
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        await db.Database.ExecuteSqlAsync($"SELECT pg_advisory_xact_lock(hashtextextended('import-scan-claim', 0))", ct);
         var claimed = await db.Database.SqlQuery<string>($"""
             UPDATE import.scans s
             SET status = 'running', lease_owner = {workerId}, lease_expires_at = now() + make_interval(secs => {lease}),
@@ -160,12 +163,13 @@ public sealed class ScanWorker(
                        OR (c.status = 'running' AND c.lease_expires_at < now()))
                   AND (EXISTS (SELECT 1 FROM import.sources k WHERE k.id = c.source_id AND k.kind IN ('directory', 'archive'))
                        OR (SELECT count(*) FROM import.scans r
-                           WHERE r.host = c.host AND r.id <> c.id AND r.status = 'running' AND r.lease_expires_at >= now()) < {perHost})
+                           WHERE r.workspace_id = c.workspace_id AND r.host = c.host AND r.id <> c.id AND r.status = 'running' AND r.lease_expires_at >= now()) < {perHost})
                 ORDER BY served.last NULLS FIRST, c.created_at, c.id
                 FOR UPDATE OF c SKIP LOCKED
                 LIMIT 1)
             RETURNING s.id::text || ':' || s.lease_token::text AS "Value"
             """).ToListAsync(ct);
+        await transaction.CommitAsync(ct);
         if (claimed.Count == 0)
             return null;
 

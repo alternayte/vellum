@@ -163,14 +163,19 @@ public sealed class CodeSourceTests : IClassFixture<ImportHost>, IDisposable
         Assert.Equal(HttpStatusCode.Created, archive.StatusCode);
     }
 
-    public static TheoryData<string> HostileArchives => ["zip-slip", "absolute", "zip-symlink", "tar-symlink", "tar-hardlink", "nested", "ratio", "oversize"];
+    public static TheoryData<string> HostileArchives =>
+    [
+        "zip-slip", "absolute", "zip-symlink", "tar-symlink", "tar-hardlink", "nested", "ratio", "oversize",
+        "tar-long-name", "tar-pax-header", "tar-ratio-per-entry", "zip-entry-count", "zip-compressed-size",
+    ];
 
     [Theory]
     [MemberData(nameof(HostileArchives))]
     public async Task A_hostile_archive_is_refused_whole_and_stores_no_blob(string kind)
     {
         var s = await ImportScenario.CreateAsync(_local, fixture: null);
-        await OutboundHost.PutSettingsAsync(s.Owner, s.WorkspaceId, new JsonObject { ["import"] = new JsonObject { ["maxArchiveBytes"] = 1024 * 1024 } });
+        var limit = kind == "tar-ratio-per-entry" ? 64 * 1024 * 1024 : 1024 * 1024;
+        await OutboundHost.PutSettingsAsync(s.Owner, s.WorkspaceId, new JsonObject { ["import"] = new JsonObject { ["maxArchiveBytes"] = limit } });
         var good = new Dictionary<string, byte[]> { ["app/openapi.yaml"] = "openapi: 3.0.0\npaths: {}\n"u8.ToArray() };
         var random = new byte[700 * 1024];
         new Random(7).NextBytes(random);
@@ -184,6 +189,14 @@ public sealed class CodeSourceTests : IClassFixture<ImportHost>, IDisposable
             "tar-hardlink" => (TarGz(good, link: (TarEntryType.HardLink, "app/hard.yaml", "app/openapi.yaml")), "archive_link_entry"),
             "nested" => (Zip(good.Append(new("app/notes.txt", Zip(good))).ToDictionary()), "archive_nested"),
             "ratio" => (Zip(good.Append(new("app/zeros.txt", new byte[900 * 1024])).ToDictionary()), "archive_compression_ratio"),
+            // A metadata entry that declares 200 MB, with the bytes present: a reader would allocate it before reading a byte.
+            "tar-long-name" => (Gzip([.. TarHeader("././@LongLink", 'L', 200L * 1024 * 1024), .. new byte[200 * 1024 * 1024 + 1024]]), "archive_unreadable"),
+            "tar-pax-header" => (Gzip([.. TarHeader("PaxHeaders/x", 'x', 200L * 1024 * 1024), .. new byte[200 * 1024 * 1024 + 1024]]), "archive_unreadable"),
+            // Incompressible bytes first, then one entry of zeros: the ratio is per entry, not of the whole stream.
+            "tar-ratio-per-entry" => (TarGz(new Dictionary<string, byte[]> { ["app/noise.txt"] = RandomBytes(2 * 1024 * 1024), ["app/zeros.txt"] = new byte[20 * 1024 * 1024] }),
+                "archive_compression_ratio"),
+            "zip-entry-count" => (ClaimEntries(Zip(good), 1_000_000), "archive_too_many_entries"),
+            "zip-compressed-size" => (InflateCompressedSize(Zip(new Dictionary<string, byte[]> { ["app/zeros.txt"] = new byte[900 * 1024] })), "archive_unreadable"),
             _ => (Zip(good.Append(new("app/a.txt", noise)).Append(new("app/b.txt", noise)).ToDictionary()), "archive_too_large"),
         };
 
@@ -193,6 +206,60 @@ public sealed class CodeSourceTests : IClassFixture<ImportHost>, IDisposable
         Assert.Equal(0, await BlobCountAsync(s));
         await using var db = Db(s);
         Assert.False(await db.Scans.AnyAsync(x => x.SourceId == source));
+    }
+
+    [Fact]
+    public async Task A_folder_the_server_cannot_list_makes_the_scan_partial_and_proposes_no_removal_under_it()
+    {
+        if (OperatingSystem.IsWindows())
+            return;
+        var s = await ImportScenario.CreateAsync(_local, fixture: null);
+        var files = FixtureGitHub.Load("orders");
+        var folder = Path.Combine(_root, "locked");
+        foreach (var (path, content) in files)
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(Path.Combine(folder, path))!);
+            File.WriteAllBytes(Path.Combine(folder, path), content);
+        }
+        var source = await CreateAsync(s, new { kind = "directory", path = "locked" });
+        await StartAsync(s, source);
+        await s.DrainAsync();
+        var accepted = await s.Owner.PostAsJsonAsync($"/api/projects/{s.ProjectId}/sources/{source}/accept", new { acknowledgeImpact = true });
+        Assert.True(accepted.StatusCode == HttpStatusCode.OK, await accepted.Content.ReadAsStringAsync());
+
+        // The folder of one service can no longer be listed.
+        var service = Path.Combine(folder, "orders-api");
+        File.SetUnixFileMode(service, UnixFileMode.None);
+        try
+        {
+            var scan = await StartAsync(s, source);
+            await s.DrainAsync();
+            var read = await s.GetAsync(scan);
+            Assert.Equal("completed", read.Text("status"));
+            Assert.False(read["isComplete"]!.GetValue<bool>());
+            Assert.Contains(read["notes"]!.AsArray(), n => n!["code"]!.GetValue<string>() == "folder-unreadable" && n["path"]!.GetValue<string>() == "orders-api");
+            var proposals = await s.ProposalsAsync(scan);
+            Assert.DoesNotContain(proposals, p => p.Text("action") == "remove");
+        }
+        finally
+        {
+            File.SetUnixFileMode(service, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        }
+    }
+
+    [Fact]
+    public async Task An_upload_file_that_a_crash_left_behind_is_deleted_by_the_next_upload()
+    {
+        var s = await ImportScenario.CreateAsync(_local, fixture: null);
+        var uploads = Path.Combine(_local.Host.Factory.Services.GetRequiredService<Vellum.Modules.Settings.Bootstrap>().DataDirectory, "uploads");
+        Directory.CreateDirectory(uploads);
+        var stale = Path.Combine(uploads, $"{Guid.NewGuid():N}.upload");
+        File.WriteAllBytes(stale, [1, 2, 3]);
+        File.SetLastWriteTimeUtc(stale, DateTime.UtcNow - TimeSpan.FromHours(2));
+
+        var source = await CreateAsync(s, new { kind = "archive", name = "After a crash" });
+        await UploadAsync(s, source, Zip(new Dictionary<string, byte[]> { ["openapi.yaml"] = "openapi: 3.0.0\npaths: {}\n"u8.ToArray() }));
+        Assert.False(File.Exists(stale));
     }
 
     [Fact]
@@ -214,11 +281,19 @@ public sealed class CodeSourceTests : IClassFixture<ImportHost>, IDisposable
         var queued = items.Where(i => i["scanId"] is not null).ToDictionary(i => i.Text("repository")!, i => i.Id("scanId"));
         Assert.Equal(["acme/billing", "acme/broken", "acme/orders"], queued.Keys.Order(StringComparer.Ordinal));
 
-        // While as many scans of the host run as the bound allows, the next one waits.
+        // Scans of the same host in another workspace do not count against this one.
+        var other = await ImportScenario.CreateAsync(_local);
+        await other.SqlAsync($"UPDATE import.scans SET host = {s.GitHubHost} WHERE id = {await other.StartAsync()}");
+        await other.SqlAsync($"UPDATE import.scans SET host = {s.GitHubHost} WHERE id = {await other.StartAsync("acme/billing")}");
+        await other.SqlAsync($"UPDATE import.scans SET status = 'running', lease_expires_at = now() + interval '1 minute' WHERE workspace_id = {other.WorkspaceId}");
+
+        // While as many scans of the host run in this workspace as the bound allows, the next one waits.
         var running = queued.Values.Take(2).ToArray();
         await s.SqlAsync($"UPDATE import.scans SET status = 'running', lease_expires_at = now() + interval '1 minute' WHERE id = ANY({running})");
         Assert.False(await s.Worker.RunOnceAsync("worker-a", CancellationToken.None));
         await s.SqlAsync($"UPDATE import.scans SET status = 'queued', lease_expires_at = NULL WHERE id = ANY({running})");
+        Assert.True(await s.Worker.RunOnceAsync("worker-a", CancellationToken.None));
+        await other.SqlAsync($"UPDATE import.scans SET status = 'cancelled', lease_expires_at = NULL WHERE workspace_id = {other.WorkspaceId}");
 
         await s.DrainAsync();
         Assert.Equal("completed", (await s.GetAsync(queued["acme/orders"])).Text("status"));
@@ -305,6 +380,67 @@ public sealed class CodeSourceTests : IClassFixture<ImportHost>, IDisposable
             }
         }
         return buffer.ToArray();
+    }
+
+    private static byte[] RandomBytes(int length)
+    {
+        var bytes = new byte[length];
+        new Random(11).NextBytes(bytes);
+        return bytes;
+    }
+
+    private static byte[] Gzip(byte[] content)
+    {
+        using var buffer = new MemoryStream();
+        using (var gzip = new GZipStream(buffer, CompressionLevel.Optimal, leaveOpen: true))
+            gzip.Write(content);
+        return buffer.ToArray();
+    }
+
+    /// <summary>One ustar header block with a valid checksum.</summary>
+    private static byte[] TarHeader(string name, char type, long size)
+    {
+        var header = new byte[512];
+        Encoding.ASCII.GetBytes(name).CopyTo(header, 0);
+        Encoding.ASCII.GetBytes("0000644\0").CopyTo(header, 100);
+        Encoding.ASCII.GetBytes(Convert.ToString(size, 8).PadLeft(11, '0') + "\0").CopyTo(header, 124);
+        header[156] = (byte)type;
+        Encoding.ASCII.GetBytes("ustar\000").CopyTo(header, 257);
+        for (var i = 148; i < 156; i++)
+            header[i] = (byte)' ';
+        var sum = header.Sum(b => b);
+        Encoding.ASCII.GetBytes(Convert.ToString(sum, 8).PadLeft(6, '0') + "\0 ").CopyTo(header, 148);
+        return header;
+    }
+
+    /// <summary>The zip with its end record replaced by a zip64 one that claims <paramref name="entries"/> entries.</summary>
+    private static byte[] ClaimEntries(byte[] zip, long entries)
+    {
+        var eocd = zip.Length - 22;
+        var size = BitConverter.ToUInt32(zip, eocd + 12);
+        var offset = BitConverter.ToUInt32(zip, eocd + 16);
+        using var buffer = new MemoryStream();
+        buffer.Write(zip, 0, eocd);
+        var at = buffer.Position;
+        using var writer = new BinaryWriter(buffer);
+        writer.Write(0x06064b50u); writer.Write(44L); writer.Write((ushort)45); writer.Write((ushort)45);
+        writer.Write(0u); writer.Write(0u); writer.Write(entries); writer.Write(entries); writer.Write((long)size); writer.Write((long)offset);
+        writer.Write(0x07064b50u); writer.Write(0u); writer.Write(at); writer.Write(1u);
+        writer.Write(0x06054b50u); writer.Write((ushort)0); writer.Write((ushort)0); writer.Write((ushort)0xFFFF); writer.Write((ushort)0xFFFF);
+        writer.Write(0xFFFFFFFFu); writer.Write(0xFFFFFFFFu); writer.Write((ushort)0);
+        writer.Flush();
+        return buffer.ToArray();
+    }
+
+    /// <summary>The zip with the central directory's compressed size of its entries raised far above the bytes they take.</summary>
+    private static byte[] InflateCompressedSize(byte[] zip)
+    {
+        for (var i = 0; i + 4 <= zip.Length; i++)
+        {
+            if (BitConverter.ToUInt32(zip, i) == 0x02014b50)
+                BitConverter.GetBytes(16u * 1024 * 1024).CopyTo(zip, i + 20);
+        }
+        return zip;
     }
 
     private static byte[] TarGz(IReadOnlyDictionary<string, byte[]> files, (TarEntryType Type, string Path, string Target)? link = null)

@@ -135,7 +135,8 @@ public static class ImportModule
             .Produces<ErrorResponse>(StatusCodes.Status404NotFound)
             .Produces<ErrorResponse>(StatusCodes.Status409Conflict)
             .Produces<ErrorResponse>(StatusCodes.Status413PayloadTooLarge)
-            .Produces<ErrorResponse>(StatusCodes.Status429TooManyRequests);
+            .Produces<ErrorResponse>(StatusCodes.Status429TooManyRequests)
+            .Produces<ErrorResponse>(StatusCodes.Status503ServiceUnavailable);
 
         sources.MapGet("/kinds", SourceRequests.Kinds)
             .Produces<SourceKindsDto>();

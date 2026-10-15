@@ -152,17 +152,23 @@ internal static class ArchiveReader
 
     private static void Walk(FileStream archive, Format format, long maxExpanded, Action<string, long, EntryReader> onFile)
     {
-        archive.Position = 0;
         try
         {
+            // The raw structure is bounded first, so no library allocates what a header claims.
+            if (format == Format.Zip)
+                ArchiveChecks.Zip(archive);
+            else
+                ArchiveChecks.TarGz(archive, maxExpanded);
+            archive.Position = 0;
             if (format == Format.Zip)
                 WalkZip(archive, maxExpanded, onFile);
             else
                 WalkTarGz(archive, maxExpanded, onFile);
         }
-        catch (Exception ex) when (ex is InvalidDataException or EndOfStreamException or FormatException or NotSupportedException
-                                       or ArgumentException or IOException)
+        catch (Exception ex) when (ex is not (ArchiveRefused or OperationCanceledException))
         {
+            // Whatever a damaged or hostile archive makes a parser throw (an overflow, an
+            // allocation it cannot make, a format error) is a refusal, never a server error.
             throw ArchiveRefused.Unreadable();
         }
     }
@@ -172,6 +178,9 @@ internal static class ArchiveReader
         using var zip = new ZipArchive(archive, ZipArchiveMode.Read, leaveOpen: true, entryNameEncoding: Encoding.UTF8);
         if (zip.Entries.Count > MaxEntries)
             throw ArchiveRefused.TooManyEntries();
+        // The ratio below trusts each entry's compressed size; together they fit in the file.
+        if (zip.Entries.Sum(e => e.CompressedLength) > archive.Length)
+            throw ArchiveRefused.Unreadable();
         foreach (var entry in zip.Entries)
         {
             // The upper 16 bits of the external attributes hold the Unix mode when the archive
@@ -198,18 +207,11 @@ internal static class ArchiveReader
 
     private static void WalkTarGz(FileStream archive, long maxExpanded, Action<string, long, EntryReader> onFile)
     {
-        var compressed = new CountingStream(archive);
-        using var gzip = new GZipStream(compressed, CompressionMode.Decompress, leaveOpen: true);
-        var expanded = new CountingStream(gzip);
-        using var tar = new TarReader(expanded, leaveOpen: true);
-        var entries = 0;
-        bool Bomb(long _) => expanded.Count > RatioFloorBytes && expanded.Count > Math.Max(1, compressed.Count) * MaxCompressionRatio;
+        // ArchiveChecks.TarGz bounded the entries, their sizes and their ratios already.
+        using var gzip = new GZipStream(archive, CompressionMode.Decompress, leaveOpen: true);
+        using var tar = new TarReader(gzip, leaveOpen: true);
         while (tar.GetNextEntry(copyData: false) is { } entry)
         {
-            if (++entries > MaxEntries)
-                throw ArchiveRefused.TooManyEntries();
-            if (Bomb(0))
-                throw ArchiveRefused.Ratio();
             switch (entry.EntryType)
             {
                 case TarEntryType.GlobalExtendedAttributes:
@@ -229,7 +231,7 @@ internal static class ArchiveReader
             if (entry.Length > maxExpanded)
                 throw ArchiveRefused.TooLarge(maxExpanded);
             var data = entry.DataStream;
-            onFile(path, entry.Length, (sink, limit) => data is null ? 0 : Copy(data, sink, limit, maxExpanded, Bomb));
+            onFile(path, entry.Length, (sink, limit) => data is null ? 0 : Copy(data, sink, limit, maxExpanded, static _ => false));
         }
     }
 
@@ -322,27 +324,6 @@ internal static class ArchiveReader
         public string Finish() => Convert.ToHexStringLower(_hash.GetHashAndReset());
 
         public void Dispose() => _hash.Dispose();
-    }
-
-    /// <summary>A stream that counts the bytes read through it.</summary>
-    private sealed class CountingStream(Stream inner) : Stream
-    {
-        public long Count { get; private set; }
-        public override bool CanRead => true;
-        public override bool CanSeek => false;
-        public override bool CanWrite => false;
-        public override long Length => throw new NotSupportedException();
-        public override long Position { get => Count; set => throw new NotSupportedException(); }
-        public override void Flush() { }
-        public override int Read(byte[] buffer, int offset, int count)
-        {
-            var read = inner.Read(buffer, offset, count);
-            Count += read;
-            return read;
-        }
-        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
-        public override void SetLength(long value) => throw new NotSupportedException();
-        public override void Write(byte[] buffer, int offset, int count) => throw new NotSupportedException();
     }
 }
 

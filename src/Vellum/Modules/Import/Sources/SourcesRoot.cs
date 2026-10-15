@@ -184,7 +184,50 @@ internal static partial class RealPath
         return current;
     }
 
-#pragma warning disable SYSLIB1054 // The two libc calls are plain; a source-generated stub adds nothing here.
+    /// <summary>
+    /// Opens a file for reading only when its last part is no link at the moment of the open
+    /// (<c>O_NOFOLLOW</c>) and the handle is a plain file: a pipe, a socket or a character
+    /// device cannot seek. <c>O_NONBLOCK</c> keeps the open of a pipe from waiting for a writer.
+    /// Null when the open is refused or the handle is no plain file. Windows opens as before;
+    /// the caller has checked for a reparse point.
+    /// </summary>
+    public static FileStream? OpenNoFollow(string path)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return new FileStream(path, new FileStreamOptions
+            {
+                Mode = FileMode.Open, Access = FileAccess.Read, Share = FileShare.ReadWrite | FileShare.Delete, Options = FileOptions.SequentialScan,
+            });
+        }
+        var flags = OperatingSystem.IsMacOS() || OperatingSystem.IsFreeBSD()
+            ? 0x0100 | 0x0004
+            : (RuntimeInformation.ProcessArchitecture is Architecture.Arm64 or Architecture.Arm ? 0x8000 : 0x20000) | 0x0800;
+        var fd = open(path, flags | ReadOnly);
+        if (fd < 0)
+            return null;
+        var handle = new Microsoft.Win32.SafeHandles.SafeFileHandle(fd, ownsHandle: true);
+        try
+        {
+            var stream = new FileStream(handle, FileAccess.Read, bufferSize: 0);
+            if (stream.CanSeek)
+                return stream;
+            stream.Dispose();
+            return null;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            handle.Dispose();
+            return null;
+        }
+    }
+
+    private const int ReadOnly = 0;
+
+#pragma warning disable SYSLIB1054 // The libc calls are plain; a source-generated stub adds nothing here.
+    [DllImport("libc", SetLastError = true)]
+    private static extern int open([MarshalAs(UnmanagedType.LPUTF8Str)] string path, int flags);
+
     [DllImport("libc", SetLastError = true)]
     private static extern IntPtr realpath([MarshalAs(UnmanagedType.LPUTF8Str)] string path, IntPtr resolved);
 

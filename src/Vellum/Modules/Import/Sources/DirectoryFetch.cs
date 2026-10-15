@@ -37,7 +37,17 @@ internal static partial class DirectoryFetch
         if (!scan.TreeListed)
         {
             scan.HeadCommitSha = ReadHead(folder);
-            await context.ListAsync(List(folder), ct);
+            var entries = List(folder, out var unreadable);
+            if (unreadable.Count > 0)
+            {
+                // A folder that cannot be read is out of what this scan looked at: its files
+                // are neither listed nor absent, so no fact under it is proposed for removal or
+                // marked stale. The scan is partial and says which folders it could not read.
+                scan.ExcludePaths = [.. scan.ExcludePaths.Concat(unreadable).Distinct(StringComparer.Ordinal)];
+                scan.Partial = true;
+                scan.Notes = ScanNotes.Write(ScanNotes.Read(scan.Notes).Concat(unreadable.Select(path => ScanNotes.Of("folder-unreadable", path))));
+            }
+            await context.ListAsync(entries, ct);
         }
 
         foreach (var file in await context.PendingAsync(ct))
@@ -61,18 +71,32 @@ internal static partial class DirectoryFetch
     /// and the size the file system gives. Folders named <c>.git</c> are left out, and so is
     /// everything that is neither a file, a folder nor a link (a pipe, a socket, a device).
     /// </summary>
-    internal static List<GitHubTreeEntry> List(string folder)
+    /// <param name="unreadable">The folders, relative to <paramref name="folder"/>, that could not be listed.</param>
+    internal static List<GitHubTreeEntry> List(string folder, out List<string> unreadable)
     {
         var entries = new List<GitHubTreeEntry>();
+        var failed = new List<string>();
         var seen = 0;
         void Walk(DirectoryInfo directory, string prefix, int depth)
         {
             if (depth > MaxDepth)
                 throw ScanStop.Failed(new ScanError("directory_too_deep", $"The folder nests deeper than {MaxDepth} levels. Vellum does not read it. Choose a smaller folder."));
-            foreach (var info in directory.EnumerateFileSystemInfos("*", new EnumerationOptions
+            List<FileSystemInfo> children;
+            try
             {
-                AttributesToSkip = 0, IgnoreInaccessible = true, RecurseSubdirectories = false, ReturnSpecialDirectories = false,
-            }))
+                children = [.. directory.EnumerateFileSystemInfos("*", new EnumerationOptions
+                {
+                    AttributesToSkip = 0, IgnoreInaccessible = false, RecurseSubdirectories = false, ReturnSpecialDirectories = false,
+                })];
+            }
+            catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
+            {
+                if (depth == 0)
+                    throw ScanStop.Failed(new ScanError("directory_unreadable", "The server cannot list the folder. Check its permissions, then start a new scan."));
+                failed.Add(prefix.TrimEnd('/'));
+                return;
+            }
+            foreach (var info in children)
             {
                 if (++seen > MaxEntries)
                     throw ScanStop.Failed(new ScanError("directory_too_large", $"The folder holds more than {MaxEntries} entries. Vellum does not read it. Choose a smaller folder."));
@@ -97,6 +121,7 @@ internal static partial class DirectoryFetch
             }
         }
         Walk(new DirectoryInfo(folder), "", 0);
+        unreadable = failed;
         return entries;
     }
 
@@ -122,10 +147,9 @@ internal static partial class DirectoryFetch
             return [];
         try
         {
-            using var stream = new FileStream(info.FullName, new FileStreamOptions
-            {
-                Mode = FileMode.Open, Access = FileAccess.Read, Share = FileShare.ReadWrite | FileShare.Delete, Options = FileOptions.SequentialScan,
-            });
+            using var stream = RealPath.OpenNoFollow(info.FullName);
+            if (stream is null)
+                return null;
             var buffer = new MemoryStream();
             var chunk = new byte[81920];
             int read;

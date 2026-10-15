@@ -82,7 +82,9 @@ The scan applies the same [limits](/how-to/import-a-repository/#limits), the sam
 
 A folder with more than 200,000 entries, or with more than 64 levels of folders, fails the scan with `directory_too_large` or `directory_too_deep`. Choose a smaller folder.
 
-A file that disappears during the scan makes the scan partial.
+A file that disappears during the scan makes the scan partial. A file that becomes a link or a pipe before Vellum opens it is not read.
+
+A folder that the server cannot list also makes the scan partial. The scan shows the note `folder-unreadable` with the path of that folder. Vellum proposes no removal and marks no fact stale for anything under that folder. Fix the permissions, then scan again.
 
 ## Cite a folder
 

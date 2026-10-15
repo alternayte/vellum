@@ -81,7 +81,7 @@ Each scan counts for **Repository scans per day**. When you add more repositorie
 
 ## Watch the scans
 
-The scans wait in the one scan queue of the instance. Vellum runs at most 2 scans for one git host at the same time. The other scans of that host wait. An operator changes the number with `Import__Worker__MaxRunningPerHost`. See [Bootstrap environment](/reference/bootstrap-environment/#scan-worker).
+The scans wait in the one scan queue of the instance. Vellum runs at most 2 scans for one git host at the same time in one workspace. The other scans of that host in the workspace wait. An operator changes the number with `Import__Worker__MaxRunningPerHost`. See [Bootstrap environment](/reference/bootstrap-environment/#scan-worker).
 
 Each Source shows its own progress and its own failure. A scan that a limit stopped is partial. Vellum never shows a partial scan as complete. Resume or rescan each failed Source by itself. See [Watch the scan](/how-to/import-a-repository/#watch-the-scan).
 

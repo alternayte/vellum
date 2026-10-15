@@ -58,7 +58,7 @@ An upload counts as one scan for **Repository scans per day**. A project runs on
 | Code | Status | The archive |
 |---|---|---|
 | `archive_format` | `400` | is not a `.zip` or a `.tar.gz` file. |
-| `archive_unreadable` | `400` | is damaged or encrypted, or an entry does not have the size that its header states. |
+| `archive_unreadable` | `400` | is damaged or encrypted, an entry does not have the size that its header states, the compressed sizes of a zip add up to more than the file, or a tar metadata entry (a PAX header or a long name) is larger than 64 KiB. |
 | `archive_absolute_path` | `400` | has an entry with an absolute path, a backslash or a drive letter. |
 | `archive_path_traversal` | `400` | has an entry with a `..`, a `.` or an empty part in its path, or a control character. |
 | `archive_link_entry` | `400` | has a symbolic link, a hard link, a device or another entry that is not a file or a folder. |
@@ -68,6 +68,10 @@ An upload counts as one scan for **Repository scans per day**. A project runs on
 | `archive_too_many_entries` | `400` | has more than 200,000 entries. |
 | `archive_too_large` | `400` | expands to more than `import.maxArchiveBytes`, all files together. |
 | `archive_too_large` | `413` | is an upload larger than `import.maxArchiveBytes` and 64 MiB. |
+| `archive_upload_busy` | `429` | arrives while the workspace has 2 uploads in progress. Upload it again when one ends. |
+| `archive_no_space` | `503` | arrives while the server has less free disk space than the upload can take. |
+
+The server writes the upload to a temporary file in its data folder and deletes it when the request ends. The next upload deletes a temporary file that is older than one hour, for example after a crash.
 
 Vellum counts the bytes of an entry as they expand. It does not trust the size that a header states.
 
