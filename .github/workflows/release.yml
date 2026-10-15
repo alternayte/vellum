@@ -154,7 +154,7 @@ jobs:
         if: matrix.rid == 'linux-x64' || matrix.rid == 'osx-arm64'
         env:
           VERSION: ${{ needs.meta.outputs.version }}
-        run: test "$(dist/vellum --version)" = "$VERSION"
+        run: test "$(dist/vellum --version)" = "vellum $VERSION"
 
       - uses: actions/upload-artifact@v4
         with:
