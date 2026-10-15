@@ -136,6 +136,8 @@ The check runs three times, because each time closes a different gap.
 
 The transport does not follow redirects, keeps no cookies and does not use the proxy settings of the machine. A redirect could send a request, with its credential, to an address that was never checked.
 
+A New Relic Source has no URL setting. Its key goes only to `https://api.newrelic.com` or `https://api.eu.newrelic.com`, chosen by the region of the Source. The key is stored envelope-encrypted and bound to that origin, like every other credential, so even a changed database row cannot send it elsewhere. Vellum sends NerdGraph queries only, never a mutation, so a read-only User API key is enough. A trace upload is read as a stream and never written to disk or to the database; only the derived services and edges are kept. See [Runtime sources](/reference/runtime-sources/).
+
 A local model server is on a private address. So the local profile allows private network URLs by default, and the hosted profile refuses them. See [What leaves your instance](/concepts/what-leaves-your-instance/).
 
 ## Untrusted input

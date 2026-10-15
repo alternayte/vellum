@@ -9,7 +9,9 @@ This page explains the three words of an import: Source, Snapshot and source bin
 
 A project has Sources. A Source is one place that Vellum reads evidence from, such as one GitHub repository. A Source has a kind, a name and its connection details.
 
-The kinds are `github`, `gitlab`, `bitbucket`, `azure-devops`, `directory`, `archive`, `agent-push`, `model-file`, `traces` and `newrelic`. This version of Vellum reads `github`. It refuses to create a Source of another kind with the code `source_kind_unavailable`.
+The kinds are `github`, `gitlab`, `bitbucket`, `azure-devops`, `directory`, `archive`, `agent-push`, `model-file`, `traces` and `newrelic`. This version of Vellum reads `github`, `traces` and `newrelic`. It refuses to create a Source of another kind with the code `source_kind_unavailable`.
+
+A `traces` Source and a `newrelic` Source are runtime Sources. Their Snapshot has one file: a document that Vellum derives, with one line for each service and each edge. Their Snapshot ID is the SHA-256 of those sorted lines, and a citation names the line. See [Runtime sources](/reference/runtime-sources/).
 
 The first scan of a repository creates its Source. A project has one Source for each repository. The import screen lists the Sources under **Sources**.
 
