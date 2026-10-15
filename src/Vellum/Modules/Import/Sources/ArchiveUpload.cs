@@ -98,7 +98,7 @@ public static class ArchiveUpload
             (files, content) = await Task.Run(() =>
             {
                 var listed = ArchiveReader.List(spool, format, import.MaxArchiveBytes, out var strip);
-                var selection = ScanScope.Select([.. listed.Select(ArchiveFiles.Entry)], limits, [], []);
+                var selection = ScanScope.Select([.. listed.Select(f => new ListingEntry(f.Path, f.BlobSha, f.Size))], limits, [], []);
                 var wanted = selection.Files.Where(f => f.Reason is null).Select(f => f.Entry.Path).ToHashSet(StringComparer.Ordinal);
                 return (listed, ArchiveReader.Read(spool, format, import.MaxArchiveBytes, wanted, strip));
             }, ct);
@@ -110,7 +110,7 @@ public static class ArchiveUpload
 
         return await ScanRequests.QueueAsync(projectId, source, new ScanRequests.ScanOptions(null, null, null, null),
             user, workspace, db, signal, time.GetUtcNow(), ct,
-            async (scan, token) =>
+            fill: async (scan, token) =>
             {
                 var context = new FetchContext(http.RequestServices, db, scan, source, ScanLimits.FromJson(scan.Limits), time);
                 await context.ListAsync([.. files.Select(ArchiveFiles.Entry)], token);

@@ -210,10 +210,10 @@ public class AgentReferenceTests(IntegrationFixture fixture) : IClassFixture<Int
         Assert.Equal(HttpStatusCode.Forbidden, (await narrow.Client.GetAsync($"/api/workspaces/{workspaceId}/projects")).StatusCode);
 
         // Every scope, no restriction.
-        var wide = await TestHost.CreateAgentAsync(factory, owner, workspaceId, ["read", "propose", "export", "scan-pull-request"]);
+        var wide = await TestHost.CreateAgentAsync(factory, owner, workspaceId, ["read", "propose", "export", "scan-pull-request", "push"]);
         var all = (await wide.Client.GetFromJsonAsync<JsonObject>("/api/agent/capabilities"))!;
         Assert.Null(all["projectId"]);
-        Assert.Equal(["read", "propose", "export", "scan-pull-request"], all["scopes"]!.AsArray().Select(s => s!.GetValue<string>()));
+        Assert.Equal(["read", "propose", "export", "scan-pull-request", "push"], all["scopes"]!.AsArray().Select(s => s!.GetValue<string>()));
         Assert.Equal(AgentTools.All.Count, all["tools"]!.AsArray().Count);
         Assert.Contains(all["endpoints"]!.AsArray(), e => e!["path"]!.GetValue<string>() == "/api/workspaces/{workspaceId}/projects");
 

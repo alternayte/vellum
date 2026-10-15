@@ -85,7 +85,7 @@ public sealed class CodeSourceTests : IClassFixture<ImportHost>, IDisposable
         var dir = sources!.Select(x => x!.AsObject()).Single(x => x.Text("kind") == "directory");
         Assert.Equal("directory/acme/orders", dir.Text("citation"));
         var snapshot = dir["latestSnapshot"]!.AsObject();
-        Assert.Equal((expected, ImportScenario.Commit1), (snapshot.Text("revision"), snapshot.Text("commitSha")));
+        Assert.Equal((expected, null, ImportScenario.Commit1), (snapshot.Text("revision"), snapshot.Text("commitSha"), snapshot.Text("reportedCommitSha")));
         var proposals = await s.ProposalsAsync(directoryScan);
         Assert.All(proposals.SelectMany(p => p["evidence"]!.AsArray()), e => Assert.StartsWith(
             $"directory/acme/orders@{expected}:", e!["pointer"]!.GetValue<string>(), StringComparison.Ordinal));

@@ -119,7 +119,7 @@ Each entry gives the meaning of a term in Vellum and the page that defines it.
 
 **Snapshot**: Of a review: the stored findings of one model version with their answers. Of a scan: one immutable import of a Source, identified by the SHA-256 of its manifest of path, size and git blob SHA. See [Review a design](/how-to/review-a-design/#save-a-snapshot) and [Sources, Snapshots and bindings](/concepts/sources-and-snapshots/#a-snapshot-is-what-one-scan-read).
 
-**Source**: A configured origin of architecture evidence for a project, with a kind such as `github`. See [Sources, Snapshots and bindings](/concepts/sources-and-snapshots/).
+**Source**: A configured origin of architecture evidence for a project, with a kind such as `github` or `agent-push`. See [Sources, Snapshots and bindings](/concepts/sources-and-snapshots/).
 
 **Source binding**: A pair of a Source and an external key that links an element to its counterpart in that Source. Vellum never adds one by name alone. See [Sources, Snapshots and bindings](/concepts/sources-and-snapshots/#a-source-binding-links-an-element-to-a-source).
 

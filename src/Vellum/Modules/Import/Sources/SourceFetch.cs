@@ -24,6 +24,11 @@ internal static class SourceFetch
         SourceKind.Gitlab or SourceKind.Bitbucket or SourceKind.AzureDevops => GitHostFetch.RunAsync(context, ct),
         SourceKind.Directory => DirectoryFetch.RunAsync(context, ct),
         SourceKind.Archive => ArchiveFetch.RunAsync(context, ct),
+        // A push carries its Snapshot in its request. A worker meets one only when that request
+        // died before it completed the scan, and it has nothing to fetch.
+        SourceKind.AgentPush => throw ScanStop.Failed(ScanFailures.PushInterrupted),
+        SourceKind.Traces => Runtime.RuntimeFetch.TracesAsync(context, ct),
+        SourceKind.Newrelic => Runtime.RuntimeFetch.NewRelicAsync(context, ct),
         _ => throw ScanStop.Failed(new ScanError("source_kind_unavailable",
             $"This instance cannot read a Source of kind '{EnumText.Of(context.Source.Kind)}'.")),
     };
@@ -59,11 +64,13 @@ internal sealed class FetchContext(
     /// </summary>
     public async Task ListAsync(IReadOnlyList<GitHubTreeEntry> entries, CancellationToken ct)
     {
-        var selection = ScanScope.Select(entries, limits, scan.IncludePaths, scan.ExcludePaths);
+        var selection = ScanScope.Select(
+            [.. entries.Where(e => e.Type == "blob").Select(e => new ListingEntry(e.Path, e.Sha, e.Size ?? 0))],
+            limits, scan.IncludePaths, scan.ExcludePaths);
         var rows = selection.Files.Select(file => new ScanFileEntity
         {
             ScanId = scan.Id, Path = file.Entry.Path, PathHash = KeyHash.Of(file.Entry.Path),
-            BlobSha = file.Entry.Sha, Size = file.Entry.Size ?? 0,
+            BlobSha = file.Entry.Sha, Size = file.Entry.Size,
             State = file.Reason is null ? ScanFileState.Pending : ScanFileState.Skipped, Reason = file.Reason,
         }).ToList();
         db.ScanFiles.AddRange(rows);
@@ -157,6 +164,20 @@ internal sealed class FetchContext(
             await StoreBlobAsync(file.BlobSha, content, content.LongLength, null, ct);
             MarkRead(file, content.LongLength);
         }
+    }
+
+    /// <summary>
+    /// Stores a document that Vellum derived itself, such as the services and edges of a
+    /// runtime Source. Every name in it passed <see cref="Runtime.RuntimeGraph.CleanName"/>
+    /// one by one, so the file-level credential check, which counts opaque identifiers such as
+    /// New Relic GUIDs as credentials, does not apply.
+    /// </summary>
+    public async Task AcceptDerivedAsync(ScanFileEntity file, byte[] content, CancellationToken ct)
+    {
+        if (!ContentClearance.IsBlob(content, file.BlobSha))
+            throw new InvalidOperationException("A derived document is stored under its own blob SHA.");
+        await StoreBlobAsync(file.BlobSha, content, content.LongLength, null, ct);
+        MarkRead(file, content.LongLength);
     }
 
     public void MarkRead(ScanFileEntity file, long bytes)

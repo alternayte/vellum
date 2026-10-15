@@ -23,6 +23,9 @@ site/dist/
 site/node_modules/
 site/.astro/
 
+# `just cli` writes the vellum CLI here
+/artifacts/
+
 # Written by the backup runbook when it is run in the repository directory
 /backup/
 

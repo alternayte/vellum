@@ -45,11 +45,11 @@ namespace Vellum.Migrations
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "comments", "thread_status", new[] { "open", "resolved" });
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "costs", "price_source_kind", new[] { "custom", "fetched" });
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "drafts", "draft_status", new[] { "abandoned", "merged", "open" });
-            NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "identity", "agent_scope", new[] { "export", "propose", "read", "scan_pull_request" });
+            NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "identity", "agent_scope", new[] { "export", "propose", "push", "read", "scan_pull_request" });
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "import", "coverage_gap", new[] { "failed", "limit", "scope", "withheld" });
-            NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "import", "entity_kind", new[] { "binding", "channel", "element", "message", "operation", "schema", "subscription" });
+            NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "import", "entity_kind", new[] { "binding", "channel", "element", "message", "operation", "relationship", "schema", "subscription" });
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "import", "fact_disposition", new[] { "blocked", "evidence_only", "folded", "mapped" });
-            NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "import", "fact_kind", new[] { "channel", "data_access", "data_store", "dependency", "deployment", "message", "operation", "pattern", "publication", "schema", "service", "subscription" });
+            NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "import", "fact_kind", new[] { "channel", "data_access", "data_store", "dependency", "deployment", "interaction", "message", "operation", "pattern", "publication", "schema", "service", "subscription" });
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "import", "proposal_action", new[] { "add", "bind", "change", "conflict", "relink", "remove" });
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "import", "proposal_status", new[] { "accepted", "pending", "rejected", "superseded" });
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "import", "scan_file_state", new[] { "pending", "read", "skipped" });
@@ -1641,6 +1641,10 @@ namespace Vellum.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("completed_at");
 
+                    b.Property<bool>("ContentNotHeld")
+                        .HasColumnType("boolean")
+                        .HasColumnName("content_not_held");
+
                     b.Property<string>("Coverage")
                         .HasColumnType("jsonb")
                         .HasColumnName("coverage");
@@ -1685,10 +1689,6 @@ namespace Vellum.Migrations
                     b.Property<int>("FilesSkipped")
                         .HasColumnType("integer")
                         .HasColumnName("files_skipped");
-
-                    b.Property<string>("HeadCommitSha")
-                        .HasColumnType("text")
-                        .HasColumnName("head_commit_sha");
 
                     b.Property<string>("Host")
                         .IsRequired()
@@ -1758,6 +1758,11 @@ namespace Vellum.Migrations
                     b.Property<int>("Relinked")
                         .HasColumnType("integer")
                         .HasColumnName("relinked");
+
+                    b.Property<string>("ReportedCommitSha")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("reported_commit_sha");
 
                     b.Property<string>("Repository")
                         .IsRequired()
@@ -2440,6 +2445,10 @@ namespace Vellum.Migrations
                         .HasColumnType("double precision")
                         .HasColumnName("provenance_confidence");
 
+                    b.Property<bool>("ProvenanceContentNotHeld")
+                        .HasColumnType("boolean")
+                        .HasColumnName("provenance_content_not_held");
+
                     b.Property<string>("ProvenanceRevision")
                         .HasColumnType("text")
                         .HasColumnName("provenance_revision");
@@ -2543,6 +2552,10 @@ namespace Vellum.Migrations
                         .HasColumnType("double precision")
                         .HasColumnName("provenance_confidence");
 
+                    b.Property<bool>("ProvenanceContentNotHeld")
+                        .HasColumnType("boolean")
+                        .HasColumnName("provenance_content_not_held");
+
                     b.Property<string>("ProvenanceRevision")
                         .HasColumnType("text")
                         .HasColumnName("provenance_revision");
@@ -2643,6 +2656,10 @@ namespace Vellum.Migrations
                     b.Property<double?>("ProvenanceConfidence")
                         .HasColumnType("double precision")
                         .HasColumnName("provenance_confidence");
+
+                    b.Property<bool>("ProvenanceContentNotHeld")
+                        .HasColumnType("boolean")
+                        .HasColumnName("provenance_content_not_held");
 
                     b.Property<string>("ProvenanceRevision")
                         .HasColumnType("text")

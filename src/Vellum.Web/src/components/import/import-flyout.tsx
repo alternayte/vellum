@@ -11,6 +11,7 @@ import { ImpactDialog } from './impact-dialog'
 import { SourcesList, SourcesReview } from './sources-review'
 import { AddSourceDialog } from './add-source-dialog'
 import { BulkAddDialog } from './bulk-add-dialog'
+import { AddRuntimeSourceDialog } from './add-runtime-source-dialog'
 import { sourcesKey } from '@/hooks/use-sources'
 
 const STATUS_COLOR: Record<ScanSummary['status'], string> = {
@@ -50,7 +51,7 @@ export function ImportFlyout({ projectId, owners }: {
   const [bySource, setBySource] = useState(false)
   const [opening, setOpening] = useState<string | null>(null)
   const [impactOf, setImpactOf] = useState<ScanSummary | null>(null)
-  const [adding, setAdding] = useState<'one' | 'many' | null>(null)
+  const [adding, setAdding] = useState<'one' | 'many' | 'runtime' | null>(null)
 
   const scans = useQuery({
     queryKey: ['projects', projectId, 'imports'],
@@ -161,9 +162,10 @@ export function ImportFlyout({ projectId, owners }: {
 
       <div className="flex-1 overflow-y-auto">
         <section aria-labelledby="import-sources" className="border-b border-border pt-2">
-          <div className="flex items-center gap-2 px-3 pb-1.5">
-            <h3 id="import-sources" className="flex-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Sources</h3>
-            <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" onClick={() => setBySource(true)}>Proposals by Source</Button>
+          <div className="flex flex-wrap items-center gap-x-1 gap-y-0.5 px-3 pb-1.5">
+            <h3 id="import-sources" className="flex-1 basis-full text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Sources</h3>
+            <Button size="sm" variant="ghost" className="h-6 px-1.5 text-xs" onClick={() => setAdding('runtime')}>Add runtime Source</Button>
+            <Button size="sm" variant="ghost" className="h-6 px-1.5 text-xs" onClick={() => setBySource(true)}>Proposals by Source</Button>
           </div>
           <div className="flex gap-1.5 px-2 pb-2">
             <Button size="sm" variant="secondary" className="h-6 flex-1 gap-1 px-2 text-xs" onClick={() => setAdding('one')}>
@@ -189,7 +191,9 @@ export function ImportFlyout({ projectId, owners }: {
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm text-foreground">{scan.repository}</p>
                   <p className="break-words font-mono text-[10px] text-muted-foreground">
-                    {scanSubject(scan)}{scan.commitSha ? ` · ${scan.commitSha.slice(0, 10)}` : ''}
+                    {scan.contentHeld
+                      ? <>{scanSubject(scan)}{scan.commitSha ? ` · ${scan.commitSha.slice(0, 10)}` : ''}</>
+                      : <>pushed · Snapshot {scan.commitSha?.slice(0, 10)}{scan.reportedCommitSha ? ` · reported ${scan.reportedCommitSha.slice(0, 10)}` : ''}</>}
                     {scan.kind === 'comparison' && ' · comparison'}
                   </p>
                   {scan.pullRequest && (
@@ -251,6 +255,7 @@ export function ImportFlyout({ projectId, owners }: {
 
       {adding === 'one' && <AddSourceDialog projectId={projectId} onClose={() => setAdding(null)} />}
       {adding === 'many' && <BulkAddDialog projectId={projectId} onClose={() => setAdding(null)} />}
+      {adding === 'runtime' && <AddRuntimeSourceDialog projectId={projectId} onClose={() => { setAdding(null); refresh() }} />}
       {impactOf && <ImpactDialog projectId={projectId} scan={impactOf} owners={owners} onClose={() => setImpactOf(null)} />}
       {bySource && !reviewing && (
         <SourcesReview projectId={projectId} onOpenScan={(scanId, source) => openScan(scanId, source)} onClose={() => { setBySource(false); refresh() }} />

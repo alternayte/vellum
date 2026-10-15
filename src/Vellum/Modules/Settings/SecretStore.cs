@@ -23,6 +23,22 @@ public static class SecretNames
 
     public static string AiApiKey(Guid providerId) => $"ai:{providerId:D}:apiKey";
 
+    /// <summary>
+    /// The read-only User API key of a New Relic Source. The region is part of the name, so the
+    /// key is bound to the fixed NerdGraph endpoint of that region and goes nowhere else.
+    /// </summary>
+    public static string NewRelicApiKey(Guid sourceId, string region) => $"newrelic:{sourceId:D}:{region}:apiKey";
+
+    /// <summary>The region of a <c>newrelic:&lt;source id&gt;:&lt;region&gt;:apiKey</c> name, or null for any other name.</summary>
+    public static string? NewRelicRegionOf(string? name)
+    {
+        var parts = name?.Split(':');
+        return parts is ["newrelic", var id, var region and ("us" or "eu"), "apiKey"]
+            && Guid.TryParseExact(id, "D", out var sourceId) && sourceId != Guid.Empty
+            ? region
+            : null;
+    }
+
     /// <summary>The provider that an <c>ai:&lt;provider id&gt;:apiKey</c> name belongs to, or null for any other name.</summary>
     public static Guid? ProviderIdOf(string? name) =>
         name is not null
@@ -55,6 +71,7 @@ public static class SecretNames
     public static string? Normalize(string? name) =>
         name is GithubToken or GitlabToken or BitbucketToken or AzureDevopsToken or WebhookSecret or GcpApiKey ? name
         : ProviderIdOf(name) is { } providerId ? AiApiKey(providerId)
+        : NewRelicRegionOf(name) is not null ? name
         : null;
 }
 

@@ -113,11 +113,6 @@ public class ScanEntity
     /// without commits (a directory, an archive) it is the Snapshot ID, which a citation names.
     /// </summary>
     public string? CommitSha { get; set; }
-    /// <summary>
-    /// For a <c>directory</c> Source: the commit SHA that the folder's <c>.git/HEAD</c> names, read
-    /// as text. Metadata only: nothing checks that the files on disk are that commit.
-    /// </summary>
-    public string? HeadCommitSha { get; set; }
     /// <summary>The number of the pull request the caller asked for. Such a scan reads the head commit of the pull request and names no ref.</summary>
     public int? PullRequestNumber { get; set; }
     /// <summary>A JSON <see cref="ScanPullRequest"/>: what GitHub said of the pull request when the scan pinned its head commit. Null until then.</summary>
@@ -184,6 +179,18 @@ public class ScanEntity
     /// <summary>Who made this scan's ref the tracked ref of the repository, when a person did so with <c>track</c>.</summary>
     public string? TrackedBy { get; set; }
     public DateTimeOffset? TrackedAt { get; set; }
+    /// <summary>
+    /// True for a push of <c>vellum scan</c>: the machine that pushed read the files, and the
+    /// instance holds only the manifest, the facts and the citations. No blob of the scan is
+    /// stored, so nothing that needs the text of a file (the source view) can serve it.
+    /// </summary>
+    public bool ContentNotHeld { get; set; }
+    /// <summary>
+    /// For a push: the commit that <c>.git/HEAD</c> named on the machine that pushed. For a
+    /// <c>directory</c> Source: the commit the folder's <c>.git/HEAD</c> names, read as text by the
+    /// server. Recorded as reported, not verified against the files.
+    /// </summary>
+    public string? ReportedCommitSha { get; set; }
 
     /// <summary>True when the caller asked for a commit SHA and no ref: such a scan follows no line of history.</summary>
     public bool IsBareCommit() => RequestedRef is { Length: 40 } requested && requested.All(char.IsAsciiHexDigit);
@@ -203,7 +210,7 @@ public class ScanEntity
 public class ScanFileEntity
 {
     /// <summary>The longest path a scan records. A longer path gets a note and no row.</summary>
-    public const int MaxPath = 1024;
+    public const int MaxPath = Scans.ScanScope.MaxPath;
 
     public Guid ScanId { get; set; }
     /// <summary>SHA-256 of <see cref="Path"/>, in hex: the key, so a long path is never part of an index.</summary>
@@ -402,6 +409,7 @@ public enum StoredEntityKind
     Binding,
     Message,
     Schema,
+    Relationship,
 }
 
 /// <summary>

@@ -9,7 +9,11 @@ This page explains the three words of an import: Source, Snapshot and source bin
 
 A project has Sources. A Source is one place that Vellum reads evidence from, such as one GitHub repository. A Source has a kind, a name and its connection details.
 
-The kinds are `github`, `gitlab`, `bitbucket`, `azure-devops`, `directory`, `archive`, `agent-push`, `model-file`, `traces` and `newrelic`. This version of Vellum reads the first six. It refuses to create a Source of another kind with the code `source_kind_unavailable`.
+The kinds are `github`, `gitlab`, `bitbucket`, `azure-devops`, `directory`, `archive`, `agent-push`, `model-file`, `traces` and `newrelic`. This version of Vellum reads `github`, `gitlab`, `bitbucket`, `azure-devops`, `directory`, `archive`, `traces` and `newrelic`, and takes `agent-push`. It refuses to create a Source of another kind with the code `source_kind_unavailable`.
+
+A `traces` Source and a `newrelic` Source are runtime Sources. Their Snapshot has one file: a document that Vellum derives, with one line for each service and each edge. Their Snapshot ID is the SHA-256 of those sorted lines, and a citation names the line. See [Runtime sources](/reference/runtime-sources/).
+
+An `agent-push` Source holds what `vellum scan` pushed from a machine that has the code: a manifest, facts and citations, and no file content. Its first push creates it. Vellum cannot scan it again, because Vellum does not hold its files. See [Push evidence from CI or a laptop](/how-to/push-evidence-from-ci-or-a-laptop/).
 
 | Kind | What Vellum reads | Revision | Profile |
 |---|---|---|---|
@@ -57,7 +61,11 @@ A fact that an import wrote cites its evidence as `<source>@<revision>:path:star
 github.com/acme/orders@38035b90c4a1e3f2d8b7a6c5d4e3f2a1b0c9d8e7:orders-api/Program.cs:40-50
 ```
 
-For a Source that is not git, the revision is the Snapshot ID.
+For a Source that is not git, the revision is the Snapshot ID:
+
+```text
+agent-push/orders-api@def2307d05b4ab8e76e7ce3788825385a4e1ec1bf6464524612f5ce232f3fc7e:orders-api/Program.cs:40-50
+```
 
 | Kind | Citation |
 |---|---|

@@ -1,0 +1,15 @@
+{
+  "data": {
+    "actor": {
+      "entitySearch": {
+        "results": {
+          "nextCursor": null,
+          "entities": [
+            { "guid": "MTIzNDU2N3xCUk9XU0VSfEFQUExJQ0FUSU9OfDM", "name": "checkout-web", "domain": "BROWSER", "type": "APPLICATION", "entityType": "BROWSER_APPLICATION_ENTITY" },
+            { "guid": "MTIzNDU2N3xFWFR8U0VSVklDRXw0", "name": "stripe.com", "domain": "EXT", "type": "SERVICE", "entityType": "GENERIC_ENTITY" }
+          ]
+        }
+      }
+    }
+  }
+}

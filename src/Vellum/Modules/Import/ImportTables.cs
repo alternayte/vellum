@@ -58,6 +58,7 @@ public static class ImportTables
             b.Property(s => s.Notes).HasColumnType("jsonb");
             b.Property(s => s.Coverage).HasColumnType("jsonb");
             b.Property(s => s.PullRequest).HasColumnType("jsonb");
+            b.Property(s => s.ReportedCommitSha).HasMaxLength(64);
             // The fencing token: a run that lost the scan names an old token, and its save fails.
             b.Property(s => s.LeaseToken).IsConcurrencyToken();
             b.HasIndex(s => new { s.ProjectId, s.CreatedAt, s.Id });

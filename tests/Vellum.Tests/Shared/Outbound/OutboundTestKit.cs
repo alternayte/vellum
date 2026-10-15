@@ -96,10 +96,21 @@ internal sealed class RoutedTransport : HttpMessageHandler
 
     public void Forget(string host) => _hosts.TryRemove(host, out _);
 
+    private readonly ConcurrentQueue<Uri> _asked = new();
+
+    /// <summary>Every address the pipeline sent a request to, set up or not, in order.</summary>
+    public IReadOnlyList<Uri> Asked => [.. _asked];
+
     protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct) =>
-        _hosts.TryGetValue(request.RequestUri!.Host, out var stub)
+        Record(request) && _hosts.TryGetValue(request.RequestUri!.Host, out var stub)
             ? new HttpMessageInvoker(stub, disposeHandler: false).SendAsync(request, ct)
             : throw new HttpRequestException(HttpRequestError.ConnectionError, "The test set up no host with this name.");
+
+    private bool Record(HttpRequestMessage request)
+    {
+        _asked.Enqueue(request.RequestUri!);
+        return true;
+    }
 
     // The client factory disposes its handlers. The stub outlives them.
     protected override void Dispose(bool disposing) { }

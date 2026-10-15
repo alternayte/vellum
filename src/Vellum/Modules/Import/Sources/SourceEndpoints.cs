@@ -17,8 +17,12 @@ namespace Vellum.Modules.Import.Sources;
 /// <param name="CommitSha">The commit of a git Source. For a directory with a <c>.git</c> folder, the commit its <c>HEAD</c> names, read as text: metadata that nothing checks against the files.</param>
 /// <param name="Revision">What a citation of this Snapshot names after <c>@</c>: the commit SHA of a git Source, else the Snapshot ID.</param>
 /// <param name="Files">The files in the manifest: those the scan read whole.</param>
+/// <param name="ContentHeld">False for a push of <c>vellum scan</c>: the instance holds the manifest, the facts and the citations, and no file content.</param>
+/// <param name="ReportedCommitSha">For a push or a directory: the commit that <c>.git/HEAD</c> names, as reported. Not verified.</param>
+/// <param name="PushedBy">For a push: the agent token that pushed it, as <c>agent-token:&lt;id&gt;</c>. Null for a scan the instance ran.</param>
 public sealed record SourceSnapshotDto(
-    Guid ScanId, string SnapshotId, string? CommitSha, string Revision, string? Ref, int Files, int Facts, bool IsComplete, DateTimeOffset CreatedAt);
+    Guid ScanId, string SnapshotId, string? CommitSha, string Revision, string? Ref, int Files, int Facts, bool IsComplete, DateTimeOffset CreatedAt,
+    bool ContentHeld, string? ReportedCommitSha, string? PushedBy);
 
 /// <summary>
 /// The proposals of a Source that wait for a person: those of its newest completed tracking
@@ -36,19 +40,25 @@ public sealed record SourceReviewDto(
 /// <param name="Citation">The <c>&lt;source&gt;</c> part of a citation <c>&lt;source&gt;@&lt;revision&gt;:path:start-end</c>.</param>
 /// <param name="LatestScan">The newest scan of the Source, in any state. Null before the first.</param>
 /// <param name="LatestSnapshot">The Snapshot of the newest completed scan. Null before the first.</param>
+/// <param name="Connection">For a <c>traces</c> or <c>newrelic</c> Source: what it reads. Null for the other kinds.</param>
 public sealed record SourceDto(
     Guid Id, string Kind, string Name, string Host, string Locator, string Citation,
-    string CreatedBy, DateTimeOffset CreatedAt, ScanDto? LatestScan, SourceSnapshotDto? LatestSnapshot, SourceReviewDto Review);
+    string CreatedBy, DateTimeOffset CreatedAt, ScanDto? LatestScan, SourceSnapshotDto? LatestSnapshot, SourceReviewDto Review,
+    Runtime.RuntimeConnectionDto? Connection = null);
 
-/// <param name="Kind"><c>github</c>, <c>gitlab</c>, <c>bitbucket</c>, <c>azure-devops</c>, <c>directory</c> (local profile only) or <c>archive</c>.</param>
-/// <param name="Name">What people call the Source. Without it the Source is named after its repository or folder. An archive Source needs one: its citations carry it.</param>
+/// <param name="Kind"><c>github</c>, <c>gitlab</c>, <c>bitbucket</c>, <c>azure-devops</c>, <c>directory</c> (local profile only), <c>archive</c>, <c>traces</c> or <c>newrelic</c>. An <c>agent-push</c> Source is made by its first push.</param>
+/// <param name="Name">What people call the Source. Without it the Source is named after its repository, folder or account. An archive or a traces Source needs one: its citations carry it.</param>
 /// <param name="Repository">
 /// For a git host: the repository as <c>owner/name</c> (GitHub), <c>group/name</c> or
 /// <c>group/subgroup/name</c> (GitLab), <c>workspace/repository</c> (Bitbucket),
 /// <c>organization/project/repository</c> (Azure DevOps), or the address of its page.
 /// </param>
+/// <param name="AccountId">For <c>newrelic</c>: the account ID.</param>
+/// <param name="Region">For <c>newrelic</c>: <c>us</c> or <c>eu</c>. It chooses the fixed NerdGraph endpoint.</param>
+/// <param name="ApiKey">For <c>newrelic</c>: a read-only User API key. It is stored envelope-encrypted and never returned. Only an Owner gives one.</param>
 /// <param name="Path">For <c>directory</c>: a folder under the sources root, as a relative path such as <c>acme/orders</c>.</param>
-public sealed record CreateSourceRequest(string? Kind, string? Name, string? Repository, string? Path = null);
+public sealed record CreateSourceRequest(
+    string? Kind, string? Name, string? Repository, long? AccountId = null, string? Region = null, string? ApiKey = null, string? Path = null);
 
 public sealed record UpdateSourceRequest(string? Name);
 
@@ -142,7 +152,7 @@ public static class SourceRequests
     /// </summary>
     public static async Task<IResult> Create(
         Guid projectId, CreateSourceRequest request, ClaimsPrincipal user,
-        WorkspaceAuthorizationService auth, SettingsResolver settings, SourcesRoot roots, AppDbContext db, TimeProvider time, CancellationToken ct)
+        WorkspaceAuthorizationService auth, SettingsResolver settings, SourcesRoot roots, Bootstrap bootstrap, AppDbContext db, TimeProvider time, CancellationToken ct)
     {
         var userId = user.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
@@ -153,6 +163,8 @@ public static class SourceRequests
             return Invalid(nameError);
 
         var workspaceId = await auth.GetProjectWorkspaceIdAsync(projectId, ct);
+        if (Runtime.RuntimeFetch.IsRuntime(kind))
+            return await Runtime.RuntimeSources.CreateAsync(projectId, workspaceId, kind, name, request, userId, auth, bootstrap, db, time, ct);
         var workspace = await settings.GetWorkspaceAsync(workspaceId, ct);
         var place = Place(kind, request, name, workspace, roots);
         if (place.Error is { } refused)
@@ -228,9 +240,12 @@ public static class SourceRequests
                     ? Refuse(Invalid("name", "Give a name with at least one letter or digit."))
                     : new SourcePlace(ArchiveHost, slug, null);
             }
+            case SourceKind.AgentPush:
+                return Refuse(Results.BadRequest(new ErrorResponse("source_kind_unavailable",
+                    "An agent-push Source is made by its first push: run vellum scan with an agent token that has the push scope.")));
             default:
                 return Refuse(Results.BadRequest(new ErrorResponse("source_kind_unavailable",
-                    $"This instance cannot read a Source of kind '{EnumText.Of(kind)}' yet. Create a github, gitlab, bitbucket, azure-devops, directory or archive Source.")));
+                    $"This instance cannot read a Source of kind '{EnumText.Of(kind)}' yet.")));
         }
     }
 
@@ -285,8 +300,22 @@ public static class SourceRequests
         var source = await db.Sources.AsNoTracking().FirstOrDefaultAsync(s => s.Id == sourceId && s.ProjectId == projectId, ct);
         if (source is null)
             return NotFound("Source");
+        if (source.Kind == SourceKind.AgentPush)
+        {
+            return Results.Conflict(new ErrorResponse("push_only",
+                "Vellum does not hold the files of an agent-push Source, so it cannot scan it. Run vellum scan on the machine that holds them."));
+        }
 
         var workspace = await settings.GetWorkspaceAsync(source.WorkspaceId, ct);
+        if (source.Kind == SourceKind.Traces)
+            return Results.Conflict(new ErrorResponse("upload_required", "A traces Source reads a trace export file. Upload one to scan it."));
+        if (source.Kind == SourceKind.Newrelic)
+        {
+            if (request.Ref is not null || request.PullRequest is not null || request.IncludePaths is { Length: > 0 } || request.ExcludePaths is { Length: > 0 })
+                return Invalid("ref", "A New Relic Source has no ref, no pull request and no paths. Send an empty body.");
+            return await ScanRequests.QueueAsync(projectId, source, new ScanRequests.ScanOptions(null, null, null, null),
+                user, workspace, db, signal, time.GetUtcNow(), ct);
+        }
         if (CanScan(source, request, workspace, roots) is { } refused)
             return refused;
         return await ScanRequests.QueueAsync(projectId, source,
@@ -546,7 +575,7 @@ public static class SourceRequests
         return completed.FirstOrDefault(s => ScanKindInfo.Of(s, tracked).Tracking);
     }
 
-    private static async Task<SourceDto> ToDtoAsync(AppDbContext db, SourceEntity source, CancellationToken ct)
+    internal static async Task<SourceDto> ToDtoAsync(AppDbContext db, SourceEntity source, CancellationToken ct)
     {
         var latest = await db.Scans.AsNoTracking().Where(s => s.SourceId == source.Id)
             .OrderByDescending(s => s.CreatedAt).ThenByDescending(s => s.Id).FirstOrDefaultAsync(ct);
@@ -575,10 +604,11 @@ public static class SourceRequests
         return new SourceDto(
             source.Id, EnumText.Of(source.Kind), source.Name, source.Host, source.Locator, source.CitationName,
             source.CreatedBy, source.CreatedAt, latestDto,
-            snapshot is null ? null : ToDto(source, snapshot), review);
+            snapshot is null ? null : ToDto(source, snapshot), review,
+            await Runtime.RuntimeSources.ConnectionAsync(db, source, ct));
     }
 
-    private sealed record SnapshotRow(SnapshotEntity Snapshot, string? Ref, string? HeadCommit);
+    private sealed record SnapshotRow(SnapshotEntity Snapshot, string? Ref, bool ContentNotHeld, string? ReportedCommitSha, string RequestedBy);
 
     /// <summary>The Snapshots of a Source, newest first, each with the ref its scan read.</summary>
     private static async Task<List<SnapshotRow>> SnapshotRowsAsync(AppDbContext db, Guid sourceId, Guid[]? scanIds, int take, CancellationToken ct)
@@ -589,16 +619,21 @@ public static class SourceRequests
         var snapshots = await query.OrderByDescending(s => s.CreatedAt).ThenByDescending(s => s.ScanId).Take(take).ToListAsync(ct);
         var ids = snapshots.Select(s => s.ScanId).ToList();
         var scans = await db.Scans.AsNoTracking().Where(s => ids.Contains(s.Id))
-            .Select(s => new { s.Id, s.ResolvedRef, s.HeadCommitSha }).ToDictionaryAsync(s => s.Id, ct);
-        return [.. snapshots.Select(s => new SnapshotRow(s, scans.GetValueOrDefault(s.ScanId)?.ResolvedRef, scans.GetValueOrDefault(s.ScanId)?.HeadCommitSha))];
+            .Select(s => new { s.Id, s.ResolvedRef, s.ContentNotHeld, s.ReportedCommitSha, s.RequestedBy }).ToDictionaryAsync(s => s.Id, ct);
+        // A snapshot row goes with its scan row (cascade), so every snapshot has one.
+        return [.. snapshots.Select(s => scans[s.ScanId]).Zip(snapshots, (scan, s) =>
+            new SnapshotRow(s, scan.ResolvedRef, scan.ContentNotHeld, scan.ReportedCommitSha, scan.RequestedBy))];
     }
 
-    private static SourceSnapshotDto ToDto(SourceEntity source, SnapshotRow row) => ToDto(source, row.Snapshot, row.Ref, row.HeadCommit);
-
-    private static SourceSnapshotDto ToDto(SourceEntity source, SnapshotEntity snapshot, string? reference, string? headCommit) => new(
-        snapshot.ScanId, snapshot.SnapshotId, SourceEntity.IsGit(source.Kind) ? snapshot.CommitSha : headCommit,
-        SourceEntity.IsGit(source.Kind) ? snapshot.CommitSha : snapshot.SnapshotId,
-        reference, snapshot.ManifestFiles, snapshot.FactCount, snapshot.IsComplete, snapshot.CreatedAt);
+    private static SourceSnapshotDto ToDto(SourceEntity source, SnapshotRow row)
+    {
+        var snapshot = row.Snapshot;
+        return new(
+            snapshot.ScanId, snapshot.SnapshotId, SourceEntity.IsGit(source.Kind) ? snapshot.CommitSha : null,
+            SourceEntity.IsGit(source.Kind) ? snapshot.CommitSha : snapshot.SnapshotId,
+            row.Ref, snapshot.ManifestFiles, snapshot.FactCount, snapshot.IsComplete, snapshot.CreatedAt,
+            !row.ContentNotHeld, row.ReportedCommitSha, row.ContentNotHeld ? row.RequestedBy : null);
+    }
 
     private sealed record ManifestRow(Guid ScanId, string Path, string BlobSha);
 

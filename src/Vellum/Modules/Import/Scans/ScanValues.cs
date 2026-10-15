@@ -1,21 +1,8 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using Vellum.Shared;
 
 namespace Vellum.Modules.Import.Scans;
-
-public static class ScanSnapshots
-{
-    /// <summary>
-    /// The snapshots of a project whose scans read a ref: no pull request and no bare commit.
-    /// Only such a snapshot can stand for the newest state of a repository; a pull request or
-    /// a commit follows no line of history. The database filters them.
-    /// </summary>
-    public static IQueryable<SnapshotEntity> OfRefs(AppDbContext db, Guid projectId) =>
-        db.ImportSnapshots.Where(s => s.ProjectId == projectId && db.Scans.Any(c => c.Id == s.ScanId && c.PullRequestNumber == null
-            && !(c.RequestedRef != null && System.Text.RegularExpressions.Regex.IsMatch(c.RequestedRef, "^[0-9A-Fa-f]{40}$"))));
-}
 
 /// <summary>
 /// The provenance of a pull request scan: the pull request as GitHub described it when the
@@ -140,6 +127,7 @@ public static class ScanNotes
         "blob-missing" => "The host did not return this file. It was not read.",
         "file-missing" => "The file was gone, or was no plain file, when the scan read it. It was not read.",
         "folder-unreadable" => "The server cannot list this folder. Nothing under it was read, and nothing under it counts as removed.",
+        "read-failure" => "The machine that pushed could not read this file.",
         "notes-truncated" => "More notes exist than one scan keeps.",
         "tree-truncated" => "GitHub cut the file list of this repository. No file was read.",
         "path-too-long" => "The path is longer than a scan records. The file was not read.",
@@ -149,6 +137,10 @@ public static class ScanNotes
         "pull-request-fork" => "The pull request comes from another repository. GitHub serves its head commit through this repository, and the scan read it from here.",
         "pull-request-closed" => "The pull request is closed. The scan read its head commit as it was when the pull request closed.",
         "pull-request-merged" => "The pull request is merged. The scan read its head commit, which is not the merge commit.",
+        "entity-search-errors" or "related-entities-errors" => "New Relic answered part of a query with errors. That part of the account was not read, so the scan is partial.",
+        "limit:entities" => "The account has more entities than one scan reads. The scan is partial.",
+        "limit:pages" => "New Relic gave a page cursor that did not advance, or more pages than one scan reads. The scan stopped paging and is partial.",
+        "limit:relationships" => "The account has more relationships than one scan reads. The scan is partial.",
         "relink-needs-review" => "The extraction rules changed, and an accepted fact could not be matched to a new one by the exact rule. Review its relink proposal.",
         _ when code.StartsWith("limit:", StringComparison.Ordinal) => "A bound of the extraction was reached. Part of this file was left out.",
         _ when code.StartsWith("extractor-failure", StringComparison.Ordinal) => "An extractor failed. Its facts are missing from this scan.",

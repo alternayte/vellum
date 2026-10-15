@@ -81,7 +81,7 @@ A coding agent authenticates with a bearer token that starts with `vlm_agt_`. Ve
 A token is a weaker identity than the user who made it.
 
 - It works in one workspace. An owner can restrict it to one project.
-- It has scopes: `read`, `propose`, `export`, `scan-pull-request`.
+- It has scopes: `read`, `propose`, `export`, `scan-pull-request`, `push`.
 - It acts for the user who created it and has no more access than that user has today. When that user leaves the workspace, the token stops.
 - It is refused on each endpoint that does not explicitly accept tokens. The default for a new endpoint is refusal.
 - It cannot call an endpoint that is for a person only, with any scope. The answer is `403` with the type `human_only`.
@@ -136,6 +136,8 @@ The check runs three times, because each time closes a different gap.
 
 The transport does not follow redirects, keeps no cookies and does not use the proxy settings of the machine. A redirect could send a request, with its credential, to an address that was never checked.
 
+A New Relic Source has no URL setting. Its key goes only to `https://api.newrelic.com` or `https://api.eu.newrelic.com`, chosen by the region of the Source. The key is stored envelope-encrypted and bound to that origin, like every other credential, so even a changed database row cannot send it elsewhere. Vellum sends NerdGraph queries only, never a mutation, so a read-only User API key is enough. A trace upload is read as a stream and never written to disk or to the database; only the derived services and edges are kept. See [Runtime sources](/reference/runtime-sources/).
+
 A local model server is on a private address. So the local profile allows private network URLs by default, and the hosted profile refuses them. See [What leaves your instance](/concepts/what-leaves-your-instance/).
 
 ## Untrusted input
@@ -153,6 +155,19 @@ The redactor works on the shape of a value and on the name beside it. It does no
 Generated documents apply the same idea in the other direction. The SDD and the brief mark each text from the model as data and escape it, so that a name in a model cannot form an instruction or a heading for the agent that reads the document.
 
 Each request body has a size limit, and a body over the limit gets `413` before the endpoint parses it.
+
+### What `vellum scan` sends
+
+`vellum scan` runs the extractors on the machine that holds the code. It sends these items and nothing else:
+
+- the manifest: the path, the size and the git blob SHA of each file that the extractors read whole;
+- the path and a reason code of each file that the scope would read and that was not read, such as `secret-file` or `limit:file-bytes`;
+- the facts, with their citations as path and lines;
+- the extraction rules and their versions, the scope that selected the files, and the commit that `.git/HEAD` names.
+
+It does not send the content of a file, and it does not send the path of a file that the path filter refuses by its name, such as `.env`. A fact can hold a value that the source states, such as a route, an image name or a schema. The credential guard runs on the machine before a value enters a fact. Run `vellum scan --dry-run --payload push.json` to read the exact body before you push.
+
+The server takes a push as untrusted input. It checks the token, the scope `push` and the editor role of its user. It refuses rules that are not its own, a file that the scope rules do not read, a citation of a file that is not in the manifest, and a push over the limits of the workspace. A push makes proposals. It cannot accept one, and it cannot change an accepted fact. Vellum records the token, the reported commit and "content not held" with the Snapshot, and does not verify the reported commit.
 
 A project document is untrusted text too. Vellum parses it to a tree and builds the page from the tree. It generates no code from a document and evaluates none. An expression, an `import`, an event handler and a `script` tag in a document have no effect. See [Write project documents](/how-to/write-project-docs/#know-what-the-text-can-contain).
 

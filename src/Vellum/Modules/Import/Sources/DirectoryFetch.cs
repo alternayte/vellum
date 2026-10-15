@@ -14,7 +14,7 @@ namespace Vellum.Modules.Import.Sources;
 /// whose content is the text of its target, so nothing outside the folder is read and the
 /// manifest is the one a git host gives for the same tree. A <c>.git</c> folder is not listed.
 /// When the folder has one, its <c>HEAD</c> (and the ref file or <c>packed-refs</c> line it names)
-/// is read as text, and the commit SHA is kept as metadata of the scan. No git command runs.
+/// is read as text, and the commit SHA is kept as the reported commit of the scan. No git command runs.
 /// </para>
 /// </summary>
 internal static partial class DirectoryFetch
@@ -36,7 +36,7 @@ internal static partial class DirectoryFetch
 
         if (!scan.TreeListed)
         {
-            scan.HeadCommitSha = ReadHead(folder);
+            scan.ReportedCommitSha = ReadHead(folder);
             var entries = List(folder, out var unreadable);
             if (unreadable.Count > 0)
             {
