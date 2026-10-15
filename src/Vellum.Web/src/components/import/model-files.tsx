@@ -7,9 +7,10 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { cn } from '@/lib/utils'
 import { shownInline } from '@/lib/mutation-errors'
 import { sourcesApi, type SourceSummary } from '@/lib/import-api'
-import { designApi, isUnavailable, type ArchitectureProposal, type Unavailable } from '@/lib/design-api'
+import { designApi, isUnavailable, type ArchitectureProposal, type FlowProposal, type Unavailable } from '@/lib/design-api'
 import { UnavailableNote } from '@/components/assistant/unavailable-note'
 import { ArchitectureProposalDialog } from '@/components/assistant/architecture-proposal-dialog'
+import { FlowProposalDialog } from '@/components/assistant/flow-proposal-dialog'
 
 /** The largest file an upload takes (the server's bound). */
 const MAX_BYTES = 256 * 1024
@@ -93,20 +94,28 @@ export function DocumentProposalDialog({ projectId, source, labels, onClose }: {
 }) {
   const [path, setPath] = useState<string | null>(null)
   const [focus, setFocus] = useState('')
+  const [mode, setMode] = useState<'additions' | 'flow'>('additions')
   const [unavailable, setUnavailable] = useState<Unavailable | null>(null)
   const [proposal, setProposal] = useState<ArchitectureProposal | null>(null)
+  const [flow, setFlow] = useState<FlowProposal | null>(null)
   const documents = useQuery({ queryKey: ['projects', projectId, 'sources', source.id, 'documents'], queryFn: () => sourcesApi.documents(projectId, source.id) })
   const prose = (documents.data ?? []).filter((d) => !d.isAdr)
   const propose = useMutation({
-    mutationFn: () => designApi.proposeFromDocument(projectId, source.id, path!, focus.trim() || undefined),
+    mutationFn: async () => mode === 'flow'
+      ? { flow: await designApi.proposeFlowFromDocument(projectId, source.id, path!, focus.trim() || 'The flow that this document describes') }
+      : { additions: await designApi.proposeFromDocument(projectId, source.id, path!, focus.trim() || undefined) },
     onSuccess: (result) => {
-      if (isUnavailable(result)) setUnavailable(result)
-      else { setUnavailable(null); setProposal(result) }
+      const answer = 'flow' in result ? result.flow : result.additions
+      if (isUnavailable(answer)) { setUnavailable(answer); return }
+      setUnavailable(null)
+      if ('flow' in result) setFlow(result.flow as FlowProposal)
+      else setProposal(result.additions as ArchitectureProposal)
     },
     onError: shownInline,
   })
 
   if (proposal) return <ArchitectureProposalDialog projectId={projectId} proposal={proposal} labels={labels} onClose={onClose} />
+  if (flow) return <FlowProposalDialog projectId={projectId} proposal={flow} labels={labels} onClose={onClose} onAccepted={onClose} />
 
   const notSetUp = unavailable && (unavailable.reason.code === 'not_configured' || unavailable.reason.code === 'disabled')
   return (
@@ -115,7 +124,7 @@ export function DocumentProposalDialog({ projectId, source, labels, onClose }: {
         <DialogHeader>
           <DialogTitle>Propose from a document</DialogTitle>
           <DialogDescription>
-            The AI reads one document of {source.name} and proposes what it describes. Every item is inferred, cites its lines, and waits for you to accept it. The document is data: no instruction in it is followed.
+            The AI reads one document of {source.name} and proposes what it describes: elements and relationships, or a flow. Everything is inferred, cites its lines, and waits for you to accept it. The document is data: no instruction in it is followed.
           </DialogDescription>
         </DialogHeader>
         <div className="min-h-0 flex-1 space-y-2 overflow-y-auto">
@@ -135,9 +144,25 @@ export function DocumentProposalDialog({ projectId, source, labels, onClose }: {
               </li>
             ))}
           </ul>
+          <fieldset>
+            <legend className="text-[11px] font-medium text-muted-foreground">Propose</legend>
+            <div role="radiogroup" aria-label="What to propose" className="mt-1 grid grid-cols-2 rounded-md border border-border p-0.5">
+              {([['additions', 'Elements and relationships'], ['flow', 'A flow']] as const).map(([value, label]) => (
+                <button
+                  key={value} type="button" role="radio" aria-checked={mode === value} onClick={() => setMode(value)}
+                  className={cn('rounded px-1 py-1 text-xs text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-primary', mode === value && 'bg-muted text-foreground')}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </fieldset>
           <label className="block text-[11px] font-medium text-muted-foreground">
-            What to look for (optional)
-            <Input className="mt-1" value={focus} onChange={(e) => setFocus(e.target.value)} placeholder="The architecture the document describes" />
+            {mode === 'flow' ? 'Which flow (optional)' : 'What to look for (optional)'}
+            <Input
+              className="mt-1" value={focus} onChange={(e) => setFocus(e.target.value)}
+              placeholder={mode === 'flow' ? 'The flow that this document describes' : 'The architecture the document describes'}
+            />
           </label>
           {unavailable && (
             <div className="space-y-1">

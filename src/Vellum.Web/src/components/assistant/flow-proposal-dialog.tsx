@@ -68,6 +68,7 @@ export function FlowProposalDialog({ projectId, proposal: initial, labels, onClo
           <DialogTitle>{proposal.name || 'Proposed flow'}</DialogTitle>
           <DialogDescription>
             {describeOrigin(proposal)} It describes declared behaviour.{' '}
+            {proposal.citation && `Read from ${proposal.citation.slice(proposal.citation.lastIndexOf(':', proposal.citation.lastIndexOf(':') - 1) + 1)}; what it creates is inferred and cites those lines. `}
             {proposal.status === 'draft'
               ? 'It is not saved, and nothing is verified, until you decide.'
               : `${proposal.status === 'accepted' ? 'Accepted as a scenario' : 'Rejected'}${proposal.decidedBy ? ` by ${personOf(proposal.decidedBy)}` : ''}${proposal.decidedAt ? ` on ${new Date(proposal.decidedAt).toLocaleString()}` : ''}. A decided proposal does not change.`}
@@ -136,7 +137,7 @@ export function FlowProposalDialog({ projectId, proposal: initial, labels, onClo
                   )
                 })}
               </ul>
-              <p className="mt-1.5 text-xs text-muted-foreground">A created part is added to the model with the label “inferred” and this proposal as its source.</p>
+              <p className="mt-1.5 text-xs text-muted-foreground">A created part is added to the model with the label “inferred” and {proposal.citation ? 'the cited lines of the document' : 'this proposal'} as its source.</p>
               {proposal.blockedSteps.length > 0 && (
                 <p className="mt-1 text-xs text-[var(--trace-retry)]">
                   {proposal.blockedSteps.length} {proposal.blockedSteps.length === 1 ? 'step waits' : 'steps wait'} for these parts and {proposal.blockedSteps.length === 1 ? 'is' : 'are'} not in the list above.

@@ -396,7 +396,14 @@ public sealed class ScanWorker(
             if (scan.Status != ScanStatus.Completed || !ScanKindInfo.Of(scan, tracked).Tracking)
                 return;
             services.GetRequiredService<DeedboxContext>().Metadata = new EventMetadata { Actor = AdrDecisions.Actor, CorrelationId = scanId.ToString() };
-            await AdrDecisions.ProposeAsync(services, scan, facts, CancellationToken.None);
+            var refused = await AdrDecisions.ProposeAsync(services, scan, facts, CancellationToken.None);
+            if (refused.Count > 0)
+            {
+                // The scan is complete; its notes say which ADRs gave no decision.
+                var notes = ScanNotes.Write(ScanNotes.Read(scan.Notes).Concat(refused));
+                await db.Scans.Where(s => s.Id == scanId)
+                    .ExecuteUpdateAsync(set => set.SetProperty(s => s.Notes, notes), CancellationToken.None);
+            }
         }
         catch (Exception ex)
         {

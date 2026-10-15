@@ -174,10 +174,13 @@ internal sealed class BackstageExtractor : IExtractor
         if (elementKind is "app" or "store" or "component" && parent is null)
             context.Note(NoteKind.Undecided, "backstage:no-parent", file.Path, node.StartLine);
 
-        context.Add(FactKind.Element, entity.Ref, entity.Name, evidence,
+        // A title the model refuses falls back to the name, which is always a short identifier.
+        var name = ModelFileText.Line(context, file, node.StartLine, "name", entity.Name) ?? entity.Ref[(entity.Ref.IndexOf('/') + 1)..];
+        context.Add(FactKind.Element, entity.Ref, name, evidence,
             ("elementKind", elementKind), ("parent", parent), ("backstage.kind", entity.Kind),
-            ("description", metadata?.Str("description")), ("technology", technology),
-            ("tags", context.List(tags.Distinct(StringComparer.Ordinal), file.Path, node.StartLine)),
+            ("description", ModelFileText.Lines(context, file, node.StartLine, "description", metadata?.Str("description"))),
+            ("technology", ModelFileText.Line(context, file, node.StartLine, "technology", technology)),
+            ("tags", ModelFileText.Tags(context, file, node.StartLine, tags)),
             ("type", entity.Kind is "component" ? spec?.Str("type") : null),
             ("lifecycle", spec?.Str("lifecycle")), ("owner", spec?.Str("owner")));
 

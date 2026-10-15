@@ -30,23 +30,26 @@ internal static class AdrDecisions
 {
     public const string Actor = "system:import-scan";
 
-    /// <returns>How many decisions were proposed or changed.</returns>
-    public static async Task<int> ProposeAsync(IServiceProvider services, ScanEntity scan, IReadOnlyList<ExtractedFact> facts, CancellationToken ct)
+    /// <returns>A note for each ADR whose decision the project refused. Nothing is dropped without one.</returns>
+    public static async Task<IReadOnlyList<ScanNote>> ProposeAsync(IServiceProvider services, ScanEntity scan, IReadOnlyList<ExtractedFact> facts, CancellationToken ct)
     {
         var adrs = facts.Where(f => f.Kind == FactKind.Decision).OrderBy(f => f.Key, StringComparer.Ordinal).ToList();
+        var refused = new List<ScanNote>();
         if (adrs.Count == 0)
-            return 0;
+            return refused;
         var db = services.GetRequiredService<AppDbContext>();
         var citationName = $"{scan.Host}/{scan.Repository}";
         var revision = scan.CommitSha!;
         var time = services.GetRequiredService<TimeProvider>();
-        var written = 0;
 
         foreach (var fact in adrs)
         {
-            if (Content(fact) is not { } content)
-                continue;
             var path = fact.Evidence[0].Path;
+            if (Content(fact) is not { } content)
+            {
+                refused.Add(ScanNotes.Of("adr-not-proposed", path, fact.Evidence[0].StartLine));
+                continue;
+            }
             var pathHash = KeyHash.Of(path);
             var hash = Hash(fact);
             var source = Source(fact, citationName, revision);
@@ -59,25 +62,29 @@ internal static class AdrDecisions
             Guid? decided = null;
             if (link is not null)
             {
-                var current = (await DecisionReads.CurrentAsync(db, scan.ProjectId, ct)).FirstOrDefault(d => d.Id == link.DecisionId);
-                if (current is not null && current.State.Status == DecisionStatus.Proposed && current.State.History.All(h => h.By == Actor))
-                {
-                    var changed = await DecisionEndpoints.DecideAsync(services.GetRequiredService<IEventStore>(), link.DecisionId,
-                        state => DecisionDecider.Change(state, scan.ProjectId, content, Actor, now, source), ct);
-                    if (changed is CommandResult<DecisionState>.Success)
-                        decided = link.DecisionId;
-                }
-                else if (current is not null && current.State.Status == DecisionStatus.Accepted)
-                {
+                // Only a decision that is still proposed and that only this import wrote takes the
+                // new text. The test runs on the state of the locked stream, so a person who edits,
+                // accepts or rejects it at the same time is never overwritten: the import then
+                // proposes a new decision instead.
+                var changed = await DecisionEndpoints.DecideAsync(services.GetRequiredService<IEventStore>(), link.DecisionId,
+                    state => state.Status == DecisionStatus.Proposed && state.History.All(h => h.By == Actor)
+                        ? DecisionDecider.Change(state, scan.ProjectId, content, Actor, now, source)
+                        : new CommandResult<IReadOnlyList<object>>.Conflict("A person wrote this decision."), ct);
+                if (changed is CommandResult<DecisionState>.Success)
+                    decided = link.DecisionId;
+                else if ((await DecisionReads.CurrentAsync(db, scan.ProjectId, ct)).FirstOrDefault(d => d.Id == link.DecisionId)
+                    is { State.Status: DecisionStatus.Accepted })
                     content = content with { Supersedes = link.DecisionId };
-                }
             }
 
             if (decided is null)
             {
                 var (dto, _) = await DecisionEndpoints.CreateAsync(services, scan.ProjectId, content, DecisionOrigin.Imported, Actor, now, ct, source);
                 if (dto is null)
+                {
+                    refused.Add(ScanNotes.Of("adr-not-proposed", path, fact.Evidence[0].StartLine));
                     continue;
+                }
                 decided = dto.Id;
             }
 
@@ -91,21 +98,30 @@ internal static class AdrDecisions
             link.ScanId = scan.Id;
             link.UpdatedAt = now;
             await db.SaveChangesAsync(ct);
-            written++;
         }
-        return written;
+        return refused;
     }
 
-    /// <summary>The content of the decision, or null when the ADR has no decision text.</summary>
+    /// <summary>
+    /// The content of the decision, with every control character a decision cannot hold taken out
+    /// (all of them in the title; all but tab and line breaks in the text) and the title cut to
+    /// its bound. Null when the ADR has no title or no decision text left.
+    /// </summary>
     private static DecisionContent? Content(ExtractedFact fact)
     {
         var a = fact.Attributes;
-        if (a.GetValueOrDefault("title") is not { Length: > 0 } title || a.GetValueOrDefault("decision") is not { Length: > 0 } decision)
+        var title = Clean(a.GetValueOrDefault("title"), multiline: false);
+        var decision = Clean(a.GetValueOrDefault("decision"), multiline: true);
+        if (title.Length == 0 || decision.Length == 0)
             return null;
+        var consequences = Clean(a.GetValueOrDefault("consequences"), multiline: true);
         return new DecisionContent(
-            TextRule.Line("title", title) is null ? title : title[..Math.Min(title.Length, TextRule.MaxName)],
-            a.GetValueOrDefault("context") ?? "", decision, [], a.GetValueOrDefault("consequences"), [], [], null);
+            title[..Math.Min(title.Length, TextRule.MaxName)], Clean(a.GetValueOrDefault("context"), multiline: true), decision, [],
+            consequences.Length == 0 ? null : consequences, [], [], null);
     }
+
+    private static string Clean(string? text, bool multiline) =>
+        new string((text ?? "").Where(c => !char.IsControl(c) || (multiline && c is '\t' or '\n' or '\r')).ToArray()).Trim();
 
     private static DecisionSource Source(ExtractedFact fact, string citationName, string revision)
     {

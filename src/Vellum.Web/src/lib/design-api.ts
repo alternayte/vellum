@@ -102,6 +102,9 @@ export function describeOrigin(proposal: { origin: ProposalOrigin; provider: { m
 }
 
 export interface FlowProposal {
+  /** For a flow read from a document: the document, and `<source>@<revision>:path:start-end` of the lines it comes from. */
+  document?: DocumentSource | null
+  citation?: string | null
   id: string
   origin: ProposalOrigin
   status: 'draft' | 'accepted' | 'rejected'
@@ -184,6 +187,11 @@ export type ExplainTarget =
 const base = (projectId: string) => `/api/projects/${projectId}/ai`
 
 export const designApi = {
+  /** A flow that a document of a Source describes. The flow cites the lines it comes from. */
+  proposeFlowFromDocument: (projectId: string, sourceId: string, path: string, request: string) =>
+    api<FlowProposal | Unavailable>('POST', `${base(projectId)}/flow-proposals`, {
+      request, branchId: null, reviseScenarioId: null, documentSourceId: sourceId, documentPath: path,
+    }),
   proposeFlow: (projectId: string, request: string, branchId?: string | null) =>
     api<FlowProposal | Unavailable>('POST', `${base(projectId)}/flow-proposals`, { request, branchId: branchId ?? null, reviseScenarioId: null }),
   acceptFlow: (projectId: string, id: string, acceptWithIssues: boolean) =>

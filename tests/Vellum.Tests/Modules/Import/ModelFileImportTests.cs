@@ -131,6 +131,101 @@ public class ModelFileImportTests(ImportHost import) : IClassFixture<ImportHost>
         Assert.Equal(2, after.Count);
     }
 
+    private static async Task<List<JsonObject>> DecisionsAsync(HttpClient owner, Guid projectId) =>
+        [.. (await owner.GetFromJsonAsync<JsonObject>($"/api/projects/{projectId}/decisions"))!["items"]!.AsArray().Select(d => d!.AsObject())];
+
+    [Fact]
+    public async Task An_ADR_with_control_characters_becomes_a_clean_decision_and_one_with_no_decision_text_leaves_a_note()
+    {
+        var s = await ImportScenario.CreateAsync(import, fixture: null);
+        var adr = Fixture("docs/adr/0001-record-architecture-decisions.md")
+            .Replace("# 1. Record architecture decisions", "# 1. Record \u0007architecture decisions", StringComparison.Ordinal);
+        await UploadAsync(s.Owner, s.ProjectId, "docs/adr/0001-record-architecture-decisions.md", adr);
+        await DrainAsync();
+        var decision = Assert.Single(await DecisionsAsync(s.Owner, s.ProjectId));
+        Assert.Equal("Record architecture decisions", decision.Text("title"));
+
+        var empty = await UploadAsync(s.Owner, s.ProjectId, "docs/adr/0002-empty.md", "# 2. Empty\n\n## Status\n\nAccepted\n\n## Context\n\nx\n\n## Decision\n\n\u0007\n");
+        await DrainAsync();
+        Assert.Single(await DecisionsAsync(s.Owner, s.ProjectId));
+        var scan = await s.GetAsync(empty.Id("scanId"));
+        Assert.Contains(scan["notes"]!.AsArray(), n => n!["code"]!.GetValue<string>() == "adr-not-proposed" && n["path"]!.GetValue<string>() == "docs/adr/0002-empty.md");
+    }
+
+    [Fact]
+    public async Task A_changed_ADR_never_overwrites_a_decision_that_a_person_edited()
+    {
+        var s = await ImportScenario.CreateAsync(import, fixture: null);
+        const string path = "docs/adr/0001-record-architecture-decisions.md";
+        var text = Fixture(path);
+        await UploadAsync(s.Owner, s.ProjectId, path, text);
+        await DrainAsync();
+        var first = Assert.Single(await DecisionsAsync(s.Owner, s.ProjectId));
+
+        // A person edits the proposed decision.
+        var edit = await s.Owner.PutAsJsonAsync($"/api/projects/{s.ProjectId}/decisions/{first.Id()}", new
+        {
+            title = "Record decisions as ADRs", context = first.Text("context"), decision = first.Text("decision"),
+            alternatives = Array.Empty<object>(), consequences = first.Text("consequences"), affectedIds = Array.Empty<Guid>(), settles = Array.Empty<object>(),
+        });
+        Assert.True(edit.IsSuccessStatusCode, await edit.Content.ReadAsStringAsync());
+
+        await UploadAsync(s.Owner, s.ProjectId, path, text.Replace("Michael Nygard.", "Michael Nygard, in Markdown.", StringComparison.Ordinal));
+        await DrainAsync();
+        var decisions = await DecisionsAsync(s.Owner, s.ProjectId);
+        Assert.Equal(2, decisions.Count);
+        Assert.Equal("Record decisions as ADRs", decisions.Single(d => d.Id() == first.Id()).Text("title"));
+        Assert.EndsWith("in Markdown.", decisions.Single(d => d.Id() != first.Id()).Text("decision"));
+    }
+
+    [Fact]
+    public async Task A_flow_read_from_a_document_cites_its_lines_or_is_not_stored()
+    {
+        var ai = await AiScenario.CreateAsync(import.Host, "openai-compatible");
+        var projectId = Guid.NewGuid();
+        await TestHost.Created(ai.Owner.PostAsJsonAsync($"/api/workspaces/{ai.WorkspaceId}/projects", new { id = projectId, name = "Shop" }));
+        var settings = (await ai.Owner.GetFromJsonAsync<JsonObject>($"/api/workspaces/{ai.WorkspaceId}/settings"))!;
+        var overrides = settings["overrides"]!.AsObject().DeepClone().AsObject();
+        overrides["privacy"] = new JsonObject { ["sendPrivateCodeToAi"] = true };
+        await OutboundHost.PutSettingsAsync(ai.Owner, ai.WorkspaceId, overrides);
+        var upload = await UploadAsync(ai.Owner, projectId, "docs/checkout.md", "# Checkout\n\nThe shop sends the basket to Checkout.\nCheckout writes the order.\n");
+        await DrainAsync();
+
+        static string Flow(int start, int end) => JsonSerializer.Serialize(new
+        {
+            name = "Checkout", summary = "The checkout flow.",
+            steps = Array.Empty<object>(), faults = Array.Empty<object>(), assertions = Array.Empty<object>(),
+            missing = new[]
+            {
+                new { alias = "N1", kind = "element", name = "Checkout", elementKind = "system", parentAlias = "", ownerAlias = "", transport = "", channelKind = "", channelAlias = "", consumerAlias = "", reason = "Line 3.", confidence = 0.8 },
+            },
+            openQuestions = Array.Empty<string>(), reasoningSummary = "", evidence = Array.Empty<object>(),
+            startLine = start, endLine = end,
+        });
+        var url = $"/api/projects/{projectId}/ai/flow-proposals";
+        var body = new { request = "The checkout flow", documentSourceId = upload.Id("sourceId"), documentPath = "docs/checkout.md" };
+
+        // Lines outside the document: nothing is stored.
+        ai.Stub.Json(ai.Completion(Flow(3, 40)));
+        var refused = (await (await ai.Owner.PostAsJsonAsync(url, body)).Content.ReadFromJsonAsync<JsonObject>())!;
+        Assert.Equal("invalid_output", refused["reason"]!["code"]!.GetValue<string>());
+
+        ai.Stub.Json(ai.Completion(Flow(3, 4)));
+        var created = await ai.Owner.PostAsJsonAsync(url, body);
+        Assert.Equal(HttpStatusCode.Created, created.StatusCode);
+        var proposal = (await created.Content.ReadFromJsonAsync<JsonObject>())!;
+        var snapshot = (await ai.Owner.GetFromJsonAsync<JsonObject>($"/api/projects/{projectId}/imports/{upload.Id("scanId")}"))!.Text("commitSha");
+        Assert.Equal($"model-file/docs/checkout.md@{snapshot}:docs/checkout.md:3-4", proposal.Text("citation"));
+        Assert.Contains("2| \n3| The shop sends the basket to Checkout.", Ai.Design.DesignKit.Text(ai.Stub.Requests[^1]).Replace("\r", "", StringComparison.Ordinal));
+
+        // A thing it needs is created only on request, as an inferred fact that cites the flow's lines.
+        Assert.Empty((await ai.Owner.GetFromJsonAsync<JsonObject>($"/api/projects/{projectId}/elements"))!["items"]!.AsArray());
+        var made = await ai.Owner.PostAsync($"{url}/{proposal.Id()}/missing/N1/create", null);
+        Assert.Equal(HttpStatusCode.OK, made.StatusCode);
+        var element = (await ai.Owner.GetFromJsonAsync<JsonObject>($"/api/projects/{projectId}/elements"))!["items"]![0]!.AsObject();
+        Assert.Equal(("inferred", proposal.Text("citation")), (element.Text("factStatus"), element["provenance"]!["source"]!.GetValue<string>()));
+    }
+
     [Fact]
     public async Task Prose_goes_through_the_AI_path_as_inferred_items_that_cite_their_lines_and_need_acceptance()
     {

@@ -130,14 +130,15 @@ internal sealed class StructurizrExtractor : IExtractor
             }
             if (element.Parent is not null && !added.Contains(element.Parent.Key))
                 continue;
+            if (ModelFileText.Line(context, file, element.StartLine, "name", element.Name) is null)
+                continue;
             var tags = element.Tags
-                .Where(t => !DefaultTags.Contains(t) && !(kind == "store" && t.Equals("Database", StringComparison.OrdinalIgnoreCase)))
-                .Distinct(StringComparer.Ordinal);
+                .Where(t => !DefaultTags.Contains(t) && !(kind == "store" && t.Equals("Database", StringComparison.OrdinalIgnoreCase)));
             context.Add(FactKind.Element, element.Key, element.Name, rule.At(file.Path, element.StartLine, element.EndLine),
                 ("elementKind", kind), ("parent", element.Parent?.Key), ("structurizr.type", element.Type),
-                ("description", element.Description),
-                ("technology", element.Type is "container" or "component" ? element.Technology : null),
-                ("tags", context.List(tags, file.Path, element.StartLine)));
+                ("description", ModelFileText.Lines(context, file, element.StartLine, "description", element.Description)),
+                ("technology", element.Type is "container" or "component" ? ModelFileText.Line(context, file, element.StartLine, "technology", element.Technology) : null),
+                ("tags", ModelFileText.Tags(context, file, element.StartLine, tags)));
             added.Add(element.Key);
         }
 
@@ -146,15 +147,24 @@ internal sealed class StructurizrExtractor : IExtractor
             if (relationship.From is not { } from || relationship.To is not { } to || !added.Contains(from) || !added.Contains(to))
                 continue;
             var behavioural = relationship.Tags.Any(t => t.Equals("Behavioural", StringComparison.OrdinalIgnoreCase));
-            context.Add(FactKind.Relationship, RelationshipKey(from, to, relationship.Label), relationship.Label ?? "",
+            var label = ModelFileText.Line(context, file, relationship.StartLine, "label", relationship.Label);
+            if (relationship.Label is not null && label is null)
+                continue;
+            context.Add(FactKind.Relationship, RelationshipKey(from, to, label), label ?? "",
                 rule.At(file.Path, relationship.StartLine, relationship.EndLine),
-                ("from", from), ("to", to), ("label", relationship.Label), ("technology", relationship.Technology),
+                ("from", from), ("to", to), ("label", label),
+                ("technology", ModelFileText.Line(context, file, relationship.StartLine, "technology", relationship.Technology)),
                 ("relationshipKind", behavioural ? "behavioural" : "structural"));
         }
     }
 
-    private static string? Text(string? value) =>
-        string.IsNullOrWhiteSpace(value) ? null : value[0] == QuotedMark ? Text(value[1..]) : value;
+    /// <summary>The value, without the one mark the reader may have put in front of it; null when it is blank.</summary>
+    private static string? Text(string? value)
+    {
+        if (value is { Length: > 0 } && value[0] == QuotedMark)
+            value = value[1..];
+        return string.IsNullOrWhiteSpace(value) ? null : value;
+    }
 
     /// <summary>Marks a quoted word that reads like syntax, so the reader never takes it for syntax. <see cref="Text"/> takes it off.</summary>
     private const char QuotedMark = (char)1;
@@ -632,7 +642,7 @@ internal sealed class StructurizrExtractor : IExtractor
                     }
                     if ((c == '/' && i + 1 < text.Length && text[i + 1] == '/') || (c == '#' && tokens.Count == 0))
                         break;
-                    if (c == '\\' && text[(i + 1)..].Trim().Length == 0)
+                    if (c == '\\' && text.AsSpan(i + 1).IsWhiteSpace())
                     {
                         continued = true;
                         break;
@@ -645,7 +655,8 @@ internal sealed class StructurizrExtractor : IExtractor
                         {
                             if (text[i] == '\\' && i + 1 < text.Length && text[i + 1] == '"')
                                 i++;
-                            value.Append(text[i]);
+                            if (text[i] != QuotedMark)
+                                value.Append(text[i]);
                             i++;
                         }
                         i++;
@@ -661,7 +672,7 @@ internal sealed class StructurizrExtractor : IExtractor
                     var startToken = i;
                     while (i < text.Length && !char.IsWhiteSpace(text[i]) && text[i] is not ('"' or '{' or '}'))
                         i++;
-                    tokens.Add(new Token(text[startToken..i], false));
+                    tokens.Add(new Token(text[startToken..i].Replace(QuotedMark.ToString(), "", StringComparison.Ordinal), false));
                 }
 
                 if (continued || tokens.Count == 0)

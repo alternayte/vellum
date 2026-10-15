@@ -182,6 +182,52 @@ public class ModelFileExtractorTests
     }
 
     [Fact]
+    public void A_DSL_file_of_control_marks_or_backslashes_stays_within_its_work_bound()
+    {
+        // A long run of U+0001 in a quoted name and in a bare word.
+        var marks = new string('\u0001', 120_000);
+        var (quoted, _) = Repo.ExtractBounded("a.dsl", $"workspace {{\nmodel {{\nperson \"{marks}\"\nperson {marks}\n}}\n}}\n");
+        Assert.DoesNotContain(quoted.Facts, f => f.Name.Contains('\u0001'));
+
+        // A long line of backslashes, each one a token.
+        var (slashes, _) = Repo.ExtractBounded("b.dsl", "workspace {\nmodel {\n" + string.Concat(Enumerable.Repeat("\\ ", 110_000)) + "\n}\n}\n");
+        Assert.True(slashes.Facts.Count == 0);
+    }
+
+    [Fact]
+    public void Text_that_the_model_refuses_is_left_out_of_a_model_file_fact_with_a_note()
+    {
+        var longTag = new string('t', 150);
+        var dsl = $$"""
+            workspace {
+                model {
+                    s = softwareSystem "Shop" {
+                        api = container "Orders API" "Takes orders" "{{new string('g', 300)}}" "web,{{longTag}},bad{{'\u0007'}}tag"
+                    }
+                    ghost = person "{{new string('n', 230)}}"
+                }
+            }
+            """;
+        var result = Repo.Extract(("workspace.dsl", dsl));
+        var api = result.Fact(Element("Shop", "Orders API"));
+        Assert.Null(api.Attr("technology"));
+        Assert.Equal("web", api.Attr("tags"));
+        Assert.DoesNotContain(result.Facts, f => f.Name.StartsWith("nnn", StringComparison.Ordinal));
+        Assert.Contains(result.Notes, n => n.Reason == "model-file:value-dropped:technology");
+        Assert.Contains(result.Notes, n => n.Reason == "model-file:value-dropped:tag");
+        Assert.Contains(result.Notes, n => n.Reason == "model-file:value-dropped:name");
+
+        var catalog = Repo.Extract(("catalog-info.yaml", $"""
+            apiVersion: backstage.io/v1alpha1
+            kind: System
+            metadata:
+              name: shop
+              tags: [ok, {longTag}]
+            """));
+        Assert.Equal("ok", catalog.Fact("system:default/shop").Attr("tags"));
+    }
+
+    [Fact]
     public void Model_file_facts_are_declared_and_code_facts_stay_observed()
     {
         var result = Repo.Extract(

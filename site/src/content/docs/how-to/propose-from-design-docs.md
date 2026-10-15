@@ -34,7 +34,11 @@ An accepted item is an `inferred` fact. Its source pointer is the citation, `<so
 
 ## Propose a flow
 
-A flow proposal can read a document too. Send `documentSourceId` and `documentPath` with the request to `POST /api/projects/{projectId}/ai/flow-proposals`. The flow cites the lines it comes from. See [Design with the assistant](/how-to/design-with-the-assistant/).
+1. In the dialog, under **Propose**, select **A flow**.
+2. Optional: in **Which flow**, name the flow.
+3. Select **Propose from document**.
+
+The flow cites the lines it comes from; an answer that cites no lines of the document is not stored. A thing the flow needs that the model does not hold is created only when you ask for it, as an `inferred` fact that cites those lines. See [Design with the assistant](/how-to/design-with-the-assistant/). Through the API, send `documentSourceId` and `documentPath` with the request to `POST /api/projects/{projectId}/ai/flow-proposals`.
 
 ## The document is data
 
