@@ -373,6 +373,39 @@ public sealed partial class GitHubConnection
         return new GitHubWorkflowJobs(jobs, jobs.Count < total);
     }
 
+    /// <summary>
+    /// One page of the repositories of an organization, or of a user when no organization has
+    /// that name, for bulk add. A page holds up to <see cref="RepositoriesPerPage"/>; a full page
+    /// says that more may follow.
+    /// </summary>
+    public async Task<GitHubResult<(IReadOnlyList<GitHubRepository> Repositories, bool HasMore)>> ListRepositoriesAsync(
+        string owner, int page, CancellationToken ct = default)
+    {
+        if (!IsName(owner) || page is < 1 or > MaxRepositoryPages)
+            return new GitHubFailure.NotFound();
+
+        async Task<GitHubResult<(IReadOnlyList<GitHubRepository>, bool)>> ReadAsync(HttpResponseMessage response)
+        {
+            if (await OutboundBody.ReadJsonAsync<List<RepositoryDto?>>(response, ct) is not { } listed)
+                return Unexpected;
+            var repositories = listed
+                .Where(r => r is not null && !r.Archived && Clean(r.FullName, MaxNameChars) is not null && Clean(r.DefaultBranch, MaxRefChars) is not null)
+                .Select(r => new GitHubRepository(Clean(r!.FullName, MaxNameChars)!, Clean(r.DefaultBranch, MaxRefChars)!, r.Private, r.Archived, r.Id > 0 ? r.Id : null))
+                .ToList();
+            return (repositories, listed.Count >= RepositoriesPerPage);
+        }
+
+        var organization = await SendAsync("list-org-repositories",
+            call => _api.ListOrganizationRepositories(owner, RepositoriesPerPage, page, call, ct), ReadAsync, ct, TreeMaxBytes);
+        if (organization.Failure is not GitHubFailure.NotFound)
+            return organization;
+        return await SendAsync("list-user-repositories",
+            call => _api.ListUserRepositories(owner, RepositoriesPerPage, page, call, ct), ReadAsync, ct, TreeMaxBytes);
+    }
+
+    public const int RepositoriesPerPage = 100;
+    private const int MaxRepositoryPages = 100;
+
     /// <summary>The path of a workflow file without the <c>@ref</c> that some answers append to it.</summary>
     private static string? WorkflowPath(string? path) =>
         path is null ? null : path.IndexOf('@', StringComparison.Ordinal) is > 0 and var at ? path[..at] : path;

@@ -1,0 +1,19 @@
+{
+  "id": "5febef5a-833d-4e14-b9c0-14cb638f91e6",
+  "name": "Orders-Api",
+  "url": "https://dev.azure.com/acme/c36ea1a5-1b52-46be-9d7e-1a1f0e4b8f62/_apis/git/repositories/5febef5a-833d-4e14-b9c0-14cb638f91e6",
+  "project": {
+    "id": "c36ea1a5-1b52-46be-9d7e-1a1f0e4b8f62",
+    "name": "Orders Platform",
+    "state": "wellFormed",
+    "revision": 411,
+    "visibility": "private",
+    "lastUpdateTime": "2025-11-02T08:00:00.000Z"
+  },
+  "defaultBranch": "refs/heads/main",
+  "size": 48213,
+  "remoteUrl": "https://acme@dev.azure.com/acme/Orders%20Platform/_git/Orders-Api",
+  "webUrl": "https://dev.azure.com/acme/Orders%20Platform/_git/Orders-Api",
+  "isDisabled": false,
+  "isInMaintenance": false
+}

@@ -18,6 +18,7 @@ public static class ImportModule
         services.TryAddSingleton(TimeProvider.System);
         services.AddSingleton<ScanSignal>();
         services.AddSingleton<ScanWorker>();
+        services.AddSingleton<SourcesRoot>();
         services.AddScoped<IProjectRetention, ImportProjectRetention>();
         Vellum.Shared.Outbound.OutboundServices.AddOutboundClient<Runtime.INewRelicApi>(services);
         services.AddScoped<Runtime.NewRelicReader>();
@@ -35,6 +36,7 @@ public static class ImportModule
                 PollInterval = TimeSpan.FromSeconds(Math.Clamp(section.GetValue("PollSeconds", defaults.PollInterval.TotalSeconds), 0.05, 3600)),
                 LeaseDuration = TimeSpan.FromSeconds(Math.Clamp(section.GetValue("LeaseSeconds", defaults.LeaseDuration.TotalSeconds), 5, 3600)),
                 Parallelism = Math.Clamp(section.GetValue("Parallelism", defaults.Parallelism), 1, 32),
+                MaxRunningPerHost = Math.Clamp(section.GetValue("MaxRunningPerHost", defaults.MaxRunningPerHost), 1, 64),
                 RetentionInterval = TimeSpan.FromSeconds(Math.Clamp(section.GetValue("RetentionSeconds", defaults.Retention.TotalSeconds), 1, 86400)),
             };
         });
@@ -120,6 +122,38 @@ public static class ImportModule
             .Produces<SourceDto>()
             .Produces<ErrorResponse>(StatusCodes.Status400BadRequest)
             .Produces<ErrorResponse>(StatusCodes.Status404NotFound);
+
+        sources.MapDelete("/{sourceId}", SourceRequests.Delete).RequireHuman()
+            .Produces(StatusCodes.Status204NoContent)
+            .Produces<ErrorResponse>(StatusCodes.Status404NotFound);
+
+        // The body is the archive itself (any content type), streamed to a temporary file. The
+        // workspace's import.maxArchiveBytes bounds it further inside the handler. No Accepts
+        // metadata: it would make routing answer 415 for other content types before the checks.
+        sources.MapPost("/{sourceId}/archive", ArchiveUpload.Handle).RequireHuman()
+            .WithBodyLimit(ArchiveUpload.MaxBodyBytes)
+            .Produces<StartScanResponse>(StatusCodes.Status202Accepted)
+            .Produces<ErrorResponse>(StatusCodes.Status400BadRequest)
+            .Produces<ErrorResponse>(StatusCodes.Status404NotFound)
+            .Produces<ErrorResponse>(StatusCodes.Status409Conflict)
+            .Produces<ErrorResponse>(StatusCodes.Status413PayloadTooLarge)
+            .Produces<ErrorResponse>(StatusCodes.Status429TooManyRequests)
+            .Produces<ErrorResponse>(StatusCodes.Status503ServiceUnavailable);
+
+        sources.MapGet("/kinds", SourceRequests.Kinds)
+            .Produces<SourceKindsDto>();
+
+        sources.MapGet("/repositories", BulkAdd.Repositories)
+            .Produces<RepositoryListDto>()
+            .Produces<ErrorResponse>(StatusCodes.Status400BadRequest)
+            .Produces<ErrorResponse>(StatusCodes.Status404NotFound)
+            .Produces<ErrorResponse>(StatusCodes.Status409Conflict)
+            .Produces<ErrorResponse>(StatusCodes.Status429TooManyRequests)
+            .Produces<ErrorResponse>(StatusCodes.Status502BadGateway);
+
+        sources.MapPost("/bulk", BulkAdd.Handle).RequireHuman()
+            .Produces<BulkAddResponse>()
+            .Produces<ErrorResponse>(StatusCodes.Status400BadRequest);
 
         sources.MapPost("/{sourceId}/scans", SourceRequests.StartScan)
             .Produces<StartScanResponse>(StatusCodes.Status202Accepted)

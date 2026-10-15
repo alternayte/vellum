@@ -22,10 +22,22 @@ public sealed class SettingsValidator(OutboundUrlPolicy urls, Bootstrap bootstra
         if (document.Github.DefaultRef.Length > 255 || document.Github.DefaultRef.Any(c => char.IsWhiteSpace(c) || char.IsControl(c)))
             errors.Add(new("github.defaultRef", "Must be a branch, tag or commit name of at most 255 characters with no spaces."));
 
+        foreach (var (field, host) in new[]
+                 {
+                     (WorkspaceSettings.GitlabField, document.Gitlab), (WorkspaceSettings.BitbucketField, document.Bitbucket),
+                     (WorkspaceSettings.AzureDevopsField, document.AzureDevops),
+                 })
+        {
+            // Empty turns the host off; a Source of it then cannot scan.
+            if (host.ApiBaseUrl.Length > 0)
+                await RequireUrlAsync(field, host.ApiBaseUrl, policy, errors, ct);
+        }
+
         var import = document.Import;
         Range("import.maxFiles", import.MaxFiles, 1, 100_000, errors);
         Range("import.maxFileBytes", import.MaxFileBytes, 1, 16L * 1024 * 1024, errors);
         Range("import.maxTotalBytes", import.MaxTotalBytes, 1, 1024L * 1024 * 1024, errors);
+        Range("import.maxArchiveBytes", import.MaxArchiveBytes, ImportSettings.MinArchiveBytes, ImportSettings.MaxArchiveBytesLimit, errors);
         if (import.MaxTotalBytes < import.MaxFileBytes)
             errors.Add(new("import.maxTotalBytes", "Must be at least import.maxFileBytes."));
         if (import.ExcludeGlobs.Count > MaxExcludeGlobs)

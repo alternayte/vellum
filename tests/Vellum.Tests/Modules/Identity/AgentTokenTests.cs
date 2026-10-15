@@ -294,6 +294,7 @@ public class AgentTokenTests(IntegrationFixture fixture) : IClassFixture<Integra
     [InlineData("POST", "/api/projects/{projectId}/ai/flow-proposals/{id}/accept")]
     [InlineData("POST", "/api/projects/{projectId}/ai/architecture-proposals/{id}/decide")]
     [InlineData("POST", "/api/workspaces/{workspaceId}/agent-tokens")]
+    [InlineData("POST", "/api/workspaces/{workspaceId}/git-hosts/gitlab/test")]
     public async Task A_human_only_endpoint_refuses_an_agent_token(string method, string route)
     {
         var (factory, owner, workspaceId, projectId) = await StartAsync();
@@ -601,6 +602,11 @@ public class AgentTokenTests(IntegrationFixture fixture) : IClassFixture<Integra
         "DELETE /api/workspaces/{workspaceId}/agent-tokens/{tokenId}",
         "POST /api/projects/{projectId}/imports/{importId}/proposals/decide",
         "POST /api/projects/{projectId}/sources/{sourceId}/accept",
+        "DELETE /api/projects/{projectId}/sources/{sourceId}",
+        "POST /api/projects/{projectId}/sources/{sourceId}/archive",
+        "POST /api/projects/{projectId}/sources/bulk",
+        // A test call sends the workspace's git host token.
+        "POST /api/workspaces/{workspaceId}/git-hosts/{host}/test",
         // A runtime Source: a trace upload, and a New Relic key, which is a credential.
         "POST /api/projects/{projectId}/sources/{sourceId}/traces",
         "PUT /api/projects/{projectId}/sources/{sourceId}/newrelic/key",
@@ -805,7 +811,7 @@ public class AgentTokenTests(IntegrationFixture fixture) : IClassFixture<Integra
             if (method == "HEAD")
                 continue;
             var refusal = (await response.Content.ReadFromJsonAsync<JsonObject>())!["type"]!.GetValue<string>();
-            Assert.Equal(ForAPerson.Contains(name) ? AgentBoundary.HumanOnlyError : AgentBoundary.AgentNotAllowedError, refusal);
+            Assert.True((ForAPerson.Contains(name) ? AgentBoundary.HumanOnlyError : AgentBoundary.AgentNotAllowedError) == refusal, $"{name}: {refusal}");
         }
 
         // A token that lacks the scope of an endpoint: 403 there, before the endpoint runs.

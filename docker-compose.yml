@@ -48,8 +48,12 @@ services:
       # (`just up-gh`). Workspaces that the instance admin owns use it to read api.github.com
       # when they have no token of their own. It is not stored.
       GH_TOKEN: ${GH_TOKEN:-}
+      # The one folder a directory Source may read. VELLUM_SOURCES on this machine (default
+      # ./sources next to this file) is mounted here read-only; a Source names a folder under it.
+      Vellum__SourcesRoot: /sources
     volumes:
       - vellum-data:/data
+      - ${VELLUM_SOURCES:-./sources}:/sources:ro
     # The app writes to /data and to a temporary directory in memory, and to nothing else:
     # the image is read-only, the process is not root and it has no Linux capability.
     read_only: true

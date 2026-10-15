@@ -58,6 +58,16 @@ internal interface IGitHubApi
         [AliasAs("per_page")] int perPage, int page,
         [Property(OutboundCall.PropertyName)] OutboundCall call, CancellationToken ct);
 
+    /// <summary>One page of the repositories of an organization, newest push first.</summary>
+    [Get("/orgs/{org}/repos?type=all&sort=pushed")]
+    Task<HttpResponseMessage> ListOrganizationRepositories(string org, [AliasAs("per_page")] int perPage, int page,
+        [Property(OutboundCall.PropertyName)] OutboundCall call, CancellationToken ct);
+
+    /// <summary>One page of the public repositories of a user, for an owner that is no organization.</summary>
+    [Get("/users/{user}/repos?type=owner&sort=pushed")]
+    Task<HttpResponseMessage> ListUserRepositories(string user, [AliasAs("per_page")] int perPage, int page,
+        [Property(OutboundCall.PropertyName)] OutboundCall call, CancellationToken ct);
+
     [Get("/rate_limit")]
     Task<HttpResponseMessage> GetRateLimit([Property(OutboundCall.PropertyName)] OutboundCall call, CancellationToken ct);
 

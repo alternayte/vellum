@@ -162,10 +162,14 @@ public static partial class ScanRequests
 
     /// <summary>Checks the options, takes one unit of the day's scans and queues a scan of <paramref name="source"/>.</summary>
     /// <param name="prepare">Adds what the scan starts with (a runtime upload's document) in the same transaction as the scan row.</param>
+    /// <param name="fill">
+    /// Writes what the scan starts with after its row is saved (an archive upload's file rows and
+    /// blobs) in the same transaction: the scan is queued with all of it or not at all.
+    /// </param>
     internal static async Task<IResult> QueueAsync(
         Guid projectId, SourceEntity source, ScanOptions request, ClaimsPrincipal user, WorkspaceSettings workspace,
         AppDbContext db, ScanSignal signal, DateTimeOffset now, CancellationToken ct,
-        Func<ScanEntity, CancellationToken, Task>? prepare = null)
+        Func<ScanEntity, CancellationToken, Task>? prepare = null, Func<ScanEntity, CancellationToken, Task>? fill = null)
     {
         var userId = user.UserId();
         var reference = string.IsNullOrWhiteSpace(request.Ref) ? null : request.Ref;
@@ -211,8 +215,10 @@ public static partial class ScanRequests
         catch (Exception ex) when (IsUniqueViolation(ex))
         {
             return Results.Conflict(new ErrorResponse("scan_in_progress",
-                "A scan of this repository is already queued or running for this project. Wait for it, or cancel it."));
+                "A scan of this Source is already queued or running for this project. Wait for it, or cancel it."));
         }
+        if (fill is not null)
+            await fill(scan, ct);
         await transaction.CommitAsync(ct);
 
         signal.Notify();

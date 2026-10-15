@@ -38,7 +38,7 @@ export interface SettingsDocument {
     taskRouting: Record<'inferArchitecture' | 'proposeFlow' | 'critique' | 'explain', string | null>
   }
   github: { apiBaseUrl: string; defaultRef: string }
-  import: { maxFiles: number; maxFileBytes: number; maxTotalBytes: number; excludeGlobs: string[] }
+  import: { maxFiles: number; maxFileBytes: number; maxTotalBytes: number; excludeGlobs: string[]; maxArchiveBytes: number }
   cost: { provider: string; region: string; currency: string; azureRetailPricesBaseUrl: string; stalePriceAfterDays: number }
   simulation: { seed: number; durationSeconds: number; arrivalRatePerSecond: number; warmUpSeconds: number }
   privacy: { sendPrivateCodeToAi: boolean }
@@ -46,6 +46,10 @@ export interface SettingsDocument {
   notifications: { webhookUrl: string | null }
   /** Who may open a share link, and which sites may frame an embedded view. */
   sharing: { linkPolicy: 'off' | 'password-only' | 'public'; embedHosts: string[] }
+  /** The REST API of a git host other than GitHub. Empty turns the host off. */
+  gitlab: { apiBaseUrl: string }
+  bitbucket: { apiBaseUrl: string }
+  azureDevops: { apiBaseUrl: string }
 }
 
 export type SettingsSection = keyof SettingsDocument
@@ -127,6 +131,13 @@ export interface GitHubTestResult {
   error: ConnectionTestError | null
 }
 
+/** The test of a GitLab, Bitbucket or Azure DevOps connection. */
+export interface GitHostTestResult {
+  ok: boolean
+  authenticatedAs: string | null
+  error: ConnectionTestError | null
+}
+
 export interface AiUsageTotal {
   providerId: string
   providerKind: ProviderKind
@@ -197,19 +208,21 @@ export async function api<T>(method: string, url: string, body?: unknown, option
   })
   const text = await response.text()
   const data = text ? safeParse(text) : null
-  if (!response.ok) {
-    // The shared error envelope: { type, title, detail, errors: [{ field, message }] }.
-    const payload = (data ?? {}) as { title?: string; detail?: string | null; errors?: FieldError[] | null }
-    throw new ApiError(
-      response.status,
-      payload.title
-        // A title is a heading with no full stop; joined to the detail it ends the sentence.
-        ? (payload.detail ? `${/[.!?]$/.test(payload.title) ? payload.title : `${payload.title}.`} ${payload.detail}` : payload.title)
-        : response.status === 403 ? 'You do not have permission to do this.' : 'The request did not complete.',
-      Array.isArray(payload.errors) ? payload.errors : [],
-    )
-  }
+  if (!response.ok) throw apiError(response.status, data)
   return data as T
+}
+
+/** The refusal a response body describes, in the shared error envelope: { type, title, detail, errors: [{ field, message }] }. */
+export function apiError(status: number, data: unknown): ApiError {
+  const payload = (data ?? {}) as { title?: string; detail?: string | null; errors?: FieldError[] | null }
+  return new ApiError(
+    status,
+    payload.title
+      // A title is a heading with no full stop; joined to the detail it ends the sentence.
+      ? (payload.detail ? `${/[.!?]$/.test(payload.title) ? payload.title : `${payload.title}.`} ${payload.detail}` : payload.title)
+      : status === 403 ? 'You do not have permission to do this.' : 'The request did not complete.',
+    Array.isArray(payload.errors) ? payload.errors : [],
+  )
 }
 
 function safeParse(text: string): unknown {

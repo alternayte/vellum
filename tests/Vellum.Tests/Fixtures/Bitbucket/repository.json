@@ -1,0 +1,13 @@
+{
+  "type": "repository",
+  "full_name": "acme/orders",
+  "name": "Orders",
+  "slug": "orders",
+  "uuid": "{3f1c0c1e-5f4e-4a8e-9a49-2f7a3c1d2b10}",
+  "is_private": true,
+  "scm": "git",
+  "mainbranch": { "type": "branch", "name": "main" },
+  "language": "c#",
+  "created_on": "2024-03-01T09:00:00.000000+00:00",
+  "links": { "html": { "href": "https://bitbucket.org/acme/orders" } }
+}

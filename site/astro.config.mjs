@@ -64,6 +64,10 @@ export default defineConfig({
               items: [
                 'how-to/connect-github',
                 'how-to/import-a-repository',
+                'how-to/connect-a-git-host',
+                'how-to/import-a-local-folder',
+                'how-to/upload-an-archive',
+                'how-to/add-many-repositories',
                 'how-to/push-evidence-from-ci-or-a-laptop',
                 'how-to/import-runtime-edges-from-a-trace-export',
                 'how-to/connect-new-relic',

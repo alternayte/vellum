@@ -25,7 +25,7 @@ using Vellum.Shared;
 namespace Vellum.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20261015022708_Initial")]
+    [Migration("20261015023346_Initial")]
     partial class Initial
     {
         /// <inheritdoc />

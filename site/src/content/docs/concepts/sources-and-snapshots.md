@@ -9,13 +9,28 @@ This page explains the three words of an import: Source, Snapshot and source bin
 
 A project has Sources. A Source is one place that Vellum reads evidence from, such as one GitHub repository. A Source has a kind, a name and its connection details.
 
-The kinds are `github`, `gitlab`, `bitbucket`, `azure-devops`, `directory`, `archive`, `agent-push`, `model-file`, `traces` and `newrelic`. This version of Vellum reads `github`, `traces` and `newrelic`, and takes `agent-push`. It refuses to create a Source of another kind with the code `source_kind_unavailable`.
+The kinds are `github`, `gitlab`, `bitbucket`, `azure-devops`, `directory`, `archive`, `agent-push`, `model-file`, `traces` and `newrelic`. This version of Vellum reads `github`, `gitlab`, `bitbucket`, `azure-devops`, `directory`, `archive`, `traces` and `newrelic`, and takes `agent-push`. It refuses to create a Source of another kind with the code `source_kind_unavailable`.
 
 A `traces` Source and a `newrelic` Source are runtime Sources. Their Snapshot has one file: a document that Vellum derives, with one line for each service and each edge. Their Snapshot ID is the SHA-256 of those sorted lines, and a citation names the line. See [Runtime sources](/reference/runtime-sources/).
 
 An `agent-push` Source holds what `vellum scan` pushed from a machine that has the code: a manifest, facts and citations, and no file content. Its first push creates it. Vellum cannot scan it again, because Vellum does not hold its files. See [Push evidence from CI or a laptop](/how-to/push-evidence-from-ci-or-a-laptop/).
 
-The first scan of a repository creates its Source. A project has one Source for each repository. The import screen lists the Sources under **Sources**.
+| Kind | What Vellum reads | Revision | Profile |
+|---|---|---|---|
+| `github` | One repository at one commit, through the GitHub REST API. See [Import a repository](/how-to/import-a-repository/). | The commit SHA | Both |
+| `gitlab`, `bitbucket`, `azure-devops` | One repository at one commit, through the REST API of the host. See [Connect GitLab, Bitbucket or Azure DevOps](/how-to/connect-a-git-host/). | The commit SHA | Both |
+| `directory` | One folder under the sources root of the instance, as it is at the time of the scan. See [Import a local folder](/how-to/import-a-local-folder/). | The Snapshot ID | Local only |
+| `archive` | One uploaded `.zip` or `.tar.gz` file. See [Upload an archive](/how-to/upload-an-archive/). | The Snapshot ID | Both |
+
+`GET /api/projects/{projectId}/sources/kinds` lists the kinds that a new Source of the project can have, with the reason when a kind cannot be used now. A git host has no usable API base URL, or the instance is hosted, or it has no sources root.
+
+The first scan of a GitHub repository creates its Source. **Add Source** and **Add many repositories** under **Sources** create a Source of any kind. A project has one Source for each place: one repository, one folder or one archive name. The import screen lists the Sources under **Sources**.
+
+### Delete a Source
+
+Select **Delete** on the Source, then **Delete Source**. `DELETE /api/projects/{projectId}/sources/{sourceId}` does the same. You need the editor role, signed in as a person. Vellum deletes the scans, the Snapshots, the proposals and the fact links of the Source, and each stored file that no other Snapshot uses. A scan of the Source that runs stops.
+
+The model keeps what people accepted. A deleted Source takes no element and no fact out of the model.
 
 Each Source keeps its own facts. When you accept a proposal of a Source, Vellum records which Source the fact came from. A scan of one Source never changes the facts of another Source.
 
@@ -27,7 +42,16 @@ A Snapshot is a manifest. The manifest lists each file that the scan read, with 
 
 The Snapshot ID is the SHA-256 of the manifest. Vellum sorts the entries by the UTF-8 bytes of their paths and writes each entry as path, NUL, size, NUL, SHA and a line feed. The same files give the same Snapshot ID, from any scan and from any kind of Source.
 
-A git Source also records the commit SHA of each Snapshot.
+So one tree gives one Snapshot ID when Vellum reads it as a git commit, as an archive and as a folder:
+
+- A folder scan does not list a `.git` folder.
+- A folder scan does not follow a symbolic link. It reads the link as git stores it: a file whose content is the text of its target.
+- An archive scan removes one top folder when every file is in it. For example, `orders-main/src/Program.cs` becomes `src/Program.cs`. Vellum removes one folder only. If every file of the tree is in one folder, such as `src/`, and the archive has no top folder, Vellum removes `src/` and the ID differs. Pack the files in one top folder to prevent this.
+- A git scan, a folder scan and an archive scan apply the same [limits and exclusions](/how-to/import-a-repository/#limits). A scan with other limits can read other files and give another ID.
+
+An archive cannot hold a symbolic link. Vellum refuses such an archive. So a tree with a link gives the same ID as a git commit only when you read it as a folder.
+
+A git Source also records the commit SHA of each Snapshot. A folder that has a `.git` folder also shows the commit SHA that its `HEAD` names. Vellum reads that SHA as text and does not check it against the files. It is information only. The Snapshot ID is the identity of a folder scan.
 
 ## A citation names the Source and the revision
 
@@ -42,6 +66,15 @@ For a Source that is not git, the revision is the Snapshot ID:
 ```text
 agent-push/orders-api@def2307d05b4ab8e76e7ce3788825385a4e1ec1bf6464524612f5ce232f3fc7e:orders-api/Program.cs:40-50
 ```
+
+| Kind | Citation |
+|---|---|
+| `github` | `github.com/<owner>/<name>@<commit>:path:start-end` |
+| `gitlab` | `gitlab.com/<group>/<name>@<commit>:path:start-end`, or the host of a self-managed instance |
+| `bitbucket` | `bitbucket.org/<workspace>/<repository>@<commit>:path:start-end` |
+| `azure-devops` | `dev.azure.com/<organization>/<project>/<repository>@<commit>:path:start-end` |
+| `directory` | `directory/<path>@<snapshot-id>:path:start-end`. `<path>` is the folder under the sources root. |
+| `archive` | `archive/<name>@<snapshot-id>:path:start-end`. `<name>` is the name of the Source in lower case, with a dash in place of each other character. |
 
 ## Staleness compares two Snapshots of one Source
 
@@ -79,5 +112,9 @@ When a scan of one Source no longer finds an entity that another Source still ho
 ## See also
 
 - [Import a repository](/how-to/import-a-repository/)
+- [Connect GitLab, Bitbucket or Azure DevOps](/how-to/connect-a-git-host/)
+- [Import a local folder](/how-to/import-a-local-folder/)
+- [Upload an archive](/how-to/upload-an-archive/)
+- [Add many repositories](/how-to/add-many-repositories/)
 - [Evidence and truth labels](/concepts/evidence-and-truth-labels/)
 - [Extraction rules](/reference/extraction-rules/)

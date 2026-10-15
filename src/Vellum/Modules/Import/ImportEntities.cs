@@ -108,7 +108,10 @@ public class ScanEntity
     /// scan made before refs were recorded that asked for no ref.
     /// </summary>
     public string? ResolvedRef { get; set; }
-    /// <summary>Set once, when the ref is resolved. Every later read of the scan uses it.</summary>
+    /// <summary>
+    /// Set once, when the ref is resolved. Every later read of the scan uses it. For a Source
+    /// without commits (a directory, an archive) it is the Snapshot ID, which a citation names.
+    /// </summary>
     public string? CommitSha { get; set; }
     /// <summary>The number of the pull request the caller asked for. Such a scan reads the head commit of the pull request and names no ref.</summary>
     public int? PullRequestNumber { get; set; }
@@ -182,7 +185,11 @@ public class ScanEntity
     /// stored, so nothing that needs the text of a file (the source view) can serve it.
     /// </summary>
     public bool ContentNotHeld { get; set; }
-    /// <summary>For a push: the commit that <c>.git/HEAD</c> named on the machine that pushed. Recorded as reported, not verified.</summary>
+    /// <summary>
+    /// For a push: the commit that <c>.git/HEAD</c> named on the machine that pushed. For a
+    /// <c>directory</c> Source: the commit the folder's <c>.git/HEAD</c> names, read as text by the
+    /// server. Recorded as reported, not verified against the files.
+    /// </summary>
     public string? ReportedCommitSha { get; set; }
 
     /// <summary>True when the caller asked for a commit SHA and no ref: such a scan follows no line of history.</summary>
