@@ -37,6 +37,9 @@ public class AgentPushTests(ImportHost import) : IClassFixture<ImportHost>
         files["orders-api/Program.cs"] = [.. files["orders-api/Program.cs"], .. Utf8($"\n// {Marker}-comment\n")];
         files["README.md"] = Utf8($"# Orders\n\n{Marker}-readme\n");
         files["orders-api/.env"] = Utf8($"DB_PASSWORD={Marker}-env\n");
+        // A file the extraction reads in part (more list items than a fact keeps): skipped, and still cited by its facts.
+        files["ops/docker-compose.yml"] = Utf8("services:\n  audit:\n    image: acme/audit:1.0\n    environment:\n"
+            + string.Concat(Enumerable.Range(0, 210).Select(i => $"      - FEATURE_{i}=on\n")));
         files["deploy/k8s/db-credentials.yaml"] = Utf8($"apiVersion: v1\nkind: Secret\nmetadata:\n  name: db\nstringData:\n  password: {Marker}-k8s\n");
         files["orders-api/appsettings.Production.json"] = Utf8("{\n" + string.Join(",\n", Enumerable.Range(0, 6).Select(i => $"  \"password{i}\": \"{Marker}-dense-{i}\"")) + "\n}\n");
         return files;
@@ -127,9 +130,13 @@ public class AgentPushTests(ImportHost import) : IClassFixture<ImportHost>
                 body.Select(p => p.Key).Order(StringComparer.Ordinal));
             Assert.All(body["files"]!.AsArray(), f => Assert.Equal(["blobSha", "path", "size"], f!.AsObject().Select(p => p.Key).Order(StringComparer.Ordinal)));
             // Files whose content is a secret are named with the reason and nothing else; one refused by its name is not named at all.
+            var skipped = body["skipped"]!.AsArray().Select(k => (Path: k!["path"]!.GetValue<string>(), Reason: k["reason"]!.GetValue<string>())).Order().ToList();
             Assert.Equal(
                 [("deploy/k8s/db-credentials.yaml", "secret-file"), ("orders-api/appsettings.Production.json", "credential-dense")],
-                body["skipped"]!.AsArray().Select(k => (k!["path"]!.GetValue<string>(), k["reason"]!.GetValue<string>())).Order());
+                skipped.Where(k => !k.Path.StartsWith("ops/", StringComparison.Ordinal)));
+            // The file read in part is skipped with a limit, and its facts still cite it: the push is taken.
+            Assert.StartsWith("limit:", Assert.Single(skipped, k => k.Path == "ops/docker-compose.yml").Reason);
+            Assert.Contains(body["facts"]!.AsArray(), f => f!["evidence"]!.AsArray().Any(e => e!["path"]!.GetValue<string>() == "ops/docker-compose.yml"));
 
             // The same files give the same Snapshot and the same facts as the server's scan of them.
             var pushed = run.Output[(run.Output.IndexOf("Snapshot ", StringComparison.Ordinal) + "Snapshot ".Length)..].Split(',')[0];
@@ -260,6 +267,8 @@ public class AgentPushTests(ImportHost import) : IClassFixture<ImportHost>
             Assert.Empty(decision["failed"]!.AsArray());
             var accepted = (await s.ElementsAsync()).Select(e => e.ToJsonString()).ToList();
             Assert.Contains(accepted, e => e.Contains("postgres", StringComparison.OrdinalIgnoreCase));
+            // Each accepted fact says in its provenance that Vellum holds no content of its evidence.
+            Assert.All(await s.ElementsAsync(), e => Assert.True(e["provenance"]!["contentNotHeld"]!.GetValue<bool>(), e.ToJsonString()));
 
             // The next push says the store is MySQL. The model keeps what a person accepted.
             File.WriteAllText(Path.Combine(root, "docker-compose.yml"),
@@ -275,6 +284,84 @@ public class AgentPushTests(ImportHost import) : IClassFixture<ImportHost>
         finally
         {
             Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task A_directory_the_walk_cannot_list_makes_the_push_partial_and_marks_nothing_stale()
+    {
+        if (OperatingSystem.IsWindows())
+            return;
+        var s = await ImportScenario.CreateAsync(import, fixture: null);
+        var root = Write(FixtureGitHub.Load("orders"));
+        var billing = Path.Combine(root, "billing");
+        try
+        {
+            var agent = await TestHost.CreateAgentAsync(import.Host.Factory, s.Owner, s.WorkspaceId, ["push"]);
+            Assert.Equal(0, (await RunCliAsync(s, agent.Token, root)).ExitCode);
+            var first = Assert.Single(await s.AllAsync(s.Url()));
+            Assert.Empty((await s.DecideAsync(first.Id(), accept: (await s.ProposalsAsync(first.Id())).Select(p => p.Id())))["failed"]!.AsArray());
+            var accepted = (await s.ElementsAsync()).Select(e => e.ToJsonString()).ToList();
+            Assert.Contains(accepted, e => e.Contains("Billing", StringComparison.Ordinal));
+
+            File.SetUnixFileMode(billing, UnixFileMode.None);
+            if (Directory.Exists(billing) && TryList(billing))
+                return; // The tests run as a user that reads any directory (root): there is nothing to refuse.
+
+            var run = await RunCliAsync(s, agent.Token, root);
+            Assert.True(run.ExitCode == 0, run.Error);
+            Assert.Contains("'billing' could not be listed", run.Error, StringComparison.Ordinal);
+            var second = (await s.AllAsync(s.Url())).Single(scan => scan.Id() != first.Id());
+            Assert.False(second["isComplete"]!.GetValue<bool>());
+            // The facts of billing were not looked for, so none is stale and the model is as accepted.
+            Assert.Equal(accepted, (await s.ElementsAsync()).Select(e => e.ToJsonString()).ToList());
+        }
+        finally
+        {
+            File.SetUnixFileMode(billing, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    private static bool TryList(string directory)
+    {
+        try
+        {
+            _ = Directory.GetFileSystemEntries(directory);
+            return true;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
+    [Fact]
+    public async Task A_FIFO_in_the_directory_is_skipped_as_unreadable_and_does_not_block_the_scan()
+    {
+        if (OperatingSystem.IsWindows())
+            return;
+        var s = await ImportScenario.CreateAsync(import, fixture: null);
+        var files = new SortedDictionary<string, byte[]>(FixtureGitHub.Load("orders"), StringComparer.Ordinal);
+        files.Remove("openapi.yaml");
+        var root = Write(files);
+        var payload = Path.Combine(root, "..", $"{Path.GetFileName(root)}.json");
+        try
+        {
+            using (var mkfifo = System.Diagnostics.Process.Start("mkfifo", Path.Combine(root, "openapi.yaml")))
+                await mkfifo.WaitForExitAsync();
+            var scan = RunCliAsync(s, "", root, "--dry-run", "--payload", payload);
+            Assert.Same(scan, await Task.WhenAny(scan, Task.Delay(TimeSpan.FromSeconds(60))));
+            var run = await scan;
+            Assert.True(run.ExitCode == 0, run.Error);
+            var body = JsonNode.Parse(File.ReadAllText(payload))!.AsArray()[0]!;
+            Assert.Contains(body["skipped"]!.AsArray(), k => k!["path"]!.GetValue<string>() == "openapi.yaml" && k["reason"]!.GetValue<string>() == "read-failure");
+            Assert.False(body["isComplete"]!.GetValue<bool>());
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+            File.Delete(payload);
         }
     }
 }

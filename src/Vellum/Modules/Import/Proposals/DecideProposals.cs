@@ -262,7 +262,7 @@ public static class DecideProposals
         }
 
         var repository = $"{scan.Host}/{scan.Repository}";
-        var applier = new ProposalApplier(model, schemas, scan.ProjectId, repository, scan.CommitSha!, Guid.Parse(userId), now, scan.SourceId);
+        var applier = new ProposalApplier(model, schemas, scan.ProjectId, repository, scan.CommitSha!, Guid.Parse(userId), now, scan.SourceId, scan.ContentNotHeld);
         foreach (var proposal in InDependencyOrder(accepted).Where(p => !UnlinksOnly(p)))
         {
             if (applier.Apply(proposal) is { } reason)

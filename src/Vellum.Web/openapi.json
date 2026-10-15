@@ -27122,6 +27122,10 @@
               "string"
             ],
             "format": "uuid"
+          },
+          "contentNotHeld": {
+            "type": "boolean",
+            "default": false
           }
         }
       },

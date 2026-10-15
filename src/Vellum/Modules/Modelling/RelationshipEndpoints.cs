@@ -56,7 +56,7 @@ public static class GetRelationship
             entity.Label, entity.Technology, entity.MessageId, entity.LineShape,
             EnumText.Of(entity.Kind), entity.FactStatus.ToApiString(),
             ProvenanceMapper.ToDto(entity.ProvenanceSource, entity.ProvenanceRevision,
-                entity.ProvenanceConfidence, entity.ProvenanceAcceptedBy, entity.ProvenanceAcceptedAt, entity.ProvenanceAcceptedAtVersion, entity.ProvenanceAcceptedOnBranch),
+                entity.ProvenanceConfidence, entity.ProvenanceAcceptedBy, entity.ProvenanceAcceptedAt, entity.ProvenanceAcceptedAtVersion, entity.ProvenanceAcceptedOnBranch, entity.ProvenanceContentNotHeld),
             StaleDto.From(entity.StaleSinceRevision, entity.StaleReason)));
     }
 }
@@ -105,6 +105,7 @@ public static class ListRelationships
                 r.ProvenanceAcceptedAt,
                 r.ProvenanceAcceptedAtVersion,
                 r.ProvenanceAcceptedOnBranch,
+                r.ProvenanceContentNotHeld,
                 r.StaleSinceRevision,
                 r.StaleReason,
             })
@@ -121,7 +122,7 @@ public static class ListRelationships
         var items = rows.Select(r => new RelationshipDto(
             r.Id, r.FromId, r.ToId, r.Label, r.Technology, r.MessageId, r.LineShape, EnumText.Of(r.Kind), r.FactStatus.ToApiString(),
             ProvenanceMapper.ToDto(r.ProvenanceSource, r.ProvenanceRevision, r.ProvenanceConfidence,
-                r.ProvenanceAcceptedBy, r.ProvenanceAcceptedAt, r.ProvenanceAcceptedAtVersion, r.ProvenanceAcceptedOnBranch),
+                r.ProvenanceAcceptedBy, r.ProvenanceAcceptedAt, r.ProvenanceAcceptedAtVersion, r.ProvenanceAcceptedOnBranch, r.ProvenanceContentNotHeld),
             StaleDto.From(r.StaleSinceRevision, r.StaleReason))).ToList();
 
         return Results.Ok(new Page<RelationshipDto>(items, nextCursor));

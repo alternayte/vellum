@@ -18,7 +18,8 @@ namespace Vellum.Modules.Import.Proposals;
 /// </summary>
 internal sealed class ProposalApplier(
     ModelState state, Dictionary<Guid, (SchemaState State, long Version)> schemas,
-    Guid projectId, string repository, string commitSha, Guid acceptedBy, DateTimeOffset acceptedAt, Guid sourceId)
+    Guid projectId, string repository, string commitSha, Guid acceptedBy, DateTimeOffset acceptedAt, Guid sourceId,
+    bool contentNotHeld = false)
 {
     public const string ChangedSinceScan =
         "The model changed after this scan completed, so the proposal no longer describes it. Scan the repository again.";
@@ -324,7 +325,7 @@ internal sealed class ProposalApplier(
         var first = ProposalJson.ReadEvidence(proposal.Evidence).FirstOrDefault();
         return first is null
             ? null
-            : new Provenance(EvidenceLinks.Pointer(repository, commitSha, first), commitSha, null, acceptedBy, acceptedAt);
+            : new Provenance(EvidenceLinks.Pointer(repository, commitSha, first), commitSha, null, acceptedBy, acceptedAt, ContentNotHeld: contentNotHeld);
     }
 
     public static string Describe(Decision decision) => decision switch

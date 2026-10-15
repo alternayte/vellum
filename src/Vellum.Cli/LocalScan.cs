@@ -12,7 +12,12 @@ namespace Vellum.Cli;
 /// <para>
 /// The walk follows no symbolic link and does not enter a directory that the path filter
 /// refuses (dependencies, build output, <c>.git</c>, secret stores). It reads only the files
-/// that the scope selects, and each at most to the file limit.
+/// that the scope selects, each at most to the file limit, and only a regular file that is
+/// still the file it checked (<see cref="FileIdentity"/>).
+/// </para>
+/// <para>
+/// A directory it cannot list makes the push partial with the extraction gap <c>failed</c>:
+/// the server then judges no fact absent, because the walk did not look everywhere.
 /// </para>
 /// </summary>
 internal static partial class LocalScan
@@ -20,16 +25,21 @@ internal static partial class LocalScan
     [GeneratedRegex("^(?:[0-9a-f]{40}|[0-9a-f]{64})$")]
     private static partial Regex Sha();
 
+    /// <param name="warn">Told of each directory the walk could not list.</param>
     public static AgentPushRequest Run(
-        string root, string name, ScanLimits limits, IReadOnlyList<string> includePaths, IReadOnlyList<string> excludePaths)
+        string root, string name, ScanLimits limits, IReadOnlyList<string> includePaths, IReadOnlyList<string> excludePaths,
+        Action<string>? warn = null)
     {
         var listing = new List<ListingEntry>();
-        List(new DirectoryInfo(root), "", listing);
+        var unlisted = new List<string>();
+        List(new DirectoryInfo(root), "", listing, unlisted);
+        foreach (var directory in unlisted)
+            warn?.Invoke($"the directory '{(directory.Length == 0 ? "." : directory)}' could not be listed. The push is partial, and no fact is judged absent.");
         var selection = ScanScope.Select(listing, limits, includePaths, excludePaths);
 
         var read = new List<(string Path, byte[] Content)>();
         var skipped = new List<AgentPushSkip>();
-        var partial = selection.Partial;
+        var partial = selection.Partial || unlisted.Count > 0;
         foreach (var file in selection.Files)
         {
             if (file.Reason is not null)
@@ -40,7 +50,7 @@ internal static partial class LocalScan
                 continue;
             }
 
-            var (content, failure) = ReadBounded(Path.Combine(root, file.Entry.Path), limits.MaxFileBytes);
+            var (content, failure) = ReadBounded(root, file.Entry.Path, limits.MaxFileBytes);
             if (content is null)
             {
                 // The file grew past the limit, or could not be read, after it was listed.
@@ -74,13 +84,28 @@ internal static partial class LocalScan
             name, GitHead.CommitSha(root),
             [.. EvidenceExtractor.Rules.Select(r => new AgentPushRule(r.Id, r.Version))],
             new AgentPushScope(limits.MaxFiles, limits.MaxFileBytes, limits.MaxTotalBytes, limits.ExcludeGlobs, includePaths, excludePaths),
-            files, skipped, facts, !partial && extraction.Result.IsComplete, extraction.ExtractionGap, listing.Count);
+            files, skipped, facts, !partial && extraction.Result.IsComplete,
+            unlisted.Count > 0 ? CoverageGap.Failed : extraction.ExtractionGap, listing.Count);
     }
 
-    /// <summary>Every regular file under <paramref name="directory"/>, as a path relative to the root with '/' separators.</summary>
-    private static void List(DirectoryInfo directory, string prefix, List<ListingEntry> listing)
+    /// <summary>
+    /// Every file under <paramref name="directory"/>, as a path relative to the root with '/'
+    /// separators. A directory that cannot be listed goes to <paramref name="unlisted"/>; nothing
+    /// is skipped quietly.
+    /// </summary>
+    private static void List(DirectoryInfo directory, string prefix, List<ListingEntry> listing, List<string> unlisted)
     {
-        foreach (var entry in directory.EnumerateFileSystemInfos("*", new EnumerationOptions { AttributesToSkip = 0, IgnoreInaccessible = true }).OrderBy(e => e.Name, StringComparer.Ordinal))
+        List<FileSystemInfo> entries;
+        try
+        {
+            entries = [.. directory.EnumerateFileSystemInfos("*", new EnumerationOptions { AttributesToSkip = 0, IgnoreInaccessible = false })];
+        }
+        catch (Exception ex) when (ex is UnauthorizedAccessException or IOException)
+        {
+            unlisted.Add(prefix.TrimEnd('/'));
+            return;
+        }
+        foreach (var entry in entries.OrderBy(e => e.Name, StringComparer.Ordinal))
         {
             // A link can point out of the directory. It is never followed.
             if (entry.LinkTarget is not null || entry.Attributes.HasFlag(FileAttributes.ReparsePoint))
@@ -91,7 +116,7 @@ internal static partial class LocalScan
                 // A directory that the path filter refuses for every file in it is not entered.
                 if (PathFilter.SkipReason(path + "/x", out var notePath) is "excluded-directory" or "secret-file" && notePath == path + "/")
                     continue;
-                List(child, path + "/", listing);
+                List(child, path + "/", listing, unlisted);
             }
             else if (entry is FileInfo file)
             {
@@ -100,12 +125,23 @@ internal static partial class LocalScan
         }
     }
 
-    /// <summary>The bytes of the file, or why not: it holds more than <paramref name="maxBytes"/>, or it cannot be read.</summary>
-    private static (byte[]? Content, string? Failure) ReadBounded(string path, long maxBytes)
+    /// <summary>
+    /// The bytes of the file, or why not: it holds more than <paramref name="maxBytes"/>, it is
+    /// not a regular file (a FIFO or a device would block or never end), it changed into another
+    /// file or a link between the walk and the read, or it cannot be read.
+    /// </summary>
+    private static (byte[]? Content, string? Failure) ReadBounded(string root, string relative, long maxBytes)
     {
+        const string failed = "read-failure";
+        var path = Path.Combine(root, relative);
         try
         {
+            if (FileIdentity.Of(path) is not { IsRegular: true } before)
+                return (null, failed);
             using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, 4096, FileOptions.SequentialScan);
+            // The file that is open must be the regular file that was checked, reached through no link.
+            if (!FileIdentity.Same(before, stream.SafeFileHandle) || LinkOnTheWay(root, relative))
+                return (null, failed);
             using var buffer = new MemoryStream();
             var chunk = new byte[81920];
             int count;
@@ -119,8 +155,22 @@ internal static partial class LocalScan
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            return (null, "read-failure");
+            return (null, failed);
         }
+    }
+
+    /// <summary>True when a directory between the root and the file, or the file, is a link now.</summary>
+    private static bool LinkOnTheWay(string root, string relative)
+    {
+        var current = root;
+        foreach (var part in relative.Split('/'))
+        {
+            current = Path.Combine(current, part);
+            FileSystemInfo info = Directory.Exists(current) ? new DirectoryInfo(current) : new FileInfo(current);
+            if (info.LinkTarget is not null || info.Attributes.HasFlag(FileAttributes.ReparsePoint))
+                return true;
+        }
+        return false;
     }
 
     /// <summary>

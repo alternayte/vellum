@@ -281,7 +281,8 @@ public static partial class AgentPush
                 return Invalid("skipped", $"'{Shown(path)}' is named twice.");
         }
 
-        // The facts: bounded, of known kinds, citing files of the manifest with the rules of this build.
+        // The facts: bounded, of known kinds, citing files of the push with the rules of this build.
+        var partlyRead = skipped.Select(s => s.Path).ToHashSet(StringComparer.Ordinal);
         if (facts.Count > ExtractionLimits.Default.MaxFacts)
             return Invalid("facts", $"At most {ExtractionLimits.Default.MaxFacts} facts.");
         var rules = RuleSet.Current.Select(r => (r.Rule, r.Version)).ToHashSet();
@@ -305,8 +306,9 @@ public static partial class AgentPush
             {
                 if (citation?.Path is not { } path || citation.Rule is not { } rule)
                     return Invalid("facts", "Each citation has a path, lines and a rule.");
-                if (!manifest.Contains(path))
-                    return Invalid("facts", $"A citation names '{Shown(path)}', which is not in the manifest.");
+                // A file the extraction read in part is skipped with its reason, and the facts it gave still cite it.
+                if (!manifest.Contains(path) && !partlyRead.Contains(path))
+                    return Invalid("facts", $"A citation names '{Shown(path)}', which is neither in the manifest nor skipped.");
                 if (citation.StartLine < 1 || citation.EndLine < citation.StartLine || citation.EndLine > 10_000_000)
                     return Invalid("facts", "A citation names lines from 1, and its last line is not before its first.");
                 if (!rules.Contains((rule, citation.RuleVersion)))

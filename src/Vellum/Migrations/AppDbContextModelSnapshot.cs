@@ -2445,6 +2445,10 @@ namespace Vellum.Migrations
                         .HasColumnType("double precision")
                         .HasColumnName("provenance_confidence");
 
+                    b.Property<bool>("ProvenanceContentNotHeld")
+                        .HasColumnType("boolean")
+                        .HasColumnName("provenance_content_not_held");
+
                     b.Property<string>("ProvenanceRevision")
                         .HasColumnType("text")
                         .HasColumnName("provenance_revision");
@@ -2548,6 +2552,10 @@ namespace Vellum.Migrations
                         .HasColumnType("double precision")
                         .HasColumnName("provenance_confidence");
 
+                    b.Property<bool>("ProvenanceContentNotHeld")
+                        .HasColumnType("boolean")
+                        .HasColumnName("provenance_content_not_held");
+
                     b.Property<string>("ProvenanceRevision")
                         .HasColumnType("text")
                         .HasColumnName("provenance_revision");
@@ -2648,6 +2656,10 @@ namespace Vellum.Migrations
                     b.Property<double?>("ProvenanceConfidence")
                         .HasColumnType("double precision")
                         .HasColumnName("provenance_confidence");
+
+                    b.Property<bool>("ProvenanceContentNotHeld")
+                        .HasColumnType("boolean")
+                        .HasColumnName("provenance_content_not_held");
 
                     b.Property<string>("ProvenanceRevision")
                         .HasColumnType("text")

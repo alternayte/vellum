@@ -62,7 +62,7 @@ public static class GetElement
             entity.Technology, entity.OwnerId, EnumText.Of(entity.Status),
             entity.ParentId, entity.Tags, entity.Icon, entity.FactStatus.ToApiString(),
             ProvenanceMapper.ToDto(entity.ProvenanceSource, entity.ProvenanceRevision,
-                entity.ProvenanceConfidence, entity.ProvenanceAcceptedBy, entity.ProvenanceAcceptedAt, entity.ProvenanceAcceptedAtVersion, entity.ProvenanceAcceptedOnBranch),
+                entity.ProvenanceConfidence, entity.ProvenanceAcceptedBy, entity.ProvenanceAcceptedAt, entity.ProvenanceAcceptedAtVersion, entity.ProvenanceAcceptedOnBranch, entity.ProvenanceContentNotHeld),
             StaleDto.From(entity.StaleSinceRevision, entity.StaleReason)));
     }
 }
@@ -126,6 +126,7 @@ public static class ListElements
                 e.ProvenanceAcceptedAt,
                 e.ProvenanceAcceptedAtVersion,
                 e.ProvenanceAcceptedOnBranch,
+                e.ProvenanceContentNotHeld,
                 e.StaleSinceRevision,
                 e.StaleReason,
             })
@@ -143,7 +144,7 @@ public static class ListElements
             e.Id, EnumText.Of(e.Kind), e.Name, e.Description, e.Technology, e.OwnerId, EnumText.Of(e.Status),
             e.ParentId, e.Tags, e.Icon, e.FactStatus.ToApiString(),
             ProvenanceMapper.ToDto(e.ProvenanceSource, e.ProvenanceRevision, e.ProvenanceConfidence,
-                e.ProvenanceAcceptedBy, e.ProvenanceAcceptedAt, e.ProvenanceAcceptedAtVersion, e.ProvenanceAcceptedOnBranch),
+                e.ProvenanceAcceptedBy, e.ProvenanceAcceptedAt, e.ProvenanceAcceptedAtVersion, e.ProvenanceAcceptedOnBranch, e.ProvenanceContentNotHeld),
             StaleDto.From(e.StaleSinceRevision, e.StaleReason))).ToList();
 
         return Results.Ok(new Page<ElementDto>(items, nextCursor));

@@ -139,7 +139,7 @@ public static class Program
                 AgentPushRequest request;
                 try
                 {
-                    request = LocalScan.Run(directory, name, limits, options.Include, options.Exclude);
+                    request = LocalScan.Run(directory, name, limits, options.Include, options.Exclude, warning => error.WriteLine($"{name}: {warning}"));
                 }
                 catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
                 {

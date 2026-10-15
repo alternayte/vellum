@@ -16,6 +16,8 @@
     <!-- The extractors read text the same way under every culture; no ICU is needed on the machine. -->
     <InvariantGlobalization>true</InvariantGlobalization>
     <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <!-- FileIdentity calls the runtime's own stat functions. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>

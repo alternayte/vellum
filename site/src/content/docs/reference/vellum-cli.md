@@ -45,7 +45,10 @@ A limit flag can only make the limit of the workspace smaller.
 
 - Each regular file under the directory. The CLI does not follow a symbolic link, and it does not enter `node_modules`, `vendor`, `bin`, `obj`, `dist`, `.git` or a directory of secrets such as `.ssh`.
 - The same path filter, scope, limits and content clearance as a server scan. See [Extraction rules](/reference/extraction-rules/).
+- Regular files only. A FIFO, a device or a socket is skipped as `read-failure`. A file that changed into another file or a link between the walk and the read is skipped the same way.
 - `.git/HEAD` as text, in the directory or the nearest directory above it, for the commit. No git program runs.
+
+A directory that the CLI cannot list (no permission) makes the push partial. The CLI names it on stderr, and the server then marks no accepted fact stale from that push.
 
 The CLI does not read `.gitignore`. The git blob SHA is computed from the bytes on disk. A checkout that converts line ends gives other SHAs than the git host.
 

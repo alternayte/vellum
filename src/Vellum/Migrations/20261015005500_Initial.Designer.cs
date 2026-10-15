@@ -25,7 +25,7 @@ using Vellum.Shared;
 namespace Vellum.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20261014215814_Initial")]
+    [Migration("20261015005500_Initial")]
     partial class Initial
     {
         /// <inheritdoc />
@@ -2448,6 +2448,10 @@ namespace Vellum.Migrations
                         .HasColumnType("double precision")
                         .HasColumnName("provenance_confidence");
 
+                    b.Property<bool>("ProvenanceContentNotHeld")
+                        .HasColumnType("boolean")
+                        .HasColumnName("provenance_content_not_held");
+
                     b.Property<string>("ProvenanceRevision")
                         .HasColumnType("text")
                         .HasColumnName("provenance_revision");
@@ -2551,6 +2555,10 @@ namespace Vellum.Migrations
                         .HasColumnType("double precision")
                         .HasColumnName("provenance_confidence");
 
+                    b.Property<bool>("ProvenanceContentNotHeld")
+                        .HasColumnType("boolean")
+                        .HasColumnName("provenance_content_not_held");
+
                     b.Property<string>("ProvenanceRevision")
                         .HasColumnType("text")
                         .HasColumnName("provenance_revision");
@@ -2651,6 +2659,10 @@ namespace Vellum.Migrations
                     b.Property<double?>("ProvenanceConfidence")
                         .HasColumnType("double precision")
                         .HasColumnName("provenance_confidence");
+
+                    b.Property<bool>("ProvenanceContentNotHeld")
+                        .HasColumnType("boolean")
+                        .HasColumnName("provenance_content_not_held");
 
                     b.Property<string>("ProvenanceRevision")
                         .HasColumnType("text")
