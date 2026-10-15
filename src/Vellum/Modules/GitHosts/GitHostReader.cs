@@ -1,3 +1,6 @@
+using Vellum.Modules.GitHosts.AzureDevOps;
+using Vellum.Modules.GitHosts.Bitbucket;
+using Vellum.Modules.GitHosts.GitLab;
 using Vellum.Modules.GitHub;
 using Vellum.Modules.Settings;
 using Vellum.Shared.Outbound;
@@ -65,8 +68,10 @@ public sealed class GitHostReader(IServiceProvider services, SettingsResolver se
         _ => new OutboundCredential("Authorization", "Basic", Convert.ToBase64String(System.Text.Encoding.ASCII.GetBytes(":" + token))),
     };
 
-    private GitHubResult<IGitHostConnection> Open(GitHostInfo host, GitHostContext context) => host.Kind switch
+    private GitHubResult<IGitHostConnection> Open(GitHostInfo host, GitHostContext context) => new(host.Kind switch
     {
-        _ => new GitHubFailure.Unavailable("unexpected_response"),
-    };
+        GitHostKind.Gitlab => (IGitHostConnection)new GitLabConnection(services.GetRequiredService<IGitLabApi>(), context),
+        GitHostKind.Bitbucket => new BitbucketConnection(services.GetRequiredService<IBitbucketApi>(), context),
+        _ => new AzureDevOpsConnection(services.GetRequiredService<IAzureDevOpsApi>(), context),
+    }, null);
 }

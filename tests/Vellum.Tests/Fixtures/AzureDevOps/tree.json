@@ -1,0 +1,11 @@
+{
+  "objectId": "dddddddddddddddddddddddddddddddddddddddd",
+  "url": "https://dev.azure.com/acme/c36ea1a5-1b52-46be-9d7e-1a1f0e4b8f62/_apis/git/repositories/5febef5a-833d-4e14-b9c0-14cb638f91e6/trees/dddddddddddddddddddddddddddddddddddddddd",
+  "treeEntries": [
+    { "objectId": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", "relativePath": "README.md", "mode": "100644", "gitObjectType": "blob", "size": 9 },
+    { "objectId": "cccccccccccccccccccccccccccccccccccccccc", "relativePath": "src", "mode": "40000", "gitObjectType": "tree", "size": 64 },
+    { "objectId": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", "relativePath": "src/Order Service.cs", "mode": "100644", "gitObjectType": "blob", "size": 120 },
+    { "objectId": "ffffffffffffffffffffffffffffffffffffffff", "relativePath": "vendor", "mode": "160000", "gitObjectType": "commit", "size": 0 }
+  ],
+  "size": 236
+}

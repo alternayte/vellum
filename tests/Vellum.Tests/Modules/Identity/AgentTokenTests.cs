@@ -294,6 +294,7 @@ public class AgentTokenTests(IntegrationFixture fixture) : IClassFixture<Integra
     [InlineData("POST", "/api/projects/{projectId}/ai/flow-proposals/{id}/accept")]
     [InlineData("POST", "/api/projects/{projectId}/ai/architecture-proposals/{id}/decide")]
     [InlineData("POST", "/api/workspaces/{workspaceId}/agent-tokens")]
+    [InlineData("POST", "/api/workspaces/{workspaceId}/git-hosts/gitlab/test")]
     public async Task A_human_only_endpoint_refuses_an_agent_token(string method, string route)
     {
         var (factory, owner, workspaceId, projectId) = await StartAsync();
@@ -604,6 +605,8 @@ public class AgentTokenTests(IntegrationFixture fixture) : IClassFixture<Integra
         "DELETE /api/projects/{projectId}/sources/{sourceId}",
         "POST /api/projects/{projectId}/sources/{sourceId}/archive",
         "POST /api/projects/{projectId}/sources/bulk",
+        // A test call sends the workspace's git host token.
+        "POST /api/workspaces/{workspaceId}/git-hosts/{host}/test",
         "POST /api/projects/{projectId}/ai/flow-proposals/",
         "POST /api/projects/{projectId}/ai/flow-proposals/{proposalId}/accept",
         "POST /api/projects/{projectId}/ai/flow-proposals/{proposalId}/missing/{alias}/create",

@@ -1,0 +1,32 @@
+{
+  "value": [
+    {
+      "id": "5febef5a-833d-4e14-b9c0-14cb638f91e6",
+      "name": "Orders-Api",
+      "project": { "id": "c36ea1a5-1b52-46be-9d7e-1a1f0e4b8f62", "name": "Orders Platform", "visibility": "private" },
+      "defaultBranch": "refs/heads/main",
+      "isDisabled": false
+    },
+    {
+      "id": "0b7e6f3a-4b2d-4c19-9e7a-6d3c2b1a0f98",
+      "name": "Archive",
+      "project": { "id": "c36ea1a5-1b52-46be-9d7e-1a1f0e4b8f62", "name": "Orders Platform", "visibility": "private" },
+      "defaultBranch": "refs/heads/main",
+      "isDisabled": true
+    },
+    {
+      "id": "7c1d2e3f-5a6b-4c7d-8e9f-0a1b2c3d4e5f",
+      "name": "Empty",
+      "project": { "id": "c36ea1a5-1b52-46be-9d7e-1a1f0e4b8f62", "name": "Orders Platform", "visibility": "private" },
+      "isDisabled": false
+    },
+    {
+      "id": "9e8d7c6b-5a49-4382-9170-6f5e4d3c2b1a",
+      "name": "billing",
+      "project": { "id": "c36ea1a5-1b52-46be-9d7e-1a1f0e4b8f62", "name": "Orders Platform", "visibility": "public" },
+      "defaultBranch": "refs/heads/trunk",
+      "isDisabled": false
+    }
+  ],
+  "count": 4
+}

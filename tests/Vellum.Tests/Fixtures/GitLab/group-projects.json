@@ -1,0 +1,5 @@
+[
+  { "id": 4021, "path_with_namespace": "Acme/platform/Orders", "default_branch": "main", "visibility": "private", "archived": false },
+  { "id": 4022, "path_with_namespace": "acme/platform/billing", "default_branch": "trunk", "visibility": "public", "archived": false },
+  { "id": 4023, "path_with_namespace": "acme/platform/empty", "default_branch": null, "visibility": "internal", "archived": false }
+]

@@ -1,0 +1,12 @@
+{
+  "pagelen": 10,
+  "size": 1,
+  "page": 1,
+  "values": [
+    {
+      "type": "branch",
+      "name": "release/1.2",
+      "target": { "type": "commit", "hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }
+    }
+  ]
+}

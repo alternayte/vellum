@@ -1,0 +1,21 @@
+{
+  "authenticatedUser": {
+    "id": "2f3e8a10-0f3b-4b0f-a9c1-9f5d0a7b6c11",
+    "descriptor": "Microsoft.IdentityModel.Claims.ClaimsIdentity;72f988bf-86f1-41af-91ab-2d7cd011db47\\bot@acme.test",
+    "subjectDescriptor": "aad.MmYzZThhMTAtMGYzYi03YjBmLWE5YzEtOWY1ZDBhN2I2YzEx",
+    "providerDisplayName": "Orders Bot",
+    "isActive": true,
+    "properties": { "Account": { "$type": "System.String", "$value": "bot@acme.test" } },
+    "resourceVersion": 2,
+    "metaTypeId": 0
+  },
+  "authorizedUser": {
+    "id": "2f3e8a10-0f3b-4b0f-a9c1-9f5d0a7b6c11",
+    "providerDisplayName": "Orders Bot",
+    "isActive": true
+  },
+  "instanceId": "8d299418-9467-402b-a171-9165e2ab6c1d",
+  "deploymentId": "2a0f2e0b-3c1d-4e5f-8a9b-0c1d2e3f4a5b",
+  "deploymentType": "hosted",
+  "locationServiceData": { "serviceOwner": "00025394-6065-48ca-87d9-7f5672854ef7", "defaultAccessMappingMoniker": "PublicAccessMapping", "lastChangeId": 1, "lastChangeId64": 1 }
+}
