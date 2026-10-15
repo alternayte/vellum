@@ -22,13 +22,15 @@ vellum scan ./services/orders --dry-run --payload push.json
 
 ## Get the CLI
 
-The CLI is one file with no other dependency. Build it from the repository of Vellum:
+The CLI is one file with no other dependency. Each [release](https://github.com/alternayte/vellum/releases) has a file for `linux-x64`, `linux-arm64`, `osx-arm64`, `osx-x64` and `win-x64`, and a `SHA256SUMS` file. For example, version 0.1.0 on a Linux runner:
 
 <!-- snippet: syntax -->
 ```sh
-just cli               # for this machine, to artifacts/cli/<rid>/vellum
-just cli linux-x64     # for a Linux runner
+curl -fsSL https://github.com/alternayte/vellum/releases/download/v0.1.0/vellum-0.1.0-linux-x64.tar.gz | tar -xz
+./vellum --version
 ```
+
+To build it from the source instead, run `just cli` (this machine) or `just cli linux-x64` in the repository. The file is written to `artifacts/cli/<rid>/vellum`.
 
 Use the CLI of the same version as your Vellum server. A CLI with other extraction rules is refused before it reads a file, with exit code `4`.
 
@@ -75,11 +77,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Get the vellum CLI
-        run: |
-          curl -fsSL -o vellum "$VELLUM_CLI_URL"
-          chmod +x vellum
+        run: curl -fsSL "https://github.com/alternayte/vellum/releases/download/v$VELLUM_VERSION/vellum-$VELLUM_VERSION-linux-x64.tar.gz" | tar -xz
         env:
-          VELLUM_CLI_URL: ${{ vars.VELLUM_CLI_URL }}
+          VELLUM_VERSION: ${{ vars.VELLUM_VERSION }}
       - name: Push the facts
         run: ./vellum scan . --name orders
         env:

@@ -162,7 +162,8 @@ public sealed class SharedOutboundHost : IAsyncLifetime
     public async Task InitializeAsync()
     {
         await Fixture.InitializeAsync();
-        Host = new(Fixture);
+        // Webhook links start with the public URL; a request's host name never goes into one.
+        Host = new(Fixture, new Dictionary<string, string?> { ["Vellum:PublicUrl"] = "https://vellum.example.com/" });
     }
 
     public async Task DisposeAsync()

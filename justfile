@@ -35,12 +35,7 @@ test-slow:
     DOCKER_CONFIG={{justfile_directory()}}/.docker-test dotnet test Vellum.slnx --filter "Category=Slow"
 
 # A new migration of the one DbContext. Every module's tables are in it, each in its own schema.
-# Before the first release only: replace all migrations with one regenerated Initial.
-# Every existing database must then be recreated (`docker compose down -v`, or drop it, then `just seed`).
-regenerate-initial:
-    rm -f src/Vellum/Migrations/*.cs
-    dotnet ef migrations add Initial --project src/Vellum --context AppDbContext --output-dir Migrations
-
+# A released migration never changes: checks/migrations-frozen.sh fails when one does.
 migration name:
     dotnet ef migrations add {{name}} --project src/Vellum --context AppDbContext --output-dir Migrations
 
@@ -93,9 +88,9 @@ docs:
 docs-build:
     cd site && npm ci && npm run build
 
-# Publishes the documentation site to the Cloudflare Pages project vellum-docs. Needs a wrangler login.
+# Publishes the documentation site to the Cloudflare Pages project vellum-arch-docs. Needs a wrangler login.
 docs-deploy:
-    cd site && npm ci && VELLUM_DOCS_SITE=https://vellum-docs-5fy.pages.dev npm run build && npx wrangler pages deploy dist --project-name vellum-docs --branch main
+    cd site && npm ci && VELLUM_DOCS_SITE=https://vellum-arch-docs.pages.dev npm run build && npx wrangler pages deploy dist --project-name vellum-arch-docs --branch main
 
 # The docs checks that need no running Vellum: API paths against openapi.json, and the snippets.
 docs-check:
@@ -111,6 +106,7 @@ check: check-backend check-web check-docs
 
 check-backend:
     checks/module-layout.sh
+    checks/migrations-frozen.sh
     dotnet build Vellum.slnx -warnaserror
     diff -u src/Vellum.Web/openapi.json src/Vellum/obj/Vellum.json
     dotnet format style Vellum.slnx --verify-no-changes --no-restore

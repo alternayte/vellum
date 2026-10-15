@@ -34,6 +34,9 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+        with:
+          # checks/migrations-frozen.sh compares with the last release tag.
+          fetch-depth: 0
 
       - uses: actions/setup-dotnet@v4
         with:
@@ -49,6 +52,9 @@ jobs:
       # Every module has one layout (checks/module-layout.sh says which files).
       - name: Module layout
         run: checks/module-layout.sh
+
+      - name: Released migrations are unchanged
+        run: checks/migrations-frozen.sh
 
       - name: Restore
         run: dotnet restore Vellum.slnx

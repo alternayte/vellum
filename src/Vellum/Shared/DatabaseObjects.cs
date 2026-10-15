@@ -6,8 +6,8 @@ namespace Vellum.Shared;
 /// <summary>
 /// The database objects that are not in the EF Core model: the Deedbox event-store tables in
 /// the schema <c>deedbox</c>, and the trigger that keeps <c>settings.audit_entries</c>
-/// append-only. They are applied after every migrate, so a regenerated <c>Initial</c>
-/// migration (<c>just migration</c>) never loses them. Every statement is idempotent; the
+/// append-only. They are applied after every migrate, so a new migration
+/// (<c>just migration</c>) never loses them. Every statement is idempotent; the
 /// Deedbox script records its version in <c>deedbox.schema_version</c>.
 /// </summary>
 public static class DatabaseObjects

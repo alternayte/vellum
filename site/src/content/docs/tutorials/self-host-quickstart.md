@@ -9,22 +9,22 @@ You need Docker with the Compose plugin.
 
 ## Start it
 
-Get the source and go to its directory:
+Make a directory and get the Compose file of the latest release:
 
-<!-- snippet: syntax -->
+<!-- snippet: live -->
 ```sh
-git clone https://github.com/alternayte/vellum
-cd vellum
+mkdir vellum && cd vellum
+curl -fsSLO https://github.com/alternayte/vellum/releases/latest/download/docker-compose.yml
 ```
 
-Build the image and start the app and the database:
+Start the app and the database:
 
 <!-- snippet: live -->
 ```sh
 docker compose up -d --wait
 ```
 
-The first start builds the image. `--wait` returns when both services are ready.
+The first start downloads the image `ghcr.io/alternayte/vellum`. `--wait` returns when both services are ready. To run one version, set `VELLUM_VERSION`, for example `VELLUM_VERSION=0.1.0`. With no value, Compose runs `latest`.
 
 Vellum listens on `http://localhost:8080`. To use other ports, set `VELLUM_PORT` and `VELLUM_POSTGRES_PORT` before the command.
 

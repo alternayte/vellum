@@ -194,7 +194,7 @@ An instance serves the document at `/openapi/v1.json` only when it runs in the `
 
 ## Limits
 
-- The API has no version in its path. Vellum has no tagged release yet, and an endpoint can change between commits.
+- The API has no version in its path. Before version 1.0, a minor release can change an endpoint. The release notes list each change.
 - The OpenAPI document has no description for an endpoint or a field. The how-to and reference pages of each feature give the meaning.
 - The paths `/health`, `/health/live`, `/health/ready`, `/mcp`, `/llms.txt`, `/llms-full.txt` and `/skills/vellum/SKILL.md` are not in the OpenAPI document. The path `/api/auth/external/callback` is not in it either: the sign-in with GitHub answers it, and only GitHub sends a browser there.
 - A caller with no valid credential gets 300 calls in one minute from one address to `/api`, `/mcp`, `/llms.txt`, `/llms-full.txt` and `/skills` together. After that the answer is `429`. A call with a valid session cookie or a valid agent token does not count.

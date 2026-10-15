@@ -27,8 +27,6 @@ import costs from '../../assets/screenshots/costs-flyout-estimate.png'
 
 Vellum is a web app with one database. `docker compose up -d` starts both. An AI provider is optional, and so is GitHub.
 
-**Status: work in progress, not released.** No version is tagged, and the data format can change. Do not put an instance on a public address yet.
-
 ## What it looks like
 
 <div class="tour">
@@ -85,9 +83,3 @@ Vellum is a web app with one database. `docker compose up -d` starts both. An AI
   <LinkCard title="Troubleshooting" description="Start-up refusals, sign-in problems, connection errors, stale results and refused requests." href="/troubleshooting/start-up-refusals/" />
   <LinkCard title="Runbooks" description="For the operator: back up and restore, upgrade, rotate the master key, recover from a lost key." href="/runbooks/backup-and-restore/" />
 </CardGrid>
-
-## What is limited now
-
-- Imports and AI calls were tested against local stand-in servers. No run against the GitHub API or a real AI provider is recorded.
-- The hosted profile exists in the code. It is not ready for use. See [Local and hosted profiles](/concepts/local-and-hosted-profiles/).
-- Some features have no screen yet and work through the HTTP API only: drafts, revisions, and the model export. Each how-to guide states this where it applies.

@@ -59,6 +59,7 @@ services:
     # The database is reached from the app only. No port is published.
 
   vellum:
+    image: ghcr.io/alternayte/vellum:${VELLUM_VERSION:-latest}
     build: .
     depends_on:
       postgres:
@@ -73,6 +74,8 @@ services:
       Vellum__PreviousMasterKey: ${VELLUM_PREVIOUS_MASTER_KEY:-}
       Vellum__SetupToken: ${VELLUM_SETUP_TOKEN:?Set VELLUM_SETUP_TOKEN to at least 16 random characters}
       AllowedHosts: ${VELLUM_HOSTS:?Set VELLUM_HOSTS to the public host names of this instance}
+      # The https address that people use to open Vellum. Links in webhook events start with it.
+      Vellum__PublicUrl: ${VELLUM_PUBLIC_URL:-}
       Vellum__TrustedProxies: ${VELLUM_TRUSTED_PROXIES:?Set VELLUM_TRUSTED_PROXIES to the addresses of your reverse proxies}
       ConnectionStrings__DefaultConnection: Host=postgres;Database=vellum;Username=vellum;Password=${VELLUM_POSTGRES_PASSWORD}
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}

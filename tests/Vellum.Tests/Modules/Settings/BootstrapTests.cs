@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Configuration;
 using Vellum.Modules.Settings;
 using Vellum.Modules.Settings.Crypto;
@@ -55,6 +56,43 @@ public class BootstrapTests : IDisposable
         var ex = Assert.Throws<BootstrapException>(() =>
             Load(Config(("Vellum:Profile", "hosted"), ("Vellum:MasterKey", NewKey()), ("AllowedHosts", allowedHosts))));
         Assert.Contains("AllowedHosts", ex.Message);
+    }
+
+    private static HttpRequest RequestTo(string host)
+    {
+        var context = new DefaultHttpContext();
+        context.Request.Scheme = "https";
+        context.Request.Host = new HostString(host);
+        return context.Request;
+    }
+
+    // The local profile accepts every host name, so a request to a spoofed host must not make
+    // the links that leave the instance (webhook events) point at that host.
+    [Fact]
+    public void Links_that_leave_the_instance_start_with_the_public_url_and_never_with_an_unchecked_host()
+    {
+        var local = Load(Config(("Vellum:DataDirectory", _directory)));
+        Assert.Null(local.LinkBase(RequestTo("attacker.example")));
+
+        var withUrl = Load(Config(("Vellum:DataDirectory", _directory), ("Vellum:PublicUrl", " https://vellum.example.com/arch/ ")));
+        Assert.Equal("https://vellum.example.com/arch", withUrl.LinkBase(RequestTo("attacker.example")));
+
+        // AllowedHosts limits the hosted profile to its public host names.
+        var hosted = Load(Config(("Vellum:Profile", "hosted"), ("Vellum:MasterKey", NewKey()), ("AllowedHosts", "vellum.example.com")));
+        Assert.Equal("https://vellum.example.com", hosted.LinkBase(RequestTo("vellum.example.com")));
+    }
+
+    [Theory]
+    [InlineData("vellum.example.com")]
+    [InlineData("ftp://vellum.example.com")]
+    [InlineData("https://vellum.example.com/?a=1")]
+    [InlineData("https://vellum.example.com/#top")]
+    [InlineData("https://user:pw@vellum.example.com")]
+    public void A_public_url_that_is_not_a_plain_http_address_refuses(string value)
+    {
+        var ex = Assert.Throws<BootstrapException>(() =>
+            Load(Config(("Vellum:DataDirectory", _directory), ("Vellum:PublicUrl", value))));
+        Assert.Contains("Vellum__PublicUrl", ex.Message);
     }
 
     [Fact]

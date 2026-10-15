@@ -3,7 +3,7 @@ title: vellum CLI
 description: The commands, flags, environment variables and exit codes of vellum scan.
 ---
 
-`vellum` is one self-contained file. `just cli` builds it. It runs the extractors of the Vellum server it was built with, on the machine where it runs, and pushes the result to a project. See [Push evidence from CI or a laptop](/how-to/push-evidence-from-ci-or-a-laptop/).
+`vellum` is one self-contained file. Each release has it for Linux, macOS and Windows, and `just cli` builds it from the source. It runs the extractors of the Vellum server it was built with, on the machine where it runs, and pushes the result to a project. See [Push evidence from CI or a laptop](/how-to/push-evidence-from-ci-or-a-laptop/).
 
 ## Commands
 

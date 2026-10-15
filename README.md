@@ -6,8 +6,7 @@ Vellum then gives a coding agent a specification to build from.
 
 ![The Vellum canvas with the model of an online shop. The actor Customer uses the system Storefront. Storefront places orders with the system Orders. Orders is expanded: a frame holds the apps Orders API and Order worker and the store Orders DB. Orders requests payment from Payments and sends paid orders to Fulfilment. Payments authorises cards with the external system Card network. Each card shows the kind, the technology and a description, and each line has a label.](site/src/assets/screenshots/canvas-online-shop.png)
 
-**Status: work in progress, not released.** No version is published. The data format can
-change. Do not put it on a public address yet.
+Documentation: https://vellum-arch-docs.pages.dev
 
 ## What it looks like
 
@@ -26,83 +25,64 @@ lines that give the label.
 
 ![The impact of pull request #1 on acme/orders. Each step of the flow Place an order has the label Definite or Possible and the source lines that give it.](site/src/assets/screenshots/impact-pull-request-steps.png)
 
-## TL;DR
+## What it does
 
-- One command starts the app and its database: `docker compose up -d`.
-- You can model a system, import a GitHub repository as proposals, trace a flow with
-  payloads and failures, declare promises, and export a specification for an agent.
-- Everything Vellum shows has a label: `declared`, `observed-in-source`, `inferred`,
-  `measured` or `unknown`. Nothing is called "verified" without evidence.
-- An AI provider is optional. Vellum works without one.
+- **Model.** Systems, apps, stores and actors on a canvas, with C4-style drill-down.
+  Operations, channels, messages and JSON schemas are part of the model, not drawings.
+- **Trace.** A scenario of calls, publishes and writes plays step by step with its
+  payloads and faults. A trace shows the declared design. It does not run your code.
+- **Import.** A Source is any origin of evidence: GitHub, GitLab, Bitbucket, Azure DevOps,
+  a local folder, a zip or tar.gz upload, a push from the `vellum scan` CLI, Structurizr,
+  Backstage, ADRs, an OpenTelemetry trace export or New Relic. Each import is a proposal
+  with file and line. A person accepts or rejects each change.
+- **Truth labels.** Each fact is `declared`, `observed-in-source`, `inferred`, `measured` or
+  `unknown`. Vellum never promotes an inference to a fact without a person.
+- **Promises.** A requirement with a stable ID such as `ORD-014`, approved by an owner,
+  with obligations that checks give evidence for. A result goes stale when its inputs change.
+- **Impact.** A scan of a branch or a pull request labels each changed fact, flow step and
+  promise `definite`, `possible` or `unknown`. CI can read a compact report.
+- **Review.** Fixed rules report concerns about resilience, contracts and truth labels.
+  Decisions (ADRs) settle findings.
+- **Drafts and variants.** Change the model in a draft, read the diff and merge it.
+  Compare variants and named revisions.
+- **Share and comment.** Read-only share links, live or pinned to a revision, and embeds.
+  Comment threads on elements, flows and promises. Export SVG, PNG, Mermaid and
+  Structurizr DSL.
+- **Build.** Export a standalone `SDD.md` and a bundle with OpenAPI, AsyncAPI, scenarios and
+  promises. The same model gives the same bytes.
+- **Agents.** A coding agent connects over MCP at `/mcp`. It reads the model, proposes
+  changes and exports the specification. An agent token cannot approve anything.
+- **Costs and stress.** Cost estimates from prices that you enter or fetch from the Azure,
+  AWS and Google Cloud price APIs. Load simulation of a scenario with a fixed seed.
+
+An AI provider is optional: OpenAI, Anthropic, Gemini or any OpenAI-compatible server.
+Every feature except the assistant works without one.
 
 ## Quick start
 
 You need Docker with the Compose plugin.
 
 ```sh
-git clone https://github.com/alternayte/vellum
-cd vellum
-docker compose up -d --build
-```
-
-The first build takes some minutes. The app listens on `http://localhost:8080`.
-
-Get the one-time setup code:
-
-```sh
+mkdir vellum && cd vellum
+curl -fsSLO https://github.com/alternayte/vellum/releases/latest/download/docker-compose.yml
+docker compose up -d --wait
 docker compose logs vellum | grep "VELLUM SETUP CODE"
 ```
 
-Then:
+Open `http://localhost:8080`. Give your name, an email, a password and the setup code, then
+create the first workspace.
 
-1. Open `http://localhost:8080`. Vellum shows the setup screen.
-2. Give your name, an email and a password. The password has 10 characters or more, with
-   a digit, an upper-case letter and a lower-case letter.
-3. Give the setup code and a name for the first workspace.
-4. Open the workspace and create a project.
+The Compose file publishes the ports on `127.0.0.1` only. To serve Vellum to other people,
+put it behind HTTPS first. See
+[Run in hosted mode](https://vellum-arch-docs.pages.dev/how-to/run-in-hosted-mode/) and
+[Upgrade](https://vellum-arch-docs.pages.dev/how-to/upgrade/).
 
-To read private GitHub repositories with your GitHub CLI login, start with
-`just up-gh` instead. It passes `gh auth token` to Vellum as `GH_TOKEN`. Vellum does not
-store it. See the docs page "Connect GitHub".
+## The `vellum scan` CLI
 
-To use other ports, set `VELLUM_PORT` and `VELLUM_POSTGRES_PORT` before the command.
-Compose publishes both ports on `127.0.0.1` only.
-
-To stop: `docker compose stop`. To delete all data and the encryption key:
-`docker compose down -v`.
-
-## What works now
-
-Each item below was run by hand against the current code: in a browser, or with an HTTP
-client for the agent interface.
-
-| Area | What you can do |
-|---|---|
-| Canvas | Add systems, apps, stores and actors. Connect them. Drill into a system: a frame shows the system around its children. Each card shows the kind, the technology and the description. Search. Tidy the layout. The detail panel has the tabs **Details** and **Connections**. |
-| Contracts | Declare operations, channels, subscriptions, bindings between channels, messages and JSON schemas. |
-| Trace | Write a scenario of calls, publishes and writes. Add faults. Play it step by step and read each payload. A trace shows the declared design. It does not run your code. |
-| Import | Scan a GitHub repository at one commit. Vellum reads .NET, Go, OpenAPI, AsyncAPI, Compose, Dockerfile and Kubernetes files, and proposes what it found with file and line. You accept or reject each proposal. |
-| Assistant | With an AI provider: ask for a flow or for model additions in words, review the proposal, then accept it. Additions get the label `inferred`. An undecided proposal stays until you decide or discard it, and the history keeps who decided and when. |
-| Promises | State a requirement with a stable ID such as `ORD-014`. An owner approves it. Checks give evidence for it, and a result goes stale when its inputs change. Each obligation keeps the history of its runs and who started each. |
-| Impact | Scan a branch or a pull request and compare it with the ref that the model follows. Vellum labels each changed fact, flow step and promise `definite`, `possible` or `unknown`, and shows the steps on the canvas. A CI job can read a compact report and an opt-in gate. Vellum writes nothing to GitHub. |
-| Drafts and variants | Change the model in a draft, read the diff and merge it into main. Keep a variant next to main, save named revisions and compare two models. |
-| Review | 18 fixed rules report concerns about resilience, contracts, truth labels and needless complexity. Record a decision (ADR) to settle a finding. |
-| Build | Export a standalone `SDD.md` and a bundle with OpenAPI, AsyncAPI, scenarios and promises. The same model gives the same bytes. Vellum can check a bundle against its source. |
-| Agents | Create an agent token. A coding agent connects over MCP at `/mcp` and reads the model, proposes draft promises and exports the specification. A token cannot approve anything. |
-| Costs | Enter prices one at a time or from a CSV file, or fetch them from the Azure, AWS and Google Cloud price APIs. Vellum ships no price table. A resource with no price shows as unknown, never as zero. A price that a project uses cannot be deleted. |
-| Stress | Simulate one scenario under load with a fixed seed. The result is an estimate and lists what the model leaves out. |
-| Settings | AI providers (OpenAI, Anthropic, Gemini, OpenAI-compatible), GitHub token, limits, encrypted secrets, key rotation, audit log. |
-
-## What is not done
-
-- Imports and AI calls were tested against local stand-in servers only. No run against the
-  real GitHub API or a real AI provider is recorded yet.
-- Generated k6 load tests and measured results were run against a local stand-in service
-  only, not against a deployed system.
-- The hosted, multi-tenant profile ran behind a local TLS proxy with a self-signed
-  certificate only. No run used a real reverse proxy. Use the local profile for real work.
-- No run sent telemetry to a real OpenTelemetry collector.
-- There is no licence file yet.
+`vellum scan` reads code on the machine that holds it and pushes the facts and their
+citations to Vellum. It sends no file content. Download the file for your platform from the
+[latest release](https://github.com/alternayte/vellum/releases/latest). See
+[Push evidence from CI or a laptop](https://vellum-arch-docs.pages.dev/how-to/push-evidence-from-ci-or-a-laptop/).
 
 ## Connect a coding agent
 
@@ -119,59 +99,36 @@ claude mcp add --transport http vellum http://localhost:8080/mcp \
 
 ## Develop
 
-You need the .NET 10 SDK, Node.js and Docker.
+You need the .NET 10 SDK, Node.js, Docker and `just`.
 
 ```sh
-docker compose up -d postgres        # the database only
-dotnet run --project src/Vellum      # the API
-cd src/Vellum.Web && npm install && npm run dev   # the web client, http://localhost:5173
+just up        # the database only
+just run       # the API
+just dev-web   # the web client, http://localhost:5173
 ```
 
-Run the tests. The backend tests start Postgres in Docker.
-
-```sh
-just test          # the backend tests without Category=Slow
-just test-slow     # the backend tests that take long by design
-cd src/Vellum.Web && npx vitest run   # the web client tests
-```
-
-CI (`.github/workflows/ci.yml`) runs on each push to `main` and on each pull request. The
-backend tests run in 6 shards at the same time, and the whole run takes about 3 minutes.
-The slow tests run each night, on a `v*` tag and on a manual start.
-
-`just check` is the gate before a commit: build, code style, lint, type checks, the docs
-build with its link check, and the docs snippet checks. It needs `just`, Node.js and Docker.
-
-The documentation is published at https://vellum-docs-5fy.pages.dev. Read it as a site on
-your machine:
-
-```sh
-just docs          # live reload at http://localhost:4321
-just docs-build    # writes site/dist and fails on a broken internal link
-```
-
-## Layout
+`just check` is the gate before a commit: build, code style, lint, type checks, the web
+tests and the docs checks. `just test` runs the backend tests, which start Postgres in
+Docker. `just docs` serves the documentation site at http://localhost:4321.
 
 | Path | Content |
 |---|---|
-| `src/Vellum` | The API. A modular monolith on .NET 10 with Postgres. One folder for each feature under `Modules/`. |
-| `src/Vellum.Web` | The web client. React 19 and React Flow. |
+| `src/Vellum` | The API. A modular monolith on .NET with Postgres. One folder for each feature under `Modules/`. |
+| `src/Vellum.Web` | The web client. React and React Flow. |
+| `src/Vellum.Cli` | The `vellum scan` CLI. |
 | `tests/Vellum.Tests` | Backend tests and fixture repositories. |
-| `site` | The documentation site (Starlight). The pages are in `site/src/content/docs`: tutorials, how-to guides, concepts, reference, troubleshooting and runbooks. |
-| `examples/orders` | A model of the Orders reference case that you can import, with two scenarios. |
-| `examples/github-standin` | A stand-in for the GitHub API that serves the fixture repositories, for an import with no GitHub account. |
+| `site` | The documentation site. |
+| `examples` | The Orders reference model and a stand-in for the GitHub API. |
 | `skills/vellum` | The skill that tells a coding agent how to use Vellum. |
 
-## Read more
+## Contributing
 
-- [Run Vellum on your machine](site/src/content/docs/tutorials/self-host-quickstart.md)
-- [Model your first system and trace a flow](site/src/content/docs/tutorials/first-model-and-trace.md)
-- [Import a repository and review the proposals](site/src/content/docs/tutorials/import-and-review.md)
-- [The promise loop: from a question to evidence](site/src/content/docs/tutorials/promise-loop.md)
-- [Back up and restore](site/src/content/docs/runbooks/backup-and-restore.md)
-- [Trace a scenario](site/src/content/docs/how-to/trace-a-scenario.md)
-- [Import a repository](site/src/content/docs/how-to/import-a-repository.md)
-- [Declare a promise](site/src/content/docs/how-to/declare-a-promise.md)
-- [Export for an agent](site/src/content/docs/how-to/export-for-an-agent.md)
-- [Connect a coding agent](site/src/content/docs/how-to/connect-a-coding-agent.md)
-- [What leaves your instance](site/src/content/docs/concepts/what-leaves-your-instance.md)
+Read [CONTRIBUTING.md](CONTRIBUTING.md). Each contributor signs the
+[Contributor License Agreement](CLA.md) once, on the first pull request. To report a
+vulnerability, follow [SECURITY.md](SECURITY.md).
+
+## Licence
+
+Vellum is free software under the [GNU Affero General Public License v3.0](LICENSE).
+`skills/vellum` and `examples` are under the [Apache License 2.0](skills/vellum/LICENSE), so
+that you can copy them into your own projects.

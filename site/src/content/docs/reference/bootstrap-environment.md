@@ -14,6 +14,7 @@ This page lists the values Vellum reads from the environment. You edit every oth
 | `Vellum__PreviousMasterKey`, `Vellum__PreviousMasterKeyFile` | none | The old key during a rotation. Vellum only reads with it. |
 | `Vellum__DataDirectory` | `./data` | Local profile only: where Vellum keeps the master key that it creates (`master.key`) and the setup code (`setup-code`). |
 | `Vellum__SourcesRoot` | none | Local profile only: the one folder that a `directory` Source can read. A Source names a folder under it. With no value, Vellum refuses a directory Source with `sources_root_not_configured`. The hosted profile ignores it. See [Import a local folder](/how-to/import-a-local-folder/). |
+| `Vellum__PublicUrl` | none | The address that people use to open Vellum, for example `https://vellum.example.com`. The link in a webhook event starts with it. With no value, the hosted profile uses the host name of the request, which `AllowedHosts` limits, and the local profile sends no link, because it accepts every host name. |
 | `Import__Worker__Parallelism` | `2` | The number of scans that one instance runs at the same time. 1 to 32. See [Scan worker](#scan-worker). |
 | `Import__Worker__MaxRunningPerHost` | `2` | The number of scans of one git host that run at the same time in one workspace, for all instances together. 1 to 64. See [Scan worker](#scan-worker). |
 | `Vellum__SetupToken` | none | The token that the first administrator types in the setup screen. At least 16 characters. Required in the hosted profile while no user exists. Optional in the local profile. |
@@ -36,6 +37,7 @@ The Compose file reads these values from your shell or from a `.env` file. Vellu
 |---|---|---|
 | `VELLUM_BIND` | `127.0.0.1` | The address on your machine that publishes the app port. Set `0.0.0.0` to accept connections from other machines. |
 | `VELLUM_PORT` | `8080` | The app port on your machine. |
+| `VELLUM_PUBLIC_URL` | `http://localhost:` and `VELLUM_PORT` | Passed to Vellum as `Vellum__PublicUrl`. Set it when people open Vellum at another address. |
 | `VELLUM_POSTGRES_BIND` | `127.0.0.1` | The address that publishes the database port. The Compose database has a well-known password. Change this value only on a network that you trust. |
 | `VELLUM_POSTGRES_PORT` | `5432` | The database port on your machine. |
 | `VELLUM_MASTER_KEY` | empty | Passed to Vellum as `Vellum__MasterKey`. Empty means that Vellum uses `master.key` on the data volume. |
@@ -101,6 +103,7 @@ In both profiles:
 - `Vellum__MasterKey` and `Vellum__MasterKeyFile` are both set, or the two previous-key values are both set.
 - A key file that a `…File` value names cannot be read.
 - `Vellum__SecureCookies` is not `true` or `false`.
+- `Vellum__PublicUrl` is set and is not an absolute `http` or `https` URL, or it has a query, a fragment or a user name.
 - `Vellum__SetupToken` is set and is shorter than 16 characters.
 - An entry of `Vellum__TrustedProxies` is no address and no CIDR range, or it is a range that holds every address, such as `0.0.0.0/0`.
 - `OTEL_EXPORTER_OTLP_ENDPOINT` is set and is not an absolute `http` or `https` URL.

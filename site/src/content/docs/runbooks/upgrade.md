@@ -5,12 +5,13 @@ description: Move a Compose deployment to a newer version of Vellum, check the r
 
 This runbook is for the operator of a Docker Compose deployment. Run every command in the directory of the Vellum source, which holds `docker-compose.yml`.
 
-Vellum has no tagged release yet. A version is a commit of the repository. The data format can change between commits until the first release.
+Vellum publishes each release as the image `ghcr.io/alternayte/vellum:<version>`, with release notes on [GitHub](https://github.com/alternayte/vellum/releases). The Compose file runs the version in `VELLUM_VERSION`. With no value, it runs `latest`, the newest release.
 
 ## What an upgrade does
 
-- You build a new image from newer source.
+- The new image replaces the container. The database container and both volumes stay.
 - When the new image starts, Vellum applies the database migrations of every module before it accepts requests. The value `Database__MigrateOnStartup` controls this. Its default is `true`.
+- A release adds migrations. It never changes a migration of an earlier release, so a database of any release upgrades to a later one.
 - Migrations add tables and columns. They do not remove data. Vellum has no migration that goes back to an older version.
 - When more than one instance starts at the same time, one instance applies the migrations and the others wait.
 
@@ -19,32 +20,28 @@ Because no migration goes back, the backup that you make before the upgrade is t
 ## Before the upgrade
 
 1. Make a backup: [Back up and restore](/runbooks/backup-and-restore/#back-up). Do not continue without the dump and the master key.
-2. Write down the commit that runs now.
-
-   <!-- snippet: syntax -->
-   ```sh
-   git rev-parse HEAD
-   ```
-
-3. Read the changes between that commit and the new one. Look for a new value in [Bootstrap environment](/reference/bootstrap-environment/) and for a note about the data format.
+2. Write down the version that runs now. `GET /api/instance` gives it as `version`.
+3. Read the release notes of each version between that version and the new one. Look for a new value in [Bootstrap environment](/reference/bootstrap-environment/).
 
 ## Upgrade
 
-1. Get the new source.
+1. Set the new version in the file `.env` next to `docker-compose.yml`, for example:
 
    <!-- snippet: syntax -->
    ```sh
-   git pull
+   VELLUM_VERSION=0.2.0
    ```
 
-2. Build the image and replace the container. `--wait` returns when the health check reports `healthy`. The database container and both volumes stay.
+2. Get the image and replace the container. `--wait` returns when the health check reports `healthy`.
 
    <!-- snippet: live -->
    ```sh
-   docker compose up -d --build --wait
+   docker compose pull vellum && docker compose up -d --wait
    ```
 
    People who use the app get errors while the container restarts. Their sessions stay valid.
+
+To run a build from source instead, check out the tag of the release (`git checkout v0.2.0`) and run `docker compose up -d --build --wait`.
 
 ## Check the result
 
@@ -76,14 +73,8 @@ A failed migration stops Vellum at start-up. The container exits, and the log en
    docker compose logs vellum > upgrade-failure.log
    ```
 
-2. Go back to the commit that you wrote down.
-
-   <!-- snippet: syntax -->
-   ```sh
-   git checkout <commit>
-   ```
-
-3. Restore the backup on empty volumes, with the old source: [Back up and restore](/runbooks/backup-and-restore/#restore). Do not start the old version on a database that the new version migrated.
+2. Set `VELLUM_VERSION` in `.env` back to the version that you wrote down.
+3. Restore the backup on empty volumes, with the old version: [Back up and restore](/runbooks/backup-and-restore/#restore). Do not start the old version on a database that the new version migrated.
 
 Changes that people made after the backup are lost in this case. For that reason, make the backup immediately before the upgrade.
 

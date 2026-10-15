@@ -68,7 +68,7 @@ public class CommentWebhookTests(SharedOutboundHost shared) : IClassFixture<Shar
             Assert.Equal(projectId, payload["projectId"]!.GetValue<Guid>());
             Assert.Equal("Payments", payload["target"]!["name"]!.GetValue<string>());
             Assert.Equal(elementId, payload["target"]!["id"]!.GetValue<Guid>());
-            Assert.EndsWith($"/projects/{projectId}?thread={thread.Id}", payload["link"]!.GetValue<string>());
+            Assert.Equal($"https://vellum.example.com/projects/{projectId}?thread={thread.Id}", payload["link"]!.GetValue<string>());
             Assert.DoesNotContain("zq-hook-4412", request.Body);
             Assert.DoesNotContain("pricing", request.Body);
         }

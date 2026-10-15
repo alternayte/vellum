@@ -19,7 +19,6 @@ It is a .NET 10 modular monolith in src/Vellum with a React 19 SPA in src/Vellum
 - The web client uses npm and Vite, not Bun.
 - The event store is Deedbox; do not replace it.
 - One EF Core AppDbContext holds every module's tables, each module in its own schema; add a migration with `just migration <name>`.
-- Before the first release, `just regenerate-initial` replaces all migrations with one Initial, and existing databases are recreated.
 - After an API change, run `just openapi` and commit `src/Vellum.Web/openapi.json`; the gate fails when it differs from the build output.
 
 ## Domain words

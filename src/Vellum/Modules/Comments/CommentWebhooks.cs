@@ -43,7 +43,8 @@ internal static class CommentWebhooks
 
     /// <summary>
     /// Adds one event when the workspace has a webhook URL that the instance policy allows.
-    /// The payload names the thread, the comment, the person, the target and a link. It holds
+    /// The payload names the thread, the comment, the person, the target and a link (null when
+    /// <see cref="Bootstrap.LinkBase"/> gives no trusted address). It holds
     /// no comment text and no source text.
     /// </summary>
     public static async Task EnqueueAsync(
@@ -59,7 +60,8 @@ internal static class CommentWebhooks
         var actor = eventName == Resolved ? thread.ResolvedBy! : comment!.Author;
         var names = await ThreadReads.NamesAsync(db, mentioned is null ? [actor] : [actor, .. mentioned], ct);
         var deliveryId = Guid.NewGuid();
-        var link = $"{http.Request.Scheme}://{http.Request.Host}/projects/{thread.ProjectId}?thread={thread.Id}";
+        var linkBase = services.GetRequiredService<Bootstrap>().LinkBase(http.Request);
+        var link = linkBase is null ? null : $"{linkBase}/projects/{thread.ProjectId}?thread={thread.Id}";
 
         var payload = new JsonObject
         {

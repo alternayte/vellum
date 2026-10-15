@@ -5,6 +5,10 @@ description: Read the entities of a New Relic account and the relationships betw
 
 This guide shows you how to add a New Relic account as a Source. Vellum reads the entities of the account and the relationships between them, and proposes them as elements and relationships. It reads no metrics, traces, logs or attributes.
 
+:::caution[Experimental]
+The New Relic Source is tested against sample NerdGraph responses, not against a live account. If an import fails on your account, [open an issue](https://github.com/alternayte/vellum/issues).
+:::
+
 ## Before you start
 
 - You need the Owner role in the workspace. The Source stores a credential.

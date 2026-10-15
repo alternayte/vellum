@@ -7,6 +7,8 @@ This guide shows you how to connect an AI provider to a workspace. You need the 
 
 Vellum works without a provider. Modelling, tracing, review rules, imports and export need none.
 
+The OpenAI-compatible kind is tested against a live Ollama server. The OpenAI, Anthropic and Gemini kinds are tested against sample responses of each API.
+
 ## Add the provider
 
 1. Open the workspace on the home screen and select **Settings**, then **AI providers**.

@@ -1,5 +1,7 @@
 # One image for both profiles: the SPA is built into the API's wwwroot.
-FROM node:26-alpine AS web
+# The web and API stages run on the build machine; their output is the same for every
+# platform, so a multi-platform build emulates only the final stage.
+FROM --platform=$BUILDPLATFORM node:26-alpine AS web
 WORKDIR /src/Vellum.Web
 COPY src/Vellum.Web/package.json src/Vellum.Web/package-lock.json ./
 RUN npm ci
@@ -10,15 +12,18 @@ COPY src/Vellum.Web/ ./
 # step and is not repeated in the image build.
 RUN npm run generate && npx vite build
 
-FROM mcr.microsoft.com/dotnet/sdk:10.0 AS api
+FROM --platform=$BUILDPLATFORM mcr.microsoft.com/dotnet/sdk:10.0 AS api
 WORKDIR /src
+COPY Directory.Build.props ./
 COPY src/Vellum/Vellum.csproj src/Vellum/
 RUN dotnet restore src/Vellum/Vellum.csproj
 COPY src/Vellum/ src/Vellum/
 # The agent skill is embedded in the API from the root of the repository.
 COPY skills/ skills/
 COPY --from=web /src/Vellum/wwwroot/ src/Vellum/wwwroot/
-RUN dotnet publish src/Vellum/Vellum.csproj -c Release -o /app --no-restore
+# The release workflow passes the version of the tag. A build from source uses Directory.Build.props.
+ARG VELLUM_VERSION=
+RUN dotnet publish src/Vellum/Vellum.csproj -c Release -o /app --no-restore ${VELLUM_VERSION:+-p:Version=$VELLUM_VERSION}
 
 FROM mcr.microsoft.com/dotnet/aspnet:10.0
 # The Postgres driver loads the GSSAPI library when it opens a connection. Without the
@@ -28,6 +33,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=api /app ./
+COPY LICENSE ./
 # The local profile writes its generated master key and its setup code here. The non-root app user owns the
 # directory, and a volume mounted on it starts with the same owner.
 RUN mkdir -p /data && chown $APP_UID /data && chmod 700 /data

@@ -5,16 +5,6 @@ description: Start Vellum with the hosted profile, with the environment it requi
 
 This guide shows you how to start Vellum with the hosted profile. The hosted profile is for an instance that more than one team reaches over a public address.
 
-## Know the status first
-
-The hosted profile has limited evidence. Read these limits before you use it.
-
-- The automated tests exercise the hosted profile. One manual run used `docker-compose.hosted.example.yml` on one machine, with the `X-Forwarded-Proto` header set by hand. A later run put the hosted profile behind a local TLS proxy with a self-signed certificate: setup, two isolated users and the core flow worked. No run used a production reverse proxy or a certificate from a public authority.
-- In that run, a user of one workspace sent 18 requests for the projects, settings, secrets, agent tokens, exports and MCP tools of another workspace. Each request got `403` or "Project not found". The automated tests cover isolation for each module; no test covers every endpoint.
-- The automated tests run the sign-in with GitHub against a stand-in for GitHub, not against GitHub itself. Sign-in with Google has no test.
-
-Use the local profile for real work. [Local and hosted profiles](/concepts/local-and-hosted-profiles/) explains the difference.
-
 ## Know what the profile changes
 
 | | `local` | `hosted` |
@@ -81,6 +71,19 @@ Vellum refuses to start when an entry is no address and no range, or when a rang
 
 Do not set `ASPNETCORE_FORWARDEDHEADERS_ENABLED`. Vellum does not need it. The web framework reads it and then trusts the two headers from every sender.
 
+### Caddy
+
+Caddy passes `Host` on unchanged and sets `X-Forwarded-For` and `X-Forwarded-Proto` by default. This `Caddyfile` gets a certificate for the host name and sends each request to the `vellum` service of the Compose example:
+
+<!-- snippet: syntax -->
+```text
+vellum.example.com {
+	reverse_proxy vellum:8080
+}
+```
+
+When Caddy runs in the same Compose project, set `VELLUM_TRUSTED_PROXIES` to the address of the Caddy container, or to the range of the Compose network.
+
 ## Start with the hosted Compose example
 
 The repository has the file `docker-compose.hosted.example.yml`. It starts Vellum in the hosted profile with a Postgres database. It publishes the app port on `127.0.0.1` only and does not publish the database port. The container has a read-only root file system, runs as a user that is not root and has no Linux capability.
@@ -104,6 +107,8 @@ The repository has the file `docker-compose.hosted.example.yml`. It starts Vellu
    | `VELLUM_PORT` | `8080` | The app port on the machine. |
    | `VELLUM_SUBNET` | `172.30.250.0/24` | The address range of the Compose network. |
    | `VELLUM_PREVIOUS_MASTER_KEY` | empty | The old key during a rotation. |
+   | `VELLUM_PUBLIC_URL` | empty | The https address that people use, for example `https://vellum.example.com`. Links in webhook events start with it. Empty means that Vellum uses the host name of the request. |
+   | `VELLUM_VERSION` | `latest` | The release to run. |
    | `OTEL_EXPORTER_OTLP_ENDPOINT` | empty | The address of an OTLP collector. Empty means that telemetry is off. |
 
 4. Start the services.
@@ -132,11 +137,12 @@ docker run -d --name vellum \
   -e "Vellum__SetupToken=<setup-token>" \
   -e AllowedHosts=vellum.example.com \
   -e "Vellum__TrustedProxies=<proxy-address>" \
+  -e Vellum__PublicUrl=https://vellum.example.com \
   -v /srv/vellum/master.key:/run/secrets/vellum-master-key:ro \
-  "<vellum-image>"
+  ghcr.io/alternayte/vellum:<version>
 ```
 
-`<vellum-image>` is the image that you build from the `Dockerfile` of the repository. The app user in the container must be able to read the key file. `<proxy-address>` is the address that Vellum sees for your reverse proxy.
+`<version>` is a release, for example `0.1.0`. The app user in the container must be able to read the key file. `<proxy-address>` is the address that Vellum sees for your reverse proxy.
 
 The image runs as a user that is not root. `docker run` does not add the other limits of the Compose files. To add them, use the options `--read-only`, `--tmpfs /tmp`, `--cap-drop ALL` and `--security-opt no-new-privileges:true`.
 

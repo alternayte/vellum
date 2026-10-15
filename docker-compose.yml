@@ -25,6 +25,9 @@ services:
       retries: 30
 
   vellum:
+    # The released image. With no such image in the registry or on this machine (a build
+    # from source), Compose builds it from the Dockerfile. `--build` always builds.
+    image: ghcr.io/alternayte/vellum:${VELLUM_VERSION:-latest}
     build: .
     depends_on:
       postgres:
@@ -51,6 +54,8 @@ services:
       # The one folder a directory Source may read. VELLUM_SOURCES on this machine (default
       # ./sources next to this file) is mounted here read-only; a Source names a folder under it.
       Vellum__SourcesRoot: /sources
+      # The address that people use to open Vellum. Links in webhook events start with it.
+      Vellum__PublicUrl: ${VELLUM_PUBLIC_URL:-http://localhost:${VELLUM_PORT:-8080}}
     volumes:
       - vellum-data:/data
       - ${VELLUM_SOURCES:-./sources}:/sources:ro

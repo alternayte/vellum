@@ -68,10 +68,6 @@ It does not turn checks off. It still refuses a master key file that other users
 
 If you publish a local instance on a network that you do not control, the local defaults no longer fit. In particular, turn **Allow URLs on private networks** off when people whom you do not know can change settings.
 
-## Status of the hosted profile
+## Before you operate the hosted profile
 
-The hosted, multi-tenant profile exists in the code. It is not ready for use.
-
-The start-up rules and the policy defaults on this page are in the code. They are not a statement that the profile is safe to operate for other people.
-
-Use the local profile to self-host. [Run in hosted mode](/how-to/run-in-hosted-mode/) describes how to start the hosted profile and what it requires.
+The hosted profile is for one instance that people from more than one team use, behind HTTPS. Automated tests check the isolation of workspaces in each module, and the profile runs behind a reverse proxy as [Run in hosted mode](/how-to/run-in-hosted-mode/) describes. Vellum has had no external security review. Read the [security model](/concepts/security-model/) before you let people outside your organisation sign in.

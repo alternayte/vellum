@@ -16,7 +16,7 @@ public sealed class BootstrapException(string message) : Exception(message);
 
 /// <summary>
 /// The values that come from the environment and nothing else: the operating profile, the
-/// master key, the cookie policy, the setup token and the data directory. Every other
+/// master key, the cookie policy, the setup token, the data directory and the public URL. Every other
 /// setting lives in the app.
 /// </summary>
 public sealed class Bootstrap
@@ -25,7 +25,8 @@ public sealed class Bootstrap
     public const int MinimumSetupTokenLength = 16;
 
     private Bootstrap(
-        OperatingProfile profile, MasterKeyRing keys, bool secureCookies, string? setupToken, string dataDirectory, string? unusedKeyFile)
+        OperatingProfile profile, MasterKeyRing keys, bool secureCookies, string? setupToken, string dataDirectory, string? unusedKeyFile,
+        Uri? publicUrl)
     {
         Profile = profile;
         Keys = keys;
@@ -33,6 +34,7 @@ public sealed class Bootstrap
         SetupToken = setupToken;
         DataDirectory = dataDirectory;
         UnusedKeyFile = unusedKeyFile;
+        PublicUrl = publicUrl;
     }
 
     public OperatingProfile Profile { get; }
@@ -55,6 +57,24 @@ public sealed class Bootstrap
     public string? UnusedKeyFile { get; }
 
     /// <summary>
+    /// The address that people use to open this instance (<c>Vellum__PublicUrl</c>), with no
+    /// trailing slash, or null when the operator set none. Links that leave the instance, such
+    /// as the link in a webhook event, start with it. See <see cref="LinkBase"/>.
+    /// </summary>
+    public Uri? PublicUrl { get; }
+
+    /// <summary>
+    /// The start of a link that leaves the instance, or null when there is none to trust: the
+    /// public URL when it is set; else, in the hosted profile, the host of the request, which
+    /// <c>AllowedHosts</c> limits to the public host names. The local profile accepts every
+    /// host name, so there a request's host never goes into a link.
+    /// </summary>
+    public string? LinkBase(HttpRequest request) =>
+        PublicUrl is not null ? PublicUrl.AbsoluteUri.TrimEnd('/')
+        : Profile == OperatingProfile.Hosted ? $"{request.Scheme}://{request.Host}"
+        : null;
+
+    /// <summary>
     /// For the build-time OpenAPI generator only: that process has no database and must not
     /// write a key file. The key exists for the life of the process.
     /// </summary>
@@ -64,7 +84,7 @@ public sealed class Bootstrap
         RandomNumberGenerator.Fill(key);
         try
         {
-            return new(OperatingProfile.Local, new MasterKeyRing(new MasterKey(key)), false, null, Path.GetFullPath("./data"), null);
+            return new(OperatingProfile.Local, new MasterKeyRing(new MasterKey(key)), false, null, Path.GetFullPath("./data"), null, null);
         }
         finally
         {
@@ -131,7 +151,9 @@ public sealed class Bootstrap
                     "Do not use '*', a name that contains '*', '0.0.0.0', '::', '[::]' or an empty entry.");
         }
 
-        return new Bootstrap(profile, new MasterKeyRing(current, previous), secureCookies, setupToken, dataDirectory, unusedKeyFile);
+        var publicUrl = ReadPublicUrl(configuration);
+
+        return new Bootstrap(profile, new MasterKeyRing(current, previous), secureCookies, setupToken, dataDirectory, unusedKeyFile, publicUrl);
     }
 
     /// <summary>
@@ -155,6 +177,19 @@ public sealed class Bootstrap
     {
         var directory = configuration["Vellum:DataDirectory"];
         return Path.GetFullPath(string.IsNullOrWhiteSpace(directory) ? "./data" : directory);
+    }
+
+    private static Uri? ReadPublicUrl(IConfiguration configuration)
+    {
+        var value = configuration["Vellum:PublicUrl"]?.Trim();
+        if (string.IsNullOrEmpty(value))
+            return null;
+        if (!Uri.TryCreate(value, UriKind.Absolute, out var url)
+            || url.Scheme is not ("http" or "https")
+            || !string.IsNullOrEmpty(url.Query) || !string.IsNullOrEmpty(url.Fragment) || !string.IsNullOrEmpty(url.UserInfo))
+            throw new BootstrapException(
+                "Vellum__PublicUrl is not valid. Set it to the http or https address that people use to open Vellum, such as https://vellum.example.com, with no query and no fragment.");
+        return url;
     }
 
     private static bool ReadSecureCookies(IConfiguration configuration, OperatingProfile profile)

@@ -1,0 +1,10 @@
+<Project>
+  <!--
+    The version of the API and of the vellum CLI. The release workflow builds with
+    the Version property from the tag, so this value is the version of a build from source between
+    releases. GET /api/instance and the vellum version command report it.
+  -->
+  <PropertyGroup>
+    <Version>0.1.0</Version>
+  </PropertyGroup>
+</Project>

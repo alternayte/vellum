@@ -1,0 +1,202 @@
+# A tag vX.Y.Z (or vX.Y.Z-rc.N) publishes a release:
+# - the image ghcr.io/alternayte/vellum:X.Y.Z for linux/amd64 and linux/arm64, after a clean
+#   Compose deployment of it starts and reports healthy;
+# - the vellum CLI as one file for each platform;
+# - a GitHub release with the notes of the version from CHANGELOG.md, the CLI files and the
+#   Compose files.
+# A tag with a hyphen is a pre-release: it does not move the tag `latest` of the image.
+# CI (ci.yml) runs the tests on the same tag.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_NOLOGO: "true"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "true"
+
+jobs:
+  meta:
+    name: Version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      prerelease: ${{ steps.v.outputs.prerelease }}
+    steps:
+      - id: v
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          echo "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$' || { echo "Tag $GITHUB_REF_NAME is not vX.Y.Z" >&2; exit 1; }
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          case "$version" in *-*) echo "prerelease=true" ;; *) echo "prerelease=false" ;; esac >> "$GITHUB_OUTPUT"
+
+  # The self-host quickstart on the image of this tag: one command, no configuration.
+  # `--wait` fails when the health check of the app does not report healthy.
+  image-check:
+    name: Image starts
+    needs: meta
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      VELLUM_VERSION: ${{ needs.meta.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the image
+        run: docker compose build --build-arg "VELLUM_VERSION=$VELLUM_VERSION" vellum
+
+      - name: Start a clean Compose deployment
+        run: docker compose up -d --wait
+
+      - name: The app answers and asks for first-run setup
+        run: |
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:8080/health)" = 200
+          curl -sS --fail-with-body http://127.0.0.1:8080/api/setup/status | tee status.json
+          test "$(jq -r .needsSetup status.json)" = true
+          docker compose logs vellum | grep -q "VELLUM SETUP CODE"
+
+      - name: Show the log
+        if: failure()
+        run: docker compose logs
+
+      - name: Stop
+        if: always()
+        run: docker compose down -v
+
+  image:
+    name: Publish the image
+    needs: [meta, image-check]
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - id: tags
+        env:
+          VERSION: ${{ needs.meta.outputs.version }}
+          PRERELEASE: ${{ needs.meta.outputs.prerelease }}
+        run: |
+          image=ghcr.io/${GITHUB_REPOSITORY,,}
+          tags="$image:$VERSION"
+          if [ "$PRERELEASE" = false ]; then
+            tags="$tags,$image:${VERSION%.*},$image:latest"
+          fi
+          echo "tags=$tags" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.tags.outputs.tags }}
+          build-args: VELLUM_VERSION=${{ needs.meta.outputs.version }}
+          labels: |
+            org.opencontainers.image.title=Vellum
+            org.opencontainers.image.description=An architecture workbench that you host yourself
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.version=${{ needs.meta.outputs.version }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.licenses=AGPL-3.0-only
+
+  # macOS refuses an unsigned arm64 binary; `dotnet publish` signs the file ad hoc only on
+  # macOS, so the macOS files build there.
+  cli:
+    name: CLI (${{ matrix.rid }})
+    needs: meta
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - { rid: linux-x64, os: ubuntu-latest }
+          - { rid: linux-arm64, os: ubuntu-latest }
+          - { rid: win-x64, os: ubuntu-latest }
+          - { rid: osx-arm64, os: macos-latest }
+          - { rid: osx-x64, os: macos-latest }
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Publish the single file
+        shell: bash
+        env:
+          VERSION: ${{ needs.meta.outputs.version }}
+          RID: ${{ matrix.rid }}
+        run: |
+          dotnet publish src/Vellum.Cli -c Release -r "$RID" --self-contained -p:PublishSingleFile=true -p:DebugType=none -p:Version="$VERSION" -o out
+          mkdir dist
+          case "$RID" in
+            win-*) cp out/Vellum.Cli.exe dist/vellum.exe; (cd dist && zip -q "../vellum-$VERSION-$RID.zip" vellum.exe) ;;
+            *) cp out/Vellum.Cli dist/vellum; chmod +x dist/vellum; tar -czf "vellum-$VERSION-$RID.tar.gz" -C dist vellum ;;
+          esac
+
+      - name: The file reports the version
+        if: matrix.rid == 'linux-x64' || matrix.rid == 'osx-arm64'
+        env:
+          VERSION: ${{ needs.meta.outputs.version }}
+        run: test "$(dist/vellum --version)" = "$VERSION"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cli-${{ matrix.rid }}
+          path: vellum-*
+          if-no-files-found: error
+
+  release:
+    name: GitHub release
+    needs: [meta, image, cli]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: cli-*
+          merge-multiple: true
+          path: dist
+
+      # The notes are the section "## X.Y.Z" of CHANGELOG.md, up to the next section.
+      - name: Release notes
+        env:
+          VERSION: ${{ needs.meta.outputs.version }}
+        run: |
+          awk -v v="## $VERSION" '$0 == v || index($0, v " ") == 1 {on=1; next} /^## / && on {exit} on' CHANGELOG.md > notes.md
+          test -s notes.md || { echo "CHANGELOG.md has no section ## $VERSION" >&2; exit 1; }
+          (cd dist && sha256sum vellum-* > SHA256SUMS)
+          # The quickstart downloads the Compose files from the latest release.
+          cp docker-compose.yml docker-compose.hosted.example.yml dist/
+          {
+            echo
+            echo "Image: \`ghcr.io/${GITHUB_REPOSITORY,,}:$VERSION\`"
+          } >> notes.md
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PRERELEASE: ${{ needs.meta.outputs.prerelease }}
+        run: |
+          flag=""
+          [ "$PRERELEASE" = true ] && flag="--prerelease"
+          gh release create "$GITHUB_REF_NAME" dist/* --title "Vellum ${GITHUB_REF_NAME#v}" --notes-file notes.md --verify-tag $flag

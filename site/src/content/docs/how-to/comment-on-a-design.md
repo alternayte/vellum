@@ -178,6 +178,8 @@ The body is JSON:
 
 The body holds no comment text and no source text. A receiver that needs the text follows the link with a signed-in account.
 
+`link` starts with `Vellum__PublicUrl`. With no such value, the hosted profile uses the host name of the request, and the local profile sends `null`. The Compose file sets it to `http://localhost:8080`. See [Bootstrap environment](/reference/bootstrap-environment/).
+
 The request has these headers:
 
 - `X-Vellum-Event`: the event.

@@ -9,6 +9,10 @@ To set the address and the token, you need the owner role in the workspace. To a
 
 Vellum reads each host through its REST API. It does not use the git protocol and runs no git command. It never writes to the host.
 
+:::caution[Experimental]
+The GitLab, Bitbucket and Azure DevOps readers are tested against sample API responses, not against the live hosts. The line links in citations follow each host's documented URL form. If a scan or a link fails on your host, [open an issue](https://github.com/alternayte/vellum/issues).
+:::
+
 ## What each host needs
 
 | Host | Setting | Default | Secret | Repository form |
