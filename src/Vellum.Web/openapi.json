@@ -2949,6 +2949,54 @@
         }
       }
     },
+    "/api/workspaces/{workspaceId}/git-hosts/{host}/test": {
+      "post": {
+        "tags": [
+          "Git hosts"
+        ],
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "host",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitHostTestResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/projects/{projectId}/imports/{importId}/impact": {
       "get": {
         "tags": [
@@ -21616,6 +21664,35 @@
           }
         }
       },
+      "GitHostTestResponse": {
+        "required": [
+          "ok",
+          "authenticatedAs",
+          "error"
+        ],
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "authenticatedAs": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "error": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ConnectionTestError"
+              }
+            ]
+          }
+        }
+      },
       "GitHubCredentialResponse": {
         "required": [
           "source",
@@ -35844,6 +35921,9 @@
     },
     {
       "name": "GitHub"
+    },
+    {
+      "name": "Git hosts"
     },
     {
       "name": "Imports"

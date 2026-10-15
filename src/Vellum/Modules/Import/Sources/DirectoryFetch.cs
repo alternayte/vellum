@@ -70,9 +70,9 @@ internal static partial class DirectoryFetch
             if (depth > MaxDepth)
                 throw ScanStop.Failed(new ScanError("directory_too_deep", $"The folder nests deeper than {MaxDepth} levels. Vellum does not read it. Choose a smaller folder."));
             foreach (var info in directory.EnumerateFileSystemInfos("*", new EnumerationOptions
-                     {
-                         AttributesToSkip = 0, IgnoreInaccessible = true, RecurseSubdirectories = false, ReturnSpecialDirectories = false,
-                     }))
+            {
+                AttributesToSkip = 0, IgnoreInaccessible = true, RecurseSubdirectories = false, ReturnSpecialDirectories = false,
+            }))
             {
                 if (++seen > MaxEntries)
                     throw ScanStop.Failed(new ScanError("directory_too_large", $"The folder holds more than {MaxEntries} entries. Vellum does not read it. Choose a smaller folder."));
