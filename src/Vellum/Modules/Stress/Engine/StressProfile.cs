@@ -1,7 +1,7 @@
 namespace Vellum.Modules.Stress.Engine;
 
 /// <summary>
-/// Where a number in a profile comes from (SDD guarantee 2). A person who types a number
+/// Where a number in a profile comes from. A person who types a number
 /// declares it. A number is <see cref="Measured"/> only when it names a measurement that
 /// was imported.
 /// </summary>

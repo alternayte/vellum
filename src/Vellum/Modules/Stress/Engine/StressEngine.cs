@@ -37,7 +37,7 @@ public static class StressJson
 /// model, scenario, profile and seed give the same result and the same hash on every machine.
 /// <para>
 /// A change to what any input produces is a new <see cref="Version"/>. The version is part of
-/// the result and of its hash (SDD guarantee 4).
+/// the result and of its hash.
 /// </para>
 /// </summary>
 public static class StressEngine

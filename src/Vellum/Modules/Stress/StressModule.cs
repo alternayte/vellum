@@ -6,7 +6,7 @@ using Vellum.Shared;
 namespace Vellum.Modules.Stress;
 
 /// <summary>
-/// Stress profiles, stored runs and their comparison (SDD §8, the stress engine). A run is an
+/// Stress profiles, stored runs and their comparison (the stress engine). A run is an
 /// estimate from a seeded model of the declared flow. It never measures a running system.
 /// </summary>
 public static class StressModule

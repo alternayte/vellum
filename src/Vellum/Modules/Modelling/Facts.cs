@@ -3,7 +3,7 @@ using Vellum.Shared;
 namespace Vellum.Modules.Modelling;
 
 /// <summary>
-/// How a fact's truth is established. SDD guarantee 2: every fact is labelled, and an
+/// How a fact's truth is established. Every fact is labelled, and an
 /// inference is never silently promoted to fact.
 /// </summary>
 public enum FactStatus

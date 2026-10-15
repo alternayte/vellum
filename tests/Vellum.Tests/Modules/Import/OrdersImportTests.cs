@@ -9,7 +9,7 @@ using Vellum.Modules.Import.Scans;
 namespace Vellum.Tests.Modules.Import;
 
 /// <summary>
-/// The reference journey of SDD §10: scan the Orders repository at a commit, review what the
+/// The reference journey: scan the Orders repository at a commit, review what the
 /// source establishes, accept it, and scan again. Everything goes through the HTTP API, the
 /// real worker and the real outbound pipeline; only GitHub is a stub. Fact keys are opaque:
 /// the test reads them from the extraction of the fixture and finds proposals by kind and name.

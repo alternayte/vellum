@@ -5,7 +5,7 @@ using Vellum.Shared;
 namespace Vellum.Modules.Build;
 
 /// <summary>
-/// Build mode (SDD §3): the standalone SDD and the agent handoff bundle of a pinned state,
+/// Build mode: the standalone SDD and the agent handoff bundle of a pinned state,
 /// the check that a bundle is what its pinned state generates, and the change-scoped build
 /// brief. Every endpoint reads and none writes, so a Viewer may call them all.
 /// </summary>

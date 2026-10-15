@@ -7,7 +7,7 @@ namespace Vellum.Modules.Promises;
 /// <summary>
 /// The decisions of a promise. An approved revision is never changed: a change is a new draft
 /// revision, and the approved one stays in force until a person approves the new one
-/// (SDD guarantees 11 and 12). A run records a result and changes nothing else.
+///. A run records a result and changes nothing else.
 /// </summary>
 public static class PromiseDecider
 {

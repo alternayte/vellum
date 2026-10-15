@@ -4,7 +4,7 @@ using Vellum.Modules.Trace.Engine;
 namespace Vellum.Modules.Trace;
 
 /// <summary>
-/// Where a scenario document came from when a person did not write it (SDD guarantee 2).
+/// Where a scenario document came from when a person did not write it.
 /// </summary>
 /// <param name="Kind"><c>ai-proposal</c> (the in-app assistant generated the flow proposal) or <c>submitted-proposal</c> (an agent token or a caller of the API submitted it).</param>
 /// <param name="ProposalId">The flow proposal that a person accepted.</param>

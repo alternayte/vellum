@@ -6,7 +6,7 @@ using Vellum.Shared;
 namespace Vellum.Modules.LoadTests;
 
 /// <summary>
-/// k6 evidence (SDD §8): load-test targets with a person's authorisation, k6 scripts generated
+/// k6 evidence: load-test targets with a person's authorisation, k6 scripts generated
 /// from valid scenarios, and the import of measured results. Vellum writes the script and
 /// reads the result. It does not run k6 and sends no request to a target.
 /// </summary>
@@ -49,7 +49,7 @@ public static class LoadTestsModule
         loadTests.MapGet("/scripts", Scripts.List).AllowAgent(AgentScope.Read, AgentScope.Export).Produces<IReadOnlyList<ScriptDto>>();
         loadTests.MapGet("/scripts/{scriptId:guid}", Scripts.Get).AllowAgent(AgentScope.Read, AgentScope.Export).Produces<ScriptDto>();
 
-        // An agent may submit evidence (SDD §6), so a token with the propose scope may send a
+        // An agent may submit evidence, so a token with the propose scope may send a
         // result file, as it may record evidence for a promise. The token gets no way around
         // the checks: the same identity check runs for every caller, a result is bound to a
         // script for a target that a person authorised, and the row names the token. Sending a

@@ -223,7 +223,7 @@ public static class RenameRevision
 /// <summary>
 /// A delete of a named revision that nothing pins. A promise run, a review snapshot and a
 /// variant name the revision they were made on, and that record must stay readable and
-/// repeatable (SDD guarantee 4), so the revision stays while one of them names it. The
+/// repeatable, so the revision stays while one of them names it. The
 /// refusal names each of them.
 /// </summary>
 public static class DeleteRevision

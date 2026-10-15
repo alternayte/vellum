@@ -50,7 +50,7 @@ public static class Explain
     public const int MaxOutputTokens = 1_500;
     /// <summary>The most characters of context one explanation sends. A larger context is cut and says so.</summary>
     public const int MaxContextChars = 60_000;
-    /// <summary>The word of the <c>done</c> event that tells the client to show the limitation line (SDD guarantee 8).</summary>
+    /// <summary>The word of the <c>done</c> event that tells the client to show the limitation line.</summary>
     public const string Disclaimer = "declared-design";
     private const int MaxNeighbours = 50;
     private const string Withheld = "(withheld)";

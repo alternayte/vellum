@@ -27,7 +27,7 @@ public sealed record BriefManifest(
 public sealed record BriefResult(string Brief, BriefManifest Manifest);
 
 /// <summary>
-/// A change-scoped build brief (SDD §6): the part of the pinned architecture that a selection
+/// A change-scoped build brief: the part of the pinned architecture that a selection
 /// of promises, scenarios and elements needs, and nothing else. The closure rule:
 /// <list type="number">
 /// <item>A selected element brings the operations it owns, the subscriptions it consumes and

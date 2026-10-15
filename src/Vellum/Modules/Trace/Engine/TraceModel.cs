@@ -31,7 +31,7 @@ public sealed record MessageContract(MessageId Id, string Name, SchemaId? Schema
 
 /// <summary>
 /// The contract snapshot a trace runs against. It is a plain value so that playback of a
-/// pinned revision depends on nothing but this record and the scenario (SDD guarantee 4).
+/// pinned revision depends on nothing but this record and the scenario.
 /// </summary>
 public sealed record TraceModel(
     IReadOnlyDictionary<ElementId, string> Elements,

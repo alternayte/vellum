@@ -6,7 +6,7 @@ namespace Vellum.Modules.Trace.Engine;
 
 /// <summary>
 /// A declared behaviour: ordered steps over stable contract IDs, the faults to inject and
-/// the results that must hold. Steps reference contracts, never free text (SDD guarantee 3).
+/// the results that must hold. Steps reference contracts, never free text.
 /// </summary>
 public sealed record Scenario(
     ScenarioId Id,

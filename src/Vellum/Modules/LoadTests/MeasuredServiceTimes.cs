@@ -13,7 +13,7 @@ namespace Vellum.Modules.LoadTests;
 public sealed record ProfileMeasurement(Guid Target, string MeasurementRef, bool MeasurementStale, IReadOnlyList<string> StaleBecause);
 
 /// <summary>
-/// The one way a value of a stress profile is <c>measured</c> (SDD guarantee 2): it is the
+/// The one way a value of a stress profile is <c>measured</c>: it is the
 /// service time of an operation, it names an imported k6 result of the scenario of the
 /// profile, that result covers the operation, and the numbers are the numbers of the result.
 /// The caller picks the result and the distribution. The server writes the numbers, so a

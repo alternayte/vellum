@@ -62,7 +62,7 @@ public sealed record DecisionDto(
 /// Decisions (ADRs) of a project. Anyone with the Editor role, and an agent token with the
 /// <c>propose</c> scope, writes a proposed decision. Only a person with the Owner role
 /// accepts or rejects one; an accepted decision is the only thing that settles a blocking
-/// finding (SDD guarantees 8 and 12).
+/// finding.
 /// </summary>
 public static class DecisionEndpoints
 {

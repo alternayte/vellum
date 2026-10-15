@@ -6,7 +6,7 @@ using Vellum.Tests.Shared.Outbound;
 namespace Vellum.Tests.Modules.Import;
 
 /// <summary>
-/// A scan of a pull request (SDD §5, "Change scope": a read-only GitHub PR). The scan reads the
+/// A scan of a pull request (a read-only GitHub PR). The scan reads the
 /// head commit that GitHub names for the pull request, records the pull request with both
 /// SHAs, and gives the same impact report as a scan of that commit by ref. The GitHub answers
 /// are the recorded <c>Fixtures/GitHub/pull-request.json</c> with the SHAs of the fixture commits.

@@ -7,7 +7,7 @@ public enum ElementStatus { Current, Planned, Deprecated, Removed }
 
 /// <summary>
 /// Structural edges carry no executable semantics. Behavioural edges (invokes, consumes,
-/// publishes) are the only edges a scenario can reference. SDD §4: a line alone does not
+/// publishes) are the only edges a scenario can reference. A line alone does not
 /// imply executable semantics.
 /// </summary>
 public enum RelationshipKind { Structural = 0, Behavioural = 1 }

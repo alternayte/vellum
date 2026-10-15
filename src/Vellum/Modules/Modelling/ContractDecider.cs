@@ -42,7 +42,7 @@ public sealed record UpdateBindingCommand(
 /// <summary>
 /// Decisions for the contracts a scenario plays against: operations, channels,
 /// subscriptions and bindings. A contract never points at something that is not in the model
-/// (SDD guarantee 3). Schema references are checked by the caller, because schemas live in
+///. Schema references are checked by the caller, because schemas live in
 /// their own streams.
 /// </summary>
 public static class ContractDecider

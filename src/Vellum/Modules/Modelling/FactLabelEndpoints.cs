@@ -21,7 +21,7 @@ public enum FactLabelAction
 }
 
 /// <summary>
-/// The two label changes a person makes by hand (SDD guarantee 2). "Accept as declared" turns
+/// The two label changes a person makes by hand. "Accept as declared" turns
 /// an inferred, observed-in-source or unknown fact into a declared one; "Mark as unknown"
 /// turns a declared fact into an unknown one. Each keeps the source, the source revision and
 /// the confidence of the fact, and the server stamps the person and the time. Neither can

@@ -1,4 +1,4 @@
-# Fast CI (Vellum-SDD.md §9): build, format, type checks and tests for correctness, security
+# Fast CI: build, format, type checks and tests for correctness, security
 # and data boundaries. No browser, no screenshots, no paid AI key and no live GitHub access.
 # The five live smoke tests skip, because no VELLUM_LIVE_* value is set.
 # Backend tests marked Category=Slow run in their own job: on a manual run, on a v* tag and
@@ -93,7 +93,7 @@ jobs:
           restore-keys: nuget-${{ runner.os }}-
 
       # The k6 script tests run each generated script through the real k6. With CI set and
-      # no k6 they fail, so that "the k6 script is valid" (SDD §10) holds in CI.
+      # no k6 they fail, so that "the k6 script is valid" holds in CI.
       - name: Install k6
         uses: grafana/setup-k6-action@v1
         with:

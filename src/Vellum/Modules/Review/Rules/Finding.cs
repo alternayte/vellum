@@ -3,7 +3,7 @@ using Vellum.Modules.Promises;
 namespace Vellum.Modules.Review.Rules;
 
 /// <summary>
-/// The four results of SDD §8. <c>verified</c> means only that the declared model satisfies
+/// The four results of a review rule. <c>verified</c> means only that the declared model satisfies
 /// the structural rule; it says nothing about a running system. A rule that needs a fact the
 /// model does not hold gives <c>unknown</c>, never <c>verified</c> and never <c>concern</c>.
 /// </summary>

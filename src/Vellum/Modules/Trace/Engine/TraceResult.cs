@@ -60,7 +60,7 @@ public sealed record AssertionResult(string Id, bool Passed, string Detail);
 
 /// <summary>
 /// A playback is declared behaviour replayed over declared contracts. It is not evidence
-/// that a running system behaves this way (SDD guarantee 8).
+/// that a running system behaves this way.
 /// </summary>
 public sealed record TraceResult(
     string EngineVersion,

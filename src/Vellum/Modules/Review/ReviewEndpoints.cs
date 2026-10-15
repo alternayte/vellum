@@ -26,7 +26,7 @@ public sealed record ReviewCounts(int Blocking, int Concerns, int Unknown, int V
 /// <summary>
 /// The findings of one pinned state. They are computed on every read and are a function of
 /// that state: <paramref name="Hash"/> is the same for the same state. A finding says what
-/// the declared model shows. It is no evidence about a running system (SDD guarantee 8).
+/// the declared model shows. It is no evidence about a running system.
 /// </summary>
 /// <param name="Branch">The model stream that was read.</param>
 /// <param name="InputsFingerprint">A hash of the version of every input: the model, the scenarios, the schemas, the promises, their runs, the followed commits and the decisions.</param>
@@ -59,7 +59,7 @@ public sealed record SetDispositionRequest(
     string RuleId, Guid SubjectId, string Status, Guid? DecisionId = null, string? Reason = null, Guid? RevisionId = null, Guid? BranchId = null);
 
 /// <summary>
-/// Review mode (SDD §3 and §8): the deterministic findings of a pinned state, saved
+/// Review mode: the deterministic findings of a pinned state, saved
 /// snapshots of them, and what a person did about a finding. No endpoint here calls an AI.
 /// </summary>
 public static class ReviewEndpoints

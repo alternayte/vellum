@@ -247,7 +247,7 @@ internal static class DesignPrompts
     public const string ExplainVersion = "design/explain/2";
 
     /// <summary>
-    /// SDD guarantee 8. The flow and the explanation templates both hold this sentence, and a
+    /// The limitation line: AI output is no evidence about a running system. The flow and the explanation templates both hold this sentence, and a
     /// test checks that it is in the outgoing request.
     /// </summary>
     public const string DeclaredBehaviourRule =

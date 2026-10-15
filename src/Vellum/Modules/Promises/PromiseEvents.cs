@@ -99,7 +99,7 @@ public static class ObligationKind
 }
 
 /// <summary>
-/// The four results of SDD §8. There is no fifth, and none of them is "verified". A result
+/// The four results of an obligation check. There is no fifth, and none of them is "verified". A result
 /// whose inputs moved on is still one of the four; the status shows it with <c>current: false</c>.
 /// </summary>
 public static class RunResult

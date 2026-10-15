@@ -56,7 +56,7 @@ internal static class ReviewPrompts
 }
 
 /// <summary>
-/// Rubber Duck critique (SDD §3 and §8): the assistant reads the alias table of the model and
+/// Rubber Duck critique: the assistant reads the alias table of the model and
 /// the deterministic findings as data, and answers with questions, risks and proposed
 /// decisions. The call goes through <see cref="AiClient"/> with the task <c>critique</c>, so
 /// the provider routing, the budget, the metering, the secret redaction and the private-code

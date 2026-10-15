@@ -14,7 +14,7 @@ using static Vellum.Shared.ResultExtensions;
 namespace Vellum.Modules.LoadTests;
 
 /// <summary>
-/// Where the numbers of a measured result come from (SDD guarantee 2): the import of one file,
+/// Where the numbers of a measured result come from: the import of one file,
 /// by one caller, for one script that Vellum generated for one authorised target.
 /// </summary>
 /// <param name="Kind"><c>k6-import</c>.</param>
@@ -83,9 +83,9 @@ public static class MeasuredResults
     /// <para>
     /// A result whose script hash names no script that Vellum generated for this project is
     /// rejected, and so is a result whose stated scenario, revision or target differs from
-    /// what the script was generated for. It is not stored as "unverified". SDD guarantee 11
-    /// says that a result names the exact test, revision and environment, and §8 lets Vellum
-    /// ingest results "whose identity can be verified". A stored row with the label
+    /// what the script was generated for. It is not stored as "unverified".
+    /// A result names the exact test, revision and environment, and Vellum ingests only results
+    /// whose identity can be verified. A stored row with the label
     /// <c>measured</c> and no known script would name none of those, and every reader of the
     /// comparison would have to remember that this one row means less. The stored script is
     /// what binds the numbers to a scenario version, a model version and an authorised

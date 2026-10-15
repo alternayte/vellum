@@ -108,7 +108,7 @@ public sealed record ChangeImpactDto(
     int PromisesNotAffected, ScanPullRequest? PullRequest);
 
 /// <summary>
-/// The change impact of one completed scan (SDD §8, capability 2). It reads and writes nothing.
+/// The change impact of one completed scan. It reads and writes nothing.
 /// <list type="number">
 /// <item>Changes: every proposal of the scan, and every source pattern fact that the base
 /// snapshot and the snapshot of this scan do not both hold. The base snapshot is that of the

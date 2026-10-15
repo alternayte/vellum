@@ -9,7 +9,7 @@ using Vellum.Shared;
 namespace Vellum.Modules.Review;
 
 /// <summary>
-/// Review mode (SDD §3 and §8): deterministic rules, their findings, decisions (ADRs), open
+/// Review mode: deterministic rules, their findings, decisions (ADRs), open
 /// questions and the Rubber Duck critique. The rules, the findings, the decisions and the
 /// questions call no AI. A blocking finding prevents Build Ready and never a save.
 /// </summary>

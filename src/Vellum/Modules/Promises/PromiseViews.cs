@@ -55,7 +55,7 @@ public sealed record ObligationStatusDto(
 /// <summary>
 /// What the evidence of a revision establishes, and what it does not. It is computed on every
 /// read and never stored. It has no single flag: the counts, the exact revisions and
-/// environments and the list of gaps are the answer (SDD guarantees 8 and 11).
+/// environments and the list of gaps are the answer.
 /// </summary>
 public sealed record EvidenceStatusDto(
     EvidenceCountsDto Counts,

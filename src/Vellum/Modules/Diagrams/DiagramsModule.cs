@@ -11,7 +11,7 @@ using static Vellum.Shared.ResultExtensions;
 namespace Vellum.Modules.Diagrams;
 
 /// <summary>
-/// Diagram export (SDD §3 Share): a view as SVG or Mermaid, the model as Structurizr DSL. Each
+/// Diagram export: a view as SVG or Mermaid, the model as Structurizr DSL. Each
 /// reads the main model, or a named revision with <c>revisionId</c>, and the saved layout of the
 /// view. The same revision and the same layout give the same bytes (guarantee 4). Every export
 /// reads and none writes, so a Viewer may call them all. PNG is rasterised in the browser from

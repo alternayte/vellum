@@ -7,7 +7,7 @@ using Vellum.Tests.Modules.Promises;
 namespace Vellum.Tests.Modules.Mcp;
 
 /// <summary>
-/// The tools of SDD §6 over the review and over proposals, through the real app with real
+/// The MCP tools over the review and over proposals, through the real app with real
 /// agent tokens: what a token reads, what it proposes, that a proposal changes nothing until
 /// a person decides, and that a token never decides.
 /// </summary>

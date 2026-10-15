@@ -58,7 +58,7 @@ public static class StreamAt
 /// <summary>
 /// A model at one exact place: a named revision, or a branch stream at the version it had
 /// when it was read. A check and an export say which one they used, so a result can be
-/// repeated on the same input (SDD guarantee 4).
+/// repeated on the same input.
 /// </summary>
 public sealed record PinnedModel(ModelPin Pin, ModelState State)
 {

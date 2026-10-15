@@ -7,7 +7,7 @@ namespace Vellum.Tests.Modules.Modelling;
 
 /// <summary>
 /// A person changes a truth label only by "Accept as declared" and "Mark as unknown"
-/// (SDD guarantees 2 and 8). The server stamps who and when and keeps the source of the fact.
+///. The server stamps who and when and keeps the source of the fact.
 /// </summary>
 public class FactLabelEndpointTests(IntegrationFixture fixture) : IClassFixture<IntegrationFixture>
 {

@@ -31,3 +31,9 @@ site/.astro/
 
 # The folder that Compose mounts read-only at /sources for directory Sources
 /sources/
+
+# Internal build artifacts: kept on the maintainer machine only
+/Vellum-SDD.md
+/Vellum-Build-Prompt.md
+/PROGRESS.md
+/CLAUDE.md

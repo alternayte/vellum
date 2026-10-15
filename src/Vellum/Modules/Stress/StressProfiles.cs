@@ -183,7 +183,7 @@ public static class StressProfiles
 
     /// <summary>
     /// The profile to store, or the refusal. A service time with the label <c>measured</c>
-    /// gets its numbers from the k6 result that it names (SDD guarantee 2,
+    /// gets its numbers from the k6 result that it names (see
     /// <see cref="MeasuredServiceTimes"/>): the caller picks the result and the distribution,
     /// and the numbers that the caller sent for it are not read. Every other label
     /// <c>measured</c> is refused, so a person cannot promote a typed number to a measured one.

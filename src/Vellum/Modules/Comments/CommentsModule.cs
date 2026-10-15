@@ -8,7 +8,7 @@ namespace Vellum.Modules.Comments;
 /// <summary>
 /// Comment threads on the targets of a project, the inbox of each person, and the webhook
 /// events of a workspace. Comments live outside the model streams: a comment is an opinion,
-/// never a fact (SDD guarantee 12). No export, SDD or agent brief reads these tables.
+/// never a fact. No export, SDD or agent brief reads these tables.
 /// </summary>
 public static class CommentsModule
 {

@@ -6,7 +6,7 @@ using System.Text.Json.Nodes;
 namespace Vellum.Tests.Modules.Promises;
 
 /// <summary>
-/// The Orders reference case of SDD §8, built through the API: a customer places an order,
+/// The Orders reference case, built through the API: a customer places an order,
 /// the Orders API stores it and <c>OrderCreated</c> goes to Inventory and Billing. The
 /// scenario has two variants. Without an outbox the API publishes after it answered, so an
 /// outage of the broker loses the event of an accepted order. With an outbox the API stores

@@ -10,7 +10,7 @@ using Vellum.Tests.Shared.Outbound;
 namespace Vellum.Tests.Modules.Promises;
 
 /// <summary>
-/// The compact impact report for pull request CI (SDD §10, "Change impact": a deterministic
+/// The compact impact report for pull request CI (a deterministic
 /// failed check can block only by opt-in policy) and the tokens that read it. Vellum writes
 /// nothing to GitHub; a CI job reads the report with a token.
 /// </summary>

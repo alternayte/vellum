@@ -27,7 +27,7 @@ public sealed record RecordEvidenceRequest(string Result, ExternalSourceRequest 
 /// the run is of that repository and that workflow, ran on the commit, is completed, and
 /// that the job ran in it. A run of any other repository or workflow is not evidence here.
 /// Anything Vellum cannot read so is stored as a claim, and the obligation stays
-/// <c>not-run</c> with the claim shown (SDD guarantee 11).
+/// <c>not-run</c> with the claim shown.
 /// </summary>
 public static partial class ExternalEvidence
 {

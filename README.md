@@ -104,8 +104,6 @@ client for the agent interface.
 - No run sent telemetry to a real OpenTelemetry collector.
 - There is no licence file yet.
 
-`PROGRESS.md` holds the exact state of each build step and the evidence for it.
-
 ## Connect a coding agent
 
 1. In the app, open the workspace settings, then **Agent tokens**. Create a token.
@@ -163,8 +161,6 @@ just docs-build    # writes site/dist and fails on a broken internal link
 | `examples/orders` | A model of the Orders reference case that you can import, with two scenarios. |
 | `examples/github-standin` | A stand-in for the GitHub API that serves the fixture repositories, for an import with no GitHub account. |
 | `skills/vellum` | The skill that tells a coding agent how to use Vellum. |
-| `Vellum-SDD.md` | The product contract. |
-| `PROGRESS.md` | The build log and the current state. |
 
 ## Read more
 

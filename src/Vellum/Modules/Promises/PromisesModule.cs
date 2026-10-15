@@ -10,7 +10,7 @@ namespace Vellum.Modules.Promises;
 
 /// <summary>
 /// Promises with stable requirement IDs, their proof obligations and their verification runs
-/// (SDD §4 and §8, the Architecture Promise Loop). Nothing in this module calls an AI.
+/// (the Architecture Promise Loop). Nothing in this module calls an AI.
 /// </summary>
 public static class PromisesModule
 {

@@ -102,7 +102,7 @@ internal static class Slices
 public sealed record Blocker(string Code, string Subject, string Message);
 
 /// <summary>
-/// What stands between the pinned state and Build Ready (SDD §8: blocking issues prevent
+/// What stands between the pinned state and Build Ready (blocking issues prevent
 /// Build Ready, not export). A bundle with a blocker is still exported; its manifest says
 /// <c>buildReady: false</c> and lists them.
 /// </summary>

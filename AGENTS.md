@@ -23,7 +23,7 @@ It is a .NET 10 modular monolith in src/Vellum with a React 19 SPA in src/Vellum
 - After an API change, run `just openapi` and commit `src/Vellum.Web/openapi.json`; the gate fails when it differs from the build output.
 
 ## Domain words
-- truth label: the class of a fact by its origin, as Vellum-SDD.md §2 defines.
+- truth label: the class of a fact by its origin, as the FactStatus enum defines.
 - promise: a human-approved architectural claim with a stable ID, such as ORD-014.
 - obligation: a check whose evidence decides a promise.
 - draft: a branch of the model that merges into main.

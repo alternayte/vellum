@@ -10,7 +10,7 @@ namespace Vellum.Modules.Costs;
 
 /// <summary>
 /// Deployment resources, workload assumptions, the price book and monthly infrastructure
-/// estimates (SDD §3 Cost and Compare, §8). Vellum holds no price of its own: a number in an
+/// estimates (Cost and Compare). Vellum holds no price of its own: a number in an
 /// estimate comes from a price entry or from an assumption, and a line without both is
 /// unknown. Engineering cost is not modelled.
 /// </summary>

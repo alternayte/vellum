@@ -4,10 +4,10 @@ using Vellum.Modules.Promises;
 namespace Vellum.Modules.Review.Rules;
 
 /// <summary>
-/// The deterministic review rules (SDD §8). Each rule is a pure function of the pinned state:
+/// The deterministic review rules. Each rule is a pure function of the pinned state:
 /// it reads the model, the scenarios, the schemas and the promises of one
 /// <see cref="BuildInput"/>, and gives one result per subject. No rule calls an AI, reads a
-/// clock or reads the database, so the rules work with no AI key (SDD guarantee 6) and the
+/// clock or reads the database, so the rules work with no AI key and the
 /// same state gives the same findings and the same hash (guarantee 4).
 /// <para>
 /// A rule reads a fact as stated only when its truth label is <c>declared</c>,

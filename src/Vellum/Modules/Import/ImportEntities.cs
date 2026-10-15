@@ -297,7 +297,7 @@ public class TrackedRefEntity
 }
 
 /// <summary>
-/// The <c>RepositorySnapshot</c> of SDD §4: what one scan established about one commit. It is
+/// A <c>RepositorySnapshot</c>: what one scan established about one commit. It is
 /// written once, when the scan completes, and never changed.
 /// </summary>
 public class SnapshotEntity
@@ -413,7 +413,7 @@ public enum StoredEntityKind
 }
 
 /// <summary>
-/// The <c>FactProposal</c> of SDD §4. A proposal changes nothing. Only a decision of a person
+/// A <c>FactProposal</c>. A proposal changes nothing. Only a decision of a person
 /// with the Editor role applies it.
 /// </summary>
 public class ProposalEntity

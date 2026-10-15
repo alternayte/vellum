@@ -10,7 +10,7 @@ using Vellum.Shared;
 namespace Vellum.Tests.Modules.Promises;
 
 /// <summary>
-/// The change impact of a scan (SDD §8, capability 2, and the "Change impact" row of §10) on
+/// The change impact of a scan on
 /// the fixtures <c>orders</c> and <c>orders-outbox-removed</c>: what is definite stands on
 /// source lines or a contract diff, what is reached through a flow is possible, and what the
 /// scan did not look at is unknown.

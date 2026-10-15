@@ -11,7 +11,7 @@ public sealed record StressOutcome(IReadOnlyList<StressIssue> Issues, StressResu
 
 /// <summary>
 /// What a simulation of the declared flow under the declared load gives. Every number is an
-/// estimate from a model: none is a measurement of a running system (SDD guarantee 8), and
+/// estimate from a model: none is a measurement of a running system, and
 /// every block says so in <c>Label</c>.
 /// </summary>
 public sealed record StressResult(

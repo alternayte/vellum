@@ -26,7 +26,7 @@ internal sealed record AdditionRefused(Guid Id, string Reason, bool Conflict);
 /// that the modelling endpoints use (<see cref="ModelDecider"/>, <see cref="ContractDecider"/>),
 /// followed by the decision that records its status and provenance. The status is always
 /// <see cref="FactStatus.Inferred"/>: a model's suggestion is not a declared fact because a
-/// person accepted it (SDD guarantee 2). A set of additions is one append to the model stream,
+/// person accepted it. A set of additions is one append to the model stream,
 /// so it is applied whole or not at all, and the append commits with the proposal row that
 /// records the decision.
 /// </summary>

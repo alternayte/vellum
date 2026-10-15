@@ -124,7 +124,7 @@ public static class ReadScenarios
 
 /// <summary>
 /// Create and replace. The body is the scenario document itself. A document with validation
-/// issues is saved (SDD §8: blocking issues prevent Build Ready, not saving). A body that
+/// issues is saved (blocking issues prevent Build Ready, not saving). A body that
 /// cannot be read as a scenario document, or that breaks a limit of <see cref="ScenarioShape"/>,
 /// is refused with 400, and one that is too large with 413.
 /// </summary>

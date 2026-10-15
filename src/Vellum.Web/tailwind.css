@@ -96,7 +96,7 @@
     --kind-store: hsl(38 92% 50%);
     --kind-component: hsl(258 90% 72%);
 
-    /* Trace semantics (SDD §3): teal requests, violet events, cyan data, amber retries, red failures. */
+    /* Trace semantics: teal requests, violet events, cyan data, amber retries, red failures. */
     --trace-request: hsl(172 66% 50%);
     --trace-event: hsl(258 90% 78%);
     --trace-data: hsl(190 90% 55%);

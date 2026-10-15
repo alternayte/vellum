@@ -147,7 +147,7 @@ public static partial class PromiseRules
         return errors;
     }
 
-    /// <summary>What approval needs beyond a valid draft (SDD §8: preconditions, outcomes and what counts as evidence).</summary>
+    /// <summary>What approval needs beyond a valid draft (preconditions, outcomes and what counts as evidence).</summary>
     public static IReadOnlyList<ValidationError> CheckComplete(PromiseContent content)
     {
         var errors = new List<ValidationError>();

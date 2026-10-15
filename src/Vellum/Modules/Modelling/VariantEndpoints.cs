@@ -222,7 +222,7 @@ public static class CreateVariant
 /// Deletes a variant: its row, its read-model rows, its cost sheet and its saved estimates.
 /// The model stream of the variant stays as history, like the stream of an abandoned draft:
 /// a stress run, a load-test script or a promise run that was pinned to a version of it can
-/// still be played again on that version (SDD guarantee 4). A project delete removes the
+/// still be played again on that version. A project delete removes the
 /// stream with every other stream of the project.
 /// </summary>
 public static class DeleteVariant

@@ -206,7 +206,7 @@ public sealed record PromiseState(
 
     /// <summary>
     /// The newest approved revision. It stays in force while a later revision is a draft
-    /// (SDD guarantee 12: a change of an approved promise does nothing until a person approves it).
+    /// (a change of an approved promise does nothing until a person approves it).
     /// </summary>
     [JsonIgnore]
     public PromiseRevisionState? InForce => Revisions.LastOrDefault(r => !r.IsDraft);
