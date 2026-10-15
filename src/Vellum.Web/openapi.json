@@ -33824,6 +33824,75 @@
           }
         }
       },
+      "SourceDisagreementDto": {
+        "required": [
+          "relationshipId",
+          "fromId",
+          "fromName",
+          "toId",
+          "toName",
+          "label",
+          "declaredBySourceId",
+          "declaredBy",
+          "citation",
+          "unconfirmedBySourceId",
+          "unconfirmedBy",
+          "unconfirmedLabel"
+        ],
+        "type": "object",
+        "properties": {
+          "relationshipId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "fromId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "fromName": {
+            "type": "string"
+          },
+          "toId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "toName": {
+            "type": "string"
+          },
+          "label": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "declaredBySourceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "declaredBy": {
+            "type": "string"
+          },
+          "citation": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "unconfirmedBySourceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "unconfirmedBy": {
+            "type": "string"
+          },
+          "unconfirmedLabel": {
+            "type": "string"
+          }
+        }
+      },
       "SourceDocumentDto": {
         "required": [
           "path",
@@ -33922,6 +33991,15 @@
                 "$ref": "#/components/schemas/RuntimeConnectionDto"
               }
             ]
+          },
+          "disagreements": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/SourceDisagreementDto"
+            }
           }
         }
       },
@@ -34099,6 +34177,15 @@
               "string"
             ],
             "format": "int32"
+          },
+          "unconfirmed": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32",
+            "default": 0
           }
         }
       },

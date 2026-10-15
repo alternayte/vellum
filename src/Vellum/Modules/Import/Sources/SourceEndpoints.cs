@@ -32,9 +32,10 @@ public sealed record SourceSnapshotDto(
 /// <param name="CrossSourceConflicts">Conflicts where another Source of the project holds the entity with other values.</param>
 /// <param name="BindQuestions">"Same as X?" questions: an element of another Source has the name of an element fact of this one.</param>
 /// <param name="Acceptable">Pending proposals that "accept all from this Source" would accept: additions, changes and removals that no other Source holds and that change no truth label, with no conflict, question or relink, and every dependency accepted or in the set.</param>
+/// <param name="Unconfirmed">Dependencies this Source declares that another Source does not see, or that this Source does not see while another declares them (<see cref="SourceDisagreementDto"/>).</param>
 public sealed record SourceReviewDto(
     Guid? ScanId, int Pending, int Additions, int Changes, int Removals, int Conflicts, int CrossSourceConflicts,
-    int BindQuestions, int Relinks, int Acceptable);
+    int BindQuestions, int Relinks, int Acceptable, int Unconfirmed = 0);
 
 /// <param name="Kind">One of <c>github</c>, <c>gitlab</c>, <c>bitbucket</c>, <c>azure-devops</c>, <c>directory</c>, <c>archive</c>, <c>agent-push</c>, <c>model-file</c>, <c>traces</c>, <c>newrelic</c>. This instance reads the first six.</param>
 /// <param name="Citation">The <c>&lt;source&gt;</c> part of a citation <c>&lt;source&gt;@&lt;revision&gt;:path:start-end</c>.</param>
@@ -44,7 +45,7 @@ public sealed record SourceReviewDto(
 public sealed record SourceDto(
     Guid Id, string Kind, string Name, string Host, string Locator, string Citation,
     string CreatedBy, DateTimeOffset CreatedAt, ScanDto? LatestScan, SourceSnapshotDto? LatestSnapshot, SourceReviewDto Review,
-    Runtime.RuntimeConnectionDto? Connection = null);
+    Runtime.RuntimeConnectionDto? Connection = null, IReadOnlyList<SourceDisagreementDto>? Disagreements = null);
 
 /// <param name="Kind"><c>github</c>, <c>gitlab</c>, <c>bitbucket</c>, <c>azure-devops</c>, <c>directory</c> (local profile only), <c>archive</c>, <c>traces</c> or <c>newrelic</c>. An <c>agent-push</c> Source is made by its first push.</param>
 /// <param name="Name">What people call the Source. Without it the Source is named after its repository, folder or account. An archive or a traces Source needs one: its citations carry it.</param>
@@ -104,15 +105,23 @@ public static class SourceRequests
     public const int MaxSnapshots = 100;
 
     public static async Task<IResult> List(
-        Guid projectId, ClaimsPrincipal user, WorkspaceAuthorizationService auth, AppDbContext db, CancellationToken ct)
+        Guid projectId, ClaimsPrincipal user, HttpContext http, WorkspaceAuthorizationService auth, AppDbContext db, CancellationToken ct)
     {
         await auth.RequireProjectRoleAsync(projectId, user.UserId(), WorkspaceRole.Viewer, ct);
         var sources = await db.Sources.AsNoTracking().Where(s => s.ProjectId == projectId)
             .OrderBy(s => s.CreatedAt).ThenBy(s => s.Id).ToListAsync(ct);
+        var disagreements = await SourceDisagreements.ComputeAsync(http.RequestServices, db, projectId, sources, ct);
         var result = new List<SourceDto>(sources.Count);
         foreach (var source in sources)
-            result.Add(await ToDtoAsync(db, source, ct));
+            result.Add(WithDisagreements(await ToDtoAsync(db, source, ct), disagreements));
         return Results.Ok(result);
+    }
+
+    /// <summary>The dependencies one Source declares and another does not see, on both Sources.</summary>
+    private static SourceDto WithDisagreements(SourceDto dto, IReadOnlyList<SourceDisagreementDto> all)
+    {
+        var mine = all.Where(d => d.DeclaredBySourceId == dto.Id || d.UnconfirmedBySourceId == dto.Id).ToList();
+        return dto with { Review = dto.Review with { Unconfirmed = mine.Count }, Disagreements = mine };
     }
 
     /// <summary>

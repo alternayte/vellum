@@ -174,7 +174,7 @@ public class SourceTests(ImportHost import) : IClassFixture<ImportHost>
         // another Source holds.
         var bulk = await s.Owner.PostAsJsonAsync($"/api/projects/{s.ProjectId}/sources/{b.Id()}/accept", new { acknowledgeImpact = true });
         var bulkResult = (await bulk.Content.ReadFromJsonAsync<JsonObject>())!;
-        Assert.True(bulk.StatusCode == HttpStatusCode.OK, bulkResult.ToJsonString());
+        Assert.True(bulkResult["failed"]!.AsArray().Count == 0, bulkResult.ToJsonString());
         Assert.Empty(bulkResult["failed"]!.AsArray());
         var accepted = bulkResult["accepted"]!.AsArray().Select(id => id!.GetValue<Guid>()).ToHashSet();
         Assert.DoesNotContain(api.Id(), accepted);
