@@ -56,6 +56,19 @@ function ShareDialog({ projectId, workspaceId, onClose }: { projectId: string; w
   const [created, setCreated] = useState<ShareLinkCreated | null>(null)
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: key })
+  // A new link starts from the defaults: live, no password, no expiry, no costs or promises.
+  // Only the scope and its view stay, so a second link of the same view is one click away.
+  const startOver = () => {
+    setCreated(null)
+    setMode('live')
+    setRevisionId('')
+    setLabel('')
+    setShowCosts(false)
+    setShowPromises(false)
+    setPassword('')
+    setExpiresAt('')
+    create.reset()
+  }
   const create = useMutation({
     mutationFn: () => shareLinksApi.create(projectId, {
       scope, viewId: scope === 'view' ? viewId || null : null, mode, revisionId: mode === 'pinned' ? revisionId || null : null,
@@ -83,7 +96,7 @@ function ShareDialog({ projectId, workspaceId, onClose }: { projectId: string; w
         {policy === 'password-only' && <p className="text-xs text-muted-foreground">The workspace link policy allows links with a password only.</p>}
 
         {created ? (
-          <CreatedLink created={created} onDone={() => setCreated(null)} />
+          <CreatedLink created={created} onDone={startOver} />
         ) : (
           <form className="grid gap-3 sm:grid-cols-2" onSubmit={(e) => { e.preventDefault(); create.mutate() }}>
             <label className="text-xs text-muted-foreground">Scope

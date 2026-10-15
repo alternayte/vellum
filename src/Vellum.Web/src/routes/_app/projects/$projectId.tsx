@@ -677,6 +677,7 @@ function ProjectWorkspace() {
               elements={elements ?? []}
               canEdit={!!project && canEditModel(project.yourRole)}
               model={project && { projectId, projectName: project.name, canImport: canEditModel(project.yourRole) }}
+              revision={openRevision}
             />
           )}
           {activeFlyout === 'catalog' && (

@@ -42,6 +42,8 @@ interface FilesFlyoutProps {
   canEdit: boolean
   /** The project whose model document the flyout exports and imports. Without it the section is not shown. */
   model?: { projectId: string; projectName: string; canImport: boolean }
+  /** The named revision the workbench shows. Diagram exports read it instead of main. */
+  revision?: { id: string; name: string } | null
 }
 
 const TYPE_COLORS: Record<string, string> = {
@@ -53,11 +55,11 @@ const TYPE_COLORS: Record<string, string> = {
 const DOC_DRAG = 'application/x-vellum-doc'
 
 /** Exports the model document of main as a file and opens the import of one. */
-function ModelDocument({ projectId, projectName, canImport }: NonNullable<FilesFlyoutProps['model']>) {
+function ModelDocument({ projectId, projectName, canImport, revision }: NonNullable<FilesFlyoutProps['model']> & { revision?: FilesFlyoutProps['revision'] }) {
   const [importing, setImporting] = useState(false)
   const download = useMutation({
     mutationFn: (format: 'json' | 'yaml' | 'structurizr') =>
-      format === 'structurizr' ? downloadStructurizr(projectId, projectName) : downloadModel(projectId, projectName, format),
+      format === 'structurizr' ? downloadStructurizr(projectId, projectName, revision?.id) : downloadModel(projectId, projectName, format),
     onError: shownInline,
   })
 
@@ -76,7 +78,7 @@ function ModelDocument({ projectId, projectName, canImport }: NonNullable<FilesF
         </Button>
       </div>
       <Button size="sm" variant="secondary" className="mt-1.5 w-full gap-1.5" disabled={download.isPending} onClick={() => download.mutate('structurizr')}>
-        <FileCode className="h-3.5 w-3.5" aria-hidden="true" /> Export Structurizr DSL
+        <FileCode className="h-3.5 w-3.5" aria-hidden="true" /> Export Structurizr DSL{revision ? ` of revision ${revision.name}` : ''}
       </Button>
       <p className="mt-1 text-[11px] leading-relaxed text-muted-foreground">
         Structurizr DSL holds the elements, relationships and views. It drops truth labels, layout, messages, contracts, scenarios, promises and costs, and cannot be imported back.
@@ -155,7 +157,7 @@ function ViewDialogs({ projectId, view, mode, views, onClose }: {
   )
 }
 
-export function FilesFlyout({ projectId, views, docs, spaces, elements, canEdit, model }: FilesFlyoutProps) {
+export function FilesFlyout({ projectId, views, docs, spaces, elements, canEdit, model, revision }: FilesFlyoutProps) {
   const activeViewId = useShellStore((s) => s.activeViewId)
   const activeDocId = useShellStore((s) => s.activeDocId)
   const setActiveView = useShellStore((s) => s.setActiveView)
@@ -169,7 +171,7 @@ export function FilesFlyout({ projectId, views, docs, spaces, elements, canEdit,
   const [dropTarget, setDropTarget] = useState<string | null>(null)
   const moveDoc = useUpdateDoc(projectId)
   const exportView = useMutation({
-    mutationFn: ({ view, format }: { view: ViewItem; format: ViewExportFormat }) => downloadView(projectId, view.id, view.name, format),
+    mutationFn: ({ view, format }: { view: ViewItem; format: ViewExportFormat }) => downloadView(projectId, view.id, view.name, format, revision?.id),
     onError: shownInline,
   })
   const createSpace = useCreateSpace(projectId)
@@ -302,9 +304,9 @@ export function FilesFlyout({ projectId, views, docs, spaces, elements, canEdit,
               label={`Actions for diagram ${view.name}`}
               className="mr-1 opacity-0 group-hover:opacity-100 focus-visible:opacity-100 data-[state=open]:opacity-100"
               items={[
-                { label: 'Export SVG', icon: <FileImage className="h-3.5 w-3.5" aria-hidden="true" />, disabled: exportView.isPending, onSelect: () => exportView.mutate({ view, format: 'svg' }) },
-                { label: 'Export PNG', icon: <FileImage className="h-3.5 w-3.5" aria-hidden="true" />, disabled: exportView.isPending, onSelect: () => exportView.mutate({ view, format: 'png' }) },
-                { label: 'Export Mermaid', icon: <FileCode className="h-3.5 w-3.5" aria-hidden="true" />, disabled: exportView.isPending, onSelect: () => exportView.mutate({ view, format: 'mermaid' }) },
+                { label: revision ? `Export SVG of revision ${revision.name}` : 'Export SVG', icon: <FileImage className="h-3.5 w-3.5" aria-hidden="true" />, disabled: exportView.isPending, onSelect: () => exportView.mutate({ view, format: 'svg' }) },
+                { label: revision ? `Export PNG of revision ${revision.name}` : 'Export PNG', icon: <FileImage className="h-3.5 w-3.5" aria-hidden="true" />, disabled: exportView.isPending, onSelect: () => exportView.mutate({ view, format: 'png' }) },
+                { label: revision ? `Export Mermaid of revision ${revision.name}` : 'Export Mermaid', icon: <FileCode className="h-3.5 w-3.5" aria-hidden="true" />, disabled: exportView.isPending, onSelect: () => exportView.mutate({ view, format: 'mermaid' }) },
                 ...(canEdit ? [
                   { label: 'Rename', icon: <Pencil className="h-3.5 w-3.5" aria-hidden="true" />, onSelect: () => setViewDialog({ view, mode: 'rename' }) },
                   { label: 'Delete…', icon: <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />, destructive: true, onSelect: () => setViewDialog({ view, mode: 'delete' }) },
@@ -380,7 +382,7 @@ export function FilesFlyout({ projectId, views, docs, spaces, elements, canEdit,
         )}
       </div>
 
-      {model && <ModelDocument {...model} />}
+      {model && <ModelDocument {...model} revision={revision} />}
 
       {viewDialog && (
         <ViewDialogs projectId={projectId} view={viewDialog.view} mode={viewDialog.mode} views={views} onClose={() => setViewDialog(null)} />
