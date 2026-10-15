@@ -66,7 +66,7 @@ When you complete the tutorials, put the value `https://api.github.com` back.
 ## Scan the repository
 
 1. On the home screen, select your workspace, then select **+ New Project**. In **Project name**, give `Orders import`. Select **Create**. The project opens.
-2. Select **Import from GitHub** in the left toolbar.
+2. Select **Import** in the left toolbar.
 3. In **Repository**, give `acme/orders`.
 4. In **Read**, select **Branch**. In **Branch or tag**, give `main`.
 5. Leave **Only these folders** empty.
@@ -120,7 +120,7 @@ Three things are true about this model:
 
 ## Scan again
 
-1. Open **Import from GitHub** and select **Scan repository** again, with the same values.
+1. Open **Import** and select **Scan repository** again, with the same values.
 2. Select **Open review** on the new scan. The dialog shows "The source matches the model. This scan proposes no change."
 
 A second scan of the same commit compares the source with the model and finds no difference.

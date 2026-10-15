@@ -193,6 +193,12 @@ export function ProposalReview({ projectId, scan, sourceName, onClose }: {
                             <span className="text-xs font-medium" style={{ color: action.color }}>{action.label}</span>
                             <span className={cn('min-w-0 truncate text-sm', isPending ? 'text-foreground' : 'text-muted-foreground')}>{proposal.name}</span>
                             {!isPending && <span className="rounded-full border border-border px-1.5 text-[10px] text-muted-foreground">{proposal.status}</span>}
+                            <span
+                              className="shrink-0 rounded-full border border-border px-1.5 font-mono text-[10px] text-muted-foreground"
+                              title={proposal.factStatus === 'declared' ? 'A model file states this. Accepted, it is a declared fact.' : 'The source code shows this. Accepted, it is an observed-in-source fact.'}
+                            >
+                              {proposal.factStatus}
+                            </span>
                             <span className="ml-auto shrink-0 font-mono text-[10px] text-muted-foreground">
                               {proposal.evidence[0] ? `${proposal.evidence[0].path}:${proposal.evidence[0].startLine}` : 'no source line'}
                             </span>

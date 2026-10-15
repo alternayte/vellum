@@ -52,7 +52,7 @@ internal static class InferredWrites
     public static async Task<AdditionRefused?> ApplyAsync(
         IEventStore pinned, Guid streamId,
         IReadOnlyList<(Addition Addition, double Confidence)> additions, string source, string userId, DateTimeOffset acceptedAt,
-        CancellationToken ct)
+        CancellationToken ct, IReadOnlyDictionary<Guid, string>? sources = null)
     {
         // The acceptance stamp is taken once, by the caller, so the decision stays a pure
         // function of the state.
@@ -74,7 +74,8 @@ internal static class InferredWrites
                     return new Decision.Conflict(message);
                 }
 
-                var provenance = new Provenance(source, null, confidence, acceptedBy, acceptedAt);
+                // An item read from a document cites its lines: that citation is its source pointer.
+                var provenance = new Provenance(sources?.GetValueOrDefault(addition.Id) ?? source, null, confidence, acceptedBy, acceptedAt);
                 var decision = Add(state, addition).Then(state, after => Record(after, addition, provenance));
                 if (decision is not Decision.Success success)
                 {

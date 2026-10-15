@@ -18,7 +18,8 @@ public sealed record FlowOutput(
     IReadOnlyList<FlowMissingOutput> Missing,
     IReadOnlyList<string> OpenQuestions,
     string ReasoningSummary,
-    IReadOnlyList<FlowEvidenceOutput> Evidence);
+    IReadOnlyList<FlowEvidenceOutput> Evidence,
+    int? StartLine = null, int? EndLine = null);
 
 /// <param name="Slot"><c>root</c>, <c>then</c>, <c>onError</c>, <c>handler</c>, <c>branchThen</c>, <c>branchElse</c> or <c>parallelBranch</c>.</param>
 /// <param name="SlotKey">The subscription alias of a handler, or the branch number of a parallel branch.</param>
@@ -63,7 +64,8 @@ public sealed record ArchitectureItemOutput(
     string? ChannelKind,
     string? Channel, string? Consumer,
     string? Producer, IReadOnlyList<string>? Consumers,
-    double Confidence, string Rationale);
+    double Confidence, string Rationale,
+    int? StartLine = null, int? EndLine = null);
 
 /// <summary>
 /// The JSON Schemas of the structured answers. They sit inside the subset that all three
@@ -98,7 +100,21 @@ internal static class DesignSchemas
     /// <summary>The value of <c>expectedCount</c> in an assertion that does not count events.</summary>
     public const int NoExpectedCount = -1;
 
-    public static readonly JsonElement Flow = JsonSerializer.SerializeToElement(Object(
+    public static readonly JsonElement Flow = JsonSerializer.SerializeToElement(FlowSchema());
+
+    /// <summary>The flow answer for a flow read from a document: it also names the lines the flow comes from.</summary>
+    public static readonly JsonElement FlowFromDocument = JsonSerializer.SerializeToElement(WithLines(FlowSchema()));
+
+    private static JsonObject WithLines(JsonObject schema)
+    {
+        schema["properties"]!["startLine"] = Type("integer");
+        schema["properties"]!["endLine"] = Type("integer");
+        schema["required"]!.AsArray().Add("startLine");
+        schema["required"]!.AsArray().Add("endLine");
+        return schema;
+    }
+
+    private static JsonObject FlowSchema() => Object(
         ("name", Text()),
         ("summary", Text()),
         ("steps", Array(Object(
@@ -149,11 +165,21 @@ internal static class DesignSchemas
             ("confidence", Type("number"))))),
         ("openQuestions", Array(Text())),
         ("reasoningSummary", Text()),
-        ("evidence", Array(Object(("alias", Text()), ("why", Text()))))));
+        ("evidence", Array(Object(("alias", Text()), ("why", Text())))));
 
-    public static readonly JsonElement Architecture = JsonSerializer.SerializeToElement(Object(
+    public static readonly JsonElement Architecture = JsonSerializer.SerializeToElement(ArchitectureSchema(cited: false));
+
+    /// <summary>The answer for additions read from a document: each item also names the lines it comes from.</summary>
+    public static readonly JsonElement ArchitectureFromDocument = JsonSerializer.SerializeToElement(ArchitectureSchema(cited: true));
+
+    private static JsonObject ArchitectureSchema(bool cited) => Object(
         ("summary", Text()),
-        ("items", Array(Object(
+        ("items", Array(Object([.. ItemProperties(), .. cited ? new[] { ("startLine", Type("integer")), ("endLine", Type("integer")) } : []]))),
+        ("openQuestions", Array(Text())),
+        ("reasoningSummary", Text()));
+
+    private static (string Name, JsonObject Schema)[] ItemProperties() =>
+    [
             ("alias", Text()),
             ("action", Enum("add", "change", "remove")),
             ("target", Text()),
@@ -175,9 +201,8 @@ internal static class DesignSchemas
             ("producer", Text()),
             ("consumers", Array(Text())),
             ("confidence", Type("number")),
-            ("rationale", Text())))),
-        ("openQuestions", Array(Text())),
-        ("reasoningSummary", Text())));
+            ("rationale", Text()),
+    ];
 
     private static JsonObject Object(params (string Name, JsonObject Schema)[] properties)
     {

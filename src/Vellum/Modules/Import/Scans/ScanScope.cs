@@ -142,7 +142,7 @@ internal static class ScanScope
             noted = true;
             return reason;
         }
-        if (!PathFilter.IsRelevant(path[(path.LastIndexOf('/') + 1)..]))
+        if (!PathFilter.IsRelevantPath(path))
             return CoverageGap.NotRelevant;
         if (!InScope(path, includePaths, excludePaths))
             return CoverageGap.OutOfScope;

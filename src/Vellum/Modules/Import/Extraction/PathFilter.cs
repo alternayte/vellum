@@ -51,7 +51,28 @@ internal static class PathFilter
     private static readonly HashSet<string> RelevantExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
         ".cs", ".csproj", ".go", ".json", ".yaml", ".yml",
+        // A Structurizr DSL workspace.
+        ".dsl",
     };
+
+    /// <summary>
+    /// The extensions of prose: text that no extractor reads, except an ADR (<see cref="IsRelevantPath"/>).
+    /// A scan does not fetch it; the prose import reads one document when a person asks for it.
+    /// </summary>
+    public static bool IsProse(string name) =>
+        Extension(name).ToLowerInvariant() is ".md" or ".markdown" or ".txt";
+
+    /// <summary>
+    /// <see cref="IsRelevant"/> for a whole path: a Markdown file is read only where ADRs stand
+    /// (<see cref="AdrExtractor.Directory"/>), so other prose takes no part of the bounds.
+    /// </summary>
+    public static bool IsRelevantPath(string path)
+    {
+        var slash = path.LastIndexOf('/');
+        var name = path[(slash + 1)..];
+        return IsRelevant(name)
+            || (slash > 0 && Extension(name).Equals(".md", StringComparison.OrdinalIgnoreCase) && AdrExtractor.Directory(path[..slash]) is not null);
+    }
 
     /// <summary>The reason the path is not read, or null when it may be read.</summary>
     /// <param name="notePath">The path the note is about: the excluded directory for a directory exclusion.</param>

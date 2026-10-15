@@ -698,7 +698,7 @@ function ProjectWorkspace() {
           {activeFlyout === 'scenarios' && (
             <ScenariosFlyout projectId={projectId} branchId={contractBranchId} references={scenarioReferences} />
           )}
-          {activeFlyout === 'import' && <ImportFlyout projectId={projectId} owners={reviewOwners} />}
+          {activeFlyout === 'import' && <ImportFlyout projectId={projectId} owners={reviewOwners} labels={referenceLabels} />}
           {activeFlyout === 'promises' && <PromisesFlyout projectId={projectId} references={scenarioReferences} scenarios={scenarioList ?? []} owners={reviewOwners} />}
           {activeFlyout === 'review' && (
             <ReviewFlyout projectId={projectId} branchId={contractBranchId} revision={openRevision} references={scenarioReferences} elementIds={reviewElementIds} owners={reviewOwners} />

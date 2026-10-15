@@ -14,7 +14,7 @@ This guide shows you how to put a Vellum diagram in a document, a slide or a dia
 | Mermaid | One view | You keep the diagram as text in Markdown, for example in a README. |
 | Structurizr DSL | The whole model | You use Structurizr or another tool that reads the C4 DSL. |
 
-Each export is one-way. Vellum does not import these files. Each file lists what it drops. For the full lists, see [Diagram export formats](/reference/diagram-export-formats/).
+Each export lists what it drops. Vellum does not import SVG, PNG or Mermaid. It reads a Structurizr DSL file back as declared facts: see [Import a Structurizr workspace or Backstage catalog](/how-to/import-a-model-file/). For the full lists, see [Diagram export formats](/reference/diagram-export-formats/).
 
 The SVG shows what the canvas shows. The other formats keep less.
 

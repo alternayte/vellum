@@ -243,6 +243,9 @@ public static class SourceRequests
             case SourceKind.AgentPush:
                 return Refuse(Results.BadRequest(new ErrorResponse("source_kind_unavailable",
                     "An agent-push Source is made by its first push: run vellum scan with an agent token that has the push scope.")));
+            case SourceKind.ModelFile:
+                return Refuse(Results.BadRequest(new ErrorResponse("source_kind_unavailable",
+                    "A model-file Source is made by uploading its file: POST /api/projects/{projectId}/sources/upload.")));
             default:
                 return Refuse(Results.BadRequest(new ErrorResponse("source_kind_unavailable",
                     $"This instance cannot read a Source of kind '{EnumText.Of(kind)}' yet.")));
@@ -363,6 +366,9 @@ public static class SourceRequests
             case SourceKind.Archive:
                 return Results.BadRequest(new ErrorResponse("archive_needs_upload",
                     "An archive Source scans what is uploaded to it. Upload a .zip or .tar.gz to its archive address; each upload is a new Snapshot."));
+            case SourceKind.ModelFile:
+                return Results.Conflict(new ErrorResponse("source_is_upload",
+                    "This Source is an uploaded file. Upload the file again to make a new Snapshot of it."));
             default:
                 return Results.BadRequest(new ErrorResponse("source_kind_unavailable",
                     $"This instance cannot read a Source of kind '{EnumText.Of(source.Kind)}'."));

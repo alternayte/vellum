@@ -10,7 +10,7 @@ public sealed record DecisionState(
     ImmutableList<SettlementStamp> Stamps,
     string? CreatedBy, DateTimeOffset? CreatedAt, DateTimeOffset? UpdatedAt,
     string? AcceptedBy, DateTimeOffset? AcceptedAt,
-    ImmutableList<DecisionHistoryEntry> History, bool Deleted)
+    ImmutableList<DecisionHistoryEntry> History, bool Deleted, DecisionSource? Source = null)
     : IState<DecisionState>
 {
     public static DecisionState Initial => new(null, 0, null, DecisionStatus.Proposed, null, [], null, null, null, null, null, [], false);
@@ -28,8 +28,9 @@ public sealed record DecisionState(
             CreatedAt = e.At,
             UpdatedAt = e.At,
             History = [new DecisionHistoryEntry(e.At, e.By, "proposed", e.Origin)],
+            Source = e.Source,
         },
-        DecisionEvent.DecisionChanged e => state.Noted(e.At, e.By, "changed", null) with { Content = e.Content },
+        DecisionEvent.DecisionChanged e => state.Noted(e.At, e.By, "changed", null) with { Content = e.Content, Source = e.Source ?? state.Source },
         DecisionEvent.DecisionAccepted e => state.Noted(e.At, e.By, "accepted", null) with
         {
             Status = DecisionStatus.Accepted,
@@ -127,4 +128,6 @@ public static class DecisionOrigin
     public const string Human = PromiseOrigin.Human;
     public const string AiSuggested = PromiseOrigin.AiSuggested;
     public const string AgentSuggested = PromiseOrigin.AgentSuggested;
+    /// <summary>An import read it from an ADR file of a Source. A person accepts it like any other.</summary>
+    public const string Imported = "imported";
 }

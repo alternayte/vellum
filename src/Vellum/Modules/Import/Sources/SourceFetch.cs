@@ -21,6 +21,10 @@ internal static class SourceFetch
     public static Task RunAsync(FetchContext context, CancellationToken ct) => context.Source.Kind switch
     {
         SourceKind.Github => GitHubFetch.RunAsync(context, ct),
+        // An upload pinned the Snapshot and listed its one file when it was made (ModelFileUpload).
+        SourceKind.ModelFile when context.Scan is { TreeListed: true, CommitSha: not null } => Task.CompletedTask,
+        SourceKind.ModelFile => throw ScanStop.Failed(new ScanError("upload_missing",
+            "This scan of an uploaded file has no file. Upload the file again.")),
         SourceKind.Gitlab or SourceKind.Bitbucket or SourceKind.AzureDevops => GitHostFetch.RunAsync(context, ct),
         SourceKind.Directory => DirectoryFetch.RunAsync(context, ct),
         SourceKind.Archive => ArchiveFetch.RunAsync(context, ct),

@@ -111,6 +111,7 @@ public static class ScanNotes
     public static string Message(string code) => code switch
     {
         "secret-file" => "The file looks like it holds secrets. It was not read.",
+        "adr-not-proposed" => "The ADR was read, but the project refused its decision (for example, it holds the most decisions it can). No decision was proposed from it.",
         "excluded-directory" => "The directory holds dependencies or build output. It was not read.",
         "lock-file" => "A lock file. It was not read.",
         "minified" => "A minified or generated file. It was not read.",

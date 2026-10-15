@@ -44,7 +44,7 @@ public sealed record DecisionDto(
     IReadOnlyList<Guid> AffectedIds, IReadOnlyList<Settles> Settles, IReadOnlyList<SettlementStamp> Stamps,
     Guid? Supersedes, Guid? SupersededBy,
     string CreatedBy, DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt, string? AcceptedBy, DateTimeOffset? AcceptedAt,
-    IReadOnlyList<DecisionHistoryEntry> History, string ContentHash)
+    IReadOnlyList<DecisionHistoryEntry> History, string ContentHash, DecisionSource? Source = null)
 {
     internal static DecisionDto From(DecisionBook book, PinnedDecision decision)
     {
@@ -54,7 +54,7 @@ public sealed record DecisionDto(
             content.Context, content.Decision, content.Alternatives, content.Consequences,
             content.AffectedIds, content.Settles, state.Stamps, content.Supersedes, book.SupersededBy(decision.Id)?.Id,
             state.CreatedBy!, state.CreatedAt!.Value, state.UpdatedAt!.Value, state.AcceptedBy, state.AcceptedAt, state.History,
-            DecisionContentHash.Of(state));
+            DecisionContentHash.Of(state), state.Source);
     }
 }
 
@@ -103,7 +103,8 @@ public static class DecisionEndpoints
     /// one project take turns, and a refused create gives its number back because it was never issued.
     /// </summary>
     internal static async Task<(DecisionDto? Dto, IResult? Refusal)> CreateAsync(
-        IServiceProvider requestServices, Guid projectId, DecisionContent content, string origin, string userId, DateTimeOffset now, CancellationToken ct)
+        IServiceProvider requestServices, Guid projectId, DecisionContent content, string origin, string userId, DateTimeOffset now, CancellationToken ct,
+        DecisionSource? source = null)
     {
         var db = requestServices.GetRequiredService<AppDbContext>();
         if (content.Supersedes is { } supersedes && !await db.Decisions.AsNoTracking().AnyAsync(d => d.Id == supersedes && d.ProjectId == projectId, ct))
@@ -124,7 +125,7 @@ public static class DecisionEndpoints
 
             var proposed = await services.GetRequiredService<IEventStore>().UseDbContext(db)
                 .DecideInTransaction<DecisionState, DecisionState>(
-                    decisionId, state => DecisionDecider.Propose(state, projectId, number, origin, content, userId, now), state => state, ct);
+                    decisionId, state => DecisionDecider.Propose(state, projectId, number, origin, content, userId, now, source), state => state, ct);
             if (proposed is CommandResult<DecisionState>.Success)
                 await transaction.CommitAsync(ct);
             return proposed;

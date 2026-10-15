@@ -63,6 +63,7 @@ export function DecisionsTab({ projectId, branchId, revision = null, references 
               <p className="mt-1 flex flex-wrap items-center gap-x-2 text-[11px] text-muted-foreground">
                 <span className="rounded-full border border-border px-1.5">{decision.status}</span>
                 <span>{decision.origin}</span>
+                {decision.source && <span className="rounded-full border border-border px-1.5 font-mono">{decision.source.factStatus}</span>}
                 {decision.settles.length > 0 && <span>answers {decision.settles.length} {decision.settles.length === 1 ? 'finding' : 'findings'}</span>}
               </p>
             </button>

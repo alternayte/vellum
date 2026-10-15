@@ -9,6 +9,7 @@ import { describeScan, importApi, isActive, pullRequestState, scanSubject, type 
 import { ProposalReview } from './proposal-review'
 import { ImpactDialog } from './impact-dialog'
 import { SourcesList, SourcesReview } from './sources-review'
+import { DocumentProposalDialog, ModelFileUpload } from './model-files'
 import { AddSourceDialog } from './add-source-dialog'
 import { BulkAddDialog } from './bulk-add-dialog'
 import { AddRuntimeSourceDialog } from './add-runtime-source-dialog'
@@ -37,11 +38,14 @@ const TARGETS: { value: Target; label: string; field: string; placeholder: strin
  * found. Each completed scan is a Snapshot of its Source. Nothing reaches the model until a
  * person accepts it in the review.
  */
-export function ImportFlyout({ projectId, owners }: {
+export function ImportFlyout({ projectId, owners, labels = {} }: {
   projectId: string
   /** The element that owns an operation, a subscription or a message: what the canvas shows for it. */
   owners: Record<string, string>
+  /** Names of the things of the model by ID, for a proposal read from a document. */
+  labels?: Record<string, string>
 }) {
+  const [proseOf, setProseOf] = useState<SourceSummary | null>(null)
   const queryClient = useQueryClient()
   const [repository, setRepository] = useState('')
   const [target, setTarget] = useState<Target>('ref')
@@ -103,7 +107,7 @@ export function ImportFlyout({ projectId, owners }: {
   return (
     <div className="flex h-full flex-col">
       <div className="border-b border-border px-3 py-2">
-        <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Import from GitHub</span>
+        <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Scan a GitHub repository</span>
       </div>
 
       <form onSubmit={submit} className="space-y-2 border-b border-border p-3">
@@ -161,6 +165,7 @@ export function ImportFlyout({ projectId, owners }: {
       {failure && <p role="alert" className="border-b border-border px-3 py-2 text-xs text-[var(--trace-failure)]">{failure.message}</p>}
 
       <div className="flex-1 overflow-y-auto">
+        <ModelFileUpload projectId={projectId} onUploaded={() => void refresh()} />
         <section aria-labelledby="import-sources" className="border-b border-border pt-2">
           <div className="flex flex-wrap items-center gap-x-1 gap-y-0.5 px-3 pb-1.5">
             <h3 id="import-sources" className="flex-1 basis-full text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Sources</h3>
@@ -175,7 +180,7 @@ export function ImportFlyout({ projectId, owners }: {
               Add many repositories
             </Button>
           </div>
-          <SourcesList projectId={projectId} onReview={(source) => openScan(source.review.scanId!, source)} />
+          <SourcesList projectId={projectId} onReview={(source) => openScan(source.review.scanId!, source)} onProse={setProseOf} />
           {opening && <p role="status" className="px-3 pb-2 text-xs text-muted-foreground">Opening the review…</p>}
         </section>
         <h3 className="px-3 pb-1 pt-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Scans</h3>
@@ -253,6 +258,7 @@ export function ImportFlyout({ projectId, owners }: {
         </div>
       </div>
 
+      {proseOf && <DocumentProposalDialog projectId={projectId} source={proseOf} labels={labels} onClose={() => setProseOf(null)} />}
       {adding === 'one' && <AddSourceDialog projectId={projectId} onClose={() => setAdding(null)} />}
       {adding === 'many' && <BulkAddDialog projectId={projectId} onClose={() => setAdding(null)} />}
       {adding === 'runtime' && <AddRuntimeSourceDialog projectId={projectId} onClose={() => { setAdding(null); refresh() }} />}

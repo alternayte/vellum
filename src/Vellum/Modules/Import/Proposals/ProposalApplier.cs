@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using Vellum.Modules.Import.Extraction;
 using Vellum.Modules.Modelling;
 using Vellum.Modules.Schemas;
 using Vellum.Modules.Trace.Engine;
@@ -67,9 +68,13 @@ internal sealed class ProposalApplier(
         {
             if (!ModelEnum.TryParseDefined(Text(proposed, Field.Kind), out ElementKind kind))
                 return $"'{Text(proposed, Field.Kind)}' is not an element kind.";
+            // A model file can state a description and tags. They are set when the element is
+            // added and never compared later: they are the intent of whoever wrote them.
+            var tags = (Text(proposed, Field.Tags) ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Distinct(StringComparer.Ordinal).Take(TextRule.MaxTags).ToArray();
             return Run(p, ModelDecider.AddElement(State, new AddElementCommand(
-                    id, kind, Text(proposed, Field.Name) ?? "", null, Text(proposed, Field.Technology), null,
-                    ElementStatus.Current, Id(proposed, Field.ParentId) is { } parent ? new ElementId(parent) : null, []))
+                    id, kind, Text(proposed, Field.Name) ?? "", Text(proposed, Field.Description), Text(proposed, Field.Technology), null,
+                    ElementStatus.Current, Id(proposed, Field.ParentId) is { } parent ? new ElementId(parent) : null, tags))
                 .Then(State, after => ModelDecider.RecordElementProvenance(after, id, Label(p), provenance))
                 .Then(State, after => ModelDecider.BindElementSource(after, id, sourceId, ExternalKeyOf(p))));
         }
@@ -223,8 +228,10 @@ internal sealed class ProposalApplier(
             return "The proposal names no source element or no target element.";
         if (p.Action == ProposalAction.Add)
         {
+            // A runtime edge ran, so it is behavioural; a model file says which kind it is.
+            var kind = Text(proposed, Field.Kind) == "structural" ? RelationshipKind.Structural : RelationshipKind.Behavioural;
             return Run(p, ModelDecider.AddRelationship(State, new AddRelationshipCommand(
-                    id, from, to, Text(proposed, Field.Label), null, RelationshipKind.Behavioural))
+                    id, from, to, Text(proposed, Field.Label), Text(proposed, Field.Technology), kind))
                 .Then(State, after => ModelDecider.RecordRelationshipProvenance(after, id, Label(p), provenance)));
         }
 
@@ -238,7 +245,7 @@ internal sealed class ProposalApplier(
 
     /// <summary>The truth label the Source gives the fact of the proposal (<see cref="FactMapping.LabelOf"/>).</summary>
     private static FactStatus Label(ProposalEntity p) =>
-        FactStatusFormat.TryParseApiString(FactMapping.LabelOf(ProposalJson.ReadAttributes(p.Attributes)), out var status) ? status : FactStatus.ObservedInSource;
+        FactStatusFormat.TryParseApiString(FactMapping.LabelOf(ProposalJson.ReadAttributes(p.Attributes), ProposalJson.ReadEvidence(p.Evidence)), out var status) ? status : FactStatus.ObservedInSource;
 
     private string? Message(ProposalEntity p, JsonObject? proposed, JsonObject? current, Provenance? provenance)
     {

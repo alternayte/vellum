@@ -80,6 +80,7 @@ export function ArchitectureProposalDialog({ projectId, proposal: initial, label
           <DialogTitle>Proposed additions</DialogTitle>
           <DialogDescription>
             {describeOrigin(proposal)} Accepted items are added as inferred facts. Nothing in the model is changed or removed.
+            {proposal.document && ` Read from ${proposal.document.path}; each item cites the lines it comes from, and that citation is its source.`}
           </DialogDescription>
         </DialogHeader>
 
@@ -109,6 +110,11 @@ export function ArchitectureProposalDialog({ projectId, proposal: initial, label
                   </p>
                   <p className="font-mono text-[11px] text-muted-foreground">{detail(item)}</p>
                   {item.rationale && <p className="mt-0.5 text-xs text-muted-foreground">{item.rationale}</p>}
+                  {item.citation && (
+                    <p className="mt-0.5 break-all font-mono text-[10px] text-muted-foreground" title={item.citation}>
+                      inferred · {item.citation.slice(item.citation.lastIndexOf(':', item.citation.lastIndexOf(':') - 1) + 1)}
+                    </p>
+                  )}
                   {item.status !== 'pending' && item.decidedBy && (
                     <p className="mt-0.5 font-mono text-[10px] text-muted-foreground">
                       {item.status} by {personOf(item.decidedBy)}{item.decidedAt ? ` · ${new Date(item.decidedAt).toLocaleString()}` : ''}

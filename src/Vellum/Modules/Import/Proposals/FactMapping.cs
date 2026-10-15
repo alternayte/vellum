@@ -40,6 +40,10 @@ internal static class Field
     public const string FromId = "fromId";
     public const string ToId = "toId";
     public const string Label = "label";
+    /// <summary>Set on an element when it is added. Not compared: a description is the intent of a person.</summary>
+    public const string Description = "description";
+    /// <summary>Set on an element when it is added, comma-separated. Not compared.</summary>
+    public const string Tags = "tags";
 
     /// <summary>The fields that hold the ID of another entity.</summary>
     public static readonly string[] References =
@@ -125,10 +129,20 @@ internal static class FactMapping
     public const string SamplePrefix = "sample.";
 
     /// <summary>The truth label a fact carries: its <see cref="TruthLabelAttribute"/> when that is one of the labels a Source may give, else <c>observed-in-source</c>.</summary>
-    public static string LabelOf(IReadOnlyDictionary<string, string> attributes) =>
+    public static string LabelOf(IReadOnlyDictionary<string, string> attributes) => LabelOf(attributes, Array.Empty<string>());
+
+    /// <summary>
+    /// The truth label of a fact: its <see cref="TruthLabelAttribute"/> when a runtime Source
+    /// set one, else the label of the rules of its evidence (<see cref="TruthLabels"/>): a model
+    /// file or an ADR is <c>declared</c>, code and configuration <c>observed-in-source</c>.
+    /// </summary>
+    public static string LabelOf(IReadOnlyDictionary<string, string> attributes, IEnumerable<string> rules) =>
         attributes.TryGetValue(TruthLabelAttribute, out var label) && label is "measured" or "declared"
             ? label
-            : ProposalPlanner.ObservedInSource;
+            : TruthLabels.Of(rules);
+
+    public static string LabelOf(IReadOnlyDictionary<string, string> attributes, IEnumerable<EvidenceRef> evidence) =>
+        LabelOf(attributes, evidence.Select(e => e.Rule));
 
     /// <summary>
     /// The in-memory key of the candidate that stands for the repository. It starts with a
@@ -398,6 +412,48 @@ internal static class FactMapping
                         Evidence(fact, "contract-document-has-no-model-home");
                     break;
 
+                case FactKind.Element:
+                {
+                    var kind = fact.Attributes.GetValueOrDefault("elementKind");
+                    var rank = kind switch { "actor" or "system" => 1, "app" or "store" => 2, "component" => 3, _ => 0 };
+                    if (rank == 0)
+                    {
+                        Evidence(fact, "element-kind-has-no-model-home");
+                        break;
+                    }
+                    var parent = fact.Attributes.GetValueOrDefault("parent");
+                    var needsParent = rank > 1;
+                    Add(fact, EntityKinds.Element, fact.Name, rank,
+                        Fields((Field.Kind, kind), (Field.Name, fact.Name), (Field.Technology, fact.Attributes.GetValueOrDefault("technology")),
+                            (Field.Description, fact.Attributes.GetValueOrDefault("description")), (Field.Tags, fact.Attributes.GetValueOrDefault("tags"))),
+                        needsParent ? [new Reference(Field.ParentId, parent, RequiredToAdd: true)] : [],
+                        consumed: ["elementKind", "parent", "technology", "description", "tags"],
+                        notAddable: needsParent && parent is null ? "no-parent-declared" : null);
+                    break;
+                }
+
+                case FactKind.Relationship:
+                {
+                    if (!fact.Attributes.TryGetValue("from", out var fromKey) || !fact.Attributes.TryGetValue("to", out var toKey))
+                    {
+                        Evidence(fact, "relationship-ends-not-declared");
+                        break;
+                    }
+                    var label = fact.Attributes.GetValueOrDefault("label");
+                    var shown = $"{byKey.GetValueOrDefault(fromKey)?.Name ?? fromKey} → {byKey.GetValueOrDefault(toKey)?.Name ?? toKey}" + (label is null ? "" : $": {label}");
+                    Add(fact, EntityKinds.Relationship, shown, 7,
+                        Fields((Field.Label, label), (Field.Technology, fact.Attributes.GetValueOrDefault("technology")),
+                            (Field.Kind, fact.Attributes.GetValueOrDefault("relationshipKind") == "behavioural" ? "behavioural" : "structural")),
+                        [new Reference(Field.FromId, fromKey, RequiredToAdd: true), new Reference(Field.ToId, toKey, RequiredToAdd: true)],
+                        consumed: ["from", "to", "label", "technology", "relationshipKind"]);
+                    break;
+                }
+
+                case FactKind.Decision:
+                    // An ADR becomes a proposed decision of the project's review, not a model entity.
+                    Evidence(fact, "proposed-as-decision");
+                    break;
+
                 default:
                     Evidence(fact, NoModelHome);
                     break;
@@ -411,7 +467,7 @@ internal static class FactMapping
             var name = repository[(repository.LastIndexOf('/') + 1)..];
             // The label travels in the attributes, as for every fact, so the applier and the
             // link give the system the label of the Source and not observed-in-source.
-            var systemLabel = LabelOf(inSystem[0].Attributes);
+            var systemLabel = LabelOf(inSystem[0].Attributes, inSystem[0].Evidence.Select(e => e.Rule));
             candidates.Add(new Candidate(
                 RepositoryKey, EntityKinds.Element, name, 0,
                 Fields((Field.Kind, "system"), (Field.Name, name)), [], [],
@@ -421,7 +477,7 @@ internal static class FactMapping
                     : new Dictionary<string, string> { [TruthLabelAttribute] = systemLabel },
                 [.. inSystem.Select(f => Ref(f.Evidence[0])).Take(EvidenceCap)], NotAddable: null,
                 // The system holds what the Source shows: it carries the label of its parts.
-                TruthLabel: LabelOf(inSystem[0].Attributes)));
+                TruthLabel: systemLabel));
         }
 
         return new MappingResult(
@@ -441,9 +497,10 @@ internal static class FactMapping
                     observed[attribute] = value;
             }
 
+            var cited = (evidence ?? fact.Evidence).ToList();
             candidates.Add(new Candidate(
                 fact.Key, entityKind, name, rank, fields, references, consumerKeys ?? [], observed, attributes,
-                [.. (evidence ?? fact.Evidence).Select(Ref).Distinct().Take(EvidenceCap)], notAddable, matchRoute, LabelOf(fact.Attributes)));
+                [.. (evidence ?? fact.Evidence).Select(Ref).Distinct().Take(EvidenceCap)], notAddable, matchRoute, LabelOf(fact.Attributes, fact.Evidence.Select(e => e.Rule))));
             mapped.Add(new MappedFact(fact, FactDisposition.Mapped, null));
         }
 

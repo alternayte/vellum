@@ -304,7 +304,7 @@ The stand-in serves a second ref of `acme/orders`: `remove-outbox`. On that ref 
 
 In the app:
 
-1. Open **Import from GitHub**. Enter `acme/orders` in **Repository**. In **Read**, select **Branch** and enter `remove-outbox` in **Branch or tag**. Select **Scan repository**. To compare pull request #1 of the stand-in in place of the branch, select **Pull request #** and enter `1`: the impact is the same, and the scan cannot be followed.
+1. Open **Import**. Enter `acme/orders` in **Repository**. In **Read**, select **Branch** and enter `remove-outbox` in **Branch or tag**. Select **Scan repository**. To compare pull request #1 of the stand-in in place of the branch, select **Pull request #** and enter `1`: the impact is the same, and the scan cannot be followed.
 2. When the scan shows **Scan complete**, select **Impact** on it.
 3. Read **Changed in the source**. It has the changed schema and the changed message `OrderCreated`, and the line **Removed Transactional outbox**. Each line has the label **Definite**. Open a line to read the diff and the source lines.
 4. Read **Affected flows**. **Place an order** has the label **Definite**. Each step shows its own label and its reasons. `publish-order-created` is **Definite**: it names the changed schema. The other steps are **Possible**: they run in the service of the outbox. **4 reasons for the flow** opens the reasons of the flow as a whole.

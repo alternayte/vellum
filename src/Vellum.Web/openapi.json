@@ -6622,6 +6622,86 @@
         }
       }
     },
+    "/api/projects/{projectId}/ai/architecture-proposals/from-document": {
+      "post": {
+        "tags": [
+          "AI design"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ArchitectureFromDocumentRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ArchitectureProposalDto"
+                }
+              }
+            }
+          },
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AiUnavailable"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/projects/{projectId}/ai/architecture-proposals/submit": {
       "post": {
         "tags": [
@@ -7741,6 +7821,76 @@
         }
       }
     },
+    "/api/projects/{projectId}/sources/upload": {
+      "post": {
+        "tags": [
+          "Sources"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UploadModelFileRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Accepted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UploadModelFileResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too Many Requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/projects/{projectId}/sources/{sourceId}": {
       "get": {
         "tags": [
@@ -8660,6 +8810,58 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/SnapshotComparisonDto"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/sources/{sourceId}/documents": {
+      "get": {
+        "tags": [
+          "Sources"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "sourceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SourceDocumentDto"
+                  }
                 }
               }
             }
@@ -15879,6 +16081,34 @@
           }
         }
       },
+      "ArchitectureFromDocumentRequest": {
+        "required": [
+          "sourceId",
+          "path"
+        ],
+        "type": "object",
+        "properties": {
+          "sourceId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "path": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "request": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
       "ArchitectureItemDto": {
         "required": [
           "id",
@@ -15946,6 +16176,12 @@
               "string"
             ],
             "format": "date-time"
+          },
+          "citation": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -16097,6 +16333,24 @@
           },
           "rationale": {
             "type": "string"
+          },
+          "startLine": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "endLine": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
           }
         }
       },
@@ -16274,6 +16528,16 @@
           },
           "origin": {
             "type": "string"
+          },
+          "document": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/DocumentSource"
+              }
+            ]
           }
         }
       },
@@ -18667,6 +18931,19 @@
               "type": "string",
               "format": "uuid"
             }
+          },
+          "documentSourceId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "documentPath": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -19693,6 +19970,16 @@
           },
           "contentHash": {
             "type": "string"
+          },
+          "source": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/DecisionSource"
+              }
+            ]
           }
         }
       },
@@ -19810,6 +20097,57 @@
               "null",
               "string"
             ]
+          }
+        }
+      },
+      "DecisionSection": {
+        "required": [
+          "name",
+          "citation"
+        ],
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "citation": {
+            "type": "string"
+          }
+        }
+      },
+      "DecisionSource": {
+        "required": [
+          "factStatus",
+          "citation",
+          "recordedStatus",
+          "recordedDate",
+          "sections"
+        ],
+        "type": "object",
+        "properties": {
+          "factStatus": {
+            "type": "string"
+          },
+          "citation": {
+            "type": "string"
+          },
+          "recordedStatus": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "recordedDate": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "sections": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DecisionSection"
+            }
           }
         }
       },
@@ -19938,6 +20276,35 @@
           "lognormal",
           "uniform"
         ]
+      },
+      "DocumentSource": {
+        "required": [
+          "sourceId",
+          "path",
+          "citation",
+          "lines"
+        ],
+        "type": "object",
+        "properties": {
+          "sourceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "path": {
+            "type": "string"
+          },
+          "citation": {
+            "type": "string"
+          },
+          "lines": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          }
+        }
       },
       "DrainStats": {
         "required": [
@@ -21822,6 +22189,24 @@
             "items": {
               "$ref": "#/components/schemas/FlowEvidenceOutput"
             }
+          },
+          "startLine": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "endLine": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
           }
         }
       },
@@ -22045,6 +22430,22 @@
           },
           "origin": {
             "type": "string"
+          },
+          "document": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/DocumentSource"
+              }
+            ]
+          },
+          "citation": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -27512,6 +27913,10 @@
           "sourceId": {
             "type": "string",
             "format": "uuid"
+          },
+          "factStatus": {
+            "type": "string",
+            "default": "observed-in-source"
           }
         }
       },
@@ -33419,6 +33824,30 @@
           }
         }
       },
+      "SourceDocumentDto": {
+        "required": [
+          "path",
+          "size",
+          "isAdr"
+        ],
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "size": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "isAdr": {
+            "type": "boolean"
+          }
+        }
+      },
       "SourceDto": {
         "required": [
           "id",
@@ -36532,6 +36961,50 @@
               "null",
               "string"
             ]
+          }
+        }
+      },
+      "UploadModelFileRequest": {
+        "required": [
+          "path",
+          "content"
+        ],
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "content": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "name": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
+      "UploadModelFileResponse": {
+        "required": [
+          "sourceId",
+          "scanId"
+        ],
+        "type": "object",
+        "properties": {
+          "sourceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "scanId": {
+            "type": "string",
+            "format": "uuid"
           }
         }
       },

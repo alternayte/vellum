@@ -44,7 +44,7 @@ public class DiagramExportTests
                 Relationships = relationships.ToImmutableDictionary(r => r.Id),
             });
 
-    private static PinnedModel FixedModel() => Model(
+    internal static PinnedModel FixedModel() => Model(
         [
             Element(Shop, ElementKind.System, "Shop", technology: "Kubernetes"),
             Element(Customer, ElementKind.Actor, "Customer"),

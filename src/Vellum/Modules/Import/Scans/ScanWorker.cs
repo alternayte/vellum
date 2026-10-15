@@ -395,8 +395,44 @@ public sealed class ScanWorker(
             case SnapshotOutcome.ModelBusy:
                 throw ScanStop.Failed(ScanFailures.ModelBusy);
             case SnapshotOutcome.Written:
+                await ProposeDecisionsAsync(scanId, result.Facts);
                 await DropUnusedBlobsAsync(scan.WorkspaceId, CancellationToken.None);
                 break;
+        }
+    }
+
+    /// <summary>
+    /// The ADRs of a completed tracking scan become proposed decisions (<see cref="AdrDecisions"/>).
+    /// The scan is complete whatever happens here: a failure is logged, and the next scan of the
+    /// Source proposes what is missing, since nothing links it yet.
+    /// </summary>
+    private async Task ProposeDecisionsAsync(Guid scanId, IReadOnlyList<ExtractedFact> facts)
+    {
+        if (!facts.Any(f => f.Kind == FactKind.Decision))
+            return;
+        try
+        {
+            await using var scope = scopes.CreateAsyncScope();
+            var services = scope.ServiceProvider;
+            var db = services.GetRequiredService<AppDbContext>();
+            var scan = await db.Scans.AsNoTracking().FirstAsync(s => s.Id == scanId, CancellationToken.None);
+            var tracked = await db.TrackedRefs.AsNoTracking()
+                .FirstOrDefaultAsync(t => t.ProjectId == scan.ProjectId && t.Host == scan.Host && t.Repository == scan.Repository, CancellationToken.None);
+            if (scan.Status != ScanStatus.Completed || !ScanKindInfo.Of(scan, tracked).Tracking)
+                return;
+            services.GetRequiredService<DeedboxContext>().Metadata = new EventMetadata { Actor = AdrDecisions.Actor, CorrelationId = scanId.ToString() };
+            var refused = await AdrDecisions.ProposeAsync(services, scan, facts, CancellationToken.None);
+            if (refused.Count > 0)
+            {
+                // The scan is complete; its notes say which ADRs gave no decision.
+                var notes = ScanNotes.Write(ScanNotes.Read(scan.Notes).Concat(refused));
+                await db.Scans.Where(s => s.Id == scanId)
+                    .ExecuteUpdateAsync(set => set.SetProperty(s => s.Notes, notes), CancellationToken.None);
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogError("Scan {ScanId}: the decisions of its ADRs could not be proposed ({ExceptionType}).", scanId, ex.GetType().FullName);
         }
     }
 

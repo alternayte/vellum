@@ -3,7 +3,7 @@ title: Diagram export formats
 description: The SVG, PNG, Mermaid and Structurizr DSL exports, with the endpoints, the mapping of each format, what each drops and how text is escaped.
 ---
 
-Vellum exports a view as SVG, PNG or Mermaid, and the model as Structurizr DSL. Each export is one-way: Vellum does not import these files. [Export a diagram](/how-to/export-a-diagram/) shows the steps.
+Vellum exports a view as SVG, PNG or Mermaid, and the model as Structurizr DSL. Vellum does not import SVG, PNG or Mermaid. A Structurizr DSL file reads back as the same elements and relationships: see [Model file mappings](/reference/model-file-mappings/). [Export a diagram](/how-to/export-a-diagram/) shows the steps.
 
 ## Endpoints
 

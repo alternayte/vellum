@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.EntityFrameworkCore;
+using Vellum.Modules.Import.Extraction;
 using Vellum.Modules.Import.Scans;
 using Vellum.Shared;
 
@@ -110,7 +111,7 @@ internal sealed record ImportState(
         return new OtherSourceFact(
             source?.Id ?? Guid.Empty, citationName, source?.Name ?? link.Repository,
             // The label the Source gave the fact: observed-in-source for code, measured or declared at runtime.
-            FactMapping.LabelOf(ProposalJson.ReadAttributes(link.Attributes)),
+            FactMapping.LabelOf(ProposalJson.ReadAttributes(link.Attributes), ProposalJson.ReadEvidence(link.Evidence)),
             ProposalJson.ReadValues(link.Accepted), ProposalJson.ReadAttributes(link.Attributes),
             first is null ? null : EvidenceLinks.Pointer(citationName, link.CommitSha, first),
             link.AcceptedBy, link.AcceptedAt);

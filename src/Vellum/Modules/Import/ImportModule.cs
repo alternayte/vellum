@@ -114,6 +114,14 @@ public static class ImportModule
             .Produces<ErrorResponse>(StatusCodes.Status400BadRequest)
             .Produces<ErrorResponse>(StatusCodes.Status409Conflict);
 
+        // One file as its own Source: a Structurizr workspace, a Backstage catalog, an ADR or a document.
+        sources.MapPost("/upload", ModelFileUpload.Upload).RequireHuman()
+            .WithBodyLimit(RequestBodyLimit.Document)
+            .Produces<UploadModelFileResponse>(StatusCodes.Status202Accepted)
+            .Produces<ErrorResponse>(StatusCodes.Status400BadRequest)
+            .Produces<ErrorResponse>(StatusCodes.Status409Conflict)
+            .Produces<ErrorResponse>(StatusCodes.Status429TooManyRequests);
+
         sources.MapGet("/{sourceId}", SourceRequests.Get)
             .Produces<SourceDto>()
             .Produces<ErrorResponse>(StatusCodes.Status404NotFound);
@@ -196,6 +204,10 @@ public static class ImportModule
             .Produces<SnapshotComparisonDto>()
             .Produces<ErrorResponse>(StatusCodes.Status404NotFound);
 
+        sources.MapGet("/{sourceId}/documents", SourceDocuments.List)
+            .Produces<List<SourceDocumentDto>>()
+            .Produces<ErrorResponse>(StatusCodes.Status404NotFound);
+
         sources.MapGet("/{sourceId}/bindings", SourceRequests.Bindings)
             .Produces<List<SourceBindingDto>>()
             .Produces<ErrorResponse>(StatusCodes.Status404NotFound);
@@ -257,6 +269,7 @@ public static class ImportRetention
 
         await db.FactLinks.Where(l => l.ProjectId == projectId).ExecuteDeleteAsync(ct);
         await db.Rejections.Where(r => r.ProjectId == projectId).ExecuteDeleteAsync(ct);
+        await db.DecisionLinks.Where(l => l.ProjectId == projectId).ExecuteDeleteAsync(ct);
         await db.TrackedRefs.Where(t => t.ProjectId == projectId).ExecuteDeleteAsync(ct);
         // The files, the snapshot, its facts and the proposals of a scan go with its row.
         // A worker that runs one of these scans finds no row to write to and stops.
@@ -283,6 +296,7 @@ public static class ImportRetention
                   UNION SELECT project_id FROM import.sources
                   UNION SELECT project_id FROM import.fact_links
                   UNION SELECT project_id FROM import.rejections
+                  UNION SELECT project_id FROM import.decision_links
                   UNION SELECT project_id FROM import.tracked_refs) i
             WHERE NOT EXISTS (SELECT 1 FROM workspaces.projects p WHERE p.id = i.project_id)
             """).ToListAsync(ct);

@@ -102,6 +102,9 @@ export function describeOrigin(proposal: { origin: ProposalOrigin; provider: { m
 }
 
 export interface FlowProposal {
+  /** For a flow read from a document: the document, and `<source>@<revision>:path:start-end` of the lines it comes from. */
+  document?: DocumentSource | null
+  citation?: string | null
   id: string
   origin: ProposalOrigin
   status: 'draft' | 'accepted' | 'rejected'
@@ -143,9 +146,21 @@ export interface ArchitectureItem {
   /** Who accepted or rejected the item, and when. Null while it is pending. */
   decidedBy?: string | null
   decidedAt?: string | null
+  /** For an item read from a document: `<source>@<revision>:path:start-end`, the lines it comes from. */
+  citation?: string | null
+}
+
+/** The document a proposal was read from. */
+export interface DocumentSource {
+  sourceId: string
+  path: string
+  citation: string
+  lines: number
 }
 
 export interface ArchitectureProposal {
+  /** Set when the proposal was read from a document of a Source. */
+  document?: DocumentSource | null
   id: string
   origin: ProposalOrigin
   status: 'draft' | 'decided'
@@ -172,6 +187,11 @@ export type ExplainTarget =
 const base = (projectId: string) => `/api/projects/${projectId}/ai`
 
 export const designApi = {
+  /** A flow that a document of a Source describes. The flow cites the lines it comes from. */
+  proposeFlowFromDocument: (projectId: string, sourceId: string, path: string, request: string) =>
+    api<FlowProposal | Unavailable>('POST', `${base(projectId)}/flow-proposals`, {
+      request, branchId: null, reviseScenarioId: null, documentSourceId: sourceId, documentPath: path,
+    }),
   proposeFlow: (projectId: string, request: string, branchId?: string | null) =>
     api<FlowProposal | Unavailable>('POST', `${base(projectId)}/flow-proposals`, { request, branchId: branchId ?? null, reviseScenarioId: null }),
   acceptFlow: (projectId: string, id: string, acceptWithIssues: boolean) =>
@@ -205,6 +225,9 @@ export const designApi = {
   rejectFlow: (projectId: string, id: string) => api<FlowProposal>('POST', `${base(projectId)}/flow-proposals/${id}/reject`),
   createMissing: (projectId: string, id: string, alias: string) =>
     api<FlowProposal>('POST', `${base(projectId)}/flow-proposals/${id}/missing/${encodeURIComponent(alias)}/create`),
+  /** Prose of a Source through the AI path: inferred items, each citing its lines. */
+  proposeFromDocument: (projectId: string, sourceId: string, path: string, request?: string) =>
+    api<ArchitectureProposal | Unavailable>('POST', `${base(projectId)}/architecture-proposals/from-document`, { sourceId, path, request: request || null }),
   proposeArchitecture: (projectId: string, request: string, branchId?: string | null) =>
     api<ArchitectureProposal | Unavailable>('POST', `${base(projectId)}/architecture-proposals`, { request, branchId: branchId ?? null }),
   decideArchitecture: (projectId: string, id: string, accept: string[], reject: string[]) =>

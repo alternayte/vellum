@@ -160,8 +160,7 @@ internal sealed class ExtractionContext(ExtractionLimits limits)
                 Note(NoteKind.Skipped, reason, notePath);
                 continue;
             }
-            var name = file.Path[(file.Path.LastIndexOf('/') + 1)..];
-            if (!PathFilter.IsRelevant(name))
+            if (!PathFilter.IsRelevantPath(file.Path))
                 continue;
 
             // A char is at least one UTF-8 byte, so the length alone can refuse a huge file.
@@ -408,7 +407,7 @@ internal sealed class ExtractionContext(ExtractionLimits limits)
             if (string.IsNullOrEmpty(raw))
                 continue;
             var value = TextUtil.FixSurrogates(raw);
-            var isBody = attribute is "schema" or "payload";
+            var isBody = attribute is "schema" or "payload" or "context" or "decision" or "consequences";
             if (value.Length > (isBody ? Limits.MaxSchemaBytes : MaxValueLength))
             {
                 Note(NoteKind.Redacted, "value-too-long:" + attribute, at.Path, at.StartLine);

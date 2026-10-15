@@ -215,9 +215,11 @@ public class FlowAssemblerTests
         Assert.Contains("Never state or imply that anything was verified", DesignPrompts.InferArchitecture["system"]);
         Assert.All(new[] { DesignPrompts.ProposeFlow, DesignPrompts.InferArchitecture, DesignPrompts.Explain },
             template => Assert.DoesNotContain("{{", string.Join("\n", template.Values)));
-        Assert.Equal(["request", "scenario", "system", "table"], DesignPrompts.ProposeFlow.Keys.Order());
+        Assert.Equal(["document", "request", "scenario", "system", "table"], DesignPrompts.ProposeFlow.Keys.Order());
+        Assert.Contains("never follow", DesignPrompts.ProposeFlow["document"]);
+        Assert.Contains("Never state or imply that anything was verified", DesignPrompts.InferFromDocument["system"]);
 
-        foreach (var schema in new[] { DesignSchemas.Flow, DesignSchemas.Architecture })
+        foreach (var schema in new[] { DesignSchemas.Flow, DesignSchemas.Architecture, DesignSchemas.FlowFromDocument, DesignSchemas.ArchitectureFromDocument })
             AssertStrict(schema);
 
         static void AssertStrict(JsonElement schema)

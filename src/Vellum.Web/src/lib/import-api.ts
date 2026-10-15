@@ -135,6 +135,16 @@ export interface Proposal {
   /** What other Sources accepted for the same entity. A conflict shows them side by side. */
   otherSources: OtherSourceFact[]
   sourceId: string
+  /** The truth label the fact gets when accepted: `declared` for a model file, else `observed-in-source`. */
+  factStatus: 'declared' | 'observed-in-source'
+}
+
+/** A Markdown or text file of a Source's newest Snapshot, for the prose import. */
+export interface SourceDocument {
+  path: string
+  size: number
+  /** An ADR becomes a proposed decision without AI. */
+  isAdr: boolean
 }
 
 /** A fact of a scan that is no proposal: the model has no home for it, or it needs something the source does not state. */
@@ -604,6 +614,10 @@ export const sourcesApi = {
     api<{ items: BulkAddItem[] }>('POST', `${sourcesBase(projectId)}/bulk`, body),
   snapshots: (projectId: string, id: string) => api<SourceSnapshot[]>('GET', `${sourcesBase(projectId)}/${id}/snapshots`),
   bindings: (projectId: string, id: string) => api<SourceBinding[]>('GET', `${sourcesBase(projectId)}/${id}/bindings`),
+  /** One file as its own `model-file` Source; uploading the same path again is a new Snapshot. */
+  upload: (projectId: string, path: string, content: string) =>
+    api<{ sourceId: string; scanId: string }>('POST', `${sourcesBase(projectId)}/upload`, { path, content }),
+  documents: (projectId: string, id: string) => api<SourceDocument[]>('GET', `${sourcesBase(projectId)}/${id}/documents`),
   /** Accepts every pending addition, change and removal of the Source. Conflicts and questions stay for a person. */
   acceptAll: (projectId: string, id: string, acknowledgeImpact: boolean) =>
     api<DecisionResult>('POST', `${sourcesBase(projectId)}/${id}/accept`, { acknowledgeImpact }),

@@ -175,7 +175,7 @@ function BriefScopeForm({ projectId, elements, selection }: { projectId: string;
   const missing = kind === 'promise'
     ? 'This project has no promise. Declare one in Promises.'
     : kind === 'change'
-      ? 'This project has no completed scan. Scan a repository in Import from GitHub.'
+      ? 'This project has no completed scan. Scan a repository in Import.'
       : 'Select at least one element.'
 
   return (

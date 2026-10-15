@@ -106,6 +106,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : IdentityDbCo
     public DbSet<ImportSnapshotFactEntity> SnapshotFacts => Set<ImportSnapshotFactEntity>();
     public DbSet<ImportProposalEntity> ImportProposals => Set<ImportProposalEntity>();
     public DbSet<FactLinkEntity> FactLinks => Set<FactLinkEntity>();
+    public DbSet<DecisionLinkEntity> DecisionLinks => Set<DecisionLinkEntity>();
     public DbSet<RejectionEntity> Rejections => Set<RejectionEntity>();
 
     // promises

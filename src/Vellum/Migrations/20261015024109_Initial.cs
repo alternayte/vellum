@@ -96,7 +96,7 @@ namespace Vellum.Migrations
                 .Annotation("Npgsql:Enum:import.coverage_gap", "failed,limit,scope,withheld")
                 .Annotation("Npgsql:Enum:import.entity_kind", "binding,channel,element,message,operation,relationship,schema,subscription")
                 .Annotation("Npgsql:Enum:import.fact_disposition", "blocked,evidence_only,folded,mapped")
-                .Annotation("Npgsql:Enum:import.fact_kind", "channel,data_access,data_store,dependency,deployment,interaction,message,operation,pattern,publication,schema,service,subscription")
+                .Annotation("Npgsql:Enum:import.fact_kind", "channel,data_access,data_store,decision,dependency,deployment,element,interaction,message,operation,pattern,publication,relationship,schema,service,subscription")
                 .Annotation("Npgsql:Enum:import.proposal_action", "add,bind,change,conflict,relink,remove")
                 .Annotation("Npgsql:Enum:import.proposal_status", "accepted,pending,rejected,superseded")
                 .Annotation("Npgsql:Enum:import.scan_file_state", "pending,read,skipped")
@@ -212,6 +212,25 @@ namespace Vellum.Migrations
                 constraints: table =>
                 {
                     table.PrimaryKey("pk_data_protection_keys", x => x.id);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "decision_links",
+                schema: "import",
+                columns: table => new
+                {
+                    project_id = table.Column<Guid>(type: "uuid", nullable: false),
+                    source_id = table.Column<Guid>(type: "uuid", nullable: false),
+                    path_hash = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: false),
+                    path = table.Column<string>(type: "character varying(1024)", maxLength: 1024, nullable: false),
+                    decision_id = table.Column<Guid>(type: "uuid", nullable: false),
+                    content_hash = table.Column<string>(type: "character varying(64)", maxLength: 64, nullable: false),
+                    scan_id = table.Column<Guid>(type: "uuid", nullable: false),
+                    updated_at = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("pk_decision_links", x => new { x.project_id, x.source_id, x.path_hash });
                 });
 
             migrationBuilder.CreateTable(
@@ -1768,6 +1787,12 @@ namespace Vellum.Migrations
                 columns: new[] { "project_id", "created_at", "id" });
 
             migrationBuilder.CreateIndex(
+                name: "ix_decision_links_scan_id",
+                schema: "import",
+                table: "decision_links",
+                column: "scan_id");
+
+            migrationBuilder.CreateIndex(
                 name: "ix_decisions_project_id_number",
                 schema: "review",
                 table: "decisions",
@@ -2285,6 +2310,10 @@ namespace Vellum.Migrations
             migrationBuilder.DropTable(
                 name: "data_protection_keys",
                 schema: "settings");
+
+            migrationBuilder.DropTable(
+                name: "decision_links",
+                schema: "import");
 
             migrationBuilder.DropTable(
                 name: "decision_numbering",

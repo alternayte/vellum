@@ -129,6 +129,17 @@ export interface Decision {
   history: { at: string; by: string; action: string; note: string | null }[]
   /** The hash of the number, the status and the content. An acceptance and a rejection name the hash that was read. */
   contentHash: string
+  /** For a decision an import read from an ADR file: where, labelled `declared`, and what the file records. */
+  source?: DecisionSource | null
+}
+
+export interface DecisionSource {
+  factStatus: string
+  /** `<source>@<revision>:path:start-end` of the whole ADR. */
+  citation: string
+  recordedStatus: string | null
+  recordedDate: string | null
+  sections: { name: string; citation: string }[]
 }
 
 export interface DecisionInput {

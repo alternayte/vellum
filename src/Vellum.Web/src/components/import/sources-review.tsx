@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Activity, ChevronDown, ChevronRight, FileArchive, Folder, GitBranch, PlugZap, Radar, RotateCw, Trash2, Upload } from 'lucide-react'
+import { Activity, ChevronDown, ChevronRight, FileArchive, FileText, Folder, GitBranch, PlugZap, Radar, RotateCw, Trash2, Upload } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -31,6 +31,11 @@ const ORDER: Proposal['action'][] = ['bind', 'conflict', 'relink', 'remove', 'ch
 /** How many rows of one Source the grouped view lists before it points to the full review. */
 const SHOWN = 40
 
+/** An uploaded Markdown or text document that is not an ADR: only the AI path reads it. */
+function isProse(path: string): boolean {
+  return /\.(md|markdown|txt)$/i.test(path) && !/(^|\/)(docs?\/adr|docs\/decisions)\/[^/]+$/i.test(path)
+}
+
 function short(value: string | null | undefined, length = 10): string {
   return value ? value.slice(0, length) : ''
 }
@@ -44,7 +49,7 @@ const STATUS_COLOR: Record<ScanStatus, string> = {
   cancelled: 'var(--muted-foreground)',
 }
 
-const KIND_ICON: Record<string, typeof GitBranch> = { directory: Folder, archive: FileArchive, traces: Activity, newrelic: Radar }
+const KIND_ICON: Record<string, typeof GitBranch> = { directory: Folder, archive: FileArchive, traces: Activity, newrelic: Radar, 'model-file': FileText }
 
 /** What "scan again" does for each kind, as the button says it. */
 function rescan(kind: string): { label: string; title: string } {
@@ -55,9 +60,11 @@ function rescan(kind: string): { label: string; title: string } {
 }
 
 /** The list of Sources on the import screen: each with its newest scan, its newest Snapshot and what waits for a decision. */
-export function SourcesList({ projectId, onReview }: {
+export function SourcesList({ projectId, onReview, onProse }: {
   projectId: string
   onReview: (source: SourceSummary) => void
+  /** Opens the prose import for a document of the Source. */
+  onProse?: (source: SourceSummary) => void
 }) {
   const queryClient = useQueryClient()
   const sources = useSources(projectId)
@@ -123,6 +130,8 @@ export function SourcesList({ projectId, onReview }: {
                 )}
                 {source.kind === 'agent-push' ? (
                   <span className="self-center text-[11px] text-muted-foreground">Vellum does not hold these files. Run vellum scan again to update.</span>
+                ) : source.kind === 'model-file' ? (
+                  <span className="self-center text-[11px] text-muted-foreground">Upload the file again for a new Snapshot.</span>
                 ) : source.kind === 'traces' ? (
                   <TraceUploadButton projectId={projectId} source={source} />
                 ) : source.kind === 'archive' ? (
@@ -151,6 +160,16 @@ export function SourcesList({ projectId, onReview }: {
                     onClick={() => scan.mutate(source.id)}
                   >
                     <RotateCw className="h-3 w-3" /> {again.label}
+                  </Button>
+                )}
+                {onProse && source.latestSnapshot && !['agent-push', 'traces', 'newrelic'].includes(source.kind)
+                  && (source.kind !== 'model-file' || isProse(source.locator)) && (
+                  <Button
+                    size="sm" variant="ghost" className="h-6 gap-1 px-2 text-xs"
+                    title="Ask the AI to propose what a README or design document of this Source describes"
+                    onClick={() => onProse(source)}
+                  >
+                    <FileText className="h-3 w-3" /> Propose from a document
                   </Button>
                 )}
                 {source.kind === 'newrelic' && <TestConnectionButton projectId={projectId} source={source} />}

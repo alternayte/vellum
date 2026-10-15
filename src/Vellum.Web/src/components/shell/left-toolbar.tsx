@@ -13,7 +13,7 @@ const toolbarItems: { flyout: Flyout; label: string; icon: typeof FileText }[] =
   { flyout: 'catalog', label: 'Element catalog', icon: LayoutGrid },
   { flyout: 'contracts', label: 'Contracts', icon: Cable },
   { flyout: 'scenarios', label: 'Scenarios', icon: Route },
-  { flyout: 'import', label: 'Import from GitHub', icon: GitPullRequestArrow },
+  { flyout: 'import', label: 'Import', icon: GitPullRequestArrow },
   { flyout: 'assistant', label: 'Assistant', icon: Sparkles },
   { flyout: 'promises', label: 'Promises', icon: ShieldCheck },
   { flyout: 'review', label: 'Review', icon: ClipboardCheck },

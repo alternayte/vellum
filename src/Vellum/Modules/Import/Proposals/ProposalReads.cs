@@ -3,6 +3,7 @@ using System.Security.Claims;
 using System.Text.Json.Nodes;
 using Deedbox;
 using Microsoft.EntityFrameworkCore;
+using Vellum.Modules.Import.Extraction;
 using Vellum.Modules.Import.Scans;
 using Vellum.Modules.Modelling;
 using Vellum.Modules.Workspaces;
@@ -12,8 +13,7 @@ using static Vellum.Shared.ResultExtensions;
 namespace Vellum.Modules.Import.Proposals;
 
 /// <param name="Pointer">The form stored on a fact: <c>github.com/acme/orders@&lt;sha&gt;:src/Api/Program.cs:41-44</c>.</param>
-/// <param name="Url">The permanent link to the lines at the commit.</param>
-/// <param name="Url">The page that shows the lines on the git host. Null when the Source has no such page (an agent-push Source).</param>
+/// <param name="Url">The permanent link to the lines on the Source's host. Null for a Source with no web page, such as an uploaded file.</param>
 public sealed record EvidenceDto(string Path, int StartLine, int EndLine, string Rule, string Pointer, string? Url);
 
 public sealed record ProposalChangeDto(string Field, string? From, string? To);
@@ -27,13 +27,14 @@ public sealed record ProposalChangeDto(string Field, string? From, string? To);
 /// <param name="CanDecideReason">Why a pending proposal cannot be decided.</param>
 /// <param name="Impact">What accepting would break, as the model and the scenarios are now. Null when nothing.</param>
 /// <param name="OtherSources">What other Sources of the project accepted for the same entity, each with its values and citation. A <c>conflict</c> shows them side by side; none wins by itself.</param>
+/// <param name="FactStatus">The truth label the fact gets when it is accepted: <c>declared</c> for a model file (Structurizr, Backstage), else <c>observed-in-source</c>.</param>
 /// <param name="Truncated">True when long values of <paramref name="Proposed"/>, <paramref name="Current"/> or <paramref name="Changes"/> are cut in this list. The whole proposal is at <c>GET …/proposals/{id}</c>.</param>
 public sealed record ProposalDto(
     Guid Id, string Action, string EntityKind, Guid EntityId, string Subject, string FactKey, string Name,
     JsonObject? Proposed, JsonObject? Current, IReadOnlyList<ProposalChangeDto> Changes,
     IReadOnlyList<EvidenceDto> Evidence, Guid[] DependsOn, string Status, bool Partial,
     bool CanDecide, string? CanDecideReason, ProposalImpactDto? Impact, bool Truncated,
-    IReadOnlyList<OtherSourceFact> OtherSources, Guid SourceId);
+    IReadOnlyList<OtherSourceFact> OtherSources, Guid SourceId, string FactStatus = TruthLabels.ObservedInSource);
 
 /// <param name="NotCovered">
 /// The accepted facts of the repository that this scan could not judge, by reason. They are
@@ -176,7 +177,8 @@ public static class ProposalReads
             [.. changes.Select(c => new ProposalChangeDto(c.Field, c.From, c.To))],
             Evidence(context.Repository, context.CommitSha, p.Evidence), p.DependsOn, EnumText.Of(p.Status), p.Partial,
             pending && context.Decidable, pending ? context.Reason : null, impact, truncated,
-            ProposalJson.ReadOtherSources(p.OtherSources), context.SourceId);
+            ProposalJson.ReadOtherSources(p.OtherSources), context.SourceId,
+            FactMapping.LabelOf(ProposalJson.ReadAttributes(p.Attributes), ProposalJson.ReadEvidence(p.Evidence)));
     }
 
     private static string? Cut(string? value) =>

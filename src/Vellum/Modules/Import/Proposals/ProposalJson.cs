@@ -105,7 +105,9 @@ internal static class EvidenceLinks
     /// </summary>
     public static string? Url(string repository, string commitSha, EvidenceRef evidence)
     {
-        if (repository.StartsWith(Sources.AgentPush.Host + "/", StringComparison.Ordinal))
+        // An agent push and an uploaded model file have no web page.
+        if (repository.StartsWith(Sources.AgentPush.Host + "/", StringComparison.Ordinal)
+            || repository.StartsWith(Sources.ModelFileUpload.Host + "/", StringComparison.Ordinal))
             return null;
         // A runtime Source has no page to link to: its evidence is the derived line Vellum keeps.
         if (evidence.Rule.StartsWith("runtime.", StringComparison.Ordinal))

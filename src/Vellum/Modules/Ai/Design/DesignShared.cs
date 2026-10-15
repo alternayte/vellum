@@ -256,6 +256,8 @@ internal static class DesignPrompts
 
     public static readonly IReadOnlyDictionary<string, string> ProposeFlow = Load("propose-flow.md");
     public static readonly IReadOnlyDictionary<string, string> InferArchitecture = Load("infer-architecture.md");
+    public const string InferFromDocumentVersion = "design/infer-from-document/1";
+    public static readonly IReadOnlyDictionary<string, string> InferFromDocument = Load("infer-from-document.md");
     public static readonly IReadOnlyDictionary<string, string> Explain = Load("explain.md");
 
     /// <param name="folder">The end of the resource name before the file name. Another feature gives its own prompt folder.</param>
