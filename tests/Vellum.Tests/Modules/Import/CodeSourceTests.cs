@@ -165,7 +165,7 @@ public sealed class CodeSourceTests : IClassFixture<ImportHost>, IDisposable
 
     public static TheoryData<string> HostileArchives =>
     [
-        "zip-slip", "absolute", "zip-symlink", "tar-symlink", "tar-hardlink", "nested", "ratio", "oversize",
+        "zip-slip", "absolute", "zip-symlink", "tar-symlink", "tar-hardlink", "ratio", "oversize",
         "tar-long-name", "tar-pax-header", "tar-ratio-per-entry", "zip-entry-count", "zip-compressed-size",
     ];
 
@@ -187,7 +187,6 @@ public sealed class CodeSourceTests : IClassFixture<ImportHost>, IDisposable
             "zip-symlink" => (Zip(good, symlink: ("app/link.yaml", "/etc/passwd")), "archive_link_entry"),
             "tar-symlink" => (TarGz(good, link: (TarEntryType.SymbolicLink, "app/link.yaml", "/etc/passwd")), "archive_link_entry"),
             "tar-hardlink" => (TarGz(good, link: (TarEntryType.HardLink, "app/hard.yaml", "app/openapi.yaml")), "archive_link_entry"),
-            "nested" => (Zip(good.Append(new("app/notes.txt", Zip(good))).ToDictionary()), "archive_nested"),
             "ratio" => (Zip(good.Append(new("app/zeros.txt", new byte[900 * 1024])).ToDictionary()), "archive_compression_ratio"),
             // A metadata entry that declares 200 MB, with the bytes present: a reader would allocate it before reading a byte.
             "tar-long-name" => (Gzip([.. TarHeader("././@LongLink", 'L', 200L * 1024 * 1024), .. new byte[200 * 1024 * 1024 + 1024]]), "archive_unreadable"),
@@ -206,6 +205,34 @@ public sealed class CodeSourceTests : IClassFixture<ImportHost>, IDisposable
         Assert.Equal(0, await BlobCountAsync(s));
         await using var db = Db(s);
         Assert.False(await db.Scans.AnyAsync(x => x.SourceId == source));
+    }
+
+    [Fact]
+    public async Task An_archive_inside_an_archive_is_skipped_as_binary_and_never_opened()
+    {
+        var s = await ImportScenario.CreateAsync(_local, fixture: null);
+        var inner = Zip(new Dictionary<string, byte[]> { ["openapi.yaml"] = "openapi: 3.0.0\npaths: {}\n"u8.ToArray() });
+        var files = new Dictionary<string, byte[]>
+        {
+            ["app/openapi.yaml"] = "openapi: 3.0.0\npaths: {}\n"u8.ToArray(),
+            ["lib/inner.jar"] = inner,
+            ["docs/report.docx"] = inner,
+            // An archive under a name the scan reads: its bytes are not text, so it is withheld.
+            ["deploy/values.yaml"] = Gzip("replicas: 2\n"u8.ToArray()),
+        };
+        var source = await CreateAsync(s, new { kind = "archive", name = "With nested" });
+        var scan = await UploadAsync(s, source, Zip(files));
+        Assert.Equal("completed", (await s.GetAsync(scan)).Text("status"));
+
+        await using var db = Db(s);
+        var rows = await db.ScanFiles.AsNoTracking().Where(f => f.ScanId == scan).ToDictionaryAsync(f => f.Path);
+        Assert.Equal(Vellum.Modules.Import.ScanFileState.Read, rows["app/openapi.yaml"].State);
+        Assert.Equal(("binary-extension", Vellum.Modules.Import.ScanFileState.Skipped), (rows["lib/inner.jar"].Reason, rows["lib/inner.jar"].State));
+        Assert.NotEqual(Vellum.Modules.Import.ScanFileState.Read, rows["docs/report.docx"].State);
+        Assert.Equal(("binary-content", Vellum.Modules.Import.ScanFileState.Skipped), (rows["deploy/values.yaml"].Reason, rows["deploy/values.yaml"].State));
+        // No byte of an inner archive is stored.
+        Assert.False(await db.Blobs.AnyAsync(b => b.WorkspaceId == s.WorkspaceId && b.Content != null && b.Content.Length > 0 && b.Content[0] == 0x50 && b.Content[1] == 0x4b));
+        Assert.False(await db.Blobs.AnyAsync(b => b.WorkspaceId == s.WorkspaceId && b.Content != null && b.Content.Length > 0 && b.Content[0] == 0x1f));
     }
 
     [Fact]

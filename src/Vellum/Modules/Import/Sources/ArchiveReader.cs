@@ -26,9 +26,6 @@ public sealed class ArchiveRefused(string code, string message) : Exception(mess
     public static ArchiveRefused Link() => new("archive_link_entry",
         "The archive holds a symbolic link, a hard link, a device or another entry that is not a plain file or a folder. Vellum refuses the whole archive. Pack the files the links point at instead.");
 
-    public static ArchiveRefused Nested() => new("archive_nested",
-        "The archive holds another archive. Vellum does not open archives inside archives and refuses the whole upload. Unpack the inner archive first.");
-
     public static ArchiveRefused Duplicate() => new("archive_duplicate_path",
         "Two entries of the archive have the same path, so the archive does not say which content is meant. Vellum refuses the whole archive.");
 
@@ -51,9 +48,10 @@ internal sealed record ArchiveFile(string Path, long Size, string BlobSha);
 /// <summary>
 /// Reads an uploaded <c>.zip</c> or <c>.tar.gz</c> that the caller spooled to a temporary file.
 /// Nothing is extracted to disk and nothing in it runs. The first pass reads every entry and
-/// refuses the whole archive on an absolute path, a <c>..</c> part, a link or device entry, a
-/// nested archive, two entries with one path, an expanded total over the workspace limit or an
-/// entry that expands more than <see cref="MaxCompressionRatio"/> times. It computes the git blob
+/// refuses the whole archive on an absolute path, a <c>..</c> part, a link or device entry, two
+/// entries with one path, an expanded total over the workspace limit or an entry that expands
+/// more than <see cref="MaxCompressionRatio"/> times. An archive inside it is never opened: the
+/// scan rules skip it as binary, as they do on a git host. It computes the git blob
 /// SHA of every file and keeps no content. The second pass reads only the files the scan rules
 /// selected, so memory holds at most the bytes a scan may read.
 /// </summary>
@@ -64,12 +62,6 @@ internal static class ArchiveReader
     /// <summary>Below this many expanded bytes the ratio is not checked: a small file of one repeated character is no bomb.</summary>
     public const long RatioFloorBytes = 64 * 1024;
     public const int MaxEntries = 200_000;
-
-    private static readonly string[] ArchiveExtensions =
-    [
-        ".zip", ".jar", ".war", ".ear", ".aar", ".apk", ".nupkg", ".whl", ".egg", ".tar", ".tgz", ".gz", ".bz2", ".tbz", ".tbz2",
-        ".xz", ".txz", ".zst", ".7z", ".rar", ".cab", ".lz", ".lzma", ".z",
-    ];
 
     public enum Format { Zip, TarGz }
 
@@ -238,23 +230,15 @@ internal static class ArchiveReader
     /// <summary>
     /// Copies an entry to the sink in chunks. The bytes are counted as they come, not as the
     /// headers declare them: an entry that expands past the workspace limit, or past the ratio,
-    /// refuses the archive. The first bytes are checked for the signature of another archive.
+    /// refuses the archive.
     /// </summary>
     private static long Copy(Stream source, Action<byte[], int> sink, long limit, long maxExpanded, Func<long, bool> bomb)
     {
         var buffer = new byte[81920];
         long total = 0;
-        var head = new byte[262];
-        var headLength = 0;
         int read;
         while ((read = source.Read(buffer, 0, buffer.Length)) > 0)
         {
-            if (headLength < head.Length)
-            {
-                var take = Math.Min(read, head.Length - headLength);
-                Array.Copy(buffer, 0, head, headLength, take);
-                headLength += take;
-            }
             total += read;
             if (total > limit || total > maxExpanded)
                 throw ArchiveRefused.TooLarge(maxExpanded);
@@ -262,16 +246,15 @@ internal static class ArchiveReader
                 throw ArchiveRefused.Ratio();
             sink(buffer, read);
         }
-        if (IsArchive(head.AsSpan(0, headLength)))
-            throw ArchiveRefused.Nested();
         return total;
     }
 
     /// <summary>
     /// The path of an entry with <c>/</c> between its parts, or null for a folder entry. A path
     /// that is absolute, holds a backslash, a drive letter or a control character, or has an
-    /// empty, <c>.</c> or <c>..</c> part (after a leading <c>./</c>) refuses the archive. A name
-    /// that says it is an archive refuses it too.
+    /// empty, <c>.</c> or <c>..</c> part (after a leading <c>./</c>) refuses the archive. An archive
+    /// inside the archive is a file like any other: it is never opened, and the scan rules skip it
+    /// as binary (by its extension, or by its bytes when it is read), as they do on a git host.
     /// </summary>
     internal static string? Normalize(string name)
     {
@@ -291,21 +274,8 @@ internal static class ArchiveReader
             throw ArchiveRefused.Traversal();
         if (folder)
             return null;
-        var dot = path.LastIndexOf('.');
-        if (dot > path.LastIndexOf('/') && ArchiveExtensions.Contains(path[dot..].ToLowerInvariant()))
-            throw ArchiveRefused.Nested();
         return path;
     }
-
-    /// <summary>The signatures of zip, gzip, bzip2, xz, 7z, rar and zstd, and the <c>ustar</c> mark of a tar.</summary>
-    internal static bool IsArchive(ReadOnlySpan<byte> head) =>
-        Detect(head) is not null
-        || head.StartsWith("BZh"u8)
-        || head.StartsWith((ReadOnlySpan<byte>)[0xFD, 0x37, 0x7A, 0x58, 0x5A, 0x00])
-        || head.StartsWith((ReadOnlySpan<byte>)[0x37, 0x7A, 0xBC, 0xAF, 0x27, 0x1C])
-        || head.StartsWith("Rar!"u8)
-        || head.StartsWith((ReadOnlySpan<byte>)[0x28, 0xB5, 0x2F, 0xFD])
-        || (head.Length >= 262 && head[257..262].SequenceEqual("ustar"u8));
 
     /// <summary>
     /// The git blob SHA of content that arrives in chunks: SHA-1 over <c>blob &lt;size&gt;\0</c>

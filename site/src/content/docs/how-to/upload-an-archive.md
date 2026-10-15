@@ -62,7 +62,6 @@ An upload counts as one scan for **Repository scans per day**. A project runs on
 | `archive_absolute_path` | `400` | has an entry with an absolute path, a backslash or a drive letter. |
 | `archive_path_traversal` | `400` | has an entry with a `..`, a `.` or an empty part in its path, or a control character. |
 | `archive_link_entry` | `400` | has a symbolic link, a hard link, a device or another entry that is not a file or a folder. |
-| `archive_nested` | `400` | has another archive in it. Vellum knows it by the name, such as `.zip`, `.jar`, `.tar`, `.gz` or `.7z`, and by the first bytes of the content. |
 | `archive_duplicate_path` | `400` | has two entries with the same path. |
 | `archive_compression_ratio` | `400` | has an entry larger than 64 KiB that expands to more than 100 times its compressed size. |
 | `archive_too_many_entries` | `400` | has more than 200,000 entries. |
@@ -81,7 +80,8 @@ To fix a refusal, pack the files again:
 
 - Use paths relative to the archive.
 - Replace each link with the file that it points to.
-- Unpack an inner archive first.
+
+An archive inside the archive, such as a `.jar`, a `.docx` or a `.gz`, is not a refusal. Vellum never opens it. The scan skips it as a binary file: by its name (`binary-extension`), or by its bytes when the scan reads it (`binary-content`). A scan of the same repository on a git host skips it the same way, so both give the same Snapshot. To scan the files of an inner archive, unpack it before you pack the upload.
 
 ## The size limit
 

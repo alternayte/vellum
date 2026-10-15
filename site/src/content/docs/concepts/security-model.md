@@ -175,7 +175,8 @@ A `directory` Source reads a folder on the machine of the instance. A file syste
 An `archive` Source reads an uploaded `.zip` or `.tar.gz`. An archive is untrusted input. Its entry names can point outside a folder, and its size after expansion can be much larger than the upload.
 
 - **No extraction.** Vellum writes the upload to a temporary file in the data folder and deletes it when the request ends. It reads the entries from that file. It writes no entry to disk.
-- **One rule fails, nothing is stored.** Vellum refuses the whole archive for an absolute path, a backslash or a drive letter, a `..`, `.` or empty part, a link, a device or another entry that is not a file or a folder, an archive in the archive, or two entries with one path.
+- **One rule fails, nothing is stored.** Vellum refuses the whole archive for an absolute path, a backslash or a drive letter, a `..`, `.` or empty part, a link, a device or another entry that is not a file or a folder, or two entries with one path.
+- **An archive in the archive is never opened.** Vellum reads it as one more file. The scan rules skip it as binary, by its name or by its bytes, as they do for the same file on a git host.
 - **Bounded expansion.** Vellum counts the bytes of each entry as they expand. It refuses an archive that expands to more than `import.maxArchiveBytes`, an entry larger than 64 KiB that expands to more than 100 times its compressed size, and an archive with more than 200,000 entries. The size that a header states does not count.
 - **The same filters as a repository.** Each accepted file then passes the scan rules and the content clearance. Vellum keeps the cleared content of the selected files only, not the archive.
 
