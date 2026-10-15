@@ -119,6 +119,7 @@ public static class SourcePatternCheck
         }
 
         var repository = $"{snapshot.Host}/{snapshot.Repository}";
+        var sourceKind = await db.Sources.AsNoTracking().Where(s => s.Id == snapshot.SourceId).Select(s => s.Kind).FirstOrDefaultAsync(ct);
         var environment = $"source@{snapshot.CommitSha}";
         var limitations = new List<string>
         {
@@ -178,7 +179,7 @@ public static class SourcePatternCheck
 
             // A run keeps at most MaxEvidence pointers; they are enough to find the declaration.
             foreach (var reference in (JsonSerializer.Deserialize<List<EvidenceRef>>(fact.Evidence, Json) ?? []).Take(MaxEvidence - evidence.Count))
-                evidence.Add(new EvidenceItem(EvidenceKind.Source, Pointer: Pointer(repository, snapshot.CommitSha, reference), Url: Url(repository, snapshot.CommitSha, reference)));
+                evidence.Add(new EvidenceItem(EvidenceKind.Source, Pointer: Pointer(repository, snapshot.CommitSha, reference), Url: EvidenceLinks.Url(sourceKind, repository, snapshot.CommitSha, reference)));
         }
 
         var found = unconditional + conditions.Count;
@@ -386,14 +387,4 @@ public static class SourcePatternCheck
     /// <summary><c>github.com/acme/orders@&lt;sha&gt;:src/Api/Program.cs:41-44</c></summary>
     private static string Pointer(string repository, string commitSha, EvidenceRef evidence) => string.Create(
         CultureInfo.InvariantCulture, $"{repository}@{evidence.CommitSha ?? commitSha}:{evidence.Path}:{evidence.StartLine}-{evidence.EndLine}");
-
-    /// <summary>The page that shows the lines at the commit.</summary>
-    private static string Url(string repository, string commitSha, EvidenceRef evidence)
-    {
-        var path = string.Join('/', evidence.Path.Split('/').Select(Uri.EscapeDataString));
-        var lines = evidence.EndLine > evidence.StartLine
-            ? string.Create(CultureInfo.InvariantCulture, $"L{evidence.StartLine}-L{evidence.EndLine}")
-            : string.Create(CultureInfo.InvariantCulture, $"L{evidence.StartLine}");
-        return $"https://{repository}/blob/{evidence.CommitSha ?? commitSha}/{path}#{lines}";
-    }
 }

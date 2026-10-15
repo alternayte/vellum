@@ -196,6 +196,7 @@ public static class ChangeImpact
         }
         var kind = ScanKindInfo.Of(scan, tracked);
         var repository = $"{scan.Host}/{scan.Repository}";
+        var sourceKind = await db.Sources.AsNoTracking().Where(s => s.Id == scan.SourceId).Select(s => s.Kind).FirstOrDefaultAsync(ct);
         var limits = new List<string>
         {
             "A change in the source does not prove a change in behaviour. An entry marked definite names a thing that the change touches. Whether a flow or a promise still holds needs its checks.",
@@ -273,7 +274,7 @@ public static class ChangeImpact
                     _ => "The source at the cited lines differs from the model.",
                 },
                 [.. diff.Select(c => new ProposalChangeDto(c.Field, Cut(c.From), Cut(c.To)))],
-                Evidence(repository, head.CommitSha, ProposalJson.ReadEvidence(proposal.Evidence)),
+                Evidence(sourceKind, repository, head.CommitSha, ProposalJson.ReadEvidence(proposal.Evidence)),
                 OwnerOf(model, EnumText.Of(proposal.EntityKind), proposal.EntityId), null));
 
             if (relink || proposal.Action == ProposalAction.Add)
@@ -322,7 +323,7 @@ public static class ChangeImpact
 
                 var id = $"pattern:{key}";
                 var element = await ServiceElementAsync(was.Service);
-                var lines = Evidence(repository, baseScan.CommitSha!, was.Evidence);
+                var lines = Evidence(sourceKind, repository, baseScan.CommitSha!, was.Evidence);
                 var other = after.Where(p => p.Key != key).OrderBy(p => p.Key, StringComparer.Ordinal).Select(p => p.Value)
                     .FirstOrDefault(f => f.Pattern == was.Pattern && f.Service == was.Service && (f.Condition is null || was.Condition is not null));
                 var remains = other is null ? "" : $" The snapshot of commit {Short(head.CommitSha)} still declares the pattern in the same service: '{other.Name}'.";
@@ -333,7 +334,7 @@ public static class ChangeImpact
                     changes.Add(new ImpactChangeDto(id, "source-pattern", EnumText.Of(ProposalAction.Change), "pattern", null, was.Name, ImpactCertainty.Definite,
                         $"At commit {Short(head.CommitSha)} the source declares the pattern only under #if {now.Condition}. At commit {Short(baseScan.CommitSha)} it declared it with no condition.{remains}",
                         [new ProposalChangeDto(ConditionalAttribute, null, now.Condition)],
-                        Evidence(repository, head.CommitSha, now.Evidence), element, was.Pattern));
+                        Evidence(sourceKind, repository, head.CommitSha, now.Evidence), element, was.Pattern));
                     continue;
                 }
 
@@ -359,7 +360,7 @@ public static class ChangeImpact
                     gap is null
                         ? $"The source declares the pattern at the cited lines of commit {Short(head.CommitSha)}. The base scan read those files at commit {Short(baseScan.CommitSha)}, and its snapshot has no such fact."
                         : $"The source declares the pattern at the cited lines of commit {Short(head.CommitSha)}. The snapshot of commit {Short(baseScan.CommitSha)} has no such fact, and the base scan did not look at every file where the pattern is now declared ({gap}). The pattern may have been there before.",
-                    [], Evidence(repository, head.CommitSha, now.Evidence), await ServiceElementAsync(now.Service), now.Pattern));
+                    [], Evidence(sourceKind, repository, head.CommitSha, now.Evidence), await ServiceElementAsync(now.Service), now.Pattern));
             }
         }
 
@@ -649,10 +650,10 @@ public static class ChangeImpact
         _ => null,
     };
 
-    private static List<EvidenceDto> Evidence(string repository, string commitSha, IEnumerable<EvidenceRef> evidence) =>
+    private static List<EvidenceDto> Evidence(SourceKind kind, string repository, string commitSha, IEnumerable<EvidenceRef> evidence) =>
         [.. evidence.Select(e => new EvidenceDto(
             e.Path, e.StartLine, e.EndLine, e.Rule,
-            EvidenceLinks.Pointer(repository, commitSha, e), EvidenceLinks.Url(repository, commitSha, e)))];
+            EvidenceLinks.Pointer(repository, commitSha, e), EvidenceLinks.Url(kind, repository, commitSha, e)))];
 
     private static string Steps(IReadOnlyList<string> stepIds) =>
         string.Create(CultureInfo.InvariantCulture, $"{(stepIds.Count == 1 ? "Step" : "Steps")} {string.Join(", ", stepIds)}");

@@ -123,7 +123,7 @@ public static class ProposalReads
         return Results.Ok(ToDto(row, context, cut: false, out _));
     }
 
-    private sealed record ReadContext(string Repository, string CommitSha, bool Decidable, string? Reason, ProposalImpact? Impact, Guid SourceId);
+    private sealed record ReadContext(string Repository, string CommitSha, bool Decidable, string? Reason, ProposalImpact? Impact, Guid SourceId, SourceKind SourceKind);
 
     private static async Task<ReadContext> ContextAsync(
         IServiceProvider services, AppDbContext db, ScanEntity scan, IReadOnlyList<ProposalEntity> rows, CancellationToken ct)
@@ -144,8 +144,9 @@ public static class ProposalReads
             impact = await ProposalImpact.LoadAsync(services, store, scan.ProjectId, model, ct);
         }
 
+        var sourceKind = await db.Sources.AsNoTracking().Where(s => s.Id == scan.SourceId).Select(s => s.Kind).FirstOrDefaultAsync(ct);
         return new ReadContext(
-            $"{scan.Host}/{scan.Repository}", scan.CommitSha ?? "", kind.Tracking, ScanKindInfo.Describe(kind, tracked), impact, scan.SourceId);
+            $"{scan.Host}/{scan.Repository}", scan.CommitSha ?? "", kind.Tracking, ScanKindInfo.Describe(kind, tracked), impact, scan.SourceId, sourceKind);
     }
 
     private static ProposalDto ToDto(ProposalEntity p, ReadContext context, bool cut, out int size)
@@ -175,7 +176,7 @@ public static class ProposalReads
         return new ProposalDto(
             p.Id, EnumText.Of(p.Action), EnumText.Of(p.EntityKind), p.EntityId, EnumText.Of(p.Subject), p.FactKey, p.Name, proposed, current,
             [.. changes.Select(c => new ProposalChangeDto(c.Field, c.From, c.To))],
-            Evidence(context.Repository, context.CommitSha, p.Evidence), p.DependsOn, EnumText.Of(p.Status), p.Partial,
+            Evidence(context.SourceKind, context.Repository, context.CommitSha, p.Evidence), p.DependsOn, EnumText.Of(p.Status), p.Partial,
             pending && context.Decidable, pending ? context.Reason : null, impact, truncated,
             ProposalJson.ReadOtherSources(p.OtherSources), context.SourceId,
             FactMapping.LabelOf(ProposalJson.ReadAttributes(p.Attributes), ProposalJson.ReadEvidence(p.Evidence)));
@@ -246,9 +247,10 @@ public static class ProposalReads
         }
 
         var repository = $"{scan.Host}/{scan.Repository}";
+        var sourceKind = await db.Sources.AsNoTracking().Where(s => s.Id == scan.SourceId).Select(s => s.Kind).FirstOrDefaultAsync(ct);
         return Results.Ok(new Page<EvidenceItemDto>([.. rows.Select(f => new EvidenceItemDto(
             f.FactKey, f.Kind.ToString(), f.Name, ProposalJson.ReadAttributes(f.Attributes),
-            Evidence(repository, scan.CommitSha!, f.Evidence), f.Reason ?? FactMapping.NoModelHome))], next));
+            Evidence(sourceKind, repository, scan.CommitSha!, f.Evidence), f.Reason ?? FactMapping.NoModelHome))], next));
     }
 
     private static int? After(string? cursor) =>
@@ -256,8 +258,8 @@ public static class ProposalReads
         : decoded.Number <= int.MaxValue ? (int)decoded.Number
         : throw new InvalidCursorException();
 
-    private static List<EvidenceDto> Evidence(string repository, string commitSha, string json) =>
+    private static List<EvidenceDto> Evidence(SourceKind kind, string repository, string commitSha, string json) =>
         [.. ProposalJson.ReadEvidence(json).Select(e => new EvidenceDto(
             e.Path, e.StartLine, e.EndLine, e.Rule,
-            EvidenceLinks.Pointer(repository, commitSha, e), EvidenceLinks.Url(repository, commitSha, e)))];
+            EvidenceLinks.Pointer(repository, commitSha, e), EvidenceLinks.Url(kind, repository, commitSha, e)))];
 }

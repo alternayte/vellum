@@ -99,25 +99,54 @@ internal static class EvidenceLinks
         $"{repository}@{evidence.CommitSha ?? commitSha}:{evidence.Path}:{evidence.StartLine}-{evidence.EndLine}");
 
     /// <summary>
-    /// The permanent link to the lines at the commit. A commit SHA never moves, so the link
-    /// shows the same lines for as long as the repository exists. Null for an agent-push,
-    /// model-file, directory or archive Source: none of them has a web page.
+    /// The permanent link to the lines at the commit, in the form of the Source's git host. A
+    /// commit SHA never moves, so the link shows the same lines for as long as the repository
+    /// exists. Null for an agent-push, model-file, directory or archive Source: none of them has
+    /// a web page. Empty for runtime evidence, whose line Vellum keeps itself.
+    /// <list type="bullet">
+    /// <item>GitHub: <c>https://github.com/acme/orders/blob/&lt;sha&gt;/src/a.cs#L4-L9</c></item>
+    /// <item>GitLab: <c>https://gitlab.com/acme/orders/-/blob/&lt;sha&gt;/src/a.cs#L4-9</c></item>
+    /// <item>Bitbucket Cloud: <c>https://bitbucket.org/acme/orders/src/&lt;sha&gt;/src/a.cs#lines-4:9</c></item>
+    /// <item>Azure DevOps: <c>https://dev.azure.com/org/project/_git/repo?path=/src/a.cs&amp;version=GC&lt;sha&gt;&amp;line=4&amp;lineEnd=10&amp;lineStartColumn=1&amp;lineEndColumn=1&amp;lineStyle=plain</c>
+    /// (the selection ends at the start of the line after the last one)</item>
+    /// </list>
     /// </summary>
-    public static string? Url(string repository, string commitSha, EvidenceRef evidence)
+    /// <param name="repository">With the host, for example <c>github.com/acme/orders</c>.</param>
+    public static string? Url(SourceKind kind, string repository, string commitSha, EvidenceRef evidence)
     {
-        // An agent push, an uploaded model file, a folder and an archive have no web page.
-        if (repository.StartsWith(Sources.AgentPush.Host + "/", StringComparison.Ordinal)
-            || repository.StartsWith(Sources.ModelFileUpload.Host + "/", StringComparison.Ordinal)
-            || repository.StartsWith(Sources.SourceRequests.DirectoryHost + "/", StringComparison.Ordinal)
-            || repository.StartsWith(Sources.SourceRequests.ArchiveHost + "/", StringComparison.Ordinal))
-            return null;
         // A runtime Source has no page to link to: its evidence is the derived line Vellum keeps.
         if (evidence.Rule.StartsWith("runtime.", StringComparison.Ordinal))
             return "";
+        var sha = evidence.CommitSha ?? commitSha;
+        var (start, end) = (evidence.StartLine, Math.Max(evidence.StartLine, evidence.EndLine));
         var path = string.Join('/', evidence.Path.Split('/').Select(Uri.EscapeDataString));
-        var lines = evidence.EndLine > evidence.StartLine
-            ? string.Create(CultureInfo.InvariantCulture, $"L{evidence.StartLine}-L{evidence.EndLine}")
-            : string.Create(CultureInfo.InvariantCulture, $"L{evidence.StartLine}");
-        return $"https://{repository}/blob/{evidence.CommitSha ?? commitSha}/{path}#{lines}";
+        var page = "https://" + string.Join('/', repository.Split('/').Select(Uri.EscapeDataString));
+        return kind switch
+        {
+            SourceKind.Github => end > start
+                ? string.Create(CultureInfo.InvariantCulture, $"{page}/blob/{sha}/{path}#L{start}-L{end}")
+                : string.Create(CultureInfo.InvariantCulture, $"{page}/blob/{sha}/{path}#L{start}"),
+            SourceKind.Gitlab => end > start
+                ? string.Create(CultureInfo.InvariantCulture, $"{page}/-/blob/{sha}/{path}#L{start}-{end}")
+                : string.Create(CultureInfo.InvariantCulture, $"{page}/-/blob/{sha}/{path}#L{start}"),
+            SourceKind.Bitbucket => end > start
+                ? string.Create(CultureInfo.InvariantCulture, $"{page}/src/{sha}/{path}#lines-{start}:{end}")
+                : string.Create(CultureInfo.InvariantCulture, $"{page}/src/{sha}/{path}#lines-{start}"),
+            SourceKind.AzureDevops => AzureUrl(repository, sha, evidence.Path, start, end),
+            _ => null,
+        };
+    }
+
+    /// <summary><c>dev.azure.com/org/project/repo</c> as the page of the repository, <c>…/org/project/_git/repo</c>.</summary>
+    private static string? AzureUrl(string repository, string sha, string filePath, int start, int end)
+    {
+        var parts = repository.Split('/');
+        if (parts.Length < 4)
+            return null;
+        var host = string.Join('/', parts[..^3]);
+        var (organization, project, name) = (parts[^3], parts[^2], parts[^1]);
+        return string.Create(CultureInfo.InvariantCulture,
+            $"https://{host}/{Uri.EscapeDataString(organization)}/{Uri.EscapeDataString(project)}/_git/{Uri.EscapeDataString(name)}" +
+            $"?path={Uri.EscapeDataString("/" + filePath)}&version=GC{sha}&line={start}&lineEnd={end + 1}&lineStartColumn=1&lineEndColumn=1&lineStyle=plain");
     }
 }
