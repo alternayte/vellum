@@ -174,10 +174,12 @@ internal sealed partial record RuntimeGraph(
         var name = value.Trim();
         if (name.Length == 0 || TextRule.Line("name", name, int.MaxValue) is not null)
             return null;
-        if (name.Length > MaxName)
-            name = char.IsHighSurrogate(name[MaxName - 1]) ? name[..(MaxName - 1)] : name[..MaxName];
+        // The whole value is checked before it is cut: a cut can leave a fragment of a token
+        // that no longer has the token's shape.
         if (Email().IsMatch(name) || CredentialGuard.LooksSecret(name))
             return null;
+        if (name.Length > MaxName)
+            name = char.IsHighSurrogate(name[MaxName - 1]) ? name[..(MaxName - 1)] : name[..MaxName];
         return name;
     }
 

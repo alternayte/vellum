@@ -76,6 +76,10 @@ internal sealed class NewRelicReader(INewRelicApi api, SecretReader secrets, Tim
     public const int MaxEntities = 500;
     public const int MaxRelationshipsPerEntity = 500;
     public const int MaxRelationships = 20_000;
+    /// <summary>Pages of the entity search. 500 entities at 200 a page need 3; more pages mean the cursor does not advance.</summary>
+    public const int MaxSearchPages = 10;
+    /// <summary>Further pages of related entities, across all entities of one read.</summary>
+    public const int MaxRelatedPages = 200;
     /// <summary>NerdGraph returns at most 25 entities for one <c>entities(guids:)</c> call.</summary>
     public const int EntitiesPerCall = 25;
     private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(30);
@@ -185,8 +189,12 @@ internal sealed class NewRelicReader(INewRelicApi api, SecretReader secrets, Tim
         var complete = true;
         var entities = new Dictionary<string, NewRelicEntity>(StringComparer.Ordinal);
         string? cursor = null;
+        var cursors = new HashSet<string>(StringComparer.Ordinal);
+        var searchPages = 0;
         do
         {
+            var before = entities.Count;
+            searchPages++;
             var page = await QueryAsync(region, key, "entity-search", EntitySearchQuery,
                 new JsonObject { ["query"] = SearchText(accountId), ["cursor"] = cursor }, ct);
             if (page.Failure is { } failure)
@@ -212,6 +220,15 @@ internal sealed class NewRelicReader(INewRelicApi api, SecretReader secrets, Tim
                 entities.TryAdd(entity.Guid, entity);
             }
             cursor = Clean(results["nextCursor"], 2000);
+            // A cursor that comes back, a page that adds nothing, or too many pages: the paging
+            // does not advance. The read stops there and is partial.
+            if (cursor is not null && entities.Count < MaxEntities
+                && (entities.Count == before || !cursors.Add(cursor) || searchPages >= MaxSearchPages))
+            {
+                complete = false;
+                notes.Add("limit:pages");
+                cursor = null;
+            }
         }
         while (cursor is not null && entities.Count < MaxEntities);
         if (cursor is not null)
@@ -245,16 +262,24 @@ internal sealed class NewRelicReader(INewRelicApi api, SecretReader secrets, Tim
             }
         }
 
+        var relatedPages = 0;
         foreach (var (guid, first) in more)
         {
             var next = first;
             var read = 0;
+            var seen = new HashSet<string>(StringComparer.Ordinal) { first };
             while (next is not null)
             {
                 if (read >= MaxRelationshipsPerEntity || relationships.Count >= MaxRelationships)
                 {
                     complete = false;
                     notes.Add("limit:relationships");
+                    break;
+                }
+                if (++relatedPages > MaxRelatedPages)
+                {
+                    complete = false;
+                    notes.Add("limit:pages");
                     break;
                 }
                 var page = await QueryAsync(region, key, "related-entities-page", RelatedEntitiesPageQuery,
@@ -272,8 +297,15 @@ internal sealed class NewRelicReader(INewRelicApi api, SecretReader secrets, Tim
                     complete = false;
                     break;
                 }
-                read += AddRelationships(related["results"] as JsonArray, relationships, ref complete, notes);
+                var added = AddRelationships(related["results"] as JsonArray, relationships, ref complete, notes);
+                read += added;
                 next = Clean(related["nextCursor"], 2000);
+                if (next is not null && (added == 0 || !seen.Add(next)))
+                {
+                    complete = false;
+                    notes.Add("limit:pages");
+                    break;
+                }
             }
         }
 

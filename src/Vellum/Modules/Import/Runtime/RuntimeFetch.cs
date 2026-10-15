@@ -113,9 +113,9 @@ internal static class RuntimeFetch
                 continue;
             services[entity.Guid] = new RuntimeService(entity.Guid, name, "measured", new Dictionary<string, string>
             {
-                ["newrelic.domain"] = entity.Domain,
-                ["newrelic.type"] = entity.Type,
-                ["newrelic.entityType"] = entity.EntityType,
+                ["newrelic.domain"] = Word(entity.Domain),
+                ["newrelic.type"] = Word(entity.Type),
+                ["newrelic.entityType"] = Word(entity.EntityType),
             });
         }
 
@@ -146,6 +146,14 @@ internal static class RuntimeFetch
         };
         return new RuntimeGraph(header, [.. services.Values], [.. edges.Values], read.Complete);
     }
+
+    /// <summary>
+    /// A New Relic enum value, such as <c>APM</c> or <c>APM_APPLICATION_ENTITY</c>: upper-case
+    /// letters, digits, '_' and '-'. Anything else is <c>unknown</c>: the document skips the
+    /// file-level credential check, so no free text may enter it here.
+    /// </summary>
+    internal static string Word(string value) =>
+        value.Length is > 0 and <= 100 && value.All(c => c is (>= 'A' and <= 'Z') or (>= '0' and <= '9') or '_' or '-') ? value : "unknown";
 
     private static bool IsKey(string guid) => guid.Length is > 0 and <= 200 && TextRule.Line("guid", guid) is null;
 

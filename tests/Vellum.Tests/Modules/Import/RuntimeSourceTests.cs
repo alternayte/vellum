@@ -93,7 +93,7 @@ public class RuntimeSourceTests(ImportHost import) : IClassFixture<ImportHost>
         Assert.Equal(4, relationships.Count);
         Assert.All(relationships, r => Assert.Equal("measured", r.Text("factStatus")));
         Assert.All(relationships, r => Assert.StartsWith("traces/checkout-traces@", r["provenance"]!["source"]!.GetValue<string>()));
-        Assert.All((await s.ElementsAsync()).Where(e => e.Text("name") != "checkout-traces"), e => Assert.Equal("measured", e.Text("factStatus")));
+        Assert.All(await s.ElementsAsync(), e => Assert.Equal("measured", e.Text("factStatus")));
 
         // Every table, every event and the decoded content of every blob: no span data.
         await AssertNoRowHoldsAsync(Secrets);

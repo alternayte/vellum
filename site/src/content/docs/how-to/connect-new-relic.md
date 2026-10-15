@@ -22,7 +22,7 @@ This guide shows you how to add a New Relic account as a Source. Vellum reads th
 6. Select **Test connection**. Vellum sends one query to the endpoint of the region and shows the account name, or what to change.
 7. Select **Add and read account**.
 
-Vellum stores the key envelope-encrypted and bound to the endpoint of the region. No screen and no API answer shows it again. The audit log records `secret.set` with the name `newrelic:<source id>:<region>:apiKey`.
+Vellum stores the key envelope-encrypted and bound to the endpoint of the region. Deleting the project deletes the key. No screen and no API answer shows it again. The audit log records `secret.set` with the name `newrelic:<source id>:<region>:apiKey`.
 
 The Source lists the account, the region and whether a key is stored. Its status line says if the last read is complete, partial, waiting for the rate limit, unavailable, or failed.
 

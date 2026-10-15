@@ -409,11 +409,16 @@ internal static class FactMapping
             // The repository is not an extracted fact. What shows that it holds these parts
             // is the first evidence of each of them.
             var name = repository[(repository.LastIndexOf('/') + 1)..];
+            // The label travels in the attributes, as for every fact, so the applier and the
+            // link give the system the label of the Source and not observed-in-source.
+            var systemLabel = LabelOf(inSystem[0].Attributes);
             candidates.Add(new Candidate(
                 RepositoryKey, EntityKinds.Element, name, 0,
                 Fields((Field.Kind, "system"), (Field.Name, name)), [], [],
                 new SortedDictionary<string, string>(StringComparer.Ordinal),
-                new Dictionary<string, string>(),
+                systemLabel == ProposalPlanner.ObservedInSource
+                    ? new Dictionary<string, string>()
+                    : new Dictionary<string, string> { [TruthLabelAttribute] = systemLabel },
                 [.. inSystem.Select(f => Ref(f.Evidence[0])).Take(EvidenceCap)], NotAddable: null,
                 // The system holds what the Source shows: it carries the label of its parts.
                 TruthLabel: LabelOf(inSystem[0].Attributes)));

@@ -149,6 +149,7 @@ public static class ScanNotes
         "pull-request-merged" => "The pull request is merged. The scan read its head commit, which is not the merge commit.",
         "entity-search-errors" or "related-entities-errors" => "New Relic answered part of a query with errors. That part of the account was not read, so the scan is partial.",
         "limit:entities" => "The account has more entities than one scan reads. The scan is partial.",
+        "limit:pages" => "New Relic gave a page cursor that did not advance, or more pages than one scan reads. The scan stopped paging and is partial.",
         "limit:relationships" => "The account has more relationships than one scan reads. The scan is partial.",
         "relink-needs-review" => "The extraction rules changed, and an accepted fact could not be matched to a new one by the exact rule. Review its relink proposal.",
         _ when code.StartsWith("limit:", StringComparison.Ordinal) => "A bound of the extraction was reached. Part of this file was left out.",

@@ -123,7 +123,7 @@ public static partial class RuntimeSources
         if (source.Kind != SourceKind.Traces)
             return Results.Conflict(new ErrorResponse("source_kind_mismatch", "Only a traces Source takes a trace file."));
         if (CleanFileName(fileName) is not { } name)
-            return Invalid("fileName", $"Give the file name: 1 to {MaxFileName} characters, no folder, no control character.");
+            return Invalid("fileName", $"Give the file name: 1 to {MaxFileName} characters, no control character, no e-mail address and nothing that looks like a credential. Rename the file and upload it again.");
 
         // The server's own cap is lower than a trace export can be. The endpoint's limit applies instead.
         var limits = http.RequestServices.GetService<TraceLimits>() ?? TraceLimits.Default;
@@ -285,13 +285,17 @@ public static partial class RuntimeSources
     }
 
     /// <summary>The last part of the name, without control characters: the file is cited under it.</summary>
-    private static string? CleanFileName(string? fileName)
+    internal static string? CleanFileName(string? fileName)
     {
         if (fileName is null)
             return null;
         var name = fileName.Replace('\\', '/');
         name = name[(name.LastIndexOf('/') + 1)..].Trim();
-        return name.Length is 0 or > MaxFileName || name is "." or ".." || TextRule.Line("fileName", name, MaxFileName) is not null ? null : name;
+        if (name.Length is 0 or > MaxFileName || name is "." or "..")
+            return null;
+        // The name is cited in every fact and provenance of the upload, so it passes the same
+        // checks as a name in the trace: no control character, no e-mail address, no credential.
+        return RuntimeGraph.CleanName(name) == name ? name : null;
     }
 
     [GeneratedRegex("[^a-z0-9]+")]

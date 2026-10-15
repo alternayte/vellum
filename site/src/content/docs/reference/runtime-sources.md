@@ -30,7 +30,7 @@ A service, operation or peer name with a control character, an e-mail address or
 The only file of a runtime Snapshot is a document that Vellum writes: one JSON object per line.
 
 - Line 1 is the header: `format` (`vellum.runtime.v1`), `complete`, `kind`, and for traces `file`, `exportFormat`, `spans` and `window`; for New Relic `account`, `region`, `entities` and `relationships`.
-- Then one line per service, ordered by key: `type` `service`, `key`, `name`, `truthLabel` and its attributes.
+- Then one line per service, ordered by key: `type` `service`, `key`, `name`, `truthLabel` and its attributes. A New Relic `domain`, `type` or `entityType` that is not an upper-case word is written as `unknown`.
 - Then one line per edge, ordered by key: `type` `interaction`, `key`, `from`, `to`, `label`, `truthLabel` and its attributes.
 
 A citation names the line of its fact. The Snapshot ID is the SHA-256 of the lines after the header. The same services and edges give the same Snapshot ID, whatever the format of the export and whatever the file name.
@@ -53,9 +53,10 @@ A citation names the line of its fact. The Snapshot ID is the SHA-256 of the lin
 | Edges | 10,000 | `413 trace_too_many_edges` |
 | One JSON value | 1 MiB | `413 trace_token_too_large` |
 | Nesting depth | 64 | `400 trace_malformed` |
-| Operations of one edge | 50 | the rest are counted in `operationsLeftOut` |
+| Links or references of one span | 128 | `413 trace_too_many_links` |
+| Operations of one edge | 50 | the rest are counted in `sample.operationsLeftOut` |
 
-A malformed file gives `400 trace_malformed`, a file of no known shape `400 trace_format_unknown`, and a file with no span `400 trace_empty`. A refused file stores nothing.
+Every span counts toward the span bound as it is read, with or without an ID. A file name with a control character, an e-mail address or the shape of a credential is refused with `400`; rename the file. A malformed file, including a string that is not valid UTF-8, gives `400 trace_malformed`, a file of no known shape `400 trace_format_unknown`, and a file with no span `400 trace_empty`. A refused file stores nothing.
 
 ## NerdGraph queries
 
@@ -103,6 +104,10 @@ Each further page of one entity's relationships uses `entity(guid: $guid) { rela
 | Entities | 500 |
 | Relationships of one entity | 500 |
 | Relationships in all | 20,000 |
+| Entity search pages | 10 |
+| Further pages of related entities | 200 |
+
+A cursor that comes back, or a page that adds nothing while it names a next cursor, ends the paging with the note `limit:pages`.
 
 A read that reaches a bound, or that gets an answer with both data and errors, is partial. A partial read marks nothing stale.
 

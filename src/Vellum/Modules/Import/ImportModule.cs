@@ -213,6 +213,13 @@ public static class ImportRetention
         // The files, the snapshot, its facts and the proposals of a scan go with its row.
         // A worker that runs one of these scans finds no row to write to and stops.
         await db.Scans.Where(s => s.ProjectId == projectId).ExecuteDeleteAsync(ct);
+        // The key of a New Relic Source belongs to the Source and goes with it.
+        foreach (var source in await db.Sources.Where(s => s.ProjectId == projectId && s.Kind == SourceKind.Newrelic)
+                     .Select(s => new { s.Id, s.WorkspaceId }).ToListAsync(ct))
+        {
+            var prefix = $"newrelic:{source.Id:D}:";
+            await db.Secrets.Where(x => x.WorkspaceId == source.WorkspaceId && x.Name.StartsWith(prefix)).ExecuteDeleteAsync(ct);
+        }
         await db.Sources.Where(s => s.ProjectId == projectId).ExecuteDeleteAsync(ct);
 
         foreach (var workspaceId in workspaces)

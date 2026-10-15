@@ -15,6 +15,8 @@ internal sealed record TraceLimits(long MaxBytes, int MaxSpans, int MaxServices,
 {
     public const int MaxDepth = 64;
     public const int MaxOperationsPerEdge = 50;
+    /// <summary>Links (OTLP) or references (Jaeger) of one span. A span with more is refused with the file.</summary>
+    public const int MaxLinksPerSpan = 128;
     public static readonly TraceLimits Default = new(256L * 1024 * 1024, 1_000_000, 2_000, 10_000);
 }
 
@@ -71,6 +73,8 @@ internal sealed class TraceExport
     private readonly Dictionary<string, string> _interned = new(StringComparer.Ordinal);
     private string? _format;
     private int _redacted;
+    /// <summary>Every span read so far, kept or not. The bound applies to it as each span is read.</summary>
+    private int _read;
 
     private TraceExport(Stream body, TraceLimits limits, CancellationToken ct)
     {
@@ -93,6 +97,11 @@ internal sealed class TraceExport
         }
         catch (JsonException)
         {
+            throw Malformed();
+        }
+        catch (InvalidOperationException)
+        {
+            // A string that is not valid UTF-8 or holds a lone surrogate. Its bytes are not logged.
             throw Malformed();
         }
         if (export._format is null)
@@ -211,7 +220,7 @@ internal sealed class TraceExport
                 })
                 : SkipAsync()),
             "scopeSpans" or "instrumentationLibrarySpans" => ArrayAsync(() => ObjectAsync(field => field == "spans"
-                ? ArrayAsync(async () => spans.Add(await OtlpSpanAsync()))
+                ? ArrayAsync(async () => Hold(spans, await OtlpSpanAsync()))
                 : SkipAsync())),
             _ => SkipAsync(),
         });
@@ -289,7 +298,7 @@ internal sealed class TraceExport
                             else await SkipAsync();
                         });
                         if (linkTrace is not null && linkSpan is not null)
-                            (links ??= []).Add((Intern(linkTrace), Id(linkSpan)));
+                            AddLink(ref links, linkTrace, linkSpan);
                     });
                     break;
                 default: await SkipAsync(); break;
@@ -308,7 +317,7 @@ internal sealed class TraceExport
         var processes = new Dictionary<string, string?>(StringComparer.Ordinal);
         await ObjectAsync(name => name switch
         {
-            "spans" => ArrayAsync(async () => spans.Add(await JaegerSpanAsync())),
+            "spans" => ArrayAsync(async () => Hold(spans, await JaegerSpanAsync())),
             "processes" => ObjectAsync(async processId =>
             {
                 string? service = null;
@@ -361,7 +370,7 @@ internal sealed class TraceExport
                         if (type == "CHILD_OF" && (refTrace is null || refTrace == trace))
                             parent ??= refSpan;
                         else
-                            (links ??= []).Add((Intern(refTrace ?? trace ?? ""), Id(refSpan)));
+                            AddLink(ref links, refTrace ?? trace ?? "", refSpan);
                     });
                     break;
                 case "tags":
@@ -395,6 +404,29 @@ internal sealed class TraceExport
         };
     }
 
+    /// <summary>
+    /// Counts a span the moment it is read, whether it is kept or not, and refuses the file at
+    /// the bound. A span without an ID can be no end of an edge, so it is dropped at once; its
+    /// service is not known yet, so the others wait in <paramref name="pending"/>.
+    /// </summary>
+    private void Hold(List<Span> pending, Span span)
+    {
+        if (++_read > _limits.MaxSpans)
+            throw new TraceRefusal("trace_too_many_spans",
+                $"The file holds more than {_limits.MaxSpans} spans. Export a shorter window.", tooLarge: true);
+        if (span.Id.Length > 0)
+            pending.Add(span);
+    }
+
+    private void AddLink(ref List<(string, string)>? links, string trace, string id)
+    {
+        links ??= [];
+        if (links.Count >= TraceLimits.MaxLinksPerSpan)
+            throw new TraceRefusal("trace_too_many_links",
+                $"A span of the file has more than {TraceLimits.MaxLinksPerSpan} links. Vellum reads no such span.", tooLarge: true);
+        links.Add((Intern(trace), Id(id)));
+    }
+
     /// <summary>Gives the spans their service and keeps them. A service name that is not fit to keep drops its spans.</summary>
     private void Keep(List<Span> spans, string service)
     {
@@ -406,11 +438,6 @@ internal sealed class TraceExport
         }
         foreach (var span in spans)
         {
-            if (span.Id.Length == 0)
-                continue;
-            if (_spans.Count >= _limits.MaxSpans)
-                throw new TraceRefusal("trace_too_many_spans",
-                    $"The file holds more than {_limits.MaxSpans} spans. Export a shorter window.", tooLarge: true);
             span.Service = Intern(name);
             _spans.Add(span);
         }
@@ -561,7 +588,7 @@ internal sealed class TraceExport
                 [FactMapping.SamplePrefix + "errors"] = RuntimeGraph.Number(e.Errors),
             };
             if (e.OperationsLeftOut > 0)
-                attributes["operationsLeftOut"] = RuntimeGraph.Number(e.OperationsLeftOut);
+                attributes[FactMapping.SamplePrefix + "operationsLeftOut"] = RuntimeGraph.Number(e.OperationsLeftOut);
             if (e.First != long.MaxValue)
                 attributes[FactMapping.SamplePrefix + "firstSeen"] = Time(e.First);
             if (e.Last != long.MinValue)
