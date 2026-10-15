@@ -125,6 +125,14 @@ public static class DesignModule
             .Produces<ErrorResponse>(StatusCodes.Status400BadRequest)
             .Produces<ErrorResponse>(StatusCodes.Status409Conflict)
             .Produces<ErrorResponse>(StatusCodes.Status429TooManyRequests);
+        // Prose of a Source (a README, a design document) through the AI path: inferred, each item citing its lines.
+        architecture.MapPost("/from-document", ArchitectureProposals.FromDocument).RequireHuman()
+            .WithMetadata(generates)
+            .Produces<ArchitectureProposalDto>(StatusCodes.Status201Created)
+            .Produces<AiUnavailable>()
+            .Produces<ErrorResponse>(StatusCodes.Status400BadRequest)
+            .Produces<ErrorResponse>(StatusCodes.Status409Conflict)
+            .Produces<ErrorResponse>(StatusCodes.Status429TooManyRequests);
         architecture.MapPost("/submit", ArchitectureProposals.Submit).AllowAgent(AgentScope.Propose)
             .WithBodyLimit(RequestBodyLimit.Document)
             .AddEndpointFilter(CallerRate.Filter<ProposalSubmitRate>)

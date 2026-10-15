@@ -47,7 +47,8 @@ public sealed record SetImpactGateRequest(string? Policy);
 
 /// <param name="Reference"><c>path:start-end@commit</c>.</param>
 /// <param name="Url">The permanent link to the lines at the commit.</param>
-public sealed record ImpactReportReferenceDto(string Reference, string Url);
+/// <param name="Url">Null for a Source with no web page, such as an uploaded file.</param>
+public sealed record ImpactReportReferenceDto(string Reference, string? Url);
 
 /// <param name="Fields">For a contract change: the fields that differ.</param>
 /// <param name="ReferencesOmitted">Source references of the change that the report does not list.</param>

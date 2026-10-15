@@ -160,6 +160,16 @@ public static class ImportTables
             b.HasIndex(l => new { l.ProjectId, l.EntityId });
         });
 
+        modelBuilder.Entity<DecisionLinkEntity>(b =>
+        {
+            b.ToTable("decision_links", Schema);
+            b.HasKey(l => new { l.ProjectId, l.SourceId, l.PathHash });
+            b.Property(l => l.PathHash).HasMaxLength(64);
+            b.Property(l => l.Path).HasMaxLength(ScanFileEntity.MaxPath);
+            b.Property(l => l.ContentHash).HasMaxLength(64);
+            b.HasIndex(l => l.ScanId);
+        });
+
         modelBuilder.Entity<RejectionEntity>(b =>
         {
             b.ToTable("rejections", Schema);

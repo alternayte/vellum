@@ -55,6 +55,8 @@ internal sealed class ModelIndex
             index.Add(Of(model, b));
         foreach (var m in model.Messages.Values)
             index.Add(Of(m));
+        foreach (var r in model.Relationships.Values)
+            index.Add(Of(model, r));
         foreach (var schema in schemas)
             index.Add(Of(schema));
         return index;
@@ -86,6 +88,14 @@ internal sealed class ModelIndex
         (Field.ConsumerIds, JoinIds(m.ConsumerIds.Select(c => c.Value))), (Field.SchemaId, m.SchemaId?.ToString())),
         m.FactStatus.ToApiString(), m.Stale);
 
+    public static ModelEntity Of(ModelState model, RelationshipState r) => new(r.Id, EntityKinds.Relationship,
+        $"{(model.Elements.TryGetValue(r.FromId, out var from) ? from.Name : r.FromId.ToString())} → {(model.Elements.TryGetValue(r.ToId, out var to) ? to.Name : r.ToId.ToString())}"
+            + (r.Label is null ? "" : $": {r.Label}"),
+        Values(
+            (Field.FromId, r.FromId.ToString()), (Field.ToId, r.ToId.ToString()), (Field.Label, r.Label),
+            (Field.Technology, r.Technology), (Field.Kind, r.Kind.ToString().ToLowerInvariant())),
+        r.FactStatus.ToApiString(), r.Stale);
+
     public static ModelEntity Of(SchemaRow s) => new(s.Id, EntityKinds.Schema, s.Name, Values(
         (Field.Name, s.Name), (Field.Content, s.Content)), null, null);
 
@@ -110,6 +120,7 @@ internal sealed class ModelIndex
         EntityKinds.Binding => BindingFields,
         EntityKinds.Message => MessageFields,
         EntityKinds.Schema => SchemaFields,
+        EntityKinds.Relationship => RelationshipFields,
         _ => [],
     };
 
@@ -120,6 +131,8 @@ internal sealed class ModelIndex
     private static readonly string[] BindingFields = [Field.SourceChannelId, Field.TargetChannelId, Field.RoutingKey];
     private static readonly string[] MessageFields = [Field.Name, Field.ProducerId, Field.ConsumerIds, Field.SchemaId];
     private static readonly string[] SchemaFields = [Field.Name, Field.Content];
+    // Not the ends: a relationship with other ends is another relationship.
+    private static readonly string[] RelationshipFields = [Field.Label, Field.Technology, Field.Kind];
 
     /// <summary>
     /// The exact rule that says a fact and an entity are the same thing: the same kind and
@@ -136,6 +149,7 @@ internal sealed class ModelIndex
         EntityKinds.Operation => $"{values.GetValueOrDefault(Field.OwnerId)}|{NormalRoute(values.GetValueOrDefault(Field.Name))}",
         EntityKinds.Subscription => $"{values.GetValueOrDefault(Field.ChannelId)}|{values.GetValueOrDefault(Field.ConsumerId)}",
         EntityKinds.Binding => $"{values.GetValueOrDefault(Field.SourceChannelId)}|{values.GetValueOrDefault(Field.TargetChannelId)}|{values.GetValueOrDefault(Field.RoutingKey)}",
+        EntityKinds.Relationship => $"{values.GetValueOrDefault(Field.FromId)}|{values.GetValueOrDefault(Field.ToId)}|{NormalName(values.GetValueOrDefault(Field.Label))}",
         _ => NormalName(values.GetValueOrDefault(Field.Name)),
     };
 
@@ -182,6 +196,7 @@ internal sealed class ModelIndex
         EntityKinds.Subscription => model.Subscriptions.TryGetValue(id, out var subscription) ? Of(model, subscription) : null,
         EntityKinds.Binding => model.Bindings.TryGetValue(id, out var binding) ? Of(model, binding) : null,
         EntityKinds.Message => model.Messages.TryGetValue(id, out var message) ? Of(message) : null,
+        EntityKinds.Relationship => model.Relationships.TryGetValue(id, out var relationship) ? Of(model, relationship) : null,
         _ => null,
     };
 

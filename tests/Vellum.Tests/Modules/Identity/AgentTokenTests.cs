@@ -601,6 +601,8 @@ public class AgentTokenTests(IntegrationFixture fixture) : IClassFixture<Integra
         "DELETE /api/workspaces/{workspaceId}/agent-tokens/{tokenId}",
         "POST /api/projects/{projectId}/imports/{importId}/proposals/decide",
         "POST /api/projects/{projectId}/sources/{sourceId}/accept",
+        "POST /api/projects/{projectId}/sources/upload",
+        "POST /api/projects/{projectId}/ai/architecture-proposals/from-document",
         "POST /api/projects/{projectId}/ai/flow-proposals/",
         "POST /api/projects/{projectId}/ai/flow-proposals/{proposalId}/accept",
         "POST /api/projects/{projectId}/ai/flow-proposals/{proposalId}/missing/{alias}/create",

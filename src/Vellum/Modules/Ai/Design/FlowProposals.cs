@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -20,7 +21,11 @@ namespace Vellum.Modules.Ai.Design;
 /// The IDs of the things selected on the canvas, at most 500. They are listed in the alias
 /// table before the rest of a large model. An ID that names nothing is ignored.
 /// </param>
-public sealed record CreateFlowProposalRequest(string? Request, Guid? BranchId, Guid? ReviseScenarioId, IReadOnlyList<Guid>? Selection = null);
+/// <param name="DocumentSourceId">With <paramref name="DocumentPath"/>: a Source whose newest Snapshot holds a Markdown or text document that describes the flow. The document goes to the provider as untrusted data, and the flow cites the lines it comes from.</param>
+/// <param name="DocumentPath">The path of that document.</param>
+public sealed record CreateFlowProposalRequest(
+    string? Request, Guid? BranchId, Guid? ReviseScenarioId, IReadOnlyList<Guid>? Selection = null,
+    Guid? DocumentSourceId = null, string? DocumentPath = null);
 
 /// <summary>
 /// A flow proposal that the caller wrote, for the main model. The server checks it as it
@@ -125,7 +130,8 @@ public sealed record FlowProposalDto(
     AliasOmitted Omitted,
     OmittedPrivate? OmittedPrivate,
     ProposalProvider Provider, string PromptTemplateVersion, ProposalUsage Usage,
-    string CreatedBy, DateTimeOffset CreatedAt, string? DecidedBy, DateTimeOffset? DecidedAt, string Origin);
+    string CreatedBy, DateTimeOffset CreatedAt, string? DecidedBy, DateTimeOffset? DecidedAt, string Origin,
+    DocumentSource? Document = null, string? Citation = null);
 
 /// <summary>What a flow proposal resolves to against one version of a branch.</summary>
 internal sealed record FlowView(
@@ -165,7 +171,8 @@ internal sealed record FlowDocument(
     FlowCarried? Carried, FlowView? Decided, string? Fingerprint,
     long ModelVersion,
     ProposalProvider Provider, string PromptTemplateVersion, ProposalUsage Usage,
-    AliasOmitted? Omitted, OmittedPrivate? OmittedPrivate, string? Origin = null);
+    AliasOmitted? Omitted, OmittedPrivate? OmittedPrivate, string? Origin = null,
+    DocumentSource? Document = null, string? Citation = null);
 
 /// <summary>A branch's model at one version, with the content of the schemas it names.</summary>
 internal sealed record BranchSnapshot(ModelState Model, long Version, IReadOnlyDictionary<SchemaId, string> Schemas)
@@ -239,6 +246,16 @@ public static class FlowProposals
         if (await ProposalStore.DraftsFullAsync(db, projectId, ct))
             return ProposalStore.TooManyDrafts();
 
+        // Prose of a Source that describes the flow: untrusted data, cited by its lines.
+        Import.Sources.SourceDocument? source = null;
+        if (body.DocumentSourceId is { } documentSourceId)
+        {
+            var (read, problem) = await Import.Sources.SourceDocuments.ReadAsync(http.RequestServices, projectId, documentSourceId, body.DocumentPath, ct);
+            if (read is null)
+                return Invalid("documentPath", problem!);
+            source = read;
+        }
+
         Scenario? revised = null;
         if (body.ReviseScenarioId is { } reviseId)
         {
@@ -264,15 +281,35 @@ public static class FlowProposals
             // The scenario holds aliases and the payloads a person saved. It holds no ID and no text of a hidden thing.
             parts.Add(AiPart.Untrusted(RevisedAsData(revised, split), AiDataClass.Public));
         }
+        DocumentSource? documentSource = null;
+        if (source is not null)
+        {
+            var numbered = new StringBuilder();
+            for (var i = 0; i < source.Lines.Count; i++)
+                numbered.Append((i + 1).ToString(CultureInfo.InvariantCulture)).Append("| ").Append(source.Lines[i]).Append('\n');
+            parts.Add(AiPart.Instruction(prompt["document"]));
+            parts.Add(AiPart.Untrusted(numbered.ToString(), source.IsPublic ? AiDataClass.Public : AiDataClass.PrivateRepository));
+            documentSource = new DocumentSource(source.SourceId, source.Path, $"{source.Citation}:{source.Path}", source.Lines.Count);
+        }
         // The request is what a person typed or pasted. It is data too, in a part of its own.
         parts.Add(AiPart.Instruction(prompt["request"]));
         parts.Add(AiPart.Untrusted(body.Request!, AiDataClass.Public));
 
         var result = await ai.CompleteStructuredAsync<FlowOutput>(new AiRequest(
             caller.WorkspaceId, AiTask.ProposeFlow, Purpose, DesignPrompts.ProposeFlowVersion, prompt["system"],
-            [new AiMessage(AiRole.User, parts)], DesignSchemas.Flow, MaxOutputTokens, caller.UserId), ct);
+            [new AiMessage(AiRole.User, parts)], documentSource is null ? DesignSchemas.Flow : DesignSchemas.FlowFromDocument,
+            MaxOutputTokens, caller.UserId), ct);
         if (result is not AiResult<FlowOutput>.Succeeded answer)
             return Results.Ok(AiUnavailable.From(((AiResult<FlowOutput>.Failed)result).Failure));
+
+        // A flow read from a document cites the lines it comes from, or it is not stored.
+        string? citation = null;
+        if (documentSource is not null)
+        {
+            if (answer.Value.StartLine is not { } start || answer.Value.EndLine is not { } end || start < 1 || end < start || end > documentSource.Lines)
+                return Results.Ok(AiUnavailable.From(new AiFailure.InvalidOutput(["/startLine: the flow cites no lines of the document"])));
+            citation = string.Create(CultureInfo.InvariantCulture, $"{documentSource.Citation}:{start}-{end}");
+        }
 
         var (output, ingestIssues) = FlowAssembler.Normalize(answer.Value);
         var document = new FlowDocument(
@@ -281,7 +318,7 @@ public static class FlowProposals
             carried, null, null, snapshot.Version,
             new ProposalProvider(answer.Usage.ProviderKind, answer.Usage.Model, answer.Usage.ReportedModel),
             DesignPrompts.ProposeFlowVersion, ProposalUsage.From(answer.Usage),
-            aliases.Omitted, OmittedPrivate.Of(aliases.OmittedPrivateCount));
+            aliases.Omitted, OmittedPrivate.Of(aliases.OmittedPrivateCount), Document: documentSource, Citation: citation);
         var view = Resolve(document, snapshot, revised);
         document = document with { Fingerprint = Fingerprint(view) };
 
@@ -597,7 +634,8 @@ public static class FlowProposals
 
             var refused = await InferredWrites.ApplyAsync(
                 store, caller.StreamId, [(addition, entry.Confidence)],
-                InferredWrites.Source(document.Provider, document.Origin, Kind, row.Id), caller.UserId, time.GetUtcNow(), ct);
+                // A flow read from a document gives what it needs the citation of its lines.
+                document.Citation ?? InferredWrites.Source(document.Provider, document.Origin, Kind, row.Id), caller.UserId, time.GetUtcNow(), ct);
             if (refused is not null)
                 return refused.Conflict ? Conflict(refused.Reason) : Invalid(alias, refused.Reason);
 
@@ -839,7 +877,8 @@ public static class FlowProposals
         view.Preview, view.Diff, view.Evidence, document.ReviseScenarioId, document.ModelVersion, stale,
         document.Omitted ?? AliasOmitted.None, document.OmittedPrivate,
         document.Provider, document.PromptTemplateVersion, document.Usage,
-        row.CreatedBy, row.CreatedAt, row.DecidedBy, row.DecidedAt, document.Origin ?? SubmittedProposal.AiOrigin);
+        row.CreatedBy, row.CreatedAt, row.DecidedBy, row.DecidedAt, document.Origin ?? SubmittedProposal.AiOrigin,
+        document.Document, document.Citation);
 }
 
 /// <summary>Reads and limits that both kinds of proposal share.</summary>

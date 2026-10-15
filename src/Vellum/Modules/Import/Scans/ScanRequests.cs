@@ -149,7 +149,8 @@ public static partial class ScanRequests
     /// <summary>Checks the options, takes one unit of the day's scans and queues a scan of <paramref name="source"/>.</summary>
     internal static async Task<IResult> QueueAsync(
         Guid projectId, SourceEntity source, ScanOptions request, ClaimsPrincipal user, WorkspaceSettings workspace,
-        AppDbContext db, ScanSignal signal, DateTimeOffset now, CancellationToken ct)
+        AppDbContext db, ScanSignal signal, DateTimeOffset now, CancellationToken ct,
+        Func<ScanEntity, Task>? prepare = null)
     {
         var userId = user.UserId();
         var reference = string.IsNullOrWhiteSpace(request.Ref) ? null : request.Ref;
@@ -185,6 +186,10 @@ public static partial class ScanRequests
         if (await ChargeAsync(db, workspaceId, scan.Id, workspace.Effective.Usage.MaxScansPerDay, now, ct) is { } refused)
             return refused;
 
+        // A kind that has its content already (an upload) pins the revision and lists the
+        // files here, in the transaction of the scan.
+        if (prepare is not null)
+            await prepare(scan);
         db.Scans.Add(scan);
         try
         {

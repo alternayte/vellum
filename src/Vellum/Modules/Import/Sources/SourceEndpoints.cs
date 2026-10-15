@@ -110,6 +110,11 @@ public static class SourceRequests
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
         if (!EnumText.TryParse(request.Kind, out SourceKind kind))
             return Invalid("kind", $"A Source kind is one of: {string.Join(", ", Enum.GetValues<SourceKind>().Select(k => EnumText.Of(k)))}.");
+        if (kind == SourceKind.ModelFile)
+        {
+            return Results.BadRequest(new ErrorResponse("source_kind_unavailable",
+                "A model-file Source is made by uploading its file: POST /api/projects/{projectId}/sources/upload."));
+        }
         if (kind != SourceKind.Github)
         {
             return Results.BadRequest(new ErrorResponse("source_kind_unavailable",
@@ -178,6 +183,11 @@ public static class SourceRequests
         var source = await db.Sources.AsNoTracking().FirstOrDefaultAsync(s => s.Id == sourceId && s.ProjectId == projectId, ct);
         if (source is null)
             return NotFound("Source");
+        if (source.Kind == SourceKind.ModelFile)
+        {
+            return Results.Conflict(new ErrorResponse("source_is_upload",
+                "This Source is an uploaded file. Upload the file again to make a new Snapshot of it."));
+        }
 
         var workspace = await settings.GetWorkspaceAsync(source.WorkspaceId, ct);
         if (workspace.GithubApiBaseUrl is not SettingsUrl.Usable github)

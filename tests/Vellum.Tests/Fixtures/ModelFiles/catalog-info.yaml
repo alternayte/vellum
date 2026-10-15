@@ -1,0 +1,82 @@
+apiVersion: backstage.io/v1alpha1
+kind: Domain
+metadata:
+  name: commerce
+spec:
+  owner: team-commerce
+---
+apiVersion: backstage.io/v1alpha1
+kind: System
+metadata:
+  name: shop
+  title: Shop
+spec:
+  owner: team-commerce
+  domain: commerce
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: orders
+  title: Orders
+  description: Takes orders from the web shop.
+  tags: [go, orders]
+spec:
+  type: service
+  lifecycle: production
+  owner: team-orders
+  system: shop
+  providesApis: [orders-api]
+  consumesApis: [api:default/payments-api]
+  dependsOn:
+    - resource:default/orders-db
+    - component:payments
+---
+apiVersion: backstage.io/v1alpha1
+kind: Component
+metadata:
+  name: payments
+spec:
+  type: service
+  lifecycle: production
+  owner: team-payments
+  system: shop
+  providesApis: [payments-api]
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: orders-api
+spec:
+  type: openapi
+  lifecycle: production
+  owner: team-orders
+  system: shop
+  definition: |
+    openapi: 3.0.0
+---
+apiVersion: backstage.io/v1alpha1
+kind: API
+metadata:
+  name: payments-api
+spec:
+  type: grpc
+  owner: team-payments
+---
+apiVersion: backstage.io/v1alpha1
+kind: Resource
+metadata:
+  name: orders-db
+  title: Orders DB
+spec:
+  type: postgres
+  owner: team-orders
+  system: shop
+---
+apiVersion: backstage.io/v1alpha1
+kind: Location
+metadata:
+  name: more
+spec:
+  targets:
+    - https://example.com/catalog-info.yaml

@@ -365,7 +365,10 @@ internal static class ProposalPlanner
 
             // A schema has no truth label of its own. A linked schema came from an import; an
             // unlinked one was written by a person.
-            var status = entity.FactStatus ?? (linked ? ObservedInSource : "declared");
+            // The label a fact of this Source gets: observed-in-source for code and
+            // configuration, declared for a model file (TruthLabels).
+            var sourceLabel = candidate.FactStatus;
+            var status = entity.FactStatus ?? (linked ? sourceLabel : "declared");
             var editedSince = linked && compared.Any(field =>
                 link!.Accepted.TryGetValue(field, out var accepted)
                 && !string.Equals(accepted, entity.Values.GetValueOrDefault(field), StringComparison.Ordinal));
@@ -373,15 +376,18 @@ internal static class ProposalPlanner
             // review lists every side. Accepting this one is a person's choice, never a default.
             var others = input.OthersOf(candidate.EntityKind, entity.Id);
             // An entity that another Source holds and that this fact matches by name alone is
-            // a conflict even where the values agree: linking it is a person's choice.
-            var action = (matchedByName && others.Count > 0) || (modelChanges > 0 && (status != ObservedInSource || editedSince || others.Count > 0))
+            // a conflict even where the values agree: linking it is a person's choice. A
+            // hand-made declared entity is a person's word, so a model file that differs from
+            // it is a conflict too: the match by name makes it "the same", not the link.
+            var action = (matchedByName && others.Count > 0)
+                || (modelChanges > 0 && (status != sourceLabel || (!linked && sourceLabel != ObservedInSource) || editedSince || others.Count > 0))
                 ? ProposalAction.Conflict
                 : ProposalAction.Change;
 
             // Accepting a link gives the entity the label of the source. That is a change of
             // the entity even when every value already agrees, so it is shown as one.
-            if (entity.FactStatus is { } label && label != ObservedInSource)
-                changes.Add(new FieldChange("factStatus", label, ObservedInSource));
+            if (entity.FactStatus is { } label && label != sourceLabel)
+                changes.Add(new FieldChange("factStatus", label, sourceLabel));
 
             var fingerprint = Fingerprint(action, candidate, entity.Values);
             if (input.Rejections.Contains((candidate.FactKey, fingerprint)))
@@ -458,9 +464,11 @@ internal static class ProposalPlanner
 
             // A fact that a person declared, or took over by changing its label, rests on
             // their word and not on the evidence. A scan leaves no mark on it. Nor on a fact
-            // that another Source still holds: staleness compares Snapshots of one Source.
+            // that another Source still holds: staleness compares Snapshots of one Source. A
+            // fact accepted from a model file keeps the label "declared" of that file, and the
+            // file no longer says it: it gets the mark like an observed fact.
             var others = input.OthersOf(link.EntityKind, entity.Id);
-            if (entity.FactStatus == ObservedInSource && entity.Stale is null && others.Count == 0)
+            if (entity.FactStatus == TruthLabels.Of(link.Evidence.Select(e => e.Rule)) && entity.Stale is null && others.Count == 0)
                 markStale.Add(entity.Id);
 
             var fingerprint = Hash([EnumText.Of(ProposalAction.Remove), link.EntityKind, link.FactKey, Canonical(entity.Values)]);

@@ -394,6 +394,8 @@ public enum StoredEntityKind
     Binding,
     Message,
     Schema,
+    /// <summary>A relationship between two elements, which a model file declares.</summary>
+    Relationship,
 }
 
 /// <summary>
@@ -475,6 +477,26 @@ public class FactLinkEntity
     public string Evidence { get; set; } = "[]";
     public string AcceptedBy { get; set; } = null!;
     public DateTimeOffset AcceptedAt { get; set; }
+}
+
+/// <summary>
+/// An ADR file of a Source and the decision an import proposed from it. A later scan of the
+/// Source finds the decision by the path: the same text proposes nothing again, changed text
+/// changes the decision while nobody touched it, else proposes a new one.
+/// </summary>
+public class DecisionLinkEntity
+{
+    public Guid ProjectId { get; set; }
+    public Guid SourceId { get; set; }
+    /// <summary>SHA-256 of <see cref="Path"/>, in hex: the key.</summary>
+    public string PathHash { get; set; } = null!;
+    public string Path { get; set; } = null!;
+    public Guid DecisionId { get; set; }
+    /// <summary>The hash of what the file said when the decision was proposed or last changed from it.</summary>
+    public string ContentHash { get; set; } = null!;
+    /// <summary>The scan that last proposed or changed the decision.</summary>
+    public Guid ScanId { get; set; }
+    public DateTimeOffset UpdatedAt { get; set; }
 }
 
 /// <summary>A rejected proposal, remembered by its fingerprint.</summary>

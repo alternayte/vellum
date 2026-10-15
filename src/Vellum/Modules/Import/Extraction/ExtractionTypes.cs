@@ -24,6 +24,44 @@ public enum FactKind
     DataStore, DataAccess, Dependency, Schema, Deployment,
     /// <summary>An architecture pattern the source declares, such as a transactional outbox. Not a publication.</summary>
     Pattern,
+    /// <summary>
+    /// An element that a model file declares (Structurizr, Backstage): <c>elementKind</c> is a
+    /// kind of the model (<c>actor</c>, <c>system</c>, <c>app</c>, <c>store</c>, <c>component</c>)
+    /// or one the model has no place for (<c>domain</c>); <c>parent</c> is the key of its parent.
+    /// </summary>
+    Element,
+    /// <summary>A relationship that a model file declares: <c>from</c> and <c>to</c> are element keys.</summary>
+    Relationship,
+    /// <summary>An architecture decision record (Nygard or MADR). It becomes a proposed decision, not a model entity.</summary>
+    Decision,
+}
+
+/// <summary>
+/// The truth label of a fact by the rules that established it. A model file or an ADR is a
+/// statement that people wrote down: its facts are <c>declared</c>. Every other rule reads
+/// code and configuration: <c>observed-in-source</c>. A fact with evidence of both kinds is
+/// <c>observed-in-source</c>.
+/// </summary>
+public static class TruthLabels
+{
+    public const string Declared = "declared";
+    public const string ObservedInSource = "observed-in-source";
+
+    private static readonly string[] DeclaringRules = ["structurizr.", "backstage.", "adr."];
+
+    public static bool IsDeclaring(string rule) => DeclaringRules.Any(prefix => rule.StartsWith(prefix, StringComparison.Ordinal));
+
+    public static string Of(IEnumerable<string> rules)
+    {
+        var any = false;
+        foreach (var rule in rules)
+        {
+            if (!IsDeclaring(rule))
+                return ObservedInSource;
+            any = true;
+        }
+        return any ? Declared : ObservedInSource;
+    }
 }
 
 /// <summary>

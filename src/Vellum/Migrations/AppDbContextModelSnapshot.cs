@@ -47,9 +47,9 @@ namespace Vellum.Migrations
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "drafts", "draft_status", new[] { "abandoned", "merged", "open" });
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "identity", "agent_scope", new[] { "export", "propose", "read", "scan_pull_request" });
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "import", "coverage_gap", new[] { "failed", "limit", "scope", "withheld" });
-            NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "import", "entity_kind", new[] { "binding", "channel", "element", "message", "operation", "schema", "subscription" });
+            NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "import", "entity_kind", new[] { "binding", "channel", "element", "message", "operation", "relationship", "schema", "subscription" });
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "import", "fact_disposition", new[] { "blocked", "evidence_only", "folded", "mapped" });
-            NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "import", "fact_kind", new[] { "channel", "data_access", "data_store", "dependency", "deployment", "message", "operation", "pattern", "publication", "schema", "service", "subscription" });
+            NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "import", "fact_kind", new[] { "channel", "data_access", "data_store", "decision", "dependency", "deployment", "element", "message", "operation", "pattern", "publication", "relationship", "schema", "service", "subscription" });
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "import", "proposal_action", new[] { "add", "bind", "change", "conflict", "relink", "remove" });
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "import", "proposal_status", new[] { "accepted", "pending", "rejected", "superseded" });
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "import", "scan_file_state", new[] { "pending", "read", "skipped" });
@@ -1277,6 +1277,54 @@ namespace Vellum.Migrations
                         .HasName("pk_blobs");
 
                     b.ToTable("blobs", "import");
+                });
+
+            modelBuilder.Entity("Vellum.Modules.Import.DecisionLinkEntity", b =>
+                {
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("project_id");
+
+                    b.Property<Guid>("SourceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("source_id");
+
+                    b.Property<string>("PathHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("path_hash");
+
+                    b.Property<string>("ContentHash")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)")
+                        .HasColumnName("content_hash");
+
+                    b.Property<Guid>("DecisionId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("decision_id");
+
+                    b.Property<string>("Path")
+                        .IsRequired()
+                        .HasMaxLength(1024)
+                        .HasColumnType("character varying(1024)")
+                        .HasColumnName("path");
+
+                    b.Property<Guid>("ScanId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("scan_id");
+
+                    b.Property<DateTimeOffset>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.HasKey("ProjectId", "SourceId", "PathHash")
+                        .HasName("pk_decision_links");
+
+                    b.HasIndex("ScanId")
+                        .HasDatabaseName("ix_decision_links_scan_id");
+
+                    b.ToTable("decision_links", "import");
                 });
 
             modelBuilder.Entity("Vellum.Modules.Import.FactLinkEntity", b =>

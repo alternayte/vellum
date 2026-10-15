@@ -65,17 +65,20 @@ public static class DecisionDecider
 {
     private const string NotFoundMessage = "Decision not found";
 
-    public static Outcome Propose(DecisionState state, Guid projectId, int number, string origin, DecisionContent content, string userId, DateTimeOffset now)
+    public static Outcome Propose(
+        DecisionState state, Guid projectId, int number, string origin, DecisionContent content, string userId, DateTimeOffset now,
+        DecisionSource? source = null)
     {
         if (state.Content is not null || state.Deleted)
             return new Outcome.Conflict(PromiseDecider.IdInUse);
         content = DecisionRules.Normalize(content);
         return DecisionRules.Check(content) is { Count: > 0 } errors
             ? new Outcome.Invalid(errors)
-            : new Outcome.Success([new DecisionEvent.DecisionProposed(projectId, number, origin, content, userId, now)]);
+            : new Outcome.Success([new DecisionEvent.DecisionProposed(projectId, number, origin, content, userId, now, source)]);
     }
 
-    public static Outcome Change(DecisionState state, Guid projectId, DecisionContent content, string userId, DateTimeOffset now)
+    public static Outcome Change(
+        DecisionState state, Guid projectId, DecisionContent content, string userId, DateTimeOffset now, DecisionSource? source = null)
     {
         if (!state.ExistsIn(projectId))
             return new Outcome.NotFound(NotFoundMessage);
@@ -86,7 +89,7 @@ public static class DecisionDecider
         content = DecisionRules.Normalize(content);
         return DecisionRules.Check(content) is { Count: > 0 } errors
             ? new Outcome.Invalid(errors)
-            : new Outcome.Success([new DecisionEvent.DecisionChanged(content, userId, now)]);
+            : new Outcome.Success([new DecisionEvent.DecisionChanged(content, userId, now, source)]);
     }
 
     public const string ChangedMessage = "The decision changed after it was read. Read it again before you accept or reject it.";

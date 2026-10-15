@@ -37,16 +37,39 @@ public sealed record DecisionContent(
     IReadOnlyList<Alternative> Alternatives, string? Consequences,
     IReadOnlyList<Guid> AffectedIds, IReadOnlyList<Settles> Settles, Guid? Supersedes);
 
+/// <summary>
+/// Where a decision that an import proposed was read: an ADR file of a Source. The decision
+/// is a statement people wrote down, so its truth label is <c>declared</c>; it is still only
+/// proposed until a person accepts it.
+/// </summary>
+/// <param name="FactStatus">Always <c>declared</c>.</param>
+/// <param name="Citation"><c>&lt;source&gt;@&lt;revision&gt;:path:start-end</c>: the ADR from its title to its last line.</param>
+/// <param name="RecordedStatus">The status the file states, as written (<c>Accepted</c>, <c>superseded by …</c>). It is not the status of the decision in Vellum.</param>
+/// <param name="RecordedDate">The date the file states, as written.</param>
+/// <param name="Sections">Each section the decision was read from, with its citation.</param>
+public sealed record DecisionSource(
+    string FactStatus, string Citation, string? RecordedStatus, string? RecordedDate, IReadOnlyList<DecisionSection> Sections);
+
+/// <param name="Name"><c>title</c>, <c>status</c>, <c>context</c>, <c>decision</c> or <c>consequences</c>.</param>
+public sealed record DecisionSection(string Name, string Citation);
+
 /// <param name="Action"><c>proposed</c>, <c>changed</c>, <c>accepted</c>, <c>rejected</c>, <c>settlement-recorded</c> or <c>settlement-removed</c>.</param>
 public sealed record DecisionHistoryEntry(DateTimeOffset At, string By, string Action, string? Note);
 
 /// <summary>The events of a decision stream. Plain records; the stream registers every nested type.</summary>
 public static class DecisionEvent
 {
-    public sealed record DecisionProposed(Guid ProjectId, int Number, string Origin, DecisionContent Content, string By, DateTimeOffset At);
+    /// <param name="Source">
+    /// For a decision that an import read from an ADR file: where, and what the file said of its
+    /// own status and date. Added later as a nullable member, which keeps the event at shape
+    /// version 1: an event stored without it reads as null, a decision written in Vellum.
+    /// </param>
+    public sealed record DecisionProposed(
+        Guid ProjectId, int Number, string Origin, DecisionContent Content, string By, DateTimeOffset At, DecisionSource? Source = null);
 
     /// <summary>New content of a proposed decision. An accepted or rejected decision never gets this event.</summary>
-    public sealed record DecisionChanged(DecisionContent Content, string By, DateTimeOffset At);
+    /// <param name="Source">For an import that read a changed ADR: the new citation. Null keeps the one the decision has.</param>
+    public sealed record DecisionChanged(DecisionContent Content, string By, DateTimeOffset At, DecisionSource? Source = null);
 
     /// <param name="Stamps">Each finding the decision settles, as it was when the person accepted.</param>
     /// <param name="ContentHash">

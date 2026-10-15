@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using Microsoft.EntityFrameworkCore;
+using Vellum.Modules.Import.Extraction;
 using Vellum.Modules.Import.Scans;
 using Vellum.Shared;
 
@@ -109,8 +110,8 @@ internal sealed record ImportState(
         var first = ProposalJson.ReadEvidence(link.Evidence).FirstOrDefault();
         return new OtherSourceFact(
             source?.Id ?? Guid.Empty, citationName, source?.Name ?? link.Repository,
-            // Every link is a fact a scan read from the Source's files.
-            ProposalPlanner.ObservedInSource,
+            // Every link is a fact a scan read from the Source's files: code is observed, a model file declared.
+            TruthLabels.Of(ProposalJson.ReadEvidence(link.Evidence).Select(e => e.Rule)),
             ProposalJson.ReadValues(link.Accepted), ProposalJson.ReadAttributes(link.Attributes),
             first is null ? null : EvidenceLinks.Pointer(citationName, link.CommitSha, first),
             link.AcceptedBy, link.AcceptedAt);

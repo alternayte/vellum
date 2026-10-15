@@ -91,7 +91,7 @@ internal sealed class ScanCoverage
     /// </summary>
     private void NoteGap(string path, string reason)
     {
-        if (PathFilter.SkipReason(path, out _) is not null || !PathFilter.IsRelevant(path[(path.LastIndexOf('/') + 1)..]))
+        if (PathFilter.SkipReason(path, out _) is not null || !PathFilter.IsRelevantPath(path))
             return;
         _gapDirectories.TryAdd(DirectoryOf(path), reason);
     }

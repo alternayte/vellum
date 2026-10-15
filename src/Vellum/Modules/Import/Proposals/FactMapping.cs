@@ -13,8 +13,9 @@ public static class EntityKinds
     public const string Binding = "binding";
     public const string Message = "message";
     public const string Schema = "schema";
+    public const string Relationship = "relationship";
 
-    public static readonly string[] All = [Element, Operation, Channel, Subscription, Binding, Message, Schema];
+    public static readonly string[] All = [Element, Operation, Channel, Subscription, Binding, Message, Schema, Relationship];
 }
 
 /// <summary>The names of the values a proposal can hold. They are the names of the model's own fields.</summary>
@@ -36,10 +37,17 @@ internal static class Field
     public const string ProducerId = "producerId";
     public const string ConsumerIds = "consumerIds";
     public const string SchemaId = "schemaId";
+    public const string FromId = "fromId";
+    public const string ToId = "toId";
+    public const string Label = "label";
+    /// <summary>Set on an element when it is added. Not compared: a description is the intent of a person.</summary>
+    public const string Description = "description";
+    /// <summary>Set on an element when it is added, comma-separated. Not compared.</summary>
+    public const string Tags = "tags";
 
     /// <summary>The fields that hold the ID of another entity.</summary>
     public static readonly string[] References =
-        [ParentId, OwnerId, ChannelId, ConsumerId, DeadLetterChannelId, SourceChannelId, TargetChannelId, ProducerId, SchemaId];
+        [ParentId, OwnerId, ChannelId, ConsumerId, DeadLetterChannelId, SourceChannelId, TargetChannelId, ProducerId, SchemaId, FromId, ToId];
 }
 
 /// <summary>A value of a candidate that is another fact. <paramref name="FactKey"/> is null when the source names none.</summary>
@@ -64,7 +72,8 @@ internal sealed record Candidate(
     IReadOnlyDictionary<string, string> Attributes,
     IReadOnlyList<EvidenceRef> Evidence,
     string? NotAddable,
-    string? MatchRoute = null);
+    string? MatchRoute = null,
+    string FactStatus = TruthLabels.ObservedInSource);
 
 /// <summary>A fact of the snapshot with what the mapping decided for it.</summary>
 internal sealed record MappedFact(ExtractedFact Fact, FactDisposition Disposition, string? Reason);
@@ -358,6 +367,48 @@ internal static class FactMapping
                         Evidence(fact, "contract-document-has-no-model-home");
                     break;
 
+                case FactKind.Element:
+                {
+                    var kind = fact.Attributes.GetValueOrDefault("elementKind");
+                    var rank = kind switch { "actor" or "system" => 1, "app" or "store" => 2, "component" => 3, _ => 0 };
+                    if (rank == 0)
+                    {
+                        Evidence(fact, "element-kind-has-no-model-home");
+                        break;
+                    }
+                    var parent = fact.Attributes.GetValueOrDefault("parent");
+                    var needsParent = rank > 1;
+                    Add(fact, EntityKinds.Element, fact.Name, rank,
+                        Fields((Field.Kind, kind), (Field.Name, fact.Name), (Field.Technology, fact.Attributes.GetValueOrDefault("technology")),
+                            (Field.Description, fact.Attributes.GetValueOrDefault("description")), (Field.Tags, fact.Attributes.GetValueOrDefault("tags"))),
+                        needsParent ? [new Reference(Field.ParentId, parent, RequiredToAdd: true)] : [],
+                        consumed: ["elementKind", "parent", "technology", "description", "tags"],
+                        notAddable: needsParent && parent is null ? "no-parent-declared" : null);
+                    break;
+                }
+
+                case FactKind.Relationship:
+                {
+                    if (!fact.Attributes.TryGetValue("from", out var from) || !fact.Attributes.TryGetValue("to", out var to))
+                    {
+                        Evidence(fact, "relationship-ends-not-declared");
+                        break;
+                    }
+                    var label = fact.Attributes.GetValueOrDefault("label");
+                    var shown = $"{byKey.GetValueOrDefault(from)?.Name ?? from} → {byKey.GetValueOrDefault(to)?.Name ?? to}" + (label is null ? "" : $": {label}");
+                    Add(fact, EntityKinds.Relationship, shown, 7,
+                        Fields((Field.Label, label), (Field.Technology, fact.Attributes.GetValueOrDefault("technology")),
+                            (Field.Kind, fact.Attributes.GetValueOrDefault("relationshipKind") == "behavioural" ? "behavioural" : "structural")),
+                        [new Reference(Field.FromId, from, RequiredToAdd: true), new Reference(Field.ToId, to, RequiredToAdd: true)],
+                        consumed: ["from", "to", "label", "technology", "relationshipKind"]);
+                    break;
+                }
+
+                case FactKind.Decision:
+                    // An ADR becomes a proposed decision of the project's review, not a model entity.
+                    Evidence(fact, "proposed-as-decision");
+                    break;
+
                 default:
                     Evidence(fact, NoModelHome);
                     break;
@@ -394,9 +445,11 @@ internal static class FactMapping
                     observed[attribute] = value;
             }
 
+            var cited = (evidence ?? fact.Evidence).ToList();
             candidates.Add(new Candidate(
                 fact.Key, entityKind, name, rank, fields, references, consumerKeys ?? [], observed, attributes,
-                [.. (evidence ?? fact.Evidence).Select(Ref).Distinct().Take(EvidenceCap)], notAddable, matchRoute));
+                [.. cited.Select(Ref).Distinct().Take(EvidenceCap)], notAddable, matchRoute,
+                TruthLabels.Of(cited.Select(e => e.Rule))));
             mapped.Add(new MappedFact(fact, FactDisposition.Mapped, null));
         }
 

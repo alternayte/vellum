@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Deedbox;
@@ -32,6 +34,16 @@ public sealed record CreateArchitectureProposalRequest(string? Request, Guid? Br
 /// </param>
 public sealed record SubmitArchitectureProposalRequest(string? Request, ArchitectureOutput? Proposal);
 
+/// <param name="SourceId">The Source whose newest Snapshot holds the document.</param>
+/// <param name="Path">The path of a Markdown or text document of that Snapshot (<c>GET …/sources/{id}/documents</c>).</param>
+/// <param name="Request">What to look for in the document, at most 4,000 characters. Without it: the architecture the document describes.</param>
+public sealed record ArchitectureFromDocumentRequest(Guid? SourceId, string? Path, string? Request = null);
+
+/// <summary>The document a proposal was read from.</summary>
+/// <param name="Citation">The <c>&lt;source&gt;@&lt;revision&gt;:path</c> of the document. Each item cites its own lines of it.</param>
+/// <param name="Lines">How many lines the document has.</param>
+public sealed record DocumentSource(Guid SourceId, string Path, string Citation, int Lines);
+
 /// <summary>Item IDs. An ID is in one list at most.</summary>
 public sealed record DecideArchitectureProposalRequest(IReadOnlyList<Guid>? Accept, IReadOnlyList<Guid>? Reject);
 
@@ -59,10 +71,11 @@ public sealed record ProposedEntity(
 /// <param name="Status"><c>pending</c>, <c>accepted</c> or <c>rejected</c>.</param>
 /// <param name="DecidedBy">The user who accepted or rejected the item. Null while it is pending, and in an item decided before this was kept.</param>
 /// <param name="DecidedAt">When the item was accepted or rejected.</param>
+/// <param name="Citation">For an item read from a document: <c>&lt;source&gt;@&lt;revision&gt;:path:start-end</c>, the lines it comes from. It is the source pointer of the fact when the item is accepted.</param>
 public sealed record ArchitectureItemDto(
     Guid Id, string Alias, string Action, string EntityKind, string Name, ProposedEntity Proposed,
     IReadOnlyList<Guid> DependsOn, double Confidence, string Rationale, string Status,
-    string? DecidedBy = null, DateTimeOffset? DecidedAt = null);
+    string? DecidedBy = null, DateTimeOffset? DecidedAt = null, string? Citation = null);
 
 /// <param name="Status"><c>draft</c> while an item is pending, then <c>decided</c>.</param>
 /// <param name="Scope">Always <c>additions</c>: this version proposes no change to and no removal of an existing fact.</param>
@@ -89,7 +102,8 @@ public sealed record ArchitectureProposalDto(
     AliasOmitted Omitted,
     OmittedPrivate? OmittedPrivate,
     ProposalProvider Provider, string PromptTemplateVersion, ProposalUsage Usage,
-    string CreatedBy, DateTimeOffset CreatedAt, string? DecidedBy, DateTimeOffset? DecidedAt, string Origin);
+    string CreatedBy, DateTimeOffset CreatedAt, string? DecidedBy, DateTimeOffset? DecidedAt, string Origin,
+    DocumentSource? Document = null);
 
 public sealed record ProposalItemFailure(Guid ItemId, string Reason);
 
@@ -101,7 +115,7 @@ internal sealed record ArchitectureDocument(
     IReadOnlyList<ArchitectureItemDto> Items, IReadOnlyList<RejectedReference> RejectedReferences,
     long ModelVersion, ProposalProvider Provider, string PromptTemplateVersion, ProposalUsage Usage,
     IReadOnlyList<ResolvedToExisting>? ResolvedToExisting = null, AliasOmitted? Omitted = null, OmittedPrivate? OmittedPrivate = null,
-    string? Origin = null);
+    string? Origin = null, DocumentSource? Document = null);
 
 /// <summary>
 /// Natural language to additions to the model, as a proposal. Each item is a suggestion with
@@ -182,6 +196,92 @@ public static partial class ArchitectureProposals
 
         return Results.Created(
             $"/api/projects/{projectId}/ai/architecture-proposals/{row.Id}", ToDto(row, document, snapshot));
+    }
+
+    public const string FromDocumentPurpose = "infer-from-document";
+
+    /// <summary>
+    /// Prose to additions: a Markdown or text document of a Source (a README, a design
+    /// document) goes to the AI provider of <c>infer-architecture</c>, and the answer is a draft
+    /// proposal like any other. It is the only path that reads prose: no extractor does. Each
+    /// item cites the lines it comes from, and an item that cites none is dropped; an accepted
+    /// item is an <c>inferred</c> fact whose source pointer is that citation. The document is
+    /// untrusted data in a marked part of the prompt, with every line that looks like a
+    /// credential masked. A document of a private repository or an upload is private: it is
+    /// sent only when the workspace's <c>privacy.sendPrivateCodeToAi</c> allows it, else the
+    /// answer says that setting refuses it. Without a provider the answer is
+    /// <see cref="AiUnavailable"/>; nothing is stored.
+    /// </summary>
+    public static async Task<IResult> FromDocument(
+        Guid projectId, ArchitectureFromDocumentRequest body, HttpContext http,
+        AiClient ai, IEventStore store, AppDbContext db, PrivateSources privateSources,
+        TimeProvider time, CancellationToken ct)
+    {
+        var (caller, refusal) = await DesignAccess.ResolveAsync(http, projectId, null, WorkspaceRole.Editor, forWrite: true, ct);
+        if (caller is null)
+            return refusal!;
+        var request = string.IsNullOrWhiteSpace(body.Request) ? "Propose the architecture that this document describes." : body.Request;
+        if (FlowProposals.RequestText(request) is { } invalid)
+            return invalid;
+        if (body.SourceId is not { } sourceId)
+            return Invalid("sourceId", "Name the Source that holds the document.");
+        var (source, problem) = await Import.Sources.SourceDocuments.ReadAsync(http.RequestServices, projectId, sourceId, body.Path, ct);
+        if (source is null)
+            return Invalid("path", problem!);
+        if (await ProposalStore.DraftsFullAsync(db, projectId, ct))
+            return ProposalStore.TooManyDrafts();
+
+        var snapshot = await BranchSnapshot.LoadAsync(store, db, projectId, caller.StreamId, ct);
+        var gate = await privateSources.LoadAsync(caller.WorkspaceId, projectId, snapshot.Model, ct);
+        var aliases = ModelAliases.Build(snapshot.Model, snapshot.Schemas, AliasNeeds.For(request, selected: null), gate);
+        var prompt = DesignPrompts.InferFromDocument;
+        var numbered = new StringBuilder();
+        for (var i = 0; i < source.Lines.Count; i++)
+            numbered.Append((i + 1).ToString(CultureInfo.InvariantCulture)).Append("| ").Append(source.Lines[i]).Append('\n');
+        var document = new DocumentSource(sourceId, source.Path, $"{source.Citation}:{source.Path}", source.Lines.Count);
+
+        var result = await ai.CompleteStructuredAsync<ArchitectureOutput>(new AiRequest(
+            caller.WorkspaceId, AiTask.InferArchitecture, FromDocumentPurpose, DesignPrompts.InferFromDocumentVersion, prompt["system"],
+            [new AiMessage(AiRole.User,
+            [
+                AiPart.Instruction(prompt["table"]), AiPart.Untrusted(aliases.Table, aliases.DataClass),
+                AiPart.Instruction(prompt["document"]),
+                AiPart.Untrusted(numbered.ToString(), source.IsPublic ? AiDataClass.Public : AiDataClass.PrivateRepository),
+                AiPart.Instruction(prompt["request"]), AiPart.Untrusted(request, AiDataClass.Public),
+            ])],
+            DesignSchemas.ArchitectureFromDocument, MaxOutputTokens, caller.UserId), ct);
+        if (result is not AiResult<ArchitectureOutput>.Succeeded answer)
+            return Results.Ok(AiUnavailable.From(((AiResult<ArchitectureOutput>.Failed)result).Failure));
+
+        var (items, resolved, rejected) = Build(answer.Value, aliases.ByAlias, snapshot.Model, document: document);
+        var stored = new ArchitectureDocument(
+            DesignText.Lines(answer.Value.Summary), DesignText.Lines(answer.Value.ReasoningSummary, TextRule.MaxDescription),
+            DesignText.List(answer.Value.OpenQuestions, FlowAssembler.MaxQuestions),
+            items, rejected, snapshot.Version,
+            new ProposalProvider(answer.Usage.ProviderKind, answer.Usage.Model, answer.Usage.ReportedModel),
+            DesignPrompts.InferFromDocumentVersion, ProposalUsage.From(answer.Usage),
+            resolved, aliases.Omitted, OmittedPrivate.Of(aliases.OmittedPrivateCount), Document: document);
+
+        var name = DesignText.Line(answer.Value.Summary);
+        var row = new ProposalEntity
+        {
+            Id = Guid.NewGuid(),
+            Kind = RowKind,
+            WorkspaceId = caller.WorkspaceId,
+            ProjectId = projectId,
+            BranchId = null,
+            Status = items.Count > 0 ? DesignProposalStatus.Draft : DesignProposalStatus.Decided,
+            Name = name.Length > 0 ? name : $"From {DesignText.Line(source.Path, 180)}",
+            Request = DesignText.Line($"From {source.Path}: {request}", 4000),
+            Document = JsonSerializer.Serialize(stored, DesignJson.Options),
+            CreatedBy = caller.UserId,
+            CreatedAt = time.GetUtcNow(),
+        };
+        if (!await ProposalStore.InsertDraftAsync(db, row, ct))
+            return ProposalStore.TooManyDrafts();
+
+        return Results.Created(
+            $"/api/projects/{projectId}/ai/architecture-proposals/{row.Id}", ToDto(row, stored, snapshot));
     }
 
     /// <summary>
@@ -400,8 +500,9 @@ public static partial class ArchitectureProposals
                     additions.Add((addition, item.Confidence));
                 }
 
+                var cited = document.Items.Where(i => i.Citation is not null).ToDictionary(i => i.Id, i => i.Citation!);
                 var refused = await InferredWrites.ApplyAsync(
-                    store, streamId, additions, InferredWrites.Source(document.Provider, document.Origin, Kind, row.Id), userId, now, ct);
+                    store, streamId, additions, InferredWrites.Source(document.Provider, document.Origin, Kind, row.Id), userId, now, ct, cited);
                 if (refused is not null)
                     return Refused([new(refused.Id, refused.Reason)]);
             }
@@ -549,8 +650,10 @@ public static partial class ArchitectureProposals
     /// that depends on a dropped item, and every item that depends on itself.
     /// </summary>
     /// <param name="byId">True for a submitted proposal, whose table lists things under their IDs (<see cref="SubmittedProposal.References"/>).</param>
+    /// <param name="document">For an answer about a document: the document. Every item must cite lines of it, or it is dropped.</param>
     internal static (List<ArchitectureItemDto> Items, List<ResolvedToExisting> Resolved, List<RejectedReference> Rejected) Build(
-        ArchitectureOutput output, IReadOnlyDictionary<string, AliasRef> table, ModelState model, bool byId = false)
+        ArchitectureOutput output, IReadOnlyDictionary<string, AliasRef> table, ModelState model, bool byId = false,
+        DocumentSource? document = null)
     {
         // An item that turns out to exist is added to this copy of the table under its own alias.
         var aliases = new Dictionary<string, AliasRef>(table, StringComparer.Ordinal);
@@ -594,6 +697,12 @@ public static partial class ArchitectureProposals
             void Reject(string field, string value, string reason) =>
                 rejected.Add(new(field.Length == 0 ? $"item:{alias}" : $"item:{alias}.{field}", value, $"{reason} The item was dropped."));
 
+            if (document is not null
+                && (raw.StartLine is not { } start || raw.EndLine is not { } end || start < 1 || end < start || end > document.Lines))
+            {
+                Reject("lines", alias, "An item read from a document cites lines of it, from 1 to the last line.");
+                continue;
+            }
             if (raw.Action != "add")
             {
                 Reject("action", Token(raw.Target) ?? alias,
@@ -800,7 +909,8 @@ public static partial class ArchitectureProposals
             return new ArchitectureItemDto(
                 candidate.Id, item.Alias, "add", item.EntityKind, DesignText.Line(name, 500), proposed,
                 [.. References(item).Where(r => r.Alias is not null && candidates.ContainsKey(r.Alias)).Select(r => candidates[r.Alias!].Id).Distinct()],
-                item.Confidence, item.Rationale, "pending");
+                item.Confidence, item.Rationale, "pending",
+                Citation: document is null ? null : string.Create(CultureInfo.InvariantCulture, $"{document.Citation}:{item.StartLine}-{item.EndLine}"));
         }).ToList();
 
         return (items, resolved, rejected.Count <= FlowAssembler.MaxFindings
@@ -831,5 +941,5 @@ public static partial class ArchitectureProposals
         current is not null && row.Status == DesignProposalStatus.Draft ? ItemIssues(document, current.Model) : [],
         document.Omitted ?? AliasOmitted.None, document.OmittedPrivate,
         document.Provider, document.PromptTemplateVersion, document.Usage,
-        row.CreatedBy, row.CreatedAt, row.DecidedBy, row.DecidedAt, document.Origin ?? SubmittedProposal.AiOrigin);
+        row.CreatedBy, row.CreatedAt, row.DecidedBy, row.DecidedAt, document.Origin ?? SubmittedProposal.AiOrigin, document.Document);
 }
