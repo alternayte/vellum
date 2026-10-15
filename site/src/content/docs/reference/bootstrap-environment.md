@@ -13,6 +13,9 @@ This page lists the values Vellum reads from the environment. You edit every oth
 | `Vellum__MasterKeyFile` | none | A file that holds the master key. Set this or `Vellum__MasterKey`, not both. |
 | `Vellum__PreviousMasterKey`, `Vellum__PreviousMasterKeyFile` | none | The old key during a rotation. Vellum only reads with it. |
 | `Vellum__DataDirectory` | `./data` | Local profile only: where Vellum keeps the master key that it creates (`master.key`) and the setup code (`setup-code`). |
+| `Vellum__SourcesRoot` | none | Local profile only: the one folder that a `directory` Source can read. A Source names a folder under it. With no value, Vellum refuses a directory Source with `sources_root_not_configured`. The hosted profile ignores it. See [Import a local folder](/how-to/import-a-local-folder/). |
+| `Import__Worker__Parallelism` | `2` | The number of scans that one instance runs at the same time. 1 to 32. See [Scan worker](#scan-worker). |
+| `Import__Worker__MaxRunningPerHost` | `2` | The number of scans of one git host that run at the same time, for all instances and workspaces together. 1 to 64. See [Scan worker](#scan-worker). |
 | `Vellum__SetupToken` | none | The token that the first administrator types in the setup screen. At least 16 characters. Required in the hosted profile while no user exists. Optional in the local profile. |
 | `Vellum__SecureCookies` | `true` in hosted, `false` in local | `true` marks the session cookie as Secure on every response. With `false`, the cookie is Secure only when the request came over HTTPS. |
 | `AllowedHosts` | `*` | The public host names of the instance, separated by `;`. |
@@ -39,12 +42,13 @@ The Compose file reads these values from your shell or from a `.env` file. Vellu
 | `VELLUM_PREVIOUS_MASTER_KEY` | empty | Passed to Vellum as `Vellum__PreviousMasterKey`. |
 | `VELLUM_SETUP_TOKEN` | empty | Passed to Vellum as `Vellum__SetupToken`. Empty means that Vellum creates a setup code. |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | empty | Passed to Vellum with the same name. Empty means that telemetry is off. |
+| `VELLUM_SOURCES` | `./sources`, next to the Compose file | The folder on your machine that the Compose file mounts read-only at `/sources`. A `directory` Source reads folders under it. A change needs a restart of the container. |
 
-The Compose file sets `Vellum__Profile` to `local`, `Vellum__DataDirectory` to `/data` on the volume `vellum-data`, and the connection string of the Compose database.
+The Compose file sets `Vellum__Profile` to `local`, `Vellum__DataDirectory` to `/data` on the volume `vellum-data`, `Vellum__SourcesRoot` to `/sources`, and the connection string of the Compose database.
 
 The Compose file passes only the variables that it lists. To set another variable of Vellum, for example `Vellum__TrustedProxies` or `OTEL_EXPORTER_OTLP_HEADERS`, add it to the `environment` of the `vellum` service.
 
-The Compose file starts the `vellum` container with a read-only root file system, with no Linux capability and with `no-new-privileges`. The process is not root. It writes to the volume on `/data` and to a temporary directory in memory on `/tmp`.
+The Compose file starts the `vellum` container with a read-only root file system, with no Linux capability and with `no-new-privileges`. The process is not root. It writes to the volume on `/data` and to a temporary directory in memory on `/tmp`. It reads `/sources` and cannot write to it.
 
 ### The hosted Compose example
 
@@ -75,6 +79,7 @@ For a proxy on the Docker host, Vellum sees the gateway of the network. The gate
 | URLs on private networks | Allowed | Refused |
 | Plain `http` in a settings URL | Allowed | Refused, except for a private host when private network URLs are allowed |
 | Sending private code to AI | A workspace can allow it | Refused until the instance administrator allows it |
+| `directory` Source | Available when `Vellum__SourcesRoot` names a folder | Refused with `source_kind_not_in_profile` |
 
 ## First-run setup
 
@@ -190,6 +195,18 @@ If an account with the same email address already exists, Vellum refuses the sig
 Each endpoint needs no sign-in and gives no detail. The body is the status word. The instance administrator reads details under **Settings → Instance → Diagnostics**.
 
 The container image and the Compose files have a health check. `docker compose ps` shows `healthy` when `/health` returns `200`.
+
+## Scan worker
+
+The scan worker takes queued scans from the one scan queue in the database.
+
+| Item | Rule |
+|---|---|
+| `Import__Worker__Parallelism` | The number of scans that one instance runs at the same time. A value outside 1 to 32 is moved to the nearest end. |
+| `Import__Worker__MaxRunningPerHost` | The number of scans of Sources on one git host that run at the same time, for all instances and all workspaces together. Other scans of that host wait in the queue. A value outside 1 to 64 is moved to the nearest end. |
+| Folder and archive scans | They read no git host. `Import__Worker__MaxRunningPerHost` does not count them. |
+
+A bulk add queues many scans of one host. The limit for each host keeps them from using up the rate limit of the host together. See [Add many repositories](/how-to/add-many-repositories/#watch-the-scans).
 
 ## Telemetry
 

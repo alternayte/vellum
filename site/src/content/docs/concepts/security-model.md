@@ -90,7 +90,7 @@ Vellum decides if a request is from a person or from an agent by the way the req
 
 ## Secrets
 
-Vellum stores three kinds of credential for a workspace: the GitHub token, the API key of each AI provider and the webhook signing secret. [Settings](/reference/settings/#secret-names) lists the names.
+Vellum stores these credentials for a workspace: the token of each git host (GitHub, GitLab, Bitbucket and Azure DevOps), the API key of each AI provider, the webhook signing secret and the Google Cloud API key. [Settings](/reference/settings/#secret-names) lists the names.
 
 ### Envelope encryption
 
@@ -116,11 +116,11 @@ A credential is saved for one origin: the scheme, the host and the port of the U
 
 Without this, a person who can change settings could change the GitHub base URL to a server of their own and receive the stored token on the next import. With it, a changed URL gets no credential. The owner must enter the value again to bind it to the new origin, and that needs the value.
 
-A GitHub token and an AI API key go in an HTTP header. Vellum accepts only printable ASCII for them. A line break in such a value would add a header to the request.
+A git host token and an AI API key go in an HTTP header. Vellum accepts only printable ASCII for them. A line break in such a value would add a header to the request.
 
 ## Outbound requests
 
-Vellum makes requests to URLs that users supply: the GitHub API, AI providers and the price API. A server that fetches a URL for a user can be made to fetch an address inside the network of its operator. This is server-side request forgery (SSRF). The cloud metadata address is the usual target.
+Vellum makes requests to URLs that users supply: the APIs of GitHub, GitLab, Bitbucket and Azure DevOps, AI providers and the price API. A server that fetches a URL for a user can be made to fetch an address inside the network of its operator. This is server-side request forgery (SSRF). The cloud metadata address is the usual target.
 
 One component decides if the server can call a URL. It applies these rules.
 
@@ -144,7 +144,7 @@ Text from a repository, text from an AI provider and text that an agent writes a
 
 Three controls stop a secret that is in a repository from moving further.
 
-- **Content clearance.** A scan checks the bytes of each file when they arrive from GitHub, before it stores them. Vellum does not store binary content, a manifest that declares a Secret, text that holds a private key, or text in which many lines look like credentials. It keeps only the reason. The check depends on the content alone, not on the path.
+- **Content clearance.** A scan checks the bytes of each file when they arrive from a git host, a folder or an archive, before it stores them. Vellum does not store binary content, a manifest that declares a Secret, text that holds a private key, or text in which many lines look like credentials. It keeps only the reason. The check depends on the content alone, not on the path.
 - **The credential guard.** The extractors do not read a value in the places where a secret can be: command arguments, environment values, schema defaults and examples, and the user part of a URL. As a second line, each key, name and attribute that an extractor reads passes a check for the shape of a credential before it enters a fact. See [Extraction rules](/reference/extraction-rules/).
 - **The secret redactor.** Before a prompt goes to an AI provider, Vellum replaces text that looks like a credential. This is always on.
 
@@ -155,6 +155,31 @@ Generated documents apply the same idea in the other direction. The SDD and the 
 Each request body has a size limit, and a body over the limit gets `413` before the endpoint parses it.
 
 A project document is untrusted text too. Vellum parses it to a tree and builds the page from the tree. It generates no code from a document and evaluates none. An expression, an `import`, an event handler and a `script` tag in a document have no effect. See [Write project documents](/how-to/write-project-docs/#know-what-the-text-can-contain).
+
+## Imported files
+
+A scan reads files. It never runs them, and it never runs a git command. Two kinds of Source read files that are not on a git host. Each has a boundary of its own.
+
+### A folder stays under the sources root
+
+A `directory` Source reads a folder on the machine of the instance. A file system has paths that point elsewhere: `..` and symbolic links. A Source that follows them could read `/etc`, the data volume or the master key.
+
+- **One root.** The instance reads folders under one root only: `Vellum__SourcesRoot`. Compose mounts that root read-only. A Source keeps a path relative to the root, with no `..` part and no absolute path.
+- **Real paths.** On each scan, Vellum resolves the real path of the folder and of each file, with each link on the way followed. A path or a link that leaves the root is refused. This applies to a link to a file and to a link to a folder.
+- **No link is followed in the folder.** Vellum reads a link as git stores it: the text of its target. So a link in a repository cannot make Vellum read another file.
+- **Read only.** Vellum opens files to read. It writes nothing in the root. It reads `.git/HEAD` as text and does not run git.
+- **Local profile only.** A hosted instance refuses the kind with `source_kind_not_in_profile`. On a hosted instance the machine belongs to the operator, not to the users of a workspace.
+
+### An archive is refused as a whole
+
+An `archive` Source reads an uploaded `.zip` or `.tar.gz`. An archive is untrusted input. Its entry names can point outside a folder, and its size after expansion can be much larger than the upload.
+
+- **No extraction.** Vellum writes the upload to a temporary file in the data folder and deletes it when the request ends. It reads the entries from that file. It writes no entry to disk.
+- **One rule fails, nothing is stored.** Vellum refuses the whole archive for an absolute path, a backslash or a drive letter, a `..`, `.` or empty part, a link, a device or another entry that is not a file or a folder, an archive in the archive, or two entries with one path.
+- **Bounded expansion.** Vellum counts the bytes of each entry as they expand. It refuses an archive that expands to more than `import.maxArchiveBytes`, an entry larger than 64 KiB that expands to more than 100 times its compressed size, and an archive with more than 200,000 entries. The size that a header states does not count.
+- **The same filters as a repository.** Each accepted file then passes the scan rules and the content clearance. Vellum keeps the cleared content of the selected files only, not the archive.
+
+[Upload an archive](/how-to/upload-an-archive/#why-vellum-refuses-an-archive) lists the codes.
 
 ## The browser
 
@@ -192,7 +217,7 @@ In the `Development` environment, the pages of the API reference under `/scalar`
 The image and the two Compose files limit what the app process can do.
 
 - **Not root.** The process runs as the app user of the image, not as root.
-- **Read-only root file system.** The process cannot change the program or write a file beside it. It writes to the data volume on `/data` and to a temporary directory in memory on `/tmp`, and to nothing else.
+- **Read-only root file system.** The process cannot change the program or write a file beside it. It writes to the data volume on `/data` and to a temporary directory in memory on `/tmp`, and to nothing else. `docker-compose.yml` mounts the sources root on `/sources` read-only.
 - **No Linux capability.** The Compose files drop all capabilities.
 - **No new privileges.** A program that the process starts cannot get more privileges than the process has.
 
@@ -214,7 +239,7 @@ The workspace log is for the owners of the workspace. The instance log, for exam
 
 - **An operator of the instance.** A person with the master key and the database reads every credential. A person with the database alone reads every model: only credentials and session keys are encrypted by Vellum. Encrypt the disk and limit access to the host.
 - **A lost master key.** Vellum cannot recover the credentials. Back up the key apart from the database.
-- **A compromised third party.** A token that you store works with the permissions that you gave it at GitHub. Use a fine-grained, read-only token. Text that you send to an AI provider is under the terms of that provider.
+- **A compromised third party.** A token that you store works with the permissions that you gave it at the git host. Use a read-only token with the smallest scope. Text that you send to an AI provider is under the terms of that provider.
 - **A secret with no shape.** The redactor and the clearance find credentials by pattern. They do not find all of them. Do not turn on **Send private repository code to AI providers** for a repository that holds secrets.
 - **Plain HTTP in the local profile.** The local profile serves `http://localhost`. Put the app behind HTTPS before you publish it on a network.
 - **A stolen agent token.** A token works until an owner revokes it or it expires. It cannot approve, accept or change settings, but it can read what its scopes allow.

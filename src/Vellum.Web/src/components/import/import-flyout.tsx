@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { GitBranch, GitPullRequest, RotateCw, Square } from 'lucide-react'
+import { GitBranch, GitPullRequest, Plus, RotateCw, Square } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
@@ -9,6 +9,8 @@ import { describeScan, importApi, isActive, pullRequestState, scanSubject, type 
 import { ProposalReview } from './proposal-review'
 import { ImpactDialog } from './impact-dialog'
 import { SourcesList, SourcesReview } from './sources-review'
+import { AddSourceDialog } from './add-source-dialog'
+import { BulkAddDialog } from './bulk-add-dialog'
 import { sourcesKey } from '@/hooks/use-sources'
 
 const STATUS_COLOR: Record<ScanSummary['status'], string> = {
@@ -48,6 +50,7 @@ export function ImportFlyout({ projectId, owners }: {
   const [bySource, setBySource] = useState(false)
   const [opening, setOpening] = useState<string | null>(null)
   const [impactOf, setImpactOf] = useState<ScanSummary | null>(null)
+  const [adding, setAdding] = useState<'one' | 'many' | null>(null)
 
   const scans = useQuery({
     queryKey: ['projects', projectId, 'imports'],
@@ -162,6 +165,14 @@ export function ImportFlyout({ projectId, owners }: {
             <h3 id="import-sources" className="flex-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Sources</h3>
             <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" onClick={() => setBySource(true)}>Proposals by Source</Button>
           </div>
+          <div className="flex gap-1.5 px-2 pb-2">
+            <Button size="sm" variant="secondary" className="h-6 flex-1 gap-1 px-2 text-xs" onClick={() => setAdding('one')}>
+              <Plus className="h-3 w-3" /> Add Source
+            </Button>
+            <Button size="sm" variant="secondary" className="h-6 flex-1 px-2 text-xs" title="Add many repositories of one organization, group or workspace" onClick={() => setAdding('many')}>
+              Add many repositories
+            </Button>
+          </div>
           <SourcesList projectId={projectId} onReview={(source) => openScan(source.review.scanId!, source)} />
           {opening && <p role="status" className="px-3 pb-2 text-xs text-muted-foreground">Opening the review…</p>}
         </section>
@@ -238,6 +249,8 @@ export function ImportFlyout({ projectId, owners }: {
         </div>
       </div>
 
+      {adding === 'one' && <AddSourceDialog projectId={projectId} onClose={() => setAdding(null)} />}
+      {adding === 'many' && <BulkAddDialog projectId={projectId} onClose={() => setAdding(null)} />}
       {impactOf && <ImpactDialog projectId={projectId} scan={impactOf} owners={owners} onClose={() => setImpactOf(null)} />}
       {bySource && !reviewing && (
         <SourcesReview projectId={projectId} onOpenScan={(scanId, source) => openScan(scanId, source)} onClose={() => { setBySource(false); refresh() }} />

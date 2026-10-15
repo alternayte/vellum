@@ -69,6 +69,16 @@ Each entry of `ai.providers` has these fields. `id`, `kind`, `name` and `model` 
 | `github.apiBaseUrl` | string | `https://api.github.com` | A URL that obeys the [URL rules](#url-rules) | **GitHub** → **API base URL** | The address of the GitHub API. Change it only for GitHub Enterprise Server. |
 | `github.defaultRef` | string | `""` | 255 characters at most. No white space. No control characters. | **GitHub** → **Default ref** | The branch or tag that an import reads when the request names none. Empty uses the default branch of the repository. |
 
+### Git hosts
+
+| JSON path | Type | Default | Allowed | UI | Effect |
+|---|---|---|---|---|---|
+| `gitlab.apiBaseUrl` | string | `https://gitlab.com/api/v4` | Empty, or a URL that obeys the [URL rules](#url-rules) | **GitLab** → **API base URL** | The address of the GitLab REST API: gitlab.com or a self-managed server. Empty turns GitLab off. |
+| `bitbucket.apiBaseUrl` | string | `https://api.bitbucket.org/2.0` | Empty, or a URL that obeys the [URL rules](#url-rules) | **Bitbucket** → **API base URL** | The address of the Bitbucket Cloud REST API. Empty turns Bitbucket off. |
+| `azureDevops.apiBaseUrl` | string | `https://dev.azure.com` | Empty, or a URL that obeys the [URL rules](#url-rules) | **Azure DevOps** → **API base URL** | The address of the Azure DevOps REST API. Empty turns Azure DevOps off. |
+
+A Source of a host that is off cannot scan. The token of each host is bound to the origin of its address. See [Connect GitLab, Bitbucket or Azure DevOps](/how-to/connect-a-git-host/).
+
 ### `import`
 
 | JSON path | Type | Default | Allowed | UI | Effect |
@@ -77,6 +87,7 @@ Each entry of `ai.providers` has these fields. `id`, `kind`, `name` and `model` 
 | `import.maxFileBytes` | integer | `262144` | 1 to 16777216 | **Import limits** → **Largest file** | The largest file, in bytes, that a scan reads. |
 | `import.maxTotalBytes` | integer | `20971520` | 1 to 1073741824. Not less than `import.maxFileBytes`. | **Import limits** → **Total size** | The largest total size, in bytes, that one scan reads. |
 | `import.excludeGlobs` | list of strings | `**/node_modules/**`, `**/vendor/**`, `**/bin/**`, `**/obj/**`, `**/*.min.*` | 100 patterns at most. Each pattern has 1 to 200 characters. | **Import limits** → **Excluded paths** | Paths that a scan does not read. |
+| `import.maxArchiveBytes` | integer | `268435456` (256 MiB) | 1048576 (1 MiB) to 4294967296 (4 GiB) | **Import limits** → **Uploaded archive** | The largest total size, in bytes, that the files of one uploaded archive expand to. Vellum refuses a larger archive as a whole and stores nothing of it. See [Upload an archive](/how-to/upload-an-archive/#the-size-limit). |
 
 A scan records the limits that applied when it was requested.
 
@@ -151,7 +162,7 @@ Vellum checks each stored workspace value against the policy each time it reads 
 
 ## URL rules
 
-These rules apply to `ai.providers[].baseUrl`, `github.apiBaseUrl`, `cost.azureRetailPricesBaseUrl` and `notifications.webhookUrl`.
+These rules apply to `ai.providers[].baseUrl`, `github.apiBaseUrl`, `gitlab.apiBaseUrl`, `bitbucket.apiBaseUrl`, `azureDevops.apiBaseUrl`, `cost.azureRetailPricesBaseUrl` and `notifications.webhookUrl`.
 
 - The URL has 2000 characters at most.
 - The URL is absolute, with the scheme `http` or `https`, and has no user name or password.
@@ -220,6 +231,9 @@ A body over the limit gets `413`.
 | Name | Credential | Bound to the origin of | Value rule |
 |---|---|---|---|
 | `github:token` | The GitHub access token | `github.apiBaseUrl` | Printable ASCII only |
+| `gitlab:token` | A read-only GitLab token, with the scope `read_api` or `read_repository`. Sent in the header `PRIVATE-TOKEN`. | `gitlab.apiBaseUrl` | Printable ASCII only |
+| `bitbucket:token` | A Bitbucket Cloud access token with read access to repositories, sent as a bearer token. Or `user:token` with an API token or an app password, sent with HTTP basic authentication. | `bitbucket.apiBaseUrl` | Printable ASCII only |
+| `azure-devops:token` | An Azure DevOps personal access token with the scope **Code (Read)**. Sent with HTTP basic authentication and an empty user name. | `azureDevops.apiBaseUrl` | Printable ASCII only |
 | `ai:<provider id>:apiKey` | The API key of one AI provider. `<provider id>` is the `id` of the provider, in the form `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`. | The `baseUrl` of the provider, or the address of its kind | Printable ASCII only |
 | `notifications:webhookSecret` | The webhook signing secret | `notifications.webhookUrl` | No control characters |
 | `gcp:apiKey` | The API key of the Google Cloud Billing Catalog API | `https://cloudbilling.googleapis.com`, a fixed address | Printable ASCII only |

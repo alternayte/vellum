@@ -1,13 +1,19 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ChevronDown, ChevronRight, GitBranch, RotateCw } from 'lucide-react'
+import { ChevronDown, ChevronRight, FileArchive, Folder, GitBranch, RotateCw, Trash2, Upload } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { ConfirmDialog } from '@/components/shell/confirm-dialog'
 import { cn } from '@/lib/utils'
 import { shownInline } from '@/lib/mutation-errors'
-import { describeReview, importApi, isActive, sourcesApi, type DecisionResult, type Proposal, type SourceSummary } from '@/lib/import-api'
+import {
+  ARCHIVE_ACCEPT, describeReview, describeScan, importApi, isActive, revisionLabel, sourcesApi,
+  type DecisionResult, type Proposal, type ScanStatus, type ScanSummary, type SourceSnapshot, type SourceSummary,
+} from '@/lib/import-api'
 import { sourcesKey, useSources } from '@/hooks/use-sources'
 import { SourceSides } from './source-facts'
+import { useArchiveUpload } from '@/hooks/use-archive-upload'
+import { UploadProgress } from './archive-upload'
 
 const ROW: Record<Proposal['action'], { sign: string; color: string; label: string }> = {
   add: { sign: '+', color: 'var(--trace-request)', label: 'Add' },
@@ -28,68 +34,172 @@ function short(value: string | null | undefined, length = 10): string {
   return value ? value.slice(0, length) : ''
 }
 
-/** The list of Sources on the import screen: each with its newest Snapshot and what waits for a decision. */
+const STATUS_COLOR: Record<ScanStatus, string> = {
+  queued: 'var(--muted-foreground)',
+  running: 'var(--trace-data)',
+  waiting: 'var(--trace-retry)',
+  completed: 'var(--trace-request)',
+  failed: 'var(--trace-failure)',
+  cancelled: 'var(--muted-foreground)',
+}
+
+const KIND_ICON: Record<string, typeof GitBranch> = { directory: Folder, archive: FileArchive }
+
+/** What "scan again" does for each kind, as the button says it. */
+function rescan(kind: string): { label: string; title: string } {
+  if (kind === 'directory') return { label: 'Read again', title: 'Read the folder again as it is now. Each read is a new Snapshot.' }
+  if (kind === 'archive') return { label: 'Upload again', title: 'Upload a new .zip or .tar.gz. Each upload is a new Snapshot.' }
+  return { label: 'Scan again', title: 'Scan the default ref of this Source again' }
+}
+
+/** The list of Sources on the import screen: each with its newest scan, its newest Snapshot and what waits for a decision. */
 export function SourcesList({ projectId, onReview }: {
   projectId: string
   onReview: (source: SourceSummary) => void
 }) {
   const queryClient = useQueryClient()
   const sources = useSources(projectId)
+  const [deleting, setDeleting] = useState<SourceSummary | null>(null)
+  const refresh = () => Promise.all([
+    queryClient.invalidateQueries({ queryKey: sourcesKey(projectId) }),
+    queryClient.invalidateQueries({ queryKey: ['projects', projectId, 'imports'] }),
+  ])
   const scan = useMutation({
     mutationFn: (id: string) => sourcesApi.scan(projectId, id, {}),
-    onSuccess: () => Promise.all([
-      queryClient.invalidateQueries({ queryKey: sourcesKey(projectId) }),
-      queryClient.invalidateQueries({ queryKey: ['projects', projectId, 'imports'] }),
-    ]),
+    onSuccess: refresh,
     onError: shownInline,
   })
+  const remove = useMutation({
+    mutationFn: (id: string) => sourcesApi.remove(projectId, id),
+    onSuccess: () => { setDeleting(null); return refresh() },
+    onError: shownInline,
+  })
+  const { upload, sent } = useArchiveUpload(projectId)
 
   if (sources.isLoading) return <p className="px-3 py-2 text-xs text-muted-foreground">Loading Sources…</p>
   if (sources.isError) return <p role="alert" className="px-3 py-2 text-xs text-destructive">{sources.error.message}</p>
   const list = sources.data ?? []
-  if (list.length === 0) return <p className="px-3 py-2 text-xs text-muted-foreground">No Source yet. Scan a repository to add one.</p>
+  if (list.length === 0) return <p className="px-3 py-2 text-xs text-muted-foreground">No Source yet. Add a repository, a folder or an archive.</p>
 
   return (
     <div>
       {scan.isError && <p role="alert" className="px-3 pb-1 text-xs text-[var(--trace-failure)]">{scan.error.message}</p>}
       <ul className="space-y-1 px-2 pb-2">
-        {list.map((source) => (
-          <li key={source.id} className="rounded-md border border-border p-2">
-            <div className="flex items-start gap-2">
-              <GitBranch className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-              <div className="min-w-0 flex-1">
-                <p className="flex items-baseline gap-1.5">
-                  <span className="truncate text-sm text-foreground">{source.name}</span>
-                  <span className="shrink-0 rounded-full border border-border px-1.5 font-mono text-[10px] text-muted-foreground">{source.kind}</span>
-                </p>
-                <p className="truncate font-mono text-[10px] text-muted-foreground" title={source.citation}>{source.citation}</p>
-                {source.latestSnapshot && (
-                  <p className="font-mono text-[10px] text-muted-foreground" title={`Snapshot ${source.latestSnapshot.snapshotId}`}>
-                    Snapshot {short(source.latestSnapshot.snapshotId, 8)}
-                    {source.latestSnapshot.commitSha && ` · ${short(source.latestSnapshot.commitSha)}`}
-                    {` · ${source.latestSnapshot.files} files`}
+        {list.map((source) => {
+          const Icon = KIND_ICON[source.kind] ?? GitBranch
+          const busy = source.latestScan !== null && isActive(source.latestScan.status)
+          const uploading = upload.isPending && upload.variables?.sourceId === source.id
+          const uploadFailed = upload.isError && upload.variables?.sourceId === source.id
+          const again = rescan(source.kind)
+          return (
+            <li key={source.id} className="rounded-md border border-border p-2">
+              <div className="flex items-start gap-2">
+                <Icon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+                <div className="min-w-0 flex-1">
+                  <p className="flex items-baseline gap-1.5">
+                    <span className="truncate text-sm text-foreground">{source.name}</span>
+                    <span className="shrink-0 rounded-full border border-border px-1.5 font-mono text-[10px] text-muted-foreground">{source.kind}</span>
                   </p>
-                )}
-                <p className={cn('mt-1 text-xs', source.review.pending > 0 ? 'text-foreground' : 'text-muted-foreground')}>{describeReview(source)}</p>
+                  <p className="truncate font-mono text-[10px] text-muted-foreground" title={source.citation}>{source.citation}</p>
+                  {source.latestSnapshot && <SnapshotLine source={source} snapshot={source.latestSnapshot} />}
+                  {source.latestScan && <ScanState scan={source.latestScan} />}
+                  <p className={cn('mt-1 text-xs', source.review.pending > 0 ? 'text-foreground' : 'text-muted-foreground')}>{describeReview(source)}</p>
+                </div>
               </div>
-            </div>
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {source.review.scanId && source.review.pending > 0 && (
-                <Button size="sm" variant="secondary" className="h-6 px-2 text-xs" onClick={() => onReview(source)}>Review</Button>
-              )}
-              <Button
-                size="sm" variant="ghost" className="h-6 gap-1 px-2 text-xs"
-                disabled={scan.isPending || (source.latestScan !== null && isActive(source.latestScan.status))}
-                title="Scan the default ref of this Source again"
-                onClick={() => scan.mutate(source.id)}
-              >
-                <RotateCw className="h-3 w-3" /> Scan again
-              </Button>
-            </div>
-          </li>
-        ))}
+              {uploading && <div className="mt-2"><UploadProgress sent={sent} pending /></div>}
+              {uploadFailed && <p role="alert" className="mt-1.5 text-xs text-[var(--trace-failure)]">{upload.error.message}</p>}
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {source.review.scanId && source.review.pending > 0 && (
+                  <Button size="sm" variant="secondary" className="h-6 px-2 text-xs" onClick={() => onReview(source)}>Review</Button>
+                )}
+                {source.kind === 'archive' ? (
+                  <label
+                    title={again.title}
+                    className={cn(
+                      'inline-flex h-6 cursor-pointer items-center gap-1 rounded-md px-2 text-xs font-medium text-foreground hover:bg-muted focus-within:outline-2 focus-within:outline-primary',
+                      (busy || upload.isPending) && 'pointer-events-none opacity-50',
+                    )}
+                  >
+                    <Upload className="h-3 w-3" aria-hidden="true" /> {again.label}
+                    <input
+                      type="file" accept={ARCHIVE_ACCEPT} className="sr-only" disabled={busy || upload.isPending}
+                      onChange={(e) => {
+                        const file = e.target.files?.[0]
+                        e.target.value = ''
+                        if (file) upload.mutate({ sourceId: source.id, file })
+                      }}
+                    />
+                  </label>
+                ) : (
+                  <Button
+                    size="sm" variant="ghost" className="h-6 gap-1 px-2 text-xs"
+                    disabled={scan.isPending || busy}
+                    title={again.title}
+                    onClick={() => scan.mutate(source.id)}
+                  >
+                    <RotateCw className="h-3 w-3" /> {again.label}
+                  </Button>
+                )}
+                <Button
+                  size="sm" variant="ghost" className="ml-auto h-6 gap-1 px-2 text-xs text-muted-foreground hover:text-destructive"
+                  title="Delete this Source and its Snapshots"
+                  onClick={() => { remove.reset(); setDeleting(source) }}
+                >
+                  <Trash2 className="h-3 w-3" /> Delete
+                </Button>
+              </div>
+            </li>
+          )
+        })}
       </ul>
+      {deleting && (
+        <ConfirmDialog
+          title="Delete Source"
+          description={<>“{deleting.name}” is deleted with its scans, its Snapshots and the stored files that no other Source needs. The model keeps every fact that people accepted from it.</>}
+          confirmLabel="Delete Source"
+          destructive
+          pending={remove.isPending}
+          error={remove.error?.message}
+          onConfirm={() => remove.mutate(deleting.id)}
+          onClose={() => setDeleting(null)}
+        />
+      )}
     </div>
+  )
+}
+
+/**
+ * The newest Snapshot. A git Source cites a commit; a folder or an archive cites the Snapshot
+ * ID. The commit that a folder's `.git/HEAD` names is shown as metadata only.
+ */
+function SnapshotLine({ source, snapshot }: { source: SourceSummary; snapshot: SourceSnapshot }) {
+  const git = revisionLabel(source.kind) === 'commit'
+  return (
+    <p className="font-mono text-[10px] text-muted-foreground" title={`Snapshot ${snapshot.snapshotId}${snapshot.commitSha ? `\nCommit ${snapshot.commitSha}` : ''}`}>
+      {git
+        ? <>commit {short(snapshot.revision)} · Snapshot {short(snapshot.snapshotId, 8)}</>
+        : <>Snapshot {short(snapshot.snapshotId, 12)}{snapshot.commitSha && <> · .git/HEAD {short(snapshot.commitSha)}</>}</>}
+      {` · ${snapshot.files} ${snapshot.files === 1 ? 'file' : 'files'}`}
+      {!snapshot.isComplete && ' · partial'}
+    </p>
+  )
+}
+
+/** The state of the newest scan: progress while it runs, the failure with its code, the retry time while it waits. */
+function ScanState({ scan }: { scan: ScanSummary }) {
+  const p = scan.progress
+  const text =
+    scan.status === 'running' && p.filesListed > 0 ? `Reading files: ${p.filesRead} of ${p.filesListed}${p.filesSkipped > 0 ? `, ${p.filesSkipped} skipped` : ''}`
+    : scan.status === 'completed' && scan.isComplete ? `Scan complete: ${p.filesRead} of ${p.filesListed} files read${p.filesSkipped > 0 ? `, ${p.filesSkipped} skipped` : ''}`
+    : describeScan(scan)
+  return (
+    <p className="mt-1 flex items-start gap-1.5 text-xs" style={{ color: STATUS_COLOR[scan.status] }}>
+      <span className={cn('mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-current', scan.status === 'running' && 'motion-safe:animate-pulse')} aria-hidden="true" />
+      <span className={cn('min-w-0', scan.status === 'completed' && scan.isComplete && 'text-muted-foreground')}>
+        {text}
+        {scan.error && <span className="ml-1 font-mono text-[10px] text-muted-foreground">({scan.error.code})</span>}
+      </span>
+    </p>
   )
 }
 
