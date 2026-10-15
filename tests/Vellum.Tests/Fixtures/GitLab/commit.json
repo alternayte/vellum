@@ -1,0 +1,10 @@
+{
+  "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "short_id": "aaaaaaaa",
+  "title": "Add outbox",
+  "author_name": "Dev",
+  "created_at": "2025-12-01T10:00:00.000+00:00",
+  "parent_ids": ["ffffffffffffffffffffffffffffffffffffffff"],
+  "message": "Add outbox\n",
+  "web_url": "https://gitlab.example.com/acme/platform/orders/-/commit/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+}

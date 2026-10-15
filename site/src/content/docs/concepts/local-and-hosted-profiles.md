@@ -9,13 +9,14 @@ This page explains the two operating profiles of Vellum and the reason for each 
 
 Vellum is one program and one container image. The value `Vellum__Profile` selects the profile at start-up: `local` or `hosted`. The default is `local`.
 
-The two profiles have the same features, the same data model and the same database schema. No feature exists in one profile only. A workspace, a project and a model are the same thing in both.
+The two profiles have the same data model and the same database schema. They have the same features, with one exception: a `directory` Source works in the local profile only. A workspace, a project and a model are the same thing in both.
 
-A profile changes three things only:
+A profile changes four things only:
 
 - What Vellum requires from the environment before it starts.
 - The built-in defaults of the instance policy.
 - Whether Vellum sends the `Strict-Transport-Security` header.
+- Whether a Source can read a folder of the machine of the instance.
 
 Vellum reads the profile from the environment and nowhere else. No screen and no API call changes it.
 
@@ -40,6 +41,7 @@ Each difference below follows from one of these two assumptions.
 | URLs on private networks | Allowed by default. | Refused by default. | A local model server such as Ollama is on a private address. On a hosted instance, a settings URL that points at a private address is an attack on the network of the operator. |
 | Plain `http` in a settings URL | Allowed. | Refused. It is accepted only for a private host, and only when the policy allows private network URLs. | A credential goes to each settings URL. On a public network it must not go in clear text. |
 | Sending private code to AI | A workspace can turn it on. | Refused until the instance administrator allows it. | On a hosted instance the operator decides first if code of customers can leave the instance. |
+| `directory` Source | Reads folders under `Vellum__SourcesRoot`. | Refused with `source_kind_not_in_profile`. | On a local instance the operator owns the machine and chooses the root. On a hosted instance the users of a workspace do not own the machine, so no workspace may read its files. Upload an archive or connect a git host there. |
 
 The three policy rows are defaults. The instance administrator changes them under **Settings** → **Instance**, in both profiles. The other rows are rules of the profile and cannot be changed in the app.
 

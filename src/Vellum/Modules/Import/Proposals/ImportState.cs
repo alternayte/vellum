@@ -110,8 +110,8 @@ internal sealed record ImportState(
         var first = ProposalJson.ReadEvidence(link.Evidence).FirstOrDefault();
         return new OtherSourceFact(
             source?.Id ?? Guid.Empty, citationName, source?.Name ?? link.Repository,
-            // Every link is a fact a scan read from the Source's files: code is observed, a model file declared.
-            TruthLabels.Of(ProposalJson.ReadEvidence(link.Evidence).Select(e => e.Rule)),
+            // The label the Source gave the fact: observed-in-source for code, measured or declared at runtime.
+            FactMapping.LabelOf(ProposalJson.ReadAttributes(link.Attributes), ProposalJson.ReadEvidence(link.Evidence)),
             ProposalJson.ReadValues(link.Accepted), ProposalJson.ReadAttributes(link.Attributes),
             first is null ? null : EvidenceLinks.Pointer(citationName, link.CommitSha, first),
             link.AcceptedBy, link.AcceptedAt);

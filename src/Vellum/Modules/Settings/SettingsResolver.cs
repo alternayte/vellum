@@ -48,10 +48,19 @@ public sealed record WorkspaceSettings(
     public const string GithubField = "github.apiBaseUrl";
     public const string WebhookField = "notifications.webhookUrl";
     public const string AzurePricesField = "cost.azureRetailPricesBaseUrl";
+    public const string GitlabField = "gitlab.apiBaseUrl";
+    public const string BitbucketField = "bitbucket.apiBaseUrl";
+    public const string AzureDevopsField = "azureDevops.apiBaseUrl";
 
     public SettingsUrl GithubApiBaseUrl => Resolve(GithubField, Effective.Github.ApiBaseUrl);
 
     public SettingsUrl WebhookUrl => Resolve(WebhookField, Effective.Notifications.WebhookUrl);
+
+    public SettingsUrl GitlabApiBaseUrl => Resolve(GitlabField, Effective.Gitlab.ApiBaseUrl);
+
+    public SettingsUrl BitbucketApiBaseUrl => Resolve(BitbucketField, Effective.Bitbucket.ApiBaseUrl);
+
+    public SettingsUrl AzureDevopsApiBaseUrl => Resolve(AzureDevopsField, Effective.AzureDevops.ApiBaseUrl);
 
     public SettingsUrl AzureRetailPricesBaseUrl => Resolve(AzurePricesField, Effective.Cost.AzureRetailPricesBaseUrl);
 
@@ -61,6 +70,12 @@ public sealed record WorkspaceSettings(
     /// </summary>
     public static readonly SettingsUrl.Usable GcpCloudBillingUrl = new(
         new Uri("https://cloudbilling.googleapis.com"), OutboundUrlPolicy.OriginOf(new Uri("https://cloudbilling.googleapis.com")));
+
+    public static readonly SettingsUrl.Usable NewRelicUsUrl = new(
+        new Uri("https://api.newrelic.com"), OutboundUrlPolicy.OriginOf(new Uri("https://api.newrelic.com")));
+
+    public static readonly SettingsUrl.Usable NewRelicEuUrl = new(
+        new Uri("https://api.eu.newrelic.com"), OutboundUrlPolicy.OriginOf(new Uri("https://api.eu.newrelic.com")));
 
     /// <summary>The address of a provider: its base URL, or the address of its kind when the base URL is empty.</summary>
     public SettingsUrl ProviderBaseUrl(Guid providerId)
@@ -83,9 +98,14 @@ public sealed record WorkspaceSettings(
     public SettingsUrl DestinationOf(string secretName) => secretName switch
     {
         SecretNames.GithubToken => GithubApiBaseUrl,
+        SecretNames.GitlabToken => GitlabApiBaseUrl,
+        SecretNames.BitbucketToken => BitbucketApiBaseUrl,
+        SecretNames.AzureDevopsToken => AzureDevopsApiBaseUrl,
         SecretNames.WebhookSecret => WebhookUrl,
         SecretNames.GcpApiKey => GcpCloudBillingUrl,
         _ when SecretNames.ProviderIdOf(secretName) is { } providerId => ProviderBaseUrl(providerId),
+        // A New Relic key goes to the fixed NerdGraph endpoint of its region, never to a setting.
+        _ when SecretNames.NewRelicRegionOf(secretName) is { } region => region == "eu" ? NewRelicEuUrl : NewRelicUsUrl,
         _ => new SettingsUrl.NotConfigured(),
     };
 
@@ -230,6 +250,11 @@ public sealed class SettingsResolver(AppDbContext db, Bootstrap bootstrap)
         var github = UrlRefused(WorkspaceSettings.GithubField, document.Github.ApiBaseUrl)
             ? document.Github with { ApiBaseUrl = "" }
             : document.Github;
+        GitHostSettings GitHost(string field, GitHostSettings host) =>
+            UrlRefused(field, host.ApiBaseUrl) ? host with { ApiBaseUrl = "" } : host;
+        var gitlab = GitHost(WorkspaceSettings.GitlabField, document.Gitlab);
+        var bitbucket = GitHost(WorkspaceSettings.BitbucketField, document.Bitbucket);
+        var azureDevops = GitHost(WorkspaceSettings.AzureDevopsField, document.AzureDevops);
         var notifications = UrlRefused(WorkspaceSettings.WebhookField, document.Notifications.WebhookUrl)
             ? new NotificationSettings(null)
             : document.Notifications;
@@ -251,6 +276,9 @@ public sealed class SettingsResolver(AppDbContext db, Bootstrap bootstrap)
             Ai = new AiSettings(providers,
                 new TaskRouting(Route(routing.InferArchitecture), Route(routing.ProposeFlow), Route(routing.Critique), Route(routing.Explain))),
             Github = github,
+            Gitlab = gitlab,
+            Bitbucket = bitbucket,
+            AzureDevops = azureDevops,
             Cost = cost,
             Notifications = notifications,
             Privacy = new PrivacySettings(forwardsCode),

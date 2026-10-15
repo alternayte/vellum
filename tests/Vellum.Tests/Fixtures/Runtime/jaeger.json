@@ -1,0 +1,63 @@
+{
+  "data": [
+    {
+      "traceID": "5b8efff798038103d269b633813fc60c",
+      "spans": [
+        {
+          "traceID": "5b8efff798038103d269b633813fc60c", "spanID": "a000000000000001", "operationName": "GET /orders",
+          "references": [], "startTime": 1760000000000000, "duration": 50000, "processID": "p1",
+          "tags": [
+            { "key": "span.kind", "type": "string", "value": "client" },
+            { "key": "user.email", "type": "string", "value": "alice@example.com" },
+            { "key": "http.request.header.authorization", "type": "string", "value": "Bearer sk-live-abcdef0123456789abcdef" }
+          ],
+          "logs": [ { "timestamp": 1760000000001000, "fields": [ { "key": "message", "type": "string", "value": "password=hunter2" } ] } ]
+        },
+        {
+          "traceID": "5b8efff798038103d269b633813fc60c", "spanID": "b000000000000001", "operationName": "GET /orders",
+          "references": [ { "refType": "CHILD_OF", "traceID": "5b8efff798038103d269b633813fc60c", "spanID": "a000000000000001" } ],
+          "startTime": 1760000000005000, "duration": 40000, "processID": "p2",
+          "tags": [ { "key": "span.kind", "type": "string", "value": "server" } ]
+        },
+        {
+          "traceID": "5b8efff798038103d269b633813fc60c", "spanID": "b000000000000002", "operationName": "POST /charge",
+          "references": [ { "refType": "CHILD_OF", "traceID": "5b8efff798038103d269b633813fc60c", "spanID": "b000000000000001" } ],
+          "startTime": 1760000000010000, "duration": 10000, "processID": "p2",
+          "tags": [ { "key": "span.kind", "type": "string", "value": "client" } ]
+        },
+        {
+          "traceID": "5b8efff798038103d269b633813fc60c", "spanID": "b000000000000003", "operationName": "GET /stock",
+          "references": [ { "refType": "CHILD_OF", "traceID": "5b8efff798038103d269b633813fc60c", "spanID": "b000000000000001" } ],
+          "startTime": 1760000000021000, "duration": 4000, "processID": "p2",
+          "tags": [ { "key": "span.kind", "type": "string", "value": "client" }, { "key": "peer.service", "type": "string", "value": "inventory" } ]
+        },
+        {
+          "traceID": "5b8efff798038103d269b633813fc60c", "spanID": "b000000000000004", "operationName": "orders publish",
+          "references": [ { "refType": "CHILD_OF", "traceID": "5b8efff798038103d269b633813fc60c", "spanID": "b000000000000001" } ],
+          "startTime": 1760000000030000, "duration": 1000, "processID": "p2",
+          "tags": [ { "key": "span.kind", "type": "string", "value": "producer" } ]
+        },
+        {
+          "traceID": "5b8efff798038103d269b633813fc60c", "spanID": "c000000000000001", "operationName": "POST /charge",
+          "references": [ { "refType": "CHILD_OF", "traceID": "5b8efff798038103d269b633813fc60c", "spanID": "b000000000000002" } ],
+          "startTime": 1760000000011000, "duration": 8000, "processID": "p3",
+          "tags": [ { "key": "span.kind", "type": "string", "value": "server" }, { "key": "error", "type": "bool", "value": true } ]
+        },
+        {
+          "traceID": "5b8efff798038103d269b633813fc60c", "spanID": "d000000000000001", "operationName": "orders process",
+          "references": [ { "refType": "FOLLOWS_FROM", "traceID": "5b8efff798038103d269b633813fc60c", "spanID": "b000000000000004" } ],
+          "startTime": 1760000000060000, "duration": 10000, "processID": "p4",
+          "tags": [ { "key": "span.kind", "type": "string", "value": "consumer" } ]
+        }
+      ],
+      "processes": {
+        "p1": { "serviceName": "frontend", "tags": [ { "key": "hostname", "type": "string", "value": "secret-host-xyz" } ] },
+        "p2": { "serviceName": "orders", "tags": [] },
+        "p3": { "serviceName": "payments", "tags": [] },
+        "p4": { "serviceName": "shipping", "tags": [] }
+      },
+      "warnings": null
+    }
+  ],
+  "total": 0, "limit": 0, "offset": 0, "errors": null
+}

@@ -348,12 +348,12 @@ internal static class ProposalPlanner
                     var before = link!.Attributes.GetValueOrDefault(attribute);
                     if (before is not null)
                         acceptedObserved[attribute] = before;
-                    if (!string.Equals(before, value, StringComparison.Ordinal))
+                    if (!IsSample(attribute) && !string.Equals(before, value, StringComparison.Ordinal))
                         changes.Add(new FieldChange("observed." + attribute, before, value));
                 }
                 foreach (var (attribute, before) in link!.Attributes.OrderBy(a => a.Key, StringComparer.Ordinal))
                 {
-                    if (candidate.Attributes.ContainsKey(attribute))
+                    if (candidate.Attributes.ContainsKey(attribute) || IsSample(attribute) || attribute == FactMapping.TruthLabelAttribute)
                         continue;
                     acceptedObserved[attribute] = before;
                     changes.Add(new FieldChange("observed." + attribute, before, null));
@@ -367,7 +367,7 @@ internal static class ProposalPlanner
             // unlinked one was written by a person.
             // The label a fact of this Source gets: observed-in-source for code and
             // configuration, declared for a model file (TruthLabels).
-            var sourceLabel = candidate.FactStatus;
+            var sourceLabel = candidate.TruthLabel;
             var status = entity.FactStatus ?? (linked ? sourceLabel : "declared");
             var editedSince = linked && compared.Any(field =>
                 link!.Accepted.TryGetValue(field, out var accepted)
@@ -468,7 +468,7 @@ internal static class ProposalPlanner
             // fact accepted from a model file keeps the label "declared" of that file, and the
             // file no longer says it: it gets the mark like an observed fact.
             var others = input.OthersOf(link.EntityKind, entity.Id);
-            if (entity.FactStatus == TruthLabels.Of(link.Evidence.Select(e => e.Rule)) && entity.Stale is null && others.Count == 0)
+            if (entity.FactStatus == FactMapping.LabelOf(link.Attributes, link.Evidence) && entity.Stale is null && others.Count == 0)
                 markStale.Add(entity.Id);
 
             var fingerprint = Hash([EnumText.Of(ProposalAction.Remove), link.EntityKind, link.FactKey, Canonical(entity.Values)]);
@@ -636,9 +636,12 @@ internal static class ProposalPlanner
         Canonical(candidate.Fields),
         Hash(candidate.References.Select(r => $"{r.Field}={r.FactKey}")),
         Hash(candidate.ConsumerKeys),
-        Hash(candidate.Observed.Select(o => $"{o.Key}={o.Value}")),
+        // A sample value is no claim: a rejected proposal stays rejected when only the counts differ.
+        Hash(candidate.Observed.Where(o => !IsSample(o.Key)).Select(o => $"{o.Key}={o.Value}")),
         current is null ? "" : Canonical(current),
     ]);
+
+    private static bool IsSample(string attribute) => attribute.StartsWith(FactMapping.SamplePrefix, StringComparison.Ordinal);
 
     /// <summary>What a "same as X?" question asks: this key of this Source and that element. A "no" is remembered by it.</summary>
     public static string BindFingerprint(string factKey, Guid elementId) =>

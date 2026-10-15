@@ -27,6 +27,7 @@ public sealed record SourceWindowDto(string Path, string CommitSha, int StartLin
 /// at this commit. No other window of the file is served.</item>
 /// <item>Each line passes <see cref="SourceMask"/>.</item>
 /// </list>
+/// <para>A push of <c>vellum scan</c> holds no content: its scans answer 409 <c>content_not_held</c>.</para>
 /// <para>
 /// Who may read: for a repository that GitHub reports as public, any member of the project.
 /// For a private repository, or one whose visibility is unknown, the Editor role and above.
@@ -51,6 +52,11 @@ public static class SourceWindow
         var scan = await db.Scans.AsNoTracking().FirstOrDefaultAsync(s => s.Id == importId && s.ProjectId == projectId, ct);
         if (scan is null)
             return NotFound("Import");
+        if (scan.ContentNotHeld)
+        {
+            return Results.Conflict(new ErrorResponse("content_not_held",
+                "This Snapshot was pushed by vellum scan, which sends the manifest, the facts and the citations and no file content. Vellum holds no line of it. Open the file on the machine that pushed it."));
+        }
         if (scan.RepositoryIsPrivate != false)
             await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
 

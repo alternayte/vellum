@@ -9,6 +9,17 @@ An import proposes. It changes nothing in the model until you accept a proposal.
 
 A repository is a **Source** of the project, and each completed scan is a **Snapshot** of it. See [Sources, Snapshots and bindings](/concepts/sources-and-snapshots/).
 
+## Other kinds of Source
+
+The review, the limits and the stale marks on this page apply to each kind of Source. To read code from another place, see these guides:
+
+- A repository on GitLab, Bitbucket Cloud or Azure DevOps: [Connect GitLab, Bitbucket or Azure DevOps](/how-to/connect-a-git-host/).
+- A folder on the machine that runs a local instance: [Import a local folder](/how-to/import-a-local-folder/).
+- A `.zip` or `.tar.gz` file: [Upload an archive](/how-to/upload-an-archive/).
+- Many repositories of one organization, group or workspace: [Add many repositories](/how-to/add-many-repositories/).
+
+To delete a Source, see [Delete a Source](/concepts/sources-and-snapshots/#delete-a-source).
+
 ## Start a scan
 
 1. Open the project and select **Import** in the left toolbar.
@@ -153,6 +164,10 @@ The review shows a value that is not text as unformatted JSON.
 - [Sources, Snapshots and bindings](/concepts/sources-and-snapshots/)
 - [Import and review](/tutorials/import-and-review/)
 - [Connect GitHub](/how-to/connect-github/)
+- [Connect GitLab, Bitbucket or Azure DevOps](/how-to/connect-a-git-host/)
+- [Import a local folder](/how-to/import-a-local-folder/)
+- [Upload an archive](/how-to/upload-an-archive/)
+- [Add many repositories](/how-to/add-many-repositories/)
 - [Check change impact](/how-to/check-change-impact/)
 - [Extraction rules](/reference/extraction-rules/)
 - [Evidence and truth labels](/concepts/evidence-and-truth-labels/)

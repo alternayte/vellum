@@ -105,7 +105,7 @@ public class SecretsTests : IClassFixture<IntegrationFixture>
 
         var list = JsonNode.Parse(await BodyAsync(owner.GetAsync($"/api/workspaces/{workspaceId}/secrets")))!.AsArray();
         var byName = list.ToDictionary(s => (string)s!["name"]!, s => s!);
-        Assert.Equal(4, byName.Count);
+        Assert.Equal(7, byName.Count);
         Assert.False((bool)byName["gcp:apiKey"]["isSet"]!);
         Assert.True((bool)byName["github:token"]["isSet"]!);
         Assert.Matches("^[0-9a-f]{8}$", (string)byName["github:token"]["fingerprint"]!);

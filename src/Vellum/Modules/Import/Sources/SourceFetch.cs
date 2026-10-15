@@ -25,6 +25,14 @@ internal static class SourceFetch
         SourceKind.ModelFile when context.Scan is { TreeListed: true, CommitSha: not null } => Task.CompletedTask,
         SourceKind.ModelFile => throw ScanStop.Failed(new ScanError("upload_missing",
             "This scan of an uploaded file has no file. Upload the file again.")),
+        SourceKind.Gitlab or SourceKind.Bitbucket or SourceKind.AzureDevops => GitHostFetch.RunAsync(context, ct),
+        SourceKind.Directory => DirectoryFetch.RunAsync(context, ct),
+        SourceKind.Archive => ArchiveFetch.RunAsync(context, ct),
+        // A push carries its Snapshot in its request. A worker meets one only when that request
+        // died before it completed the scan, and it has nothing to fetch.
+        SourceKind.AgentPush => throw ScanStop.Failed(ScanFailures.PushInterrupted),
+        SourceKind.Traces => Runtime.RuntimeFetch.TracesAsync(context, ct),
+        SourceKind.Newrelic => Runtime.RuntimeFetch.NewRelicAsync(context, ct),
         _ => throw ScanStop.Failed(new ScanError("source_kind_unavailable",
             $"This instance cannot read a Source of kind '{EnumText.Of(context.Source.Kind)}'.")),
     };
@@ -60,11 +68,13 @@ internal sealed class FetchContext(
     /// </summary>
     public async Task ListAsync(IReadOnlyList<GitHubTreeEntry> entries, CancellationToken ct)
     {
-        var selection = ScanScope.Select(entries, limits, scan.IncludePaths, scan.ExcludePaths);
+        var selection = ScanScope.Select(
+            [.. entries.Where(e => e.Type == "blob").Select(e => new ListingEntry(e.Path, e.Sha, e.Size ?? 0))],
+            limits, scan.IncludePaths, scan.ExcludePaths);
         var rows = selection.Files.Select(file => new ScanFileEntity
         {
             ScanId = scan.Id, Path = file.Entry.Path, PathHash = KeyHash.Of(file.Entry.Path),
-            BlobSha = file.Entry.Sha, Size = file.Entry.Size ?? 0,
+            BlobSha = file.Entry.Sha, Size = file.Entry.Size,
             State = file.Reason is null ? ScanFileState.Pending : ScanFileState.Skipped, Reason = file.Reason,
         }).ToList();
         db.ScanFiles.AddRange(rows);
@@ -130,6 +140,22 @@ internal sealed class FetchContext(
     /// </summary>
     public async Task AcceptAsync(ScanFileEntity file, byte[] content, CancellationToken ct)
     {
+        // A list that named no blob SHA (a host without one, a directory) gets it from the
+        // bytes, and a list that named no size gets that too: the manifest holds both.
+        if (file.BlobSha.Length == 0)
+            file.BlobSha = GitBlob.Sha(content);
+        file.Size = content.LongLength;
+        if (content.LongLength > limits.MaxFileBytes)
+        {
+            Skip(file, "limit:file-bytes", partial: true);
+            return;
+        }
+        if (scan.BytesRead + content.LongLength > limits.MaxTotalBytes)
+        {
+            Skip(file, "limit:total-bytes", partial: true);
+            return;
+        }
+
         if (!ContentClearance.IsBlob(content, file.BlobSha))
             Skip(file, CoverageGap.ShaMismatch, partial: true);
         else if (ContentClearance.Withhold(content) is { } withheld)
@@ -142,6 +168,20 @@ internal sealed class FetchContext(
             await StoreBlobAsync(file.BlobSha, content, content.LongLength, null, ct);
             MarkRead(file, content.LongLength);
         }
+    }
+
+    /// <summary>
+    /// Stores a document that Vellum derived itself, such as the services and edges of a
+    /// runtime Source. Every name in it passed <see cref="Runtime.RuntimeGraph.CleanName"/>
+    /// one by one, so the file-level credential check, which counts opaque identifiers such as
+    /// New Relic GUIDs as credentials, does not apply.
+    /// </summary>
+    public async Task AcceptDerivedAsync(ScanFileEntity file, byte[] content, CancellationToken ct)
+    {
+        if (!ContentClearance.IsBlob(content, file.BlobSha))
+            throw new InvalidOperationException("A derived document is stored under its own blob SHA.");
+        await StoreBlobAsync(file.BlobSha, content, content.LongLength, null, ct);
+        MarkRead(file, content.LongLength);
     }
 
     public void MarkRead(ScanFileEntity file, long bytes)
@@ -158,6 +198,20 @@ internal sealed class FetchContext(
         scan.FilesSkipped++;
         scan.Partial |= partial;
         scan.Notes = ScanNotes.Write(ScanNotes.Read(scan.Notes).Append(ScanNotes.Of(reason, file.Path)));
+    }
+
+    /// <summary>
+    /// The revision of a Source that has no commits (a directory, an archive): the ID of the
+    /// manifest of the files the fetch stage read. The extraction can take a file out of the
+    /// manifest; the worker then writes the Snapshot ID in its place, so a citation always
+    /// names the Snapshot.
+    /// </summary>
+    public async Task PinContentRevisionAsync(CancellationToken ct)
+    {
+        var files = await db.ScanFiles.AsNoTracking().Where(f => f.ScanId == scan.Id && f.State == ScanFileState.Read)
+            .Select(f => new { f.Path, f.Size, f.BlobSha }).ToListAsync(ct);
+        scan.CommitSha = SnapshotManifest.Id(files.Select(f => new ManifestEntry(f.Path, f.Size, f.BlobSha)));
+        await SaveAsync(ct);
     }
 
     /// <summary>When a scan that a host's rate limit stopped starts again: the host's reset time, bounded.</summary>

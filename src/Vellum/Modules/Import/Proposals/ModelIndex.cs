@@ -88,13 +88,14 @@ internal sealed class ModelIndex
         (Field.ConsumerIds, JoinIds(m.ConsumerIds.Select(c => c.Value))), (Field.SchemaId, m.SchemaId?.ToString())),
         m.FactStatus.ToApiString(), m.Stale);
 
-    public static ModelEntity Of(ModelState model, RelationshipState r) => new(r.Id, EntityKinds.Relationship,
-        $"{(model.Elements.TryGetValue(r.FromId, out var from) ? from.Name : r.FromId.ToString())} → {(model.Elements.TryGetValue(r.ToId, out var to) ? to.Name : r.ToId.ToString())}"
-            + (r.Label is null ? "" : $": {r.Label}"),
-        Values(
-            (Field.FromId, r.FromId.ToString()), (Field.ToId, r.ToId.ToString()), (Field.Label, r.Label),
-            (Field.Technology, r.Technology), (Field.Kind, r.Kind.ToString().ToLowerInvariant())),
+    /// <summary>A relationship is named after its two elements; its label is a value a person may change, and the scan never compares it.</summary>
+    public static ModelEntity Of(ModelState model, RelationshipState r) => new(
+        r.Id, EntityKinds.Relationship, RelationshipName(model, r.FromId, r.ToId), Values(
+            (Field.FromId, r.FromId.ToString()), (Field.ToId, r.ToId.ToString()), (Field.Label, r.Label)),
         r.FactStatus.ToApiString(), r.Stale);
+
+    private static string RelationshipName(ModelState model, ElementId from, ElementId to) =>
+        $"{(model.Elements.TryGetValue(from, out var a) ? a.Name : from.ToString())} → {(model.Elements.TryGetValue(to, out var b) ? b.Name : to.ToString())}";
 
     public static ModelEntity Of(SchemaRow s) => new(s.Id, EntityKinds.Schema, s.Name, Values(
         (Field.Name, s.Name), (Field.Content, s.Content)), null, null);
@@ -131,14 +132,15 @@ internal sealed class ModelIndex
     private static readonly string[] BindingFields = [Field.SourceChannelId, Field.TargetChannelId, Field.RoutingKey];
     private static readonly string[] MessageFields = [Field.Name, Field.ProducerId, Field.ConsumerIds, Field.SchemaId];
     private static readonly string[] SchemaFields = [Field.Name, Field.Content];
-    // Not the ends: a relationship with other ends is another relationship.
-    private static readonly string[] RelationshipFields = [Field.Label, Field.Technology, Field.Kind];
+    // Not the label: what a person calls an edge stays their choice.
+    private static readonly string[] RelationshipFields = [Field.FromId, Field.ToId];
 
     /// <summary>
     /// The exact rule that says a fact and an entity are the same thing: the same kind and
     /// the same normalised name or route. For an operation the owner must be the same
     /// element too; a subscription has no name and matches on its channel and consumer; a
     /// binding has none either and matches on its source, its target and its routing key; a
+    /// relationship matches on its two elements; a
     /// message, a channel and a schema match on the name alone.
     /// It is used for two things: to join a fact to a hand-made entity, and to move an
     /// accepted link to the fact that replaced its key after the extraction rules changed.
@@ -149,7 +151,7 @@ internal sealed class ModelIndex
         EntityKinds.Operation => $"{values.GetValueOrDefault(Field.OwnerId)}|{NormalRoute(values.GetValueOrDefault(Field.Name))}",
         EntityKinds.Subscription => $"{values.GetValueOrDefault(Field.ChannelId)}|{values.GetValueOrDefault(Field.ConsumerId)}",
         EntityKinds.Binding => $"{values.GetValueOrDefault(Field.SourceChannelId)}|{values.GetValueOrDefault(Field.TargetChannelId)}|{values.GetValueOrDefault(Field.RoutingKey)}",
-        EntityKinds.Relationship => $"{values.GetValueOrDefault(Field.FromId)}|{values.GetValueOrDefault(Field.ToId)}|{NormalName(values.GetValueOrDefault(Field.Label))}",
+        EntityKinds.Relationship => $"{values.GetValueOrDefault(Field.FromId)}|{values.GetValueOrDefault(Field.ToId)}",
         _ => NormalName(values.GetValueOrDefault(Field.Name)),
     };
 

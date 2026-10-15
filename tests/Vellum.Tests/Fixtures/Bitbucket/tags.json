@@ -1,0 +1,13 @@
+{
+  "pagelen": 10,
+  "size": 1,
+  "page": 1,
+  "values": [
+    {
+      "type": "tag",
+      "name": "v1.0",
+      "message": "First release\n",
+      "target": { "type": "commit", "hash": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" }
+    }
+  ]
+}

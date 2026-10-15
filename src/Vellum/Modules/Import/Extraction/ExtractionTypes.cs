@@ -25,6 +25,12 @@ public enum FactKind
     /// <summary>An architecture pattern the source declares, such as a transactional outbox. Not a publication.</summary>
     Pattern,
     /// <summary>
+    /// A runtime edge between two services that a trace export or an APM account shows: a call,
+    /// or a message from a producer to a consumer. Its <c>from</c> and <c>to</c> attributes are
+    /// the keys of the two service facts.
+    /// </summary>
+    Interaction,
+    /// <summary>
     /// An element that a model file declares (Structurizr, Backstage): <c>elementKind</c> is a
     /// kind of the model (<c>actor</c>, <c>system</c>, <c>app</c>, <c>store</c>, <c>component</c>)
     /// or one the model has no place for (<c>domain</c>); <c>parent</c> is the key of its parent.

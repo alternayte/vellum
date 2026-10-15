@@ -24,6 +24,8 @@ public enum FactStatus
 /// <paramref name="AcceptedOnBranch"/> record the model the person accepted it on: the version
 /// of the model stream that the acceptance read, and that stream. Both are null for a fact
 /// that was accepted before they were recorded, or by an import or a proposal.
+/// <paramref name="ContentNotHeld"/> is true for a fact accepted from a push of <c>vellum scan</c>:
+/// the evidence was read on the machine that pushed, and Vellum holds no line of it.
 /// </summary>
 public sealed record Provenance(
     string? Source = null,
@@ -32,7 +34,8 @@ public sealed record Provenance(
     Guid? AcceptedBy = null,
     DateTimeOffset? AcceptedAt = null,
     long? AcceptedAtVersion = null,
-    Guid? AcceptedOnBranch = null);
+    Guid? AcceptedOnBranch = null,
+    bool ContentNotHeld = false);
 
 /// <summary>
 /// A mark on an accepted fact whose evidence a complete repository scan no longer finds. It
@@ -56,10 +59,11 @@ public sealed record StaleDto(string SinceRevision, string Reason)
 public sealed record ProvenanceInput(string? Source, string? Revision, double? Confidence);
 
 /// <summary>Provenance as returned by the API.</summary>
+/// <param name="ContentNotHeld">True when the fact was accepted from a push of <c>vellum scan</c>: Vellum holds no file content of its evidence.</param>
 public sealed record ProvenanceDto(
     string? Source, string? Revision, double? Confidence,
     Guid? AcceptedBy, DateTimeOffset? AcceptedAt,
-    long? AcceptedAtVersion = null, Guid? AcceptedOnBranch = null);
+    long? AcceptedAtVersion = null, Guid? AcceptedOnBranch = null, bool ContentNotHeld = false);
 
 public static class FactStatusFormat
 {
@@ -103,14 +107,15 @@ public static class ProvenanceMapper
             ? null
             : new ProvenanceDto(
                 provenance.Source, provenance.Revision, provenance.Confidence,
-                provenance.AcceptedBy, provenance.AcceptedAt, provenance.AcceptedAtVersion, provenance.AcceptedOnBranch);
+                provenance.AcceptedBy, provenance.AcceptedAt, provenance.AcceptedAtVersion, provenance.AcceptedOnBranch,
+                provenance.ContentNotHeld);
 
     public static ProvenanceDto? ToDto(
         string? source, string? revision, double? confidence, Guid? acceptedBy, DateTimeOffset? acceptedAt,
-        long? acceptedAtVersion = null, Guid? acceptedOnBranch = null) =>
+        long? acceptedAtVersion = null, Guid? acceptedOnBranch = null, bool contentNotHeld = false) =>
         source is null && revision is null && confidence is null && acceptedBy is null && acceptedAt is null
             ? null
-            : new ProvenanceDto(source, revision, confidence, acceptedBy, acceptedAt, acceptedAtVersion, acceptedOnBranch);
+            : new ProvenanceDto(source, revision, confidence, acceptedBy, acceptedAt, acceptedAtVersion, acceptedOnBranch, contentNotHeld);
 
     public static Provenance? ToDomain(ProvenanceInput? input, Guid actorId, DateTimeOffset acceptedAt) =>
         input is null

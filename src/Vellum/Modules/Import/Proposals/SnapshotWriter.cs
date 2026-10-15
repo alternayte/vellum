@@ -342,7 +342,10 @@ internal static class SnapshotWriter
     private static async Task<bool> SupersededAsync(AppDbContext db, ScanEntity scan, CancellationToken ct) =>
         await db.ImportProposals.AnyAsync(p => p.ScanId == scan.Id && p.Status == ProposalStatus.Superseded, ct)
         || await db.Scans.AnyAsync(s => s.SourceId == scan.SourceId && s.Id != scan.Id && s.Status == ScanStatus.Completed
-            && s.PullRequestNumber == null && s.ResolvedRef != null && s.ResolvedRef == scan.ResolvedRef
+            && s.PullRequestNumber == null
+            && ((s.ResolvedRef != null && s.ResolvedRef == scan.ResolvedRef)
+                // A Source without refs (a directory, an archive): every scan reads the one line.
+                || (s.ResolvedRef == null && scan.ResolvedRef == null && s.RequestedRef == null && scan.RequestedRef == null))
             && s.CompletedAt > scan.CompletedAt, ct);
 
     private sealed record StreamExecuteResult(ModelState State, long Version);

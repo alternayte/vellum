@@ -1,4 +1,4 @@
-import { ApiError, api } from '@/lib/settings-api'
+import { ApiError, api, apiError } from '@/lib/settings-api'
 
 export type ScanStatus = 'queued' | 'running' | 'waiting' | 'completed' | 'failed' | 'cancelled'
 
@@ -57,6 +57,10 @@ export interface ScanSummary {
   canResume: boolean
   /** The Source the scan reads. */
   sourceId: string
+  /** False for a push of `vellum scan`: Vellum holds the manifest, the facts and the citations, and no file content. */
+  contentHeld: boolean
+  /** For a push: the commit that `.git/HEAD` named on the machine that pushed. Reported, not verified. */
+  reportedCommitSha: string | null
 }
 
 export interface ScanNote {
@@ -104,7 +108,7 @@ export interface ProposalEvidence {
   endLine: number
   rule: string
   pointer: string
-  /** Null for a Source with no web page, such as an uploaded file. */
+  /** The lines on the git host. Null for an agent-push Source: it has no web page. */
   url: string | null
 }
 
@@ -202,7 +206,17 @@ export interface SourceSnapshot {
   facts: number
   isComplete: boolean
   createdAt: string
+  /** False for a push of `vellum scan`: no file content is held. */
+  contentHeld: boolean
+  /** For a push: the commit `.git/HEAD` named on the machine that pushed. Reported, not verified. */
+  reportedCommitSha: string | null
+  /** For a push: the agent token that pushed it, as `agent-token:<id>`. */
+  pushedBy: string | null
 }
+
+/** Why nothing that needs file content works for a pushed Snapshot. One sentence, shown wherever such a feature would be. */
+export const CONTENT_NOT_HELD =
+  'Content not held: vellum scan pushed this Snapshot from the machine that holds the code. Vellum has its manifest, facts and citations, and no file content, so it cannot show source lines.'
 
 /** The pending proposals of a Source: those of its newest completed tracking scan. */
 export interface SourceReview {
@@ -231,6 +245,34 @@ export interface SourceSummary {
   latestScan: ScanSummary | null
   latestSnapshot: SourceSnapshot | null
   review: SourceReview
+  /** What a `traces` or `newrelic` Source reads. Null for the other kinds. The key itself is never sent back. */
+  connection: RuntimeConnection | null
+}
+
+export interface RuntimeConnection {
+  accountId: number | null
+  region: 'us' | 'eu' | null
+  /** The fixed NerdGraph endpoint of the region. */
+  endpoint: string | null
+  keySet: boolean
+}
+
+export type NewRelicRegion = 'us' | 'eu'
+
+/** One real NerdGraph query. A failure says what to change and holds no text from New Relic. */
+export interface NewRelicTest {
+  ok: boolean
+  accountName: string | null
+  error: { code: string; message: string } | null
+}
+
+export interface TraceUpload {
+  scanId: string
+  snapshotId: string
+  services: number
+  edges: number
+  spans: string
+  format: string
 }
 
 export interface SourceBinding {
@@ -404,15 +446,172 @@ export const importApi = {
     ),
 }
 
+/** The kinds of Source a person can add on this instance. */
+export type AddableKind = 'github' | 'gitlab' | 'bitbucket' | 'azure-devops' | 'directory' | 'archive'
+export type GitHostKind = 'github' | 'gitlab' | 'bitbucket' | 'azure-devops'
+
+export interface SourceKindInfo {
+  kind: AddableKind
+  available: boolean
+  /** Why the kind cannot be used now. Null when it can. */
+  reason: string | null
+  /** The web host of a git host, or the sources root of a directory. */
+  where: string | null
+}
+
+export interface SourceKinds {
+  kinds: SourceKindInfo[]
+  /** The workspace limit `import.maxArchiveBytes`: the most bytes the files of one archive may expand to. */
+  maxArchiveBytes: number
+}
+
+export interface RepositoryChoice {
+  /** The repository as a Source of the kind keeps it, such as `acme/orders`. */
+  repository: string
+  name: string
+  defaultBranch: string
+  isPrivate: boolean
+  /** The Source this project already has for the repository. */
+  sourceId: string | null
+}
+
+export interface RepositoryList {
+  kind: GitHostKind
+  owner: string
+  page: number
+  repositories: RepositoryChoice[]
+  hasMore: boolean
+}
+
+export interface BulkAddItem {
+  repository: string
+  sourceId: string | null
+  /** False when the project had the Source already. */
+  created: boolean
+  /** Null when no scan was queued: see `error`. */
+  scanId: string | null
+  error: { type: string; title: string; detail?: string | null } | null
+}
+
+/** What each kind is called, and how it names one place. */
+export const KIND_INFO: Record<AddableKind, { label: string; locator: string; owner: string; placeholder: string }> = {
+  github: { label: 'GitHub', locator: 'owner/name', owner: 'Organization or user', placeholder: 'acme' },
+  gitlab: { label: 'GitLab', locator: 'group/name or group/subgroup/name', owner: 'Group', placeholder: 'acme or acme/platform' },
+  bitbucket: { label: 'Bitbucket', locator: 'workspace/repository', owner: 'Workspace', placeholder: 'acme' },
+  'azure-devops': { label: 'Azure DevOps', locator: 'organization/project/repository', owner: 'Organization or organization/project', placeholder: 'acme or acme/shop' },
+  directory: { label: 'Folder', locator: 'a folder under the sources root', owner: '', placeholder: 'acme/orders' },
+  archive: { label: 'Archive', locator: 'a .zip or .tar.gz file', owner: '', placeholder: '' },
+}
+
+export function isGitHost(kind: string): kind is GitHostKind {
+  return kind === 'github' || kind === 'gitlab' || kind === 'bitbucket' || kind === 'azure-devops'
+}
+
+/**
+ * What the revision of a Snapshot is called: a commit of a git Source, else the Snapshot ID.
+ * The commit a directory's `.git/HEAD` names is metadata, not the revision.
+ */
+export function revisionLabel(kind: string): 'commit' | 'Snapshot' {
+  return isGitHost(kind) ? 'commit' : 'Snapshot'
+}
+
+/** The sentence to show for a refused request: the field rule when the server named one, else the error. */
+export function errorText(error: Error): string {
+  return error instanceof ApiError && error.fields.length > 0 ? error.fields.map((f) => f.message).join(' ') : error.message
+}
+
+/** A byte count in the largest unit that keeps it at or above 1. */
+export function formatBytes(bytes: number): string {
+  const units = ['bytes', 'KB', 'MB', 'GB', 'TB']
+  let value = bytes
+  let unit = 0
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024
+    unit++
+  }
+  return unit === 0 ? `${bytes} bytes` : `${Number.isInteger(value) ? value : value.toFixed(1)} ${units[unit]}`
+}
+
+export const ARCHIVE_ACCEPT = '.zip,.tar.gz,.tgz,application/zip,application/gzip'
+
+/** What one upload may hold beyond the expanded limit: headers and the central directory. The server answers 413 above it. */
+const UPLOAD_OVERHEAD = 64 * 1024 * 1024
+
+/** The largest upload the server takes for a workspace limit `import.maxArchiveBytes`. */
+export function uploadCap(maxArchiveBytes: number): number {
+  return maxArchiveBytes + UPLOAD_OVERHEAD
+}
+
 const sourcesBase = (projectId: string) => `/api/projects/${projectId}/sources`
+
+/**
+ * Sends a `.zip` or `.tar.gz` as the raw body. XMLHttpRequest, because fetch reports no upload
+ * progress. Resolves with the ID of the scan the upload queued.
+ */
+function uploadArchive(projectId: string, sourceId: string, file: File, onProgress: (sent: number, total: number) => void): Promise<{ id: string }> {
+  return new Promise((resolve, reject) => {
+    const request = new XMLHttpRequest()
+    request.open('POST', `${sourcesBase(projectId)}/${sourceId}/archive`)
+    request.withCredentials = true
+    request.setRequestHeader('Content-Type', file.type || 'application/octet-stream')
+    request.upload.onprogress = (e) => onProgress(e.loaded, e.lengthComputable ? e.total : file.size)
+    request.onload = () => {
+      const data = request.responseText ? safeJson(request.responseText) : null
+      if (request.status >= 200 && request.status < 300) resolve(data as { id: string })
+      else if (request.status === 413 && !(data as { title?: string } | null)?.title) {
+        reject(new ApiError(413, 'The file is larger than this workspace accepts for one upload.'))
+      } else reject(apiError(request.status, data))
+    }
+    request.onerror = () => reject(new ApiError(0, 'The upload did not reach the server. Check the connection and try again.'))
+    request.onabort = () => reject(new ApiError(0, 'The upload was cancelled.'))
+    request.send(file)
+  })
+}
+
+function safeJson(text: string): unknown {
+  try {
+    return JSON.parse(text)
+  } catch {
+    return null
+  }
+}
 
 export const sourcesApi = {
   list: (projectId: string) => api<SourceSummary[]>('GET', sourcesBase(projectId)),
-  create: (projectId: string, body: { kind: SourceKind; repository: string; name?: string }) =>
+  kinds: (projectId: string) => api<SourceKinds>('GET', `${sourcesBase(projectId)}/kinds`),
+  create: (projectId: string, body: { kind: SourceKind; repository?: string; path?: string; name?: string; accountId?: number; region?: NewRelicRegion; apiKey?: string }) =>
     api<SourceSummary>('POST', sourcesBase(projectId), body),
+  /**
+   * Sends a trace export file as the request body. The server reads it as it arrives, keeps
+   * only the services and edges it shows, and queues the scan that proposes them.
+   */
+  uploadTraces: async (projectId: string, id: string, file: File): Promise<TraceUpload> => {
+    const response = await fetch(`${sourcesBase(projectId)}/${id}/traces?fileName=${encodeURIComponent(file.name)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: file,
+    })
+    const text = await response.text()
+    const data = parseOrEmpty(text) as { title?: string } & Partial<TraceUpload>
+    if (!response.ok) throw new ApiError(response.status, data.title ?? (response.status === 413 ? 'The file is too large.' : 'The upload did not complete.'))
+    return data as TraceUpload
+  },
+  /** Tests an account, a region and a key before a Source is made of them. Nothing is stored. */
+  testNewRelic: (projectId: string, body: { accountId: number; region: NewRelicRegion; apiKey: string }) =>
+    api<NewRelicTest>('POST', `${sourcesBase(projectId)}/newrelic/test`, body),
+  /** Tests the stored key of a New Relic Source. */
+  testSource: (projectId: string, id: string) => api<NewRelicTest>('POST', `${sourcesBase(projectId)}/${id}/newrelic/test`),
+  setKey: (projectId: string, id: string, apiKey: string) => api<void>('PUT', `${sourcesBase(projectId)}/${id}/newrelic/key`, { apiKey }),
   rename: (projectId: string, id: string, name: string) => api<SourceSummary>('PATCH', `${sourcesBase(projectId)}/${id}`, { name }),
+  /** Deletes the Source, its Snapshots and the stored files no other Snapshot needs. The model keeps accepted facts. */
+  remove: (projectId: string, id: string) => api<void>('DELETE', `${sourcesBase(projectId)}/${id}`),
   scan: (projectId: string, id: string, body: { ref?: string; pullRequest?: number; includePaths?: string[] }) =>
     api<{ id: string }>('POST', `${sourcesBase(projectId)}/${id}/scans`, body),
+  uploadArchive,
+  repositories: (projectId: string, kind: GitHostKind, owner: string, page: number) =>
+    api<RepositoryList>('GET', `${sourcesBase(projectId)}/repositories?kind=${kind}&owner=${encodeURIComponent(owner)}&page=${page}`),
+  bulk: (projectId: string, body: { kind: GitHostKind; repositories: string[]; ref?: string }) =>
+    api<{ items: BulkAddItem[] }>('POST', `${sourcesBase(projectId)}/bulk`, body),
   snapshots: (projectId: string, id: string) => api<SourceSnapshot[]>('GET', `${sourcesBase(projectId)}/${id}/snapshots`),
   bindings: (projectId: string, id: string) => api<SourceBinding[]>('GET', `${sourcesBase(projectId)}/${id}/bindings`),
   /** One file as its own `model-file` Source; uploading the same path again is a new Snapshot. */
@@ -490,7 +689,7 @@ export function describeScan(scan: ScanSummary): string {
     case 'running':
       return scan.progress.filesListed === 0 ? 'Listing files' : `Reading files: ${scan.progress.filesRead} of ${scan.progress.filesListed}`
     case 'waiting':
-      return scan.retryAt ? `Paused by the GitHub rate limit until ${new Date(scan.retryAt).toLocaleTimeString()}` : 'Paused by the GitHub rate limit'
+      return scan.retryAt ? `Paused by the rate limit of the host until ${new Date(scan.retryAt).toLocaleTimeString()}` : 'Paused by the rate limit of the host'
     case 'completed':
       return scan.isComplete ? 'Scan complete' : 'Partial scan: a limit stopped it before every file was read'
     case 'failed':
@@ -515,4 +714,33 @@ export function withDependencies(selected: Set<string>, proposals: Proposal[]): 
     }
   }
   return result
+}
+
+function parseOrEmpty(text: string): unknown {
+  try {
+    return text ? JSON.parse(text) : {}
+  } catch {
+    return {}
+  }
+}
+
+/** What a Source can do now, from its newest scan: one tone and one sentence. */
+export function sourceState(source: Pick<SourceSummary, 'kind' | 'latestScan'>): { tone: 'ok' | 'busy' | 'warn' | 'fail'; text: string } {
+  const scan = source.latestScan
+  if (!scan) {
+    if (source.kind === 'traces') return { tone: 'warn', text: 'No trace file yet. Upload an export to read its edges.' }
+    return { tone: 'warn', text: 'Not read yet.' }
+  }
+  if (scan.status === 'queued' || scan.status === 'running') return { tone: 'busy', text: 'Reading…' }
+  if (scan.status === 'waiting') {
+    const at = scan.retryAt ? new Date(scan.retryAt).toLocaleTimeString() : 'later'
+    return { tone: 'warn', text: `Waiting for the rate limit. Vellum reads again at ${at}.` }
+  }
+  if (scan.status === 'failed') {
+    if (scan.error?.code === 'newrelic_unavailable') return { tone: 'warn', text: 'Unavailable: this instance cannot reach New Relic. Everything else works without it.' }
+    return { tone: 'fail', text: scan.error?.message ?? 'The last read failed.' }
+  }
+  if (scan.status === 'cancelled') return { tone: 'warn', text: 'The last read was cancelled.' }
+  if (!scan.isComplete) return { tone: 'warn', text: 'The last read is partial. Nothing is marked stale from it.' }
+  return { tone: 'ok', text: `Read ${new Date(scan.completedAt ?? scan.createdAt).toLocaleString()}.` }
 }

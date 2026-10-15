@@ -1,14 +1,17 @@
 using System.Text;
 using System.Text.RegularExpressions;
-using Vellum.Modules.GitHub;
 using Vellum.Modules.Import.Extraction;
 using Vellum.Shared;
 
 namespace Vellum.Modules.Import.Scans;
 
+/// <summary>One file of a listing, in the shape of a blob entry of a git tree.</summary>
+/// <param name="Sha">The git blob SHA. Empty when the lister computes it later, from the files the scope selects (<c>vellum scan</c>).</param>
+internal sealed record ListingEntry(string Path, string Sha, long Size);
+
 /// <summary>One file of the tree with what the scan does with it.</summary>
 /// <param name="Reason">Null for a file the scan reads. Else why it does not: a note code or a code of <see cref="CoverageGap"/>.</param>
-internal sealed record ListedFile(GitHubTreeEntry Entry, string? Reason);
+internal sealed record ListedFile(ListingEntry Entry, string? Reason);
 
 /// <summary>The files of a commit, each with whether the scan reads it, and why the others are not read.</summary>
 /// <param name="Files">Every file of the commit that a scan can record, in path order.</param>
@@ -20,21 +23,24 @@ internal sealed record ScanSelection(
 
 /// <summary>
 /// Decides from the file list alone which blobs a scan asks GitHub for. Nothing is fetched
-/// to make the decision: a path that looks like a secret, a binary, a dependency directory
+/// to make the decision. The server and <c>vellum scan</c> compile this same file: a path that looks like a secret, a binary, a dependency directory
 /// or a file outside the scope is never requested. Every file keeps the reason it was left
 /// out, so the scan can say later where it looked and where it did not.
 /// </summary>
 internal static class ScanScope
 {
+    /// <summary>The longest path a scan records. A longer path gets a note and no row.</summary>
+    public const int MaxPath = 1024;
+
     public static ScanSelection Select(
-        IReadOnlyList<GitHubTreeEntry> entries, ScanLimits limits,
+        IReadOnlyList<ListingEntry> entries, ScanLimits limits,
         IReadOnlyList<string> includePaths, IReadOnlyList<string> excludePaths)
     {
         var globs = limits.ExcludeGlobs.Select(Glob).ToList();
         var notes = new List<ScanNote>();
         var files = new List<ListedFile>();
         var seen = new HashSet<string>(StringComparer.Ordinal);
-        var blobs = entries.Where(e => e.Type == "blob").OrderBy(e => e.Path, StringComparer.Ordinal).ToList();
+        var blobs = entries.OrderBy(e => e.Path, StringComparer.Ordinal).ToList();
         long total = 0;
         var selected = 0;
         var partial = false;
@@ -43,12 +49,12 @@ internal static class ScanScope
         foreach (var entry in blobs)
         {
             // A path that cannot be a key or a text column gets a note and no row.
-            if (entry.Path.Length > ScanFileEntity.MaxPath)
+            if (entry.Path.Length > MaxPath)
             {
                 notes.Add(ScanNotes.Of("path-too-long", ""));
                 continue;
             }
-            if (TextRule.Line("path", entry.Path, ScanFileEntity.MaxPath) is not null)
+            if (TextRule.Line("path", entry.Path, MaxPath) is not null)
             {
                 notes.Add(ScanNotes.Of("invalid-path", ""));
                 continue;
@@ -74,7 +80,7 @@ internal static class ScanScope
                 continue;
             }
 
-            var size = entry.Size ?? 0;
+            var size = entry.Size;
             if (size > limits.MaxFileBytes)
             {
                 notes.Add(ScanNotes.Of("limit:file-bytes", entry.Path));

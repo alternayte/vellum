@@ -68,13 +68,15 @@ public sealed record ScanCoverageDto(int FilesListed, int FilesExtracted, Linked
 /// <param name="PullRequest">The pull request as GitHub described it when the scan pinned the head commit. Null until then.</param>
 /// <param name="CanResume">True for a failed or cancelled scan that a resume can carry on. False when the failure is one that a resume meets again: start a new scan.</param>
 /// <param name="SourceId">The Source the scan reads.</param>
+/// <param name="ContentHeld">False for a push of <c>vellum scan</c>: the instance holds the manifest, the facts and the citations, and no file content. The source view has nothing to show.</param>
+/// <param name="ReportedCommitSha">For a push: the commit that <c>.git/HEAD</c> named on the machine that pushed, as reported. Not verified.</param>
 public sealed record ScanDto(
     Guid Id, string Repository, string? RepositoryName, string? Ref, string? ResolvedRef, string? CommitSha, string Status, bool IsComplete,
     string Kind, string? TrackedRef, bool CanDecide, string? CanDecideReason,
     ScanCoverageDto Coverage, int Relinked, int NeedsReview,
     ScanProgressDto Progress, ProposalCountsDto ProposalCounts, ScanError? Error,
     DateTimeOffset? RetryAt, string RequestedBy, DateTimeOffset CreatedAt, DateTimeOffset? CompletedAt,
-    int? PullRequestNumber, ScanPullRequest? PullRequest, bool CanResume, Guid SourceId);
+    int? PullRequestNumber, ScanPullRequest? PullRequest, bool CanResume, Guid SourceId, bool ContentHeld, string? ReportedCommitSha);
 
 public sealed record ScanDetailDto(
     Guid Id, string Repository, string? RepositoryName, string? Ref, string? ResolvedRef, string? CommitSha, string Status, bool IsComplete,
@@ -84,7 +86,19 @@ public sealed record ScanDetailDto(
     DateTimeOffset? RetryAt, string RequestedBy, DateTimeOffset CreatedAt, DateTimeOffset? CompletedAt,
     int? PullRequestNumber, ScanPullRequest? PullRequest, bool CanResume,
     IReadOnlyList<ScanNote> Notes, IReadOnlyList<RuleVersion> RuleVersions,
-    string? TrackedBy, DateTimeOffset? TrackedAt, Guid SourceId, string? SnapshotId);
+    string? TrackedBy, DateTimeOffset? TrackedAt, Guid SourceId, string? SnapshotId, bool ContentHeld, string? ReportedCommitSha);
+
+public static class ScanSnapshots
+{
+    /// <summary>
+    /// The snapshots of a project whose scans read a ref: no pull request and no bare commit.
+    /// Only such a snapshot can stand for the newest state of a repository; a pull request or
+    /// a commit follows no line of history. The database filters them.
+    /// </summary>
+    public static IQueryable<SnapshotEntity> OfRefs(AppDbContext db, Guid projectId) =>
+        db.ImportSnapshots.Where(s => s.ProjectId == projectId && db.Scans.Any(c => c.Id == s.ScanId && c.PullRequestNumber == null
+            && !(c.RequestedRef != null && Regex.IsMatch(c.RequestedRef, "^[0-9A-Fa-f]{40}$"))));
+}
 
 public static partial class ScanRequests
 {
@@ -147,10 +161,15 @@ public static partial class ScanRequests
     public sealed record ScanOptions(string? Ref, string[]? IncludePaths, string[]? ExcludePaths, int? PullRequest);
 
     /// <summary>Checks the options, takes one unit of the day's scans and queues a scan of <paramref name="source"/>.</summary>
+    /// <param name="prepare">Adds what the scan starts with (a runtime upload's document) in the same transaction as the scan row.</param>
+    /// <param name="fill">
+    /// Writes what the scan starts with after its row is saved (an archive upload's file rows and
+    /// blobs) in the same transaction: the scan is queued with all of it or not at all.
+    /// </param>
     internal static async Task<IResult> QueueAsync(
         Guid projectId, SourceEntity source, ScanOptions request, ClaimsPrincipal user, WorkspaceSettings workspace,
         AppDbContext db, ScanSignal signal, DateTimeOffset now, CancellationToken ct,
-        Func<ScanEntity, Task>? prepare = null)
+        Func<ScanEntity, CancellationToken, Task>? prepare = null, Func<ScanEntity, CancellationToken, Task>? fill = null)
     {
         var userId = user.UserId();
         var reference = string.IsNullOrWhiteSpace(request.Ref) ? null : request.Ref;
@@ -186,11 +205,9 @@ public static partial class ScanRequests
         if (await ChargeAsync(db, workspaceId, scan.Id, workspace.Effective.Usage.MaxScansPerDay, now, ct) is { } refused)
             return refused;
 
-        // A kind that has its content already (an upload) pins the revision and lists the
-        // files here, in the transaction of the scan.
-        if (prepare is not null)
-            await prepare(scan);
         db.Scans.Add(scan);
+        if (prepare is not null)
+            await prepare(scan, ct);
         try
         {
             await db.SaveChangesAsync(ct);
@@ -198,8 +215,10 @@ public static partial class ScanRequests
         catch (Exception ex) when (IsUniqueViolation(ex))
         {
             return Results.Conflict(new ErrorResponse("scan_in_progress",
-                "A scan of this repository is already queued or running for this project. Wait for it, or cancel it."));
+                "A scan of this Source is already queued or running for this project. Wait for it, or cancel it."));
         }
+        if (fill is not null)
+            await fill(scan, ct);
         await transaction.CommitAsync(ct);
 
         signal.Notify();
@@ -211,7 +230,7 @@ public static partial class ScanRequests
     /// transaction and under a lock for the workspace. Returns the refusal when the day's
     /// units are used up. A started scan is one unit; so is a resume that asks GitHub again.
     /// </summary>
-    private static async Task<IResult?> ChargeAsync(
+    internal static async Task<IResult?> ChargeAsync(
         AppDbContext db, Guid workspaceId, Guid scanId, int limit, DateTimeOffset now, CancellationToken ct)
     {
         await db.Database.ExecuteSqlAsync($"SELECT pg_advisory_xact_lock(hashtextextended({"import-scans:" + workspaceId}, 0))", ct);
@@ -285,7 +304,7 @@ public static partial class ScanRequests
             dto.PullRequestNumber, dto.PullRequest, dto.CanResume,
             ScanNotes.Read(scan.Notes),
             rules is null ? [] : System.Text.Json.JsonSerializer.Deserialize<List<RuleVersion>>(rules, System.Text.Json.JsonSerializerOptions.Web) ?? [],
-            scan.TrackedBy, scan.TrackedAt, scan.SourceId, snapshot?.SnapshotId);
+            scan.TrackedBy, scan.TrackedAt, scan.SourceId, snapshot?.SnapshotId, dto.ContentHeld, dto.ReportedCommitSha);
     }
 
     /// <summary>
@@ -347,6 +366,8 @@ public static partial class ScanRequests
             return NotFound("Import");
         if (scan.Status is not (ScanStatus.Failed or ScanStatus.Cancelled))
             return Results.Conflict(new ErrorResponse("scan_not_resumable", "Only a failed or cancelled scan can be resumed."));
+        if (scan.ContentNotHeld)
+            return Results.Conflict(new ErrorResponse("scan_not_resumable", "A push is not resumed: Vellum holds none of its files. Run vellum scan again."));
         if (!ScanFailures.CanResume(scan.Status, scan.ErrorCode))
         {
             return Results.Conflict(new ErrorResponse("scan_not_resumable",
@@ -486,6 +507,15 @@ public static partial class ScanRequests
     /// <summary>A completed scan as a plan reads it again: its stored facts, and where it looked, from its file rows.</summary>
     internal static async Task<SnapshotInput> StoredInputAsync(AppDbContext db, ScanEntity scan, CancellationToken ct)
     {
+        var kind = await db.Sources.AsNoTracking().Where(x => x.Id == scan.SourceId).Select(x => x.Kind).FirstOrDefaultAsync(ct);
+        if (Runtime.RuntimeFetch.IsRuntime(kind))
+        {
+            var path = await db.ScanFiles.AsNoTracking().Where(f => f.ScanId == scan.Id).Select(f => f.Path).FirstOrDefaultAsync(ct) ?? "";
+            var stored = await SnapshotWriter.StoredFactsAsync(db, scan.Id, ct);
+            return new SnapshotInput(stored, scan.IsComplete, scan.ExtractionGapText(), scan.Notes,
+                () => ScanWorker.RuntimeCoverage(path, scan.ExtractionGapText()), scan.FilesExtracted);
+        }
+
         var files = await db.ScanFiles.AsNoTracking().Where(f => f.ScanId == scan.Id)
             .Select(f => new { f.Path, f.State, f.Reason }).ToListAsync(ct);
         var coverageFiles = files.ToDictionary(
@@ -629,7 +659,9 @@ public static partial class ScanRequests
             counts ?? new ProposalCountsDto(0, 0, 0),
             scan.ErrorCode is null ? null : new ScanError(scan.ErrorCode, scan.ErrorMessage ?? ""),
             scan.RetryAt, scan.RequestedBy, scan.CreatedAt, scan.CompletedAt,
-            scan.PullRequestNumber, ScanPullRequest.FromJson(scan.PullRequest), ScanFailures.CanResume(scan.Status, scan.ErrorCode), scan.SourceId);
+            scan.PullRequestNumber, ScanPullRequest.FromJson(scan.PullRequest),
+            !scan.ContentNotHeld && ScanFailures.CanResume(scan.Status, scan.ErrorCode), scan.SourceId,
+            !scan.ContentNotHeld, scan.ReportedCommitSha);
     }
 
 }

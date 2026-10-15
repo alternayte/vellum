@@ -178,7 +178,7 @@ public static class ProposalReads
             Evidence(context.Repository, context.CommitSha, p.Evidence), p.DependsOn, EnumText.Of(p.Status), p.Partial,
             pending && context.Decidable, pending ? context.Reason : null, impact, truncated,
             ProposalJson.ReadOtherSources(p.OtherSources), context.SourceId,
-            TruthLabels.Of(ProposalJson.ReadEvidence(p.Evidence).Select(e => e.Rule)));
+            FactMapping.LabelOf(ProposalJson.ReadAttributes(p.Attributes), ProposalJson.ReadEvidence(p.Evidence)));
     }
 
     private static string? Cut(string? value) =>

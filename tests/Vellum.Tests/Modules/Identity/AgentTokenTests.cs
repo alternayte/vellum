@@ -294,6 +294,7 @@ public class AgentTokenTests(IntegrationFixture fixture) : IClassFixture<Integra
     [InlineData("POST", "/api/projects/{projectId}/ai/flow-proposals/{id}/accept")]
     [InlineData("POST", "/api/projects/{projectId}/ai/architecture-proposals/{id}/decide")]
     [InlineData("POST", "/api/workspaces/{workspaceId}/agent-tokens")]
+    [InlineData("POST", "/api/workspaces/{workspaceId}/git-hosts/gitlab/test")]
     public async Task A_human_only_endpoint_refuses_an_agent_token(string method, string route)
     {
         var (factory, owner, workspaceId, projectId) = await StartAsync();
@@ -603,6 +604,15 @@ public class AgentTokenTests(IntegrationFixture fixture) : IClassFixture<Integra
         "POST /api/projects/{projectId}/sources/{sourceId}/accept",
         "POST /api/projects/{projectId}/sources/upload",
         "POST /api/projects/{projectId}/ai/architecture-proposals/from-document",
+        "DELETE /api/projects/{projectId}/sources/{sourceId}",
+        "POST /api/projects/{projectId}/sources/{sourceId}/archive",
+        "POST /api/projects/{projectId}/sources/bulk",
+        // A test call sends the workspace's git host token.
+        "POST /api/workspaces/{workspaceId}/git-hosts/{host}/test",
+        // A runtime Source: a trace upload, and a New Relic key, which is a credential.
+        "POST /api/projects/{projectId}/sources/{sourceId}/traces",
+        "PUT /api/projects/{projectId}/sources/{sourceId}/newrelic/key",
+        "POST /api/projects/{projectId}/sources/newrelic/test",
         "POST /api/projects/{projectId}/ai/flow-proposals/",
         "POST /api/projects/{projectId}/ai/flow-proposals/{proposalId}/accept",
         "POST /api/projects/{projectId}/ai/flow-proposals/{proposalId}/missing/{alias}/create",
@@ -663,6 +673,9 @@ public class AgentTokenTests(IntegrationFixture fixture) : IClassFixture<Integra
         ["GET /api/projects/{projectId}/imports/{importId}"] = "read",
         ["GET /api/projects/{projectId}/imports/{importId:guid}/impact/report"] = "read",
         ["POST /api/projects/{projectId}/imports/{importId:guid}/impact/checks"] = "propose or scan-pull-request",
+        // vellum scan: the rules and limits, then the push of a manifest, facts and citations.
+        ["GET /api/projects/{projectId}/sources/push"] = "push",
+        ["POST /api/projects/{projectId}/sources/push"] = "push",
         ["GET /api/projects/{projectId}/impact-gate/"] = "read",
         ["POST /api/projects/{projectId}/promises/"] = "propose",
         ["PUT /api/projects/{projectId}/promises/{promiseId:guid}"] = "propose",
@@ -792,7 +805,7 @@ public class AgentTokenTests(IntegrationFixture fixture) : IClassFixture<Integra
         }
 
         // A token with every scope, whose user is an Owner: 403 on every endpoint that is not open to agents.
-        var every = await TestHost.CreateAgentAsync(factory, owner, workspaceId);
+        var every = await TestHost.CreateAgentAsync(factory, owner, workspaceId, [.. Enum.GetValues<AgentScope>().Select(AgentScopes.Name)]);
         foreach (var (name, method, endpoint) in endpoints.Where(e => !ForAnAgent.ContainsKey(e.Name)))
         {
             using var response = await SendAsync(every.Client, method, endpoint);
@@ -800,7 +813,7 @@ public class AgentTokenTests(IntegrationFixture fixture) : IClassFixture<Integra
             if (method == "HEAD")
                 continue;
             var refusal = (await response.Content.ReadFromJsonAsync<JsonObject>())!["type"]!.GetValue<string>();
-            Assert.Equal(ForAPerson.Contains(name) ? AgentBoundary.HumanOnlyError : AgentBoundary.AgentNotAllowedError, refusal);
+            Assert.True((ForAPerson.Contains(name) ? AgentBoundary.HumanOnlyError : AgentBoundary.AgentNotAllowedError) == refusal, $"{name}: {refusal}");
         }
 
         // A token that lacks the scope of an endpoint: 403 there, before the endpoint runs.

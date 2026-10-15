@@ -8,10 +8,11 @@ import { cn } from '@/lib/utils'
 import { shownInline } from '@/lib/mutation-errors'
 import {
   ApiError, PROVIDER_PRESETS, api, countOverrides, effectiveSection, setOverride,
-  type AiProvider, type AiUsage, type AuditEntry, type GitHubCredential, type GitHubTestResult, type InstanceInfo, type InstanceSettings,
+  type AiProvider, type AiUsage, type AuditEntry, type GitHostTestResult, type GitHubCredential, type GitHubTestResult, type InstanceInfo, type InstanceSettings,
   type InstanceDiagnostics, type ModelPrice, type ProviderKind, type ProviderTestResult, type RotateKeysResult,
   type SecretStatus, type SettingsDocument, type SettingsOverrides, type SettingsSection, type WorkspaceSettings,
 } from '@/lib/settings-api'
+import { formatBytes } from '@/lib/import-api'
 import { NumberField, SectionHeading, SelectField, TextField, Toggle, ToggleField, selectClass } from '@/components/settings/fields'
 import { SecretControl } from '@/components/settings/secret-control'
 import { PriceBook } from '@/components/settings/price-book'
@@ -28,6 +29,9 @@ const SECTIONS: { id: SectionId; label: string; adminOnly?: boolean }[] = [
   { id: 'general', label: 'General' },
   { id: 'ai', label: 'AI providers' },
   { id: 'github', label: 'GitHub' },
+  { id: 'gitlab', label: 'GitLab' },
+  { id: 'bitbucket', label: 'Bitbucket' },
+  { id: 'azureDevops', label: 'Azure DevOps' },
   { id: 'import', label: 'Import limits' },
   { id: 'cost', label: 'Cost' },
   { id: 'prices', label: 'Prices' },
@@ -40,6 +44,28 @@ const SECTIONS: { id: SectionId; label: string; adminOnly?: boolean }[] = [
   { id: 'agents', label: 'Agent tokens' },
   { id: 'audit', label: 'Audit log' },
   { id: 'instance', label: 'Instance', adminOnly: true },
+]
+
+/** The git hosts other than GitHub: their setting, their token and what the token is. */
+const GIT_HOSTS: { section: 'gitlab' | 'bitbucket' | 'azureDevops'; route: string; title: string; description: string; urlHint: string; secret: string; secretLabel: string }[] = [
+  {
+    section: 'gitlab', route: 'gitlab', title: 'GitLab',
+    description: 'Vellum reads repositories of gitlab.com or of a self-managed GitLab, and never writes to them. A public project needs no token.',
+    urlHint: 'https://gitlab.com/api/v4, or the /api/v4 address of a self-managed GitLab. Empty turns GitLab off.',
+    secret: 'gitlab:token', secretLabel: 'Access token (read_api and read_repository)',
+  },
+  {
+    section: 'bitbucket', route: 'bitbucket', title: 'Bitbucket',
+    description: 'Vellum reads repositories of Bitbucket Cloud and never writes to them. A public repository needs no token.',
+    urlHint: 'https://api.bitbucket.org/2.0. Empty turns Bitbucket off.',
+    secret: 'bitbucket:token', secretLabel: 'Access token, or user:token for basic auth',
+  },
+  {
+    section: 'azureDevops', route: 'azure-devops', title: 'Azure DevOps',
+    description: 'Vellum reads Azure Repos and never writes to them.',
+    urlHint: 'https://dev.azure.com, or the address of an Azure DevOps Server. Empty turns Azure DevOps off.',
+    secret: 'azure-devops:token', secretLabel: 'Personal access token (Code: Read)',
+  },
 ]
 
 const TASKS: { id: keyof SettingsDocument['ai']['taskRouting']; label: string; hint: string }[] = [
@@ -212,12 +238,29 @@ function SettingsPage() {
               </>
             )}
 
+            {GIT_HOSTS.filter((h) => h.section === section).map((h) => (
+              <div key={h.section}>
+                <SectionHeading title={h.title} description={h.description} />
+                <TextField label="API base URL" hint={h.urlHint} {...bind(h.section, 'apiBaseUrl')} />
+                <div className="mt-4">
+                  <SecretControl workspaceId={workspaceId} name={h.secret} label={h.secretLabel} status={secretFor(h.secret)} canEdit={canEdit} />
+                  {canEdit && <ConnectionTest url={`${base}/git-hosts/${h.route}/test`} blocked={dirty} kind="git-host" />}
+                </div>
+              </div>
+            ))}
+
             {section === 'import' && (
               <>
                 <SectionHeading title="Import limits" description="An import stops at these limits and reports what it left out. It never describes a partial scan as complete." />
                 <NumberField label="Files per import" min={1} {...bind('import', 'maxFiles')} />
                 <NumberField label="Largest file" min={1} suffix="bytes" {...bind('import', 'maxFileBytes')} />
                 <NumberField label="Total size" min={1} suffix="bytes" {...bind('import', 'maxTotalBytes')} />
+                <NumberField
+                  label="Uploaded archive"
+                  hint="The most bytes the files of one .zip or .tar.gz may expand to, all together. An archive over it is refused whole. From 1 MB to 4 GB."
+                  min={1024 * 1024} max={4 * 1024 * 1024 * 1024} suffix={`bytes (${formatBytes(current('import').maxArchiveBytes)})`}
+                  {...bind('import', 'maxArchiveBytes')}
+                />
                 <TextField
                   label="Excluded paths"
                   hint="Glob patterns, separated by commas."
@@ -488,6 +531,7 @@ const AGENT_SCOPES: { id: string; label: string; hint: string }[] = [
   { id: 'propose', label: 'Propose', hint: 'Write promise drafts and record check results. A person approves.' },
   { id: 'export', label: 'Export', hint: 'Generate the SDD and the bundle.' },
   { id: 'scan-pull-request', label: 'Scan pull requests', hint: 'Start a scan of a pull request for CI. No other scan. Add Read to read the report.' },
+  { id: 'push', label: 'Push evidence', hint: 'vellum scan pushes a manifest, facts and citations from a laptop or CI. No file content. A person still accepts every proposal.' },
 ]
 
 /**
@@ -758,9 +802,9 @@ function StressRunBound({ value, saving, onSave }: { value: number; saving: bool
 }
 
 /** A real call through the same path a task uses. The result says what to fix. */
-function ConnectionTest({ url, blocked, kind }: { url: string; blocked: boolean; kind: 'provider' | 'github' }) {
+function ConnectionTest({ url, blocked, kind }: { url: string; blocked: boolean; kind: 'provider' | 'github' | 'git-host' }) {
   const test = useMutation({
-    mutationFn: () => api<ProviderTestResult | GitHubTestResult>('POST', url),
+    mutationFn: () => api<ProviderTestResult | GitHubTestResult | GitHostTestResult>('POST', url),
     onError: shownInline,
   })
   const result = test.data
@@ -777,7 +821,9 @@ function ConnectionTest({ url, blocked, kind }: { url: string; blocked: boolean;
             {result.ok
               ? kind === 'provider'
                 ? describeProviderTest(result as ProviderTestResult)
-                : describeGitHubTest(result as GitHubTestResult)
+                : kind === 'github'
+                  ? describeGitHubTest(result as GitHubTestResult)
+                  : describeGitHostTest(result as GitHostTestResult)
               : result.error?.message ?? 'The connection did not work.'}
           </span>
         </p>
@@ -821,6 +867,10 @@ function GitHubCredentialLine({ workspaceId, tokenSet, apiBaseUrl }: { workspace
 function describeGitHubTest(result: GitHubTestResult): string {
   const who = result.authenticatedAs ? `Signed in as ${result.authenticatedAs}.` : 'Connected without a token: public repositories only.'
   return result.rateLimitRemaining === null ? who : `${who} ${result.rateLimitRemaining} requests remain in this hour.`
+}
+
+function describeGitHostTest(result: GitHostTestResult): string {
+  return result.authenticatedAs ? `Signed in as ${result.authenticatedAs}.` : 'Connected without a token: public repositories only.'
 }
 
 function UsageTable({ workspaceId, providers }: { workspaceId: string; providers: AiProvider[] }) {

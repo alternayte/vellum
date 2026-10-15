@@ -1,7 +1,6 @@
 using System.Security.Claims;
 using System.Text;
 using Microsoft.EntityFrameworkCore;
-using Vellum.Modules.GitHub;
 using Vellum.Modules.Import.Extraction;
 using Vellum.Modules.Import.Scans;
 using Vellum.Modules.Settings;
@@ -75,7 +74,7 @@ public static class ModelFileUpload
             return Refused("content_withheld", $"The file was not stored ({withheld}). {ScanNotes.Message(withheld)}");
 
         var blobSha = GitBlob.Sha(content);
-        var entry = new GitHubTreeEntry(path, "blob", blobSha, content.LongLength, "100644");
+        var entry = new ListingEntry(path, blobSha, content.LongLength);
         var limits = new ScanLimits(import.MaxFiles, import.MaxFileBytes, import.MaxTotalBytes, [.. import.ExcludeGlobs]);
         // A document is not a file the scan reads (not-relevant); the prose import reads it. Every other reason refuses it.
         if (ScanScope.Select([entry], limits, [], []).Files.FirstOrDefault()?.Reason is { } outOfScope && outOfScope != CoverageGap.NotRelevant)
@@ -93,7 +92,7 @@ public static class ModelFileUpload
 
         var manifest = SnapshotManifest.Id([new ManifestEntry(path, content.LongLength, blobSha)]);
         var queued = await ScanRequests.QueueAsync(projectId, source, new ScanRequests.ScanOptions(null, null, null, null),
-            user, workspace, db, signal, now, ct, async scan =>
+            user, workspace, db, signal, now, ct, async (scan, _) =>
             {
                 // The Snapshot is pinned by the upload: its ID is its revision. The blob is the
                 // cleared content, keyed by its git blob SHA like every other.

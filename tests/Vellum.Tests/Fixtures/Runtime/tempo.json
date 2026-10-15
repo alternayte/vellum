@@ -1,0 +1,67 @@
+{
+  "batches": [
+    {
+      "resource": {
+        "attributes": [
+          { "key": "service.name", "value": { "stringValue": "frontend" } },
+          { "key": "host.name", "value": { "stringValue": "secret-host-xyz" } }
+        ]
+      },
+      "instrumentationLibrarySpans": [
+        {
+          "spans": [
+            {
+              "traceId": "W47/95gDgQPSabYzgT/GDA==",
+              "spanId": "oAAAAAAAAAE=",
+              "name": "GET /orders",
+              "kind": "SPAN_KIND_CLIENT",
+              "startTimeUnixNano": 1760000000000000000,
+              "endTimeUnixNano": 1760000000050000000,
+              "attributes": [
+                { "key": "user.email", "value": { "stringValue": "alice@example.com" } },
+                { "key": "http.request.header.authorization", "value": { "stringValue": "Bearer sk-live-abcdef0123456789abcdef" } }
+              ],
+              "events": [ { "name": "log", "attributes": [ { "key": "message", "value": { "stringValue": "password=hunter2" } } ] } ],
+              "status": { "code": "STATUS_CODE_OK" }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "resource": { "attributes": [ { "key": "service.name", "value": { "stringValue": "orders" } } ] },
+      "instrumentationLibrarySpans": [
+        {
+          "spans": [
+            { "traceId": "W47/95gDgQPSabYzgT/GDA==", "spanId": "sAAAAAAAAAE=", "parentSpanId": "oAAAAAAAAAE=", "name": "GET /orders", "kind": "SPAN_KIND_SERVER", "startTimeUnixNano": 1760000000005000000, "endTimeUnixNano": 1760000000045000000 },
+            { "traceId": "W47/95gDgQPSabYzgT/GDA==", "spanId": "sAAAAAAAAAI=", "parentSpanId": "sAAAAAAAAAE=", "name": "POST /charge", "kind": "SPAN_KIND_CLIENT", "startTimeUnixNano": 1760000000010000000, "endTimeUnixNano": 1760000000020000000 },
+            { "traceId": "W47/95gDgQPSabYzgT/GDA==", "spanId": "sAAAAAAAAAM=", "parentSpanId": "sAAAAAAAAAE=", "name": "GET /stock", "kind": "SPAN_KIND_CLIENT", "startTimeUnixNano": 1760000000021000000, "endTimeUnixNano": 1760000000025000000,
+              "attributes": [ { "key": "peer.service", "value": { "stringValue": "inventory" } } ] },
+            { "traceId": "W47/95gDgQPSabYzgT/GDA==", "spanId": "sAAAAAAAAAQ=", "parentSpanId": "sAAAAAAAAAE=", "name": "orders publish", "kind": "SPAN_KIND_PRODUCER", "startTimeUnixNano": 1760000000030000000, "endTimeUnixNano": 1760000000031000000 }
+          ]
+        }
+      ]
+    },
+    {
+      "resource": { "attributes": [ { "key": "service.name", "value": { "stringValue": "payments" } } ] },
+      "instrumentationLibrarySpans": [
+        {
+          "spans": [
+            { "traceId": "W47/95gDgQPSabYzgT/GDA==", "spanId": "wAAAAAAAAAE=", "parentSpanId": "sAAAAAAAAAI=", "name": "POST /charge", "kind": "SPAN_KIND_SERVER", "startTimeUnixNano": 1760000000011000000, "endTimeUnixNano": 1760000000019000000,
+              "status": { "code": "STATUS_CODE_ERROR", "message": "card of alice@example.com declined" } }
+          ]
+        }
+      ]
+    },
+    {
+      "resource": { "attributes": [ { "key": "service.name", "value": { "stringValue": "shipping" } } ] },
+      "instrumentationLibrarySpans": [
+        {
+          "spans": [
+            { "traceId": "W47/95gDgQPSabYzgT/GDA==", "spanId": "0AAAAAAAAAE=", "parentSpanId": "sAAAAAAAAAQ=", "name": "orders process", "kind": "SPAN_KIND_CONSUMER", "startTimeUnixNano": 1760000000060000000, "endTimeUnixNano": 1760000000070000000 }
+          ]
+        }
+      ]
+    }
+  ]
+}

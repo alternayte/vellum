@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 import { shownInline } from '@/lib/mutation-errors'
-import { describeFactReason, describeNotCovered, importApi, withDependencies, type Proposal, type ProposalAction, type ProposalEvidence, type ScanSummary } from '@/lib/import-api'
+import { CONTENT_NOT_HELD, describeFactReason, describeNotCovered, importApi, withDependencies, type Proposal, type ProposalAction, type ProposalEvidence, type ScanSummary } from '@/lib/import-api'
 import { prettyJson } from '@/lib/pretty-json'
 import { BindQuestion, SourceSides } from './source-facts'
 
@@ -117,9 +117,17 @@ export function ProposalReview({ projectId, scan, sourceName, onClose }: {
         <DialogHeader>
           <DialogTitle>Review {scan.repository}</DialogTitle>
           <DialogDescription>
-            Read at {scan.commitSha && /^[0-9a-f]{40}$/.test(scan.commitSha) ? 'commit' : 'Snapshot'} <span className="font-mono">{scan.commitSha?.slice(0, 10)}</span>. Each proposal states what the source shows at the cited lines, and nothing more.
+            {!scan.contentHeld
+              ? <>Pushed by vellum scan as Snapshot <span className="font-mono">{scan.commitSha?.slice(0, 10)}</span>{scan.reportedCommitSha && <> from commit <span className="font-mono">{scan.reportedCommitSha.slice(0, 10)}</span> (as reported)</>}. </>
+              // A runtime Source has no commit: its revision is the 64-character Snapshot ID.
+              : <>{scan.commitSha?.length === 64 ? 'Read as Snapshot ' : 'Read at commit '}<span className="font-mono">{scan.commitSha?.slice(0, 10)}</span>. </>}
+            Each proposal states what the source shows at the cited lines, and nothing more.
           </DialogDescription>
         </DialogHeader>
+
+        {!scan.contentHeld && (
+          <p role="status" className="rounded-md border border-border px-3 py-2 text-xs text-foreground">{CONTENT_NOT_HELD}</p>
+        )}
 
         {!scan.canDecide && (
           <p role="status" className="rounded-md border border-border px-3 py-2 text-xs text-foreground">
@@ -198,7 +206,7 @@ export function ProposalReview({ projectId, scan, sourceName, onClose }: {
                           {problem && <p role="alert" className="mt-1 text-xs text-destructive">{problem.reason}</p>}
                           {open === proposal.id && (
                             <ProposalDetail
-                              projectId={projectId} scanId={scan.id} proposal={proposal} sourceName={source}
+                              projectId={projectId} scanId={scan.id} contentHeld={scan.contentHeld} proposal={proposal} sourceName={source}
                               link={links[proposal.id]}
                               onLink={(factKey) => setLinks((current) => ({ ...current, [proposal.id]: factKey }))}
                               answer={answers[proposal.id]}
@@ -268,8 +276,8 @@ function readable(proposed: Record<string, unknown>): { field: string; from: unk
   return rows
 }
 
-function ProposalDetail({ projectId, scanId, proposal: listed, sourceName, link, onLink, answer, onAnswer }: {
-  projectId: string; scanId: string; proposal: Proposal; sourceName: string
+function ProposalDetail({ projectId, scanId, contentHeld, proposal: listed, sourceName, link, onLink, answer, onAnswer }: {
+  projectId: string; scanId: string; contentHeld: boolean; proposal: Proposal; sourceName: string
   link: string | null | undefined; onLink: (factKey: string | null) => void
   answer: boolean | undefined; onAnswer: (same: boolean) => void
 }) {
@@ -286,7 +294,7 @@ function ProposalDetail({ projectId, scanId, proposal: listed, sourceName, link,
     return (
       <div className="space-y-3 pb-1">
         <BindQuestion proposal={proposal} sourceName={sourceName} answer={answer} onAnswer={onAnswer} />
-        {proposal.evidence.map((evidence) => <SourceLines key={evidence.pointer} projectId={projectId} scanId={scanId} evidence={evidence} />)}
+        {proposal.evidence.map((evidence) => <SourceLines key={evidence.pointer} projectId={projectId} scanId={scanId} contentHeld={contentHeld} evidence={evidence} />)}
       </div>
     )
   }
@@ -355,18 +363,19 @@ function ProposalDetail({ projectId, scanId, proposal: listed, sourceName, link,
         </div>
       )}
       {proposal.evidence.map((evidence) => (
-        <SourceLines key={evidence.pointer} projectId={projectId} scanId={scanId} evidence={evidence} />
+        <SourceLines key={evidence.pointer} projectId={projectId} scanId={scanId} contentHeld={contentHeld} evidence={evidence} />
       ))}
     </div>
   )
 }
 
-/** The cited lines of one file at the commit of a scan, as text. */
-export function SourceLines({ projectId, scanId, evidence }: { projectId: string; scanId: string; evidence: ProposalEvidence }) {
+/** The cited lines of one file at the commit of a scan, as text. A pushed Snapshot holds no lines: it says so and asks for none. */
+export function SourceLines({ projectId, scanId, contentHeld, evidence }: { projectId: string; scanId: string; contentHeld: boolean; evidence: ProposalEvidence }) {
   const source = useQuery({
     queryKey: ['projects', projectId, 'imports', scanId, 'source', evidence.path, evidence.startLine, evidence.endLine],
     queryFn: () => importApi.source(projectId, scanId, evidence),
     staleTime: Infinity,
+    enabled: contentHeld,
   })
   return (
     <figure className="overflow-hidden rounded-md border border-border">
@@ -379,8 +388,10 @@ export function SourceLines({ projectId, scanId, evidence }: { projectId: string
           </a>
         )}
       </figcaption>
-      {source.isError ? (
-        <p className="px-2 py-1.5 text-xs text-muted-foreground">These lines are not stored. Open them on GitHub.</p>
+      {!contentHeld ? (
+        <p className="px-2 py-1.5 text-xs text-muted-foreground" title={CONTENT_NOT_HELD}>Content not held. Open these lines on the machine that pushed them.</p>
+      ) : source.isError ? (
+        <p className="px-2 py-1.5 text-xs text-muted-foreground">{evidence.url ? 'These lines are not stored. Open them on GitHub.' : 'This line is not stored any more.'}</p>
       ) : (
         <pre tabIndex={0} className="max-h-48 overflow-auto bg-background px-2 py-1.5 font-mono text-[11px] leading-relaxed text-foreground focus-visible:outline-2 focus-visible:outline-primary">
           {source.data

@@ -1,0 +1,15 @@
+{
+  "data": {
+    "actor": {
+      "entitySearch": {
+        "results": {
+          "nextCursor": "Y3Vyc29yLXBhZ2UtMg==",
+          "entities": [
+            { "guid": "MTIzNDU2N3xBUE18QVBQTElDQVRJT058MQ", "name": "Orders.Api", "domain": "APM", "type": "APPLICATION", "entityType": "APM_APPLICATION_ENTITY" },
+            { "guid": "MTIzNDU2N3xBUE18QVBQTElDQVRJT058Mg", "name": "payments", "domain": "APM", "type": "APPLICATION", "entityType": "APM_APPLICATION_ENTITY" }
+          ]
+        }
+      }
+    }
+  }
+}

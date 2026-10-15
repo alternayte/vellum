@@ -35,7 +35,7 @@ When you remove a provider and save, Vellum deletes the API key of that provider
 
 ## Store a credential
 
-Credentials are the AI provider keys, the GitHub token and the webhook signing secret.
+Credentials are the AI provider keys, the tokens of GitHub, GitLab, Bitbucket and Azure DevOps, and the webhook signing secret.
 
 Vellum encrypts a credential when you save it and never shows it again. The screen shows the date it changed, a fingerprint and the host that the credential is for.
 
@@ -50,6 +50,7 @@ The fingerprint is not a hash that you can compute yourself. The same value in t
 Vellum binds each credential to the origin of the URL that it is for when you save it. The origin is the scheme, the host and the port, for example `https://api.github.com`.
 
 - The GitHub token belongs to the origin of the GitHub API base URL.
+- The GitLab, Bitbucket and Azure DevOps tokens each belong to the origin of the API base URL of their host. See [Connect GitLab, Bitbucket or Azure DevOps](/how-to/connect-a-git-host/).
 - An AI provider key belongs to the origin of the base URL of the provider. A provider with an empty base URL uses the address of its kind: `https://api.openai.com`, `https://api.anthropic.com` or `https://generativelanguage.googleapis.com`.
 - The webhook signing secret belongs to the origin of the webhook URL. Set the webhook URL before you save the secret.
 
@@ -74,7 +75,7 @@ A host name has 253 characters at most, and each part between dots has 63 at mos
 Vellum checks each stored URL against the instance policy each time it reads the settings. The instance administrator can make the policy stricter after you saved a URL. Vellum then stops using that URL at once:
 
 - A blocked AI provider is disabled, and no task routes to it.
-- A blocked GitHub base URL or webhook URL is not used.
+- A blocked git host base URL or webhook URL is not used.
 - Vellum sends no credential to a blocked URL.
 
 Your stored value does not change. The settings screen lists each blocked setting with the reason. In the API this list is `policyViolations`, with a `field` and a `message` for each entry. Change the URL, or ask the instance administrator to change the policy.

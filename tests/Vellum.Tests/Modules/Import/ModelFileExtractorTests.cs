@@ -240,9 +240,9 @@ public class ModelFileExtractorTests
         var fromModelFiles = mapping.Candidates.Where(c => c.FactKey.StartsWith("structurizr:", StringComparison.Ordinal)
             || c.FactKey.Contains(":default/", StringComparison.Ordinal)).ToList();
         Assert.NotEmpty(fromModelFiles);
-        Assert.All(fromModelFiles, c => Assert.Equal(TruthLabels.Declared, c.FactStatus));
-        Assert.All(mapping.Candidates.Except(fromModelFiles), c => Assert.Equal(TruthLabels.ObservedInSource, c.FactStatus));
-        Assert.Contains(mapping.Candidates, c => c.FactStatus == TruthLabels.ObservedInSource);
+        Assert.All(fromModelFiles, c => Assert.Equal(TruthLabels.Declared, c.TruthLabel));
+        Assert.All(mapping.Candidates.Except(fromModelFiles), c => Assert.Equal(TruthLabels.ObservedInSource, c.TruthLabel));
+        Assert.Contains(mapping.Candidates, c => c.TruthLabel == TruthLabels.ObservedInSource);
         Assert.Equal("proposed-as-decision", mapping.Facts.Single(f => f.Fact.Kind == FactKind.Decision).Reason);
     }
 }

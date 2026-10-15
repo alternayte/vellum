@@ -14,7 +14,10 @@ public sealed record SettingsDocument(
     PrivacySettings Privacy,
     UsageSettings Usage,
     NotificationSettings Notifications,
-    SharingSettings Sharing);
+    SharingSettings Sharing,
+    GitHostSettings Gitlab,
+    GitHostSettings Bitbucket,
+    GitHostSettings AzureDevops);
 
 public sealed record AiSettings(IReadOnlyList<AiProviderSettings> Providers, TaskRouting TaskRouting);
 
@@ -40,7 +43,33 @@ public sealed record AiProviderSettings(
 public sealed record TaskRouting(Guid? InferArchitecture, Guid? ProposeFlow, Guid? Critique, Guid? Explain);
 
 public sealed record GithubSettings(string ApiBaseUrl, string DefaultRef);
-public sealed record ImportSettings(int MaxFiles, long MaxFileBytes, long MaxTotalBytes, IReadOnlyList<string> ExcludeGlobs);
+/// <param name="MaxArchiveBytes">
+/// The most bytes the entries of one uploaded archive may expand to, all files together. An
+/// archive over it is refused as a whole and nothing of it is stored.
+/// </param>
+public sealed record ImportSettings(
+    int MaxFiles, long MaxFileBytes, long MaxTotalBytes, IReadOnlyList<string> ExcludeGlobs,
+    long MaxArchiveBytes = ImportSettings.DefaultMaxArchiveBytes)
+{
+    public const long DefaultMaxArchiveBytes = 256L * 1024 * 1024;
+    public const long MinArchiveBytes = 1024L * 1024;
+    public const long MaxArchiveBytesLimit = 4L * 1024 * 1024 * 1024;
+}
+
+/// <summary>
+/// The REST API of a git host other than GitHub: GitLab (gitlab.com or self-managed),
+/// Bitbucket Cloud or Azure DevOps. Each workspace token is bound to the origin of this
+/// address and goes nowhere else. Empty turns the host off.
+/// </summary>
+public sealed record GitHostSettings(string ApiBaseUrl);
+
+/// <summary>The git hosts other than GitHub, with the addresses of their cloud services.</summary>
+public static class GitHostDefaults
+{
+    public const string Gitlab = "https://gitlab.com/api/v4";
+    public const string Bitbucket = "https://api.bitbucket.org/2.0";
+    public const string AzureDevops = "https://dev.azure.com";
+}
 /// <param name="AzureRetailPricesBaseUrl">
 /// The address of the Azure Retail Prices API, or of a mirror of it. Empty turns the price
 /// search off. No credential is sent to it.
@@ -151,7 +180,10 @@ public static class SettingsDefaults
         new PrivacySettings(false),
         new UsageSettings(null, 20),
         new NotificationSettings(null),
-        new SharingSettings(SharingSettings.Public, []));
+        new SharingSettings(SharingSettings.Public, []),
+        new GitHostSettings(GitHostDefaults.Gitlab),
+        new GitHostSettings(GitHostDefaults.Bitbucket),
+        new GitHostSettings(GitHostDefaults.AzureDevops));
 
     /// <summary>
     /// The defaults of a new instance of <paramref name="profile"/>. A hosted instance is open

@@ -549,7 +549,9 @@ public class ExtractionSafetyTests
                 return $"{name} as {path}: extractor failure";
             if (spent > 64L * bytes + 4096)
                 return $"{name} as {path}: {spent} operations for {bytes} bytes";
-            if (watch.Elapsed > TimeSpan.FromSeconds(2))
+            // The operation count above is the bound; the clock only catches a hang. A loaded
+            // machine (parallel test runs) took 2.9 s for an input within the operation bound.
+            if (watch.Elapsed > TimeSpan.FromSeconds(10))
                 return $"{name} as {path}: {watch.Elapsed.TotalMilliseconds:F0} ms for {bytes} bytes";
             if (Encoding.UTF8.GetByteCount(json) > 4 * 1024 * 1024)
                 return $"{name} as {path}: output of {json.Length} characters";

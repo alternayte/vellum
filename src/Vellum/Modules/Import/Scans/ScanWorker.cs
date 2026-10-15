@@ -19,9 +19,14 @@ namespace Vellum.Modules.Import.Scans;
 /// <param name="Parallelism">How many scans one instance runs at the same time.</param>
 /// <param name="MaxInternalFailures">How many runs in a row an unexpected error may stop before the scan fails with <c>internal_error</c>.</param>
 /// <param name="RetentionInterval">How often the worker applies <see cref="ImportRetention"/>.</param>
+/// <param name="MaxRunningPerHost">
+/// How many scans of Sources on one git host run at the same time in one workspace, across all
+/// instances. A bulk add queues many scans of one host; this keeps them from using up the
+/// workspace's rate limit at the host together, and one workspace does not hold up another. Scans of Sources that are no git host (a folder, an archive, a push, a runtime Source) are not counted.
+/// </param>
 public sealed record ScanWorkerOptions(
     bool Enabled, TimeSpan PollInterval, TimeSpan LeaseDuration, TimeSpan WatchInterval, int MaxAttempts = 50,
-    int Parallelism = 2, int MaxInternalFailures = 5, TimeSpan? RetentionInterval = null)
+    int Parallelism = 2, int MaxInternalFailures = 5, TimeSpan? RetentionInterval = null, int MaxRunningPerHost = 2)
 {
     public static readonly ScanWorkerOptions Default = new(true, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(60), TimeSpan.FromSeconds(2));
 
@@ -62,7 +67,8 @@ public sealed class ScanSignal
 /// several instances never take the same scan.
 /// <para>
 /// Fairness: the next scan is the oldest one of the workspace that was served least
-/// recently, so one workspace with many scans does not hold up the others.
+/// recently, so one workspace with many scans does not hold up the others. A scan of a git
+/// host waits while <see cref="ScanWorkerOptions.MaxRunningPerHost"/> scans of that host run.
 /// </para>
 /// <para>
 /// The lease. Its expiry is written and compared on the clock of the database
@@ -128,6 +134,7 @@ public sealed class ScanWorker(
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var now = time.GetUtcNow();
         var lease = options.LeaseDuration.TotalSeconds;
+        var perHost = options.MaxRunningPerHost;
 
         // A scan whose worker stopped renewing the lease twice in a row is not run a third time.
         await db.Database.ExecuteSqlAsync($"""
@@ -137,6 +144,9 @@ public sealed class ScanWorker(
             WHERE status = 'running' AND lease_expires_at < now() AND crashes >= 1
             """, ct);
 
+        // Claims take turns, so the count of running scans per host that a claim reads is exact.
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        await db.Database.ExecuteSqlAsync($"SELECT pg_advisory_xact_lock(hashtextextended('import-scan-claim', 0))", ct);
         var claimed = await db.Database.SqlQuery<string>($"""
             UPDATE import.scans s
             SET status = 'running', lease_owner = {workerId}, lease_expires_at = now() + make_interval(secs => {lease}),
@@ -148,14 +158,18 @@ public sealed class ScanWorker(
                 FROM import.scans c
                 LEFT JOIN LATERAL (
                     SELECT max(w.claimed_at) AS last FROM import.scans w WHERE w.workspace_id = c.workspace_id) served ON true
-                WHERE c.status = 'queued'
-                   OR (c.status = 'waiting' AND c.retry_at <= {now})
-                   OR (c.status = 'running' AND c.lease_expires_at < now())
+                WHERE (c.status = 'queued'
+                       OR (c.status = 'waiting' AND c.retry_at <= {now})
+                       OR (c.status = 'running' AND c.lease_expires_at < now()))
+                  AND (EXISTS (SELECT 1 FROM import.sources k WHERE k.id = c.source_id AND k.kind NOT IN ('github', 'gitlab', 'bitbucket', 'azure_devops'))
+                       OR (SELECT count(*) FROM import.scans r
+                           WHERE r.workspace_id = c.workspace_id AND r.host = c.host AND r.id <> c.id AND r.status = 'running' AND r.lease_expires_at >= now()) < {perHost})
                 ORDER BY served.last NULLS FIRST, c.created_at, c.id
                 FOR UPDATE OF c SKIP LOCKED
                 LIMIT 1)
             RETURNING s.id::text || ':' || s.lease_token::text AS "Value"
             """).ToListAsync(ct);
+        await transaction.CommitAsync(ct);
         if (claimed.Count == 0)
             return null;
 
@@ -296,6 +310,12 @@ public sealed class ScanWorker(
         await SourceFetch.RunAsync(new FetchContext(services, db, scan, source, limits, time), ct);
         var workspaceId = scan.WorkspaceId;
 
+        if (Runtime.RuntimeFetch.IsRuntime(source.Kind))
+        {
+            await CompleteRuntimeAsync(services, db, scan, source, leaseToken, ct);
+            return;
+        }
+
         // Step 5: extract. The extractors read text and nothing else; they run nothing.
         // They get exactly the files that count as read. One file less means stored
         // content went missing, and the scan has no result.
@@ -314,17 +334,16 @@ public sealed class ScanWorker(
             throw ScanStop.Failed(ScanFailures.StoredContentMissing);
 
         var repositoryName = $"{scan.Host}/{scan.Repository}";
-        var input = new ExtractionInput(repositoryName, scan.CommitSha ?? throw new InvalidOperationException("The fetch stage pins the revision of the scan."),
-            [.. readFiles.Select(f => new SourceFile(f.Path, Encoding.UTF8.GetString(contents[f.BlobSha])))]);
-        var result = await Task.Run(() => EvidenceExtractor.Extract(input, new ExtractionLimits(
-            MaxFiles: limits.MaxFiles, MaxFileBytes: limits.MaxFileBytes, MaxTotalBytes: limits.MaxTotalBytes)), ct);
+        var commitSha = scan.CommitSha ?? throw new InvalidOperationException("The fetch stage pins the revision of the scan.");
+        var extraction = await Task.Run(() => ScanExtraction.Run(repositoryName, commitSha,
+            [.. readFiles.Select(f => (f.Path, contents[f.BlobSha]))], limits), ct);
+        var result = extraction.Result;
 
-        // What the extraction says about single files. A file that it withheld is not kept;
-        // a file that it read in part does not count as looked at.
-        var byPath = readFiles.ToDictionary(f => f.Path, StringComparer.Ordinal);
-        foreach (var note in result.Notes)
+        // A file that the extraction withheld is not kept; a file that it read in part does
+        // not count as looked at.
+        foreach (var file in readFiles)
         {
-            if (FileGap(note) is not { } reason || !byPath.TryGetValue(note.Path, out var file) || file.State != ScanFileState.Read)
+            if (!extraction.FileGaps.TryGetValue(file.Path, out var reason))
                 continue;
             file.State = ScanFileState.Skipped;
             file.Reason = reason;
@@ -336,15 +355,21 @@ public sealed class ScanWorker(
         }
         await SaveAsync(db, scan, ct);
 
-        var gap = ExtractionGap(result);
-        var notes = ScanNotes.Read(scan.Notes)
-            .Concat(result.Notes.Select(n => new ScanNote(n.Reason, n.Path, n.Line, NoteMessage(n))))
-            .ToList();
+        var gap = extraction.ExtractionGap;
+        var notes = ScanNotes.Read(scan.Notes).Concat(extraction.Notes).ToList();
         var isComplete = !scan.Partial && result.IsComplete;
 
         // The Snapshot: the files the extraction read whole, with their blob SHAs.
         var manifest = readFiles.Where(f => f.State == ScanFileState.Read)
             .Select(f => new ManifestEntry(f.Path, f.Size, f.BlobSha)).ToList();
+        var snapshotId = SnapshotManifest.Id(manifest);
+        // A Source without commits is cited by its Snapshot: the revision of the scan becomes
+        // the Snapshot ID once the extraction has said which files it read whole.
+        if (!SourceEntity.IsGit(source.Kind) && scan.CommitSha != snapshotId)
+        {
+            scan.CommitSha = snapshotId;
+            await SaveAsync(db, scan, ct);
+        }
 
         var coverageFiles = files.ToDictionary(f => f.Path, f => f.State == ScanFileState.Read ? null : f.Reason ?? CoverageGap.ParseFailure, StringComparer.Ordinal);
         var absent = ScanScope.AbsentGap(limits, scan.IncludePaths, scan.ExcludePaths);
@@ -361,7 +386,7 @@ public sealed class ScanWorker(
             services, scan, WriteMode.Complete(leaseToken),
             new SnapshotInput(result.Facts, isComplete, gap, ScanNotes.Write(notes),
                 () => new ScanCoverage(coverageFiles, absent, gap), coverageFiles.Count(f => f.Value is null),
-                new ManifestSummary(SnapshotManifest.Id(manifest), manifest.Count)),
+                new ManifestSummary(snapshotId, manifest.Count)),
             time.GetUtcNow(), ct);
         switch (written)
         {
@@ -411,36 +436,52 @@ public sealed class ScanWorker(
         }
     }
 
-    /// <summary>The reason a note takes a file out of what the scan looked at, or null when it does not.</summary>
-    private static string? FileGap(ExtractionNote note)
+    /// <summary>
+    /// The rest of a scan of a runtime Source. Its one file is the derived document of the
+    /// fetch stage; its facts are the lines of that document, and its Snapshot ID is the hash
+    /// of their sorted set. A runtime Source has no paths to scope, so a complete read looked
+    /// everywhere: a fact that is gone is gone, and the plan marks it stale as a code scan
+    /// does. A partial read concludes nothing from an absence.
+    /// </summary>
+    private async Task CompleteRuntimeAsync(IServiceProvider services, AppDbContext db, ScanEntity scan, SourceEntity source, long leaseToken, CancellationToken ct)
     {
-        if (note.Path.Length == 0)
-            return null;
-        return note.Kind switch
+        var file = await db.ScanFiles.AsNoTracking().FirstOrDefaultAsync(f => f.ScanId == scan.Id && f.State == ScanFileState.Read, ct);
+        var content = file is null ? null : await db.Blobs.AsNoTracking()
+            .Where(b => b.WorkspaceId == scan.WorkspaceId && b.BlobSha == file.BlobSha && b.Content != null)
+            .Select(b => b.Content).FirstOrDefaultAsync(ct);
+        if (file is null || content is null)
+            throw ScanStop.Failed(ScanFailures.StoredContentMissing);
+        if (Runtime.RuntimeGraph.Read(content, file.Path, Runtime.RuntimeFetch.RuleOf(source.Kind)) is not { } read)
+            throw ScanStop.Failed(ScanFailures.Internal);
+
+        var isComplete = !scan.Partial && read.IsComplete;
+        var gap = isComplete ? null : CoverageGap.Limit;
+        services.GetRequiredService<DeedboxContext>().Metadata = new EventMetadata
         {
-            NoteKind.Skipped => note.Reason,
-            NoteKind.ParseFailure => CoverageGap.ParseFailure,
-            NoteKind.LimitReached => note.Reason.StartsWith("limit:", StringComparison.Ordinal) ? note.Reason : "limit:" + note.Reason,
-            _ => null,
+            Actor = "system:import-scan",
+            CorrelationId = scan.Id.ToString(),
         };
+        db.ChangeTracker.Clear();
+        var written = await SnapshotWriter.WriteAsync(
+            services, scan, WriteMode.Complete(leaseToken),
+            new SnapshotInput(read.Facts, isComplete, gap, scan.Notes, () => RuntimeCoverage(file.Path, gap), 1,
+                new ManifestSummary(scan.CommitSha!, 1)),
+            time.GetUtcNow(), ct);
+        switch (written)
+        {
+            case SnapshotOutcome.ProjectGone:
+                throw ScanStop.Failed(ScanFailures.ProjectGone);
+            case SnapshotOutcome.ModelBusy:
+                throw ScanStop.Failed(ScanFailures.ModelBusy);
+            case SnapshotOutcome.Written:
+                await DropUnusedBlobsAsync(scan.WorkspaceId, CancellationToken.None);
+                break;
+        }
     }
 
-    /// <summary>
-    /// Null when every fact that is missing is explained by a file that <see cref="FileGap"/>
-    /// takes out. Else the extraction left out facts across files (a bound on facts, on files
-    /// or on notes, or a failure with no file), and no absence can be judged.
-    /// </summary>
-    private static string? ExtractionGap(ExtractionResult result)
-    {
-        if (result.IsComplete)
-            return null;
-        var cuts = result.Notes.Where(n => n.Kind is NoteKind.ParseFailure or NoteKind.LimitReached).ToList();
-        if (cuts.Any(n => n.Kind == NoteKind.ParseFailure && n.Path.Length == 0))
-            return CoverageGap.Failed;
-        var acrossFiles = cuts.Count == 0 || cuts.Any(n =>
-            n.Path.Length == 0 || n.Reason is "limit:facts" or "limit:files" or "limit:total-bytes" or "limit:notes");
-        return acrossFiles ? CoverageGap.Limit : null;
-    }
+    /// <summary>Where a runtime scan looked: its document, and everywhere else a fact of its Source could be cited.</summary>
+    internal static ScanCoverage RuntimeCoverage(string path, string? gap) =>
+        new(new Dictionary<string, string?>(StringComparer.Ordinal) { [path] = null }, _ => null, gap);
 
     /// <summary>
     /// The checkpoint. The scan row is written with every save, and its fencing token is a
@@ -499,13 +540,6 @@ public sealed class ScanWorker(
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         await ImportRetention.DropUnusedBlobsAsync(db, workspaceId, time.GetUtcNow(), ct);
     }
-
-    private static string NoteMessage(ExtractionNote note) => note.Kind switch
-    {
-        NoteKind.Undecided => "A rule found a site it could not decide from the text. No fact was made for it.",
-        NoteKind.Redacted or NoteKind.Conflict or NoteKind.LimitReached or NoteKind.Skipped => ScanNotes.Message(note.Reason),
-        _ => "The file could not be parsed. Its facts are missing from this scan.",
-    };
 }
 
 /// <summary>

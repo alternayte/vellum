@@ -19,7 +19,8 @@ namespace Vellum.Modules.Import.Proposals;
 /// </summary>
 internal sealed class ProposalApplier(
     ModelState state, Dictionary<Guid, (SchemaState State, long Version)> schemas,
-    Guid projectId, string repository, string commitSha, Guid acceptedBy, DateTimeOffset acceptedAt, Guid sourceId)
+    Guid projectId, string repository, string commitSha, Guid acceptedBy, DateTimeOffset acceptedAt, Guid sourceId,
+    bool contentNotHeld = false)
 {
     public const string ChangedSinceScan =
         "The model changed after this scan completed, so the proposal no longer describes it. Scan the repository again.";
@@ -37,19 +38,9 @@ internal sealed class ProposalApplier(
     /// <summary>For each applied proposal, the entity's compared values after it: what the link remembers.</summary>
     public Dictionary<Guid, SortedDictionary<string, string?>> AcceptedValues { get; } = [];
 
-    /// <summary>The truth label of the proposal being applied: declared for a model file, else observed-in-source.</summary>
-    private FactStatus _status = FactStatus.ObservedInSource;
-
-    /// <summary>The label a fact gets from its evidence (<see cref="TruthLabels"/>).</summary>
-    public static FactStatus StatusOf(ProposalEntity proposal) =>
-        TruthLabels.Of(ProposalJson.ReadEvidence(proposal.Evidence).Select(e => e.Rule)) == TruthLabels.Declared
-            ? FactStatus.Declared
-            : FactStatus.ObservedInSource;
-
     /// <summary>Why the proposal cannot be applied, or null when its events are added.</summary>
     public string? Apply(ProposalEntity proposal)
     {
-        _status = StatusOf(proposal);
         var proposed = proposal.Proposed is null ? null : JsonNode.Parse(proposal.Proposed)!.AsObject();
         var current = proposal.Current is null ? null : JsonNode.Parse(proposal.Current)!.AsObject();
         var provenance = proposal.Action == ProposalAction.Remove ? null : Provenance(proposal);
@@ -84,7 +75,7 @@ internal sealed class ProposalApplier(
             return Run(p, ModelDecider.AddElement(State, new AddElementCommand(
                     id, kind, Text(proposed, Field.Name) ?? "", Text(proposed, Field.Description), Text(proposed, Field.Technology), null,
                     ElementStatus.Current, Id(proposed, Field.ParentId) is { } parent ? new ElementId(parent) : null, tags))
-                .Then(State, after => ModelDecider.RecordElementProvenance(after, id, _status, provenance))
+                .Then(State, after => ModelDecider.RecordElementProvenance(after, id, Label(p), provenance))
                 .Then(State, after => ModelDecider.BindElementSource(after, id, sourceId, ExternalKeyOf(p))));
         }
 
@@ -111,7 +102,7 @@ internal sealed class ProposalApplier(
         return Run(p, ModelDecider.UpdateElement(State, new UpdateElementCommand(
                 id, Name: Text(proposed, Field.Name), SetName: true,
                 Technology: Text(proposed, Field.Technology), SetTechnology: true))
-            .Then(State, after => ModelDecider.RecordElementProvenance(after, id, _status, provenance))
+            .Then(State, after => ModelDecider.RecordElementProvenance(after, id, Label(p), provenance))
             .Then(State, after => ModelDecider.BindElementSource(after, id, sourceId, ExternalKeyOf(p))));
     }
 
@@ -156,7 +147,7 @@ internal sealed class ProposalApplier(
             : ContractDecider.UpdateOperation(State, new UpdateOperationCommand(
                 id, Text(proposed, Field.Name), new ElementId(owner), transport));
         return Run(p, decision.Then(State, after =>
-            ContractDecider.RecordOperationProvenance(after, id, _status, provenance)));
+            ContractDecider.RecordOperationProvenance(after, id, Label(p), provenance)));
     }
 
     private string? Channel(ProposalEntity p, JsonObject? proposed, JsonObject? current, Provenance? provenance)
@@ -175,7 +166,7 @@ internal sealed class ProposalApplier(
             ? ContractDecider.AddChannel(State, new AddChannelCommand(id, Text(proposed, Field.Name) ?? "", kind))
             : ContractDecider.UpdateChannel(State, new UpdateChannelCommand(id, Text(proposed, Field.Name), kind));
         return Run(p, decision.Then(State, after =>
-            ContractDecider.RecordChannelProvenance(after, id, _status, provenance)));
+            ContractDecider.RecordChannelProvenance(after, id, Label(p), provenance)));
     }
 
     private string? Subscription(ProposalEntity p, JsonObject? proposed, JsonObject? current, Provenance? provenance)
@@ -196,7 +187,7 @@ internal sealed class ProposalApplier(
             : ContractDecider.UpdateSubscription(State, new UpdateSubscriptionCommand(
                 id, new ChannelId(channel), new ElementId(consumer), null, deadLetter, SetDeadLetterChannelId: true));
         return Run(p, decision.Then(State, after =>
-            ContractDecider.RecordSubscriptionProvenance(after, id, _status, provenance)));
+            ContractDecider.RecordSubscriptionProvenance(after, id, Label(p), provenance)));
     }
 
     private string? Binding(ProposalEntity p, JsonObject? proposed, JsonObject? current, Provenance? provenance)
@@ -217,8 +208,44 @@ internal sealed class ProposalApplier(
             : ContractDecider.UpdateBinding(State, new UpdateBindingCommand(
                 id, new ChannelId(source), new ChannelId(target), routingKey, SetRoutingKey: true));
         return Run(p, decision.Then(State, after =>
-            ContractDecider.RecordBindingProvenance(after, id, _status, provenance)));
+            ContractDecider.RecordBindingProvenance(after, id, Label(p), provenance)));
     }
+
+    /// <summary>
+    /// A runtime edge between two elements: behavioural, since it records calls or messages
+    /// that ran. A change moves its ends only; its label stays what a person made it.
+    /// </summary>
+    private string? Relationship(ProposalEntity p, JsonObject? proposed, JsonObject? current, Provenance? provenance)
+    {
+        RelationshipId id = p.EntityId;
+        if (p.Action != ProposalAction.Add
+            && (!State.Relationships.TryGetValue(id, out var relationship) || Differs(ModelIndex.Of(State, relationship), current)))
+            return ChangedSinceScan;
+        if (p.Action == ProposalAction.Remove)
+            return Run(p, ModelDecider.RemoveRelationship(State, id));
+
+        if (Id(proposed, Field.FromId) is not { } from || Id(proposed, Field.ToId) is not { } to)
+            return "The proposal names no source element or no target element.";
+        if (p.Action == ProposalAction.Add)
+        {
+            // A runtime edge ran, so it is behavioural; a model file says which kind it is.
+            var kind = Text(proposed, Field.Kind) == "structural" ? RelationshipKind.Structural : RelationshipKind.Behavioural;
+            return Run(p, ModelDecider.AddRelationship(State, new AddRelationshipCommand(
+                    id, from, to, Text(proposed, Field.Label), Text(proposed, Field.Technology), kind))
+                .Then(State, after => ModelDecider.RecordRelationshipProvenance(after, id, Label(p), provenance)));
+        }
+
+        // The model has no command that moves an edge. One whose ends changed is a new edge,
+        // which the next scan proposes after this one is removed.
+        var existing = State.Relationships[id];
+        if (existing.FromId != new ElementId(from) || existing.ToId != new ElementId(to))
+            return "The ends of this relationship changed. Remove it, then scan again to add the new one.";
+        return Run(p, ModelDecider.RecordRelationshipProvenance(State, id, Label(p), provenance));
+    }
+
+    /// <summary>The truth label the Source gives the fact of the proposal (<see cref="FactMapping.LabelOf"/>).</summary>
+    private static FactStatus Label(ProposalEntity p) =>
+        FactStatusFormat.TryParseApiString(FactMapping.LabelOf(ProposalJson.ReadAttributes(p.Attributes), ProposalJson.ReadEvidence(p.Evidence)), out var status) ? status : FactStatus.ObservedInSource;
 
     private string? Message(ProposalEntity p, JsonObject? proposed, JsonObject? current, Provenance? provenance)
     {
@@ -245,35 +272,7 @@ internal sealed class ProposalApplier(
                 ConsumerIds: consumers, SetConsumerIds: true,
                 SchemaId: schema, SetSchemaId: true));
         return Run(p, decision.Then(State, after =>
-            ModelDecider.RecordMessageProvenance(after, id, _status, provenance)));
-    }
-
-    private string? Relationship(ProposalEntity p, JsonObject? proposed, JsonObject? current, Provenance? provenance)
-    {
-        RelationshipId id = p.EntityId;
-        if (p.Action != ProposalAction.Add
-            && (!State.Relationships.TryGetValue(id, out var relationship) || Differs(ModelIndex.Of(State, relationship), current)))
-            return ChangedSinceScan;
-        if (p.Action == ProposalAction.Remove)
-            return Run(p, ModelDecider.RemoveRelationship(State, id));
-
-        var kind = Text(proposed, Field.Kind) == "behavioural" ? RelationshipKind.Behavioural : RelationshipKind.Structural;
-        Decision decision;
-        if (p.Action == ProposalAction.Add)
-        {
-            if (Id(proposed, Field.FromId) is not { } from || Id(proposed, Field.ToId) is not { } to)
-                return "The proposal names no source or no target element.";
-            decision = ModelDecider.AddRelationship(State, new AddRelationshipCommand(
-                id, from, to, Text(proposed, Field.Label), Text(proposed, Field.Technology), kind));
-        }
-        else
-        {
-            decision = ModelDecider.UpdateRelationship(State, new UpdateRelationshipCommand(
-                id, Label: Text(proposed, Field.Label), SetLabel: true,
-                Technology: Text(proposed, Field.Technology), SetTechnology: true, Kind: kind, SetKind: true));
-        }
-        return Run(p, decision.Then(State, after =>
-            ModelDecider.RecordRelationshipProvenance(after, id, _status, provenance)));
+            ModelDecider.RecordMessageProvenance(after, id, Label(p), provenance)));
     }
 
     /// <summary>
@@ -368,7 +367,7 @@ internal sealed class ProposalApplier(
         var first = ProposalJson.ReadEvidence(proposal.Evidence).FirstOrDefault();
         return first is null
             ? null
-            : new Provenance(EvidenceLinks.Pointer(repository, commitSha, first), commitSha, null, acceptedBy, acceptedAt);
+            : new Provenance(EvidenceLinks.Pointer(repository, commitSha, first), commitSha, null, acceptedBy, acceptedAt, ContentNotHeld: contentNotHeld);
     }
 
     public static string Describe(Decision decision) => decision switch
