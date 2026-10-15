@@ -1,11 +1,12 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ChevronDown, ChevronRight, GitBranch, RotateCw } from 'lucide-react'
+import { Activity, ChevronDown, ChevronRight, GitBranch, PlugZap, Radar, RotateCw, Upload } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { cn } from '@/lib/utils'
 import { shownInline } from '@/lib/mutation-errors'
-import { describeReview, importApi, isActive, sourcesApi, type DecisionResult, type Proposal, type SourceSummary } from '@/lib/import-api'
+import { describeReview, importApi, isActive, sourceState, sourcesApi, type DecisionResult, type Proposal, type SourceSummary } from '@/lib/import-api'
 import { sourcesKey, useSources } from '@/hooks/use-sources'
 import { SourceSides } from './source-facts'
 
@@ -47,7 +48,7 @@ export function SourcesList({ projectId, onReview }: {
   if (sources.isLoading) return <p className="px-3 py-2 text-xs text-muted-foreground">Loading Sources…</p>
   if (sources.isError) return <p role="alert" className="px-3 py-2 text-xs text-destructive">{sources.error.message}</p>
   const list = sources.data ?? []
-  if (list.length === 0) return <p className="px-3 py-2 text-xs text-muted-foreground">No Source yet. Scan a repository to add one.</p>
+  if (list.length === 0) return <p className="px-3 py-2 text-xs text-muted-foreground">No Source yet. Scan a repository or add a runtime Source.</p>
 
   return (
     <div>
@@ -56,7 +57,7 @@ export function SourcesList({ projectId, onReview }: {
         {list.map((source) => (
           <li key={source.id} className="rounded-md border border-border p-2">
             <div className="flex items-start gap-2">
-              <GitBranch className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+              <SourceIcon kind={source.kind} />
               <div className="min-w-0 flex-1">
                 <p className="flex items-baseline gap-1.5">
                   <span className="truncate text-sm text-foreground">{source.name}</span>
@@ -67,9 +68,10 @@ export function SourcesList({ projectId, onReview }: {
                   <p className="font-mono text-[10px] text-muted-foreground" title={`Snapshot ${source.latestSnapshot.snapshotId}`}>
                     Snapshot {short(source.latestSnapshot.snapshotId, 8)}
                     {source.latestSnapshot.commitSha && ` · ${short(source.latestSnapshot.commitSha)}`}
-                    {` · ${source.latestSnapshot.files} files`}
+                    {` · ${source.latestSnapshot.files} ${source.latestSnapshot.files === 1 ? 'file' : 'files'}`}
                   </p>
                 )}
+                {source.connection && <RuntimeStatus source={source} />}
                 <p className={cn('mt-1 text-xs', source.review.pending > 0 ? 'text-foreground' : 'text-muted-foreground')}>{describeReview(source)}</p>
               </div>
             </div>
@@ -77,19 +79,134 @@ export function SourcesList({ projectId, onReview }: {
               {source.review.scanId && source.review.pending > 0 && (
                 <Button size="sm" variant="secondary" className="h-6 px-2 text-xs" onClick={() => onReview(source)}>Review</Button>
               )}
-              <Button
-                size="sm" variant="ghost" className="h-6 gap-1 px-2 text-xs"
-                disabled={scan.isPending || (source.latestScan !== null && isActive(source.latestScan.status))}
-                title="Scan the default ref of this Source again"
-                onClick={() => scan.mutate(source.id)}
-              >
-                <RotateCw className="h-3 w-3" /> Scan again
-              </Button>
+              {source.kind === 'traces' ? (
+                <TraceUploadButton projectId={projectId} source={source} />
+              ) : (
+                <Button
+                  size="sm" variant="ghost" className="h-6 gap-1 px-2 text-xs"
+                  disabled={scan.isPending || (source.latestScan !== null && isActive(source.latestScan.status))}
+                  title={source.kind === 'newrelic' ? 'Read the account again' : 'Scan the default ref of this Source again'}
+                  onClick={() => scan.mutate(source.id)}
+                >
+                  <RotateCw className="h-3 w-3" /> {source.kind === 'newrelic' ? 'Read again' : 'Scan again'}
+                </Button>
+              )}
+              {source.kind === 'newrelic' && <TestConnectionButton projectId={projectId} source={source} />}
+              {source.kind === 'newrelic' && <ReplaceKey projectId={projectId} source={source} />}
             </div>
           </li>
         ))}
       </ul>
     </div>
+  )
+}
+
+function SourceIcon({ kind }: { kind: SourceSummary['kind'] }) {
+  const Icon = kind === 'traces' ? Activity : kind === 'newrelic' ? Radar : GitBranch
+  return <Icon className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+}
+
+const TONE: Record<ReturnType<typeof sourceState>['tone'], string> = {
+  ok: 'var(--trace-request)',
+  busy: 'var(--trace-data)',
+  warn: 'var(--trace-retry)',
+  fail: 'var(--trace-failure)',
+}
+
+/** The state of a runtime Source: whether it can be read now, and what it reads. */
+function RuntimeStatus({ source }: { source: SourceSummary }) {
+  const state = sourceState(source)
+  return (
+    <>
+      {source.connection?.endpoint && (
+        <p className="truncate font-mono text-[10px] text-muted-foreground" title={source.connection.endpoint}>
+          account {source.connection.accountId} · {source.connection.region?.toUpperCase()} · {source.connection.keySet ? 'key stored' : 'no key'}
+        </p>
+      )}
+      <p className="mt-1 flex items-start gap-1.5 text-xs" style={{ color: TONE[state.tone] }} data-testid="source-state">
+        <span className={cn('mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-current', state.tone === 'busy' && 'motion-safe:animate-pulse')} />
+        <span>{state.text}</span>
+      </p>
+    </>
+  )
+}
+
+/** Uploads another trace export to a trace Source: a new Snapshot of the same Source. */
+function TraceUploadButton({ projectId, source }: { projectId: string; source: SourceSummary }) {
+  const queryClient = useQueryClient()
+  const picker = useRef<HTMLInputElement>(null)
+  const upload = useMutation({
+    mutationFn: (file: File) => sourcesApi.uploadTraces(projectId, source.id, file),
+    onSuccess: () => Promise.all([
+      queryClient.invalidateQueries({ queryKey: sourcesKey(projectId) }),
+      queryClient.invalidateQueries({ queryKey: ['projects', projectId, 'imports'] }),
+    ]),
+    onError: shownInline,
+  })
+  return (
+    <>
+      <input
+        ref={picker} type="file" accept=".json,application/json" className="sr-only" aria-label={`Trace file for ${source.name}`}
+        onChange={(e) => { const file = e.target.files?.[0]; e.target.value = ''; if (file) upload.mutate(file) }}
+      />
+      <Button
+        size="sm" variant="ghost" className="h-6 gap-1 px-2 text-xs"
+        disabled={upload.isPending || (source.latestScan !== null && isActive(source.latestScan.status))}
+        onClick={() => picker.current?.click()}
+      >
+        <Upload className="h-3 w-3" /> {upload.isPending ? 'Reading…' : 'Upload trace file'}
+      </Button>
+      {upload.isError && <p role="alert" className="basis-full text-xs text-[var(--trace-failure)]">{upload.error.message}</p>}
+      {upload.data && <p role="status" className="basis-full text-xs text-muted-foreground">Read {upload.data.spans} spans: {upload.data.services} services, {upload.data.edges} edges.</p>}
+    </>
+  )
+}
+
+/** Stores a new key for a New Relic Source. The old one is replaced; neither is shown. */
+function ReplaceKey({ projectId, source }: { projectId: string; source: SourceSummary }) {
+  const queryClient = useQueryClient()
+  const [open, setOpen] = useState(false)
+  const [key, setKey] = useState('')
+  const save = useMutation({
+    mutationFn: () => sourcesApi.setKey(projectId, source.id, key),
+    onSuccess: () => {
+      setKey('')
+      setOpen(false)
+      return queryClient.invalidateQueries({ queryKey: sourcesKey(projectId) })
+    },
+    onError: shownInline,
+  })
+  if (!open) {
+    return <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" onClick={() => setOpen(true)}>Replace key</Button>
+  }
+  return (
+    <form className="flex basis-full items-center gap-1.5" onSubmit={(e) => { e.preventDefault(); save.mutate() }}>
+      <Input
+        type="password" autoComplete="off" value={key} onChange={(e) => setKey(e.target.value)} required spellCheck={false}
+        aria-label={`New User API key for ${source.name}`} placeholder="New User API key" className="h-7 text-xs"
+      />
+      <Button type="submit" size="sm" className="h-7 px-2 text-xs" disabled={!key || save.isPending}>Save</Button>
+      <Button type="button" size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => { setKey(''); setOpen(false) }}>Cancel</Button>
+      {save.isError && <p role="alert" className="basis-full text-xs text-[var(--trace-failure)]">{save.error.message}</p>}
+    </form>
+  )
+}
+
+/** One real NerdGraph query with the stored key. */
+function TestConnectionButton({ projectId, source }: { projectId: string; source: SourceSummary }) {
+  const test = useMutation({ mutationFn: () => sourcesApi.testSource(projectId, source.id), onError: shownInline })
+  return (
+    <>
+      <Button size="sm" variant="ghost" className="h-6 gap-1 px-2 text-xs" disabled={test.isPending} onClick={() => test.mutate()}>
+        <PlugZap className="h-3 w-3" /> {test.isPending ? 'Testing…' : 'Test connection'}
+      </Button>
+      {test.data && (
+        <p role="status" className={cn('basis-full text-xs', test.data.ok ? 'text-[var(--trace-request)]' : 'text-[var(--trace-failure)]')}>
+          {test.data.ok ? `Connected to “${test.data.accountName}”.` : test.data.error?.message}
+        </p>
+      )}
+      {test.isError && <p role="alert" className="basis-full text-xs text-[var(--trace-failure)]">{test.error.message}</p>}
+    </>
   )
 }
 

@@ -21,6 +21,8 @@ internal static class SourceFetch
     public static Task RunAsync(FetchContext context, CancellationToken ct) => context.Source.Kind switch
     {
         SourceKind.Github => GitHubFetch.RunAsync(context, ct),
+        SourceKind.Traces => Runtime.RuntimeFetch.TracesAsync(context, ct),
+        SourceKind.Newrelic => Runtime.RuntimeFetch.NewRelicAsync(context, ct),
         _ => throw ScanStop.Failed(new ScanError("source_kind_unavailable",
             $"This instance cannot read a Source of kind '{EnumText.Of(context.Source.Kind)}'.")),
     };
@@ -138,6 +140,20 @@ internal sealed class FetchContext(
             await StoreBlobAsync(file.BlobSha, content, content.LongLength, null, ct);
             MarkRead(file, content.LongLength);
         }
+    }
+
+    /// <summary>
+    /// Stores a document that Vellum derived itself, such as the services and edges of a
+    /// runtime Source. Every name in it passed <see cref="Runtime.RuntimeGraph.CleanName"/>
+    /// one by one, so the file-level credential check, which counts opaque identifiers such as
+    /// New Relic GUIDs as credentials, does not apply.
+    /// </summary>
+    public async Task AcceptDerivedAsync(ScanFileEntity file, byte[] content, CancellationToken ct)
+    {
+        if (!ContentClearance.IsBlob(content, file.BlobSha))
+            throw new InvalidOperationException("A derived document is stored under its own blob SHA.");
+        await StoreBlobAsync(file.BlobSha, content, content.LongLength, null, ct);
+        MarkRead(file, content.LongLength);
     }
 
     public void MarkRead(ScanFileEntity file, long bytes)

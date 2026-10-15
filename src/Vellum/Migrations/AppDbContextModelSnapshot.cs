@@ -47,9 +47,9 @@ namespace Vellum.Migrations
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "drafts", "draft_status", new[] { "abandoned", "merged", "open" });
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "identity", "agent_scope", new[] { "export", "propose", "read", "scan_pull_request" });
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "import", "coverage_gap", new[] { "failed", "limit", "scope", "withheld" });
-            NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "import", "entity_kind", new[] { "binding", "channel", "element", "message", "operation", "schema", "subscription" });
+            NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "import", "entity_kind", new[] { "binding", "channel", "element", "message", "operation", "relationship", "schema", "subscription" });
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "import", "fact_disposition", new[] { "blocked", "evidence_only", "folded", "mapped" });
-            NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "import", "fact_kind", new[] { "channel", "data_access", "data_store", "dependency", "deployment", "message", "operation", "pattern", "publication", "schema", "service", "subscription" });
+            NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "import", "fact_kind", new[] { "channel", "data_access", "data_store", "dependency", "deployment", "interaction", "message", "operation", "pattern", "publication", "schema", "service", "subscription" });
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "import", "proposal_action", new[] { "add", "bind", "change", "conflict", "relink", "remove" });
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "import", "proposal_status", new[] { "accepted", "pending", "rejected", "superseded" });
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "import", "scan_file_state", new[] { "pending", "read", "skipped" });

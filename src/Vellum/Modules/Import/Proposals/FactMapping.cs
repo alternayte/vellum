@@ -13,8 +13,9 @@ public static class EntityKinds
     public const string Binding = "binding";
     public const string Message = "message";
     public const string Schema = "schema";
+    public const string Relationship = "relationship";
 
-    public static readonly string[] All = [Element, Operation, Channel, Subscription, Binding, Message, Schema];
+    public static readonly string[] All = [Element, Operation, Channel, Subscription, Binding, Message, Schema, Relationship];
 }
 
 /// <summary>The names of the values a proposal can hold. They are the names of the model's own fields.</summary>
@@ -36,10 +37,13 @@ internal static class Field
     public const string ProducerId = "producerId";
     public const string ConsumerIds = "consumerIds";
     public const string SchemaId = "schemaId";
+    public const string FromId = "fromId";
+    public const string ToId = "toId";
+    public const string Label = "label";
 
     /// <summary>The fields that hold the ID of another entity.</summary>
     public static readonly string[] References =
-        [ParentId, OwnerId, ChannelId, ConsumerId, DeadLetterChannelId, SourceChannelId, TargetChannelId, ProducerId, SchemaId];
+        [ParentId, OwnerId, ChannelId, ConsumerId, DeadLetterChannelId, SourceChannelId, TargetChannelId, ProducerId, SchemaId, FromId, ToId];
 }
 
 /// <summary>A value of a candidate that is another fact. <paramref name="FactKey"/> is null when the source names none.</summary>
@@ -55,6 +59,7 @@ internal sealed record Reference(string Field, string? FactKey, bool RequiredToA
 /// <param name="Observed">The fact's attributes that no model field holds. They stay visible on the proposal and the link.</param>
 /// <param name="NotAddable">Why the candidate cannot become a new entity, or null. A linked entity is still compared.</param>
 /// <param name="MatchRoute">For an operation: the method and route that a hand-made operation is matched on.</param>
+/// <param name="TruthLabel">The label the Source gives the fact: <c>observed-in-source</c> for code, <c>measured</c> or <c>declared</c> for a runtime Source.</param>
 internal sealed record Candidate(
     string FactKey, string EntityKind, string Name, int Rank,
     SortedDictionary<string, string?> Fields,
@@ -64,7 +69,8 @@ internal sealed record Candidate(
     IReadOnlyDictionary<string, string> Attributes,
     IReadOnlyList<EvidenceRef> Evidence,
     string? NotAddable,
-    string? MatchRoute = null);
+    string? MatchRoute = null,
+    string TruthLabel = ProposalPlanner.ObservedInSource);
 
 /// <summary>A fact of the snapshot with what the mapping decided for it.</summary>
 internal sealed record MappedFact(ExtractedFact Fact, FactDisposition Disposition, string? Reason);
@@ -89,6 +95,7 @@ internal sealed record MappingResult(
 /// <item><term>Publication</term><description>Not an entity: it gives a message its producer. The model's relationships join two elements and a channel is not an element, so there is no producer-to-channel edge to write. A pattern fact and a contract-only publication stay evidence.</description></item>
 /// <item><term>Schema</term><description>A schema, when the fact holds a JSON Schema body. A contract document as a whole stays evidence.</description></item>
 /// <item><term>Code and contract</term><description>One thing has one entity. A message that a contract file declares (it has a <c>contract</c> attribute) is the code message with exactly the same name (ordinal) that a Publication names, when there is exactly one: the contract fact is then folded into that message's proposal, with its evidence, its payload schema and its attributes under <c>contract.*</c>. A channel that a contract file declares is the code channel of the same kind whose name is exactly the contract's <c>address</c>, in the same way. With no such code fact the contract fact maps by itself; with several it stays evidence. Names that differ in case or form (a Go struct <c>orderCreated</c>) are other facts.</description></item>
+/// <item><term>Interaction</term><description>A relationship of kind behavioural from the element of its <c>from</c> service to the element of its <c>to</c> service, labelled with what the Source says (<c>calls</c>, <c>sends messages to</c>). Both services must be facts of this scan. Only runtime Sources make it.</description></item>
 /// <item><term>Every other kind</term><description>Evidence only: the model has no home for it yet.</description></item>
 /// </list>
 /// </summary>
@@ -102,6 +109,26 @@ internal static class FactMapping
     /// <summary>The longest attribute value a snapshot keeps. A schema body is the largest attribute.</summary>
     public const int MaxAttributeValue = 200_000;
     private const int EvidenceCap = 50;
+
+    /// <summary>
+    /// The attribute in which a runtime Source names the truth label of a fact (<c>measured</c>
+    /// or <c>declared</c>). Without it the fact is <c>observed-in-source</c>: an extractor read
+    /// it from a file. It is consumed by the mapping, so it is never an observed value.
+    /// </summary>
+    public const string TruthLabelAttribute = "truthLabel";
+
+    /// <summary>
+    /// Attributes whose names start with this describe one sample of a runtime Source (call
+    /// counts, the time window). They are shown and kept, and a new value is no change: the
+    /// next trace export has other counts and says nothing new about the architecture.
+    /// </summary>
+    public const string SamplePrefix = "sample.";
+
+    /// <summary>The truth label a fact carries: its <see cref="TruthLabelAttribute"/> when that is one of the labels a Source may give, else <c>observed-in-source</c>.</summary>
+    public static string LabelOf(IReadOnlyDictionary<string, string> attributes) =>
+        attributes.TryGetValue(TruthLabelAttribute, out var label) && label is "measured" or "declared"
+            ? label
+            : ProposalPlanner.ObservedInSource;
 
     /// <summary>
     /// The in-memory key of the candidate that stands for the repository. It starts with a
@@ -350,6 +377,19 @@ internal static class FactMapping
                     break;
                 }
 
+                case FactKind.Interaction:
+                    if (!fact.Attributes.TryGetValue("from", out var from) || !fact.Attributes.TryGetValue("to", out var to)
+                        || !IsService(from) || !IsService(to) || from == to)
+                        Evidence(fact, "interaction-services-not-resolved");
+                    else
+                        Add(fact, EntityKinds.Relationship, fact.Name, 7,
+                            Fields((Field.Label, fact.Attributes.GetValueOrDefault("label") ?? "calls")),
+                        [
+                            new Reference(Field.FromId, from, RequiredToAdd: true),
+                            new Reference(Field.ToId, to, RequiredToAdd: true),
+                        ], consumed: ["from", "to", "label"]);
+                    break;
+
                 case FactKind.Schema:
                     if (HasBody(fact))
                         Add(fact, EntityKinds.Schema, fact.Name, 3,
@@ -374,7 +414,9 @@ internal static class FactMapping
                 Fields((Field.Kind, "system"), (Field.Name, name)), [], [],
                 new SortedDictionary<string, string>(StringComparer.Ordinal),
                 new Dictionary<string, string>(),
-                [.. inSystem.Select(f => Ref(f.Evidence[0])).Take(EvidenceCap)], NotAddable: null));
+                [.. inSystem.Select(f => Ref(f.Evidence[0])).Take(EvidenceCap)], NotAddable: null,
+                // The system holds what the Source shows: it carries the label of its parts.
+                TruthLabel: LabelOf(inSystem[0].Attributes)));
         }
 
         return new MappingResult(
@@ -390,18 +432,21 @@ internal static class FactMapping
             var observed = new SortedDictionary<string, string>(StringComparer.Ordinal);
             foreach (var (attribute, value) in attributes)
             {
-                if (!consumed.Contains(attribute))
+                if (!consumed.Contains(attribute) && attribute != TruthLabelAttribute)
                     observed[attribute] = value;
             }
 
             candidates.Add(new Candidate(
                 fact.Key, entityKind, name, rank, fields, references, consumerKeys ?? [], observed, attributes,
-                [.. (evidence ?? fact.Evidence).Select(Ref).Distinct().Take(EvidenceCap)], notAddable, matchRoute));
+                [.. (evidence ?? fact.Evidence).Select(Ref).Distinct().Take(EvidenceCap)], notAddable, matchRoute, LabelOf(fact.Attributes)));
             mapped.Add(new MappedFact(fact, FactDisposition.Mapped, null));
         }
 
         void Evidence(ExtractedFact fact, string reason) =>
             mapped.Add(new MappedFact(fact, FactDisposition.EvidenceOnly, reason));
+
+        // A service fact of this scan, which maps to an element.
+        bool IsService(string key) => byKey.TryGetValue(key, out var service) && service.Kind == FactKind.Service;
 
         // A channel fact of this scan that maps to a channel of the model.
         bool IsChannel(string key) =>

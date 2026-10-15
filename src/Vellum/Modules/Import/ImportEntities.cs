@@ -394,6 +394,7 @@ public enum StoredEntityKind
     Binding,
     Message,
     Schema,
+    Relationship,
 }
 
 /// <summary>

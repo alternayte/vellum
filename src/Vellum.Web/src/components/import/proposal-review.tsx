@@ -117,7 +117,8 @@ export function ProposalReview({ projectId, scan, sourceName, onClose }: {
         <DialogHeader>
           <DialogTitle>Review {scan.repository}</DialogTitle>
           <DialogDescription>
-            Read at commit <span className="font-mono">{scan.commitSha?.slice(0, 10)}</span>. Each proposal states what the source shows at the cited lines, and nothing more.
+            {/* A runtime Source has no commit: its revision is the 64-character Snapshot ID. */}
+            {scan.commitSha?.length === 64 ? 'Read as Snapshot ' : 'Read at commit '}<span className="font-mono">{scan.commitSha?.slice(0, 10)}</span>. Each proposal states what the source shows at the cited lines, and nothing more.
           </DialogDescription>
         </DialogHeader>
 
@@ -367,12 +368,14 @@ export function SourceLines({ projectId, scanId, evidence }: { projectId: string
       <figcaption className="flex items-center gap-2 border-b border-border bg-muted/40 px-2 py-1 font-mono text-[10px] text-muted-foreground">
         <span className="min-w-0 flex-1 truncate">{evidence.path}:{evidence.startLine}-{evidence.endLine}</span>
         <span className="shrink-0">{evidence.rule}</span>
-        <a href={evidence.url} target="_blank" rel="noreferrer noopener" className="flex shrink-0 items-center gap-1 rounded text-foreground hover:underline focus-visible:outline-2 focus-visible:outline-primary">
-          GitHub <ExternalLink className="h-3 w-3" />
-        </a>
+        {evidence.url && (
+          <a href={evidence.url} target="_blank" rel="noreferrer noopener" className="flex shrink-0 items-center gap-1 rounded text-foreground hover:underline focus-visible:outline-2 focus-visible:outline-primary">
+            GitHub <ExternalLink className="h-3 w-3" />
+          </a>
+        )}
       </figcaption>
       {source.isError ? (
-        <p className="px-2 py-1.5 text-xs text-muted-foreground">These lines are not stored. Open them on GitHub.</p>
+        <p className="px-2 py-1.5 text-xs text-muted-foreground">{evidence.url ? 'These lines are not stored. Open them on GitHub.' : 'This line is not stored any more.'}</p>
       ) : (
         <pre tabIndex={0} className="max-h-48 overflow-auto bg-background px-2 py-1.5 font-mono text-[11px] leading-relaxed text-foreground focus-visible:outline-2 focus-visible:outline-primary">
           {source.data

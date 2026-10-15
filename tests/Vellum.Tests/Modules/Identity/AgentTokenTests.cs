@@ -601,6 +601,10 @@ public class AgentTokenTests(IntegrationFixture fixture) : IClassFixture<Integra
         "DELETE /api/workspaces/{workspaceId}/agent-tokens/{tokenId}",
         "POST /api/projects/{projectId}/imports/{importId}/proposals/decide",
         "POST /api/projects/{projectId}/sources/{sourceId}/accept",
+        // A runtime Source: a trace upload, and a New Relic key, which is a credential.
+        "POST /api/projects/{projectId}/sources/{sourceId}/traces",
+        "PUT /api/projects/{projectId}/sources/{sourceId}/newrelic/key",
+        "POST /api/projects/{projectId}/sources/newrelic/test",
         "POST /api/projects/{projectId}/ai/flow-proposals/",
         "POST /api/projects/{projectId}/ai/flow-proposals/{proposalId}/accept",
         "POST /api/projects/{projectId}/ai/flow-proposals/{proposalId}/missing/{alias}/create",
