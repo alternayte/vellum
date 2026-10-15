@@ -63,15 +63,21 @@ async function rasterise(svg: string): Promise<Blob> {
   }
 }
 
-/** Downloads one view as SVG, PNG or Mermaid, of the main model. */
-export async function downloadView(projectId: string, viewId: string, viewName: string, format: ViewExportFormat): Promise<void> {
+/** The query that picks a named revision; empty for the main model. */
+const revisionQuery = (revisionId: string | null | undefined) => (revisionId ? `?revisionId=${encodeURIComponent(revisionId)}` : '')
+
+/** Downloads one view as SVG, PNG or Mermaid, of the main model or of the named revision `revisionId`. */
+export async function downloadView(
+  projectId: string, viewId: string, viewName: string, format: ViewExportFormat, revisionId?: string | null,
+): Promise<void> {
   const base = `/api/projects/${projectId}/views/${viewId}/export`
+  const query = revisionQuery(revisionId)
   if (format === 'mermaid') {
-    const text = await fetchText(`${base}/mermaid`)
+    const text = await fetchText(`${base}/mermaid${query}`)
     save(new Blob([text], { type: 'text/plain' }), fileName(viewName, 'diagram', 'mmd'))
     return
   }
-  const svg = await fetchText(`${base}/svg`)
+  const svg = await fetchText(`${base}/svg${query}`)
   if (format === 'svg') {
     save(new Blob([svg], { type: 'image/svg+xml' }), fileName(viewName, 'diagram', 'svg'))
     return
@@ -79,8 +85,8 @@ export async function downloadView(projectId: string, viewId: string, viewName: 
   save(await rasterise(svg), fileName(viewName, 'diagram', 'png'))
 }
 
-/** Downloads the model of main as a Structurizr DSL workspace. */
-export async function downloadStructurizr(projectId: string, projectName: string): Promise<void> {
-  const text = await fetchText(`/api/projects/${projectId}/export/structurizr`)
+/** Downloads the model of main, or of the named revision `revisionId`, as a Structurizr DSL workspace. */
+export async function downloadStructurizr(projectId: string, projectName: string, revisionId?: string | null): Promise<void> {
+  const text = await fetchText(`/api/projects/${projectId}/export/structurizr${revisionQuery(revisionId)}`)
   save(new Blob([text], { type: 'text/plain' }), fileName(projectName, 'workspace', 'dsl'))
 }

@@ -25,14 +25,14 @@ The SVG shows what the canvas shows. The other formats keep less.
 3. Move the pointer onto the diagram. Select the **⋯** button.
 4. Select **Export SVG**, **Export PNG** or **Export Mermaid**. The browser saves the file.
 
-The app exports the main model with the saved layout of the view.
+The app exports the model that the workbench shows, with the saved layout of the view. When the model switcher shows a named revision, the menu item reads **Export SVG of revision** and the name of the revision, and the file holds that revision. A draft or a variant is not exported: the app then exports main.
 
 The browser makes the PNG from the SVG of the server, at twice the size of the SVG. The PNG uses the fonts of your computer when the fonts of Vellum are not installed. The same view can give a different PNG on a different computer. Use the SVG when you need the same file each time.
 
 ## Export the model as Structurizr DSL in the app
 
 1. Select **Project files** in the left toolbar.
-2. Below **Model document**, select **Export Structurizr DSL**. The browser saves `<project>.dsl`.
+2. Below **Model document**, select **Export Structurizr DSL**. The browser saves `<project>.dsl`. When the workbench shows a named revision, the button names it and the file holds that revision.
 
 ## Export with HTTP
 
