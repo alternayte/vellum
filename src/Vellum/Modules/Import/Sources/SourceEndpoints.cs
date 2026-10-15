@@ -38,14 +38,19 @@ public sealed record SourceReviewDto(
 /// <param name="Citation">The <c>&lt;source&gt;</c> part of a citation <c>&lt;source&gt;@&lt;revision&gt;:path:start-end</c>.</param>
 /// <param name="LatestScan">The newest scan of the Source, in any state. Null before the first.</param>
 /// <param name="LatestSnapshot">The Snapshot of the newest completed scan. Null before the first.</param>
+/// <param name="Connection">For a <c>traces</c> or <c>newrelic</c> Source: what it reads. Null for the other kinds.</param>
 public sealed record SourceDto(
     Guid Id, string Kind, string Name, string Host, string Locator, string Citation,
-    string CreatedBy, DateTimeOffset CreatedAt, ScanDto? LatestScan, SourceSnapshotDto? LatestSnapshot, SourceReviewDto Review);
+    string CreatedBy, DateTimeOffset CreatedAt, ScanDto? LatestScan, SourceSnapshotDto? LatestSnapshot, SourceReviewDto Review,
+    Runtime.RuntimeConnectionDto? Connection = null);
 
-/// <param name="Kind">The kind of the Source. This instance creates <c>github</c> Sources only.</param>
-/// <param name="Name">What people call the Source. Without it the Source is named after its repository.</param>
+/// <param name="Kind">The kind of the Source. This instance creates <c>github</c>, <c>traces</c> and <c>newrelic</c> Sources.</param>
+/// <param name="Name">What people call the Source. Without it the Source is named after its repository or account. A <c>traces</c> Source needs one.</param>
 /// <param name="Repository">For <c>github</c>: <c>owner/name</c>, or the address of the repository on the workspace's GitHub host.</param>
-public sealed record CreateSourceRequest(string? Kind, string? Name, string? Repository);
+/// <param name="AccountId">For <c>newrelic</c>: the account ID.</param>
+/// <param name="Region">For <c>newrelic</c>: <c>us</c> or <c>eu</c>. It chooses the fixed NerdGraph endpoint.</param>
+/// <param name="ApiKey">For <c>newrelic</c>: a read-only User API key. It is stored envelope-encrypted and never returned. Only an Owner gives one.</param>
+public sealed record CreateSourceRequest(string? Kind, string? Name, string? Repository, long? AccountId = null, string? Region = null, string? ApiKey = null);
 
 public sealed record UpdateSourceRequest(string? Name);
 
@@ -108,23 +113,25 @@ public static class SourceRequests
     /// </summary>
     public static async Task<IResult> Create(
         Guid projectId, CreateSourceRequest request, ClaimsPrincipal user,
-        WorkspaceAuthorizationService auth, SettingsResolver settings, AppDbContext db, TimeProvider time, CancellationToken ct)
+        WorkspaceAuthorizationService auth, SettingsResolver settings, Bootstrap bootstrap, AppDbContext db, TimeProvider time, CancellationToken ct)
     {
         var userId = user.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
         if (!EnumText.TryParse(request.Kind, out SourceKind kind))
             return Invalid("kind", $"A Source kind is one of: {string.Join(", ", Enum.GetValues<SourceKind>().Select(k => EnumText.Of(k)))}.");
-        if (kind != SourceKind.Github)
+        if (kind is not (SourceKind.Github or SourceKind.Traces or SourceKind.Newrelic))
         {
             return Results.BadRequest(new ErrorResponse("source_kind_unavailable", kind == SourceKind.AgentPush
                 ? "An agent-push Source is made by its first push: run vellum scan with an agent token that has the push scope."
-                : $"This instance cannot read a Source of kind '{EnumText.Of(kind)}' yet. Create a github Source."));
+                : $"This instance cannot read a Source of kind '{EnumText.Of(kind)}' yet. Create a github, traces or newrelic Source."));
         }
         var name = string.IsNullOrWhiteSpace(request.Name) ? null : request.Name.Trim();
         if (name is not null && TextRule.Line("name", name, SourceEntity.MaxName) is { } nameError)
             return Invalid(nameError);
 
         var workspaceId = await auth.GetProjectWorkspaceIdAsync(projectId, ct);
+        if (Runtime.RuntimeFetch.IsRuntime(kind))
+            return await Runtime.RuntimeSources.CreateAsync(projectId, workspaceId, kind, name, request, userId, auth, bootstrap, db, time, ct);
         var workspace = await settings.GetWorkspaceAsync(workspaceId, ct);
         if (workspace.GithubApiBaseUrl is not SettingsUrl.Usable github)
             return GitHubNotConfigured();
@@ -190,6 +197,15 @@ public static class SourceRequests
         }
 
         var workspace = await settings.GetWorkspaceAsync(source.WorkspaceId, ct);
+        if (source.Kind == SourceKind.Traces)
+            return Results.Conflict(new ErrorResponse("upload_required", "A traces Source reads a trace export file. Upload one to scan it."));
+        if (source.Kind == SourceKind.Newrelic)
+        {
+            if (request.Ref is not null || request.PullRequest is not null || request.IncludePaths is { Length: > 0 } || request.ExcludePaths is { Length: > 0 })
+                return Invalid("ref", "A New Relic Source has no ref, no pull request and no paths. Send an empty body.");
+            return await ScanRequests.QueueAsync(projectId, source, new ScanRequests.ScanOptions(null, null, null, null),
+                user, workspace, db, signal, time.GetUtcNow(), ct);
+        }
         if (workspace.GithubApiBaseUrl is not SettingsUrl.Usable github)
             return GitHubNotConfigured();
         if (ScanRequests.WebHost(github.Url) != source.Host)
@@ -379,7 +395,7 @@ public static class SourceRequests
         return completed.FirstOrDefault(s => ScanKindInfo.Of(s, tracked).Tracking);
     }
 
-    private static async Task<SourceDto> ToDtoAsync(AppDbContext db, SourceEntity source, CancellationToken ct)
+    internal static async Task<SourceDto> ToDtoAsync(AppDbContext db, SourceEntity source, CancellationToken ct)
     {
         var latest = await db.Scans.AsNoTracking().Where(s => s.SourceId == source.Id)
             .OrderByDescending(s => s.CreatedAt).ThenByDescending(s => s.Id).FirstOrDefaultAsync(ct);
@@ -408,7 +424,8 @@ public static class SourceRequests
         return new SourceDto(
             source.Id, EnumText.Of(source.Kind), source.Name, source.Host, source.Locator, source.CitationName,
             source.CreatedBy, source.CreatedAt, latestDto,
-            snapshot is null ? null : ToDto(source, snapshot), review);
+            snapshot is null ? null : ToDto(source, snapshot), review,
+            await Runtime.RuntimeSources.ConnectionAsync(db, source, ct));
     }
 
     private sealed record SnapshotRow(SnapshotEntity Snapshot, string? Ref, bool ContentNotHeld, string? ReportedCommitSha, string RequestedBy);

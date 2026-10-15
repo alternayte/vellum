@@ -1,0 +1,120 @@
+{
+  "resourceSpans": [
+    {
+      "resource": {
+        "attributes": [
+          { "key": "service.name", "value": { "stringValue": "frontend" } },
+          { "key": "host.name", "value": { "stringValue": "secret-host-xyz" } }
+        ]
+      },
+      "scopeSpans": [
+        {
+          "scope": { "name": "io.opentelemetry.http" },
+          "spans": [
+            {
+              "traceId": "5b8efff798038103d269b633813fc60c",
+              "spanId": "a000000000000001",
+              "name": "GET /orders",
+              "kind": 3,
+              "startTimeUnixNano": "1760000000000000000",
+              "endTimeUnixNano": "1760000000050000000",
+              "attributes": [
+                { "key": "user.email", "value": { "stringValue": "alice@example.com" } },
+                { "key": "http.request.header.authorization", "value": { "stringValue": "Bearer sk-live-abcdef0123456789abcdef" } },
+                { "key": "http.response.status_code", "value": { "intValue": "200" } }
+              ],
+              "events": [
+                { "name": "log", "attributes": [ { "key": "message", "value": { "stringValue": "password=hunter2" } } ] }
+              ],
+              "status": { "code": 1 }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "scopeSpans": [
+        {
+          "spans": [
+            {
+              "traceId": "5b8efff798038103d269b633813fc60c",
+              "spanId": "b000000000000001",
+              "parentSpanId": "a000000000000001",
+              "name": "GET /orders",
+              "kind": 2,
+              "startTimeUnixNano": "1760000000005000000",
+              "endTimeUnixNano": "1760000000045000000",
+              "status": {}
+            },
+            {
+              "traceId": "5b8efff798038103d269b633813fc60c",
+              "spanId": "b000000000000002",
+              "parentSpanId": "b000000000000001",
+              "name": "POST /charge",
+              "kind": 3,
+              "startTimeUnixNano": "1760000000010000000",
+              "endTimeUnixNano": "1760000000020000000"
+            },
+            {
+              "traceId": "5b8efff798038103d269b633813fc60c",
+              "spanId": "b000000000000003",
+              "parentSpanId": "b000000000000001",
+              "name": "GET /stock",
+              "kind": 3,
+              "startTimeUnixNano": "1760000000021000000",
+              "endTimeUnixNano": "1760000000025000000",
+              "attributes": [ { "key": "peer.service", "value": { "stringValue": "inventory" } } ]
+            },
+            {
+              "traceId": "5b8efff798038103d269b633813fc60c",
+              "spanId": "b000000000000004",
+              "parentSpanId": "b000000000000001",
+              "name": "orders publish",
+              "kind": 4,
+              "startTimeUnixNano": "1760000000030000000",
+              "endTimeUnixNano": "1760000000031000000"
+            }
+          ]
+        }
+      ],
+      "resource": { "attributes": [ { "key": "service.name", "value": { "stringValue": "orders" } } ] }
+    },
+    {
+      "resource": { "attributes": [ { "key": "service.name", "value": { "stringValue": "payments" } } ] },
+      "scopeSpans": [
+        {
+          "spans": [
+            {
+              "traceId": "5b8efff798038103d269b633813fc60c",
+              "spanId": "c000000000000001",
+              "parentSpanId": "b000000000000002",
+              "name": "POST /charge",
+              "kind": 2,
+              "startTimeUnixNano": "1760000000011000000",
+              "endTimeUnixNano": "1760000000019000000",
+              "status": { "code": 2, "message": "card of alice@example.com declined" }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "resource": { "attributes": [ { "key": "service.name", "value": { "stringValue": "shipping" } } ] },
+      "scopeSpans": [
+        {
+          "spans": [
+            {
+              "traceId": "77777777777777777777777777777777",
+              "spanId": "d000000000000001",
+              "name": "orders process",
+              "kind": 5,
+              "startTimeUnixNano": "1760000000060000000",
+              "endTimeUnixNano": "1760000000070000000",
+              "links": [ { "traceId": "5b8efff798038103d269b633813fc60c", "spanId": "b000000000000004" } ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

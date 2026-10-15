@@ -9,6 +9,7 @@ import { describeScan, importApi, isActive, pullRequestState, scanSubject, type 
 import { ProposalReview } from './proposal-review'
 import { ImpactDialog } from './impact-dialog'
 import { SourcesList, SourcesReview } from './sources-review'
+import { AddSourceDialog } from './add-source-dialog'
 import { sourcesKey } from '@/hooks/use-sources'
 
 const STATUS_COLOR: Record<ScanSummary['status'], string> = {
@@ -48,6 +49,7 @@ export function ImportFlyout({ projectId, owners }: {
   const [bySource, setBySource] = useState(false)
   const [opening, setOpening] = useState<string | null>(null)
   const [impactOf, setImpactOf] = useState<ScanSummary | null>(null)
+  const [adding, setAdding] = useState(false)
 
   const scans = useQuery({
     queryKey: ['projects', projectId, 'imports'],
@@ -158,9 +160,10 @@ export function ImportFlyout({ projectId, owners }: {
 
       <div className="flex-1 overflow-y-auto">
         <section aria-labelledby="import-sources" className="border-b border-border pt-2">
-          <div className="flex items-center gap-2 px-3 pb-1.5">
-            <h3 id="import-sources" className="flex-1 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Sources</h3>
-            <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" onClick={() => setBySource(true)}>Proposals by Source</Button>
+          <div className="flex flex-wrap items-center gap-x-1 gap-y-0.5 px-3 pb-1.5">
+            <h3 id="import-sources" className="flex-1 basis-full text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Sources</h3>
+            <Button size="sm" variant="ghost" className="h-6 px-1.5 text-xs" onClick={() => setAdding(true)}>Add runtime Source</Button>
+            <Button size="sm" variant="ghost" className="h-6 px-1.5 text-xs" onClick={() => setBySource(true)}>Proposals by Source</Button>
           </div>
           <SourcesList projectId={projectId} onReview={(source) => openScan(source.review.scanId!, source)} />
           {opening && <p role="status" className="px-3 pb-2 text-xs text-muted-foreground">Opening the review…</p>}
@@ -240,6 +243,7 @@ export function ImportFlyout({ projectId, owners }: {
         </div>
       </div>
 
+      {adding && <AddSourceDialog projectId={projectId} onClose={() => { setAdding(false); refresh() }} />}
       {impactOf && <ImpactDialog projectId={projectId} scan={impactOf} owners={owners} onClose={() => setImpactOf(null)} />}
       {bySource && !reviewing && (
         <SourcesReview projectId={projectId} onOpenScan={(scanId, source) => openScan(scanId, source)} onClose={() => { setBySource(false); refresh() }} />

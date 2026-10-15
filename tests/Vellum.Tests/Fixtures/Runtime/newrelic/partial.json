@@ -1,0 +1,17 @@
+{
+  "data": {
+    "actor": {
+      "entitySearch": {
+        "results": {
+          "nextCursor": null,
+          "entities": [
+            { "guid": "MTIzNDU2N3xBUE18QVBQTElDQVRJT058MQ", "name": "Orders.Api", "domain": "APM", "type": "APPLICATION", "entityType": "APM_APPLICATION_ENTITY" }
+          ]
+        }
+      }
+    }
+  },
+  "errors": [
+    { "message": "A downstream service did not answer for part of the search.", "extensions": { "errorClass": "INTERNAL_SERVER_ERROR" } }
+  ]
+}

@@ -348,12 +348,12 @@ internal static class ProposalPlanner
                     var before = link!.Attributes.GetValueOrDefault(attribute);
                     if (before is not null)
                         acceptedObserved[attribute] = before;
-                    if (!string.Equals(before, value, StringComparison.Ordinal))
+                    if (!IsSample(attribute) && !string.Equals(before, value, StringComparison.Ordinal))
                         changes.Add(new FieldChange("observed." + attribute, before, value));
                 }
                 foreach (var (attribute, before) in link!.Attributes.OrderBy(a => a.Key, StringComparer.Ordinal))
                 {
-                    if (candidate.Attributes.ContainsKey(attribute))
+                    if (candidate.Attributes.ContainsKey(attribute) || IsSample(attribute) || attribute == FactMapping.TruthLabelAttribute)
                         continue;
                     acceptedObserved[attribute] = before;
                     changes.Add(new FieldChange("observed." + attribute, before, null));
@@ -365,7 +365,7 @@ internal static class ProposalPlanner
 
             // A schema has no truth label of its own. A linked schema came from an import; an
             // unlinked one was written by a person.
-            var status = entity.FactStatus ?? (linked ? ObservedInSource : "declared");
+            var status = entity.FactStatus ?? (linked ? candidate.TruthLabel : "declared");
             var editedSince = linked && compared.Any(field =>
                 link!.Accepted.TryGetValue(field, out var accepted)
                 && !string.Equals(accepted, entity.Values.GetValueOrDefault(field), StringComparison.Ordinal));
@@ -374,14 +374,14 @@ internal static class ProposalPlanner
             var others = input.OthersOf(candidate.EntityKind, entity.Id);
             // An entity that another Source holds and that this fact matches by name alone is
             // a conflict even where the values agree: linking it is a person's choice.
-            var action = (matchedByName && others.Count > 0) || (modelChanges > 0 && (status != ObservedInSource || editedSince || others.Count > 0))
+            var action = (matchedByName && others.Count > 0) || (modelChanges > 0 && (status != candidate.TruthLabel || editedSince || others.Count > 0))
                 ? ProposalAction.Conflict
                 : ProposalAction.Change;
 
             // Accepting a link gives the entity the label of the source. That is a change of
             // the entity even when every value already agrees, so it is shown as one.
-            if (entity.FactStatus is { } label && label != ObservedInSource)
-                changes.Add(new FieldChange("factStatus", label, ObservedInSource));
+            if (entity.FactStatus is { } label && label != candidate.TruthLabel)
+                changes.Add(new FieldChange("factStatus", label, candidate.TruthLabel));
 
             var fingerprint = Fingerprint(action, candidate, entity.Values);
             if (input.Rejections.Contains((candidate.FactKey, fingerprint)))
@@ -460,7 +460,7 @@ internal static class ProposalPlanner
             // their word and not on the evidence. A scan leaves no mark on it. Nor on a fact
             // that another Source still holds: staleness compares Snapshots of one Source.
             var others = input.OthersOf(link.EntityKind, entity.Id);
-            if (entity.FactStatus == ObservedInSource && entity.Stale is null && others.Count == 0)
+            if (entity.FactStatus == FactMapping.LabelOf(link.Attributes) && entity.Stale is null && others.Count == 0)
                 markStale.Add(entity.Id);
 
             var fingerprint = Hash([EnumText.Of(ProposalAction.Remove), link.EntityKind, link.FactKey, Canonical(entity.Values)]);
@@ -628,9 +628,12 @@ internal static class ProposalPlanner
         Canonical(candidate.Fields),
         Hash(candidate.References.Select(r => $"{r.Field}={r.FactKey}")),
         Hash(candidate.ConsumerKeys),
-        Hash(candidate.Observed.Select(o => $"{o.Key}={o.Value}")),
+        // A sample value is no claim: a rejected proposal stays rejected when only the counts differ.
+        Hash(candidate.Observed.Where(o => !IsSample(o.Key)).Select(o => $"{o.Key}={o.Value}")),
         current is null ? "" : Canonical(current),
     ]);
+
+    private static bool IsSample(string attribute) => attribute.StartsWith(FactMapping.SamplePrefix, StringComparison.Ordinal);
 
     /// <summary>What a "same as X?" question asks: this key of this Source and that element. A "no" is remembered by it.</summary>
     public static string BindFingerprint(string factKey, Guid elementId) =>

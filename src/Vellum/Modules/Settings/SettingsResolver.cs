@@ -62,6 +62,12 @@ public sealed record WorkspaceSettings(
     public static readonly SettingsUrl.Usable GcpCloudBillingUrl = new(
         new Uri("https://cloudbilling.googleapis.com"), OutboundUrlPolicy.OriginOf(new Uri("https://cloudbilling.googleapis.com")));
 
+    public static readonly SettingsUrl.Usable NewRelicUsUrl = new(
+        new Uri("https://api.newrelic.com"), OutboundUrlPolicy.OriginOf(new Uri("https://api.newrelic.com")));
+
+    public static readonly SettingsUrl.Usable NewRelicEuUrl = new(
+        new Uri("https://api.eu.newrelic.com"), OutboundUrlPolicy.OriginOf(new Uri("https://api.eu.newrelic.com")));
+
     /// <summary>The address of a provider: its base URL, or the address of its kind when the base URL is empty.</summary>
     public SettingsUrl ProviderBaseUrl(Guid providerId)
     {
@@ -86,6 +92,8 @@ public sealed record WorkspaceSettings(
         SecretNames.WebhookSecret => WebhookUrl,
         SecretNames.GcpApiKey => GcpCloudBillingUrl,
         _ when SecretNames.ProviderIdOf(secretName) is { } providerId => ProviderBaseUrl(providerId),
+        // A New Relic key goes to the fixed NerdGraph endpoint of its region, never to a setting.
+        _ when SecretNames.NewRelicRegionOf(secretName) is { } region => region == "eu" ? NewRelicEuUrl : NewRelicUsUrl,
         _ => new SettingsUrl.NotConfigured(),
     };
 

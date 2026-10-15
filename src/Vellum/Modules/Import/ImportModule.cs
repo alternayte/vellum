@@ -19,6 +19,8 @@ public static class ImportModule
         services.AddSingleton<ScanSignal>();
         services.AddSingleton<ScanWorker>();
         services.AddScoped<IProjectRetention, ImportProjectRetention>();
+        Vellum.Shared.Outbound.OutboundServices.AddOutboundClient<Runtime.INewRelicApi>(services);
+        services.AddScoped<Runtime.NewRelicReader>();
 
         // Import:Worker:Enabled=false turns the worker of this instance off; scans then wait
         // for an instance that runs one. Import:Worker:Parallelism is how many scans one
@@ -126,6 +128,32 @@ public static class ImportModule
             .Produces<ErrorResponse>(StatusCodes.Status409Conflict)
             .Produces<ErrorResponse>(StatusCodes.Status429TooManyRequests);
 
+        // A trace export is read as it arrives and is never stored; its own bounds apply (TraceLimits).
+        sources.MapPost("/{sourceId}/traces", Runtime.RuntimeSources.Upload).RequireHuman()
+            .WithBodyLimit(Runtime.TraceLimits.Default.MaxBytes)
+            .Accepts<Stream>("application/json")
+            .Produces<Runtime.TraceUploadResponse>(StatusCodes.Status202Accepted)
+            .Produces<ErrorResponse>(StatusCodes.Status400BadRequest)
+            .Produces<ErrorResponse>(StatusCodes.Status404NotFound)
+            .Produces<ErrorResponse>(StatusCodes.Status409Conflict)
+            .Produces<ErrorResponse>(StatusCodes.Status413PayloadTooLarge)
+            .Produces<ErrorResponse>(StatusCodes.Status429TooManyRequests);
+
+        sources.MapPut("/{sourceId}/newrelic/key", Runtime.RuntimeSources.SetKey).RequireHuman()
+            .Produces(StatusCodes.Status204NoContent)
+            .Produces<ErrorResponse>(StatusCodes.Status400BadRequest)
+            .Produces<ErrorResponse>(StatusCodes.Status404NotFound)
+            .Produces<ErrorResponse>(StatusCodes.Status409Conflict);
+
+        sources.MapPost("/{sourceId}/newrelic/test", Runtime.RuntimeSources.Test)
+            .Produces<Runtime.NewRelicTestResponse>()
+            .Produces<ErrorResponse>(StatusCodes.Status404NotFound)
+            .Produces<ErrorResponse>(StatusCodes.Status409Conflict);
+
+        sources.MapPost("/newrelic/test", Runtime.RuntimeSources.TestNew).RequireHuman()
+            .Produces<Runtime.NewRelicTestResponse>()
+            .Produces<ErrorResponse>(StatusCodes.Status400BadRequest);
+
         sources.MapGet("/{sourceId}/snapshots", SourceRequests.Snapshots)
             .Produces<List<SourceSnapshotDto>>()
             .Produces<ErrorResponse>(StatusCodes.Status404NotFound);
@@ -199,6 +227,13 @@ public static class ImportRetention
         // The files, the snapshot, its facts and the proposals of a scan go with its row.
         // A worker that runs one of these scans finds no row to write to and stops.
         await db.Scans.Where(s => s.ProjectId == projectId).ExecuteDeleteAsync(ct);
+        // The key of a New Relic Source belongs to the Source and goes with it.
+        foreach (var source in await db.Sources.Where(s => s.ProjectId == projectId && s.Kind == SourceKind.Newrelic)
+                     .Select(s => new { s.Id, s.WorkspaceId }).ToListAsync(ct))
+        {
+            var prefix = $"newrelic:{source.Id:D}:";
+            await db.Secrets.Where(x => x.WorkspaceId == source.WorkspaceId && x.Name.StartsWith(prefix)).ExecuteDeleteAsync(ct);
+        }
         await db.Sources.Where(s => s.ProjectId == projectId).ExecuteDeleteAsync(ct);
 
         foreach (var workspaceId in workspaces)

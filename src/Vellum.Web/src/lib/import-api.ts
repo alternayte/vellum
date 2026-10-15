@@ -235,6 +235,34 @@ export interface SourceSummary {
   latestScan: ScanSummary | null
   latestSnapshot: SourceSnapshot | null
   review: SourceReview
+  /** What a `traces` or `newrelic` Source reads. Null for the other kinds. The key itself is never sent back. */
+  connection: RuntimeConnection | null
+}
+
+export interface RuntimeConnection {
+  accountId: number | null
+  region: 'us' | 'eu' | null
+  /** The fixed NerdGraph endpoint of the region. */
+  endpoint: string | null
+  keySet: boolean
+}
+
+export type NewRelicRegion = 'us' | 'eu'
+
+/** One real NerdGraph query. A failure says what to change and holds no text from New Relic. */
+export interface NewRelicTest {
+  ok: boolean
+  accountName: string | null
+  error: { code: string; message: string } | null
+}
+
+export interface TraceUpload {
+  scanId: string
+  snapshotId: string
+  services: number
+  edges: number
+  spans: string
+  format: string
 }
 
 export interface SourceBinding {
@@ -412,8 +440,29 @@ const sourcesBase = (projectId: string) => `/api/projects/${projectId}/sources`
 
 export const sourcesApi = {
   list: (projectId: string) => api<SourceSummary[]>('GET', sourcesBase(projectId)),
-  create: (projectId: string, body: { kind: SourceKind; repository: string; name?: string }) =>
+  create: (projectId: string, body: { kind: SourceKind; repository?: string; name?: string; accountId?: number; region?: NewRelicRegion; apiKey?: string }) =>
     api<SourceSummary>('POST', sourcesBase(projectId), body),
+  /**
+   * Sends a trace export file as the request body. The server reads it as it arrives, keeps
+   * only the services and edges it shows, and queues the scan that proposes them.
+   */
+  uploadTraces: async (projectId: string, id: string, file: File): Promise<TraceUpload> => {
+    const response = await fetch(`${sourcesBase(projectId)}/${id}/traces?fileName=${encodeURIComponent(file.name)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: file,
+    })
+    const text = await response.text()
+    const data = parseOrEmpty(text) as { title?: string } & Partial<TraceUpload>
+    if (!response.ok) throw new ApiError(response.status, data.title ?? (response.status === 413 ? 'The file is too large.' : 'The upload did not complete.'))
+    return data as TraceUpload
+  },
+  /** Tests an account, a region and a key before a Source is made of them. Nothing is stored. */
+  testNewRelic: (projectId: string, body: { accountId: number; region: NewRelicRegion; apiKey: string }) =>
+    api<NewRelicTest>('POST', `${sourcesBase(projectId)}/newrelic/test`, body),
+  /** Tests the stored key of a New Relic Source. */
+  testSource: (projectId: string, id: string) => api<NewRelicTest>('POST', `${sourcesBase(projectId)}/${id}/newrelic/test`),
+  setKey: (projectId: string, id: string, apiKey: string) => api<void>('PUT', `${sourcesBase(projectId)}/${id}/newrelic/key`, { apiKey }),
   rename: (projectId: string, id: string, name: string) => api<SourceSummary>('PATCH', `${sourcesBase(projectId)}/${id}`, { name }),
   scan: (projectId: string, id: string, body: { ref?: string; pullRequest?: number; includePaths?: string[] }) =>
     api<{ id: string }>('POST', `${sourcesBase(projectId)}/${id}/scans`, body),
@@ -515,4 +564,33 @@ export function withDependencies(selected: Set<string>, proposals: Proposal[]): 
     }
   }
   return result
+}
+
+function parseOrEmpty(text: string): unknown {
+  try {
+    return text ? JSON.parse(text) : {}
+  } catch {
+    return {}
+  }
+}
+
+/** What a Source can do now, from its newest scan: one tone and one sentence. */
+export function sourceState(source: Pick<SourceSummary, 'kind' | 'latestScan'>): { tone: 'ok' | 'busy' | 'warn' | 'fail'; text: string } {
+  const scan = source.latestScan
+  if (!scan) {
+    if (source.kind === 'traces') return { tone: 'warn', text: 'No trace file yet. Upload an export to read its edges.' }
+    return { tone: 'warn', text: 'Not read yet.' }
+  }
+  if (scan.status === 'queued' || scan.status === 'running') return { tone: 'busy', text: 'Reading…' }
+  if (scan.status === 'waiting') {
+    const at = scan.retryAt ? new Date(scan.retryAt).toLocaleTimeString() : 'later'
+    return { tone: 'warn', text: `Waiting for the rate limit. Vellum reads again at ${at}.` }
+  }
+  if (scan.status === 'failed') {
+    if (scan.error?.code === 'newrelic_unavailable') return { tone: 'warn', text: 'Unavailable: this instance cannot reach New Relic. Everything else works without it.' }
+    return { tone: 'fail', text: scan.error?.message ?? 'The last read failed.' }
+  }
+  if (scan.status === 'cancelled') return { tone: 'warn', text: 'The last read was cancelled.' }
+  if (!scan.isComplete) return { tone: 'warn', text: 'The last read is partial. Nothing is marked stale from it.' }
+  return { tone: 'ok', text: `Read ${new Date(scan.completedAt ?? scan.createdAt).toLocaleString()}.` }
 }

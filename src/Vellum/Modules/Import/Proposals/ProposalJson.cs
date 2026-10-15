@@ -107,6 +107,9 @@ internal static class EvidenceLinks
     {
         if (repository.StartsWith(Sources.AgentPush.Host + "/", StringComparison.Ordinal))
             return null;
+        // A runtime Source has no page to link to: its evidence is the derived line Vellum keeps.
+        if (evidence.Rule.StartsWith("runtime.", StringComparison.Ordinal))
+            return "";
         var path = string.Join('/', evidence.Path.Split('/').Select(Uri.EscapeDataString));
         var lines = evidence.EndLine > evidence.StartLine
             ? string.Create(CultureInfo.InvariantCulture, $"L{evidence.StartLine}-L{evidence.EndLine}")

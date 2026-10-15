@@ -24,6 +24,12 @@ public enum FactKind
     DataStore, DataAccess, Dependency, Schema, Deployment,
     /// <summary>An architecture pattern the source declares, such as a transactional outbox. Not a publication.</summary>
     Pattern,
+    /// <summary>
+    /// A runtime edge between two services that a trace export or an APM account shows: a call,
+    /// or a message from a producer to a consumer. Its <c>from</c> and <c>to</c> attributes are
+    /// the keys of the two service facts.
+    /// </summary>
+    Interaction,
 }
 
 /// <summary>

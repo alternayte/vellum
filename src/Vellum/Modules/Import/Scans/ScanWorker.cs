@@ -296,6 +296,12 @@ public sealed class ScanWorker(
         await SourceFetch.RunAsync(new FetchContext(services, db, scan, source, limits, time), ct);
         var workspaceId = scan.WorkspaceId;
 
+        if (Runtime.RuntimeFetch.IsRuntime(source.Kind))
+        {
+            await CompleteRuntimeAsync(services, db, scan, source, leaseToken, ct);
+            return;
+        }
+
         // Step 5: extract. The extractors read text and nothing else; they run nothing.
         // They get exactly the files that count as read. One file less means stored
         // content went missing, and the scan has no result.
@@ -371,6 +377,53 @@ public sealed class ScanWorker(
                 break;
         }
     }
+
+    /// <summary>
+    /// The rest of a scan of a runtime Source. Its one file is the derived document of the
+    /// fetch stage; its facts are the lines of that document, and its Snapshot ID is the hash
+    /// of their sorted set. A runtime Source has no paths to scope, so a complete read looked
+    /// everywhere: a fact that is gone is gone, and the plan marks it stale as a code scan
+    /// does. A partial read concludes nothing from an absence.
+    /// </summary>
+    private async Task CompleteRuntimeAsync(IServiceProvider services, AppDbContext db, ScanEntity scan, SourceEntity source, long leaseToken, CancellationToken ct)
+    {
+        var file = await db.ScanFiles.AsNoTracking().FirstOrDefaultAsync(f => f.ScanId == scan.Id && f.State == ScanFileState.Read, ct);
+        var content = file is null ? null : await db.Blobs.AsNoTracking()
+            .Where(b => b.WorkspaceId == scan.WorkspaceId && b.BlobSha == file.BlobSha && b.Content != null)
+            .Select(b => b.Content).FirstOrDefaultAsync(ct);
+        if (file is null || content is null)
+            throw ScanStop.Failed(ScanFailures.StoredContentMissing);
+        if (Runtime.RuntimeGraph.Read(content, file.Path, Runtime.RuntimeFetch.RuleOf(source.Kind)) is not { } read)
+            throw ScanStop.Failed(ScanFailures.Internal);
+
+        var isComplete = !scan.Partial && read.IsComplete;
+        var gap = isComplete ? null : CoverageGap.Limit;
+        services.GetRequiredService<DeedboxContext>().Metadata = new EventMetadata
+        {
+            Actor = "system:import-scan",
+            CorrelationId = scan.Id.ToString(),
+        };
+        db.ChangeTracker.Clear();
+        var written = await SnapshotWriter.WriteAsync(
+            services, scan, WriteMode.Complete(leaseToken),
+            new SnapshotInput(read.Facts, isComplete, gap, scan.Notes, () => RuntimeCoverage(file.Path, gap), 1,
+                new ManifestSummary(scan.CommitSha!, 1)),
+            time.GetUtcNow(), ct);
+        switch (written)
+        {
+            case SnapshotOutcome.ProjectGone:
+                throw ScanStop.Failed(ScanFailures.ProjectGone);
+            case SnapshotOutcome.ModelBusy:
+                throw ScanStop.Failed(ScanFailures.ModelBusy);
+            case SnapshotOutcome.Written:
+                await DropUnusedBlobsAsync(scan.WorkspaceId, CancellationToken.None);
+                break;
+        }
+    }
+
+    /// <summary>Where a runtime scan looked: its document, and everywhere else a fact of its Source could be cited.</summary>
+    internal static ScanCoverage RuntimeCoverage(string path, string? gap) =>
+        new(new Dictionary<string, string?>(StringComparer.Ordinal) { [path] = null }, _ => null, gap);
 
     /// <summary>
     /// The checkpoint. The scan row is written with every save, and its fencing token is a

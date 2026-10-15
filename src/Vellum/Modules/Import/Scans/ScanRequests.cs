@@ -161,9 +161,11 @@ public static partial class ScanRequests
     public sealed record ScanOptions(string? Ref, string[]? IncludePaths, string[]? ExcludePaths, int? PullRequest);
 
     /// <summary>Checks the options, takes one unit of the day's scans and queues a scan of <paramref name="source"/>.</summary>
+    /// <param name="prepare">Adds what the scan starts with (a runtime upload's document) in the same transaction as the scan row.</param>
     internal static async Task<IResult> QueueAsync(
         Guid projectId, SourceEntity source, ScanOptions request, ClaimsPrincipal user, WorkspaceSettings workspace,
-        AppDbContext db, ScanSignal signal, DateTimeOffset now, CancellationToken ct)
+        AppDbContext db, ScanSignal signal, DateTimeOffset now, CancellationToken ct,
+        Func<ScanEntity, CancellationToken, Task>? prepare = null)
     {
         var userId = user.UserId();
         var reference = string.IsNullOrWhiteSpace(request.Ref) ? null : request.Ref;
@@ -200,6 +202,8 @@ public static partial class ScanRequests
             return refused;
 
         db.Scans.Add(scan);
+        if (prepare is not null)
+            await prepare(scan, ct);
         try
         {
             await db.SaveChangesAsync(ct);
@@ -497,6 +501,15 @@ public static partial class ScanRequests
     /// <summary>A completed scan as a plan reads it again: its stored facts, and where it looked, from its file rows.</summary>
     internal static async Task<SnapshotInput> StoredInputAsync(AppDbContext db, ScanEntity scan, CancellationToken ct)
     {
+        var kind = await db.Sources.AsNoTracking().Where(x => x.Id == scan.SourceId).Select(x => x.Kind).FirstOrDefaultAsync(ct);
+        if (Runtime.RuntimeFetch.IsRuntime(kind))
+        {
+            var path = await db.ScanFiles.AsNoTracking().Where(f => f.ScanId == scan.Id).Select(f => f.Path).FirstOrDefaultAsync(ct) ?? "";
+            var stored = await SnapshotWriter.StoredFactsAsync(db, scan.Id, ct);
+            return new SnapshotInput(stored, scan.IsComplete, scan.ExtractionGapText(), scan.Notes,
+                () => ScanWorker.RuntimeCoverage(path, scan.ExtractionGapText()), scan.FilesExtracted);
+        }
+
         var files = await db.ScanFiles.AsNoTracking().Where(f => f.ScanId == scan.Id)
             .Select(f => new { f.Path, f.State, f.Reason }).ToListAsync(ct);
         var coverageFiles = files.ToDictionary(

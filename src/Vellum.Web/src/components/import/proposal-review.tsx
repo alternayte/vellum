@@ -117,9 +117,10 @@ export function ProposalReview({ projectId, scan, sourceName, onClose }: {
         <DialogHeader>
           <DialogTitle>Review {scan.repository}</DialogTitle>
           <DialogDescription>
-            {scan.contentHeld
-              ? <>Read at commit <span className="font-mono">{scan.commitSha?.slice(0, 10)}</span>. </>
-              : <>Pushed by vellum scan as Snapshot <span className="font-mono">{scan.commitSha?.slice(0, 10)}</span>{scan.reportedCommitSha && <> from commit <span className="font-mono">{scan.reportedCommitSha.slice(0, 10)}</span> (as reported)</>}. </>}
+            {!scan.contentHeld
+              ? <>Pushed by vellum scan as Snapshot <span className="font-mono">{scan.commitSha?.slice(0, 10)}</span>{scan.reportedCommitSha && <> from commit <span className="font-mono">{scan.reportedCommitSha.slice(0, 10)}</span> (as reported)</>}. </>
+              // A runtime Source has no commit: its revision is the 64-character Snapshot ID.
+              : <>{scan.commitSha?.length === 64 ? 'Read as Snapshot ' : 'Read at commit '}<span className="font-mono">{scan.commitSha?.slice(0, 10)}</span>. </>}
             Each proposal states what the source shows at the cited lines, and nothing more.
           </DialogDescription>
         </DialogHeader>
@@ -384,7 +385,7 @@ export function SourceLines({ projectId, scanId, contentHeld, evidence }: { proj
       {!contentHeld ? (
         <p className="px-2 py-1.5 text-xs text-muted-foreground" title={CONTENT_NOT_HELD}>Content not held. Open these lines on the machine that pushed them.</p>
       ) : source.isError ? (
-        <p className="px-2 py-1.5 text-xs text-muted-foreground">These lines are not stored. Open them on GitHub.</p>
+        <p className="px-2 py-1.5 text-xs text-muted-foreground">{evidence.url ? 'These lines are not stored. Open them on GitHub.' : 'This line is not stored any more.'}</p>
       ) : (
         <pre tabIndex={0} className="max-h-48 overflow-auto bg-background px-2 py-1.5 font-mono text-[11px] leading-relaxed text-foreground focus-visible:outline-2 focus-visible:outline-primary">
           {source.data
