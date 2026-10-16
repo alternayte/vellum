@@ -76,7 +76,10 @@ public static class DiagramsModule
         var positions = (await db.LayoutPositions.AsNoTracking().Where(p => viewIds.Contains(p.ViewId)).ToListAsync(ct))
             .GroupBy(p => p.ViewId)
             .ToDictionary(g => g.Key, g => (IReadOnlyList<LayoutPositionEntity>)[.. g]);
-        return Results.Text(StructurizrDsl.Write(projectName, model, views, positions), "text/plain", Encoding.UTF8);
+        var edges = (await db.LayoutEdges.AsNoTracking().Where(e => viewIds.Contains(e.ViewId)).ToListAsync(ct))
+            .GroupBy(e => e.ViewId)
+            .ToDictionary(g => g.Key, g => (IReadOnlyList<LayoutEdgeEntity>)[.. g]);
+        return Results.Text(StructurizrDsl.Write(projectName, model, views, positions, edges), "text/plain", Encoding.UTF8);
     }
 
     private static async Task<(ViewDiagram? Diagram, IResult? Refusal)> LoadAsync(
@@ -93,6 +96,7 @@ public static class DiagramsModule
         if (model is null) return (null, refusal);
 
         var positions = await db.LayoutPositions.AsNoTracking().Where(p => p.ViewId == viewId).ToListAsync(ct);
-        return (ViewDiagram.Project(view, positions, model), null);
+        var edges = await db.LayoutEdges.AsNoTracking().Where(e => e.ViewId == viewId).ToListAsync(ct);
+        return (ViewDiagram.Project(view, positions, model, edges), null);
     }
 }

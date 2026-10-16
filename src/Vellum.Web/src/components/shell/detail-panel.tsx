@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { ArrowLeft, ArrowRight, MoreHorizontal, Plus, Trash2, X } from 'lucide-react'
 import { DropdownMenu } from 'radix-ui'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { CARD_SIDES, cardSide } from '@/lib/edge-utils'
 import { kindColor } from '@/lib/kind-colors'
 import { ARCHITECTURE_ICONS, defaultIconForKind, getIconComponent } from '@/lib/default-icons'
 import { CONTAINMENT_RULES } from '@/lib/containment-rules'
@@ -79,6 +80,10 @@ interface DetailPanelProps {
   onAddChild?: (parentId: string, kind: string) => void
   /** The model cannot be changed: the fields show their values and take no input. */
   readOnly?: boolean
+  /** The saved sides of the relationships in the open diagram. Undefined when no diagram is open. */
+  edgeSides?: { relationshipId: string; sourceSide?: string | null; targetSide?: string | null }[]
+  /** Saves the sides of a relationship in the open diagram. Null is auto. */
+  onUpdateEdgeSides?: (relationshipId: string, sides: { sourceSide: string | null; targetSide: string | null }) => void
 }
 
 export function DetailPanel({
@@ -93,6 +98,8 @@ export function DetailPanel({
   onDeleteRelationship,
   onAddChild,
   readOnly = false,
+  edgeSides,
+  onUpdateEdgeSides,
 }: DetailPanelProps) {
   const { detailPanelOpen, selectedElementId, selectedRelationshipId, selectedMessageId, selectElement, selectRelationship, selectMessage } =
     useShellStore()
@@ -141,6 +148,10 @@ export function DetailPanel({
         // The panel sits beside the canvas and does not trap focus: focus stays on the node
         // that opened it, so a field does not look active before anyone edits it.
         onOpenAutoFocus={(event) => event.preventDefault()}
+        // A drag of an end of the selected relationship changes its sides, shown in this panel.
+        onPointerDownOutside={(event) => {
+          if ((event.target as Element | null)?.closest?.('.react-flow__edgeupdater')) event.preventDefault()
+        }}
         className="w-80 overflow-y-auto border-l border-border bg-card"
       >
         {readOnly && <p role="note" className="mx-4 mt-10 rounded-md border border-dashed border-border px-2.5 py-1.5 text-[11px] text-muted-foreground">Read-only. The fields show the values and take no change.</p>}
@@ -487,6 +498,43 @@ export function DetailPanel({
                     <option value="step">Right-angle (Step)</option>
                   </select>
                 </div>
+                {edgeSides && (() => {
+                  // The sides belong to the open diagram, not to the model.
+                  const saved = edgeSides.find((e) => e.relationshipId === selectedRel.id)
+                  const sourceSide = cardSide(saved?.sourceSide)
+                  const targetSide = cardSide(saved?.targetSide)
+                  const change = (end: 'source' | 'target', value: string) => {
+                    const side = cardSide(value)
+                    onUpdateEdgeSides?.(selectedRel.id, end === 'source' ? { sourceSide: side, targetSide } : { sourceSide, targetSide: side })
+                  }
+                  return (
+                    <div>
+                      <div className="grid grid-cols-2 gap-2">
+                        {(['source', 'target'] as const).map((end) => (
+                          <div key={end}>
+                            <label htmlFor={idFor(`relationship-${end}-side`)} className="mb-1 block text-xs text-muted-foreground">
+                              {end === 'source' ? 'Source side' : 'Target side'}
+                            </label>
+                            <select
+                              id={idFor(`relationship-${end}-side`)}
+                              value={(end === 'source' ? sourceSide : targetSide) ?? 'auto'}
+                              onChange={(e) => change(end, e.target.value)}
+                              className="w-full rounded border border-input bg-background px-3 py-2 text-sm"
+                            >
+                              <option value="auto">Auto</option>
+                              {CARD_SIDES.map((side) => (
+                                <option key={side} value={side}>{side[0].toUpperCase() + side.slice(1)}</option>
+                              ))}
+                            </select>
+                          </div>
+                        ))}
+                      </div>
+                      <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
+                        For this diagram only. Auto uses the side that faces the other element. You can also drag an end of the selected line to another side.
+                      </p>
+                    </div>
+                  )
+                })()}
                 <section aria-labelledby={idFor('relationship-truth')}>
                   <h3 id={idFor('relationship-truth')} className={SECTION_HEADING}>Truth</h3>
                   <FactTruth

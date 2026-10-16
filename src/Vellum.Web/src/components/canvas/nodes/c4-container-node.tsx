@@ -1,5 +1,6 @@
 import { memo } from 'react'
-import { Handle, Position, NodeResizer, type Node, type NodeProps } from '@xyflow/react'
+import { NodeResizer, type Node, type NodeProps } from '@xyflow/react'
+import { SideHandles } from './side-handles'
 import { Plus } from 'lucide-react'
 import { kindColor } from '@/lib/kind-colors'
 import { defaultIconForKind, getIconComponent } from '@/lib/default-icons'
@@ -47,10 +48,7 @@ export const C4ContainerNode = memo(function C4ContainerNode({
           data.onResize?.(params.width, params.height)
         }}
       />
-      <Handle type="target" position={Position.Top} className="h-2! w-2! bg-primary! opacity-0" />
-      <Handle type="source" position={Position.Right} className="h-2! w-2! bg-primary! opacity-0" />
-      <Handle type="target" position={Position.Bottom} className="h-2! w-2! bg-primary! opacity-0" />
-      <Handle type="source" position={Position.Left} className="h-2! w-2! bg-primary! opacity-0" />
+      <SideHandles className="h-2! w-2!" />
 
       <div className="mb-2 flex items-center gap-2">
         {Icon && <Icon className="h-4 w-4 shrink-0" style={{ color }} aria-hidden="true" />}

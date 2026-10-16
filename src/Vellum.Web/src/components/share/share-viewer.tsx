@@ -207,6 +207,7 @@ function Diagram({ page, view, views, onView }: { page: SharedPage; view: Shared
           elements={elements}
           relationships={relationships}
           positions={positions}
+          edgeSides={view?.edges ?? undefined}
           messages={page.model.messages}
           onNodeDoubleClick={(id) => {
             const el = page.model.elements.find((e) => e.id === id)

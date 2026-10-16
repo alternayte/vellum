@@ -85,11 +85,28 @@ To change more than one element, select two or more elements. The toolbar at the
 
 ## Add a relationship
 
-1. Drag from a handle on the left or the right side of the source element to a handle at the top or the bottom of the target element.
+1. Drag from a handle of the source element to a handle of the target element. Each element has a handle on each side: top, right, bottom and left.
 2. Select the relationship.
 3. In the **Relationship** panel, enter a **Label** and a **Technology**.
 4. Set the **Kind** to **Structural** or **Behavioural**. A structural relationship says that one part uses or depends on the other. A behavioural relationship says that one part calls or sends to the other at run time.
 5. Set the **Line Style** to **Curved (Bezier)**, **Straight** or **Right-angle (Step)**.
+
+### Choose the sides of a relationship
+
+A new relationship has the side **Auto** at each end. An end with **Auto** attaches to the side that faces the other element. When you move an element, the end moves to the side that faces the other element. A relationship from an import or from an agent proposal also has **Auto** at each end.
+
+To attach an end to a fixed side, do one of these steps:
+
+- Select the relationship. Drag the dot at an end of the line to a handle on another side of the same element.
+- Select the relationship. In the **Relationship** panel, set **Source side** or **Target side** to **Top**, **Right**, **Bottom** or **Left**.
+
+Set the side to **Auto** to go back to the facing side.
+
+A drop on another element does not change the relationship. To connect other elements, draw a new relationship.
+
+The sides are part of the layout of the diagram, not of the model. Each diagram keeps its own sides. A side does not change the source or the target of the relationship, and it is not part of a draft or a revision. The SVG export uses the same sides.
+
+The API endpoint is `PUT /api/projects/{projectId}/views/{viewId}/layout/edges/{relationshipId}`. The body is `{ "sourceSide": "top", "targetSide": null }`. A side is `top`, `right`, `bottom`, `left` or `null` for auto. Another value gets `400`. `GET /api/projects/{projectId}/views/{viewId}` returns the sides in `edges`.
 
 To delete it, select the **⋯** button in the header of the panel, then select **Delete relationship**. Confirm **Delete this relationship?**.
 

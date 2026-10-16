@@ -44,7 +44,8 @@ public static class StructurizrDsl
 
     public static string Write(
         string projectName, PinnedModel model, IEnumerable<ViewEntity> views,
-        IReadOnlyDictionary<Guid, IReadOnlyList<LayoutPositionEntity>> positions)
+        IReadOnlyDictionary<Guid, IReadOnlyList<LayoutPositionEntity>> positions,
+        IReadOnlyDictionary<Guid, IReadOnlyList<LayoutEdgeEntity>>? edges = null)
     {
         var state = model.State;
         var ids = DiagramText.Identifiers(state.Elements.Values.Select(e => (e.Id.Value, e.Name)), "element", Reserved);
@@ -186,7 +187,7 @@ public static class StructurizrDsl
         header.Append("// From ").Append(ViewDiagram.PinText(model.Pin)).Append(".\n");
         foreach (var view in orderedViews)
             header.Append("// View \"").Append(DiagramText.OneLine(view.Name)).Append("\" with layout ")
-                .Append(ViewDiagram.LayoutFingerprint(view, positions.GetValueOrDefault(view.Id) ?? [])).Append(".\n");
+                .Append(ViewDiagram.LayoutFingerprint(view, positions.GetValueOrDefault(view.Id) ?? [], edges?.GetValueOrDefault(view.Id))).Append(".\n");
         header.Append("// One-way export. It drops: ").Append(Dropped).Append(".\n");
         foreach (var (identifier, from, to) in renames)
             header.Append("// Renamed for unique names: ").Append(identifier).Append(" \"").Append(from)

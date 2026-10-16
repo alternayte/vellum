@@ -9,7 +9,7 @@ import {
 import { useCanvasStore } from '@/stores/canvas-store'
 import { cn } from '@/lib/utils'
 import { EdgeLabelCard } from './edge-label-card'
-import { computeEdgeOffset, computeLabelOffset, facingEndpoints, getEdgePathFn, type Rect } from '@/lib/edge-utils'
+import { computeEdgeOffset, computeLabelOffset, getEdgePathFn, relationshipEnds, type Rect } from '@/lib/edge-utils'
 import type { DiffState } from '@/stores/draft-store'
 
 export interface C4EdgeData extends Record<string, unknown> {
@@ -23,6 +23,9 @@ export interface C4EdgeData extends Record<string, unknown> {
   totalParallel?: number
   /** A trace event runs along this relationship now; its label goes below the path. */
   labelBelow?: boolean
+  /** The saved side of each end in this view: top, right, bottom or left. Null is auto. */
+  sourceSide?: string | null
+  targetSide?: string | null
 }
 
 const diffEdgeColor: Record<string, string> = {
@@ -63,12 +66,13 @@ export const C4Edge = memo(function C4Edge({
   const totalParallel = d.totalParallel ?? 1
   const { sourceOffset } = computeEdgeOffset(edgeIndex, totalParallel)
 
-  // Handles are fixed on the node sides; the drawn path instead attaches to the sides that
-  // face each other. Fall back to the handle coordinates until both nodes are measured.
+  // The path attaches to the saved side of each end, or to the side that faces the other card
+  // for an auto end, from the live boxes of the cards. Fall back to the handle coordinates
+  // until both nodes are measured.
   const sourceRect = nodeRect(useInternalNode(source))
   const targetRect = nodeRect(useInternalNode(target))
   const ends = sourceRect && targetRect
-    ? facingEndpoints(sourceRect, targetRect, sourceOffset)
+    ? relationshipEnds(sourceRect, targetRect, sourceOffset, { sourceSide: d.sourceSide, targetSide: d.targetSide })
     : { sourceX: sourceX + sourceOffset, sourceY, sourcePosition, targetX: targetX + sourceOffset, targetY, targetPosition }
 
   const pathFn = getEdgePathFn(d.lineShape)

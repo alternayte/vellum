@@ -10,6 +10,12 @@ namespace Vellum.Modules.Diagrams;
 /// <summary>One element of a view, with the box it has on the canvas.</summary>
 public sealed record DiagramElement(ElementState Element, double X, double Y, double Width, double Height, int ChildCount, bool LaidOut);
 
+/// <summary>A side of a card where a relationship attaches.</summary>
+public enum CardSide { Left, Right, Top, Bottom }
+
+/// <summary>The saved sides of one relationship in a view. A null end is auto: it faces the other card.</summary>
+public sealed record RelationshipSides(CardSide? Source, CardSide? Target);
+
 /// <summary>
 /// One view of a model as the canvas shows it: the elements of the view's level, the frame of
 /// the element whose inside the level is, and the relationships between two shown elements.
@@ -21,7 +27,8 @@ public sealed record ViewDiagram(
     IReadOnlyList<DiagramElement> Elements,
     IReadOnlyList<RelationshipState> Relationships,
     ModelPin Pin,
-    string Layout)
+    string Layout,
+    IReadOnlyDictionary<RelationshipId, RelationshipSides> Sides)
 {
     /// <summary>The height of every card on the canvas.</summary>
     public const double CardHeight = 128;
@@ -52,8 +59,10 @@ public sealed record ViewDiagram(
     /// of them, so an element without a place never covers one with a place.</item>
     /// </list>
     /// </summary>
-    public static ViewDiagram Project(ViewEntity view, IEnumerable<LayoutPositionEntity> positions, PinnedModel model)
+    public static ViewDiagram Project(
+        ViewEntity view, IEnumerable<LayoutPositionEntity> positions, PinnedModel model, IEnumerable<LayoutEdgeEntity>? edges = null)
     {
+        var edgeList = edges?.ToList() ?? [];
         var state = model.State;
         ElementId? rootId = view.RootElementId is { } id ? new ElementId(id) : null;
         var root = rootId is { } r ? state.Elements.GetValueOrDefault(r) : null;
@@ -96,22 +105,49 @@ public sealed record ViewDiagram(
             .OrderBy(rel => rel.Id.Value)
             .ToList();
 
-        return new ViewDiagram(view.Name, root, shown, relationships, model.Pin, LayoutFingerprint(view, placed.Values));
+        var sides = new Dictionary<RelationshipId, RelationshipSides>();
+        foreach (var edge in edgeList)
+        {
+            var saved = new RelationshipSides(ParseSide(edge.SourceSide), ParseSide(edge.TargetSide));
+            if (saved.Source is not null || saved.Target is not null)
+                sides[new RelationshipId(edge.RelationshipId)] = saved;
+        }
+
+        return new ViewDiagram(view.Name, root, shown, relationships, model.Pin, LayoutFingerprint(view, placed.Values, edgeList), sides);
     }
 
     /// <summary>
     /// The layout a diagram was drawn from, which a revision does not pin: <c>sha256:</c> and the
-    /// SHA-256 of the view name, the root element and each saved place (element ID, x, y) in
-    /// order of element ID. The same revision and the same fingerprint give the same bytes.
+    /// SHA-256 of the view name, the root element, each saved place (element ID, x, y) in order of
+    /// element ID, then each relationship with a saved side (<c>side</c>, relationship ID, source
+    /// side, target side, an empty word for auto) in order of relationship ID. A view without a
+    /// saved side has the fingerprint it had before sides existed. The same revision and the same
+    /// fingerprint give the same bytes.
     /// </summary>
-    public static string LayoutFingerprint(ViewEntity view, IEnumerable<LayoutPositionEntity> positions)
+    public static string LayoutFingerprint(
+        ViewEntity view, IEnumerable<LayoutPositionEntity> positions, IEnumerable<LayoutEdgeEntity>? edges = null)
     {
         var text = new StringBuilder();
         text.Append(view.Name).Append('\n').Append(view.RootElementId?.ToString() ?? "").Append('\n');
         foreach (var p in positions.OrderBy(p => p.ElementId))
             text.Append(p.ElementId).Append(',').Append(DiagramText.Number(p.X)).Append(',').Append(DiagramText.Number(p.Y)).Append('\n');
+        foreach (var e in (edges ?? []).Where(e => ParseSide(e.SourceSide) is not null || ParseSide(e.TargetSide) is not null).OrderBy(e => e.RelationshipId))
+            text.Append("side,").Append(e.RelationshipId).Append(',')
+                .Append(SideWord(ParseSide(e.SourceSide))).Append(',').Append(SideWord(ParseSide(e.TargetSide))).Append('\n');
         return "sha256:" + Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(text.ToString())));
     }
+
+    /// <summary>The side a saved word names, or null for auto and for a word that names no side.</summary>
+    public static CardSide? ParseSide(string? word) => word switch
+    {
+        EdgeSides.Top => CardSide.Top,
+        EdgeSides.Right => CardSide.Right,
+        EdgeSides.Bottom => CardSide.Bottom,
+        EdgeSides.Left => CardSide.Left,
+        _ => null,
+    };
+
+    private static string SideWord(CardSide? side) => side?.ToString().ToLowerInvariant() ?? "";
 
     private static double Finite(double value) => double.IsFinite(value) ? value : 0;
 

@@ -57,8 +57,14 @@ public sealed record SharedModel(
 
 public sealed record SharedPosition(Guid ElementId, double X, double Y, double? Width, double? Height);
 
-/// <summary>A saved diagram: the place of each element on it. Presentation only.</summary>
-public sealed record SharedView(Guid Id, string Name, IReadOnlyList<SharedPosition> Positions);
+/// <summary>The saved sides of one relationship on a diagram: top, right, bottom or left, or null for auto.</summary>
+public sealed record SharedEdgeSides(Guid RelationshipId, string? SourceSide, string? TargetSide);
+
+/// <summary>
+/// A saved diagram: the place of each element on it and the saved sides of its relationships.
+/// Presentation only. <paramref name="Edges"/> is null on a page pinned before sides existed.
+/// </summary>
+public sealed record SharedView(Guid Id, string Name, IReadOnlyList<SharedPosition> Positions, IReadOnlyList<SharedEdgeSides>? Edges = null);
 
 /// <summary>A payload schema: a JSON Schema document.</summary>
 public sealed record SharedSchema(Guid Id, string Name, string? Description, string Content, int Version);
@@ -287,9 +293,17 @@ public sealed partial class SharePageReader(IServiceProvider services, AppDbCont
                 .ToListAsync(ct))
             .Where(p => shown.Contains(p.ElementId))
             .ToLookup(p => p.ViewId);
+        var shownRelationships = model.Relationships.Select(r => r.Id).ToHashSet();
+        var sides = (await db.LayoutEdges.AsNoTracking()
+                .Where(e => viewIds.Contains(e.ViewId) && (e.SourceSide != null || e.TargetSide != null))
+                .Select(e => new { e.ViewId, e.RelationshipId, e.SourceSide, e.TargetSide })
+                .ToListAsync(ct))
+            .Where(e => shownRelationships.Contains(e.RelationshipId))
+            .ToLookup(e => e.ViewId);
         var sharedViews = views
             .Select(v => new SharedView(v.Id, v.Name,
-                [.. positions[v.Id].OrderBy(p => p.ElementId).Select(p => new SharedPosition(p.ElementId, p.X, p.Y, p.Width, p.Height))]))
+                [.. positions[v.Id].OrderBy(p => p.ElementId).Select(p => new SharedPosition(p.ElementId, p.X, p.Y, p.Width, p.Height))],
+                [.. sides[v.Id].OrderBy(e => e.RelationshipId).Select(e => new SharedEdgeSides(e.RelationshipId, e.SourceSide, e.TargetSide))]))
             .ToList();
 
         var schemas = input.Schemas.OrderBy(s => s.Name, StringComparer.Ordinal).ThenBy(s => s.Id)

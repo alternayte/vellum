@@ -251,6 +251,14 @@
   stroke-width: 2.5px !important;
 }
 
+/* The ends of the selected relationship. Each one drags to another side of the same card. */
+.react-flow__edge.selected .react-flow__edgeupdater {
+  fill: var(--primary);
+  fill-opacity: 0.35;
+  stroke: var(--primary);
+  stroke-width: 1.5px;
+}
+
 /* Trace playback: the nodes taking part in the current event. The dock states the event in
    words, so the ring adds position, not meaning. */
 .react-flow__node.vellum-trace-node {

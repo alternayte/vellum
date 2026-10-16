@@ -15,7 +15,10 @@ public sealed record UpdateViewRequest(
     bool SetRootElementId = false, bool SetActiveLens = false);
 
 public sealed record SaveLayoutPosition(Guid ElementId, double X, double Y, double? Width = null, double? Height = null);
-public sealed record SaveLayoutEdge(Guid RelationshipId, JsonDocument? RoutePoints);
+public sealed record SaveLayoutEdge(Guid RelationshipId, JsonDocument? RoutePoints, string? SourceSide = null, string? TargetSide = null);
+
+/// <summary>The sides of one relationship in a view: top, right, bottom or left, or null for auto.</summary>
+public sealed record SaveEdgeSidesRequest(string? SourceSide, string? TargetSide);
 public sealed record SaveLayoutRequest(
     IReadOnlyList<SaveLayoutPosition> Positions,
     IReadOnlyList<SaveLayoutEdge>? Edges);
@@ -26,7 +29,7 @@ public sealed record ViewDto(
     DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
 
 public sealed record LayoutPositionDto(Guid ElementId, double X, double Y, double? Width = null, double? Height = null);
-public sealed record LayoutEdgeDto(Guid RelationshipId, object? RoutePoints);
+public sealed record LayoutEdgeDto(Guid RelationshipId, object? RoutePoints, string? SourceSide = null, string? TargetSide = null);
 
 public sealed record ViewDetailDto(
     Guid Id, Guid ProjectId, string Name, Guid? RootElementId,
@@ -54,6 +57,8 @@ public static class ViewEndpoints
         group.MapDelete("/{viewId}", Delete);
         // A layout holds one position for each element on the canvas.
         group.MapPut("/{viewId}/layout", SaveLayout).WithBodyLimit(RequestBodyLimit.Document);
+        // The sides of one relationship in this view. The relationship's ends in the model stay.
+        group.MapPut("/{viewId}/layout/edges/{relationshipId}", SaveEdgeSides);
 
         return app;
     }
@@ -130,9 +135,7 @@ public static class ViewEndpoints
         var rawEdges = await db.LayoutEdges.AsNoTracking()
             .Where(e => e.ViewId == viewId)
             .ToListAsync(ct);
-        var edges = rawEdges.Select(e => new LayoutEdgeDto(e.RelationshipId,
-            e.RoutePoints != null ? JsonSerializer.Deserialize<object>(e.RoutePoints.RootElement.GetRawText()) : null))
-            .ToList();
+        var edges = rawEdges.Select(ToDto).ToList();
 
         return Results.Ok(new ViewDetailDto(
             view.Id, view.ProjectId, view.Name, view.RootElementId,
@@ -205,6 +208,14 @@ public static class ViewEndpoints
     {
         await auth.RequireProjectRoleAsync(projectId, user.UserId(), WorkspaceRole.Editor, ct);
 
+        if (request.Edges is not null
+            && Refusal([.. request.Edges.SelectMany((e, i) => new[]
+            {
+                SideError($"edges[{i}].sourceSide", e.SourceSide),
+                SideError($"edges[{i}].targetSide", e.TargetSide),
+            })]) is { } refusal)
+            return refusal;
+
         var view = await db.Views.FindAsync([viewId], ct);
         if (view is null || view.ProjectId != projectId)
             return NotFound("View");
@@ -235,7 +246,9 @@ public static class ViewEndpoints
                 Id = Guid.NewGuid(),
                 ViewId = viewId,
                 RelationshipId = e.RelationshipId,
-                RoutePoints = e.RoutePoints
+                RoutePoints = e.RoutePoints,
+                SourceSide = e.SourceSide,
+                TargetSide = e.TargetSide,
             }));
         }
 
@@ -244,6 +257,52 @@ public static class ViewEndpoints
         return Results.Ok();
     }
 
+    /// <summary>
+    /// Sets the sides of one relationship in the view and keeps its route. Null is auto. The
+    /// relationship's source and target in the model do not change: a side is presentation.
+    /// </summary>
+    private static async Task<IResult> SaveEdgeSides(
+        Guid projectId, Guid viewId, Guid relationshipId,
+        SaveEdgeSidesRequest request,
+        ClaimsPrincipal user,
+        AppDbContext db,
+        WorkspaceAuthorizationService auth,
+        TimeProvider time,
+        CancellationToken ct)
+    {
+        await auth.RequireProjectRoleAsync(projectId, user.UserId(), WorkspaceRole.Editor, ct);
+
+        if (Refusal(SideError("sourceSide", request.SourceSide), SideError("targetSide", request.TargetSide)) is { } refusal)
+            return refusal;
+
+        var view = await db.Views.FindAsync([viewId], ct);
+        if (view is null || view.ProjectId != projectId)
+            return NotFound("View");
+
+        var edge = await db.LayoutEdges.FirstOrDefaultAsync(e => e.ViewId == viewId && e.RelationshipId == relationshipId, ct);
+        if (edge is null)
+        {
+            edge = new LayoutEdgeEntity { Id = Guid.NewGuid(), ViewId = viewId, RelationshipId = relationshipId };
+            db.LayoutEdges.Add(edge);
+        }
+        edge.SourceSide = request.SourceSide;
+        edge.TargetSide = request.TargetSide;
+        // A row with no route and no side says nothing.
+        if (edge.RoutePoints is null && edge.SourceSide is null && edge.TargetSide is null)
+            db.LayoutEdges.Remove(edge);
+
+        view.UpdatedAt = time.GetUtcNow();
+        await db.SaveChangesAsync(ct);
+        return Results.Ok(ToDto(edge));
+    }
+
+    private static ValidationError? SideError(string field, string? side) =>
+        EdgeSides.IsValid(side) ? null : new ValidationError(field, "must be top, right, bottom, left or null (auto)");
+
+    private static LayoutEdgeDto ToDto(LayoutEdgeEntity e) =>
+        new(e.RelationshipId,
+            e.RoutePoints != null ? JsonSerializer.Deserialize<object>(e.RoutePoints.RootElement.GetRawText()) : null,
+            e.SourceSide, e.TargetSide);
 
     private static ViewDto ToDto(ViewEntity v) =>
         new(v.Id, v.ProjectId, v.Name, v.RootElementId, v.VisibleElementIds,
