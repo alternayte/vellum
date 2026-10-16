@@ -286,9 +286,10 @@ public static partial class ArchitectureProposals
 
     /// <summary>
     /// Stores additions that the caller wrote as a draft proposal of the main model. The
-    /// items go through the checks of <see cref="Create"/>: an item that is not an addition,
-    /// that the model holds already, or that references an ID that names nothing is dropped
-    /// and listed in <c>rejectedReferences</c>. Nothing but the proposal row is written: the
+    /// items go through the checks of <see cref="Create"/>: an item that the model holds
+    /// already is not kept and is listed in <c>resolvedToExisting</c>; an item that is not an
+    /// addition, that references an ID that names nothing, or that an accept would refuse (the
+    /// rules of <see cref="Decide"/>) is dropped and listed in <c>rejectedReferences</c>. Nothing but the proposal row is written: the
     /// model does not change. A person accepts or rejects each item.
     /// </summary>
     public static async Task<IResult> Submit(
@@ -567,13 +568,17 @@ public static partial class ArchitectureProposals
             issues.AddRange(Vanished(item, items, model, pending));
             var proposed = item.Proposed;
             var thing = new ProposedThing(
-                item.EntityKind, proposed.Name ?? "", proposed.Kind,
+                item.EntityKind, proposed.Name ?? "", item.EntityKind == AliasKinds.Element ? proposed.Kind : null,
                 proposed.ParentId is { } parent && model.Elements.ContainsKey(parent) ? parent : null,
                 proposed.ParentId is { } other && !model.Elements.ContainsKey(other),
                 proposed.OwnerId, proposed.ChannelId, proposed.ConsumerId,
                 item.EntityKind == AliasKinds.Binding ? proposed.FromId : null,
                 item.EntityKind == AliasKinds.Binding ? proposed.ToId : null,
-                item.EntityKind == AliasKinds.Binding ? proposed.Label : null);
+                item.EntityKind == AliasKinds.Binding ? proposed.Label : null,
+                item.EntityKind == AliasKinds.Relationship ? proposed.FromId : null,
+                item.EntityKind == AliasKinds.Relationship ? proposed.ToId : null,
+                item.EntityKind == AliasKinds.Relationship ? proposed.Label : null,
+                item.EntityKind == AliasKinds.Relationship ? proposed.Kind : null);
             if (ExistingFacts.Find(model, thing, except: item.Id) is ExistingMatch.One one)
                 issues.Add(new(item.Id, $"The model holds this already: '{one.Name}' ({one.Id})."));
         }
@@ -849,12 +854,16 @@ public static partial class ArchitectureProposals
             var item = candidates[alias].Output;
             Guid? Existing(string? reference) => reference is not null && aliases.TryGetValue(reference, out var known) ? known.Id : null;
             var thing = new ProposedThing(
-                item.EntityKind, item.Name, candidates[alias].Enum,
+                item.EntityKind, item.Name, item.EntityKind == AliasKinds.Element ? candidates[alias].Enum : null,
                 Existing(item.Parent), item.Parent is not null && Existing(item.Parent) is null,
                 Existing(item.Owner), Existing(item.Channel), Existing(item.Consumer),
                 item.EntityKind == AliasKinds.Binding ? Existing(item.From) : null,
                 item.EntityKind == AliasKinds.Binding ? Existing(item.To) : null,
-                item.EntityKind == AliasKinds.Binding ? item.Label : null);
+                item.EntityKind == AliasKinds.Binding ? item.Label : null,
+                item.EntityKind == AliasKinds.Relationship ? Existing(item.From) : null,
+                item.EntityKind == AliasKinds.Relationship ? Existing(item.To) : null,
+                item.EntityKind == AliasKinds.Relationship ? item.Label : null,
+                item.EntityKind == AliasKinds.Relationship ? candidates[alias].Enum : null);
 
             var hasName = item.EntityKind is AliasKinds.Element or AliasKinds.Operation or AliasKinds.Channel or AliasKinds.Message;
             if (hasName && ProposedNames.Problem(model, item.EntityKind, item.Name, thing.OwnerId) is { } problem)
@@ -913,9 +922,54 @@ public static partial class ArchitectureProposals
                 Citation: document is null ? null : string.Create(CultureInfo.InvariantCulture, $"{document.Citation}:{item.StartLine}-{item.EndLine}"));
         }).ToList();
 
+        items = Acceptable(items, model, rejected);
+
         return (items, resolved, rejected.Count <= FlowAssembler.MaxFindings
             ? rejected
             : [.. rejected.Take(FlowAssembler.MaxFindings - 1), new RejectedReference("", "", "More items were dropped; they are not listed.")]);
+    }
+
+    /// <summary>
+    /// The items that an accept of the whole proposal would write. Each item is decided in
+    /// dependency order by the decision of <see cref="Decide"/> (<see cref="InferredWrites.Decide"/>),
+    /// against the model with the items before it added. An item that the decision refuses,
+    /// such as a store without a parent of kind system, can never be accepted: it is dropped
+    /// and listed with the reason, and so is every item that needs it.
+    /// </summary>
+    private static List<ArchitectureItemDto> Acceptable(List<ArchitectureItemDto> items, ModelState model, List<RejectedReference> rejected)
+    {
+        var byId = items.ToDictionary(i => i.Id);
+        var dropped = new HashSet<Guid>();
+        var state = model;
+        foreach (var item in InDependencyOrder(items))
+        {
+            string? reason;
+            if (item.DependsOn.Where(dropped.Contains).Select(d => byId[d]).FirstOrDefault() is { } needed)
+            {
+                reason = $"The item needs '{needed.Name}' ({needed.Alias}), which was dropped.";
+            }
+            else if (ToAddition(item) is not { } addition)
+            {
+                reason = "The item does not describe an addition that can be written.";
+            }
+            else
+            {
+                // The source pointer of the check stands in for the one an accept writes, which names the stored proposal.
+                var provenance = new Provenance(item.Citation ?? $"{Kind}-proposal", null, item.Confidence, Guid.Empty, DateTimeOffset.UnixEpoch);
+                var (decision, refusal) = InferredWrites.Decide(state, addition, provenance);
+                if (decision is CommandResult<IReadOnlyList<object>>.Success success)
+                {
+                    state = success.Value.Aggregate(state, ModelState.Evolve);
+                    continue;
+                }
+                reason = refusal!.Reason;
+            }
+
+            dropped.Add(item.Id);
+            rejected.Add(new($"item:{item.Alias}", item.Alias, $"An accept would refuse the item: {reason.TrimEnd('.')}. The item was dropped."));
+        }
+
+        return [.. items.Where(i => !dropped.Contains(i.Id))];
     }
 
     /// <summary>Reads a member of a closed set. A missing value takes <paramref name="fallback"/> when the kind has one.</summary>

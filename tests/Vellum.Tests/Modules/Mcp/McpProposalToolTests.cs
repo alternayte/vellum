@@ -220,4 +220,67 @@ public class McpProposalToolTests(IntegrationFixture fixture) : IClassFixture<In
             (scenario["origin"]!["kind"]!.GetValue<string>(), scenario["origin"]!["proposalId"]!.GetValue<Guid>(),
                 scenario["origin"]!["provider"]!.GetValue<string>(), scenario["origin"]!["model"]!.GetValue<string>()));
     }
+
+    /// <summary>
+    /// Issues #2 and #4: at submission an item is checked with the decision of an accept and
+    /// against the relationships of the model, so a person never reviews an item that the
+    /// accept must refuse or that repeats a fact.
+    /// </summary>
+    [Fact]
+    public async Task A_submitted_item_that_an_accept_would_refuse_or_that_the_model_holds_is_not_kept()
+    {
+        var factory = fixture.Factory;
+        var owner = await TestHost.SignInAsync(factory);
+        var (workspaceId, projectId) = await TestHost.CreateProjectAsync(owner);
+        var orders = await OrdersReference.SeedAsync(owner, projectId);
+        var calls = Guid.NewGuid();
+        await Json(owner.PostAsJsonAsync(orders.Url("relationships"), new
+        {
+            id = calls, fromId = OrdersReference.Customer, toId = OrdersReference.OrdersApi, label = "calls the REST API", kind = "behavioural",
+        }), HttpStatusCode.Created);
+        var agent = await TestHost.CreateAgentAsync(factory, owner, workspaceId, ["read", "propose"]);
+        var mcp = new McpWire(agent.Client);
+
+        JsonObject Relationship(string alias, Guid from, Guid to, string label, string kind) => new()
+        {
+            ["alias"] = alias, ["entityKind"] = "relationship", ["from"] = from, ["to"] = to, ["label"] = label, ["relationshipKind"] = kind,
+        };
+        var proposed = await DataAsync(mcp, "propose_architecture", new JsonObject
+        {
+            ["projectId"] = projectId,
+            ["request"] = "Keep the old journal.",
+            ["proposal"] = new JsonObject
+            {
+                ["summary"] = "A journal store",
+                ["items"] = new JsonArray(
+                    // A store needs a parent of kind system: the accept refuses it, and the item that needs it goes too.
+                    new JsonObject { ["alias"] = "N1", ["entityKind"] = "element", ["elementKind"] = "store", ["name"] = "Legacy Journal" },
+                    new JsonObject { ["alias"] = "N2", ["entityKind"] = "relationship", ["from"] = OrdersReference.OrdersApi, ["to"] = "N1", ["label"] = "writes" },
+                    new JsonObject { ["alias"] = "N3", ["entityKind"] = "element", ["elementKind"] = "store", ["name"] = "Archive", ["parent"] = OrdersReference.Shop },
+                    // The model holds this relationship: same ends, kind and label, with other white space and case.
+                    Relationship("N4", OrdersReference.Customer, OrdersReference.OrdersApi, "Calls  the REST API", "behavioural"),
+                    // Another label, or another kind, is another relationship.
+                    Relationship("N5", OrdersReference.Customer, OrdersReference.OrdersApi, "reads the order status", "behavioural"),
+                    Relationship("N6", OrdersReference.Customer, OrdersReference.OrdersApi, "calls the REST API", "structural"),
+                    // The same relationship twice in one proposal: the second repeats the first.
+                    Relationship("N7", OrdersReference.Customer, OrdersReference.OrdersApi, "reads the order status", "behavioural")),
+            },
+        });
+
+        Assert.Equal(["N3", "N5", "N6"], proposed["items"]!.AsArray().Select(i => i!["alias"]!.GetValue<string>()).Order());
+        var resolved = Assert.Single(proposed["resolvedToExisting"]!.AsArray())!;
+        Assert.Equal(("N4", calls), (resolved["alias"]!.GetValue<string>(), resolved["id"]!.GetValue<Guid>()));
+        var rejected = proposed["rejectedReferences"]!.AsArray().ToDictionary(r => r!["where"]!.GetValue<string>(), r => r!["reason"]!.GetValue<string>());
+        Assert.Equal(["item:N1", "item:N2", "item:N7"], rejected.Keys.Order());
+        Assert.Contains("Store requires a parent of kind System", rejected["item:N1"]);
+        Assert.Contains("which was dropped", rejected["item:N2"]);
+        Assert.Contains("The model holds this already", rejected["item:N7"]);
+        Assert.Empty(proposed["itemIssues"]!.AsArray());
+
+        // Every item that is left can be accepted.
+        var proposalId = proposed["proposalId"]!.GetValue<Guid>();
+        var itemIds = new JsonArray([.. proposed["items"]!.AsArray().Select(i => (JsonNode)i!["id"]!.GetValue<Guid>())]);
+        var decided = await Json(owner.PostAsJsonAsync($"/api/projects/{projectId}/ai/architecture-proposals/{proposalId}/decide", new { accept = itemIds }), HttpStatusCode.OK);
+        Assert.Equal("decided", decided["status"]!.GetValue<string>());
+    }
 }

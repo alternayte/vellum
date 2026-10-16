@@ -65,21 +65,12 @@ internal static class InferredWrites
             var events = new List<object>();
             foreach (var (addition, confidence) in additions)
             {
-                if (ExistingFacts.Find(state, Describe(addition), except: addition.Id) is var match and not ExistingMatch.None)
-                {
-                    var message = match is ExistingMatch.One one
-                        ? $"The model holds this already: '{one.Name}' ({one.Id}). Nothing was created."
-                        : $"The model holds more than one thing that fits ({string.Join(", ", ((ExistingMatch.Ambiguous)match).Names.Select(n => $"'{n}'"))}). Nothing was created.";
-                    refused = new AdditionRefused(addition.Id, message, true);
-                    return new Decision.Conflict(message);
-                }
-
                 // An item read from a document cites its lines: that citation is its source pointer.
                 var provenance = new Provenance(sources?.GetValueOrDefault(addition.Id) ?? source, null, confidence, acceptedBy, acceptedAt);
-                var decision = Add(state, addition).Then(state, after => Record(after, addition, provenance));
+                var (decision, refusal) = Decide(state, addition, provenance);
                 if (decision is not Decision.Success success)
                 {
-                    refused = new AdditionRefused(addition.Id, Reason(decision), decision is Decision.Conflict);
+                    refused = refusal;
                     return decision;
                 }
 
@@ -93,6 +84,30 @@ internal static class InferredWrites
         return result is CommandResult<bool>.Success ? null : refused;
     }
 
+    /// <summary>
+    /// The decision that an accept makes for one addition against <paramref name="state"/>:
+    /// the check for a thing the model holds already (<see cref="ExistingFacts"/>), the
+    /// modelling decision with its rules (<see cref="ModelInvariants"/>), and the record of the
+    /// status and provenance. A submitted proposal is checked with this same decision, so an
+    /// item that an accept would refuse is dropped when it is submitted.
+    /// </summary>
+    /// <returns>The decision, and why the addition is refused when it is not a success.</returns>
+    public static (Decision Decision, AdditionRefused? Refused) Decide(ModelState state, Addition addition, Provenance provenance)
+    {
+        if (ExistingFacts.Find(state, Describe(addition), except: addition.Id) is var match and not ExistingMatch.None)
+        {
+            var message = match is ExistingMatch.One one
+                ? $"The model holds this already: '{one.Name}' ({one.Id})."
+                : $"The model holds more than one thing that fits ({string.Join(", ", ((ExistingMatch.Ambiguous)match).Names.Select(n => $"'{n}'"))}).";
+            return (new Decision.Conflict(message), new AdditionRefused(addition.Id, message, true));
+        }
+
+        var decision = Add(state, addition).Then(state, after => Record(after, addition, provenance));
+        return decision is Decision.Success
+            ? (decision, null)
+            : (decision, new AdditionRefused(addition.Id, Reason(decision), decision is Decision.Conflict));
+    }
+
     /// <summary>The addition as <see cref="ExistingFacts"/> compares it. Every reference of an addition is an ID.</summary>
     private static ProposedThing Describe(Addition addition) => addition switch
     {
@@ -103,8 +118,9 @@ internal static class InferredWrites
         Addition.Binding b => new ProposedThing(AliasKinds.Binding, "",
             SourceChannelId: b.SourceChannelId, TargetChannelId: b.TargetChannelId, RoutingKey: b.RoutingKey),
         Addition.Message m => new ProposedThing(AliasKinds.Message, m.Name),
-        // A relationship has no rule for "the same thing"; the modelling decision judges it.
-        _ => new ProposedThing(AliasKinds.Relationship, ""),
+        Addition.Relationship r => new ProposedThing(AliasKinds.Relationship, "",
+            FromId: r.FromId, ToId: r.ToId, Label: r.Label, RelationshipKind: r.Kind.ToString()),
+        _ => throw new InvalidOperationException($"Unknown addition {addition.GetType().Name}."),
     };
 
     private static Decision Add(ModelState state, Addition addition) => addition switch
