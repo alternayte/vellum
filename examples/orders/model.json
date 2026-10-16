@@ -202,35 +202,45 @@
       "name": "OrderRequest",
       "description": "The body of POST /orders.",
       "content": "{\"type\":\"object\",\"required\":[\"sku\",\"qty\"],\"properties\":{\"sku\":{\"type\":\"string\",\"minLength\":1},\"qty\":{\"type\":\"integer\",\"minimum\":1}},\"additionalProperties\":false}",
-      "version": 1
+      "version": 1,
+      "factStatus": "declared",
+      "provenance": null
     },
     {
       "id": "e0a1d5c0-15ed-4000-8000-000000000031",
       "name": "OrderAccepted",
       "description": "The answer of POST /orders.",
       "content": "{\"type\":\"object\",\"required\":[\"orderId\",\"status\"],\"properties\":{\"orderId\":{\"type\":\"string\",\"minLength\":1},\"status\":{\"enum\":[\"accepted\"]}},\"additionalProperties\":false}",
-      "version": 1
+      "version": 1,
+      "factStatus": "declared",
+      "provenance": null
     },
     {
       "id": "e0a1d5c0-15ed-4000-8000-000000000032",
       "name": "OrderCreated",
       "description": "The event that the Orders API publishes for an accepted order with reserved stock.",
       "content": "{\"type\":\"object\",\"required\":[\"orderId\",\"sku\",\"qty\"],\"properties\":{\"orderId\":{\"type\":\"string\",\"minLength\":1},\"sku\":{\"type\":\"string\",\"minLength\":1},\"qty\":{\"type\":\"integer\",\"minimum\":1}},\"additionalProperties\":false}",
-      "version": 1
+      "version": 1,
+      "factStatus": "declared",
+      "provenance": null
     },
     {
       "id": "e0a1d5c0-15ed-4000-8000-000000000033",
       "name": "ReservationRequest",
       "description": "The body of POST /reservations.",
       "content": "{\"type\":\"object\",\"required\":[\"orderId\",\"sku\",\"qty\"],\"properties\":{\"orderId\":{\"type\":\"string\",\"minLength\":1},\"sku\":{\"type\":\"string\",\"minLength\":1},\"qty\":{\"type\":\"integer\",\"minimum\":1}},\"additionalProperties\":false}",
-      "version": 1
+      "version": 1,
+      "factStatus": "declared",
+      "provenance": null
     },
     {
       "id": "e0a1d5c0-15ed-4000-8000-000000000034",
       "name": "ChargeRequest",
       "description": "The body of POST /charges.",
       "content": "{\"type\":\"object\",\"required\":[\"orderId\",\"amount\",\"currency\"],\"properties\":{\"orderId\":{\"type\":\"string\",\"minLength\":1},\"amount\":{\"type\":\"number\",\"exclusiveMinimum\":0},\"currency\":{\"type\":\"string\",\"pattern\":\"^[A-Z]{3}$\"}},\"additionalProperties\":false}",
-      "version": 1
+      "version": 1,
+      "factStatus": "declared",
+      "provenance": null
     }
   ],
   "operations": [

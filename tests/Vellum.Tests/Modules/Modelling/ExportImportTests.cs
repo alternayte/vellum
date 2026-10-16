@@ -309,6 +309,45 @@ public class ExportImportTests : IClassFixture<IntegrationFixture>
     }
 
     [Fact]
+    public async Task A_schema_keeps_its_label_through_export_and_import_and_a_document_without_one_does_not_make_it_declared()
+    {
+        var factory = _fixture.Factory;
+        using var client = await CreateAuthenticatedClientAsync(factory);
+        var projectId = await SetupProjectAsync(client);
+        var schemaId = Guid.NewGuid();
+        const string pointer = "github.com/acme/orders@abc123:api/openapi.json:40-52";
+
+        object Document(object schema) => new { version = "1.0", project = new { name = "Labels" }, schemas = new[] { schema } };
+        async Task Import(object schema)
+        {
+            var response = await client.PostAsJsonAsync($"/api/projects/{projectId}/import", Document(schema));
+            Assert.True(response.StatusCode == HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
+        }
+        async Task<SchemaDto> Read() => (await client.GetFromJsonAsync<SchemaDto>($"/api/projects/{projectId}/schemas/{schemaId}"))!;
+
+        await Import(new
+        {
+            id = schemaId, name = "Order", content = "{\"type\":\"object\"}", version = 1,
+            factStatus = "observed-in-source", provenance = new { source = pointer, revision = "abc123" },
+        });
+        Assert.Equal(("observed-in-source", pointer), ((await Read()).FactStatus, (await Read()).Provenance?.Source));
+
+        var exported = (await client.GetFromJsonAsync<ModelExportDocument>($"/api/projects/{projectId}/export"))!;
+        var schema = Assert.Single(exported.Schemas);
+        Assert.Equal(("observed-in-source", pointer), (schema.FactStatus, schema.Provenance?.Source));
+
+        // A document of version 0.1.0 has no label on a schema. It changes the content, not the label.
+        await Import(new { id = schemaId, name = "Order", content = "{\"type\":\"object\",\"title\":\"Order\"}", version = 1 });
+        var after = await Read();
+        Assert.Equal(("observed-in-source", pointer, 2), (after.FactStatus, after.Provenance?.Source, after.Version));
+
+        // An observed-in-source label without a source pointer is refused, as for any fact.
+        var refused = await client.PostAsJsonAsync($"/api/projects/{projectId}/import",
+            Document(new { id = schemaId, name = "Order", content = "{\"type\":\"object\"}", version = 1, factStatus = "observed-in-source" }));
+        Assert.Equal(HttpStatusCode.BadRequest, refused.StatusCode);
+    }
+
+    [Fact]
     public async Task Import_rejects_invalid_enum_label_with_400()
     {
         var factory = _fixture.Factory;

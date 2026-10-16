@@ -58,11 +58,14 @@ public static class ExportModel
                 m.ProvenanceAcceptedBy, m.ProvenanceAcceptedAt),
             StaleExport.From(m.StaleSinceRevision, m.StaleReason))).ToList();
 
-        var schemas = await db.Schemas.AsNoTracking()
+        var schemaEntities = await db.Schemas.AsNoTracking()
             .Where(s => s.ProjectId == projectId)
             .OrderBy(s => s.Id)
-            .Select(s => new SchemaExport(s.Id, s.Name, s.Description, s.Content, s.Version))
             .ToListAsync(ct);
+        var schemas = schemaEntities.Select(s => new SchemaExport(
+            s.Id, s.Name, s.Description, s.Content, s.Version, s.FactStatus.ToApiString(),
+            ProvenanceExport.From(s.ProvenanceSource, s.ProvenanceRevision, s.ProvenanceConfidence,
+                s.ProvenanceAcceptedBy, s.ProvenanceAcceptedAt))).ToList();
 
         // Contracts have no read-model rows; they come from the stored state of the main
         // stream. Every list is ordered by ID, so the same model exports the same document.

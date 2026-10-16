@@ -213,5 +213,7 @@ internal static class Blockers
             .Concat(view.Operations.Select(o => (o.Id.Value, "operation", o.Name, o.FactStatus, o.Stale)))
             .Concat(view.Channels.Select(c => (c.Id.Value, "channel", c.Name, c.FactStatus, c.Stale)))
             .Concat(view.Subscriptions.Select(s => (s.Id.Value, "subscription", view.Name(s.Id), s.FactStatus, s.Stale)))
-            .Concat(view.Bindings.Select(b => (b.Id.Value, "binding", view.Name(b.Id), b.FactStatus, b.Stale)));
+            .Concat(view.Bindings.Select(b => (b.Id.Value, "binding", view.Name(b.Id), b.FactStatus, b.Stale)))
+            // A schema holds no stale mark: a scan that no longer finds it proposes its removal.
+            .Concat(view.Schemas.Select(s => (s.Id, "schema", s.Name, s.FactStatus, (StaleMark?)null)));
 }

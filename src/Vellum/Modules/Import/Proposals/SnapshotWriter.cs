@@ -123,10 +123,12 @@ internal static class SnapshotWriter
         var db = services.GetRequiredService<AppDbContext>();
         var store = services.GetRequiredService<IEventStore>().ForProject(scan.ProjectId);
         var (model, version) = await store.Load<ModelState>(StreamId.From(project.StreamId), ct);
-        var schemas = await services.GetRequiredService<AppDbContext>().Schemas.AsNoTracking()
+        var schemas = (await services.GetRequiredService<AppDbContext>().Schemas.AsNoTracking()
             .Where(s => s.ProjectId == scan.ProjectId)
-            .Select(s => new SchemaRow(s.Id, s.Name, s.Content))
-            .ToListAsync(ct);
+            .Select(s => new { s.Id, s.Name, s.Content, s.FactStatus })
+            .ToListAsync(ct))
+            .Select(s => new SchemaRow(s.Id, s.Name, s.Content, s.FactStatus.ToApiString()))
+            .ToList();
         var state = await ImportState.LoadAsync(db, scan, ct);
 
         // A scan that a person makes the tracked one is planned as a tracking scan.

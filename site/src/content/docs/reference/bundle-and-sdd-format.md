@@ -139,7 +139,7 @@ The title is `<project name>: Software Design Document`. Below it are the pinned
 | `2. Elements` | Each element with its ID, kind, parent and truth label. |
 | `3. Operations` | Each operation and its contract. Subsections list operations with no OpenAPI document and example payloads from scenarios. |
 | `4. Channels, subscriptions and messages` | Channels, subscriptions, bindings, messages, and the publications that scenarios declare. |
-| `5. Schemas` | Each schema with its ID, version and content. |
+| `5. Schemas` | Each schema with its ID, version, truth label, provenance and content. |
 | `6. Data stores and access` | Each store and the elements that use it. |
 | `7. Scenarios` | Each scenario and its playback. |
 | `8. Promises` | Each approved promise under a heading of its own. The subsections **Not approved: do not implement as requirements**, **Proposed revisions that are not in force** and **Retired** hold the rest. |

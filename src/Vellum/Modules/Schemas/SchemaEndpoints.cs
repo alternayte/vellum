@@ -87,9 +87,17 @@ public static class SchemaEndpoints
     }
 }
 
+/// <param name="FactStatus">The truth label: <c>observed-in-source</c> for a schema accepted from a scan of code or configuration, <c>declared</c> for one that a person or a model file wrote.</param>
+/// <param name="Provenance">Where the schema came from: for an accepted scan, the file and lines of its evidence. Null for a schema that a person wrote.</param>
 public sealed record SchemaDto(
     Guid Id, string Name, string? Description,
-    string Content, int Version);
+    string Content, int Version, string FactStatus, ProvenanceDto? Provenance)
+{
+    internal static SchemaDto From(SchemaEntity s) => new(
+        s.Id, s.Name, s.Description, s.Content, s.Version, s.FactStatus.ToApiString(),
+        ProvenanceMapper.ToDto(s.ProvenanceSource, s.ProvenanceRevision, s.ProvenanceConfidence, s.ProvenanceAcceptedBy, s.ProvenanceAcceptedAt,
+            contentNotHeld: s.ProvenanceContentNotHeld));
+}
 
 public sealed record CreateSchemaRequest(
     Guid Id, string Name, string? Description, string Content);
@@ -111,7 +119,8 @@ public static class CreateSchema
     }
 
     internal static SchemaDto ToDto(SchemaStateEntry schema) => new(
-        schema.Id, schema.Name, schema.Description, schema.Content, schema.Version);
+        schema.Id, schema.Name, schema.Description, schema.Content, schema.Version,
+        schema.FactStatus.ToApiString(), ProvenanceMapper.ToDto(schema.Provenance));
 }
 
 public static class GetSchema
@@ -125,8 +134,7 @@ public static class GetSchema
 
         if (entity is null) return Results.NotFound(new ErrorResponse("not_found", "Schema not found"));
 
-        return Results.Ok(new SchemaDto(
-            entity.Id, entity.Name, entity.Description, entity.Content, entity.Version));
+        return Results.Ok(SchemaDto.From(entity));
     }
 }
 
@@ -150,11 +158,11 @@ public static class ListSchemas
                 || (s.Name == sortKey && s.Id.CompareTo(afterId) > 0));
         }
 
-        var items = await query
+        var items = (await query
             .OrderBy(s => s.Name).ThenBy(s => s.Id)
             .Take(pageSize + 1)
-            .Select(s => new SchemaDto(s.Id, s.Name, s.Description, s.Content, s.Version))
-            .ToListAsync(ct);
+            .ToListAsync(ct))
+            .Select(SchemaDto.From).ToList();
 
         string? nextCursor = null;
         if (items.Count > pageSize)

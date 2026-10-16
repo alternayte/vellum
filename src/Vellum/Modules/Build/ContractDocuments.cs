@@ -84,7 +84,8 @@ internal static partial class ContractDocuments
             messages = model.Messages.Values.OrderBy(m => m.Id.Value).Select(m => new MessageExport(
                 m.Id, m.Name, m.Description, m.ProducerId, [.. m.ConsumerIds.Select(c => c.Value)], m.SchemaId, m.Tags,
                 m.FactStatus.ToApiString(), ProvenanceExport.From(m.Provenance))),
-            schemas = view.Input.Schemas.OrderBy(s => s.Id).Select(s => new SchemaExport(s.Id, s.Name, s.Description, s.Content, s.Version)),
+            schemas = view.Input.Schemas.OrderBy(s => s.Id).Select(s => new SchemaExport(
+                s.Id, s.Name, s.Description, s.Content, s.Version, s.FactStatus.ToApiString(), ProvenanceExport.From(s.Provenance))),
             operations = model.Operations.Values.OrderBy(o => o.Id.Value).Select(o => new OperationExport(
                 o.Id, o.OwnerId, o.Name, o.Transport.ToString().ToLowerInvariant(), o.RequestSchemaId, o.ResponseSchemaId,
                 o.TimeoutMs, new RetryExport(o.Retry.MaxAttempts, o.Retry.BackoffMs),

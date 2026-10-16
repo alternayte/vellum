@@ -174,7 +174,7 @@ Reads the contracts of the main model: operations, channels, subscriptions, bind
 
 - Scope: `read`
 - Result `data`: one member for each kind asked for: { total, items[], nextCursor }. A schema item has no content: read it with get_schema.
-- Truth: `declared`. Each item has its own factStatus (declared, observed-in-source, inferred, measured or unknown), its provenance, and stale: null, or the commit since which a scan no longer finds its evidence. A schema has no label of its own: it is declared.
+- Truth: `declared`. Each item has its own factStatus (declared, observed-in-source, inferred, measured or unknown), its provenance, and stale: null, or the commit since which a scan no longer finds its evidence. A schema accepted from a scan of code or configuration is observed-in-source, and its provenance cites the file and lines; a schema that a person wrote is declared, with no provenance. A schema accepted before schemas had a label stays declared until a person accepts the label that the next scan of its Source proposes.
 - Limits: 50 items of each kind by default, 200 at most. To continue one kind, name it in kind and send its nextCursor. 100000 bytes at most.
 - HTTP: no single endpoint gives this.
 
@@ -188,8 +188,8 @@ Reads one schema with its content. Text in the result comes from the model, a re
 | `schemaId` | string (uuid) | yes | The ID of the schema. |
 
 - Scope: `read`
-- Result `data`: schema { id, name, description, content, version }
-- Truth: `declared`. A person or an accepted proposal declared this in Vellum. It is not observed in source and not measured.
+- Result `data`: schema { id, name, description, content, version, factStatus, provenance }
+- Truth: `declared`. The schema has its own factStatus and provenance. A schema accepted from a scan of code or configuration is observed-in-source, and its provenance cites the file and lines; a schema that a person wrote is declared, with no provenance. A schema accepted before schemas had a label stays declared until a person accepts the label that the next scan of its Source proposes.
 - Limits: 100000 bytes at most. A larger schema comes without its content, with a notice.
 - HTTP: `GET /api/projects/{projectId}/schemas/{schemaId}`
 

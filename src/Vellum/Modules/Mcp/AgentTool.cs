@@ -63,6 +63,7 @@ public static class AgentTools
 
     private const string PerItem = "Each item has its own factStatus (declared, observed-in-source, inferred, measured or unknown), its provenance, and stale: null, or the commit since which a scan no longer finds its evidence.";
     private const string Declared = "A person or an accepted proposal declared this in Vellum. It is not observed in source and not measured.";
+    private const string SchemaLabel = "A schema accepted from a scan of code or configuration is observed-in-source, and its provenance cites the file and lines; a schema that a person wrote is declared, with no provenance. A schema accepted before schemas had a label stays declared until a person accepts the label that the next scan of its Source proposes.";
 
     // Static fields are set in the order they are written, so the texts come before the list.
     private static readonly string Bytes = $"{McpOutput.MaxBytes} bytes at most.";
@@ -110,12 +111,13 @@ public static class AgentTools
             "Reads the contracts of the main model: operations, channels, subscriptions, bindings, messages and schemas. With elementId, only the contracts of that element.",
             "one member for each kind asked for: { total, items[], nextCursor }. A schema item has no content: read it with get_schema.",
             $"{McpOutput.DefaultPage} items of each kind by default, {McpOutput.MaxPage} at most. To continue one kind, name it in kind and send its nextCursor. {Bytes}",
-            "declared", PerItem + " A schema has no label of its own: it is declared.",
+            "declared", PerItem + " " + SchemaLabel,
             null, ModelTools.GetContracts),
         new("get_schema", AgentScope.Read,
             "Reads one schema with its content.",
-            "schema { id, name, description, content, version }",
-            $"{Bytes} A larger schema comes without its content, with a notice.", "declared", Declared,
+            "schema { id, name, description, content, version, factStatus, provenance }",
+            $"{Bytes} A larger schema comes without its content, with a notice.", "declared",
+            "The schema has its own factStatus and provenance. " + SchemaLabel,
             new("GET", "/api/projects/{projectId}/schemas/{schemaId}"), ScenarioTools.GetSchema),
         new("list_scenarios", AgentScope.Read,
             "Lists the scenarios of a project.",

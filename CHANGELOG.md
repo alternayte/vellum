@@ -7,6 +7,13 @@ of an earlier release, so the data of each release upgrades to the next.
 
 ## Unreleased
 
+- A schema accepted from a scan of code or configuration has the truth label
+  `observed-in-source` and a provenance that cites its file and lines, like a channel.
+  Version 0.1.0 labelled it `declared` (#5). A stored schema keeps its label; the next
+  scan of its Source proposes the change, and a person accepts it.
+- HTTP API: a schema has the new fields `factStatus` and `provenance`. The model document
+  carries both for each schema; a document without them keeps the label a schema has.
+
 ## 0.1.0 - 2026-10-15
 
 The first release.

@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Vellum.Modules.Modelling;
 
 namespace Vellum.Modules.Schemas;
 
@@ -26,4 +27,12 @@ public class SchemaEntity
     public string? Description { get; set; }
     public string Content { get; set; } = null!;
     public int Version { get; set; }
+    /// <summary>The truth label. A row of a stream without a recorded label is <c>declared</c>.</summary>
+    public FactStatus FactStatus { get; set; } = FactStatus.Declared;
+    public string? ProvenanceSource { get; set; }
+    public string? ProvenanceRevision { get; set; }
+    public double? ProvenanceConfidence { get; set; }
+    public Guid? ProvenanceAcceptedBy { get; set; }
+    public DateTimeOffset? ProvenanceAcceptedAt { get; set; }
+    public bool ProvenanceContentNotHeld { get; set; }
 }
