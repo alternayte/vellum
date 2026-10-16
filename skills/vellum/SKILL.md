@@ -134,7 +134,8 @@ No tool and no endpoint lets a token do these. Ask a person to do them in the ap
 - A token deletes, changes or removes only what agent tokens alone wrote: a draft promise, or
   an obligation that no person changed. Else the HTTP API answers 403 `human_only`.
 - `propose_architecture` and `propose_flow` store a draft proposal and change nothing else. Use
-  IDs that a read tool gave you. `rejectedReferences` in the result lists what Vellum dropped.
+  IDs that a read tool gave you. `rejectedReferences` in the result lists what Vellum dropped,
+  with the reason. `resolvedToExisting` lists what the model holds already.
 
 Do not change a promise so that the code passes. If the code cannot keep an approved
 promise, stop and tell the user. Only a person changes an approved promise.

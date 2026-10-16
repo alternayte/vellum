@@ -22,7 +22,7 @@ internal static class ProposalTools
 
     private const string Architecture =
         "The additions: { summary, reasoningSummary, openQuestions[], items[] }. An item is { alias (N1, N2, …), action (add), entityKind, name, description, technology, confidence (0 to 1), rationale } "
-        + "and the members of its entityKind: element { elementKind (actor, system, app, store or component), parent }; relationship { from, to, label, relationshipKind (structural or behavioural) }; "
+        + "and the members of its entityKind: element { elementKind (actor, system, app, store or component), parent }, where an actor and a system have no parent, an app and a store have a parent of kind system, and a component has a parent of kind app; relationship { from, to, label, relationshipKind (structural or behavioural) }; "
         + "operation { owner, transport (http, grpc or command) }; channel { channelKind (topic, queue or exchange) }; subscription { channel, consumer }; binding { from, to, label (the routing key) }; "
         + "message { producer, consumers[] }. A reference is the ID of a thing of the model, or the alias of another item. An item that changes or removes a thing is dropped: a proposal only adds.";
 

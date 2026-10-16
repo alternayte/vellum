@@ -10,7 +10,8 @@ namespace Vellum.Modules.Ai.Design;
 internal sealed record ProposedThing(
     string Kind, string Name, string? ElementKind = null, Guid? ParentId = null, bool ParentIsNew = false,
     Guid? OwnerId = null, Guid? ChannelId = null, Guid? ConsumerId = null,
-    Guid? SourceChannelId = null, Guid? TargetChannelId = null, string? RoutingKey = null);
+    Guid? SourceChannelId = null, Guid? TargetChannelId = null, string? RoutingKey = null,
+    Guid? FromId = null, Guid? ToId = null, string? Label = null, string? RelationshipKind = null);
 
 /// <summary>What a proposed thing is in the model already.</summary>
 internal abstract record ExistingMatch
@@ -37,6 +38,8 @@ internal abstract record ExistingMatch
 /// <item>channel, message: the same normalised name.</item>
 /// <item>subscription: the same channel and consumer.</item>
 /// <item>binding: the same source, target and routing key.</item>
+/// <item>relationship: the same source, target and kind, and the same normalised label (no
+/// label is the empty label). Two relationships with another label say two things.</item>
 /// </list>
 /// A thing whose owner, channel, consumer, source or target is itself new cannot exist already.
 /// </summary>
@@ -98,6 +101,15 @@ internal static class ExistingFacts
                     .Select(b => (b.Id.Value, ContractDecider.BindingLabel(model, b)));
                 break;
 
+            case AliasKinds.Relationship:
+                if (thing is not { FromId: { } from, ToId: { } to } || !ModelEnum.TryParseDefined(thing.RelationshipKind, out RelationshipKind relationshipKind))
+                    return new ExistingMatch.None();
+                var label = ModelIndex.NormalName(thing.Label);
+                candidates = model.Relationships.Values
+                    .Where(r => r.FromId.Value == from && r.ToId.Value == to && r.Kind == relationshipKind && ModelIndex.NormalName(r.Label) == label)
+                    .Select(r => (r.Id.Value, RelationshipName(model, r)));
+                break;
+
             default:
                 return new ExistingMatch.None();
         }
@@ -109,6 +121,12 @@ internal static class ExistingFacts
             1 => new ExistingMatch.One(found[0].Id, found[0].Name),
             _ => new ExistingMatch.Ambiguous([.. found.Select(c => c.Name)]),
         };
+    }
+
+    private static string RelationshipName(ModelState model, RelationshipState relationship)
+    {
+        var ends = ModelIndex.Of(model, relationship).Name;
+        return string.IsNullOrWhiteSpace(relationship.Label) ? ends : $"{ends}: {relationship.Label}";
     }
 
     private static string Key(string entityKind, params (string Field, string? Value)[] values) =>
