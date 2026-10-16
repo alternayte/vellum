@@ -1,13 +1,14 @@
-import { type ReactNode, useEffect, useRef } from 'react'
+import { type ReactNode, useEffect, useRef, useSyncExternalStore } from 'react'
 import { useShellStore, type Flyout } from '@/stores/shell-store'
-import { FileText, Plus, LayoutGrid, Search, Cable, Route, GitPullRequestArrow, Sparkles, ShieldCheck, PackageOpen, Gauge, Coins, ClipboardCheck, MessageSquare } from 'lucide-react'
+import { FileText, Plus, LayoutGrid, Search, Cable, Route, GitPullRequestArrow, Sparkles, ShieldCheck, PackageOpen, Gauge, Coins, ClipboardCheck, MessageSquare, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 
 interface LeftToolbarProps {
   children?: ReactNode
 }
 
-const toolbarItems: { flyout: Flyout; label: string; icon: typeof FileText }[] = [
+const toolbarItems: { flyout: Flyout; label: string; icon: typeof FileText; shortcut?: string }[] = [
   { flyout: 'files', label: 'Project files', icon: FileText },
   { flyout: 'create', label: 'Create new', icon: Plus },
   { flyout: 'catalog', label: 'Element catalog', icon: LayoutGrid },
@@ -21,15 +22,47 @@ const toolbarItems: { flyout: Flyout; label: string; icon: typeof FileText }[] =
   { flyout: 'build', label: 'Build', icon: PackageOpen },
   { flyout: 'stress', label: 'Stress', icon: Gauge },
   { flyout: 'costs', label: 'Costs', icon: Coins },
-  { flyout: 'search', label: 'Search', icon: Search },
+  { flyout: 'search', label: 'Search', icon: Search, shortcut: '⌘K' },
 ]
 
 const FLYOUT_PANEL_ID = 'left-toolbar-flyout'
 
+// The tooltip names the item when the sidebar shows icons only. The expanded sidebar shows
+// the label and the shortcut itself.
+function ToolTip({ label, shortcut, show, children }: { label: string; shortcut?: string; show: boolean; children: ReactNode }) {
+  if (!show) return children
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{children}</TooltipTrigger>
+      <TooltipContent side="right" sideOffset={8}>
+        {label}
+        {shortcut && (
+          <kbd data-slot="kbd" className="rounded bg-background/20 px-1 py-0.5 font-mono text-[10px]">
+            {shortcut}
+          </kbd>
+        )}
+      </TooltipContent>
+    </Tooltip>
+  )
+}
+
+// Below this width the expanded sidebar takes half the canvas, so it shows icons only.
+const NARROW = '(max-width: 767px)'
+
+function subscribeNarrow(onChange: () => void) {
+  const query = typeof window.matchMedia === 'function' ? window.matchMedia(NARROW) : null
+  query?.addEventListener('change', onChange)
+  return () => query?.removeEventListener('change', onChange)
+}
+
+const isNarrow = () => typeof window.matchMedia === 'function' && window.matchMedia(NARROW).matches
+
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
 
 export function LeftToolbar({ children }: LeftToolbarProps) {
-  const { activeFlyout, toggleFlyout, closeFlyout } = useShellStore()
+  const { activeFlyout, toggleFlyout, closeFlyout, sidebarCollapsed, setSidebarCollapsed } = useShellStore()
+  const narrow = useSyncExternalStore(subscribeNarrow, isNarrow)
+  const collapsed = sidebarCollapsed || narrow
   const panel = useRef<HTMLDivElement>(null)
   const buttons = useRef(new Map<Flyout, HTMLButtonElement>())
 
@@ -68,32 +101,66 @@ export function LeftToolbar({ children }: LeftToolbarProps) {
 
   const activeLabel = toolbarItems.find((item) => item.flyout === activeFlyout)?.label
 
+  const Toggle = collapsed ? PanelLeftOpen : PanelLeftClose
+
   return (
     <div className="relative z-30 flex flex-shrink-0">
-      <nav aria-label="Project tools" className="relative z-20 flex w-12 flex-col items-center gap-1 border-r border-border bg-card py-2">
-        {toolbarItems.map(({ flyout, label, icon: Icon }) => (
-          <button
-            key={flyout}
-            ref={(node) => {
-              if (node) buttons.current.set(flyout, node)
-              else buttons.current.delete(flyout)
-            }}
-            type="button"
-            aria-label={label}
-            // The search button opens the command palette, which is a dialog of its own.
-            aria-expanded={flyout === 'search' ? undefined : activeFlyout === flyout}
-            aria-controls={activeFlyout === flyout ? FLYOUT_PANEL_ID : undefined}
-            title={label}
-            className={cn(
-              'flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground',
-              activeFlyout === flyout && 'bg-accent text-accent-foreground'
-            )}
-            onClick={() => toggleFlyout(flyout)}
-          >
-            <Icon className="h-4 w-4" aria-hidden="true" />
-          </button>
-        ))}
-      </nav>
+      <TooltipProvider delayDuration={200}>
+        <nav
+          aria-label="Project tools"
+          className={cn(
+            'relative z-20 flex flex-col gap-1 overflow-x-hidden overflow-y-auto border-r border-border bg-card py-2 transition-[width] duration-200 ease-out',
+            collapsed ? 'w-12 items-center' : 'w-48 px-2'
+          )}
+        >
+          {toolbarItems.map(({ flyout, label, icon: Icon, shortcut }) => (
+            <ToolTip key={flyout} label={label} shortcut={shortcut} show={collapsed}>
+              <button
+                ref={(node) => {
+                  if (node) buttons.current.set(flyout, node)
+                  else buttons.current.delete(flyout)
+                }}
+                type="button"
+                aria-label={label}
+                // The search button opens the command palette, which is a dialog of its own.
+                aria-expanded={flyout === 'search' ? undefined : activeFlyout === flyout}
+                aria-controls={activeFlyout === flyout ? FLYOUT_PANEL_ID : undefined}
+                aria-keyshortcuts={shortcut === '⌘K' ? 'Meta+K Control+K' : undefined}
+                className={cn(
+                  'flex h-9 flex-shrink-0 items-center rounded-md text-sm text-muted-foreground hover:bg-muted hover:text-foreground',
+                  collapsed ? 'w-9 justify-center' : 'w-full gap-2.5 px-2.5',
+                  activeFlyout === flyout && 'bg-accent text-accent-foreground'
+                )}
+                onClick={() => toggleFlyout(flyout)}
+              >
+                <Icon className="h-4 w-4 flex-shrink-0" aria-hidden="true" />
+                {!collapsed && <span className="min-w-0 truncate whitespace-nowrap">{label}</span>}
+                {!collapsed && shortcut && (
+                  <kbd className="ml-auto rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+                    {shortcut}
+                  </kbd>
+                )}
+              </button>
+            </ToolTip>
+          ))}
+          {!narrow && (
+          <div className={cn('mt-auto flex border-t border-border pt-2', collapsed ? 'w-9 justify-center' : 'w-full justify-end')}>
+            {/* The toggle shows an icon only in both states, so it always has its tooltip. */}
+            <ToolTip label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'} show>
+              <button
+                type="button"
+                aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+                aria-expanded={!collapsed}
+                className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+                onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+              >
+                <Toggle className="h-4 w-4" aria-hidden="true" />
+              </button>
+            </ToolTip>
+          </div>
+          )}
+        </nav>
+      </TooltipProvider>
 
       {activeFlyout && (
         <>
@@ -112,7 +179,7 @@ export function LeftToolbar({ children }: LeftToolbarProps) {
             role="region"
             aria-label={activeLabel ? `${activeLabel} panel` : undefined}
             tabIndex={-1}
-            className={cn('absolute left-12 top-0 bottom-0 z-20 border-r border-border bg-card shadow-lg outline-none', activeFlyout === 'review' ? 'w-[420px]' : activeFlyout === 'comments' ? 'w-[340px]' : 'w-[280px]')}
+            className={cn('absolute left-full top-0 bottom-0 z-20 border-r border-border bg-card shadow-lg outline-none', activeFlyout === 'review' ? 'w-[420px]' : activeFlyout === 'comments' ? 'w-[340px]' : 'w-[280px]')}
           >
             {children}
           </div>
