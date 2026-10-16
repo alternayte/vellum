@@ -184,15 +184,17 @@ export interface FieldError {
   message: string
 }
 
-/** A refused request. `fields` holds per-field messages when the server gave them. */
+/** A refused request. `fields` holds per-field messages when the server gave them; `body` is the parsed response body. */
 export class ApiError extends Error {
   status: number
   fields: FieldError[]
+  body: unknown
 
-  constructor(status: number, message: string, fields: FieldError[] = []) {
+  constructor(status: number, message: string, fields: FieldError[] = [], body: unknown = null) {
     super(message)
     this.status = status
     this.fields = fields
+    this.body = body
   }
 }
 
@@ -222,6 +224,7 @@ export function apiError(status: number, data: unknown): ApiError {
       ? (payload.detail ? `${/[.!?]$/.test(payload.title) ? payload.title : `${payload.title}.`} ${payload.detail}` : payload.title)
       : status === 403 ? 'You do not have permission to do this.' : 'The request did not complete.',
     Array.isArray(payload.errors) ? payload.errors : [],
+    data,
   )
 }
 

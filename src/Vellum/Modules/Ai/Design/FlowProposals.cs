@@ -632,11 +632,11 @@ public static class FlowProposals
                     $"{alias} cannot be created from the proposal: its kind, transport or references are not usable. Add it to the model by hand.");
             }
 
-            var refused = await InferredWrites.ApplyAsync(
+            if (await InferredWrites.ApplyAsync(
                 store, caller.StreamId, [(addition, entry.Confidence)],
                 // A flow read from a document gives what it needs the citation of its lines.
-                document.Citation ?? InferredWrites.Source(document.Provider, document.Origin, Kind, row.Id), caller.UserId, time.GetUtcNow(), ct);
-            if (refused is not null)
+                document.Citation ?? InferredWrites.Source(document.Provider, document.Origin, Kind, row.Id), caller.UserId, time.GetUtcNow(), ct)
+                is [var refused, ..])
                 return refused.Conflict ? Conflict(refused.Reason) : Invalid(alias, refused.Reason);
 
             // The stream is locked already; this reads the model with the addition in it.
