@@ -647,6 +647,8 @@ public class AgentTokenTests(IntegrationFixture fixture) : IClassFixture<Integra
         ["GET /api/projects/{projectId}/elements/"] = "read",
         ["GET /api/projects/{projectId}/views/{viewId}/export/svg"] = "read",
         ["GET /api/projects/{projectId}/views/{viewId}/export/mermaid"] = "read",
+        ["GET /api/projects/{projectId}/scenarios/{scenarioId}/export/svg"] = "read",
+        ["GET /api/projects/{projectId}/scenarios/{scenarioId}/export/mermaid"] = "read",
         ["GET /api/projects/{projectId}/export/structurizr"] = "read",
         ["GET /api/projects/{projectId}/elements/{elementId}"] = "read",
         ["GET /api/projects/{projectId}/relationships/"] = "read",

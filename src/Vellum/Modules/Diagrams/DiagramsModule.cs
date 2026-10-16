@@ -2,7 +2,9 @@ using System.Security.Claims;
 using System.Text;
 using Microsoft.EntityFrameworkCore;
 using Vellum.Modules.Identity.AgentTokens;
+using Deedbox;
 using Vellum.Modules.Promises;
+using Vellum.Modules.Trace;
 using Vellum.Modules.Views;
 using Vellum.Modules.Workspaces;
 using Vellum.Shared;
@@ -11,7 +13,8 @@ using static Vellum.Shared.ResultExtensions;
 namespace Vellum.Modules.Diagrams;
 
 /// <summary>
-/// Diagram export: a view as SVG or Mermaid, the model as Structurizr DSL. Each
+/// Diagram export: a view as SVG or Mermaid, a scenario as an SVG or Mermaid sequence diagram,
+/// the model as Structurizr DSL. Each
 /// reads the main model, or a named revision with <c>revisionId</c>, and the saved layout of the
 /// view. The same revision and the same layout give the same bytes (guarantee 4). Every export
 /// reads and none writes, so a Viewer may call them all. PNG is rasterised in the browser from
@@ -29,6 +32,18 @@ public static class DiagramsModule
             .Produces<ErrorResponse>(StatusCodes.Status400BadRequest)
             .Produces<ErrorResponse>(StatusCodes.Status404NotFound);
         views.MapGet("/mermaid", Mermaid).AllowAgent(AgentScope.Read)
+            .Produces<string>(contentType: "text/plain")
+            .Produces<ErrorResponse>(StatusCodes.Status400BadRequest)
+            .Produces<ErrorResponse>(StatusCodes.Status404NotFound);
+
+        var scenarios = app.MapGroup("/api/projects/{projectId}/scenarios/{scenarioId}/export")
+            .RequireAuthorization()
+            .WithTags("Export");
+        scenarios.MapGet("/svg", ScenarioSvg).AllowAgent(AgentScope.Read)
+            .Produces<string>(contentType: "image/svg+xml")
+            .Produces<ErrorResponse>(StatusCodes.Status400BadRequest)
+            .Produces<ErrorResponse>(StatusCodes.Status404NotFound);
+        scenarios.MapGet("/mermaid", ScenarioMermaid).AllowAgent(AgentScope.Read)
             .Produces<string>(contentType: "text/plain")
             .Produces<ErrorResponse>(StatusCodes.Status400BadRequest)
             .Produces<ErrorResponse>(StatusCodes.Status404NotFound);
@@ -61,6 +76,30 @@ public static class DiagramsModule
         return diagram is null ? refusal! : Results.Text(MermaidView.Write(diagram), "text/plain", Encoding.UTF8);
     }
 
+    /// <summary>
+    /// A scenario as an SVG sequence diagram. The steps are the scenario now; the names come from
+    /// the revision <c>revisionId</c>, the draft <c>branchId</c>, or else the main model.
+    /// </summary>
+    private static async Task<IResult> ScenarioSvg(
+        Guid projectId, Guid scenarioId, Guid? revisionId, Guid? branchId, ClaimsPrincipal user, HttpContext http,
+        WorkspaceAuthorizationService auth, CancellationToken ct)
+    {
+        var (sequence, refusal) = await LoadScenarioAsync(projectId, scenarioId, revisionId, branchId, user, http, auth, ct);
+        return sequence is null ? refusal! : Results.Text(SequenceSvg.Write(sequence), "image/svg+xml", Encoding.UTF8);
+    }
+
+    /// <summary>
+    /// A scenario as a Mermaid sequence diagram. The steps are the scenario now; the names come
+    /// from the revision <c>revisionId</c>, the draft <c>branchId</c>, or else the main model.
+    /// </summary>
+    private static async Task<IResult> ScenarioMermaid(
+        Guid projectId, Guid scenarioId, Guid? revisionId, Guid? branchId, ClaimsPrincipal user, HttpContext http,
+        WorkspaceAuthorizationService auth, CancellationToken ct)
+    {
+        var (sequence, refusal) = await LoadScenarioAsync(projectId, scenarioId, revisionId, branchId, user, http, auth, ct);
+        return sequence is null ? refusal! : Results.Text(MermaidSequence.Write(sequence), "text/plain", Encoding.UTF8);
+    }
+
     /// <summary>The whole model and its views as a Structurizr DSL workspace. <c>revisionId</c> names a revision; without it, the main model.</summary>
     private static async Task<IResult> Structurizr(
         Guid projectId, Guid? revisionId, ClaimsPrincipal user, HttpContext http,
@@ -77,6 +116,21 @@ public static class DiagramsModule
             .GroupBy(p => p.ViewId)
             .ToDictionary(g => g.Key, g => (IReadOnlyList<LayoutPositionEntity>)[.. g]);
         return Results.Text(StructurizrDsl.Write(projectName, model, views, positions), "text/plain", Encoding.UTF8);
+    }
+
+    private static async Task<(ScenarioSequence? Sequence, IResult? Refusal)> LoadScenarioAsync(
+        Guid projectId, Guid scenarioId, Guid? revisionId, Guid? branchId, ClaimsPrincipal user, HttpContext http,
+        WorkspaceAuthorizationService auth, CancellationToken ct)
+    {
+        await auth.RequireProjectRoleAsync(projectId, user.UserId(), WorkspaceRole.Viewer, ct);
+
+        var (scenario, version) = await ScenarioStreams.LoadVersionedAsync(http.RequestServices.GetRequiredService<IEventStore>(), scenarioId, ct);
+        if (scenario.DocumentIn(projectId) is not { } document) return (null, NotFound("Scenario"));
+
+        var (model, refusal) = await PinnedModel.ResolveAsync(http.RequestServices, projectId, revisionId, branchId, ct);
+        if (model is null) return (null, refusal);
+
+        return (ScenarioSequence.Build(document, version, model), null);
     }
 
     private static async Task<(ViewDiagram? Diagram, IResult? Refusal)> LoadAsync(
