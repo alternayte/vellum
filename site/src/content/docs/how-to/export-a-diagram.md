@@ -1,6 +1,6 @@
 ---
 title: Export a diagram
-description: Export a view as SVG, PNG or Mermaid, and the model as Structurizr DSL, for documents, slides and diagram-as-code tools.
+description: Export a view as SVG, PNG or Mermaid, a scenario as a sequence diagram, and the model as Structurizr DSL, for documents, slides and diagram-as-code tools.
 ---
 
 This guide shows you how to put a Vellum diagram in a document, a slide or a diagram-as-code tool. You need the viewer role. An agent token needs the `read` scope.
@@ -12,6 +12,8 @@ This guide shows you how to put a Vellum diagram in a document, a slide or a dia
 | SVG | One view | You put the diagram in a document or a web page. The picture scales without loss. |
 | PNG | One view | The tool that receives the diagram takes images only, such as some slide tools. |
 | Mermaid | One view | You keep the diagram as text in Markdown, for example in a README. |
+| Mermaid sequence diagram | One scenario | You keep a flow as text next to the architecture diagram, for example in an ADR. |
+| SVG sequence diagram | One scenario | You put a flow in a document or a web page. |
 | Structurizr DSL | The whole model | You use Structurizr or another tool that reads the C4 DSL. |
 
 Each export lists what it drops. Vellum does not import SVG, PNG or Mermaid. It reads a Structurizr DSL file back as declared facts: see [Import a Structurizr workspace or Backstage catalog](/how-to/import-a-model-file/). For the full lists, see [Diagram export formats](/reference/diagram-export-formats/).
@@ -28,6 +30,15 @@ The SVG shows what the canvas shows. The other formats keep less.
 The app exports the model that the workbench shows, with the saved layout of the view. When the model switcher shows a named revision, the menu item reads **Export SVG of revision** and the name of the revision, and the file holds that revision. A draft or a variant is not exported: the app then exports main.
 
 The browser makes the PNG from the SVG of the server, at twice the size of the SVG. The PNG uses the fonts of your computer when the fonts of Vellum are not installed. The same view can give a different PNG on a different computer. Use the SVG when you need the same file each time.
+
+## Export a scenario in the app
+
+1. Open the project.
+2. Select **Scenarios** in the left toolbar.
+3. On the row of the scenario, select the **⋯** button.
+4. Select **Export Mermaid** or **Export SVG**. The browser saves `<scenario>.mmd` or `<scenario>.svg`.
+
+The steps are the scenario now. A scenario is not part of a revision. The names come from the model that the workbench shows: main, the open draft, or the named revision. With a named revision, the menu item reads **Export Mermaid with names of revision** and the name of the revision.
 
 ## Export the model as Structurizr DSL in the app
 
@@ -47,12 +58,18 @@ curl -sS --fail-with-body -b vellum.cookies -o view.svg \
 curl -sS --fail-with-body -b vellum.cookies -o view.mmd \
   "$VELLUM_URL/api/projects/$PROJECT/views/$VIEW/export/mermaid"
 
+# A scenario as a Mermaid sequence diagram, and as an SVG.
+curl -sS --fail-with-body -b vellum.cookies -o flow.mmd \
+  "$VELLUM_URL/api/projects/$PROJECT/scenarios/$SCENARIO/export/mermaid"
+curl -sS --fail-with-body -b vellum.cookies -o flow.svg \
+  "$VELLUM_URL/api/projects/$PROJECT/scenarios/$SCENARIO/export/svg"
+
 # The model as Structurizr DSL.
 curl -sS --fail-with-body -b vellum.cookies -o workspace.dsl \
   "$VELLUM_URL/api/projects/$PROJECT/export/structurizr"
 ```
 
-An unknown view answers `404`. An unknown revision answers `400`.
+The scenario endpoints also take `branchId`, the stream ID of an open draft, for the names. An unknown view or scenario answers `404`. An unknown revision answers `400`.
 
 ## Get the same SVG again
 

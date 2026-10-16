@@ -1,8 +1,12 @@
 import { useState } from 'react'
 import { ThreadCount } from '@/components/comments/thread-count'
 import { useOpenStepThreadCounts } from '@/components/comments/use-open-thread-counts'
-import { Pencil, Play, Plus } from 'lucide-react'
+import { useMutation } from '@tanstack/react-query'
+import { FileCode, FileImage, Pencil, Play, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { ActionMenu } from '@/components/ui/action-menu'
+import { downloadScenario, type ScenarioExportFormat } from '@/lib/diagram-export'
+import { shownInline } from '@/lib/mutation-errors'
 import { useShellStore } from '@/stores/shell-store'
 import { useTraceStore } from '@/stores/trace-store'
 import { fetchScenario, useRunScenario, useScenarios, type ScenarioDocument } from '@/hooks/use-scenarios'
@@ -13,15 +17,27 @@ interface ScenariosFlyoutProps {
   branchId?: string | null
   /** Every ID a scenario can reference, for the editor's reference list. */
   references: ScenarioReference[]
+  /** The named revision that the workbench shows. Diagram exports take their names from it. */
+  revision?: { id: string; name: string } | null
 }
 
-export function ScenariosFlyout({ projectId, branchId, references }: ScenariosFlyoutProps) {
+export function ScenariosFlyout({ projectId, branchId, references, revision = null }: ScenariosFlyoutProps) {
   const { data: scenarios = [], isLoading } = useScenarios(projectId)
   const run = useRunScenario(projectId, branchId)
   const closeFlyout = useShellStore((s) => s.closeFlyout)
   const stepThreads = useOpenStepThreadCounts(projectId)
   const [editing, setEditing] = useState<{ scenario: ScenarioDocument; isNew: boolean } | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const exportScenario = useMutation({
+    mutationFn: ({ id, name, format }: { id: string; name: string; format: ScenarioExportFormat }) =>
+      downloadScenario(projectId, id, name, format, { revisionId: revision?.id, branchId }),
+    onMutate: () => setError(null),
+    onError: (e) => {
+      shownInline()
+      setError(e.message)
+    },
+  })
+  const exportLabel = (format: string) => `Export ${format}${revision ? ` with names of revision ${revision.name}` : ''}`
 
   const play = (scenarioId: string) => {
     setError(null)
@@ -77,6 +93,19 @@ export function ScenariosFlyout({ projectId, branchId, references }: ScenariosFl
               >
                 <Play className="h-3.5 w-3.5" />
               </Button>
+              <ActionMenu
+                label={`Actions for scenario ${scenario.name}`}
+                items={[
+                  {
+                    label: exportLabel('Mermaid'), icon: <FileCode className="h-3.5 w-3.5" aria-hidden="true" />, disabled: exportScenario.isPending,
+                    onSelect: () => exportScenario.mutate({ id: scenario.id, name: scenario.name, format: 'mermaid' }),
+                  },
+                  {
+                    label: exportLabel('SVG'), icon: <FileImage className="h-3.5 w-3.5" aria-hidden="true" />, disabled: exportScenario.isPending,
+                    onSelect: () => exportScenario.mutate({ id: scenario.id, name: scenario.name, format: 'svg' }),
+                  },
+                ]}
+              />
             </li>
           ))}
         </ul>

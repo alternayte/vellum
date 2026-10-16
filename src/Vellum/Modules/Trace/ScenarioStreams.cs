@@ -10,15 +10,20 @@ namespace Vellum.Modules.Trace;
 /// </summary>
 internal static class ScenarioStreams
 {
-    public static async Task<ScenarioState> LoadAsync(IEventStore store, Guid scenarioId, CancellationToken ct)
+    public static async Task<ScenarioState> LoadAsync(IEventStore store, Guid scenarioId, CancellationToken ct) =>
+        (await LoadVersionedAsync(store, scenarioId, ct)).State;
+
+    /// <summary>The state and the version of the stream; an ID that is not a scenario's reads as the initial state.</summary>
+    public static async Task<(ScenarioState State, long Version)> LoadVersionedAsync(IEventStore store, Guid scenarioId, CancellationToken ct)
     {
         try
         {
-            return (await store.Load<ScenarioState>(StreamId.From(scenarioId), ct)).State;
+            var (state, version) = await store.Load<ScenarioState>(StreamId.From(scenarioId), ct);
+            return (state, version);
         }
         catch (DeedboxException e) when (e.Code == DeedboxError.StreamTypeMismatch)
         {
-            return ScenarioState.Initial;
+            return (ScenarioState.Initial, 0);
         }
     }
 

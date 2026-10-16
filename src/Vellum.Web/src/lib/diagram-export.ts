@@ -1,7 +1,7 @@
 /**
- * Diagram exports. The server writes SVG and Mermaid of a view and Structurizr DSL of the
- * model; the browser rasterises the server's SVG for PNG. The server names no file, so the
- * name is made here from the view or project name.
+ * Diagram exports. The server writes SVG and Mermaid of a view and of a scenario, and
+ * Structurizr DSL of the model; the browser rasterises the server's SVG for PNG. The server
+ * names no file, so the name is made here from the view, scenario or project name.
  */
 
 export type ViewExportFormat = 'svg' | 'png' | 'mermaid'
@@ -83,6 +83,24 @@ export async function downloadView(
     return
   }
   save(await rasterise(svg), fileName(viewName, 'diagram', 'png'))
+}
+
+export type ScenarioExportFormat = 'svg' | 'mermaid'
+
+/**
+ * Downloads one scenario as an SVG or Mermaid sequence diagram. The steps are the scenario
+ * now; the names come from the named revision `revisionId`, else the draft `branchId`, else main.
+ */
+export async function downloadScenario(
+  projectId: string, scenarioId: string, scenarioName: string, format: ScenarioExportFormat,
+  model: { revisionId?: string | null; branchId?: string | null } = {},
+): Promise<void> {
+  const query = model.revisionId
+    ? revisionQuery(model.revisionId)
+    : model.branchId ? `?branchId=${encodeURIComponent(model.branchId)}` : ''
+  const text = await fetchText(`/api/projects/${projectId}/scenarios/${scenarioId}/export/${format}${query}`)
+  if (format === 'mermaid') save(new Blob([text], { type: 'text/plain' }), fileName(scenarioName, 'scenario', 'mmd'))
+  else save(new Blob([text], { type: 'image/svg+xml' }), fileName(scenarioName, 'scenario', 'svg'))
 }
 
 /** Downloads the model of main, or of the named revision `revisionId`, as a Structurizr DSL workspace. */

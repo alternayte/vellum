@@ -14,25 +14,25 @@ namespace Vellum.Modules.Diagrams;
 public static class DiagramSvg
 {
     // The dark theme of the web client (tailwind.css :root), as hex.
-    private const string Background = "#15191e";
-    private const string Card = "#1e232a";
-    private const string Foreground = "#f4f5f5";
-    private const string MutedForeground = "#9aa8b7";
-    private const string Border = "#303a45";
-    private const string Muted = "#2b3440";
-    private const string Behavioural = "#2dd4bf";
+    internal const string Background = "#15191e";
+    internal const string Card = "#1e232a";
+    internal const string Foreground = "#f4f5f5";
+    internal const string MutedForeground = "#9aa8b7";
+    internal const string Border = "#303a45";
+    internal const string Muted = "#2b3440";
+    internal const string Behavioural = "#2dd4bf";
     private const string Stale = "#f6a823";
 
-    private const string DisplayFont = "'Space Grotesk', sans-serif";
-    private const string BodyFont = "Inter, sans-serif";
-    private const string MonoFont = "'JetBrains Mono', monospace";
+    internal const string DisplayFont = "'Space Grotesk', sans-serif";
+    internal const string BodyFont = "Inter, sans-serif";
+    internal const string MonoFont = "'JetBrains Mono', monospace";
 
     // Text is not measured on the server. These are average advance widths per character, a
     // little wide, so truncated text fits its box in the fonts above and in common fallbacks.
-    private const double NameChar = 9;
-    private const double BodyChar = 6.7;
-    private const double MonoChar = 6.6;
-    private const double LabelChar = 6.8;
+    internal const double NameChar = 9;
+    internal const double BodyChar = 6.7;
+    internal const double MonoChar = 6.6;
+    internal const double LabelChar = 6.8;
 
     private const double Padding = 40;
     private const double ParallelOffset = 30;
@@ -413,12 +413,12 @@ public static class DiagramSvg
 
     // ---- Text ----
 
-    private static string N(double value) => DiagramText.Number(value);
+    internal static string N(double value) => DiagramText.Number(value);
 
-    private static int Length(string text) => new StringInfo(text).LengthInTextElements;
+    internal static int Length(string text) => new StringInfo(text).LengthInTextElements;
 
     /// <summary>The text cut to the width with an ellipsis, by whole text elements.</summary>
-    private static string Truncate(string text, double width, double charWidth)
+    internal static string Truncate(string text, double width, double charWidth)
     {
         var info = new StringInfo(text);
         var fits = (int)Math.Floor(width / charWidth);
@@ -428,7 +428,7 @@ public static class DiagramSvg
     }
 
     /// <summary>The text in lines of the width, at most <paramref name="maxLines"/>; the last line ends with an ellipsis when text is left.</summary>
-    private static List<string> Wrap(string text, double width, double charWidth, int maxLines)
+    internal static List<string> Wrap(string text, double width, double charWidth, int maxLines)
     {
         var lines = new List<string>();
         if (text.Length == 0) return lines;
@@ -503,7 +503,7 @@ public static class DiagramSvg
 
     // ---- Colours of the dark theme ----
 
-    private static string KindColor(ElementKind kind) => kind switch
+    internal static string KindColor(ElementKind kind) => kind switch
     {
         ElementKind.Actor => "#7d8ca1",
         ElementKind.System => "#639cf8",

@@ -86,7 +86,7 @@ public static class MermaidView
     /// Text for a comment line: on one line, and with a space after each percent sign, so a name
     /// cannot form <c>%%{</c>, which Mermaid reads as a directive even inside a comment.
     /// </summary>
-    private static string Comment(string? text) => DiagramText.OneLine(text).Replace("%", "% ", StringComparison.Ordinal).TrimEnd();
+    internal static string Comment(string? text) => DiagramText.OneLine(text).Replace("%", "% ", StringComparison.Ordinal).TrimEnd();
 
     private static string Kind(ElementState e)
     {
