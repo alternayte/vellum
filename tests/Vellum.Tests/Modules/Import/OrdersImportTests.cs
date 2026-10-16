@@ -1,10 +1,13 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json.Nodes;
+using Deedbox;
 using Microsoft.Extensions.DependencyInjection;
 using Vellum.Modules.Import.Extraction;
 using Vellum.Modules.Import;
 using Vellum.Modules.Import.Scans;
+using Vellum.Modules.Modelling;
+using Vellum.Modules.Schemas;
 
 namespace Vellum.Tests.Modules.Import;
 
@@ -138,6 +141,16 @@ public class OrdersImportTests(ImportHost import) : IClassFixture<ImportHost>
         Assert.Equal(("OrderCreated", api.Text("id"), "observed-in-source"), (stored.Text("name"), stored.Text("producerId"), stored.Text("factStatus")));
         Assert.Equal([elements.Single("name", "Billing").Text("id")], stored["consumerIds"]!.AsArray().Select(c => c!.GetValue<string>()));
         Assert.Contains(schemas, schema => schema.Text("id") == stored.Text("schemaId") && schema.Text("content")!.Contains("\"total\""));
+        // A schema from the scan is observed in source, like the channel and the message, and
+        // its provenance cites the file and lines of its evidence. Nobody declared it.
+        Assert.All(schemas, schema =>
+        {
+            var pointer = proposals.Proposal("schema", schema.Text("name")!)["evidence"]![0]!.AsObject().Text("pointer");
+            var provenance = schema["provenance"]!.AsObject();
+            Assert.Equal(("observed-in-source", pointer, ImportScenario.Commit1, me),
+                (schema.Text("factStatus"), provenance.Text("source"), provenance.Text("revision"), provenance.Text("acceptedBy")));
+            Assert.Matches($@"^{System.Text.RegularExpressions.Regex.Escape(repository)}@{ImportScenario.Commit1}:.+:\d+-\d+$", pointer);
+        });
 
         // 5. The source view returns exactly the cited lines.
         var window = (await s.Owner.GetFromJsonAsync<JsonObject>(s.Url($"/{scan.Id()}/source?path=orders-api/Program.cs&startLine=40&endLine=50")))!;
@@ -175,7 +188,10 @@ public class OrdersImportTests(ImportHost import) : IClassFixture<ImportHost>
         Assert.Empty((await s.DecideAsync(changed.Id(), accept: delta.Select(p => p.Id())))["failed"]!.AsArray());
         var after = Assert.Single(await s.AllAsync(s.Model("messages")));
         Assert.Equal(ImportScenario.Commit2, after["provenance"]!["revision"]!.GetValue<string>());
-        Assert.Contains("\"totalAmount\"", (await s.AllAsync(s.Model("schemas"))).Single("id", after.Text("schemaId")!).Text("content"));
+        var changedSchema = (await s.AllAsync(s.Model("schemas"))).Single("id", after.Text("schemaId")!);
+        Assert.Contains("\"totalAmount\"", changedSchema.Text("content"));
+        Assert.Equal(("observed-in-source", ImportScenario.Commit2),
+            (changedSchema.Text("factStatus"), changedSchema["provenance"]!.AsObject().Text("revision")));
         Assert.Equal(before, await s.Owner.GetStringAsync(s.Model("elements")));
 
         // 8. The blobs of a commit that only older scans use are not kept, and the source view says so.
@@ -190,5 +206,47 @@ public class OrdersImportTests(ImportHost import) : IClassFixture<ImportHost>
         // No text of a file reached a log, and no scan stopped on an unexpected error.
         Assert.DoesNotContain(import.Host.Logs.Lines, line => line.Contains("Goes to the outbox table", StringComparison.Ordinal));
         Assert.DoesNotContain(import.Host.Logs.Lines, line => line.Contains("stopped on", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task A_schema_that_holds_declared_from_before_schema_labels_gets_the_label_of_its_Source_only_when_a_person_accepts_it()
+    {
+        var s = await ImportScenario.CreateAsync(import);
+        await s.ScanAndAcceptAllAsync();
+
+        // A stream written before schemas had a label replays as "declared" with no provenance.
+        // The same state, made here with the event that a model document of that time writes.
+        var schemas = await s.AllAsync(s.Model("schemas"));
+        using (var scope = import.Host.Factory.Services.CreateScope())
+        {
+            var store = scope.ServiceProvider.GetRequiredService<IEventStore>();
+            foreach (var schema in schemas)
+            {
+                var (_, version) = await store.Load<SchemaState>(StreamId.From(schema.Id()));
+                await store.Append(StreamId.From(schema.Id()), ExpectedVersion.Exact(version),
+                    [new SchemaEvent.SchemaProvenanceRecorded(schema.Id(), FactStatus.Declared, null)]);
+            }
+        }
+        Assert.All(await s.AllAsync(s.Model("schemas")), schema => Assert.Equal(("declared", null), (schema.Text("factStatus"), schema["provenance"])));
+
+        // The next scan changes no label by itself. It proposes the label, and only for the schemas.
+        var again = await s.ScanAsync();
+        Assert.All(await s.AllAsync(s.Model("schemas")), schema => Assert.Equal("declared", schema.Text("factStatus")));
+        var relabels = await s.ProposalsAsync(again.Id());
+        Assert.Equal(schemas.Select(schema => $"schema {schema.Text("name")}").Order(StringComparer.Ordinal), relabels.Subjects());
+        Assert.All(relabels, p =>
+        {
+            Assert.Equal("change", p.Text("action"));
+            var change = Assert.Single(p["changes"]!.AsArray())!.AsObject();
+            Assert.Equal(("factStatus", "declared", "observed-in-source"), (change.Text("field"), change.Text("from"), change.Text("to")));
+        });
+
+        Assert.Empty((await s.DecideAsync(again.Id(), accept: relabels.Select(p => p.Id())))["failed"]!.AsArray());
+        Assert.All(await s.AllAsync(s.Model("schemas")), schema =>
+        {
+            Assert.Equal("observed-in-source", schema.Text("factStatus"));
+            Assert.StartsWith($"{s.GitHubHost}/acme/orders@{ImportScenario.Commit1}:", schema["provenance"]!.AsObject().Text("source"));
+        });
+        Assert.Empty(await s.ProposalsAsync((await s.ScanAsync()).Id()));
     }
 }

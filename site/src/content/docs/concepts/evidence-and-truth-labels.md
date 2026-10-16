@@ -44,6 +44,19 @@ A review rule reads a fact as stated only when the fact is declared, observed in
 
 A fact that is inferred, unknown or stale prevents Build Ready. The Build manifest lists it as `fact-inferred`, `fact-unknown` or `fact-stale`. It does not prevent a save or an export.
 
+## Labels of schemas
+
+A schema has a label and a provenance, like a fact of the model. A schema has no stale mark.
+
+- A schema that a person writes is `declared`. It has no provenance.
+- A schema that a person accepts from a scan of code or configuration is `observed-in-source`. Its provenance cites the file and the lines of its evidence at the commit of the scan, for example `github.com/acme/orders@1111111:api/openapi.json:40-52`.
+- A schema from a model file of a Source has the label of that file, `declared`.
+- The import of a model document keeps the label that the document gives each schema.
+
+Version 0.1.0 gave every schema the label `declared`, also a schema from a scan. Vellum does not change the label of such a schema when it reads the stored events again. The next scan of its Source proposes the change from `declared` to `observed-in-source`. The change applies when a person accepts the proposal. **Accept all from this Source** does not accept it.
+
+The Build document and the brief show the label and the provenance of each schema. A schema that is inferred or unknown prevents Build Ready, as a fact does. The section `2.4 Schemas` of a brief leaves it out.
+
 ## Evidence without a place in the model
 
 Some things that a scan finds have no place in the model yet: a dependency on a library, a data access, a deployment descriptor, and a pattern such as a transactional outbox. Vellum keeps them as evidence of the scan. A check of a promise can read them: a `source-pattern-check` looks for the pattern `transactional-outbox` or `in-memory-outbox` in the evidence of one scan. See [Extraction rules](/reference/extraction-rules/) and [Promises and evidence](/concepts/promises-and-evidence/).

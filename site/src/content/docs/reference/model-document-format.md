@@ -83,7 +83,7 @@ The import reads a list that is missing as an empty list. A list that holds `nul
 
 ## Fact fields
 
-Each element, relationship, message, operation, channel, subscription and binding has these three fields. A schema does not.
+Each element, relationship, message, operation, channel, subscription and binding has these three fields. A schema has `factStatus` and `provenance`, and no `stale`. See [Schema](#schema).
 
 | Field | Type | Meaning |
 |---|---|---|
@@ -164,6 +164,10 @@ The kind sets the parent.
 | `description` | string or `null` | |
 | `content` | string | The schema text. Required. |
 | `version` | integer | The version of the schema in the exporting project. The import does not read it. |
+| `factStatus` | string or `null` | The truth label, as in [Fact fields](#fact-fields). |
+| `provenance` | object or `null` | Where the schema came from, as in [Fact fields](#fact-fields). |
+
+When a schema has no `factStatus` and no `provenance`, the import keeps the label of the schema in the project. A new schema then gets the label `declared`. A document of version 0.1.0 has neither field.
 
 ## Operation
 
@@ -377,7 +381,9 @@ Each error has a `type` and a `title`. The `title` names the first refused entry
       "name": "OrderPlaced",
       "description": null,
       "content": "{\"type\":\"object\",\"properties\":{\"orderId\":{\"type\":\"string\"}}}",
-      "version": 1
+      "version": 1,
+      "factStatus": "declared",
+      "provenance": null
     }
   ],
   "operations": [

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Vellum.Modules.Modelling;
 using Vellum.Shared;
 
 namespace Vellum.Modules.Schemas;
@@ -91,6 +92,27 @@ public static class SchemaDecider
 
         return new CommandResult<IReadOnlyList<object>>.Success(
             [new SchemaEvent.SchemaDeleted(schemaId)]);
+    }
+
+    /// <summary>
+    /// Gives the schema a truth label and a provenance, by the rules of a fact of the model.
+    /// The same label with the same source, revision and confidence is no change: the
+    /// acceptance stamps alone are not recorded again.
+    /// </summary>
+    public static CommandResult<IReadOnlyList<object>> RecordProvenance(SchemaState state, FactStatus status, Provenance? provenance)
+    {
+        if (state.Schema is not { } schema || state.Deleted)
+            return new CommandResult<IReadOnlyList<object>>.NotFound("Schema not found");
+        if (FactRules.Validate(status, provenance) is { } error)
+            return new CommandResult<IReadOnlyList<object>>.Invalid([error]);
+        if (schema.FactStatus == status
+            && schema.Provenance?.Source == provenance?.Source
+            && schema.Provenance?.Revision == provenance?.Revision
+            && schema.Provenance?.Confidence == provenance?.Confidence)
+            return new CommandResult<IReadOnlyList<object>>.Success([]);
+
+        return new CommandResult<IReadOnlyList<object>>.Success(
+            [new SchemaEvent.SchemaProvenanceRecorded(schema.Id, status, provenance)]);
     }
 
     private static ValidationError? ValidateJsonSchema(string content)

@@ -37,6 +37,20 @@ public sealed class SchemaProjection : Projection<AppDbContext>
             if (updated.Version is not null) entity.Version = updated.Version.Value;
         });
 
+        On<SchemaEvent.SchemaProvenanceRecorded>(async (recorded, ctx) =>
+        {
+            var entity = await ctx.Db.Schemas.FindAsync([recorded.SchemaId], ctx.CancellationToken);
+            if (entity is null) return;
+
+            entity.FactStatus = recorded.Status;
+            entity.ProvenanceSource = recorded.Provenance?.Source;
+            entity.ProvenanceRevision = recorded.Provenance?.Revision;
+            entity.ProvenanceConfidence = recorded.Provenance?.Confidence;
+            entity.ProvenanceAcceptedBy = recorded.Provenance?.AcceptedBy;
+            entity.ProvenanceAcceptedAt = recorded.Provenance?.AcceptedAt;
+            entity.ProvenanceContentNotHeld = recorded.Provenance?.ContentNotHeld ?? false;
+        });
+
         On<SchemaEvent.SchemaDeleted>(async (deleted, ctx) =>
         {
             var entity = await ctx.Db.Schemas.FindAsync([deleted.SchemaId], ctx.CancellationToken);

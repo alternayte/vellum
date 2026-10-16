@@ -207,6 +207,7 @@ public static class Brief
                 Subscriptions = scoped.Subscriptions.Where(s => Confirmed(s.Value.FactStatus, s.Value.Stale)).ToImmutableDictionary(),
                 Bindings = scoped.Bindings.Where(b => Confirmed(b.Value.FactStatus, b.Value.Stale)).ToImmutableDictionary(),
             },
+            Schemas = [.. scopedInput.Schemas.Where(s => Confirmed(s.FactStatus, null))],
             Scenarios = [],
         }, view, "not confirmed");
         var unconfirmed = Blockers.Facts(view).Where(f => !Confirmed(f.Status, f.Stale)).OrderBy(f => f.Kind, StringComparer.Ordinal).ThenBy(f => f.Id).ToList();

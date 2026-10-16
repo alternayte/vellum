@@ -3308,6 +3308,10 @@ namespace Vellum.Migrations
                         .HasColumnType("text")
                         .HasColumnName("description");
 
+                    b.Property<FactStatus>("FactStatus")
+                        .HasColumnType("modelling.fact_status")
+                        .HasColumnName("fact_status");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasColumnType("text")
@@ -3316,6 +3320,30 @@ namespace Vellum.Migrations
                     b.Property<Guid>("ProjectId")
                         .HasColumnType("uuid")
                         .HasColumnName("project_id");
+
+                    b.Property<DateTimeOffset?>("ProvenanceAcceptedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("provenance_accepted_at");
+
+                    b.Property<Guid?>("ProvenanceAcceptedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("provenance_accepted_by");
+
+                    b.Property<double?>("ProvenanceConfidence")
+                        .HasColumnType("double precision")
+                        .HasColumnName("provenance_confidence");
+
+                    b.Property<bool>("ProvenanceContentNotHeld")
+                        .HasColumnType("boolean")
+                        .HasColumnName("provenance_content_not_held");
+
+                    b.Property<string>("ProvenanceRevision")
+                        .HasColumnType("text")
+                        .HasColumnName("provenance_revision");
+
+                    b.Property<string>("ProvenanceSource")
+                        .HasColumnType("text")
+                        .HasColumnName("provenance_source");
 
                     b.Property<int>("Version")
                         .HasColumnType("integer")

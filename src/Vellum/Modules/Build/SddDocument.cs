@@ -306,6 +306,10 @@ internal static class SddDocument
         foreach (var schema in view.Schemas)
         {
             md.Heading(3, $"{schema.Name} (`{schema.Id}`, version {schema.Version})");
+            if (schema.Provenance is null)
+                md.Line($"Truth: {Truth(schema.FactStatus, null)}.").Blank();
+            else
+                md.Line($"Truth: {Truth(schema.FactStatus, null)}. Provenance: {Provenance(schema.Provenance)}.").Blank();
             if (!string.IsNullOrWhiteSpace(schema.Description))
                 md.Data(Md.Raw("Description"), schema.Description);
             if (BuildText.TryParseJson(schema.Content) is { } document)

@@ -63,7 +63,7 @@ internal sealed class ProposalApplier(
             StoredEntityKind.Subscription => Subscription(proposal, proposed, current, provenance),
             StoredEntityKind.Binding => Binding(proposal, proposed, current, provenance),
             StoredEntityKind.Message => Message(proposal, proposed, current, provenance),
-            StoredEntityKind.Schema => Schema(proposal, proposed, current),
+            StoredEntityKind.Schema => Schema(proposal, proposed, current, provenance),
             StoredEntityKind.Relationship => Relationship(proposal, proposed, current, provenance),
             _ => $"Entity kind '{EnumText.Of(proposal.EntityKind)}' is not one the importer writes.",
         };
@@ -294,10 +294,11 @@ internal sealed class ProposalApplier(
     }
 
     /// <summary>
-    /// A schema is its own stream and has no truth label, so accepting writes its name and
-    /// content only. Its provenance is the link row.
+    /// A schema is its own stream. Accepting writes its name and content, and then its truth
+    /// label and provenance, as for a channel: the label of the Source and a pointer to the
+    /// first evidence. All of the evidence stays on the link row.
     /// </summary>
-    private string? Schema(ProposalEntity p, JsonObject? proposed, JsonObject? current)
+    private string? Schema(ProposalEntity p, JsonObject? proposed, JsonObject? current, Provenance? provenance)
     {
         if (!schemas.TryGetValue(p.EntityId, out var locked))
             return "The schema's stream was not locked for this decision.";
@@ -314,7 +315,7 @@ internal sealed class ProposalApplier(
         else
         {
             if (entry is null || entry.ProjectId != projectId
-                || Differs(ModelIndex.Of(new SchemaRow(entry.Id, entry.Name, entry.Content)), current))
+                || Differs(ModelIndex.Of(new SchemaRow(entry.Id, entry.Name, entry.Content, entry.FactStatus.ToApiString())), current))
                 return ChangedSinceScan;
 
             if (p.Action == ProposalAction.Remove)
@@ -330,9 +331,14 @@ internal sealed class ProposalApplier(
 
         if (decision is not Decision.Success success)
             return Describe(decision);
+        var labelled = SchemaDecider.RecordProvenance(
+            success.Value.Aggregate(locked.State, SchemaState.Evolve), Label(p), provenance);
+        if (labelled is not Decision.Success label)
+            return Describe(labelled);
 
-        if (success.Value.Count > 0)
-            SchemaAppends.Add((p.EntityId, locked.Version, success.Value));
+        IReadOnlyList<object> events = [.. success.Value, .. label.Value];
+        if (events.Count > 0)
+            SchemaAppends.Add((p.EntityId, locked.Version, events));
         AcceptedValues[p.Id] = Values((Field.Name, Text(proposed, Field.Name)), (Field.Content, Text(proposed, Field.Content)));
         return null;
     }
@@ -376,6 +382,10 @@ internal sealed class ProposalApplier(
             if (!string.Equals(then, now, StringComparison.Ordinal))
                 return true;
         }
+        // A schema proposal planned before schemas had a truth label holds none. Its values
+        // decide alone, and accepting it gives the schema the label of the Source.
+        if (live.EntityKind == EntityKinds.Schema && current["factStatus"] is null)
+            return false;
         return live.FactStatus is not null && Text(current, "factStatus") != live.FactStatus;
     }
 

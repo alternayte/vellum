@@ -575,10 +575,30 @@ public static class ImportModel
                 continue;
             }
 
+            // The document carries the label of the schema. A document without one is older
+            // than schema labels: the schema keeps the label it has, and a new one is declared.
+            IReadOnlyList<object> schemaEvents = decided.Value;
+            if (schema.FactStatus is not null || schema.Provenance is not null)
+            {
+                if (!TryReadFacts(schema.FactStatus, schema.Provenance, null, out var schemaStatus, out var schemaProvenance, out _, out var schemaFactError))
+                {
+                    Refuse("schema", schema.Id, schema.Name, schemaFactError);
+                    continue;
+                }
+                var labelled = SchemaDecider.RecordProvenance(
+                    decided.Value.Aggregate(schemaState, SchemaState.Evolve), schemaStatus, schemaProvenance);
+                if (labelled is not CommandResult<IReadOnlyList<object>>.Success label)
+                {
+                    Refuse("schema", schema.Id, schema.Name, DeciderFailure(labelled));
+                    continue;
+                }
+                schemaEvents = [.. decided.Value, .. label.Value];
+            }
+
             items.Add(new ImportItem("schema", schema.Id, schema.Name,
-                schemaState.Schema is null ? Added : decided.Value.Count == 0 ? Unchanged : Changed, ImportedAs: importedAs));
-            if (decided.Value.Count > 0)
-                schemaAppends.Add((target, schemaVersion, decided.Value));
+                schemaState.Schema is null ? Added : schemaEvents.Count == 0 ? Unchanged : Changed, ImportedAs: importedAs));
+            if (schemaEvents.Count > 0)
+                schemaAppends.Add((target, schemaVersion, schemaEvents));
         }
 
         var result = new ImportResult(

@@ -78,7 +78,11 @@ public sealed record PinnedState(
     string? RevisionName = null);
 
 /// <param name="StreamVersion">The version of the schema stream. <paramref name="Version"/> is the version of the content, which a rename does not change.</param>
-public sealed record BuildSchema(Guid Id, string Name, string? Description, string Content, int Version, long StreamVersion = 0);
+/// <param name="FactStatus">The truth label of the schema at the pinned version.</param>
+/// <param name="Provenance">Where the schema came from, or null for one that a person wrote.</param>
+public sealed record BuildSchema(
+    Guid Id, string Name, string? Description, string Content, int Version, long StreamVersion = 0,
+    FactStatus FactStatus = FactStatus.Declared, Provenance? Provenance = null);
 
 /// <summary>A pinned input that can no longer be read at its version: its stream was deleted, or never had that version.</summary>
 public sealed class PinnedInputUnavailableException(IReadOnlyList<string> inputs)
@@ -151,7 +155,8 @@ public sealed record BuildInput(
         {
             var folded = await StreamAt.FoldAsync<SchemaState>(store, pin.Id, pins is null ? null : pin.Version, ct);
             if (folded?.State.Schema is { } schema && schema.ProjectId == projectId)
-                schemas.Add(new BuildSchema(schema.Id, schema.Name, schema.Description, schema.Content, schema.Version, folded.Version));
+                schemas.Add(new BuildSchema(schema.Id, schema.Name, schema.Description, schema.Content, schema.Version, folded.Version,
+                    schema.FactStatus, schema.Provenance));
             else if (pins is not null)
                 unavailable.Add($"schema {pin.Id} at version {pin.Version}");
         }

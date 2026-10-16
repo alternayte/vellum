@@ -357,15 +357,23 @@ internal static class ProposalPlanner
                 }
             }
 
-            if (linked && changes.Count == 0)
-                continue;
-
-            // A schema has no truth label of its own. A linked schema came from an import; an
-            // unlinked one was written by a person.
             // The label a fact of this Source gets: observed-in-source for code and
             // configuration, declared for a model file (TruthLabels).
             var sourceLabel = candidate.TruthLabel;
-            var status = entity.FactStatus ?? (linked ? sourceLabel : "declared");
+
+            // No person can relabel a schema, so a linked schema whose label is not the label of
+            // its Source was accepted before schemas had a label, and holds "declared" for it.
+            // The label is proposed, for a person to accept; a replay never changes it.
+            var isSchema = candidate.EntityKind == EntityKinds.Schema;
+            var schemaRelabel = isSchema && linked && entity.FactStatus is { } held && held != sourceLabel;
+            if (linked && changes.Count == 0 && !schemaRelabel)
+                continue;
+
+            // A linked schema came from an import, so it stands for its Source; an unlinked one
+            // was written by a person.
+            var status = isSchema
+                ? (linked ? sourceLabel : "declared")
+                : entity.FactStatus ?? (linked ? sourceLabel : "declared");
             var editedSince = linked && compared.Any(field =>
                 link!.Accepted.TryGetValue(field, out var accepted)
                 && !string.Equals(accepted, entity.Values.GetValueOrDefault(field), StringComparison.Ordinal));
@@ -461,9 +469,11 @@ internal static class ProposalPlanner
             // their word and not on the evidence. A scan leaves no mark on it. Nor on a fact
             // that another Source still holds: staleness compares Snapshots of one Source. A
             // fact accepted from a model file keeps the label "declared" of that file, and the
-            // file no longer says it: it gets the mark like an observed fact.
+            // file no longer says it: it gets the mark like an observed fact. A schema is no
+            // fact of the model stream and holds no mark.
             var others = input.OthersOf(link.EntityKind, entity.Id);
-            if (entity.FactStatus == FactMapping.LabelOf(link.Attributes, link.Evidence) && entity.Stale is null && others.Count == 0)
+            if (link.EntityKind != EntityKinds.Schema
+                && entity.FactStatus == FactMapping.LabelOf(link.Attributes, link.Evidence) && entity.Stale is null && others.Count == 0)
                 markStale.Add(entity.Id);
 
             var fingerprint = Hash([EnumText.Of(ProposalAction.Remove), link.EntityKind, link.FactKey, Canonical(entity.Values)]);

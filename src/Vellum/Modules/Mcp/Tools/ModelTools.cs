@@ -253,7 +253,8 @@ internal static class ModelTools
         var schemas = (kind is null or "schemas")
             ? await call.Service<AppDbContext>().Schemas.AsNoTracking()
                 .Where(s => s.ProjectId == projectId && (schemaIds == null || schemaIds.Contains(s.Id)))
-                .Select(s => new SchemaRow(s.Id, s.Name, s.Description, s.Version))
+                .Select(s => new SchemaRow(s.Id, s.Name, s.Description, s.Version, s.FactStatus,
+                    s.ProvenanceSource, s.ProvenanceRevision, s.ProvenanceConfidence, s.ProvenanceAcceptedBy, s.ProvenanceAcceptedAt, s.ProvenanceContentNotHeld))
                 .ToListAsync(call.Aborted)
             : [];
 
@@ -290,7 +291,10 @@ internal static class ModelTools
             m.FactStatus.ToApiString(), ProvenanceMapper.ToDto(m.Provenance), StaleDto.From(m.Stale))));
         Section("schemas", schemas, s => s.Name, s => s.Id, s => new JsonObject
         {
-            ["id"] = s.Id, ["name"] = s.Name, ["description"] = s.Description, ["version"] = s.Version, ["factStatus"] = "declared",
+            ["id"] = s.Id, ["name"] = s.Name, ["description"] = s.Description, ["version"] = s.Version,
+            ["factStatus"] = s.FactStatus.ToApiString(),
+            ["provenance"] = call.Node(ProvenanceMapper.ToDto(s.ProvenanceSource, s.ProvenanceRevision, s.ProvenanceConfidence,
+                s.ProvenanceAcceptedBy, s.ProvenanceAcceptedAt, contentNotHeld: s.ProvenanceContentNotHeld)),
         });
 
         // Over the bound, the longest list gives up its last item, until the result fits.
@@ -307,7 +311,10 @@ internal static class ModelTools
             : null);
     }
 
-    private sealed record SchemaRow(Guid Id, string Name, string? Description, int Version);
+    private sealed record SchemaRow(
+        Guid Id, string Name, string? Description, int Version, FactStatus FactStatus,
+        string? ProvenanceSource, string? ProvenanceRevision, double? ProvenanceConfidence,
+        Guid? ProvenanceAcceptedBy, DateTimeOffset? ProvenanceAcceptedAt, bool ProvenanceContentNotHeld);
 
     private static ElementDto Element(ElementEntity e) => new(
         e.Id, EnumText.Of(e.Kind), e.Name, e.Description, e.Technology, e.OwnerId, EnumText.Of(e.Status), e.ParentId, e.Tags, e.Icon, e.FactStatus.ToApiString(),

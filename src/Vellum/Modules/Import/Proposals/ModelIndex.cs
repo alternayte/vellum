@@ -8,12 +8,13 @@ namespace Vellum.Modules.Import.Proposals;
 /// field name. Intent fields (description, tags, owner, status, icon, line shape) and the
 /// delivery rules a person sets (timeout, retry) are not here, so no proposal can touch them.
 /// </summary>
-/// <param name="FactStatus">Null for a schema: a schema has no truth label of its own.</param>
+/// <param name="FactStatus">The truth label. Null for a schema read without its label.</param>
 internal sealed record ModelEntity(
     Guid Id, string EntityKind, string Name,
     SortedDictionary<string, string?> Values, string? FactStatus, StaleMark? Stale);
 
-internal sealed record SchemaRow(Guid Id, string Name, string Content);
+/// <param name="FactStatus">The truth label of the schema, or null when the reader does not need it.</param>
+internal sealed record SchemaRow(Guid Id, string Name, string Content, string? FactStatus = null);
 
 /// <summary>
 /// The model as the planner reads it. Every lookup is a dictionary read: by ID, and by the
@@ -98,7 +99,7 @@ internal sealed class ModelIndex
         $"{(model.Elements.TryGetValue(from, out var a) ? a.Name : from.ToString())} → {(model.Elements.TryGetValue(to, out var b) ? b.Name : to.ToString())}";
 
     public static ModelEntity Of(SchemaRow s) => new(s.Id, EntityKinds.Schema, s.Name, Values(
-        (Field.Name, s.Name), (Field.Content, s.Content)), null, null);
+        (Field.Name, s.Name), (Field.Content, s.Content)), s.FactStatus, null);
 
     /// <summary>
     /// A set of IDs as one text: a JSON array in one fixed order, so two sets of the same IDs

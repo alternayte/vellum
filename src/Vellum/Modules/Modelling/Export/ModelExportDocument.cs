@@ -69,8 +69,10 @@ public sealed record MessageExport(
     string FactStatus = "declared", ProvenanceExport? Provenance = null,
     StaleExport? Stale = null);
 
+/// <param name="FactStatus">The truth label. A document written before schemas had a label has none: the import then keeps the label a schema has, and a new schema is declared.</param>
 public sealed record SchemaExport(
-    Guid Id, string Name, string? Description, string Content, int Version);
+    Guid Id, string Name, string? Description, string Content, int Version,
+    string? FactStatus = null, ProvenanceExport? Provenance = null);
 
 public sealed record RetryExport(int MaxAttempts, int BackoffMs);
 
