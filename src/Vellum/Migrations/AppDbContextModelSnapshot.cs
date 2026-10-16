@@ -3908,6 +3908,14 @@ namespace Vellum.Migrations
                         .HasColumnType("jsonb")
                         .HasColumnName("route_points");
 
+                    b.Property<string>("SourceSide")
+                        .HasColumnType("text")
+                        .HasColumnName("source_side");
+
+                    b.Property<string>("TargetSide")
+                        .HasColumnType("text")
+                        .HasColumnName("target_side");
+
                     b.Property<Guid>("ViewId")
                         .HasColumnType("uuid")
                         .HasColumnName("view_id");

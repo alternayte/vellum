@@ -3513,6 +3513,57 @@
         }
       }
     },
+    "/api/projects/{projectId}/views/{viewId}/layout/edges/{relationshipId}": {
+      "put": {
+        "tags": [
+          "Views"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "viewId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "relationshipId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SaveEdgeSidesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/projects/{projectId}/views/{viewId}/export/svg": {
       "get": {
         "tags": [
@@ -30660,6 +30711,27 @@
           }
         }
       },
+      "SaveEdgeSidesRequest": {
+        "required": [
+          "sourceSide",
+          "targetSide"
+        ],
+        "type": "object",
+        "properties": {
+          "sourceSide": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "targetSide": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
       "SaveEstimateRequest": {
         "required": [
           "name",
@@ -30701,6 +30773,18 @@
               {
                 "$ref": "#/components/schemas/JsonDocument"
               }
+            ]
+          },
+          "sourceSide": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "targetSide": {
+            "type": [
+              "null",
+              "string"
             ]
           }
         }
@@ -32599,6 +32683,32 @@
           }
         }
       },
+      "SharedEdgeSides": {
+        "required": [
+          "relationshipId",
+          "sourceSide",
+          "targetSide"
+        ],
+        "type": "object",
+        "properties": {
+          "relationshipId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sourceSide": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "targetSide": {
+            "type": [
+              "null",
+              "string"
+            ]
+          }
+        }
+      },
       "SharedElement": {
         "required": [
           "id",
@@ -33518,6 +33628,15 @@
             "type": "array",
             "items": {
               "$ref": "#/components/schemas/SharedPosition"
+            }
+          },
+          "edges": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/SharedEdgeSides"
             }
           }
         }

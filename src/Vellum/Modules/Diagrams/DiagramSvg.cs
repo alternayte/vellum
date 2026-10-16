@@ -228,12 +228,12 @@ public static class DiagramSvg
             if (r.FromId == r.ToId)
                 continue; // a loop has no facing sides; the canvas does not draw one either
 
-            var ends = Facing(source, target, offset);
+            var ends = Attach(source, target, offset, diagram.Sides.GetValueOrDefault(r.Id));
             var (path, centerX, centerY) = r.LineShape switch
             {
                 "straight" => Straight(ends),
-                "step" => Step(ends),
-                _ => Bezier(ends),
+                "step" => Step(ends, bounds),
+                _ => Bezier(ends, bounds),
             };
 
             var behavioural = r.Kind == RelationshipKind.Behavioural;
@@ -291,14 +291,16 @@ public static class DiagramSvg
 
     // ---- Geometry: the same rules as edge-utils.ts and React Flow's path functions ----
 
-    private enum Side { Left, Right, Top, Bottom }
-
     private readonly record struct Rect(double X, double Y, double Width, double Height);
 
-    private readonly record struct Ends(double SourceX, double SourceY, Side SourceSide, double TargetX, double TargetY, Side TargetSide);
+    private readonly record struct Ends(double SourceX, double SourceY, CardSide SourceSide, double TargetX, double TargetY, CardSide TargetSide);
 
-    /// <summary>Attaches a relationship to the sides of two boxes that face each other.</summary>
-    private static Ends Facing(Rect source, Rect target, double offset)
+    /// <summary>
+    /// Attaches a relationship to two boxes, as relationshipEnds in edge-utils.ts: a saved side
+    /// stays, and an auto end takes the side of its box that faces the other box. The facing
+    /// sides are those across the larger gap between the boxes, horizontal on a tie.
+    /// </summary>
+    private static Ends Attach(Rect source, Rect target, double offset, RelationshipSides? saved)
     {
         var dx = target.X + target.Width / 2 - (source.X + source.Width / 2);
         var dy = target.Y + target.Height / 2 - (source.Y + source.Height / 2);
@@ -306,72 +308,154 @@ public static class DiagramSvg
         var gapY = Math.Abs(dy) - (source.Height + target.Height) / 2;
         var horizontal = gapX >= gapY;
 
-        var sourceSide = horizontal ? (dx >= 0 ? Side.Right : Side.Left) : (dy >= 0 ? Side.Bottom : Side.Top);
-        var targetSide = horizontal ? (dx >= 0 ? Side.Left : Side.Right) : (dy >= 0 ? Side.Top : Side.Bottom);
+        var sourceSide = saved?.Source ?? (horizontal ? (dx >= 0 ? CardSide.Right : CardSide.Left) : (dy >= 0 ? CardSide.Bottom : CardSide.Top));
+        var targetSide = saved?.Target ?? (horizontal ? (dx >= 0 ? CardSide.Left : CardSide.Right) : (dy >= 0 ? CardSide.Top : CardSide.Bottom));
         var (sx, sy) = SidePoint(source, sourceSide, offset);
         var (tx, ty) = SidePoint(target, targetSide, offset);
         return new Ends(sx, sy, sourceSide, tx, ty, targetSide);
     }
 
-    private static (double, double) SidePoint(Rect r, Side side, double offset)
+    private static (double, double) SidePoint(Rect r, CardSide side, double offset)
     {
         var cx = r.X + r.Width / 2;
         var cy = r.Y + r.Height / 2;
         return side switch
         {
-            Side.Left => (r.X, cy + offset),
-            Side.Right => (r.X + r.Width, cy + offset),
-            Side.Top => (cx + offset, r.Y),
+            CardSide.Left => (r.X, cy + offset),
+            CardSide.Right => (r.X + r.Width, cy + offset),
+            CardSide.Top => (cx + offset, r.Y),
             _ => (cx + offset, r.Y + r.Height),
         };
     }
 
+    // A curve and a step add their points to the bounds: a saved side can route a line around a
+    // card, outside the boxes of the cards. A straight line runs between two cards.
     private static (string, double, double) Straight(Ends e) =>
         ($"M{N(e.SourceX)},{N(e.SourceY)} L{N(e.TargetX)},{N(e.TargetY)}", (e.SourceX + e.TargetX) / 2, (e.SourceY + e.TargetY) / 2);
 
     /// <summary>React Flow's getBezierPath with its default curvature of 0.25.</summary>
-    private static (string, double, double) Bezier(Ends e)
+    private static (string, double, double) Bezier(Ends e, Bounds bounds)
     {
         var (scx, scy) = Control(e.SourceSide, e.SourceX, e.SourceY, e.TargetX, e.TargetY);
         var (tcx, tcy) = Control(e.TargetSide, e.TargetX, e.TargetY, e.SourceX, e.SourceY);
+        // The curve lies inside the hull of its four points.
+        bounds.Add(Hull([(e.SourceX, e.SourceY), (scx, scy), (tcx, tcy), (e.TargetX, e.TargetY)]));
         var cx = e.SourceX * 0.125 + scx * 0.375 + tcx * 0.375 + e.TargetX * 0.125;
         var cy = e.SourceY * 0.125 + scy * 0.375 + tcy * 0.375 + e.TargetY * 0.125;
         return ($"M{N(e.SourceX)},{N(e.SourceY)} C{N(scx)},{N(scy)} {N(tcx)},{N(tcy)} {N(e.TargetX)},{N(e.TargetY)}", cx, cy);
 
         static double Offset(double distance) => distance >= 0 ? 0.5 * distance : 0.25 * 25 * Math.Sqrt(-distance);
 
-        static (double, double) Control(Side side, double x1, double y1, double x2, double y2) => side switch
+        static (double, double) Control(CardSide side, double x1, double y1, double x2, double y2) => side switch
         {
-            Side.Left => (x1 - Offset(x1 - x2), y1),
-            Side.Right => (x1 + Offset(x2 - x1), y1),
-            Side.Top => (x1, y1 - Offset(y1 - y2)),
+            CardSide.Left => (x1 - Offset(x1 - x2), y1),
+            CardSide.Right => (x1 + Offset(x2 - x1), y1),
+            CardSide.Top => (x1, y1 - Offset(y1 - y2)),
             _ => (x1, y1 + Offset(y2 - y1)),
         };
     }
 
-    /// <summary>An orthogonal path through the middle between the two sides, with corners of radius 5.</summary>
-    private static (string, double, double) Step(Ends e)
+    /// <summary>
+    /// An orthogonal path with corners of radius 5 through the points of React Flow's
+    /// getSmoothStepPath (getPoints in @xyflow/system, offset 20, step in the middle), so the
+    /// picture matches the canvas for any pair of sides.
+    /// </summary>
+    private static (string, double, double) Step(Ends e, Bounds bounds)
     {
-        var horizontal = e.SourceSide is Side.Left or Side.Right;
-        (double X, double Y)[] points;
+        const double gap = 20;
+        var source = (X: e.SourceX, Y: e.SourceY);
+        var target = (X: e.TargetX, Y: e.TargetY);
+        var sourceDir = Direction(e.SourceSide);
+        var targetDir = Direction(e.TargetSide);
+        var sourceGapped = (X: source.X + sourceDir.X * gap, Y: source.Y + sourceDir.Y * gap);
+        var targetGapped = (X: target.X + targetDir.X * gap, Y: target.Y + targetDir.Y * gap);
+
+        // The main axis is the axis of the source side; the direction runs toward the target.
+        var alongX = e.SourceSide is CardSide.Left or CardSide.Right;
+        double Axis((double X, double Y) p) => alongX ? p.X : p.Y;
+        double Cross((double X, double Y) p) => alongX ? p.Y : p.X;
+        var currDir = alongX
+            ? (sourceGapped.X < targetGapped.X ? 1.0 : -1.0)
+            : (sourceGapped.Y < targetGapped.Y ? 1.0 : -1.0);
+
+        List<(double X, double Y)> points;
         double cx, cy;
-        if (horizontal)
+        var sourceGapOffset = (X: 0.0, Y: 0.0);
+        var targetGapOffset = (X: 0.0, Y: 0.0);
+        if (Axis(sourceDir) * Axis(targetDir) == -1)
         {
-            var mid = (e.SourceX + e.TargetX) / 2;
-            points = [(e.SourceX, e.SourceY), (mid, e.SourceY), (mid, e.TargetY), (e.TargetX, e.TargetY)];
-            (cx, cy) = (mid, (e.SourceY + e.TargetY) / 2);
+            // Opposite sides: one step in the middle.
+            cx = (sourceGapped.X + targetGapped.X) / 2;
+            cy = (sourceGapped.Y + targetGapped.Y) / 2;
+            List<(double X, double Y)> verticalSplit = [(cx, sourceGapped.Y), (cx, targetGapped.Y)];
+            List<(double X, double Y)> horizontalSplit = [(sourceGapped.X, cy), (targetGapped.X, cy)];
+            points = Axis(sourceDir) == currDir
+                ? (alongX ? verticalSplit : horizontalSplit)
+                : (alongX ? horizontalSplit : verticalSplit);
         }
         else
         {
-            var mid = (e.SourceY + e.TargetY) / 2;
-            points = [(e.SourceX, e.SourceY), (e.SourceX, mid), (e.TargetX, mid), (e.TargetX, e.TargetY)];
-            (cx, cy) = ((e.SourceX + e.TargetX) / 2, mid);
+            List<(double X, double Y)> sourceTarget = [(sourceGapped.X, targetGapped.Y)];
+            List<(double X, double Y)> targetSource = [(targetGapped.X, sourceGapped.Y)];
+            points = alongX
+                ? (sourceDir.X == currDir ? targetSource : sourceTarget)
+                : (sourceDir.Y == currDir ? sourceTarget : targetSource);
+
+            if (e.SourceSide == e.TargetSide)
+            {
+                // The same side on both ends, closer than the gap: one gapped end moves back.
+                var diff = Math.Abs(Axis(source) - Axis(target));
+                if (diff <= gap)
+                {
+                    var gapOffset = Math.Min(gap - 1, gap - diff);
+                    if (Axis(sourceDir) == currDir)
+                    {
+                        var v = (Axis(sourceGapped) > Axis(source) ? -1 : 1) * gapOffset;
+                        sourceGapOffset = alongX ? (v, 0) : (0, v);
+                    }
+                    else
+                    {
+                        var v = (Axis(targetGapped) > Axis(target) ? -1 : 1) * gapOffset;
+                        targetGapOffset = alongX ? (v, 0) : (0, v);
+                    }
+                }
+            }
+            else
+            {
+                // Sides at a right angle, such as right to bottom.
+                var isSameDir = Axis(sourceDir) == Cross(targetDir);
+                var sourceGt = Cross(sourceGapped) > Cross(targetGapped);
+                var sourceLt = Cross(sourceGapped) < Cross(targetGapped);
+                var flip = (Axis(sourceDir) == 1 && ((!isSameDir && sourceGt) || (isSameDir && sourceLt)))
+                           || (Axis(sourceDir) != 1 && ((!isSameDir && sourceLt) || (isSameDir && sourceGt)));
+                if (flip) points = alongX ? sourceTarget : targetSource;
+            }
+
+            var sourceGapPoint = (X: sourceGapped.X + sourceGapOffset.X, Y: sourceGapped.Y + sourceGapOffset.Y);
+            var targetGapPoint = (X: targetGapped.X + targetGapOffset.X, Y: targetGapped.Y + targetGapOffset.Y);
+            var maxX = Math.Max(Math.Abs(sourceGapPoint.X - points[0].X), Math.Abs(targetGapPoint.X - points[0].X));
+            var maxY = Math.Max(Math.Abs(sourceGapPoint.Y - points[0].Y), Math.Abs(targetGapPoint.Y - points[0].Y));
+            // The label goes on the longest run.
+            (cx, cy) = maxX >= maxY
+                ? ((sourceGapPoint.X + targetGapPoint.X) / 2, points[0].Y)
+                : (points[0].X, (sourceGapPoint.Y + targetGapPoint.Y) / 2);
         }
 
-        var path = new StringBuilder($"M{N(points[0].X)},{N(points[0].Y)}");
-        for (var i = 1; i < points.Length - 1; i++)
+        var gappedSource = (X: sourceGapped.X + sourceGapOffset.X, Y: sourceGapped.Y + sourceGapOffset.Y);
+        var gappedTarget = (X: targetGapped.X + targetGapOffset.X, Y: targetGapped.Y + targetGapOffset.Y);
+        // A gapped end on the straight run from its end to the first corner draws nothing, so it
+        // is left out, as the path of two facing sides always was.
+        var kept = new List<(double X, double Y)> { source };
+        if (gappedSource != points[0] && !Straight3(source, gappedSource, points[0])) kept.Add(gappedSource);
+        kept.AddRange(points);
+        if (gappedTarget != points[^1] && !Straight3(points[^1], gappedTarget, target)) kept.Add(gappedTarget);
+        kept.Add(target);
+        bounds.Add(Hull(kept));
+
+        var path = new StringBuilder($"M{N(kept[0].X)},{N(kept[0].Y)}");
+        for (var i = 1; i < kept.Count - 1; i++)
         {
-            var (a, b, c) = (points[i - 1], points[i], points[i + 1]);
+            var (a, b, c) = (kept[i - 1], kept[i], kept[i + 1]);
             var r = Math.Min(5, Math.Min(Distance(a, b), Distance(b, c)) / 2);
             if (r <= 0)
             {
@@ -382,8 +466,19 @@ public static class DiagramSvg
             var after = Toward(b, c, r);
             path.Append(CultureInfo.InvariantCulture, $" L{N(before.X)},{N(before.Y)} Q{N(b.X)},{N(b.Y)} {N(after.X)},{N(after.Y)}");
         }
-        path.Append(CultureInfo.InvariantCulture, $" L{N(points[^1].X)},{N(points[^1].Y)}");
+        path.Append(CultureInfo.InvariantCulture, $" L{N(kept[^1].X)},{N(kept[^1].Y)}");
         return (path.ToString(), cx, cy);
+
+        static bool Straight3((double X, double Y) a, (double X, double Y) b, (double X, double Y) c) =>
+            (a.X == b.X && b.X == c.X) || (a.Y == b.Y && b.Y == c.Y);
+
+        static (double X, double Y) Direction(CardSide side) => side switch
+        {
+            CardSide.Left => (-1, 0),
+            CardSide.Right => (1, 0),
+            CardSide.Top => (0, -1),
+            _ => (0, 1),
+        };
 
         static double Distance((double X, double Y) a, (double X, double Y) b) => Math.Abs(a.X - b.X) + Math.Abs(a.Y - b.Y);
 
@@ -392,6 +487,12 @@ public static class DiagramSvg
             var d = Distance(from, to);
             return d == 0 ? from : (from.X + (to.X - from.X) / d * length, from.Y + (to.Y - from.Y) / d * length);
         }
+    }
+
+    private static Rect Hull(IReadOnlyList<(double X, double Y)> points)
+    {
+        var (minX, minY) = (points.Min(p => p.X), points.Min(p => p.Y));
+        return new Rect(minX, minY, points.Max(p => p.X) - minX, points.Max(p => p.Y) - minY);
     }
 
     private sealed class Bounds

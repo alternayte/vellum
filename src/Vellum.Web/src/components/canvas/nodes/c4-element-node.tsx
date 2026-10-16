@@ -1,5 +1,6 @@
 import { memo, useCallback, useRef, useState } from 'react'
-import { Handle, Position, type Node, type NodeProps } from '@xyflow/react'
+import type { Node, NodeProps } from '@xyflow/react'
+import { SideHandles } from './side-handles'
 import { Plus } from 'lucide-react'
 import { kindColor } from '@/lib/kind-colors'
 import { KIND_WIDTHS } from '@/lib/card-size'
@@ -129,10 +130,7 @@ export const C4ElementNode = memo(function C4ElementNode({ data }: NodeProps<C4E
         backgroundColor: diffBg,
       }}
     >
-      <Handle type="target" position={Position.Top} className="h-2! w-2! bg-primary! opacity-0 transition-opacity group-hover/node:opacity-100" />
-      <Handle type="source" position={Position.Right} className="h-2! w-2! bg-primary! opacity-0 transition-opacity group-hover/node:opacity-100" />
-      <Handle type="target" position={Position.Bottom} className="h-2! w-2! bg-primary! opacity-0 transition-opacity group-hover/node:opacity-100" />
-      <Handle type="source" position={Position.Left} className="h-2! w-2! bg-primary! opacity-0 transition-opacity group-hover/node:opacity-100" />
+      <SideHandles className="h-2! w-2!" hoverClassName="group-hover/node:opacity-100" />
 
       <div className="flex flex-1 flex-col px-3.5 pb-3 pt-3">
         <div className="flex items-start gap-2.5">

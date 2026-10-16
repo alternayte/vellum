@@ -33,7 +33,7 @@ import { useAddRelationship, useUpdateRelationship, useRemoveRelationship } from
 import { isProjectRefusal, projectErrorBlocks, refuseWrite, useModel, useProject, writeGuard } from '@/hooks/use-model'
 import { useFactLabel } from '@/lib/fact-labels'
 import { toast } from 'sonner'
-import { useViews, useView, useCreateView, useSaveLayout } from '@/hooks/use-views'
+import { useViews, useView, useCreateView, useSaveLayout, useSaveEdgeSides } from '@/hooks/use-views'
 import { useDocs, useCreateDoc } from '@/hooks/use-docs'
 import { useSpaces } from '@/hooks/use-spaces'
 import { useSchemas } from '@/hooks/use-schemas'
@@ -171,6 +171,11 @@ function ProjectWorkspace() {
   const factLabel = guard(useFactLabel(projectId, activeDraftStreamId))
   const { saveLayout: writeLayout } = useSaveLayout(projectId, activeViewId)
   const saveLayout = useCallback<typeof writeLayout>((positions) => (readOnly ? refuseWrite() : writeLayout(positions)), [readOnly, writeLayout])
+  const saveEdgeSides = guard(useSaveEdgeSides(projectId, activeViewId))
+  const handleEdgeSidesChange = useCallback(
+    (relationshipId: string, sides: { sourceSide: string | null; targetSide: string | null }) => saveEdgeSides.mutate({ relationshipId, ...sides }),
+    [saveEdgeSides],
+  )
   const createView = useCreateView(projectId)
   const autoViewRef = useRef(false)
 
@@ -772,6 +777,8 @@ function ProjectWorkspace() {
               searchOpen={searchOpen}
               onSearchClose={() => setSearchOpen(false)}
               commentMarkers={commentMarkers}
+              edgeSides={activeView?.edges}
+              onEdgeSidesChange={activeView ? handleEdgeSidesChange : undefined}
             />
           )}
         </main>
@@ -787,6 +794,8 @@ function ProjectWorkspace() {
           onDeleteElement={(id) => removeElement.mutate(id)}
           onDeleteRelationship={(id) => removeRelationship.mutate(id)}
           onAddChild={handleOpenCreateDialog}
+          edgeSides={activeView?.edges}
+          onUpdateEdgeSides={activeView ? handleEdgeSidesChange : undefined}
         />
       </div>
       {!activeDocId && <TraceDock />}

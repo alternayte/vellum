@@ -179,5 +179,39 @@ public class ViewEndpointTests : IClassFixture<IntegrationFixture>
         Assert.Equal(0, orphanedPositions);
         Assert.Equal(0, orphanedEdges);
     }
-}
 
+    [Fact]
+    public async Task Edge_sides_round_trip_through_the_layout_and_survive_a_save_of_positions()
+    {
+        using var client = await CreateAuthenticatedClientAsync(_fixture.Factory);
+        var projectId = await SetupProjectAsync(client);
+        var viewId = Guid.NewGuid();
+        var relationshipId = Guid.NewGuid();
+        await client.PostAsJsonAsync($"/api/projects/{projectId}/views", new { id = viewId, name = "Sides" });
+        var view = $"/api/projects/{projectId}/views/{viewId}";
+
+        var saved = await client.PutAsJsonAsync($"{view}/layout/edges/{relationshipId}", new { sourceSide = "top", targetSide = (string?)null });
+        Assert.Equal(HttpStatusCode.OK, saved.StatusCode);
+
+        // The canvas saves positions with no edges: the sides stay.
+        await client.PutAsJsonAsync($"{view}/layout", new { positions = new[] { new { elementId = Guid.NewGuid(), x = 1.0, y = 2.0 } } });
+        var edge = Assert.Single((await client.GetFromJsonAsync<ViewDetailDto>(view))!.Edges);
+        Assert.Equal((relationshipId, "top", (string?)null), (edge.RelationshipId, edge.SourceSide, edge.TargetSide));
+
+        var refused = await client.PutAsJsonAsync($"{view}/layout/edges/{relationshipId}", new { sourceSide = "middle", targetSide = "left" });
+        Assert.Equal(HttpStatusCode.BadRequest, refused.StatusCode);
+
+        // Both ends auto: nothing is left to keep.
+        await client.PutAsJsonAsync($"{view}/layout/edges/{relationshipId}", new { sourceSide = (string?)null, targetSide = (string?)null });
+        Assert.Empty((await client.GetFromJsonAsync<ViewDetailDto>(view))!.Edges);
+
+        // A whole layout with edges keeps their sides too.
+        await client.PutAsJsonAsync($"{view}/layout", new
+        {
+            positions = Array.Empty<object>(),
+            edges = new[] { new { relationshipId, routePoints = (object?)null, sourceSide = "bottom", targetSide = "right" } },
+        });
+        edge = Assert.Single((await client.GetFromJsonAsync<ViewDetailDto>(view))!.Edges);
+        Assert.Equal(("bottom", "right"), (edge.SourceSide, edge.TargetSide));
+    }
+}

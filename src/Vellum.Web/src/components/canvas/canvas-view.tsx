@@ -11,6 +11,9 @@ import {
   type NodeMouseHandler,
   type OnConnect,
   type OnConnectEnd,
+  type Connection,
+  type HandleType,
+  ConnectionMode,
   MarkerType,
   useReactFlow,
   SelectionMode,
@@ -50,6 +53,7 @@ import { TraceEdgeMarkers } from './edges/trace-edge'
 import { ImpactStepMarkers } from './edges/impact-step-edge'
 import { CERTAINTY, strongest } from '@/lib/impact'
 import type { ImpactCertainty } from '@/lib/import-api'
+import { cardSide, effectiveSides, type CardSide, type Rect } from '@/lib/edge-utils'
 
 interface ElementModel {
   id: string
@@ -85,6 +89,13 @@ interface LayoutPosition {
   y: number
   width?: number
   height?: number
+}
+
+/** The saved sides of one relationship in the view. A null or missing end is auto. */
+export interface EdgeSidesModel {
+  relationshipId: string
+  sourceSide?: string | null
+  targetSide?: string | null
 }
 
 interface MessageModel {
@@ -137,6 +148,13 @@ interface CanvasViewProps {
   readOnly?: boolean
   /** The open comment threads of each element, message and relationship, drawn as badges over the canvas. */
   commentMarkers?: Record<string, CommentMarker>
+  /** The saved sides of the relationships in this view. A relationship without one is auto. */
+  edgeSides?: EdgeSidesModel[]
+  /**
+   * Saves the sides of a relationship in this view, after an end of it is dragged to another
+   * side of the same card. The relationship's source and target in the model do not change.
+   */
+  onEdgeSidesChange?: (relationshipId: string, sides: { sourceSide: CardSide | null; targetSide: CardSide | null }) => void
 }
 
 function minimapNodeColor(node: Node): string {
@@ -182,7 +200,7 @@ export function CanvasView(props: CanvasViewProps) {
         onNodeDoubleClick: props.onNodeDoubleClick, onFitViewReady: props.onFitViewReady,
         onViewportCenterReady: props.onViewportCenterReady, onSelectionChange: props.onSelectionChange,
         searchOpen: props.searchOpen, onSearchClose: props.onSearchClose, readOnly: true,
-        commentMarkers: props.commentMarkers,
+        commentMarkers: props.commentMarkers, edgeSides: props.edgeSides,
       }
     : props
   return (
@@ -232,6 +250,8 @@ function CanvasViewInner({
   onSearchClose,
   readOnly = false,
   commentMarkers,
+  edgeSides,
+  onEdgeSidesChange,
 }: CanvasViewProps) {
   const { currentRootId, zoomLevel, setZoom, activeLens, setLens, expandedNodeIds, toggleExpand } = useCanvasStore()
   const { fitView, screenToFlowPosition, getViewport, setViewport, getInternalNode } = useReactFlow()
@@ -320,6 +340,8 @@ function CanvasViewInner({
       (r) => visibleIds.has(r.fromId) && visibleIds.has(r.toId),
     )
   }, [relationships, visibleIds])
+
+  const sidesMap = useMemo(() => new Map((edgeSides ?? []).map((e) => [e.relationshipId, e])), [edgeSides])
 
   const positionMap = useMemo(() => {
     const map = new Map<string, LayoutPosition>()
@@ -464,10 +486,14 @@ function CanvasViewInner({
           diffState: diffStateMap?.get(rel.id) ?? (isReviewMode ? 'unchanged' : undefined),
           edgeIndex: idx,
           totalParallel: total,
+          sourceSide: cardSide(sidesMap.get(rel.id)?.sourceSide),
+          targetSide: cardSide(sidesMap.get(rel.id)?.targetSide),
         },
+        // Only the selected relationship offers its ends to drag; see shownEdges.
+        reconnectable: false,
       }
     })
-  }, [visibleRelationships, diffStateMap, isReviewMode])
+  }, [visibleRelationships, diffStateMap, isReviewMode, sidesMap])
 
   const messageNodes: Node[] = useMemo(() => {
     if (activeLens !== 'messages' || !messages) return []
@@ -507,6 +533,7 @@ function CanvasViewInner({
           type: 'c4-edge',
           markerEnd: { type: MarkerType.ArrowClosed, color: 'var(--muted-foreground)' },
           data: { label: null, technology: null },
+          reconnectable: false,
         }
         const consumerEdges: Edge[] = msg.consumerIds
           .filter((cid) => visibleIds.has(cid))
@@ -517,6 +544,7 @@ function CanvasViewInner({
             type: 'c4-edge',
             markerEnd: { type: MarkerType.ArrowClosed, color: 'var(--muted-foreground)' },
             data: { label: null, technology: null },
+            reconnectable: false,
           }))
         return [producerEdge, ...consumerEdges]
       })
@@ -726,7 +754,11 @@ function CanvasViewInner({
   }, [derivedNodeFingerprint, setRfNodes])
 
   useEffect(() => {
-    setRfEdges(derivedEdges)
+    // The selection is React Flow's: a change of the model or the layout keeps it.
+    setRfEdges((previous) => {
+      const selected = new Set((previous as Edge[]).filter((e) => e.selected).map((e) => e.id))
+      return selected.size === 0 ? derivedEdges : derivedEdges.map((e) => (selected.has(e.id) ? { ...e, selected: true } : e))
+    })
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [derivedEdgeFingerprint, setRfEdges])
 
@@ -766,6 +798,61 @@ function CanvasViewInner({
     }
   }, [rfNodes, rootElement])
   const shownNodes = useMemo(() => (frameNode ? [frameNode, ...rfNodes] : rfNodes), [frameNode, rfNodes])
+
+  // The selected relationship offers its two ends to drag. React Flow draws the drag anchors at
+  // the handles the edge names, so the edge names the handles of the sides it is drawn on: the
+  // saved side, or the facing side of the live cards for an auto end.
+  const relationshipIds = useMemo(() => new Set(relationships.map((r) => r.id)), [relationships])
+  const shownEdges = useMemo(() => {
+    if (!onEdgeSidesChange) return rfEdges
+    const box = (id: string): Rect | null => {
+      const node = rfNodes.find((n) => n.id === id)
+      const width = node?.measured?.width
+      const height = node?.measured?.height
+      if (!node || !width || !height) return null
+      const parent = node.parentId ? rfNodes.find((n) => n.id === node.parentId) : undefined
+      return { x: node.position.x + (parent?.position.x ?? 0), y: node.position.y + (parent?.position.y ?? 0), width, height }
+    }
+    return (rfEdges as Edge[]).map((edge) => {
+      if (!edge.selected || !relationshipIds.has(edge.id)) return edge
+      const source = box(edge.source)
+      const target = box(edge.target)
+      if (!source || !target || edge.source === edge.target) return edge
+      const data = edge.data as { sourceSide?: string | null; targetSide?: string | null } | undefined
+      const sides = effectiveSides(source, target, data)
+      return { ...edge, reconnectable: true, sourceHandle: sides.source, targetHandle: sides.target }
+    })
+  }, [rfEdges, rfNodes, relationshipIds, onEdgeSidesChange])
+
+  // The end of a relationship being dragged, from its start to its end. While it is set, a drop
+  // is valid only on a handle of the same two cards, and a drop on the pane opens no menu.
+  const reconnectingRef = useRef<{ edge: Edge; end: 'source' | 'target' } | null>(null)
+  const handleReconnectStart = useCallback((_event: React.MouseEvent, edge: Edge, handleType: HandleType) => {
+    // React Flow names the end that stays: the source end moves when the target stays.
+    reconnectingRef.current = { edge, end: handleType === 'target' ? 'source' : 'target' }
+  }, [])
+  // The release of a dragged end also clicks the pane under it; that click keeps the selection.
+  const reconnectEndedAtRef = useRef(0)
+  const handleReconnectEnd = useCallback(() => {
+    reconnectingRef.current = null
+    reconnectEndedAtRef.current = performance.now()
+  }, [])
+  const isValidConnection = useCallback((connection: Edge | Connection) => {
+    const moving = reconnectingRef.current
+    // Two handles of one card would make a loop, which the canvas does not draw.
+    if (!moving) return connection.source !== connection.target
+    return connection.source === moving.edge.source && connection.target === moving.edge.target
+  }, [])
+  const handleReconnect = useCallback((oldEdge: Edge, connection: Connection) => {
+    const moving = reconnectingRef.current
+    // A relationship keeps its two elements: an end only moves to another side of its own card.
+    if (!moving || !onEdgeSidesChange || connection.source !== oldEdge.source || connection.target !== oldEdge.target) return
+    const saved = sidesMap.get(oldEdge.id)
+    const sourceSide = moving.end === 'source' ? cardSide(connection.sourceHandle) : cardSide(saved?.sourceSide)
+    const targetSide = moving.end === 'target' ? cardSide(connection.targetHandle) : cardSide(saved?.targetSide)
+    if (sourceSide === cardSide(saved?.sourceSide) && targetSide === cardSide(saved?.targetSide)) return
+    onEdgeSidesChange(oldEdge.id, { sourceSide, targetSide })
+  }, [onEdgeSidesChange, sidesMap])
 
   const handleSearchMatchChange = useCallback(
     (matchIds: string[], _currentIndex: number) => {
@@ -844,8 +931,9 @@ function CanvasViewInner({
 
   const handleConnectEnd: OnConnectEnd = useCallback(
     (event, connectionState) => {
-      // Only open the popover when the connection was dropped on empty canvas (no target node)
-      if (readOnly || connectionState.toNode !== null) return
+      // Only open the popover when the connection was dropped on empty canvas (no target node).
+      // The end of a relationship dropped on the pane stays where it was.
+      if (readOnly || reconnectingRef.current || connectionState.toNode !== null) return
       // Must have had a source node to connect from
       const sourceNodeId = connectionState.fromHandle?.nodeId ?? null
       if (!sourceNodeId) return
@@ -905,6 +993,7 @@ function CanvasViewInner({
   )
 
   const handlePaneClick = useCallback(() => {
+    if (performance.now() - reconnectEndedAtRef.current < 250) return
     setCreatePopover(null)
     selectElement(null)
     selectRelationship(null)
@@ -995,7 +1084,7 @@ function CanvasViewInner({
     <div ref={paneRef} className="h-full w-full" onDoubleClick={handlePaneDoubleClick}>
       <ReactFlow
         nodes={shownNodes}
-        edges={rfEdges}
+        edges={shownEdges}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         nodeTypes={nodeTypes}
@@ -1005,6 +1094,14 @@ function CanvasViewInner({
         onNodeDragStop={onNodeDragStop ? (_event, node) => onNodeDragStop(node.id, node.position.x, node.position.y) : undefined}
         onConnect={handleConnect}
         onConnectEnd={handleConnectEnd}
+        // Each side of a card has one handle that starts a relationship and takes the end of one.
+        connectionMode={ConnectionMode.Loose}
+        isValidConnection={isValidConnection}
+        edgesReconnectable={false}
+        reconnectRadius={8}
+        onReconnectStart={onEdgeSidesChange ? handleReconnectStart : undefined}
+        onReconnect={onEdgeSidesChange ? handleReconnect : undefined}
+        onReconnectEnd={onEdgeSidesChange ? handleReconnectEnd : undefined}
         onEdgeClick={handleEdgeClick}
         onPaneClick={handlePaneClick}
         onSelectionChange={handleSelectionChange}

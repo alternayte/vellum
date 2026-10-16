@@ -88,6 +88,30 @@ public class DiagramExportTests
         Assert.Contains(svg.Descendants(), e => e.Name.LocalName == "rect" && (string?)e.Attribute("x") == "0" && (string?)e.Attribute("y") == "468.25");
     }
 
+    [Fact]
+    public void Saved_sides_attach_the_svg_path_and_enter_the_fingerprint_only_when_present()
+    {
+        var api = new RelationshipId(new Guid(1, 0, 0, new byte[8]));
+        LayoutEdgeEntity[] routeOnly = [new() { RelationshipId = api.Value, RoutePoints = null }];
+        LayoutEdgeEntity[] sided = [new() { RelationshipId = api.Value, SourceSide = "top", TargetSide = null }];
+
+        // A view without a saved side keeps the fingerprint it had before sides existed.
+        var plain = ViewDiagram.LayoutFingerprint(ShopView(), ShopLayout());
+        Assert.Equal(plain, ViewDiagram.LayoutFingerprint(ShopView(), ShopLayout(), routeOnly));
+        Assert.NotEqual(plain, ViewDiagram.LayoutFingerprint(ShopView(), ShopLayout(), sided));
+
+        // Auto: the Orders API (0,0, 264 wide) faces the Orders DB on its right side.
+        var auto = DiagramSvg.Write(ViewDiagram.Project(ShopView(), ShopLayout(), FixedModel()));
+        Assert.Contains("d=\"M264,64 C", auto);
+
+        // Saved: the source end leaves the top of the card; the target end stays auto.
+        var diagram = ViewDiagram.Project(ShopView(), ShopLayout(), FixedModel(), sided);
+        Assert.Equal(new RelationshipSides(CardSide.Top, null), diagram.Sides[api]);
+        var svg = DiagramSvg.Write(diagram);
+        Assert.Contains("d=\"M132,0 C", svg);
+        Assert.DoesNotContain("d=\"M264,64 C", svg);
+    }
+
     private const string Script = "<script>alert(1)</script>";
     private const string Quotes = "Say \"hi\" & 'bye'";
     private const string Lines = "first\nsecond\r\nthird";

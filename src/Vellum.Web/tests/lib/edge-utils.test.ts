@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { getBezierPath, getStraightPath, getSmoothStepPath } from '@xyflow/react'
-import { computeEdgeOffset, computeLabelOffset, getEdgePathFn, facingEndpoints } from '../../src/lib/edge-utils'
+import { computeEdgeOffset, computeLabelOffset, getEdgePathFn, facingEndpoints, relationshipEnds } from '../../src/lib/edge-utils'
 
 describe('getEdgePathFn', () => {
   it('returns getBezierPath for null lineShape', () => {
@@ -90,5 +90,32 @@ describe('facingEndpoints', () => {
   it('slides both ends along the side for parallel edges', () => {
     const ends = facingEndpoints(box(0, 0), box(400, 0), 15)
     expect([ends.sourceY, ends.targetY]).toEqual([45, 45])
+  })
+})
+
+describe('relationshipEnds', () => {
+  const box = (x: number, y: number) => ({ x, y, width: 200, height: 60 })
+
+  it('is auto without a saved side: the ends follow the cards as one moves', () => {
+    const before = relationshipEnds(box(0, 0), box(400, 0))
+    expect([before.sourcePosition, before.targetPosition]).toEqual(['right', 'left'])
+    // The target moves below the source: the same relationship now leaves the bottom.
+    const after = relationshipEnds(box(0, 0), box(0, 300), 0, { sourceSide: null, targetSide: null })
+    expect(after).toMatchObject({ sourcePosition: 'bottom', sourceX: 100, sourceY: 60, targetPosition: 'top', targetX: 100, targetY: 300 })
+    // Moved to the left of the source: the ends swap sides.
+    const left = relationshipEnds(box(400, 0), box(0, 0))
+    expect([left.sourcePosition, left.targetPosition]).toEqual(['left', 'right'])
+  })
+
+  it('keeps a saved side and leaves the other end auto', () => {
+    const ends = relationshipEnds(box(0, 0), box(400, 0), 0, { sourceSide: 'top' })
+    expect(ends).toMatchObject({ sourcePosition: 'top', sourceX: 100, sourceY: 0, targetPosition: 'left', targetX: 400, targetY: 30 })
+    const both = relationshipEnds(box(0, 0), box(400, 0), 10, { sourceSide: 'bottom', targetSide: 'bottom' })
+    expect(both).toMatchObject({ sourcePosition: 'bottom', sourceX: 110, sourceY: 60, targetPosition: 'bottom', targetX: 510, targetY: 60 })
+  })
+
+  it('treats a word that names no side as auto', () => {
+    const ends = relationshipEnds(box(0, 0), box(400, 0), 0, { sourceSide: 'middle', targetSide: 'auto' })
+    expect([ends.sourcePosition, ends.targetPosition]).toEqual(['right', 'left'])
   })
 })

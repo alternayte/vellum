@@ -47,9 +47,18 @@ The layout of a view is not part of a revision. An export of a revision uses the
 
 ## Layout fingerprint
 
-Each export names the layout it was drawn from as a layout fingerprint: `sha256:` and the SHA-256 of the view name, the root element ID and each saved position (element ID, x, y) in the order of the element IDs. The SVG has it in `<desc>`. The Mermaid file has it in the second comment line. The Structurizr DSL file has one comment line for each view.
+Each export names the layout it was drawn from as a layout fingerprint: `sha256:` and the SHA-256 of these parts, in this order:
 
-The same revision and the same layout fingerprint give the same bytes. When somebody renames the view, changes its root or moves an element, the fingerprint changes.
+1. the view name;
+2. the root element ID;
+3. each saved position (element ID, x, y), in the order of the element IDs;
+4. each relationship with a saved side (`side`, relationship ID, source side, target side), in the order of the relationship IDs. An auto end is an empty word.
+
+A view with no saved side has no part 4. Its fingerprint is the same as before Vellum saved sides.
+
+The SVG has the fingerprint in `<desc>`. The Mermaid file has it in the second comment line. The Structurizr DSL file has one comment line for each view.
+
+The same revision and the same layout fingerprint give the same bytes. When somebody renames the view, changes its root, moves an element or changes the side of a relationship, the fingerprint changes.
 
 ## SVG
 
@@ -61,7 +70,7 @@ The SVG looks like the canvas in the dark theme: the cards, the frame of the roo
 | Truth label | A dot for a label other than `declared`. The dot has a title with the label. |
 | Stale mark | A dashed `STALE` badge |
 | Elements inside | A badge with the count |
-| Relationship | A path with an arrow. A behavioural relationship is teal and thicker. The line shape (curve, straight or step) is kept. |
+| Relationship | A path with an arrow. A behavioural relationship is teal and thicker. The line shape (curve, straight or step) is kept. Each end attaches to its saved side, or to the side that faces the other card when the side is auto, as on the canvas. |
 | Relationship label | A label card with the label and the technology |
 
 The same revision and the same layout fingerprint give the same bytes:

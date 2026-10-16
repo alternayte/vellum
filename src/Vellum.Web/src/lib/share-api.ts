@@ -140,7 +140,13 @@ export interface SharedSubscription {
   stale: boolean
 }
 
-export interface SharedView { id: string; name: string; positions: { elementId: string; x: number; y: number; width: number | null; height: number | null }[] }
+export interface SharedView {
+  id: string
+  name: string
+  positions: { elementId: string; x: number; y: number; width: number | null; height: number | null }[]
+  /** The saved sides of the relationships on the diagram. Null on a page pinned before sides existed. */
+  edges?: { relationshipId: string; sourceSide: string | null; targetSide: string | null }[] | null
+}
 export interface SharedSchema { id: string; name: string; description: string | null; content: string; version: number }
 /** One step of a flow. Payloads, headers and write changes are not shared. */
 export interface SharedStep {

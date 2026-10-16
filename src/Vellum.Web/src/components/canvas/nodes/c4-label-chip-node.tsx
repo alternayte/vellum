@@ -1,5 +1,6 @@
 import { memo } from 'react'
-import { Handle, Position, type NodeProps } from '@xyflow/react'
+import type { NodeProps } from '@xyflow/react'
+import { SideHandles } from './side-handles'
 import { kindColor } from '@/lib/kind-colors'
 import { cn } from '@/lib/utils'
 import { factStatusColor, factStatusLabel, provenanceSummary } from '@/lib/fact-status'
@@ -26,10 +27,7 @@ export const C4LabelChipNode = memo(function C4LabelChipNode({ data }: NodeProps
       )}
       style={diffOverrideBorder ? { borderColor: diffOverrideBorder } : undefined}
     >
-      <Handle type="target" position={Position.Top} className="h-1.5! w-1.5! bg-primary! opacity-0 transition-opacity group-hover/chip:opacity-100" />
-      <Handle type="source" position={Position.Right} className="h-1.5! w-1.5! bg-primary! opacity-0 transition-opacity group-hover/chip:opacity-100" />
-      <Handle type="target" position={Position.Bottom} className="h-1.5! w-1.5! bg-primary! opacity-0 transition-opacity group-hover/chip:opacity-100" />
-      <Handle type="source" position={Position.Left} className="h-1.5! w-1.5! bg-primary! opacity-0 transition-opacity group-hover/chip:opacity-100" />
+      <SideHandles className="h-1.5! w-1.5!" hoverClassName="group-hover/chip:opacity-100" />
       <span
         className="h-2 w-2 rounded-full"
         style={{ backgroundColor: kindColor(d.kind) }}

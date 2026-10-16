@@ -13,6 +13,13 @@ of an earlier release, so the data of each release upgrades to the next.
   scan of its Source proposes the change, and a person accepts it.
 - HTTP API: a schema has the new fields `factStatus` and `provenance`. The model document
   carries both for each schema; a document without them keeps the label a schema has.
+- Relationship sides (#7): each card has a handle on each side. An end of a relationship
+  is auto (it faces the other card) or saved per diagram as top, right, bottom or left, by
+  a drag of the end or in the Relationship panel. The SVG export and share links use the
+  saved sides. API: `PUT /api/projects/{projectId}/views/{viewId}/layout/edges/{relationshipId}`;
+  `edges[]` of a view and of a layout save carry `sourceSide` and `targetSide`; a shared
+  view has `edges`. Migration `LayoutEdgeSides` adds two nullable columns. The layout
+  fingerprint of a view without a saved side does not change.
 
 ## 0.1.0 - 2026-10-15
 

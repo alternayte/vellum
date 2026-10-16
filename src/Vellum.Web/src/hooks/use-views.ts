@@ -1,10 +1,12 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useRef, useCallback, useEffect } from 'react'
+import { toast } from 'sonner'
 import {
   getApiProjectsByProjectIdViews,
   getApiProjectsByProjectIdViewsByViewId,
   postApiProjectsByProjectIdViews,
   putApiProjectsByProjectIdViewsByViewIdLayout,
+  putApiProjectsByProjectIdViewsByViewIdLayoutEdgesByRelationshipId,
   patchApiProjectsByProjectIdViewsByViewId,
   deleteApiProjectsByProjectIdViewsByViewId,
 } from '@/api/generated'
@@ -26,7 +28,8 @@ export interface View {
 
 export interface ViewDetail extends View {
   positions: { elementId: string; x: number; y: number; width?: number; height?: number }[]
-  edges: { relationshipId: string; routePoints: unknown }[]
+  /** The saved route and sides of each relationship that has one in this view. A null side is auto. */
+  edges: { relationshipId: string; routePoints: unknown; sourceSide?: string | null; targetSide?: string | null }[]
 }
 
 export function useViews(projectId: string) {
@@ -141,4 +144,43 @@ export function useSaveLayout(projectId: string, viewId: string | null) {
   useEffect(() => () => { if (timerRef.current) clearTimeout(timerRef.current) }, [])
 
   return { saveLayout: debouncedSave }
+}
+
+/**
+ * Saves the sides of one relationship in a view: top, right, bottom or left, or null for auto.
+ * The canvas shows the new sides at once; a failed save puts the saved ones back.
+ */
+export function useSaveEdgeSides(projectId: string, viewId: string | null) {
+  const queryClient = useQueryClient()
+  const key = ['projects', projectId, 'views', viewId]
+
+  return useMutation({
+    mutationFn: async ({ relationshipId, sourceSide, targetSide }: { relationshipId: string; sourceSide: string | null; targetSide: string | null }) => {
+      if (!viewId) throw new Error('No diagram is open.')
+      unwrap(
+        await putApiProjectsByProjectIdViewsByViewIdLayoutEdgesByRelationshipId({
+          path: { projectId, viewId, relationshipId },
+          body: { sourceSide, targetSide },
+        }),
+        'The sides of the relationship were not saved.',
+      )
+    },
+    onMutate: async ({ relationshipId, sourceSide, targetSide }) => {
+      await queryClient.cancelQueries({ queryKey: key })
+      const previous = queryClient.getQueryData<ViewDetail>(key)
+      queryClient.setQueryData<ViewDetail>(key, (old) => {
+        if (!old) return old
+        const rest = old.edges.filter((e) => e.relationshipId !== relationshipId)
+        const current = old.edges.find((e) => e.relationshipId === relationshipId)
+        const routePoints = current?.routePoints ?? null
+        const keep = sourceSide !== null || targetSide !== null || routePoints !== null
+        return { ...old, edges: keep ? [...rest, { relationshipId, routePoints, sourceSide, targetSide }] : rest }
+      })
+      return { previous }
+    },
+    onError: (error, _vars, context) => {
+      if (context?.previous) queryClient.setQueryData(key, context.previous)
+      toast.error(error.message)
+    },
+  })
 }
