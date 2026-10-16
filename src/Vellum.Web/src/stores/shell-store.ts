@@ -25,8 +25,20 @@ export interface CanvasHighlight {
 
 export type Flyout = 'files' | 'create' | 'catalog' | 'contracts' | 'scenarios' | 'import' | 'assistant' | 'promises' | 'review' | 'build' | 'stress' | 'costs' | 'comments' | 'search'
 
+const SIDEBAR_COLLAPSED_KEY = 'vellum-sidebar-collapsed'
+
+function readSidebarCollapsed(): boolean {
+  try {
+    return localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
 interface ShellState {
   activeFlyout: Flyout | null
+  /** True when the project tools sidebar shows icons only. It lasts across page loads; reset keeps it. */
+  sidebarCollapsed: boolean
   detailPanelOpen: boolean
   selectedElementId: string | null
   selectedRelationshipId: string | null
@@ -43,6 +55,7 @@ interface ShellState {
   focusThreadId: string | null
 
   openFlyout: (flyout: Flyout) => void
+  setSidebarCollapsed: (collapsed: boolean) => void
   closeFlyout: () => void
   toggleFlyout: (flyout: Flyout) => void
   selectElement: (id: string | null) => void
@@ -67,6 +80,7 @@ interface ShellState {
 
 export const useShellStore = create<ShellState>((set) => ({
   activeFlyout: null,
+  sidebarCollapsed: readSidebarCollapsed(),
   detailPanelOpen: false,
   selectedElementId: null,
   selectedRelationshipId: null,
@@ -80,6 +94,14 @@ export const useShellStore = create<ShellState>((set) => ({
   focusThreadId: null,
 
   openFlyout: (flyout) => set({ activeFlyout: flyout }),
+  setSidebarCollapsed: (collapsed) => {
+    set({ sidebarCollapsed: collapsed })
+    try {
+      localStorage.setItem(SIDEBAR_COLLAPSED_KEY, collapsed ? '1' : '0')
+    } catch {
+      // Storage is not available. The state lasts for this page load.
+    }
+  },
   closeFlyout: () => set({ activeFlyout: null }),
   toggleFlyout: (flyout) =>
     set((state) => ({
