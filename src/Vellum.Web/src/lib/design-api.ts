@@ -176,8 +176,23 @@ export interface ArchitectureProposal {
   resolvedToExisting: { alias: string; id: string; name: string }[]
   stale: boolean
   /** Items that cannot be accepted now, with the reason. */
-  itemIssues: { itemId: string; reason: string }[]
+  itemIssues: ItemFailure[]
   omittedPrivate: { count: number; reason: string } | null
+}
+
+export interface ItemFailure {
+  itemId: string
+  reason: string
+}
+
+/**
+ * The items a refused decision names, from a 409 `items_refused` answer of
+ * `…/architecture-proposals/{id}/decide`. Null for any other error.
+ */
+export function refusedItems(error: unknown): ItemFailure[] | null {
+  if (!(error instanceof ApiError) || error.status !== 409) return null
+  const body = error.body as { type?: unknown; failures?: unknown } | null
+  return body?.type === 'items_refused' && Array.isArray(body.failures) ? (body.failures as ItemFailure[]) : null
 }
 
 export type ExplainTarget =

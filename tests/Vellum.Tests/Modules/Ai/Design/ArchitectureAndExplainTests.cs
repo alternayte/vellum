@@ -206,6 +206,53 @@ public class ArchitectureAndExplainTests(SharedOutboundHost shared) : IClassFixt
             item => Assert.Equal("pending", (string)item!["status"]!));
     }
 
+    [Fact]
+    public async Task A_refused_decision_names_every_item_the_model_refuses_and_what_hangs_from_it()
+    {
+        var (ai, projectId, model) = await OrdersAsync(_host, "openai");
+        static object Item(string alias, string entityKind, string name, string? elementKind = null, string? parent = null, string? from = null, string? to = null) => new
+        {
+            alias, action = "add", entityKind, name, elementKind, parent, from, to, confidence = 0.8, rationale = "Seen in the code.",
+        };
+        var submitted = await ai.Owner.PostAsJsonAsync(Url(projectId, "ai/architecture-proposals/submit"), new
+        {
+            request = "Add a ledger.",
+            proposal = new
+            {
+                summary = "A ledger",
+                reasoningSummary = "",
+                openQuestions = Array.Empty<string>(),
+                items = new[]
+                {
+                    // Two stores without the system they need, a relationship to one of them, and an app that is fine.
+                    Item("N1", "element", "Ledger", "store"),
+                    Item("N2", "element", "Audit DB", "store"),
+                    Item("N3", "relationship", "", from: model.Orders.ToString(), to: "N1"),
+                    Item("N4", "element", "Payments", "app", parent: model.Shop.ToString()),
+                },
+            },
+        });
+        var proposal = await BodyAsync(submitted, HttpStatusCode.Created);
+        var items = proposal["items"]!.AsArray().ToDictionary(i => (string)i!["alias"]!, i => (Guid)i!["id"]!);
+        Assert.Equal(["N1", "N2", "N3", "N4"], items.Keys.Order(StringComparer.Ordinal));
+        var versionBefore = await ModelVersionAsync(_host, projectId);
+
+        // Every pending item at once, in no particular order.
+        var refused = await BodyAsync(await DecideAsync(ai.Owner, projectId, proposal, [items["N3"], items["N4"], items["N2"], items["N1"]]), HttpStatusCode.Conflict);
+
+        var failures = refused["failures"]!.AsArray().ToDictionary(f => (Guid)f!["itemId"]!, f => (string)f!["reason"]!);
+        Assert.Equal(new[] { items["N1"], items["N2"], items["N3"] }.Order(), failures.Keys.Order());
+        Assert.Contains("Store requires a parent of kind System", failures[items["N1"]]);
+        Assert.Contains("Store requires a parent of kind System", failures[items["N2"]]);
+        Assert.Equal("The item needs 'Ledger' (N1), which is refused.", failures[items["N3"]]);
+        Assert.Equal(versionBefore, await ModelVersionAsync(_host, projectId));
+
+        // Without the refused items the rest is accepted.
+        var decided = await BodyAsync(await DecideAsync(ai.Owner, projectId, proposal, [items["N4"]], [items["N1"], items["N2"], items["N3"]]), HttpStatusCode.OK);
+        Assert.Equal("decided", (string)decided["status"]!);
+        Assert.Equal(HttpStatusCode.OK, (await ai.Owner.GetAsync(Url(projectId, $"elements/{items["N4"]}"))).StatusCode);
+    }
+
     [Theory, MemberData(nameof(Kinds))]
     public async Task An_explanation_streams_as_text_and_stores_nothing_but_its_usage(string kind)
     {

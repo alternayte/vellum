@@ -486,26 +486,34 @@ public static partial class ArchitectureProposals
                 // The model can have changed since the proposal was made.
                 failures.AddRange(Vanished(items[id], items, snapshot.Model, accept));
             }
-            if (failures.Count > 0)
-                return Refused(failures);
 
             var now = time.GetUtcNow();
-            if (accept.Count > 0)
+            // The rest of the accepted items are still checked against the model, so that one
+            // refusal names every item that cannot be accepted, not only the first one.
+            var refusedIds = failures.Select(f => f.ItemId).ToHashSet();
+            var additions = new List<(Addition Addition, double Confidence)>();
+            foreach (var item in InDependencyOrder([.. accept.Where(id => !refusedIds.Contains(id)).Select(id => items[id])]))
             {
-                var additions = new List<(Addition Addition, double Confidence)>();
-                foreach (var item in InDependencyOrder(accept.Select(id => items[id]).ToList()))
+                if (ToAddition(item) is not { } addition)
                 {
-                    if (ToAddition(item) is not { } addition)
-                        return Refused([new(item.Id, "The item does not describe an addition that can be written.")]);
-                    additions.Add((addition, item.Confidence));
+                    failures.Add(new(item.Id, "The item does not describe an addition that can be written."));
+                    refusedIds.Add(item.Id);
+                    continue;
                 }
+                additions.Add((addition, item.Confidence));
+            }
 
+            if (additions.Count > 0)
+            {
                 var cited = document.Items.Where(i => i.Citation is not null).ToDictionary(i => i.Id, i => i.Citation!);
                 var refused = await InferredWrites.ApplyAsync(
-                    store, streamId, additions, InferredWrites.Source(document.Provider, document.Origin, Kind, row.Id), userId, now, ct, cited);
-                if (refused is not null)
-                    return Refused([new(refused.Id, refused.Reason)]);
+                    store, streamId, additions, InferredWrites.Source(document.Provider, document.Origin, Kind, row.Id), userId, now, ct, cited, refusedIds);
+                failures.AddRange(refused.Select(r => r.BlockedBy is { } blocker && items.TryGetValue(blocker, out var dependency)
+                    ? new ProposalItemFailure(r.Id, $"The item needs '{dependency.Name}' ({dependency.Alias}), which is refused.")
+                    : new ProposalItemFailure(r.Id, r.Reason)));
             }
+            if (failures.Count > 0)
+                return Refused(failures);
 
             // Each item keeps who decided it and when: one proposal can be decided in parts, by different people.
             document = document with

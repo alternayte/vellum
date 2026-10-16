@@ -2,10 +2,9 @@ import { useMemo, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { shownInline } from '@/lib/mutation-errors'
 import { usePersonName } from '@/hooks/use-person-name'
 import { OpenQuestions } from './open-questions'
-import { describeOrigin, designApi, type ArchitectureItem, type ArchitectureProposal } from '@/lib/design-api'
+import { describeOrigin, designApi, refusedItems, type ArchitectureItem, type ArchitectureProposal } from '@/lib/design-api'
 
 interface Props {
   projectId: string
@@ -29,6 +28,34 @@ function withDependencies(selected: Set<string>, items: ArchitectureItem[]): Set
   return result
 }
 
+/** The given items and every item that depends on one of them, directly or through others. */
+function withDependants(ids: Iterable<string>, items: ArchitectureItem[]): Set<string> {
+  const result = new Set(ids)
+  for (let changed = true; changed;) {
+    changed = false
+    for (const item of items) {
+      if (!result.has(item.id) && item.dependsOn.some((d) => result.has(d))) {
+        result.add(item.id)
+        changed = true
+      }
+    }
+  }
+  return result
+}
+
+interface Decision {
+  accept: string[]
+  reject: string[]
+  /** The selection after the decision is applied. Empty when not given. */
+  keep?: string[]
+}
+
+/** A decision the server refused: what was asked to accept, and the reasons for each refused item. */
+interface Refusal {
+  accept: string[]
+  reasons: Map<string, string[]>
+}
+
 /**
  * Additions the assistant proposes for the model. Each accepted item is written with the
  * label "inferred", the assistant's confidence and your account. It never changes or
@@ -39,18 +66,43 @@ export function ArchitectureProposalDialog({ projectId, proposal: initial, label
   const personOf = usePersonName(projectId)
   const [proposal, setProposal] = useState(initial)
   const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [refusal, setRefusal] = useState<Refusal | null>(null)
   const names = useMemo(() => ({ ...labels, ...Object.fromEntries(proposal.items.map((item) => [item.id, item.name])) }), [labels, proposal.items])
+  const byId = useMemo(() => new Map(proposal.items.map((item) => [item.id, item])), [proposal.items])
   const pending = proposal.items.filter((item) => item.status === 'pending')
   const accepting = withDependencies(selected, proposal.items)
 
   const decide = useMutation({
-    mutationFn: ({ accept, reject }: { accept: string[]; reject: string[] }) => designApi.decideArchitecture(projectId, proposal.id, accept, reject),
-    onSuccess: (next) => {
+    mutationFn: ({ accept, reject }: Decision) => designApi.decideArchitecture(projectId, proposal.id, accept, reject),
+    onSuccess: (next, { keep }) => {
       setProposal(next)
-      setSelected(new Set())
+      setRefusal(null)
+      setSelected(new Set((keep ?? []).filter((id) => next.items.find((item) => item.id === id)?.status === 'pending')))
       return queryClient.invalidateQueries({ queryKey: ['projects', projectId] })
     },
-    onError: shownInline,
+    // Shown inline, in place of the app-wide toast.
+    onError: (error, { accept }) => {
+      const failures = refusedItems(error)
+      if (!failures) {
+        setRefusal(null)
+        return
+      }
+      const reasons = new Map<string, string[]>()
+      for (const failure of failures) reasons.set(failure.itemId, [...(reasons.get(failure.itemId) ?? []), failure.reason])
+      setRefusal({ accept, reasons })
+    },
+  })
+
+  // What the refused request asked for, without the refused items and what depends on them.
+  const acceptableRest = (current: Refusal) => {
+    const excluded = withDependants(current.reasons.keys(), proposal.items)
+    return current.accept.filter((id) => !excluded.has(id) && byId.get(id)?.status === 'pending')
+  }
+  const deselectRefused = (current: Refusal) => setSelected(new Set(acceptableRest(current)))
+  const rejectRefused = (current: Refusal) => decide.mutate({
+    accept: [],
+    reject: [...current.reasons.keys()].filter((id) => byId.get(id)?.status === 'pending'),
+    keep: acceptableRest(current),
   })
 
   const toggle = (id: string) => setSelected((current) => {
@@ -86,11 +138,25 @@ export function ArchitectureProposalDialog({ projectId, proposal: initial, label
 
         {proposal.summary && <p className="text-sm text-foreground">{proposal.summary}</p>}
 
+        {pending.length > 0 && (
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <span>{pending.length} pending of {proposal.items.length}</span>
+            <div className="flex-1" />
+            <button type="button" className="rounded underline-offset-2 hover:text-foreground hover:underline focus-visible:outline-2 focus-visible:outline-primary"
+              onClick={() => setSelected(new Set(pending.map((item) => item.id)))}>
+              Select all
+            </button>
+            <button type="button" className="rounded underline-offset-2 hover:text-foreground hover:underline focus-visible:outline-2 focus-visible:outline-primary" onClick={() => setSelected(new Set())}>
+              Clear
+            </button>
+          </div>
+        )}
+
         <div className="min-h-0 flex-1 overflow-y-auto rounded-lg border border-border">
           {proposal.items.length === 0 && <p className="p-4 text-sm text-muted-foreground">The proposal holds no addition that can be made.</p>}
           <ul>
             {proposal.items.map((item) => (
-              <li key={item.id} className="flex items-start gap-2.5 border-b border-border px-3 py-2 last:border-b-0">
+              <li key={item.id} className={`flex items-start gap-2.5 border-b border-border px-3 py-2 last:border-b-0${refusal?.reasons.has(item.id) ? ' bg-destructive/5' : ''}`}>
                 <input
                   type="checkbox"
                   className="mt-1 h-3.5 w-3.5 accent-[var(--primary)]"
@@ -122,6 +188,9 @@ export function ArchitectureProposalDialog({ projectId, proposal: initial, label
                   )}
                   {proposal.itemIssues.filter((issue) => issue.itemId === item.id).map((issue, i) => (
                     <p key={i} className="mt-0.5 text-xs text-[var(--trace-retry)]">Cannot be added now: {issue.reason}</p>
+                  ))}
+                  {refusal?.reasons.get(item.id)?.map((reason, i) => (
+                    <p key={`refused-${i}`} className="mt-0.5 text-xs text-destructive">Refused: {reason}</p>
                   ))}
                 </div>
               </li>
@@ -155,14 +224,50 @@ export function ArchitectureProposalDialog({ projectId, proposal: initial, label
             <OpenQuestions projectId={projectId} proposalId={proposal.id} questions={proposal.openQuestions} />
           </details>
         )}
-        {decide.isError && <p role="alert" className="text-xs text-destructive">{decide.error.message}</p>}
+        {decide.isError && !refusal && <p role="alert" className="text-xs text-destructive">{decide.error.message}</p>}
+        {refusal && (
+          <div role="alert" className="space-y-1.5 rounded-md border border-destructive/40 px-3 py-2 text-xs">
+            <p className="text-foreground">
+              Nothing was applied. {refusal.reasons.size} {refusal.reasons.size === 1 ? 'item cannot' : 'items cannot'} be accepted:
+            </p>
+            <ul className="max-h-32 space-y-0.5 overflow-y-auto text-muted-foreground">
+              {[...refusal.reasons].map(([id, reasons]) => {
+                const item = byId.get(id)
+                return (
+                  <li key={id}>
+                    {item && <span className="font-mono text-foreground">{item.alias}</span>}{' '}
+                    <span className="text-foreground">{item?.name ?? id}</span>: {reasons.join(' ')}
+                  </li>
+                )
+              })}
+            </ul>
+            <div className="flex flex-wrap items-center gap-1.5">
+              <Button size="sm" variant="secondary" className="h-7 text-xs" onClick={() => deselectRefused(refusal)}
+                title="Keep the rest of the request selected, without the refused items and the items that need them.">
+                Deselect refused items
+              </Button>
+              <Button size="sm" variant="secondary" className="h-7 text-xs" disabled={decide.isPending} onClick={() => rejectRefused(refusal)}
+                title="Reject the refused items. The rest of the request stays selected.">
+                Reject refused items
+              </Button>
+              <span className="text-muted-foreground">Then accept the rest.</span>
+            </div>
+          </div>
+        )}
 
         <div className="flex flex-wrap items-center gap-2">
-          <p className="min-w-0 flex-1 text-xs text-muted-foreground" aria-live="polite">
+          <p className="min-w-0 flex-1 basis-full text-xs text-muted-foreground sm:basis-0" aria-live="polite">
             {pending.length === 0 ? 'Every item is decided.' : selected.size === 0 ? `${pending.length} to decide.` : `${selected.size} selected.${accepting.size > selected.size ? ` Accepting also takes ${accepting.size - selected.size} that they need.` : ''}`}
           </p>
           <Button variant="ghost" size="sm" onClick={onClose}>Close</Button>
           <Button variant="secondary" size="sm" disabled={selected.size === 0 || decide.isPending} onClick={() => decide.mutate({ accept: [], reject: [...selected] })}>Reject selected</Button>
+          <Button
+            variant="secondary" size="sm" disabled={pending.length === 0 || decide.isPending}
+            title="Accept every pending item in one decision. If one is refused, nothing is applied and the reasons are listed."
+            onClick={() => decide.mutate({ accept: pending.map((item) => item.id), reject: [] })}
+          >
+            Accept all ({pending.length})
+          </Button>
           <Button size="sm" disabled={selected.size === 0 || decide.isPending} onClick={() => decide.mutate({ accept: [...accepting], reject: [] })}>
             {decide.isPending ? 'Adding…' : `Accept ${accepting.size || ''}`.trim()}
           </Button>

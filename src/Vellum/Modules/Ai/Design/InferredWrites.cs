@@ -18,8 +18,9 @@ internal abstract record Addition(Guid Id)
     public sealed record Message(Guid Id, string Name, string? Description, Guid ProducerId, Guid[] ConsumerIds) : Addition(Id);
 }
 
-/// <summary>Why a set of additions was not applied. Nothing of the set was written.</summary>
-internal sealed record AdditionRefused(Guid Id, string Reason, bool Conflict);
+/// <summary>Why an addition of a set was not applied. Nothing of the set was written.</summary>
+/// <param name="BlockedBy">The refused addition this one references, when that is the reason.</param>
+internal sealed record AdditionRefused(Guid Id, string Reason, bool Conflict, Guid? BlockedBy = null);
 
 /// <summary>
 /// Writes what a person accepted from an AI proposal. Each addition goes through the decision
@@ -46,32 +47,52 @@ internal static class InferredWrites
     /// one unit. An addition that the branch holds already under another ID
     /// (<see cref="ExistingFacts"/>) is refused as a conflict that names the existing thing:
     /// the model can have changed since the proposal was made.
+    /// <para>
+    /// A refused addition does not stop the check of the others: each addition is judged, so
+    /// that the person sees every refusal of the set at once. An addition that references a
+    /// refused one is refused with <see cref="AdditionRefused.BlockedBy"/>. When anything is
+    /// refused, nothing is written.
+    /// </para>
     /// </summary>
     /// <param name="additions">In an order in which each addition finds what it references.</param>
-    /// <returns>Null when every addition was written.</returns>
-    public static async Task<AdditionRefused?> ApplyAsync(
+    /// <param name="refusedBefore">IDs the caller refused already. An addition that references one is refused, and nothing is written.</param>
+    /// <returns>Empty when every addition was written.</returns>
+    public static async Task<IReadOnlyList<AdditionRefused>> ApplyAsync(
         IEventStore pinned, Guid streamId,
         IReadOnlyList<(Addition Addition, double Confidence)> additions, string source, string userId, DateTimeOffset acceptedAt,
-        CancellationToken ct, IReadOnlyDictionary<Guid, string>? sources = null)
+        CancellationToken ct, IReadOnlyDictionary<Guid, string>? sources = null, IReadOnlyCollection<Guid>? refusedBefore = null)
     {
         // The acceptance stamp is taken once, by the caller, so the decision stays a pure
         // function of the state.
         var acceptedBy = Guid.Parse(userId);
-        AdditionRefused? refused = null;
+        List<AdditionRefused> refused = [];
 
         var result = await pinned.DecideInTransaction<ModelState, bool>(streamId, state =>
         {
-            refused = null;
+            refused = [];
+            var blocked = new HashSet<Guid>(refusedBefore ?? []);
             var events = new List<object>();
+            void Refuse(AdditionRefused refusal)
+            {
+                refused.Add(refusal);
+                blocked.Add(refusal.Id);
+            }
+
             foreach (var (addition, confidence) in additions)
             {
+                if (References(addition).Where(blocked.Contains).Select(id => (Guid?)id).FirstOrDefault() is { } dependency)
+                {
+                    Refuse(new AdditionRefused(addition.Id, $"The addition needs {dependency}, which is refused.", false, dependency));
+                    continue;
+                }
+
                 if (ExistingFacts.Find(state, Describe(addition), except: addition.Id) is var match and not ExistingMatch.None)
                 {
                     var message = match is ExistingMatch.One one
                         ? $"The model holds this already: '{one.Name}' ({one.Id}). Nothing was created."
                         : $"The model holds more than one thing that fits ({string.Join(", ", ((ExistingMatch.Ambiguous)match).Names.Select(n => $"'{n}'"))}). Nothing was created.";
-                    refused = new AdditionRefused(addition.Id, message, true);
-                    return new Decision.Conflict(message);
+                    Refuse(new AdditionRefused(addition.Id, message, true));
+                    continue;
                 }
 
                 // An item read from a document cites its lines: that citation is its source pointer.
@@ -79,19 +100,35 @@ internal static class InferredWrites
                 var decision = Add(state, addition).Then(state, after => Record(after, addition, provenance));
                 if (decision is not Decision.Success success)
                 {
-                    refused = new AdditionRefused(addition.Id, Reason(decision), decision is Decision.Conflict);
-                    return decision;
+                    Refuse(new AdditionRefused(addition.Id, Reason(decision), decision is Decision.Conflict));
+                    continue;
                 }
 
                 events.AddRange(success.Value);
                 state = success.Value.Aggregate(state, ModelState.Evolve);
             }
 
+            if (refused.Count > 0)
+                return new Decision.Conflict(refused[0].Reason);
+            if (refusedBefore is { Count: > 0 })
+                return new Decision.Conflict("Items of the request were refused before the write. Nothing was created.");
             return new Decision.Success(events);
         }, _ => true, ct);
 
-        return result is CommandResult<bool>.Success ? null : refused;
+        return result is CommandResult<bool>.Success ? [] : refused;
     }
+
+    /// <summary>The IDs an addition references: what must exist before it.</summary>
+    private static IEnumerable<Guid> References(Addition addition) => addition switch
+    {
+        Addition.Element { ParentId: { } parent } => [parent],
+        Addition.Relationship r => [r.FromId, r.ToId],
+        Addition.Operation o => [o.OwnerId],
+        Addition.Subscription s => [s.ChannelId, s.ConsumerId],
+        Addition.Binding b => [b.SourceChannelId, b.TargetChannelId],
+        Addition.Message m => [m.ProducerId, .. m.ConsumerIds],
+        _ => [],
+    };
 
     /// <summary>The addition as <see cref="ExistingFacts"/> compares it. Every reference of an addition is an ID.</summary>
     private static ProposedThing Describe(Addition addition) => addition switch
