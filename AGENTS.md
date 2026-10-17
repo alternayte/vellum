@@ -35,5 +35,5 @@ It is a .NET 10 modular monolith in src/Vellum with a React 19 SPA in src/Vellum
 - detached: the status of a comment thread whose target was deleted. Avoid: orphaned.
 - ghost layer: the dashed canvas overlay that shows a pending AI proposal, where a person accepts or rejects its items. Avoid: preview, draft overlay, suggestion layer.
 - Needs you: the list of rescan changes to facts a person edited, each waiting for that person's decision. Avoid: conflicts, review queue, inbox.
-- derived line: a line the canvas and the exports draw between two visible cards for relationships whose ends are hidden inside them; it is never stored. Avoid: implied relationship, lifted edge, rolled-up edge.
+- derived line: a line the canvas and the exports draw between two visible cards for relationships whose ends are hidden inside them; it is never a model fact, and only its route is stored, as layout data. Avoid: implied relationship, lifted edge, rolled-up edge.
 - not seen in latest scan: the status of a model fact that the latest Snapshot of its Source no longer holds. Avoid: stale, removed.
