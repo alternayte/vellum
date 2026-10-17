@@ -2,7 +2,7 @@ import { memo, useCallback, useRef, useState } from 'react'
 import type { Node, NodeProps } from '@xyflow/react'
 import { SideHandles } from './side-handles'
 import { Plus } from 'lucide-react'
-import { kindColor } from '@/lib/kind-colors'
+import { elementColor, isExternal } from '@/lib/kind-colors'
 import { KIND_WIDTHS } from '@/lib/card-size'
 import { CONTAINMENT_RULES } from '@/lib/containment-rules'
 import { defaultIconForKind, getIconComponent } from '@/lib/default-icons'
@@ -102,7 +102,8 @@ export const C4ElementNode = memo(function C4ElementNode({ data }: NodeProps<C4E
   const showMetadata = activeLens === 'metadata'
   const showStatus = activeLens === 'status'
   const compact = d.lod === 'compact'
-  const color = kindColor(d.kind)
+  const color = elementColor(d.kind, d.tags)
+  const external = isExternal(d.tags)
 
   const borderStyle = showStatus && d.status === 'planned' ? 'dashed' : 'solid'
   const bgTint = showStatus && d.status === 'deprecated' ? 'color-mix(in srgb, var(--status-deprecated) 10%, transparent)' : undefined
@@ -195,6 +196,14 @@ export const C4ElementNode = memo(function C4ElementNode({ data }: NodeProps<C4E
                 title="Needs you: a Source changed this fact after a person edited it, or asks a question about it. Decide it in the Sources panel or the detail panel."
               >
                 needs you
+              </span>
+            )}
+            {external && (
+              <span
+                className="rounded border border-border bg-muted px-1 font-mono text-[9px] uppercase tracking-wider text-muted-foreground"
+                title="External: a system outside this architecture's own code"
+              >
+                external
               </span>
             )}
             {d.stale && (

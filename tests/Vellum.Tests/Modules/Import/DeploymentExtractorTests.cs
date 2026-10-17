@@ -64,7 +64,10 @@ public class DeploymentExtractorTests
         Assert.Equal(("./web", "API_URL,SESSION_KEY", "unknown"), (web.Attr("build"), web.Attr("environment"), web.Attr("kind")));
         Assert.Equal(["deploy/compose.yaml:18-22"], web.Lines());
 
-        Assert.Equal(4, result.Facts.Count);
+        // search runs only an image Vellum does not know: an external system, with its depends_on.
+        Assert.Equal(("system", "acme/custom-search:2"), (result.Fact("external:compose:deploy:search").Attr("elementKind"), result.Fact("external:compose:deploy:search").Attr("technology")));
+        Assert.True(result.Has("relationship:depends-on:external:compose:deploy:search->datastore:deploy:cache"));
+        Assert.Equal(6, result.Facts.Count);
         Assert.Empty(result.Notes);
         Assert.DoesNotContain("not-in-any-fact", ExtractionJson.Serialize(result));
         Assert.DoesNotContain("http://api:8080", ExtractionJson.Serialize(result));

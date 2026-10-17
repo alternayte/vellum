@@ -17,6 +17,16 @@ public sealed record ElementState(
     StaleMark? Stale = null,
     SourceBinding[]? SourceBindings = null)
 {
+    /// <summary>
+    /// The tag of a system outside the architecture's own code, such as a service that a
+    /// deployment runs from someone else's image. It is Structurizr's <c>External</c>.
+    /// </summary>
+    public const string ExternalTag = "external";
+
+    /// <summary>True when the element has the <see cref="ExternalTag"/>, in any case.</summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public bool IsExternal => Tags.Any(t => t.Equals(ExternalTag, StringComparison.OrdinalIgnoreCase));
+
     /// <summary>The (Source, external key) pairs of the element. Empty when no Source is bound to it.</summary>
     [System.Text.Json.Serialization.JsonIgnore]
     public IReadOnlyList<SourceBinding> Bindings => SourceBindings ?? [];

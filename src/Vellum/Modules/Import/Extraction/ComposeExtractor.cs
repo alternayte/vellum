@@ -24,6 +24,9 @@ namespace Vellum.Modules.Import.Extraction;
 /// <item>a broker image gives <c>deployment:compose:&lt;project&gt;:&lt;service&gt;</c> (Deployment) with <c>kind</c> and <c>role=broker</c>;</item>
 /// <item>anything else gives <c>deployment:compose:&lt;project&gt;:&lt;service&gt;</c> with <c>kind=unknown</c> and <c>role=service</c>.</item>
 /// </list>
+/// A service that runs only an image of no kind above, and of no tool in <see cref="Tooling"/>,
+/// can be an external system (<see cref="ComposeService.ExternalImage"/>). The
+/// <see cref="RelationshipExtractor"/> decides it when no code service is named like it.
 /// An infrastructure image is a data store or a broker only when the service runs the server
 /// of the image. It is a plain service (<c>kind=unknown</c>, <c>role=service</c>) with a note when:
 /// <list type="bullet">
@@ -82,6 +85,24 @@ internal sealed class ComposeExtractor : IExtractor
         ["rabbitmq"] = ("rabbitmq", true), ["kafka"] = ("kafka", true), ["cp-kafka"] = ("kafka", true),
         ["redpanda"] = ("kafka", true), ["nats"] = ("nats", true), ["nats-streaming"] = ("nats", true),
         ["activemq"] = ("activemq", true), ["pulsar"] = ("pulsar", true),
+    };
+
+    /// <summary>
+    /// Images of tools around the architecture, not parts of it: proxies, telemetry, mail
+    /// catchers, emulators, mocks, admin consoles and base images. A service that runs one is
+    /// never an external system. The names are the last path segment without tag.
+    /// </summary>
+    private static readonly HashSet<string> Tooling = new(StringComparer.Ordinal)
+    {
+        "nginx", "nginx-unprivileged", "openresty", "traefik", "caddy", "haproxy", "envoy", "kong",
+        "otel-collector", "opentelemetry-collector", "opentelemetry-collector-contrib", "jaeger", "all-in-one",
+        "zipkin", "prometheus", "grafana", "loki", "promtail", "tempo", "alertmanager", "node-exporter",
+        "cadvisor", "seq", "aspire-dashboard",
+        "mailhog", "mailpit", "maildev", "smtp4dev", "greenmail",
+        "localstack", "azurite", "dynamodb-local", "wiremock", "mockserver", "prism", "toxiproxy",
+        "adminer", "pgadmin4", "phpmyadmin", "mongo-express", "redis-commander", "redisinsight",
+        "kafka-ui", "akhq", "kafdrop", "kibana", "zookeeper", "cp-zookeeper", "schema-registry", "cp-schema-registry",
+        "busybox", "alpine", "curl", "debian", "ubuntu",
     };
 
     /// <summary>Programs that talk to a server or copy its data. A service that runs one is not the server.</summary>
@@ -173,6 +194,8 @@ internal sealed class ComposeExtractor : IExtractor
         var dependsAt = new List<ComposeReference>();
         var variables = new List<ComposeVariable>();
         var builds = new HashSet<(string? Build, string? Dockerfile)>();
+        var images = new HashSet<string>(StringComparer.Ordinal);
+        var unsafeImage = false;
         var evidence = new List<SourceEvidence>(parts.Count);
         var single = new List<(Part Part, List<(string, string?)> Attributes)>(parts.Count);
         var hasCommand = false;
@@ -203,10 +226,12 @@ internal sealed class ComposeExtractor : IExtractor
                 if (ImageReference.Checked(context, file, reference, image.KeyLine) is { } safe)
                 {
                     attributes.Add(("image", safe));
+                    images.Add(safe);
                     kinds.Add(Infrastructure.TryGetValue(ImageReference.Repository(safe), out var known) ? known : ("unknown", false));
                 }
                 else
                 {
+                    unsafeImage = true;
                     kinds.Add(("unknown", false));
                 }
             }
@@ -306,6 +331,14 @@ internal sealed class ComposeExtractor : IExtractor
             kind = kinds.First();
         else if (kinds.Count > 1)
             context.Note(NoteKind.Undecided, "conflicting-images", first.File.Path, first.Entry.KeyLine);
+        // A service that only runs an image Vellum does not know may be a system outside the
+        // repository. Whether a code service is named like it is decided with the other facts
+        // (RelationshipExtractor). A one-shot service, a tool and an image of the list above are not.
+        var externalImage = builds.Count == 0 && !unsafeImage && images.Count == 1 && kinds.Count == 1 && kind.Kind == "unknown"
+            && plain is null && images.First() is var only && ImageReference.Repository(only) is var repository
+            && !repository.Contains('$') && !Infrastructure.ContainsKey(repository) && !Tooling.Contains(repository)
+                ? only
+                : null;
         if (kind.Kind != "unknown" && plain is { } reason)
         {
             context.Note(NoteKind.Undecided, reason.Reason, reason.Part.File.Path, reason.Line);
@@ -330,7 +363,8 @@ internal sealed class ComposeExtractor : IExtractor
         // Two files that build the service differently say no one build.
         var (buildContext, buildFile) = builds.Count == 1 ? builds.First() : (null, null);
         context.ComposeServices.Add(new ComposeService(
-            project, name, factKey, isStore, kind.Broker, at.Path, at.StartLine, builds.Count > 0, buildContext, buildFile, dependsAt, variables));
+            project, name, factKey, isStore, kind.Broker, at.Path, at.StartLine, builds.Count > 0, buildContext, buildFile, dependsAt, variables,
+            externalImage, evidence));
     }
 
     /// <summary>"NAME=value" gives "value", "NAME" gives null.</summary>
@@ -449,10 +483,17 @@ internal sealed class ComposeExtractor : IExtractor
 /// <param name="Project">The directory of the compose files, <c>.</c> at the repository root.</param>
 /// <param name="FactKey">The key of the DataStore or Deployment fact of the service.</param>
 /// <param name="HasBuild">True when a file of the project builds the service. <paramref name="Build"/> is null when the files disagree.</param>
+/// <param name="ExternalImage">
+/// The image when the service can be a system outside the repository: no file builds it, every
+/// file names this one image, the image is no data store, broker or tool that Vellum knows, and
+/// the service is no one-shot service. Null otherwise.
+/// </param>
+/// <param name="Evidence">The lines of the service in each compose file of the project.</param>
 internal sealed record ComposeService(
     string Project, string Name, string FactKey, bool IsStore, bool IsBroker, string Path, int Line,
     bool HasBuild, string? Build, string? Dockerfile,
-    IReadOnlyList<ComposeReference> DependsOn, IReadOnlyList<ComposeVariable> Environment);
+    IReadOnlyList<ComposeReference> DependsOn, IReadOnlyList<ComposeVariable> Environment,
+    string? ExternalImage, IReadOnlyList<SourceEvidence> Evidence);
 
 /// <summary>A <c>depends_on</c> item: the service it names, and its line.</summary>
 internal sealed record ComposeReference(string Service, string Path, int Line);
@@ -508,6 +549,22 @@ internal static class ImageReference
         if (safe.Contains('$'))
             context.Note(NoteKind.Undecided, "image-variable-not-resolved", file.Path, line);
         return safe;
+    }
+
+    /// <summary>
+    /// The image without its registry and digest: "ghcr.io/acme/payments:1.4@sha256:…" gives
+    /// "acme/payments:1.4". The first path segment is a registry when it has a '.' or a ':' or is
+    /// <c>localhost</c>; Docker Hub's <c>library/</c> is left out too.
+    /// </summary>
+    public static string Name(string image)
+    {
+        var at = image.IndexOf('@');
+        if (at >= 0)
+            image = image[..at];
+        var slash = image.IndexOf('/');
+        if (slash > 0 && image[..slash] is var first && (first.Contains('.') || first.Contains(':') || first == "localhost"))
+            image = image[(slash + 1)..];
+        return image.StartsWith("library/", StringComparison.Ordinal) ? image["library/".Length..] : image;
     }
 
     /// <summary>"docker.io/bitnami/postgresql:16@sha256:…" gives "postgresql".</summary>

@@ -1064,7 +1064,7 @@
         {
           "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:docker-compose.yml:49-49",
           "rule": "relationship.compose-depends-on",
-          "ruleVersion": 1
+          "ruleVersion": 2
         },
         {
           "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:inventory-worker/go.mod:1-1",
@@ -1092,7 +1092,7 @@
         {
           "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:docker-compose.yml:29-29",
           "rule": "relationship.compose-depends-on",
-          "ruleVersion": 1
+          "ruleVersion": 2
         },
         {
           "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:orders-api/Orders.Api.csproj:1-1",

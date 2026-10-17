@@ -111,6 +111,44 @@ public class ModelFileExtractorTests
     }
 
     [Fact]
+    public void An_external_system_is_Structurizr_External_in_the_DSL_and_reads_back_external()
+    {
+        var model = DiagramExportTests.FixedModel();
+        var payments = new ElementId(Guid.Parse("00000000-0000-0000-0000-0000000000aa"));
+        var api = model.State.Elements.Values.Single(e => e.Name == "Orders API");
+        model = model with
+        {
+            State = model.State with
+            {
+                Elements = model.State.Elements.Add(payments, new ElementState(payments, ElementKind.System, "payments", null, "acme/payments:1.4",
+                    null, ElementStatus.Current, null, [ElementState.ExternalTag], null, FactStatus.ObservedInSource)),
+                Relationships = model.State.Relationships.Add(new RelationshipId(Guid.Parse("00000000-0000-0000-0000-0000000000ab")),
+                    new RelationshipState(new RelationshipId(Guid.Parse("00000000-0000-0000-0000-0000000000ab")), api.Id, payments, "calls", null, null, null, RelationshipKind.Behavioural)),
+            },
+        };
+        Assert.Equal(ElementTags.External, ElementState.ExternalTag);
+
+        var dsl = StructurizrDsl.Write("Orders", model, [], new Dictionary<Guid, IReadOnlyList<Vellum.Modules.Views.LayoutPositionEntity>>());
+        Assert.Contains("softwareSystem \"payments\" \"\" \"External\"", dsl);
+        Assert.Contains("element \"External\" {", dsl);
+
+        var result = Repo.Extract(("workspace.dsl", dsl));
+        var external = result.Fact(Element("payments"));
+        Assert.Equal(("system", "external"), (external.Attr("elementKind"), external.Attr("tags")));
+        Assert.True(result.Has(StructurizrExtractor.RelationshipKey(Element("Shop", "Orders API"), Element("payments"), "calls")));
+
+        // A file that writes the tag in another case gives the same tag; no other tag changes.
+        var written = Repo.Extract(("workspace.dsl", """
+            workspace {
+                model {
+                    stripe = softwareSystem "Stripe" "" "EXTERNAL,Payments"
+                }
+            }
+            """));
+        Assert.Equal("external,Payments", written.Fact(Element("Stripe")).Attr("tags"));
+    }
+
+    [Fact]
     public void A_Backstage_catalog_maps_entity_refs_and_relations()
     {
         var result = Repo.Extract(("catalog-info.yaml", Fixture("catalog-info.yaml")));

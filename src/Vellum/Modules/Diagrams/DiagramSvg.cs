@@ -124,7 +124,7 @@ public static class DiagramSvg
 
     private static void WriteFrame(StringBuilder svg, ElementState root, Rect frame)
     {
-        var color = KindColor(root.Kind);
+        var color = ElementColor(root);
         svg.Append(CultureInfo.InvariantCulture,
             $"<g class=\"frame\"><rect x=\"{N(frame.X)}\" y=\"{N(frame.Y)}\" width=\"{N(frame.Width)}\" height=\"{N(frame.Height)}\" rx=\"14.4\" fill=\"{color}\" fill-opacity=\"0.04\" stroke=\"{color}\" stroke-opacity=\"0.55\" stroke-width=\"1.5\"/>");
         Icon(svg, root, frame.X + 16, frame.Y + 14, 16, color);
@@ -149,7 +149,7 @@ public static class DiagramSvg
     {
         var e = item.Element;
         var (x, y, w, h) = (item.X, item.Y, item.Width, item.Height);
-        var color = KindColor(e.Kind);
+        var color = ElementColor(e);
         var radius = e.Kind == ElementKind.Actor ? 24 : 12;
 
         svg.Append(CultureInfo.InvariantCulture,
@@ -159,7 +159,7 @@ public static class DiagramSvg
         Icon(svg, e, x + 22, y + 22, 16, color);
 
         // The badges at the top right, from the right: the count of elements inside, the truth
-        // label marker, the stale mark.
+        // label marker, the stale mark, the external chip.
         var right = x + w - 14;
         if (item.ChildCount > 0)
         {
@@ -184,6 +184,14 @@ public static class DiagramSvg
             svg.Append(CultureInfo.InvariantCulture,
                 $"<rect x=\"{N(right)}\" y=\"{N(y + 15)}\" width=\"38\" height=\"14\" rx=\"4\" fill=\"none\" stroke=\"{Stale}\" stroke-dasharray=\"3 2\"/>" +
                 $"<text x=\"{N(right + 19)}\" y=\"{N(y + 25)}\" text-anchor=\"middle\" font-family=\"{MonoFont}\" font-size=\"9\" letter-spacing=\"0.9\" fill=\"{Stale}\">STALE</text>");
+            right -= 4;
+        }
+        if (e.IsExternal)
+        {
+            right -= 58;
+            svg.Append(CultureInfo.InvariantCulture,
+                $"<rect class=\"external\" x=\"{N(right)}\" y=\"{N(y + 15)}\" width=\"58\" height=\"14\" rx=\"4\" fill=\"{Muted}\" stroke=\"{Border}\"/>" +
+                $"<text x=\"{N(right + 29)}\" y=\"{N(y + 25)}\" text-anchor=\"middle\" font-family=\"{MonoFont}\" font-size=\"9\" letter-spacing=\"0.9\" fill=\"{MutedForeground}\">EXTERNAL</text>");
             right -= 4;
         }
 
@@ -770,6 +778,9 @@ public static class DiagramSvg
     }
 
     // ---- Colours of the dark theme ----
+
+    /// <summary>The colour of an element: the colour of its kind, muted for an external system.</summary>
+    private static string ElementColor(ElementState e) => e.IsExternal ? MutedForeground : KindColor(e.Kind);
 
     internal static string KindColor(ElementKind kind) => kind switch
     {

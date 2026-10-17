@@ -44,7 +44,7 @@ import type { C4BoundaryData } from './nodes/c4-boundary-node'
 import { canvasOcclusion, visibleCanvasRect } from '@/lib/canvas-insets'
 import type { DiffState } from '@/stores/draft-store'
 import type { Provenance, StaleMark } from '@/lib/fact-status'
-import { kindColor } from '@/lib/kind-colors'
+import { elementColor } from '@/lib/kind-colors'
 import { CONTAINMENT_RULES, canContain } from '@/lib/containment-rules'
 import { prefersReducedMotion } from '@/lib/utils'
 import { traceEdgeLabel, traceFamily } from '@/lib/trace'
@@ -182,8 +182,8 @@ interface CanvasViewProps {
 
 function minimapNodeColor(node: Node): string {
   if (node.type === 'c4-boundary') return 'transparent'
-  const kind = (node.data as { kind?: string }).kind
-  return kind ? kindColor(kind) : 'var(--muted-foreground)'
+  const { kind, tags } = node.data as { kind?: string; tags?: string[] }
+  return kind ? elementColor(kind, tags) : 'var(--muted-foreground)'
 }
 
 
@@ -494,6 +494,7 @@ function CanvasViewInner({
             kind: el.kind,
             name: el.name,
             icon: el.icon,
+            tags: el.tags,
             onResize: onNodeResize ? (width: number, height: number) => onNodeResize(el.id, width, height) : undefined,
             onAddChild: addInside(el),
           } satisfies C4ContainerData,
@@ -1031,7 +1032,7 @@ function CanvasViewInner({
       connectable: false,
       focusable: false,
       deletable: false,
-      data: { kind: rootElement.kind, name: rootElement.name, icon: rootElement.icon, technology: rootElement.technology } satisfies C4BoundaryData,
+      data: { kind: rootElement.kind, name: rootElement.name, icon: rootElement.icon, technology: rootElement.technology, tags: rootElement.tags } satisfies C4BoundaryData,
     }
   }, [rfNodes, rfEdges, rootElement])
   const shownNodes = useMemo(() => (frameNode ? [frameNode, ...rfNodes] : rfNodes), [frameNode, rfNodes])

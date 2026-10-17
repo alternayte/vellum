@@ -70,6 +70,16 @@ public static class TruthLabels
     }
 }
 
+/// <summary>The tags an extractor gives an element fact.</summary>
+public static class ElementTags
+{
+    /// <summary>
+    /// A system outside the repository; Structurizr's <c>External</c>. It is the model's
+    /// <c>ElementState.ExternalTag</c>: the command-line scanner compiles this file without the model.
+    /// </summary>
+    public const string External = "external";
+}
+
 /// <summary>
 /// One thing the source establishes, and no more. A route fact says a route is declared; it
 /// does not say the route is reachable. Facts point at other facts by key in an attribute.

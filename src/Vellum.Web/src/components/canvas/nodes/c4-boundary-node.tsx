@@ -1,6 +1,6 @@
 import { memo } from 'react'
 import type { Node, NodeProps } from '@xyflow/react'
-import { kindColor } from '@/lib/kind-colors'
+import { elementColor } from '@/lib/kind-colors'
 import { defaultIconForKind, getIconComponent } from '@/lib/default-icons'
 
 export interface C4BoundaryData extends Record<string, unknown> {
@@ -8,6 +8,7 @@ export interface C4BoundaryData extends Record<string, unknown> {
   name: string
   icon?: string | null
   technology?: string | null
+  tags?: string[]
 }
 
 export type C4BoundaryNodeType = Node<C4BoundaryData, 'c4-boundary'>
@@ -18,7 +19,7 @@ export type C4BoundaryNodeType = Node<C4BoundaryData, 'c4-boundary'>
  * so it cannot be selected, moved or connected, and clicks pass through to the canvas.
  */
 export const C4BoundaryNode = memo(function C4BoundaryNode({ data }: NodeProps<C4BoundaryNodeType>) {
-  const color = kindColor(data.kind)
+  const color = elementColor(data.kind, data.tags)
   const Icon = getIconComponent(data.icon || defaultIconForKind(data.kind))
   return (
     <div
