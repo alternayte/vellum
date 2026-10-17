@@ -54,6 +54,8 @@ internal sealed class ProposalApplier(
         var provenance = proposal.Action == ProposalAction.Remove ? null : Provenance(proposal);
         if (proposal.Action != ProposalAction.Remove && provenance is null)
             return "The proposal has no evidence, so the fact would have no source pointer.";
+        if (provenance is not null && Label(proposal) == FactStatus.Inferred && provenance.Confidence is null)
+            return "The proposal is an inference with no confidence from 0 to 1, so it cannot be accepted as an inferred fact.";
 
         return proposal.EntityKind switch
         {
@@ -389,13 +391,19 @@ internal sealed class ProposalApplier(
         return live.FactStatus is not null && Text(current, "factStatus") != live.FactStatus;
     }
 
-    /// <summary>The first evidence is the pointer on the fact. All of it stays on the link row.</summary>
+    /// <summary>
+    /// The first evidence is the pointer on the fact. All of it stays on the link row. An
+    /// inferred fact carries the confidence its rule states.
+    /// </summary>
     private Provenance? Provenance(ProposalEntity proposal)
     {
-        var first = ProposalJson.ReadEvidence(proposal.Evidence).FirstOrDefault();
+        var evidence = ProposalJson.ReadEvidence(proposal.Evidence);
+        // A derived relationship cites the facts it rests on too; its pointer is a line of its own rule.
+        var first = evidence.FirstOrDefault(e => e.Rule != RelationshipExtractor.Basis.Id) ?? evidence.FirstOrDefault();
+        var confidence = Label(proposal) == FactStatus.Inferred ? FactMapping.ConfidenceOf(ProposalJson.ReadAttributes(proposal.Attributes)) : null;
         return first is null
             ? null
-            : new Provenance(EvidenceLinks.Pointer(repository, commitSha, first), commitSha, null, acceptedBy, acceptedAt, ContentNotHeld: contentNotHeld);
+            : new Provenance(EvidenceLinks.Pointer(repository, commitSha, first), commitSha, confidence, acceptedBy, acceptedAt, ContentNotHeld: contentNotHeld);
     }
 
     public static string Describe(Decision decision) => decision switch

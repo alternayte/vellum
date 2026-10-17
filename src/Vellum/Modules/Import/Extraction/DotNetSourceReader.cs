@@ -303,11 +303,38 @@ internal sealed partial class DotNetExtractor
             int endpointEnd = -1, nestedEnd = -1;
             for (var i = 1; i + 1 < t.Count; i++)
             {
+                if (t.Id(i - 1, "new") && t.Id(i) && DbClientTypes.TryGetValue(t[i].Text, out var clientStore) && t.P(i + 1, '(') && t.Match[i + 1] > i)
+                {
+                    ReadDbClient(i, i + 1, t[i].Text, clientStore, contextType: null);
+                    continue;
+                }
                 if (!t.P(i - 1, '.') || !t.Id(i))
                     continue;
                 if (meter.Exhausted)
                     return;
                 var name = t[i].Text;
+                if (DbClientCall(i, name) is var (found, callStore) && found)
+                {
+                    var open = i + 1;
+                    string? contextType = null;
+                    if (t.P(open, '<') && code.CloseAngle(open) is > 0 and var angle)
+                    {
+                        contextType = code.DottedName(open + 1, angle - 1) is { } written ? written[(written.LastIndexOf('.') + 1)..] : null;
+                        open = angle + 1;
+                    }
+                    if (t.P(open, '(') && t.Match[open] > open)
+                        ReadDbClient(i, open, name, callStore, contextType);
+                    continue;
+                }
+                if (name is "AddHttpClient" or "ConfigureHttpClient")
+                {
+                    var open = i + 1;
+                    if (t.P(open, '<') && code.CloseAngle(open) is > 0 and var angle)
+                        open = angle + 1;
+                    if (t.P(open, '(') && t.Match[open] > open)
+                        ReadHttpClient(i, open);
+                    continue;
+                }
                 if (MapVerbs.TryGetValue(name, out var verb))
                 {
                     if (t.P(i + 1, '(') && t.Match[i + 1] > i)
@@ -369,6 +396,133 @@ internal sealed partial class DotNetExtractor
                         or "AddInMemoryOutbox" or "UseInMemoryOutbox" when t.P(i + 1, '(') && t.Match[i + 1] > i:
                         project.OutboxCalls.Add(new OutboxCall(name, null, SiteOf(i, t.Match[i + 1]), source.Conditional(i)));
                         break;
+                }
+            }
+        }
+
+        /// <summary>Whether the member call at <paramref name="i"/> opens a database client, and the store kind its name states.</summary>
+        private (bool Found, string? Store) DbClientCall(int i, string name)
+        {
+            if (DbClientCalls.TryGetValue(name, out var store))
+                return (true, store);
+            if (name == "Create" && t.Id(i - 2, "NpgsqlDataSource"))
+                return (true, "postgres");
+            if (name is "Connect" or "ConnectAsync" && t.Id(i - 2, "ConnectionMultiplexer"))
+                return (true, "redis");
+            return (false, null);
+        }
+
+        /// <summary>
+        /// A database client registration or construction: <c>AddDbContext&lt;T&gt;(o =&gt; o.UseNpgsql(…))</c>,
+        /// <c>AddNpgsqlDataSource("orders")</c>, <c>new NpgsqlConnection(…)</c>. The store kind is the
+        /// one the method or type names, else the one provider call inside it, else the one EF
+        /// Core provider package of the project. The connection is named by the first of:
+        /// <c>GetConnectionString("X")</c> or an indexer <c>["ConnectionStrings:X"]</c> (<c>connectionName</c>),
+        /// another indexer key or <c>GetEnvironmentVariable("K")</c> (<c>connectionVariable</c>), or,
+        /// for an Aspire method, its first argument when it is a literal.
+        /// </summary>
+        private void ReadDbClient(int method, int open, string name, string? store, string? contextType)
+        {
+            if (!meter.Charge(FactCost))
+                return;
+            var close = t.Match[open];
+            var providers = new HashSet<string>(StringComparer.Ordinal);
+            string? connectionName = null, variable = null;
+            for (var k = open + 1; k < close; k++)
+            {
+                if (!meter.Charge())
+                    return;
+                if (t.P(k - 1, '.') && t.Id(k) && DbProviders.TryGetValue(t[k].Text, out var provider) && t.P(k + 1, '('))
+                    providers.Add(provider);
+                else if (connectionName is null && variable is null)
+                    (connectionName, variable) = ConfigurationRead(k);
+            }
+            // Aspire names the connection with the first argument.
+            if (connectionName is null && variable is null && name.StartsWith("Add", StringComparison.Ordinal) && store is not null
+                && t.StaticString(open + 1) is { } literal && (t.P(open + 2, ',') || open + 2 == close))
+                connectionName = literal;
+
+            var kind = store
+                ?? (providers.Count == 1 ? providers.First() : null)
+                ?? (project.EfStores.Count == 1 && contextType is not null ? project.EfStores.First() : null)
+                ?? "unknown";
+            var target = contextType ?? connectionName ?? variable ?? kind;
+            if (target.Length > CSharpFile.MaxNameLength || (connectionName?.Length ?? 0) > CSharpFile.MaxNameLength || (variable?.Length ?? 0) > CSharpFile.MaxNameLength)
+            {
+                context.Note(NoteKind.Redacted, "value-too-long", file.Path, t.Line(method));
+                return;
+            }
+            context.Add(FactKind.DataAccess, $"dataaccess:{project.Id}:client:{target}", contextType ?? connectionName ?? name,
+                DbClientRule.At(file.Path, t.Line(method), t.EndLine(close)),
+            [
+                .. project.Owner, ("technology", contextType is not null ? "efcore" : name), ("registration", name),
+                ("dbContext", contextType), ("storeKind", kind), ("connectionName", connectionName), ("connectionVariable", variable),
+                ("conditional", source.Conditional(method)),
+            ]);
+        }
+
+        /// <summary>
+        /// The configuration key that the expression at <paramref name="k"/> reads: <c>GetConnectionString("X")</c>
+        /// and <c>["ConnectionStrings:X"]</c> give the connection name X; <c>["K"]</c>,
+        /// <c>GetValue&lt;…&gt;("K")</c>, <c>GetSection("K")</c> and <c>GetEnvironmentVariable("K")</c> give the variable K.
+        /// </summary>
+        private (string? ConnectionName, string? Variable) ConfigurationRead(int k)
+        {
+            if (t.P(k, '[') && t.StaticString(k + 1) is { Length: > 0 } key && t.P(k + 2, ']'))
+            {
+                const string prefix = "ConnectionStrings:";
+                return key.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) && key.Length > prefix.Length
+                    ? (key[prefix.Length..], null)
+                    : (null, key);
+            }
+            if (!t.Id(k) || !t.P(k - 1, '.'))
+                return (null, null);
+            var open = k + 1;
+            if (t[k].Text == "GetValue" && t.P(open, '<') && code.CloseAngle(open) is > 0 and var angle)
+                open = angle + 1;
+            if (!t.P(open, '(') || t.StaticString(open + 1) is not { Length: > 0 } argument)
+                return (null, null);
+            return t[k].Text switch
+            {
+                "GetConnectionString" => (argument, null),
+                "GetValue" or "GetSection" or "GetEnvironmentVariable" => (null, argument),
+                _ => (null, null),
+            };
+        }
+
+        /// <summary>
+        /// <c>AddHttpClient(…)</c> or <c>ConfigureHttpClient(…)</c> whose call sets <c>BaseAddress</c>
+        /// from a configuration key: <c>BaseAddress = new Uri(config["Payments:BaseUrl"])</c>. The key is
+        /// the variable a deployment sets (<c>Payments__BaseUrl</c>); it is all the rule states.
+        /// </summary>
+        private void ReadHttpClient(int method, int open)
+        {
+            var close = t.Match[open];
+            for (var k = open + 1; k < close; k++)
+            {
+                if (!meter.Charge())
+                    return;
+                if (!t.Id(k, "BaseAddress") || !t.P(k + 1, '=') || t.P(k + 2, '='))
+                    continue;
+                // The value ends at the first ',' or ';' or closing bracket of the assignment.
+                for (var v = k + 2; v < close; v++)
+                {
+                    if (!meter.Charge())
+                        return;
+                    if (t.P(v, ',') || t.P(v, ';') || t.P(v, '}'))
+                        break;
+                    var (connectionName, variable) = ConfigurationRead(v);
+                    if ((variable ?? connectionName) is not { } key)
+                        continue;
+                    if (key.Length > CSharpFile.MaxNameLength || !meter.Charge(FactCost))
+                        return;
+                    context.Add(FactKind.Dependency, $"dependency:{project.Id}:http-client:{key}", key,
+                        HttpClientRule.At(file.Path, t.Line(method), t.EndLine(close)),
+                    [
+                        .. project.Owner, ("role", "http-client"), ("technology", "httpclient"), ("baseAddressKey", key),
+                        ("conditional", source.Conditional(method)),
+                    ]);
+                    return;
                 }
             }
         }

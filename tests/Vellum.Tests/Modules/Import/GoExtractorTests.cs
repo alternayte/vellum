@@ -881,7 +881,8 @@ public class GoExtractorTests
         Assert.Equal(("database/sql", "mysql", "mysql", "service:stock", "stock/go.mod"),
             (mysql.Attr("technology"), mysql.Attr("driver"), mysql.Attr("storeKind"), mysql.Attr("service"), mysql.Attr("project")));
         Assert.Equal(["stock/main.go:11-11"], mysql.Lines());
-        Assert.Equal(("go.sql-open", 2), (mysql.Evidence[0].Rule, mysql.Evidence[0].RuleVersion));
+        Assert.Equal(("go.sql-open", 3), (mysql.Evidence[0].Rule, mysql.Evidence[0].RuleVersion));
+        Assert.Null(mysql.Attr("connectionVariable"));
         Assert.Equal("sqlite", result.Fact("dataaccess:stock:sql:sqlite3").Attr("storeKind"));
         var pgx = result.Fact("dataaccess:stock:pgx");
         Assert.Equal(("pgx", "postgres"), (pgx.Attr("technology"), pgx.Attr("storeKind")));

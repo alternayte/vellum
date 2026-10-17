@@ -135,8 +135,14 @@ export interface Proposal {
   /** What other Sources accepted for the same entity. A conflict shows them side by side. */
   otherSources: OtherSourceFact[]
   sourceId: string
-  /** The truth label the fact gets when accepted: `declared` for a model file, else `observed-in-source`. */
-  factStatus: 'declared' | 'observed-in-source'
+  /**
+   * The truth label the fact gets when accepted: `declared` for a model file, `inferred` for a
+   * suggestion of a rule (an HTTP call named by a variable), `measured` for a runtime Source,
+   * else `observed-in-source`. A scan never applies an `inferred` addition.
+   */
+  factStatus: 'declared' | 'observed-in-source' | 'inferred' | 'measured'
+  /** For an `inferred` fact, the confidence from 0 to 1 that its rule states; else null. */
+  confidence?: number | null
 }
 
 /** A Markdown or text file of a Source's newest Snapshot, for the prose import. */

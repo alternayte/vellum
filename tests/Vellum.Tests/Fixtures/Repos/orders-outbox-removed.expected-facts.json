@@ -108,6 +108,7 @@
       "key": "dataaccess:inventory-worker:sql:pgx",
       "name": "database/sql (pgx)",
       "attributes": {
+        "connectionVariable": "INVENTORY_DATABASE_URL",
         "driver": "pgx",
         "project": "inventory-worker/go.mod",
         "service": "service:inventory-worker",
@@ -118,7 +119,7 @@
         {
           "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:inventory-worker/main.go:20-20",
           "rule": "go.sql-open",
-          "ruleVersion": 2
+          "ruleVersion": 3
         }
       ]
     },
@@ -144,6 +145,27 @@
           "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:orders-api/OrdersDbContext.cs:7-7",
           "rule": "dotnet.efcore-dbcontext",
           "ruleVersion": 2
+        }
+      ]
+    },
+    {
+      "kind": "DataAccess",
+      "key": "dataaccess:orders-api:client:OrdersDbContext",
+      "name": "OrdersDbContext",
+      "attributes": {
+        "connectionName": "Orders",
+        "dbContext": "OrdersDbContext",
+        "project": "orders-api/Orders.Api.csproj",
+        "registration": "AddDbContext",
+        "service": "service:orders-api",
+        "storeKind": "postgres",
+        "technology": "efcore"
+      },
+      "evidence": [
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:orders-api/Program.cs:8-9",
+          "rule": "dotnet.db-client",
+          "ruleVersion": 1
         }
       ]
     },
@@ -939,6 +961,236 @@
           "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:orders-api/Program.cs:38-38",
           "rule": "dotnet.masstransit-publish",
           "ruleVersion": 2
+        }
+      ]
+    },
+    {
+      "kind": "Relationship",
+      "key": "relationship:data-access:service:inventory-worker->datastore:.:postgres",
+      "name": "inventory-worker → postgres: reads and writes",
+      "attributes": {
+        "from": "service:inventory-worker",
+        "label": "reads and writes",
+        "relationshipKind": "behavioural",
+        "to": "datastore:.:postgres"
+      },
+      "evidence": [
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:docker-compose.yml:2-11",
+          "rule": "relationship.basis",
+          "ruleVersion": 1
+        },
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:docker-compose.yml:44-44",
+          "rule": "relationship.data-access",
+          "ruleVersion": 1
+        },
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:inventory-worker/go.mod:1-1",
+          "rule": "relationship.basis",
+          "ruleVersion": 1
+        },
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:inventory-worker/main.go:20-20",
+          "rule": "relationship.data-access",
+          "ruleVersion": 1
+        }
+      ]
+    },
+    {
+      "kind": "Relationship",
+      "key": "relationship:data-access:service:orders-api->datastore:.:postgres",
+      "name": "Orders.Api → postgres: reads and writes",
+      "attributes": {
+        "from": "service:orders-api",
+        "label": "reads and writes",
+        "relationshipKind": "behavioural",
+        "to": "datastore:.:postgres"
+      },
+      "evidence": [
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:docker-compose.yml:2-11",
+          "rule": "relationship.basis",
+          "ruleVersion": 1
+        },
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:docker-compose.yml:24-24",
+          "rule": "relationship.data-access",
+          "ruleVersion": 1
+        },
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:docker-compose.yml:29-29",
+          "rule": "relationship.data-access",
+          "ruleVersion": 1
+        },
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:orders-api/Orders.Api.csproj:1-1",
+          "rule": "relationship.basis",
+          "ruleVersion": 1
+        },
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:orders-api/OrdersDbContext.cs:5-6",
+          "rule": "relationship.data-access",
+          "ruleVersion": 1
+        },
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:orders-api/OrdersDbContext.cs:7-7",
+          "rule": "relationship.data-access",
+          "ruleVersion": 1
+        },
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:orders-api/Program.cs:8-9",
+          "rule": "relationship.data-access",
+          "ruleVersion": 1
+        }
+      ]
+    },
+    {
+      "kind": "Relationship",
+      "key": "relationship:depends-on:service:inventory-worker->datastore:.:postgres",
+      "name": "inventory-worker → postgres: depends on",
+      "attributes": {
+        "from": "service:inventory-worker",
+        "label": "depends on",
+        "relationshipKind": "structural",
+        "to": "datastore:.:postgres"
+      },
+      "evidence": [
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:docker-compose.yml:2-11",
+          "rule": "relationship.basis",
+          "ruleVersion": 1
+        },
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:docker-compose.yml:49-49",
+          "rule": "relationship.compose-depends-on",
+          "ruleVersion": 1
+        },
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:inventory-worker/go.mod:1-1",
+          "rule": "relationship.basis",
+          "ruleVersion": 1
+        }
+      ]
+    },
+    {
+      "kind": "Relationship",
+      "key": "relationship:depends-on:service:orders-api->datastore:.:postgres",
+      "name": "Orders.Api → postgres: depends on",
+      "attributes": {
+        "from": "service:orders-api",
+        "label": "depends on",
+        "relationshipKind": "structural",
+        "to": "datastore:.:postgres"
+      },
+      "evidence": [
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:docker-compose.yml:2-11",
+          "rule": "relationship.basis",
+          "ruleVersion": 1
+        },
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:docker-compose.yml:29-29",
+          "rule": "relationship.compose-depends-on",
+          "ruleVersion": 1
+        },
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:orders-api/Orders.Api.csproj:1-1",
+          "rule": "relationship.basis",
+          "ruleVersion": 1
+        }
+      ]
+    },
+    {
+      "kind": "Relationship",
+      "key": "relationship:message-flow:service:orders-api->service:billing:OrderCreated",
+      "name": "Orders.Api → Billing: publishes OrderCreated",
+      "attributes": {
+        "from": "service:orders-api",
+        "label": "publishes OrderCreated",
+        "message": "message:Orders.Contracts.OrderCreated",
+        "relationshipKind": "behavioural",
+        "to": "service:billing"
+      },
+      "evidence": [
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:billing/Billing.csproj:1-1",
+          "rule": "relationship.basis",
+          "ruleVersion": 1
+        },
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:billing/OrderCreatedConsumer.cs:7-9",
+          "rule": "relationship.message-flow",
+          "ruleVersion": 1
+        },
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:billing/Program.cs:16-20",
+          "rule": "relationship.message-flow",
+          "ruleVersion": 1
+        },
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:contracts/OrderCreated.cs:4-8",
+          "rule": "relationship.basis",
+          "ruleVersion": 1
+        },
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:orders-api/Orders.Api.csproj:1-1",
+          "rule": "relationship.basis",
+          "ruleVersion": 1
+        },
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:orders-api/Program.cs:38-38",
+          "rule": "relationship.message-flow",
+          "ruleVersion": 1
+        }
+      ]
+    },
+    {
+      "kind": "Relationship",
+      "key": "relationship:message-flow:service:orders-api->service:inventory-worker:OrderCreated",
+      "name": "Orders.Api → inventory-worker: publishes OrderCreated",
+      "attributes": {
+        "from": "service:orders-api",
+        "label": "publishes OrderCreated",
+        "message": "message:Orders.Contracts.OrderCreated",
+        "relationshipKind": "behavioural",
+        "to": "service:inventory-worker"
+      },
+      "evidence": [
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:contracts/OrderCreated.cs:4-8",
+          "rule": "relationship.basis",
+          "ruleVersion": 1
+        },
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:inventory-worker/consumer.go:46-46",
+          "rule": "relationship.message-flow",
+          "ruleVersion": 1
+        },
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:inventory-worker/consumer.go:50-50",
+          "rule": "relationship.message-flow",
+          "ruleVersion": 1
+        },
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:inventory-worker/consumer.go:63-63",
+          "rule": "relationship.message-flow",
+          "ruleVersion": 1
+        },
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:inventory-worker/go.mod:1-1",
+          "rule": "relationship.basis",
+          "ruleVersion": 1
+        },
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:orders-api/Orders.Api.csproj:1-1",
+          "rule": "relationship.basis",
+          "ruleVersion": 1
+        },
+        {
+          "pointer": "github.com/acme/orders-outbox-removed@4f2a9c1e7b3d5a6088c2e1f04b7d9a3c5e6f7081:orders-api/Program.cs:38-38",
+          "rule": "relationship.message-flow",
+          "ruleVersion": 1
         }
       ]
     },

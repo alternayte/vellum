@@ -58,8 +58,10 @@ You can resume one scan 3 times. A scan that stopped more than 7 days ago cannot
 
 When a scan of the tracked ref completes, Vellum applies to the model, in dependency order:
 
-- Every addition: a thing that the source has and the model does not have.
+- Every addition: a thing that the source has and the model does not have. An inferred addition is the exception: it waits in **Needs you**.
 - Every change of a fact that this Source wrote last and that no person edited since.
+
+The additions include the lines between the elements: a producer to the consumers of its messages, an app to the store it opens, and each Compose `depends_on`. See [Relationships of a code scan](/reference/extraction-rules/#relationships-of-a-code-scan).
 
 Vellum labels each applied fact **Observed in source**. A fact from a model file keeps the label of the file, **Declared**. Vellum records the Source, the commit or the Snapshot, the file and the lines, the person who started the scan and the time. An applied element is bound to its key in the Source. See [Evidence and truth labels](/concepts/evidence-and-truth-labels/).
 
@@ -83,6 +85,7 @@ The [extraction rules](/reference/extraction-rules/) list what Vellum reads and 
 | Same as? | An element of this scan has the name of an element in the model. | **Same** binds the element to this Source. **Not the same** proposes a new element. |
 | Match | The extraction rules changed and Vellum cannot tell which found fact is the one in the model. | Select **Choose**, select the fact or **None of these**, then select **Apply**. |
 | Add | An addition that the model refused, for example because an element of that name came into the model after the scan. | **Accept** or **Reject**. The item says why the model refused it. |
+| Suggestion | An inferred relationship: a variable such as `PAYMENTS_URL`, or an HTTP client key, names another app. The item shows the confidence and the lines. The canvas shows no line for it. | **Accept** adds it to the model, labelled **Inferred**. **Reject** keeps it out. |
 
 Select an item to see its fields and the source lines that support it. The **GitHub** link opens the same lines on GitHub at the scanned commit. The detail panel of a selected element also shows its items, with **Accept** and **Reject**.
 

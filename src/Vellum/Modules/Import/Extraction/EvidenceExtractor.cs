@@ -27,6 +27,8 @@ public static class EvidenceExtractor
         new OpenApiExtractor(), new AsyncApiExtractor(), new ComposeExtractor(),
         new DotNetExtractor(), new GoExtractor(), new DeploymentExtractor(),
         new StructurizrExtractor(), new BackstageExtractor(), new AdrExtractor(),
+        // Last: it reads the facts of the others.
+        new RelationshipExtractor(),
     ];
 
     /// <summary>Every rule with its version, in a stable order.</summary>

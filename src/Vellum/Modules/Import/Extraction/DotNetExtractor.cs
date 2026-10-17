@@ -113,6 +113,22 @@ namespace Vellum.Modules.Import.Extraction;
 /// <c>ApiAuthorizationDbContext</c>, with its <c>DbSet&lt;T&gt; Name</c> members. The store kind
 /// comes from the one EF Core provider package of the project, else <c>unknown</c>. Not:
 /// entities mapped only in <c>OnModelCreating</c>, Dapper or raw SQL, a context derived from a custom base.</item>
+/// <item><c>dotnet.db-client</c> (version 1) — <c>dataaccess:&lt;pid&gt;:client:&lt;target&gt;</c> for a
+/// database client registration (<c>AddDbContext</c>, <c>AddDbContextPool</c>, <c>AddDbContextFactory</c>,
+/// <c>AddPooledDbContextFactory</c>, the Aspire <c>AddNpgsqlDbContext</c>, <c>AddNpgsqlDataSource</c>,
+/// <c>AddSqlServerDbContext</c>, <c>AddSqlServerClient</c>, <c>AddMySqlDbContext</c>, <c>AddMySqlDataSource</c>,
+/// <c>AddRedisClient</c>, <c>AddMongoDBClient</c>), <c>NpgsqlDataSource.Create</c>,
+/// <c>ConnectionMultiplexer.Connect</c>, or <c>new</c> of <c>NpgsqlConnection</c>, <c>NpgsqlDataSourceBuilder</c>,
+/// <c>SqlConnection</c>, <c>MySqlConnection</c>, <c>SqliteConnection</c>, <c>MongoClient</c>. The target is
+/// the context type, else the connection name, else the variable, else the store kind. It
+/// states <c>storeKind</c> and, when the text names it, <c>connectionName</c> or
+/// <c>connectionVariable</c>. Not: a connection string built in code, a registration in a helper
+/// that takes the options as a parameter.</item>
+/// <item><c>dotnet.http-client-base-address</c> (version 1) — <c>dependency:&lt;pid&gt;:http-client:&lt;key&gt;</c>
+/// for <c>AddHttpClient(…)</c> or <c>ConfigureHttpClient(…)</c> whose call sets <c>BaseAddress</c> from a
+/// configuration key (<c>config["Payments:BaseUrl"]</c>, <c>GetValue&lt;string&gt;("K")</c>,
+/// <c>Environment.GetEnvironmentVariable("K")</c>). Not: a literal address, a key built in code,
+/// a client configured through an options class.</item>
 /// <item><c>dotnet.message-contract</c> — <c>message:&lt;type&gt;</c> for each type that a consumer,
 /// publish, send or entity name resolved to: positional parameters of a record and public
 /// instance properties with an accessor block as <c>Name:Type</c> fields (names, checked one by
@@ -139,12 +155,39 @@ internal sealed partial class DotNetExtractor : IExtractor
     private static readonly ExtractionRule HandwrittenOutbox = new("dotnet.outbox-handwritten", 2);
     private static readonly ExtractionRule DbContextRule = new("dotnet.efcore-dbcontext", 2);
     private static readonly ExtractionRule Contract = new("dotnet.message-contract", 2);
+    private static readonly ExtractionRule DbClientRule = new("dotnet.db-client", 1);
+    private static readonly ExtractionRule HttpClientRule = new("dotnet.http-client-base-address", 1);
+
+    /// <summary>Registrations of a database client, with the store kind the method names, or null when a provider call inside it names it.</summary>
+    private static readonly Dictionary<string, string?> DbClientCalls = new(StringComparer.Ordinal)
+    {
+        ["AddDbContext"] = null, ["AddDbContextPool"] = null, ["AddDbContextFactory"] = null, ["AddPooledDbContextFactory"] = null,
+        ["AddNpgsqlDbContext"] = "postgres", ["AddNpgsqlDataSource"] = "postgres",
+        ["AddSqlServerDbContext"] = "sqlserver", ["AddSqlServerClient"] = "sqlserver",
+        ["AddMySqlDbContext"] = "mysql", ["AddMySqlDataSource"] = "mysql",
+        ["AddRedisClient"] = "redis", ["AddMongoDBClient"] = "mongodb",
+    };
+
+    /// <summary>The EF Core provider calls inside a registration, with the store kind of each.</summary>
+    private static readonly Dictionary<string, string> DbProviders = new(StringComparer.Ordinal)
+    {
+        ["UseNpgsql"] = "postgres", ["UseSqlServer"] = "sqlserver", ["UseAzureSql"] = "sqlserver",
+        ["UseMySql"] = "mysql", ["UseMySQL"] = "mysql", ["UseSqlite"] = "sqlite", ["UseOracle"] = "oracle",
+        ["UseCosmos"] = "cosmosdb", ["UseInMemoryDatabase"] = "in-memory",
+    };
+
+    /// <summary>Client types whose construction opens a store.</summary>
+    private static readonly Dictionary<string, string> DbClientTypes = new(StringComparer.Ordinal)
+    {
+        ["NpgsqlConnection"] = "postgres", ["NpgsqlDataSourceBuilder"] = "postgres", ["SqlConnection"] = "sqlserver",
+        ["MySqlConnection"] = "mysql", ["SqliteConnection"] = "sqlite", ["MongoClient"] = "mongodb",
+    };
 
     public string Id => "dotnet";
     public IReadOnlyList<ExtractionRule> Rules =>
     [
         ProjectRule, PackageRule, MinimalApi, ControllerRoute, Consumer, ReceiveEndpoint, Publish,
-        EntityName, Outbox, HandwrittenOutbox, DbContextRule, Contract,
+        EntityName, Outbox, HandwrittenOutbox, DbContextRule, Contract, DbClientRule, HttpClientRule,
     ];
 
     /// <summary>Package id, or a prefix of it up to a dot, to what the package is.</summary>

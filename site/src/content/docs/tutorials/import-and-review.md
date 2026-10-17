@@ -78,13 +78,13 @@ A scan reads one commit. It runs no code from the repository.
 
 ## See the diagram
 
-When the scan completes, Vellum adds the 21 facts that it found to the model. The model was empty, so every fact is an addition, and no step needs you. **Needs you** in the **Sources** panel reads "Nothing needs you".
+When the scan completes, Vellum adds the 27 facts that it found to the model. The model was empty, so every fact is an addition, and no step needs you. **Needs you** in the **Sources** panel reads "Nothing needs you".
 
 1. Close the **Sources** panel. The canvas shows the top level of the view with the system `orders`. The auto layout placed it.
-2. Right-click `orders` and select **Drill into**. The canvas shows `Orders.Api`, `Billing`, `inventory-worker` and `postgres`.
-3. Select **Model** in the sidebar, then the **Contracts** tab. **Operations**, **Channels** and **Subscriptions** list the rest of the 21 facts.
+2. Right-click `orders` and select **Drill into**. The canvas shows `Orders.Api`, `Billing`, `inventory-worker` and `postgres`, and the lines between them.
+3. Select **Model** in the sidebar, then the **Contracts** tab. **Operations**, **Channels** and **Subscriptions** list the rest of the 27 facts.
 
-![The canvas at the level Context, orders. A frame with the name orders holds the apps Billing (dotnet), inventory-worker (go) and Orders.Api (dotnet) and the store postgres. Each card shows its kind and its technology. No line connects them.](../../../assets/screenshots/canvas-orders-system.png)
+![The canvas at the level Context, orders. A frame with the name orders holds the apps Billing (dotnet), inventory-worker (go) and Orders.Api (dotnet) and the store postgres. Each card shows its kind and its technology. Lines labelled publishes OrderCreated go from Orders.Api to Billing and to inventory-worker. Lines labelled reads and writes and depends on go from Orders.Api and from inventory-worker to postgres.](../../../assets/screenshots/canvas-orders-system.png)
 
 | Kind | Facts |
 |---|---|
@@ -95,6 +95,9 @@ When the scan completes, Vellum adds the 21 facts that it found to the model. Th
 | Binding | `inventory.order-created` bound to `order-events` |
 | Subscription | The consumer of Billing and the consumer of the inventory worker |
 | Message | `OrderCreated` |
+| Relationship | `Orders.Api` publishes `OrderCreated` to `Billing` and to `inventory-worker`. `Orders.Api` and `inventory-worker` each read and write `postgres` and depend on it. |
+
+The scan found each line in the source. The publish line of `Orders.Api` and the consumer of each service give the message lines. The registration `AddDbContext` with `UseNpgsql`, `sql.Open` and the Compose variable whose host is `postgres` give the store lines. The `depends_on` items of the Compose file give the startup lines.
 
 ## Read where a fact comes from
 

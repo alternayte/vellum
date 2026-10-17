@@ -111,7 +111,7 @@ public class ImportStalenessTests(ImportHost import) : IClassFixture<ImportHost>
 
         var proposals = await s.ProposalsAsync(scan.Id());
         var removals = proposals.Where(p => p.Text("action") == "remove").ToList();
-        Assert.Equal(["channel", "element", "subscription"], removals.Values("entityKind"));
+        Assert.Equal(["channel", "element", "relationship", "subscription"], removals.Values("entityKind"));
         Assert.All(proposals, p => Assert.Equal(("pending", false), (p.Text("status"), p["partial"]!.GetValue<bool>())));
         var message = Assert.Single(proposals, p => p.Text("action") != "remove");
         Assert.Equal(("message", "OrderCreated", "change"), (message.Text("entityKind"), message.Text("name"), message.Text("action")));
@@ -137,21 +137,25 @@ public class ImportStalenessTests(ImportHost import) : IClassFixture<ImportHost>
         var subscriptions = await s.AllAsync(s.Model("subscriptions"));
         Assert.Equal(ImportScenario.Commit2, Stale(subscriptions.Single("consumerId", billing.Text("id")!))!.Text("sinceRevision"));
         Assert.Null(Stale(subscriptions.Single(sub => sub.Text("consumerId") != billing.Text("id"))));
+        // The line from the producer to the consumer that is gone is not seen either; the other stays.
+        var relationships = await s.AllAsync(s.Model("relationships"));
+        Assert.Equal(ImportScenario.Commit2, Stale(relationships.Single("toId", billing.Text("id")!))!.Text("sinceRevision"));
+        Assert.All(relationships.Where(r => r.Text("toId") != billing.Text("id")), r => Assert.Null(Stale(r)));
 
         // The declared fact got no mark and no change: it rests on a person's word.
         var declared = (await s.AllAsync(s.Model("channels"))).Single("id", queue.Text("id")!);
         Assert.Equal(("declared", "billing.order-created"), (declared.Text("factStatus"), declared.Text("name")));
         Assert.Null(Stale(declared));
 
-        // Apart from the two marks, the model is what it was. Nothing was accepted.
+        // Apart from the marks, the model is what it was. Nothing was accepted.
         var marked = await ModelAsync(s);
         Assert.Equal(before, marked.Replace($$"""{"sinceRevision":"{{ImportScenario.Commit2}}","reason":"evidence-not-found"}""", "null"));
 
-        // The scan wrote two events, both stale marks, as itself and not as a person.
+        // The scan wrote three events, all stale marks, as itself and not as a person.
         using (var scope = import.Host.Factory.Services.CreateScope())
         {
             var written = await scope.ServiceProvider.GetRequiredService<IEventStore>().ReadStream(StreamId.From(streamId), afterVersion: versionBefore, limit: 100);
-            Assert.Equal(["model.element_provenance_recorded", "model.subscription_provenance_recorded"], written.Select(e => e.EventType).Order());
+            Assert.Equal(["model.element_provenance_recorded", "model.relationship_provenance_recorded", "model.subscription_provenance_recorded"], written.Select(e => e.EventType).Order());
             Assert.All(written, e => Assert.Equal("system:import-scan", e.Metadata.Actor));
         }
 
@@ -182,11 +186,11 @@ public class ImportStalenessTests(ImportHost import) : IClassFixture<ImportHost>
         Assert.Null(Stale((await s.ElementsAsync()).Single("name", "Billing (legacy)")));
 
         // The removal is a decision like any other. Named in any order, it is applied in the
-        // order the model needs: the message lets go of its consumer, the subscription goes,
-        // then the element and the queue.
+        // order the model needs: the message lets go of its consumer, the subscription and the
+        // relationship go, then the element and the queue.
         var last = await s.ScanAsync();
         var final = await s.ProposalsAsync(last.Id());
-        Assert.Equal(4, final.Count);
+        Assert.Equal(5, final.Count);
         Assert.Empty((await s.DecideAsync(last.Id(), accept: final.OrderBy(p => p.Text("entityKind")).Select(p => p.Id())))["failed"]!.AsArray());
         Assert.Equal(["Orders.Api", "inventory-worker", "orders", "postgres"], (await s.ElementsAsync()).Values("name"));
         Assert.Single(await s.AllAsync(s.Model("subscriptions")));

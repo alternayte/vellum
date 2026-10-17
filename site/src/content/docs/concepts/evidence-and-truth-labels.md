@@ -11,7 +11,7 @@ This page explains the label on each fact in a model and the rules Vellum follow
 |---|---|---|
 | Declared | A person states that this is so. | A person who adds or edits the fact. |
 | Observed in source | Vellum read it in a repository at a commit that the fact records. | An import, when a person accepts its proposal. |
-| Inferred | The assistant suggests it. The fact records the source and a confidence from 0 to 1. | Vellum, when a person accepts a suggestion of the assistant. |
+| Inferred | The assistant suggests it, or a scan rule infers it from a name, such as a call from a variable `PAYMENTS_URL`. The fact records the source and a confidence from 0 to 1. | Vellum, when a person accepts a suggestion of the assistant or of a scan. A scan never applies it by itself. |
 | Measured | A test or a run shows it. The fact records a pointer to the evidence. | A person who edits the fact and gives the pointer. |
 | Unknown | Nobody has established it. | A person. |
 
@@ -25,7 +25,7 @@ The canvas shows a marker on every fact that is not declared. Search finds facts
 
 **Observed in source** says that the text is in the repository at that commit. It does not say that the code runs, that a route answers, or how fast it is.
 
-**Inferred** with a confidence of 90% says how sure the assistant claims to be. It is not a measurement.
+**Inferred** with a confidence of 90% says how sure the assistant or the rule claims to be. It is not a measurement.
 
 A trace says what the declared design does. It is not a label on any fact.
 

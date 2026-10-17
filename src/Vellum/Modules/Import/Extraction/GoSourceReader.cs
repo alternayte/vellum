@@ -61,13 +61,13 @@ internal sealed class GoSourceReader(ExtractionContext context, SourceText file,
         PgxPath = "github.com/jackc/pgx", PgxPoolPath = "github.com/jackc/pgx/pgxpool",
         SegmentioPath = "github.com/segmentio/kafka-go", ConfluentPath = "github.com/confluentinc/confluent-kafka-go/kafka",
         RabbitPath = "github.com/rabbitmq/amqp091-go", StreadwayPath = "github.com/streadway/amqp",
-        NatsPath = "github.com/nats-io/nats.go", JsonPath = "encoding/json";
+        NatsPath = "github.com/nats-io/nats.go", JsonPath = "encoding/json", OsPath = "os";
 
     /// <summary>The import paths the rules know, without version directories.</summary>
     private static readonly HashSet<string> KnownImports = new(StringComparer.Ordinal)
     {
         HttpPath, ChiPath, GinPath, EchoPath, SqlPath, SqlxPath, PgxPath, PgxPoolPath, SegmentioPath, ConfluentPath,
-        RabbitPath, StreadwayPath, NatsPath, JsonPath,
+        RabbitPath, StreadwayPath, NatsPath, JsonPath, OsPath,
     };
 
     private enum Kind
@@ -151,7 +151,7 @@ internal sealed class GoSourceReader(ExtractionContext context, SourceText file,
     private Consumed? _literalSource;
     private int _consumeAt = -1;
     private Consumed? _consumeSource;
-    private string? _http, _chi, _gin, _echo, _sql, _sqlx, _pgx, _pgxpool, _kafka, _segmentio, _confluent, _amqp, _nats, _json;
+    private string? _http, _chi, _gin, _echo, _sql, _sqlx, _pgx, _pgxpool, _kafka, _segmentio, _confluent, _amqp, _nats, _json, _os;
 
     private (string, string?)[] Owner => [("service", module.ServiceKey), ("project", module.Path)];
 
@@ -176,6 +176,7 @@ internal sealed class GoSourceReader(ExtractionContext context, SourceText file,
         _amqp = Local(RabbitPath) ?? Local(StreadwayPath);
         _nats = Local(NatsPath);
         _json = Local(JsonPath);
+        _os = Local(OsPath);
 
         ReadFileVariables();
         if (!_meter.Charge(t.Count))
@@ -1452,14 +1453,29 @@ internal sealed class GoSourceReader(ExtractionContext context, SourceText file,
             }
             context.Add(FactKind.DataAccess, $"dataaccess:{module.ProjectId}:sql:{driver}", $"database/sql ({driver})",
                 [GoExtractor.SqlOpen.At(file.Path, line, EndLine(method))],
-                [.. Owner, ("technology", "database/sql"), ("driver", driver), ("storeKind", SqlDrivers.GetValueOrDefault(driver, "unknown"))]);
+                [.. Owner, ("technology", "database/sql"), ("driver", driver), ("storeKind", SqlDrivers.GetValueOrDefault(driver, "unknown")),
+                    ("connectionVariable", EnvironmentRead(_args[1]))]);
         }
         else if (receiver == _pgx && name is "Connect" or "ConnectConfig" || receiver == _pgxpool && name is "New" or "Connect" or "NewWithConfig")
         {
+            var variable = Arguments(method + 1) && _argCount == 2 ? EnvironmentRead(_args[1]) : null;
             context.Add(FactKind.DataAccess, $"dataaccess:{module.ProjectId}:pgx", "pgx",
                 [GoExtractor.SqlOpen.At(file.Path, line, EndLine(method))],
-                [.. Owner, ("technology", "pgx"), ("storeKind", "postgres")]);
+                [.. Owner, ("technology", "pgx"), ("storeKind", "postgres"), ("connectionVariable", variable)]);
         }
+    }
+
+    /// <summary>
+    /// The name of the variable an argument reads when it is exactly <c>os.Getenv("NAME")</c>
+    /// on the imported package, else null. The value is not read.
+    /// </summary>
+    private string? EnvironmentRead((int Start, int End) argument)
+    {
+        var (start, end) = argument;
+        if (end != start + 5 || !t.Id(start) || !IsPackage(t[start].Text, _os) || !t.P(start + 1, '.')
+            || !t.Id(start + 2, "Getenv") || !t.P(start + 3, '(') || !t.P(start + 5, ')'))
+            return null;
+        return t.StaticString(start + 4) is { } name && CommandLine.IsVariableName(name) ? name : null;
     }
 
     // ---- message contracts ------------------------------------------------------------

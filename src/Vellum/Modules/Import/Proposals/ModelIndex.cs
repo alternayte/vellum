@@ -29,6 +29,7 @@ internal sealed class ModelIndex
     private readonly Dictionary<(string Kind, Guid Id), string> _matchKeys = [];
     private readonly Dictionary<(Guid SourceId, string Key), Guid> _bound = [];
     private readonly Dictionary<Guid, HashSet<Guid>> _sourcesOf = [];
+    private readonly HashSet<(Guid From, Guid To, string Kind, string Label)> _relationships = [];
 
     public int Count => _byId.Count;
 
@@ -57,7 +58,10 @@ internal sealed class ModelIndex
         foreach (var m in model.Messages.Values)
             index.Add(Of(m));
         foreach (var r in model.Relationships.Values)
+        {
             index.Add(Of(model, r));
+            index._relationships.Add(RelationshipKey(r.FromId.Value, r.ToId.Value, r.Kind.ToString().ToLowerInvariant(), r.Label));
+        }
         foreach (var schema in schemas)
             index.Add(Of(schema));
         return index;
@@ -141,7 +145,7 @@ internal sealed class ModelIndex
     /// the same normalised name or route. For an operation the owner must be the same
     /// element too; a subscription has no name and matches on its channel and consumer; a
     /// binding has none either and matches on its source, its target and its routing key; a
-    /// relationship matches on its two elements; a
+    /// relationship matches on its two elements and its label (two labels are two things); a
     /// message, a channel and a schema match on the name alone.
     /// It is used for two things: to join a fact to a hand-made entity, and to move an
     /// accepted link to the fact that replaced its key after the extraction rules changed.
@@ -152,7 +156,7 @@ internal sealed class ModelIndex
         EntityKinds.Operation => $"{values.GetValueOrDefault(Field.OwnerId)}|{NormalRoute(values.GetValueOrDefault(Field.Name))}",
         EntityKinds.Subscription => $"{values.GetValueOrDefault(Field.ChannelId)}|{values.GetValueOrDefault(Field.ConsumerId)}",
         EntityKinds.Binding => $"{values.GetValueOrDefault(Field.SourceChannelId)}|{values.GetValueOrDefault(Field.TargetChannelId)}|{values.GetValueOrDefault(Field.RoutingKey)}",
-        EntityKinds.Relationship => $"{values.GetValueOrDefault(Field.FromId)}|{values.GetValueOrDefault(Field.ToId)}",
+        EntityKinds.Relationship => $"{values.GetValueOrDefault(Field.FromId)}|{values.GetValueOrDefault(Field.ToId)}|{NormalName(values.GetValueOrDefault(Field.Label))}",
         _ => NormalName(values.GetValueOrDefault(Field.Name)),
     };
 
@@ -213,6 +217,18 @@ internal sealed class ModelIndex
 
     /// <summary>True when the element has a binding to a Source other than this one.</summary>
     public bool IsBoundToOther(Guid elementId, Guid sourceId) => _sourcesOf.TryGetValue(elementId, out var sources) && sources.Any(s => s != sourceId);
+
+    /// <summary>
+    /// True when the model holds a relationship with these ends, this kind and this label (white
+    /// space folded, case ignored; no label is the empty label). It is the rule of
+    /// <c>ExistingFacts</c> for an AI proposal, so a scan and an AI proposal agree on what
+    /// "the same relationship" is: one with another label or kind says another thing.
+    /// </summary>
+    public bool HoldsRelationship(Guid from, Guid to, string kind, string? label) =>
+        _relationships.Contains(RelationshipKey(from, to, kind, label));
+
+    private static (Guid, Guid, string, string) RelationshipKey(Guid from, Guid to, string kind, string? label) =>
+        (from, to, kind, NormalName(label));
 
     /// <summary>The entities of a kind with this match key. The list is empty when there is none.</summary>
     public IReadOnlyList<ModelEntity> Matching(string entityKind, string matchKey) =>

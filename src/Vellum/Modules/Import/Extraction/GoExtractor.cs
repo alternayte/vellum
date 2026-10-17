@@ -64,8 +64,9 @@ namespace Vellum.Modules.Import.Extraction;
 /// <c>subscription|publication:&lt;pid&gt;:nats:&lt;subject&gt;</c>. Not: JetStream consumers and streams.</item>
 /// <item><c>go.sql-open</c> — <c>sql.Open</c>, sqlx <c>Open/Connect/MustConnect/MustOpen</c>,
 /// <c>pgx.Connect/ConnectConfig</c>, <c>pgxpool.New/Connect/NewWithConfig</c> on the imported
-/// package. The connection string is never read into a fact. Not: tables and queries, ORMs,
-/// the database name.</item>
+/// package. The connection string is never read into a fact; when it is exactly
+/// <c>os.Getenv("NAME")</c>, <c>connectionVariable</c> is the name (version 3). Not: tables and
+/// queries, ORMs, the database name.</item>
 /// <item><c>go.struct-message</c> — <c>message:&lt;import path of the package&gt;.&lt;T&gt;</c> for a
 /// struct that one function decodes from a consumed delivery: <c>json.Unmarshal(d.F, &amp;v)</c>
 /// (<c>encoding/json</c>, two arguments) where, in that same function, <c>v</c> is declared as
@@ -106,7 +107,7 @@ internal sealed class GoExtractor : IExtractor
     internal static readonly ExtractionRule AmqpConsume = new("go.amqp-consume", 2);
     internal static readonly ExtractionRule KafkaTopic = new("go.kafka-topic", 2);
     internal static readonly ExtractionRule NatsSubject = new("go.nats-subject", 2);
-    internal static readonly ExtractionRule SqlOpen = new("go.sql-open", 2);
+    internal static readonly ExtractionRule SqlOpen = new("go.sql-open", 3);
     internal static readonly ExtractionRule StructMessage = new("go.struct-message", 1);
 
     public string Id => "go";

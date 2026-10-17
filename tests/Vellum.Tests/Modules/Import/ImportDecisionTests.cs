@@ -107,7 +107,7 @@ public class ImportDecisionTests(ImportHost import) : IClassFixture<ImportHost>
         var answered = await s.Owner.PostAsJsonAsync(s.Url($"/{scan.Id()}/proposals/decide"), new { bind = new[] { new { id = question.Id(), same = true } } });
         Assert.True((await answered.Content.ReadFromJsonAsync<JsonObject>())!["replanned"]!.GetValue<bool>());
         var proposals = (await s.ProposalsAsync(scan.Id())).Where(p => p.Text("status") == "pending").ToList();
-        Assert.Equal(21, proposals.Count);
+        Assert.Equal(27, proposals.Count);
 
         // The bound element gets a proposal to link, never a silent link. Other matches are
         // only for the same kind: the hand-made system "Billing" is not the app "Billing".
@@ -145,7 +145,7 @@ public class ImportDecisionTests(ImportHost import) : IClassFixture<ImportHost>
         Assert.Empty(refused["accepted"]!.AsArray());
         Assert.Contains(refused["failed"]!.AsArray(), f =>
             f!["id"]!.GetValue<Guid>() == billing.Id() && f["reason"]!.GetValue<string>().Contains("already used by a channel"));
-        Assert.Equal(21, Counts(await s.GetAsync(scan.Id())).Pending);
+        Assert.Equal(27, Counts(await s.GetAsync(scan.Id())).Pending);
         Assert.Equal(2, (await s.ElementsAsync()).Count);
         Assert.Empty(await s.AllAsync(s.Model("operations")));
         Assert.Equal(HttpStatusCode.NoContent, (await s.Owner.DeleteAsync(s.Model($"channels/{billing.Id("entityId")}"))).StatusCode);
@@ -183,7 +183,8 @@ public class ImportDecisionTests(ImportHost import) : IClassFixture<ImportHost>
         var proposals = await s.ProposalsAsync(scan.Id());
         var worker = proposals.Proposal("element", "inventory-worker");
         var dependents = proposals.Where(p => p["dependsOn"]!.AsArray().Any(d => d!.GetValue<Guid>() == worker.Id())).Values("factKey");
-        Assert.Equal(2, dependents.Length);
+        // Its operation, its subscription, and the three relationships it is an end of.
+        Assert.Equal(5, dependents.Length);
         Assert.Equal([worker.Id()], (await s.DecideAsync(scan.Id(), reject: [worker.Id()]))["rejected"]!.AsArray().Select(r => r!.GetValue<Guid>()));
         Assert.Empty(await s.ElementsAsync());
 
@@ -191,10 +192,10 @@ public class ImportDecisionTests(ImportHost import) : IClassFixture<ImportHost>
         // its subscription are not proposals.
         var next = await s.ScanAsync();
         var keys = (await s.ProposalsAsync(next.Id())).Values("factKey");
-        Assert.Equal(18, keys.Length);
+        Assert.Equal(21, keys.Length);
         Assert.DoesNotContain(worker.Text("factKey"), keys);
         var blocked = (await s.EvidenceAsync(next.Id())).Where(e => e.Text("reason") == "dependency-rejected").ToList();
         Assert.Equal(dependents, blocked.Values("factKey"));
-        Assert.Equal(["Operation", "Subscription"], blocked.Values("kind"));
+        Assert.Equal(["Operation", "Relationship", "Relationship", "Relationship", "Subscription"], blocked.Values("kind").Order(StringComparer.Ordinal));
     }
 }

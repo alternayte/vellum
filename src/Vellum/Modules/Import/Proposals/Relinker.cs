@@ -23,11 +23,12 @@ internal sealed record RelinkResult(
 /// <para>The rule is exact. A link and a candidate fact are the same thing when they have the
 /// same subject and the same entity kind, and one of these holds:</para>
 /// <list type="number">
-/// <item>They share evidence: the same path and the same rule ID, with line ranges that overlap.</item>
+/// <item>They share evidence: the same path and the same rule ID, with line ranges that overlap.
+/// Not for a relationship: it cites the lines of the facts it joins, which other relationships cite too.</item>
 /// <item>The candidate has the match key of the link's entity (<see cref="ModelIndex.MatchKey"/>):
 /// kind and normalised name for an element, owner and method with route template for an
 /// operation, normalised name for a channel, a message or a schema, channel and consumer
-/// for a subscription. The owner, channel and consumer are entities, so "within the same
+/// for a subscription, the two ends and the label for a relationship. The owner, channel and consumer are entities, so "within the same
 /// service" is part of the key. This rule is asked only for a link that shares evidence
 /// with no candidate.</item>
 /// </list>
@@ -67,7 +68,7 @@ internal static class Relinker
         var byMatchKey = new Dictionary<(string Kind, string MatchKey), List<LinkInfo>>();
         foreach (var link in outdated.Where(l => l.FactKey != FactMapping.RepositoryKey))
         {
-            foreach (var key in link.Evidence.Select(e => (link.EntityKind, e.Path, e.Rule)).Distinct())
+            foreach (var key in link.Evidence.Where(_ => SharesLines(link.EntityKind)).Select(e => (link.EntityKind, e.Path, e.Rule)).Distinct())
                 Bucket(byEvidence, key).Add(link);
             if (model.Find(link.EntityKind, link.EntityId) is { } entity)
                 Bucket(byMatchKey, (link.EntityKind, model.MatchKeyOf(entity))).Add(link);
@@ -91,7 +92,7 @@ internal static class Relinker
                         continue;
 
                     var found = new HashSet<Guid>();
-                    foreach (var evidence in phase == 1 ? candidate.Evidence : [])
+                    foreach (var evidence in phase == 1 && SharesLines(candidate.EntityKind) ? candidate.Evidence : [])
                     {
                         if (!byEvidence.TryGetValue((candidate.EntityKind, evidence.Path, evidence.Rule), out var sharing))
                             continue;
@@ -163,6 +164,13 @@ internal static class Relinker
             effective[factKey] = link with { FactKey = factKey, RuleFingerprint = ruleFingerprint };
         }
     }
+
+    /// <summary>
+    /// False for a relationship. A relationship of a code scan cites the lines of the facts it
+    /// joins (the publish line of each of its consumers, the element at each end), so a line
+    /// fits several of them. Its match key, its two ends and its label, is what it is.
+    /// </summary>
+    private static bool SharesLines(string entityKind) => entityKind != EntityKinds.Relationship;
 
     /// <summary>
     /// The match key of a candidate, with each reference as the entity of the link that holds
