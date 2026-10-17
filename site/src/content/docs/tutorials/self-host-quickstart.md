@@ -3,7 +3,7 @@ title: Run Vellum on your machine
 description: Start Vellum with Docker Compose and create the first account.
 ---
 
-In this tutorial you start Vellum and Postgres with one command, then create the administrator and a workspace.
+In this tutorial you start Vellum and Postgres with one command, then create the administrator. Vellum then opens an empty project.
 
 You need Docker with the Compose plugin.
 
@@ -59,13 +59,13 @@ Vellum writes the same code to the log on each start until setup is complete.
 ## Create the administrator
 
 1. Open `http://localhost:8080/setup`. An instance that has no account needs setup.
-2. Fill in **Your name**, **Email** and **Password**. The password has 10 characters or more, with a digit, an upper-case letter and a lower-case letter.
-3. Select **Continue**.
-4. Fill in **Workspace name**.
-5. Type the setup code in **Setup code**.
-6. Select **Finish setup**.
+2. Fill in **Email** and **Password**. The password has 10 characters or more, with a digit, an upper-case letter and a lower-case letter.
+3. Type the setup code in **Setup code**.
+4. Select **Create account**.
 
-You are now signed in as the instance administrator and as the owner of the workspace.
+Vellum creates the workspace `My workspace` with the empty project `My system`, and opens the project. You are signed in as the instance administrator and as the owner of the workspace. Your display name is the part of the email address before the `@`.
+
+The project shows three ways to start a diagram. [Start a project](/how-to/start-a-project/) explains each one. To rename the project or the workspace, or to add more, use the project menu (**⋯**) next to the project name.
 
 Vellum deletes the `setup-code` file when setup is complete. The code does not work again.
 
@@ -104,6 +104,7 @@ Do not delete the `vellum-data` volume by itself. Vellum does not start on a dat
 
 ## Next
 
+- [Start a project](/how-to/start-a-project/)
 - [Build a first model and trace it](/tutorials/first-model-and-trace/)
 - [Configure a workspace](/how-to/configure-settings/)
 - [Back up and restore](/how-to/back-up-and-restore/)

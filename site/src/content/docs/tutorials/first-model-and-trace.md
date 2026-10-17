@@ -13,17 +13,17 @@ You need no AI provider and no repository.
 
 ## Create a project
 
-1. On the home screen, select your workspace.
-2. Select **+ New Project**.
-3. In **Project name**, give `First system`. Select **Create**.
+1. Select the project menu (**⋯**) next to the project name in the top bar.
+2. Select **New project…**.
+3. In **Name**, give `First system`. Select **Create**.
 
-Vellum opens the project. The canvas is empty. It shows the text "Start with a system. Draw a connection to add the next one." and the button **Add System**.
+Vellum opens the project. The model has no element, so the project shows three starts: **Choose folder / GitHub URL**, **Describe it / Type it** and **Open the sample**. Below them is the link **Add a system**. This tutorial draws the model by hand. [Start a project](/how-to/start-a-project/) explains the three starts.
 
-![The empty canvas of the project First system at the level Context. The middle of the canvas says: Start with a system. Draw a connection to add the next one. Below the text is the button Add System. The left toolbar has a button for each tool. The bottom bar has Tidy and Fit.](../../../assets/screenshots/tutorial-empty-project.png)
+![The empty project. The heading reads Start your diagram. Three cards follow: Choose folder / GitHub URL, with the button Choose folder and a field for a GitHub address; Describe it / Type it, with a text box and the buttons Describe it and Type it; Open the sample, with the button Open the sample. Below the cards is the line Or draw it yourself: Add a system.](../../../assets/screenshots/tutorial-empty-project.png)
 
 ## Add the elements
 
-1. Select **Add System**. The dialog **Add Element** opens.
+1. Select **Add a system**. The dialog **Add Element** opens.
 2. In **Name**, give `Shop`. Select **Add**.
 
    ![The dialog Add Element over the empty canvas. Inside is Top level, Kind is System and Name holds Shop. The button Add is at the bottom right.](../../../assets/screenshots/tutorial-add-element.png)

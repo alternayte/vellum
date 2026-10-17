@@ -81,7 +81,8 @@ public class GitHubSignInTests(IntegrationFixture fixture) : IClassFixture<Integ
 
         using var complete = await browser.GetAsync(callback.Headers.Location);
         Assert.True(complete.StatusCode == HttpStatusCode.Redirect, await complete.Content.ReadAsStringAsync());
-        Assert.Equal("/", complete.Headers.Location!.OriginalString);
+        // A new account opens the empty project of its new workspace.
+        Assert.StartsWith("/projects/", complete.Headers.Location!.OriginalString);
 
         // The account has the verified primary address, not the public address of the profile.
         var me = await browser.GetFromJsonAsync<UserInfoResponse>("/api/auth/me");

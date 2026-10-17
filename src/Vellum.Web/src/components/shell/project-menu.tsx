@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { Pencil, Text, Trash2 } from 'lucide-react'
+import { FolderPlus, LayoutGrid, Pencil, Plus, Text, Trash2 } from 'lucide-react'
 import { ActionMenu, type ActionMenuItem } from '@/components/ui/action-menu'
 import { api } from '@/lib/settings-api'
 import { shownInline } from '@/lib/mutation-errors'
@@ -32,18 +32,27 @@ const PROJECT_DATA = [
   'Agent tokens restricted to this project',
 ]
 
-type Open = 'rename' | 'description' | 'delete' | null
+type Open = 'rename' | 'description' | 'delete' | 'new-project' | 'new-workspace' | null
 
 interface ProjectMenuProps {
   project: ProjectSummary
   /** The role of the signed-in person in the workspace. Rename needs Editor; delete needs Owner. */
   role: string | undefined
   onDeleted: () => void
+  /**
+   * Opens a project that the menu created. With it the menu also offers New project (in this
+   * workspace, for an editor), New workspace (with an empty project in it) and All projects.
+   */
+  onOpenProject?: (projectId: string | null) => void
   className?: string
 }
 
-/** The "⋯" menu of a project: Rename, Edit description and, for an owner, Delete project. */
-export function ProjectMenu({ project, role, onDeleted, className }: ProjectMenuProps) {
+/**
+ * The "⋯" menu of a project: Rename, Edit description and, for an owner, Delete project. In
+ * the workbench it also creates projects and workspaces, so no step before the first diagram
+ * asks for them.
+ */
+export function ProjectMenu({ project, role, onDeleted, onOpenProject, className }: ProjectMenuProps) {
   const queryClient = useQueryClient()
   const [open, setOpen] = useState<Open>(null)
 
@@ -68,8 +77,35 @@ export function ProjectMenu({ project, role, onDeleted, className }: ProjectMenu
     onError: shownInline,
   })
 
+  const createProject = useMutation({
+    mutationFn: async ({ name, workspaceName }: { name: string; workspaceName?: string }) => {
+      let workspaceId = project.workspaceId
+      if (workspaceName !== undefined) {
+        workspaceId = crypto.randomUUID()
+        await api('POST', '/api/workspaces', { id: workspaceId, name: workspaceName })
+      }
+      const id = crypto.randomUUID()
+      await api('POST', `/api/workspaces/${workspaceId}/projects`, { id, name, description: null })
+      return { id, workspaceId }
+    },
+    onSuccess: ({ id, workspaceId }) => {
+      queryClient.invalidateQueries({ queryKey: ['workspaces'] })
+      queryClient.invalidateQueries({ queryKey: ['workspaces', workspaceId, 'projects'] })
+      setOpen(null)
+      onOpenProject?.(id)
+    },
+    onError: shownInline,
+  })
+
   const canEdit = canEditModel(role)
   const items: ActionMenuItem[] = []
+  if (onOpenProject) {
+    if (canEdit) {
+      items.push({ label: 'New project…', icon: <Plus className="h-3.5 w-3.5" aria-hidden="true" />, onSelect: () => { createProject.reset(); setOpen('new-project') } })
+    }
+    items.push({ label: 'New workspace…', icon: <FolderPlus className="h-3.5 w-3.5" aria-hidden="true" />, onSelect: () => { createProject.reset(); setOpen('new-workspace') } })
+    items.push({ label: 'All projects', icon: <LayoutGrid className="h-3.5 w-3.5" aria-hidden="true" />, onSelect: () => onOpenProject(null) })
+  }
   if (canEdit) {
     items.push({ label: 'Rename', icon: <Pencil className="h-3.5 w-3.5" aria-hidden="true" />, onSelect: () => { update.reset(); setOpen('rename') } })
     items.push({ label: 'Edit description', icon: <Text className="h-3.5 w-3.5" aria-hidden="true" />, onSelect: () => { update.reset(); setOpen('description') } })
@@ -103,6 +139,31 @@ export function ProjectMenu({ project, role, onDeleted, className }: ProjectMenu
           pending={update.isPending}
           error={update.error?.message}
           onSubmit={(description) => update.mutate({ description })}
+          onClose={() => setOpen(null)}
+        />
+      )}
+      {open === 'new-project' && (
+        <TextPromptDialog
+          title="New project"
+          label="Name"
+          initial=""
+          submitLabel="Create"
+          pending={createProject.isPending}
+          error={createProject.error?.message}
+          onSubmit={(name) => createProject.mutate({ name })}
+          onClose={() => setOpen(null)}
+        />
+      )}
+      {open === 'new-workspace' && (
+        <TextPromptDialog
+          title="New workspace"
+          label="Workspace name"
+          initial=""
+          submitLabel="Create"
+          pending={createProject.isPending}
+          error={createProject.error?.message}
+          // The new workspace opens on an empty project, as the first workspace does.
+          onSubmit={(workspaceName) => createProject.mutate({ name: 'My system', workspaceName })}
           onClose={() => setOpen(null)}
         />
       )}

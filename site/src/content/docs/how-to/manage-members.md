@@ -22,17 +22,19 @@ The person who creates a workspace is its first owner.
 
 ## Create a workspace
 
-1. Open `http://localhost:8080` and sign in.
-2. Select **+ New Workspace**. When the account has no workspace, the button reads **Create Workspace**.
-3. Enter a **Workspace name** and select **Create**.
+Setup and registration create the workspace `My workspace` for a new account. To create another one:
+
+1. In an open project, select the project menu (**⋯**) next to the project name.
+2. Select **New workspace…**, enter a **Workspace name** and select **Create**.
+
+Vellum creates the workspace with the empty project `My system`, and opens the project. On the home screen, **+ New Workspace** creates a workspace with no project.
 
 The request is `POST /api/workspaces` with `id` (a new UUID) and `name`.
 
 ## Create a project
 
-1. Below **Workspaces**, select the workspace.
-2. Select **+ New Project**.
-3. In **Create Project**, enter a **Project name** and select **Create**.
+1. In an open project of the workspace, select the project menu (**⋯**), then **New project…**. On the home screen, select the workspace, then **+ New Project**.
+2. Enter a name and select **Create**.
 
 The request is `POST /api/workspaces/{workspaceId}/projects` with `id` (a new UUID), `name` and `description`. You need the editor role.
 

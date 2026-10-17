@@ -15,6 +15,8 @@ import { sourcesKey, useSources } from '@/hooks/use-sources'
 import { SourceSides, UnconfirmedDependencies } from './source-facts'
 import { useArchiveUpload } from '@/hooks/use-archive-upload'
 import { UploadProgress } from './archive-upload'
+import { FolderPickerButton, FolderUploadProgress } from './folder-picker'
+import { useFolderUpload } from '@/hooks/use-folder-upload'
 
 const ROW: Record<Proposal['action'], { sign: string; color: string; label: string }> = {
   add: { sign: '+', color: 'var(--trace-request)', label: 'Add' },
@@ -84,6 +86,8 @@ export function SourcesList({ projectId, onReview, onProse }: {
     onError: shownInline,
   })
   const { upload, sent } = useArchiveUpload(projectId)
+  // A Source made from a folder in the browser is read again by choosing the folder again.
+  const folder = useFolderUpload(projectId)
 
   if (sources.isLoading) return <p className="px-3 py-2 text-xs text-muted-foreground">Loading Sources…</p>
   if (sources.isError) return <p role="alert" className="px-3 py-2 text-xs text-destructive">{sources.error.message}</p>
@@ -99,6 +103,8 @@ export function SourcesList({ projectId, onReview, onProse }: {
           const busy = source.latestScan !== null && isActive(source.latestScan.status)
           const uploading = upload.isPending && upload.variables?.sourceId === source.id
           const uploadFailed = upload.isError && upload.variables?.sourceId === source.id
+          const folderBusy = folder.run.isPending && folder.run.variables?.sourceId === source.id
+          const folderFailed = folder.run.isError && folder.run.variables?.sourceId === source.id
           const again = rescan(source.kind)
           return (
             <li key={source.id} className="rounded-md border border-border p-2">
@@ -124,6 +130,8 @@ export function SourcesList({ projectId, onReview, onProse }: {
               </div>
               {uploading && <div className="mt-2"><UploadProgress sent={sent} pending /></div>}
               {uploadFailed && <p role="alert" className="mt-1.5 text-xs text-[var(--trace-failure)]">{upload.error.message}</p>}
+              {folderBusy && <div className="mt-2"><FolderUploadProgress packing={folder.packing} sent={folder.sent} uploading={folder.uploading} /></div>}
+              {folderFailed && <p role="alert" className="mt-1.5 text-xs text-[var(--trace-failure)]">{folder.run.error?.message}</p>}
               <div className="mt-2 flex flex-wrap gap-1.5">
                 {source.review.scanId && source.review.pending > 0 && (
                   <Button size="sm" variant="secondary" className="h-6 px-2 text-xs" onClick={() => onReview(source)}>Review</Button>
@@ -135,6 +143,16 @@ export function SourcesList({ projectId, onReview, onProse }: {
                 ) : source.kind === 'traces' ? (
                   <TraceUploadButton projectId={projectId} source={source} />
                 ) : source.kind === 'archive' ? (
+                  <>
+                  <FolderPickerButton
+                    onPick={(picked) => folder.run.mutate({ picked, sourceId: source.id })}
+                    disabled={busy || upload.isPending || folder.run.isPending}
+                    className="inline-flex h-6 items-center gap-1 rounded-md px-2 text-xs font-medium text-foreground hover:bg-muted"
+                  >
+                    <span title="Choose the folder again. The browser reads it as it is now, and each read is a new Snapshot." className="inline-flex items-center gap-1">
+                      <Folder className="h-3 w-3" aria-hidden="true" /> Choose folder again
+                    </span>
+                  </FolderPickerButton>
                   <label
                     title={again.title}
                     className={cn(
@@ -152,6 +170,7 @@ export function SourcesList({ projectId, onReview, onProse }: {
                       }}
                     />
                   </label>
+                  </>
                 ) : (
                   <Button
                     size="sm" variant="ghost" className="h-6 gap-1 px-2 text-xs"

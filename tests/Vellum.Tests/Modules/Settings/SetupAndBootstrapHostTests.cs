@@ -85,7 +85,8 @@ public class FirstRunSetupTests : SetupAndBootstrapHostTests
         Assert.NotEmpty((await weak.Content.ReadFromJsonAsync<ErrorResponse>())!.Errors!);
         var blank = await client.PostAsJsonAsync("/api/setup", new { email = "", password = "", displayName = "", workspaceName = "", setupToken = code });
         Assert.Equal(HttpStatusCode.BadRequest, blank.StatusCode);
-        Assert.Equal(4, (await blank.Content.ReadFromJsonAsync<ErrorResponse>())!.Errors!.Count);
+        // A name and a workspace name are optional; the email address and the password are not.
+        Assert.Equal(["email", "password"], (await blank.Content.ReadFromJsonAsync<ErrorResponse>())!.Errors!.Select(e => e.Field));
         Assert.True((await client.GetFromJsonAsync<SetupStatusResponse>("/api/setup/status"))!.NeedsSetup);
         Assert.Equal(0, await CountAsync(database, "workspaces.workspaces"));
 
@@ -165,10 +166,39 @@ public class FirstRunSetupTests : SetupAndBootstrapHostTests
 
         // Hosted opens registration by default. A registered user is not an instance admin.
         using var user = TestHost.Client(factory, https: true);
-        await TestHost.Created(user.PostAsJsonAsync("/api/auth/register",
+        var registered = await TestHost.Created(user.PostAsJsonAsync("/api/auth/register",
             new { email = $"user-{Guid.NewGuid():N}@vellum.local", password = "Test12345!", displayName = "User" }));
+        // Registration opens the same way as setup: an own workspace with one empty project.
+        var account = (await registered.Content.ReadFromJsonAsync<Vellum.Modules.Identity.RegisterResponse>())!;
+        var project = (await user.GetFromJsonAsync<ProjectDetailDto>($"/api/projects/{account.ProjectId}"))!;
+        Assert.Equal((account.WorkspaceId, "Owner"), (project.WorkspaceId, project.YourRole));
         Assert.False((await user.GetFromJsonAsync<InstanceInfoResponse>("/api/instance"))!.IsInstanceAdmin);
         Assert.Equal(HttpStatusCode.Forbidden, (await user.GetAsync("/api/instance/settings")).StatusCode);
+    }
+
+    [Fact]
+    public async Task Setup_with_an_email_and_a_password_opens_an_empty_project_in_a_new_workspace()
+    {
+        var database = await TestHost.CreateDatabaseAsync();
+        using var factory = TestHost.Create(database);
+        using var client = TestHost.Client(factory);
+        await client.GetAsync("/api/setup/status");
+
+        var response = await client.PostAsJsonAsync("/api/setup",
+            new { email = "ada@vellum.local", password = TestHost.AdminPassword, setupToken = TestHost.SetupCode(factory) });
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var created = (await response.Content.ReadFromJsonAsync<SetupResponse>())!;
+
+        var me = (await client.GetFromJsonAsync<JsonObject>("/api/auth/me"))!;
+        Assert.Equal("ada", (string)me["displayName"]!);
+        var workspace = Assert.Single((await client.GetFromJsonAsync<WorkspaceDto[]>("/api/workspaces"))!);
+        Assert.Equal((created.WorkspaceId, StarterWorkspace.WorkspaceName), (workspace.Id, workspace.Name));
+        var project = Assert.Single((await client.GetFromJsonAsync<ProjectDto[]>($"/api/workspaces/{created.WorkspaceId}/projects"))!);
+        Assert.Equal((created.ProjectId, StarterWorkspace.ProjectName), (project.Id, project.Name));
+        var detail = (await client.GetFromJsonAsync<ProjectDetailDto>($"/api/projects/{created.ProjectId}"))!;
+        Assert.Equal("Owner", detail.YourRole);
+        var elements = (await client.GetFromJsonAsync<JsonObject>($"/api/projects/{created.ProjectId}/elements"))!;
+        Assert.Empty(elements["items"]!.AsArray());
     }
 
     [Fact]
@@ -190,6 +220,7 @@ public class FirstRunSetupTests : SetupAndBootstrapHostTests
         Assert.Equal(1, await CountAsync(database, "settings.instance_admins"));
         Assert.Equal(1, await CountAsync(database, "workspaces.workspaces"));
         Assert.Equal(1, await CountAsync(database, "workspaces.memberships"));
+        Assert.Equal(1, await CountAsync(database, "workspaces.projects"));
         clients.ForEach(c => c.Dispose());
     }
 

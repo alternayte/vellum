@@ -51,6 +51,7 @@ export default defineConfig({
             {
               label: 'Model and trace',
               items: [
+                'how-to/start-a-project',
                 'how-to/model-a-system',
                 'how-to/trace-a-scenario',
                 'how-to/compare-variants',

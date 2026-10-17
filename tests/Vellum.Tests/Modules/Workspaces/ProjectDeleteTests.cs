@@ -165,7 +165,7 @@ public class ProjectDeleteTests(SharedOutboundHost shared) : IClassFixture<Share
         var ai = await AiScenario.CreateAsync(host, "anthropic");
         var owner = ai.Owner;
         var workspaceId = ai.WorkspaceId;
-        await TestHost.SignInMemberAsync(host.Factory, owner, workspaceId, "Editor");
+        var editor = await TestHost.SignInMemberAsync(host.Factory, owner, workspaceId, "Editor");
         await TestHost.Created(owner.PostAsJsonAsync($"/api/workspaces/{workspaceId}/invitations",
             new { email = $"invited-{Guid.NewGuid():N}@vellum.local", role = "Viewer" }));
         await TestHost.Created(owner.PostAsJsonAsync($"/api/workspaces/{workspaceId}/prices",
@@ -205,6 +205,13 @@ public class ProjectDeleteTests(SharedOutboundHost shared) : IClassFixture<Share
 
         var deleted = await owner.DeleteAsync($"/api/workspaces/{workspaceId}");
         Assert.True(deleted.StatusCode == HttpStatusCode.NoContent, await deleted.Content.ReadAsStringAsync());
+
+        // Each new account got a workspace with an empty project at registration. They go the same way.
+        foreach (var account in new[] { owner, editor })
+        {
+            foreach (var own in (await account.GetFromJsonAsync<JsonArray>("/api/workspaces"))!)
+                Assert.Equal(HttpStatusCode.NoContent, (await account.DeleteAsync($"/api/workspaces/{own!["id"]}")).StatusCode);
+        }
 
         var after = await CountAsync();
         Assert.Empty(after.ProjectRows);

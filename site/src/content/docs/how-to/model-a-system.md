@@ -9,10 +9,14 @@ The model is the source of truth. The canvas shows the model. A change on the ca
 
 ## Create a project
 
-1. Open `http://localhost:8080` and sign in.
-2. Below **Workspaces**, find the workspace. If there is none, select **Create Workspace**, enter a **Workspace name** and select **Create**.
-3. Select the workspace, then select **+ New Project**.
-4. In **Create Project**, enter a **Project name** and select **Create**. Vellum opens the project.
+A new account starts in the empty project `My system`. To create another project:
+
+1. In an open project, select the project menu (**⋯**) next to the project name.
+2. Select **New project…**, enter a **Name** and select **Create**. Vellum opens the project.
+
+On the home screen you can also select a workspace, then **+ New Project**.
+
+An empty project shows three starts instead of a blank canvas. [Start a project](/how-to/start-a-project/) explains them. The link **Add a system** below them opens the dialog **Add Element**.
 
 Vellum creates a diagram named `Default` the first time you open a project that has no diagram.
 

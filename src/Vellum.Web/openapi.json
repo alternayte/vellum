@@ -21,8 +21,15 @@
           "required": true
         },
         "responses": {
-          "200": {
-            "description": "OK"
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RegisterResponse"
+                }
+              }
+            }
           }
         }
       }
@@ -28858,6 +28865,38 @@
           }
         }
       },
+      "RegisterResponse": {
+        "required": [
+          "id",
+          "email",
+          "displayName",
+          "workspaceId",
+          "projectId"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "workspaceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "projectId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
       "RegressionDto": {
         "required": [
           "label",
@@ -32331,7 +32370,8 @@
       "SetupResponse": {
         "required": [
           "userId",
-          "workspaceId"
+          "workspaceId",
+          "projectId"
         ],
         "type": "object",
         "properties": {
@@ -32339,6 +32379,10 @@
             "type": "string"
           },
           "workspaceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "projectId": {
             "type": "string",
             "format": "uuid"
           }
