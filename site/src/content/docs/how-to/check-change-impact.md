@@ -17,7 +17,7 @@ These parts of change impact are not available.
 
 ## Scan the other ref
 
-1. Select **Import** in the left toolbar.
+1. Select **Sources** in the sidebar.
 2. In **Repository**, enter the repository that the project follows, as `owner/name` or a GitHub URL.
 3. In **Read**, select **Branch**. In **Branch or tag**, enter the branch of the change, for example `remove-outbox`. To read one commit, select **Commit SHA** and enter the full SHA.
 4. In **Only these folders**, enter the same folders as the scan that the project follows. Leave it empty for all folders.
@@ -44,7 +44,7 @@ curl -X POST "http://localhost:8080/api/projects/<project-id>/imports" \
 
 ## Scan a pull request
 
-1. Select **Import** in the left toolbar.
+1. Select **Sources** in the sidebar.
 2. In **Repository**, enter the repository of the pull request.
 3. In **Read**, select **Pull request #**. In **Pull request number**, enter the number, for example `1`.
 4. Select **Scan repository**.

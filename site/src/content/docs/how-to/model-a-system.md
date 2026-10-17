@@ -16,6 +16,22 @@ The model is the source of truth. The canvas shows the model. A change on the ca
 
 Vellum creates a diagram named `Default` the first time you open a project that has no diagram.
 
+## Find the tools
+
+The sidebar on the left has five areas. An area with more than one tool shows its tools as tabs.
+
+| Area | Tools |
+|---|---|
+| **Model** | **Catalog**, **Contracts**, **Create** and **Files**. |
+| **Flows** | The scenarios. |
+| **Check** | **Review**, **Promises**, **Stress** and **Costs**. |
+| **Ship** | **Build**, with the SDD export, and **Share links**. |
+| **Sources** | The Sources of the project and their scans. |
+
+**Check** and **Ship** show when the model has at least one element. **Share links** shows to an editor or an owner.
+
+The assistant opens from **Ask the assistant** at the bottom of the canvas. The comments open from the bell in the top bar, on the **Comments** tab. The command palette (`Ctrl+K` or `Cmd+K`) opens each of these tools.
+
 ## Know the element kinds
 
 A model has five kinds of element. Each kind has one permitted parent.
@@ -36,7 +52,7 @@ The canvas shows one level at a time. The top level is **Context**. A new elemen
 
 Use one of these methods.
 
-- Select **Element catalog** in the left toolbar. Below **Elements**, select a kind.
+- Select **Model** in the sidebar, then the **Catalog** tab. Below **Elements**, select a kind.
 - Press the shortcut of the kind.
 - Double-click an empty part of the canvas. Select a kind.
 - Right-click an empty part of the canvas. Select **Add Actor** or **Add System** (at the top level), or the kinds that the level permits.
@@ -117,9 +133,9 @@ The server refuses a relationship when an end does not exist. The messages are `
 ## Find an element
 
 - Press `Ctrl+F` or `Cmd+F`. Enter text in **Search name, kind, technology, truth label...**. Press `Enter` to go to the next match. Press `Escape` to close.
-- Press `Ctrl+K` or `Cmd+K`, or select **Search** in the left toolbar. Enter text in **Search elements, actions...** and select an element.
+- Press `Ctrl+K` or `Cmd+K`, or select **Search** in the top bar. Enter text in **Search elements, actions...** and select an element.
 
-The command palette also has these actions: **Add element**, **Toggle status lens**, **Toggle metadata lens**, **Toggle messages lens**, **Toggle truth labels**, **Tidy layout**, **Zoom to fit** and **Go to top level**.
+The command palette opens every tool of the sidebar, **Ask the assistant** and **Comments**. It also has these actions: **Add element**, **Toggle status lens**, **Toggle metadata lens**, **Toggle messages lens**, **Toggle truth labels**, **Tidy layout**, **Zoom to fit** and **Go to top level**.
 
 ## Arrange and save a diagram
 
@@ -128,14 +144,14 @@ A diagram is a saved view of the model. It has a name and a position for each el
 1. Drag the elements. Vellum saves each position in the diagram.
 2. To let Vellum arrange the diagram, press `T`, or right-click the canvas and select **Tidy layout**.
 3. To see the full diagram, right-click the canvas and select **Zoom to fit**.
-4. To add a diagram, select **Create new** in the left toolbar, select **New Diagram**, enter a **Diagram name** and select **Create**.
-5. To open a diagram, select **Project files** in the left toolbar and select the diagram.
+4. To add a diagram, select **Model** in the sidebar, then the **Create** tab, select **New Diagram**, enter a **Diagram name** and select **Create**.
+5. To open a diagram, select **Model** in the sidebar, then the **Files** tab and select the diagram.
 
 Each diagram shows the same model. An element that you delete is gone from each diagram.
 
 ## Rename or delete a diagram
 
-1. Select **Project files** in the left toolbar.
+1. Select **Model** in the sidebar, then the **Files** tab.
 2. Point to the diagram and select its **⋯** button.
 3. Select **Rename**, enter the new name and select **Rename**. Or select **Delete…**.
 
@@ -192,7 +208,7 @@ The other lenses are `1` for status, `2` for metadata and `3` for messages.
 
 A message is data that one element produces and other elements consume. A message can name a JSON schema.
 
-To add them in the app, select **Contracts** in the left toolbar, then select **Add** next to **Schemas** or **Messages**. [Model your first system and trace a flow](/tutorials/first-model-and-trace/#add-the-message) shows the message form. To add them with the API, follow these steps.
+To add them in the app, select **Model** in the sidebar, then the **Contracts** tab, then select **Add** next to **Schemas** or **Messages**. [Model your first system and trace a flow](/tutorials/first-model-and-trace/#add-the-message) shows the message form. To add them with the API, follow these steps.
 
 1. Create the schema. The `content` is the JSON Schema as a string.
 

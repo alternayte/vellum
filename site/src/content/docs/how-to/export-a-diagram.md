@@ -23,7 +23,7 @@ The SVG shows what the canvas shows. The other formats keep less.
 ## Export a view in the app
 
 1. Open the project.
-2. Select **Project files** in the left toolbar.
+2. Select **Model** in the sidebar, then the **Files** tab.
 3. Move the pointer onto the diagram. Select the **⋯** button.
 4. Select **Export SVG**, **Export PNG** or **Export Mermaid**. The browser saves the file.
 
@@ -34,7 +34,7 @@ The browser makes the PNG from the SVG of the server, at twice the size of the S
 ## Export a scenario in the app
 
 1. Open the project.
-2. Select **Scenarios** in the left toolbar.
+2. Select **Flows** in the sidebar.
 3. On the row of the scenario, select the **⋯** button.
 4. Select **Export Mermaid** or **Export SVG**. The browser saves `<scenario>.mmd` or `<scenario>.svg`.
 
@@ -42,7 +42,7 @@ The steps are the scenario now. A scenario is not part of a revision. The names 
 
 ## Export the model as Structurizr DSL in the app
 
-1. Select **Project files** in the left toolbar.
+1. Select **Model** in the sidebar, then the **Files** tab.
 2. Below **Model document**, select **Export Structurizr DSL**. The browser saves `<project>.dsl`. When the workbench shows a named revision, the button names it and the file holds that revision.
 
 ## Export with HTTP

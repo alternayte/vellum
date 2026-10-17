@@ -15,7 +15,7 @@ Only the AI path reads prose. No extractor does. Every proposal is `inferred`, c
 
 ## Propose additions
 
-1. Select **Import** in the left toolbar.
+1. Select **Sources** in the sidebar.
 2. Under **Sources**, select **Propose from a document** on the Source.
 3. Select the document.
 4. Optional: in **What to look for**, say which part matters.

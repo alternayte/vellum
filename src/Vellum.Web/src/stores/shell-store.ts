@@ -1,5 +1,8 @@
 import { create } from 'zustand'
 import type { ImpactCertainty } from '@/lib/import-api'
+import { AREAS, areaOf, type Area, type Flyout } from '@/lib/areas'
+
+export type { Area, Flyout }
 
 /** One step of an affected flow, drawn on the canvas from where it starts to what it reaches. */
 export interface HighlightStep {
@@ -23,7 +26,8 @@ export interface CanvasHighlight {
   steps?: HighlightStep[]
 }
 
-export type Flyout = 'files' | 'create' | 'catalog' | 'contracts' | 'scenarios' | 'import' | 'assistant' | 'promises' | 'review' | 'build' | 'stress' | 'costs' | 'comments' | 'search'
+/** The tabs of the bell panel: the inbox of the person, and the comment threads of the open project. */
+export type InboxTab = 'inbox' | 'comments'
 
 const SIDEBAR_COLLAPSED_KEY = 'vellum-sidebar-collapsed'
 
@@ -37,6 +41,11 @@ function readSidebarCollapsed(): boolean {
 
 interface ShellState {
   activeFlyout: Flyout | null
+  /** The tool that each area showed last. The area opens on it again. */
+  areaTools: Partial<Record<Area, Flyout>>
+  /** True while the bell panel is open. */
+  inboxOpen: boolean
+  inboxTab: InboxTab
   /** True when the project tools sidebar shows icons only. It lasts across page loads; reset keeps it. */
   sidebarCollapsed: boolean
   detailPanelOpen: boolean
@@ -55,6 +64,12 @@ interface ShellState {
   focusThreadId: string | null
 
   openFlyout: (flyout: Flyout) => void
+  /** Opens the area on the tool it showed last, or closes it when it is open. */
+  toggleArea: (area: Area) => void
+  setInboxOpen: (open: boolean) => void
+  setInboxTab: (tab: InboxTab) => void
+  /** Opens the bell panel on the comment threads of the open project. */
+  openComments: () => void
   setSidebarCollapsed: (collapsed: boolean) => void
   closeFlyout: () => void
   toggleFlyout: (flyout: Flyout) => void
@@ -73,13 +88,22 @@ interface ShellState {
   /** Opens Review on its Decisions tab with the form of a new decision. */
   startDecision: () => void
   clearDecisionRequest: () => void
-  /** Brings a thread into view: in the detail panel of its target, or in the Comments flyout. */
+  /** Brings a thread into view: in the detail panel of its target, or in the Comments tab of the bell panel. */
   focusThread: (threadId: string | null) => void
   reset: () => void
 }
 
+/** The state change that opens a tool, and remembers it as the last tool of its area. */
+function opened(state: { areaTools: Partial<Record<Area, Flyout>> }, flyout: Flyout) {
+  const area = areaOf(flyout)
+  return { activeFlyout: flyout, areaTools: area ? { ...state.areaTools, [area]: flyout } : state.areaTools }
+}
+
 export const useShellStore = create<ShellState>((set) => ({
   activeFlyout: null,
+  areaTools: {},
+  inboxOpen: false,
+  inboxTab: 'inbox',
   sidebarCollapsed: readSidebarCollapsed(),
   detailPanelOpen: false,
   selectedElementId: null,
@@ -93,7 +117,16 @@ export const useShellStore = create<ShellState>((set) => ({
   newDecisionRequested: false,
   focusThreadId: null,
 
-  openFlyout: (flyout) => set({ activeFlyout: flyout }),
+  openFlyout: (flyout) => set((state) => opened(state, flyout)),
+  toggleArea: (area) =>
+    set((state) => {
+      if (state.activeFlyout && areaOf(state.activeFlyout) === area) return { activeFlyout: null }
+      const tool = state.areaTools[area] ?? AREAS.find((a) => a.id === area)!.tools[0].flyout
+      return opened(state, tool)
+    }),
+  setInboxOpen: (open) => set({ inboxOpen: open }),
+  setInboxTab: (tab) => set({ inboxTab: tab }),
+  openComments: () => set({ inboxOpen: true, inboxTab: 'comments' }),
   setSidebarCollapsed: (collapsed) => {
     set({ sidebarCollapsed: collapsed })
     try {
@@ -104,9 +137,7 @@ export const useShellStore = create<ShellState>((set) => ({
   },
   closeFlyout: () => set({ activeFlyout: null }),
   toggleFlyout: (flyout) =>
-    set((state) => ({
-      activeFlyout: state.activeFlyout === flyout ? null : flyout,
-    })),
+    set((state) => (state.activeFlyout === flyout ? { activeFlyout: null } : opened(state, flyout))),
 
   selectElement: (id) =>
     set({
@@ -147,13 +178,16 @@ export const useShellStore = create<ShellState>((set) => ({
   // The canvas shows the highlight: not a doc, and with no flyout over it.
   showOnCanvas: (highlight) => set({ canvasHighlight: highlight, activeDocId: null, activeFlyout: null }),
   clearCanvasHighlight: () => set({ canvasHighlight: null }),
-  startDecision: () => set({ activeFlyout: 'review', newDecisionRequested: true }),
+  startDecision: () => set((state) => ({ ...opened(state, 'review'), newDecisionRequested: true })),
   clearDecisionRequest: () => set({ newDecisionRequested: false }),
   focusThread: (threadId) => set({ focusThreadId: threadId }),
 
   reset: () =>
     set({
       activeFlyout: null,
+      areaTools: {},
+      inboxOpen: false,
+      inboxTab: 'inbox',
       detailPanelOpen: false,
       selectedElementId: null,
       selectedRelationshipId: null,

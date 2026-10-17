@@ -1,47 +1,45 @@
 import { type ReactNode, useEffect, useRef, useSyncExternalStore } from 'react'
-import { useShellStore, type Flyout } from '@/stores/shell-store'
-import { FileText, Plus, LayoutGrid, Search, Cable, Route, GitPullRequestArrow, Sparkles, ShieldCheck, PackageOpen, Gauge, Coins, ClipboardCheck, MessageSquare, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
+import { useShellStore, type Area } from '@/stores/shell-store'
+import { Boxes, Route, ShieldCheck, PackageOpen, GitPullRequestArrow, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
+import { areaOf, isToolVisible, visibleAreas, type AreaAccess } from '@/lib/areas'
 import { cn } from '@/lib/utils'
 
 interface LeftToolbarProps {
+  /** What the person sees: Check and Ship wait for the first element, Share links for an Editor. */
+  access: AreaAccess
   children?: ReactNode
 }
 
-const toolbarItems: { flyout: Flyout; label: string; icon: typeof FileText; shortcut?: string }[] = [
-  { flyout: 'files', label: 'Project files', icon: FileText },
-  { flyout: 'create', label: 'Create new', icon: Plus },
-  { flyout: 'catalog', label: 'Element catalog', icon: LayoutGrid },
-  { flyout: 'contracts', label: 'Contracts', icon: Cable },
-  { flyout: 'scenarios', label: 'Scenarios', icon: Route },
-  { flyout: 'import', label: 'Import', icon: GitPullRequestArrow },
-  { flyout: 'assistant', label: 'Assistant', icon: Sparkles },
-  { flyout: 'promises', label: 'Promises', icon: ShieldCheck },
-  { flyout: 'review', label: 'Review', icon: ClipboardCheck },
-  { flyout: 'comments', label: 'Comments', icon: MessageSquare },
-  { flyout: 'build', label: 'Build', icon: PackageOpen },
-  { flyout: 'stress', label: 'Stress', icon: Gauge },
-  { flyout: 'costs', label: 'Costs', icon: Coins },
-  { flyout: 'search', label: 'Search', icon: Search, shortcut: '⌘K' },
-]
+const AREA_ICONS: Record<Area, typeof Boxes> = {
+  model: Boxes,
+  flows: Route,
+  check: ShieldCheck,
+  ship: PackageOpen,
+  sources: GitPullRequestArrow,
+}
 
-const FLYOUT_PANEL_ID = 'left-toolbar-flyout'
+const AREA_WIDTHS: Record<Area, string> = {
+  model: 'w-[280px]',
+  flows: 'w-[280px]',
+  check: 'w-[420px]',
+  ship: 'w-[340px]',
+  sources: 'w-[280px]',
+}
+
+/** The canvas button that opens the assistant. Focus goes back to it when the assistant closes. */
+export const ASSISTANT_TRIGGER_ID = 'canvas-assistant-button'
+
+export const FLYOUT_PANEL_ID = 'left-toolbar-flyout'
 
 // The tooltip names the item when the sidebar shows icons only. The expanded sidebar shows
-// the label and the shortcut itself.
-function ToolTip({ label, shortcut, show, children }: { label: string; shortcut?: string; show: boolean; children: ReactNode }) {
+// the label itself.
+function ToolTip({ label, show, children }: { label: string; show: boolean; children: ReactNode }) {
   if (!show) return children
   return (
     <Tooltip>
       <TooltipTrigger asChild>{children}</TooltipTrigger>
-      <TooltipContent side="right" sideOffset={8}>
-        {label}
-        {shortcut && (
-          <kbd data-slot="kbd" className="rounded bg-background/20 px-1 py-0.5 font-mono text-[10px]">
-            {shortcut}
-          </kbd>
-        )}
-      </TooltipContent>
+      <TooltipContent side="right" sideOffset={8}>{label}</TooltipContent>
     </Tooltip>
   )
 }
@@ -59,12 +57,21 @@ const isNarrow = () => typeof window.matchMedia === 'function' && window.matchMe
 
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
 
-export function LeftToolbar({ children }: LeftToolbarProps) {
-  const { activeFlyout, toggleFlyout, closeFlyout, sidebarCollapsed, setSidebarCollapsed } = useShellStore()
+export function LeftToolbar({ access, children }: LeftToolbarProps) {
+  const { activeFlyout, openFlyout, toggleArea, closeFlyout, sidebarCollapsed, setSidebarCollapsed } = useShellStore()
   const narrow = useSyncExternalStore(subscribeNarrow, isNarrow)
   const collapsed = sidebarCollapsed || narrow
   const panel = useRef<HTMLDivElement>(null)
-  const buttons = useRef(new Map<Flyout, HTMLButtonElement>())
+  const buttons = useRef(new Map<Area, HTMLButtonElement>())
+  const areas = visibleAreas(access)
+  const activeArea = activeFlyout ? areaOf(activeFlyout) : null
+  const activeAreaDef = areas.find((a) => a.id === activeArea)
+  const toolVisible = activeFlyout === null || isToolVisible(activeFlyout, access)
+
+  // A tool whose area is hidden closes: the last element was deleted, or another model shows.
+  useEffect(() => {
+    if (!toolVisible) closeFlyout()
+  }, [toolVisible, closeFlyout])
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -95,11 +102,14 @@ export function LeftToolbar({ children }: LeftToolbarProps) {
       const active = document.activeElement
       const inFlyout = node !== null && (node.contains(active) || active === document.body || active === null)
       // The panel is still in the document here when another flyout replaces this one.
-      if (inFlyout && useShellStore.getState().activeFlyout === null) triggers.get(opened)?.focus({ preventScroll: true })
+      if (!inFlyout || useShellStore.getState().activeFlyout !== null) return
+      const area = areaOf(opened)
+      const trigger = area ? triggers.get(area) : document.getElementById(ASSISTANT_TRIGGER_ID)
+      trigger?.focus({ preventScroll: true })
     }
   }, [activeFlyout])
 
-  const activeLabel = toolbarItems.find((item) => item.flyout === activeFlyout)?.label
+  const activeLabel = activeFlyout === 'assistant' ? 'Assistant' : activeAreaDef?.label
 
   const Toggle = collapsed ? PanelLeftOpen : PanelLeftClose
 
@@ -113,36 +123,32 @@ export function LeftToolbar({ children }: LeftToolbarProps) {
             collapsed ? 'w-12 items-center' : 'w-48 px-2'
           )}
         >
-          {toolbarItems.map(({ flyout, label, icon: Icon, shortcut }) => (
-            <ToolTip key={flyout} label={label} shortcut={shortcut} show={collapsed}>
-              <button
-                ref={(node) => {
-                  if (node) buttons.current.set(flyout, node)
-                  else buttons.current.delete(flyout)
-                }}
-                type="button"
-                aria-label={label}
-                // The search button opens the command palette, which is a dialog of its own.
-                aria-expanded={flyout === 'search' ? undefined : activeFlyout === flyout}
-                aria-controls={activeFlyout === flyout ? FLYOUT_PANEL_ID : undefined}
-                aria-keyshortcuts={shortcut === '⌘K' ? 'Meta+K Control+K' : undefined}
-                className={cn(
-                  'flex h-9 flex-shrink-0 items-center rounded-md text-sm text-muted-foreground hover:bg-muted hover:text-foreground',
-                  collapsed ? 'w-9 justify-center' : 'w-full gap-2.5 px-2.5',
-                  activeFlyout === flyout && 'bg-accent text-accent-foreground'
-                )}
-                onClick={() => toggleFlyout(flyout)}
-              >
-                <Icon className="h-4 w-4 flex-shrink-0" aria-hidden="true" />
-                {!collapsed && <span className="min-w-0 truncate whitespace-nowrap">{label}</span>}
-                {!collapsed && shortcut && (
-                  <kbd className="ml-auto rounded border border-border bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
-                    {shortcut}
-                  </kbd>
-                )}
-              </button>
-            </ToolTip>
-          ))}
+          {areas.map(({ id, label }) => {
+            const Icon = AREA_ICONS[id]
+            return (
+              <ToolTip key={id} label={label} show={collapsed}>
+                <button
+                  ref={(node) => {
+                    if (node) buttons.current.set(id, node)
+                    else buttons.current.delete(id)
+                  }}
+                  type="button"
+                  aria-label={label}
+                  aria-expanded={activeArea === id}
+                  aria-controls={activeArea === id ? FLYOUT_PANEL_ID : undefined}
+                  className={cn(
+                    'flex h-9 flex-shrink-0 items-center rounded-md text-sm text-muted-foreground hover:bg-muted hover:text-foreground',
+                    collapsed ? 'w-9 justify-center' : 'w-full gap-2.5 px-2.5',
+                    activeArea === id && 'bg-accent text-accent-foreground'
+                  )}
+                  onClick={() => toggleArea(id)}
+                >
+                  <Icon className="h-4 w-4 flex-shrink-0" aria-hidden="true" />
+                  {!collapsed && <span className="min-w-0 truncate whitespace-nowrap">{label}</span>}
+                </button>
+              </ToolTip>
+            )
+          })}
           {!narrow && (
           <div className={cn('mt-auto flex border-t border-border pt-2', collapsed ? 'w-9 justify-center' : 'w-full justify-end')}>
             {/* The toggle shows an icon only in both states, so it always has its tooltip. */}
@@ -162,11 +168,11 @@ export function LeftToolbar({ children }: LeftToolbarProps) {
         </nav>
       </TooltipProvider>
 
-      {activeFlyout && (
+      {activeFlyout && toolVisible && (
         <>
           {/* The assistant explains what is selected on the canvas or in the trace, and the review shows
               the cited parts on the canvas, so both stay open while the canvas is used. */}
-          {activeFlyout !== 'assistant' && activeFlyout !== 'review' && activeFlyout !== 'comments' && (
+          {activeFlyout !== 'assistant' && activeFlyout !== 'review' && (
             <div
               data-testid="flyout-backdrop"
               className="fixed inset-0 z-10"
@@ -179,9 +185,29 @@ export function LeftToolbar({ children }: LeftToolbarProps) {
             role="region"
             aria-label={activeLabel ? `${activeLabel} panel` : undefined}
             tabIndex={-1}
-            className={cn('absolute left-full top-0 bottom-0 z-20 border-r border-border bg-card shadow-lg outline-none', activeFlyout === 'review' ? 'w-[420px]' : activeFlyout === 'comments' ? 'w-[340px]' : 'w-[280px]')}
+            className={cn('absolute left-full top-0 bottom-0 z-20 flex max-w-[calc(100vw-3rem)] flex-col border-r border-border bg-card shadow-lg outline-none', activeArea ? AREA_WIDTHS[activeArea] : 'w-[280px]')}
           >
-            {children}
+            {/* An area with more than one tool shows them as tabs. Each tab is the panel the tool had before. */}
+            {activeAreaDef && activeAreaDef.tools.length > 1 && (
+              <div role="tablist" aria-label={activeAreaDef.label} className="flex flex-shrink-0 gap-1 overflow-x-auto border-b border-border p-1.5">
+                {activeAreaDef.tools.map((tool) => (
+                  <button
+                    key={tool.flyout}
+                    type="button"
+                    role="tab"
+                    aria-selected={activeFlyout === tool.flyout}
+                    className={cn(
+                      'flex-shrink-0 rounded-md px-2 py-1 text-xs whitespace-nowrap text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-primary',
+                      activeFlyout === tool.flyout && 'bg-muted font-medium text-foreground'
+                    )}
+                    onClick={() => openFlyout(tool.flyout)}
+                  >
+                    {tool.label}
+                  </button>
+                ))}
+              </div>
+            )}
+            <div className="min-h-0 flex-1">{children}</div>
           </div>
         </>
       )}

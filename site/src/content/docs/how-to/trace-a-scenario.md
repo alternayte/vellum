@@ -11,7 +11,7 @@ A trace replays what you declared. It does not call or observe your system. See 
 
 A scenario can reference only contracts that exist in the model. A contract names elements, so add the elements first. See [Model a system](/how-to/model-a-system/).
 
-1. Open **Contracts** in the left toolbar.
+1. Open **Model** in the sidebar, then the **Contracts** tab.
 2. In **Operations**, select **Add** for each call a service accepts. Give **Name**, **Offered by**, **Transport**, **Timeout (ms)**, **Attempts** and **Backoff (ms)**. Select **Add operation**.
 3. In **Channels**, select **Add** for each topic, queue or exchange. Give **Name** and **Kind**. Select **Add channel**.
 4. In **Subscriptions**, select **Add** for each consumer of a channel. Give **Channel**, **Consumer**, **Attempts** and **Backoff (ms)**.
@@ -32,7 +32,7 @@ Vellum refuses to remove an element, a channel or a schema that a contract uses.
 
 The scenario editor builds the scenario from the parts of the model. You select each part by its name. You do not type an ID.
 
-1. Open **Scenarios** in the left toolbar.
+1. Open **Flows** in the sidebar.
 2. Select **New**.
 3. Give the scenario a name in **Name**.
 4. Below **Steps**, select the type of the first step. The first step is the trigger of the scenario. The editor marks it **Trigger**.

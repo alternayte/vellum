@@ -3,7 +3,7 @@ import type { Flyout } from '@/stores/shell-store'
 import { useDraftStore } from '@/stores/draft-store'
 
 /** The note at the top of a tool panel that says which model the panel reads. */
-export function ScopeNote({ flyout }: { flyout: Flyout | null }) {
+export function ScopeNote({ flyout }: { flyout: Flyout | 'comments' | null }) {
   const selection = useDraftStore((s) => s.selection)
   const note = scopeNote(flyout, selection)
   if (!note) return null

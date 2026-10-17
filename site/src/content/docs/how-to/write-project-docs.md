@@ -9,7 +9,7 @@ A document is text that people read. It is not the model. Vellum does not read a
 
 ## Create a document
 
-1. Select **Create new** in the left toolbar.
+1. Select **Model** in the sidebar, then the **Create** tab.
 2. Select **New Doc**.
 3. Select **Blank**, or a template: **PRD** or **SDD**.
 4. Enter a **Document title**.
@@ -19,11 +19,11 @@ Vellum opens the document in the editor. A template gives the document its first
 
 To write a document about one element, select the element on the canvas. In the detail panel, below **Docs**, select **New doc for this element**, enter a **Title** and select **Create**. The document is attached to the element.
 
-A document cannot be an ADR. An ADR is a decision of the review: select **New Decision (ADR)** in **Create new**, or see [Record a decision](/how-to/record-a-decision/). The API refuses a document of type `adr` with `400`. When Vellum upgrades its database, a document of type `adr` gets the type `note`. Its title and text stay.
+A document cannot be an ADR. An ADR is a decision of the review: select **New Decision (ADR)** on the **Create** tab of **Model**, or see [Record a decision](/how-to/record-a-decision/). The API refuses a document of type `adr` with `400`. When Vellum upgrades its database, a document of type `adr` gets the type `note`. Its title and text stay.
 
 ## Open a document
 
-1. Select **Project files** in the left toolbar.
+1. Select **Model** in the sidebar, then the **Files** tab.
 2. Enter part of the title to filter the list. This step is optional.
 3. Select the document.
 
@@ -35,7 +35,7 @@ The detail panel of an element lists below **Docs** the documents that are attac
 
 You need the editor role.
 
-1. Select **Project files** in the left toolbar.
+1. Select **Model** in the sidebar, then the **Files** tab.
 2. Point to the document and select its **⋯** button. The same menu is at the right of the title in the open document.
 3. Select an action.
 
@@ -52,7 +52,7 @@ To move a document into a space, you can also drag it onto the space. Drag it on
 
 A space is a folder of documents. A space holds no other space. You need the editor role.
 
-1. Select **Project files** in the left toolbar.
+1. Select **Model** in the sidebar, then the **Files** tab.
 2. Select **New space**, enter a **Name** and select **Create**.
 3. To rename or delete a space, point to it and select its **⋯** button, then **Rename** or **Delete…**.
 

@@ -9,11 +9,11 @@ A decision gets a number such as `ADR-0001`. Vellum issues a number once in a pr
 
 ## Write a decision
 
-1. Open the project and select **Review** in the left toolbar.
+1. Open the project and select **Check** in the sidebar, then the **Review** tab.
 2. Select the **Decisions** tab.
 3. Select **New**.
 
-   You can also select **Create new** in the left toolbar, then **New Decision (ADR)**. Vellum opens the same form.
+   You can also select **Model** in the sidebar, then the **Create** tab, then **New Decision (ADR)**. Vellum opens the same form.
 4. Type the title and the decision. Both are required.
 5. Type the context and the consequences.
 6. Below **Alternatives that were not chosen**, select **Add** for each alternative, and say why not.

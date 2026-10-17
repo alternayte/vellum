@@ -11,7 +11,7 @@ The assistant proposes. It never changes the model or a scenario by itself.
 
 ## Ask for a flow
 
-1. Open the project and select **Assistant** in the left toolbar.
+1. Open the project and select **Ask the assistant** at the bottom of the canvas. You can also press `Ctrl+K` or `Cmd+K` and select **Ask the assistant**.
 2. Select **Flow**.
 3. Describe the behaviour in plain words. For example: "A customer places an order. Orders saves it and publishes OrderCreated. Show what happens when Billing fails."
 4. Select **Propose a flow**.
@@ -60,7 +60,7 @@ The confidence is what the assistant claims. It is not a measurement.
 
 ## Find a proposal again
 
-Select **Review** in the left toolbar, then the **Assistant** tab.
+Select **Check** in the sidebar, then the **Review** tab, then the **Assistant** tab.
 
 - **Your proposals** lists the flows and additions that the assistant made for you and that nobody decided. Select one to open it and decide. Select the bin to discard it. A discarded proposal is deleted.
 - **History** lists every decided proposal of the project: the decision, who decided and when. Select one to read it.

@@ -19,7 +19,7 @@ The New Relic Source is tested against sample NerdGraph responses, not against a
 ## Add the Source
 
 1. Open the project.
-2. Select **Import from GitHub** in the left toolbar.
+2. Select **Sources** in the sidebar.
 3. Under **Sources**, select **Add runtime Source**.
 4. Select **New Relic**.
 5. Type the **Account ID**, select the **Region** and type the **User API key**. The **Name** is optional.

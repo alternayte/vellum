@@ -107,7 +107,7 @@ export function ImportFlyout({ projectId, owners, labels = {} }: {
   return (
     <div className="flex h-full flex-col">
       <div className="border-b border-border px-3 py-2">
-        <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Import</span>
+        <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Sources</span>
       </div>
 
       <form onSubmit={submit} className="space-y-2 border-b border-border p-3" aria-labelledby="scan-github">

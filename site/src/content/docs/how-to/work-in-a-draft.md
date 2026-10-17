@@ -34,22 +34,23 @@ Change the model as you do on main. Each change goes to the draft while the mode
 
 These parts of the workbench follow the draft:
 
-- The canvas, the detail panel and **Element catalog**.
+- The canvas, the detail panel and **Catalog**.
 - **Contracts**.
 - **Costs**. The panel opens on the cost sheet of the draft.
 - **Review**. The findings are the findings of the draft.
-- **Scenarios** and **Stress**. A run uses the model of the draft.
+- **Flows** and **Stress**. A run uses the model of the draft.
 - **Assistant**.
 
 These parts do not follow the draft. Each of them says so in a note at the top of its panel.
 
 | Panel | What it shows |
 |---|---|
-| **Project files** | Views and documents belong to the project. The model document is the document of main. |
-| **Create new** | A diagram and a document belong to the project. |
-| **Import** | An import reads main and its proposals change main. |
+| **Files** | Views and documents belong to the project. The model document is the document of main. |
+| **Create** | A diagram and a document belong to the project. |
+| **Sources** | An import reads main and its proposals change main. |
 | **Promises** | Promises belong to the project. A check that you run in the panel plays on main. |
 | **Build** | The build export and Build Ready read main. |
+| **Share links** | A share link shows main or a named revision, never a draft or a variant. |
 
 To go back to main, select the model switcher, then **main**.
 

@@ -15,7 +15,7 @@ The facts from these files have the truth label `declared`. A person wrote them 
 ## Upload one file
 
 1. Open the project.
-2. Select **Import** in the left toolbar.
+2. Select **Sources** in the sidebar.
 3. Under **Upload a model file**, select **File** and choose the file.
 4. Check **Path in the Source**. The default is the file name.
 5. Select **Upload and read**.

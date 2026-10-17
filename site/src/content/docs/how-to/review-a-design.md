@@ -11,7 +11,7 @@ A finding says what the declared model shows. It is not evidence about a running
 
 ## Read the findings
 
-1. Open the project and select **Review** in the left toolbar.
+1. Open the project and select **Check** in the sidebar, then the **Review** tab.
 2. Read the summary. It says how many findings block Build Ready.
 3. Read the list. The list shows concerns and unknowns first.
 

@@ -21,7 +21,7 @@ You need the Editor role to add a target, to generate a script and to import a r
 
 A target is the base URL of a deployed system.
 
-1. Open **Stress** in the left toolbar.
+1. Open **Check** in the sidebar, then the **Stress** tab.
 2. Select **Measure**.
 3. Select **Add** under **Targets**.
 4. Give the target a name.

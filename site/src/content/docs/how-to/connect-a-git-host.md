@@ -85,7 +85,7 @@ In the section of the host, select **Test connection**. Save your changes first.
 
 ## Add a Source and scan it
 
-1. Open the project and select **Import from GitHub** in the left toolbar.
+1. Open the project and select **Sources** in the sidebar.
 2. Under **Sources**, select **Add Source**.
 3. Select **GitLab**, **Bitbucket** or **Azure DevOps**. A host with no usable address shows **Not available** and the reason.
 4. In **Repository**, give the repository in the form of the host, or the address of its page.

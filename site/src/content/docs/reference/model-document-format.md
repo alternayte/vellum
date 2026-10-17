@@ -8,7 +8,7 @@ A model document holds the model of one project: the elements, the relationships
 ## Export and import in the app
 
 1. Open the project.
-2. Select **Project files** in the left toolbar.
+2. Select **Model** in the sidebar, then the **Files** tab.
 3. Below **Model document**, select **Export JSON** or **Export YAML**. The browser saves the file.
 
 To import, you need the editor role.

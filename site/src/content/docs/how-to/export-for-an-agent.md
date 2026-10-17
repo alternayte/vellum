@@ -19,7 +19,7 @@ In a bundle, an approved promise is in `promises/`. A promise that is not approv
 
 ## Export in the app
 
-1. Open **Build** in the left toolbar.
+1. Open **Ship** in the sidebar, then the **Build** tab.
 2. Read **Blockers**. A blocker is an open point, such as a promise that is not approved or a fact that is inferred. The list shows only when a blocker is open.
 3. Select **SDD.md** or **Bundle**.
 
@@ -31,7 +31,7 @@ The app exports the main model at its version now. To export a named revision or
 
 A brief holds only the part of the model that one change needs.
 
-1. Open **Build** in the left toolbar.
+1. Open **Ship** in the sidebar, then the **Build** tab.
 2. Below **Brief for an agent**, select the scope.
    - **A promise**: the brief holds the promise, what it links and its checks.
    - **A change**: the brief holds what the impact of one scan names, and the impact report of that scan.

@@ -1,19 +1,32 @@
-import { useRef, useState } from 'react'
+import { useRef } from 'react'
 import { useNavigate } from '@tanstack/react-router'
 import { Bell } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { useInbox, useInboxActions, type InboxItem } from '@/hooks/use-threads'
+import { useShellStore, type InboxTab } from '@/stores/shell-store'
+import { ScopeNote } from '@/components/branch/scope-note'
 import { cn } from '@/lib/utils'
+import { CommentsFlyout } from './comments-flyout'
 
 const when = (iso: string) =>
   new Date(iso).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 
+const TABS: { id: InboxTab; label: string }[] = [
+  { id: 'inbox', label: 'Inbox' },
+  { id: 'comments', label: 'Comments' },
+]
+
 /**
- * The inbox of the signed-in person: mentions of them, and replies on threads they started
- * or replied to, across their workspaces. An entry opens its thread in its project.
+ * The bell panel. Its Inbox tab lists the mentions of the signed-in person and the replies on
+ * threads they started or replied to, across their workspaces; an entry opens its thread in
+ * its project. In a project, its Comments tab lists every comment thread of the model shown.
  */
-export function InboxButton() {
-  const [open, setOpen] = useState(false)
+export function InboxButton({ project }: { project?: { id: string; name: string } }) {
+  const open = useShellStore((s) => s.inboxOpen)
+  const setOpen = useShellStore((s) => s.setInboxOpen)
+  const chosenTab = useShellStore((s) => s.inboxTab)
+  const setTab = useShellStore((s) => s.setInboxTab)
+  const tab: InboxTab = project ? chosenTab : 'inbox'
   const opened = useRef(false)
   const { data, error } = useInbox()
   const { markRead, markAllRead } = useInboxActions()
@@ -31,13 +44,19 @@ export function InboxButton() {
     })
   }
 
+  // A thread's target opens on the canvas or as its document. The focus stays there.
+  const showTarget = () => {
+    opened.current = true
+    setOpen(false)
+  }
+
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button
           type="button"
-          aria-label={unread > 0 ? `Inbox, ${unread} unread` : 'Inbox'}
-          title="Inbox"
+          aria-label={`${project ? 'Inbox and comments' : 'Inbox'}${unread > 0 ? `, ${unread} unread` : ''}`}
+          title={project ? 'Inbox and comments' : 'Inbox'}
           className="relative flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-primary"
         >
           <Bell className="h-4 w-4" aria-hidden="true" />
@@ -50,7 +69,7 @@ export function InboxButton() {
       </PopoverTrigger>
       <PopoverContent
         align="end"
-        className="w-80 gap-0 p-0"
+        className={cn('gap-0 p-0', project ? 'flex w-[min(380px,calc(100vw-1rem))] flex-col' : 'w-80')}
         // After an entry opens a thread, focus stays where the thread opened. Focus that went
         // back to the bell would leave the detail panel, which then closes.
         onCloseAutoFocus={(e) => {
@@ -58,51 +77,82 @@ export function InboxButton() {
           opened.current = false
         }}
       >
-        <div className="flex items-center justify-between border-b border-border px-3 py-2">
-          <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Inbox</span>
-          <button
-            type="button"
-            className="text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-50"
-            disabled={unread === 0 || markAllRead.isPending}
-            onClick={() => markAllRead.mutate()}
-          >
-            Mark all read
-          </button>
-        </div>
-        {error ? (
-          <p role="alert" className="px-3 py-3 text-xs text-destructive">{error.message}</p>
-        ) : !data?.items.length ? (
-          <p className="px-3 py-3 text-xs leading-relaxed text-muted-foreground">
-            Nothing here yet. A mention of you, and a reply on a thread you started or replied to, show here.
-          </p>
-        ) : (
-          <ul className="max-h-96 divide-y divide-border overflow-y-auto">
-            {data.items.map((item) => (
-              <li key={item.id}>
-                <button
-                  type="button"
-                  onClick={() => openItem(item)}
-                  className={cn('flex w-full gap-2 px-3 py-2 text-left text-xs hover:bg-muted focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary', !item.readAt && 'bg-primary/5')}
-                >
-                  <span aria-hidden="true" className={cn('mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full', item.readAt ? 'bg-transparent' : 'bg-primary')} />
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-foreground">
-                      <span className="font-medium">{item.authorName ?? 'Someone'}</span>
-                      {item.reason === 'mention' ? ' mentioned you on ' : ' replied on '}
-                      <span className="font-medium">{item.target.name}</span>
-                      {!item.readAt && <span className="sr-only"> (unread)</span>}
-                    </span>
-                    <span className="block truncate text-[11px] text-muted-foreground">
-                      {item.projectName}{item.draftId ? ' · draft' : ''} · {when(item.createdAt)}
-                    </span>
-                    <span className="mt-0.5 line-clamp-2 block text-muted-foreground">
-                      {item.excerpt ?? <em>Comment deleted.</em>}
-                    </span>
-                  </span>
-                </button>
-              </li>
+        {project && (
+          <div role="tablist" aria-label="Bell panel" className="flex gap-1 border-b border-border p-1.5">
+            {TABS.map((t) => (
+              <button
+                key={t.id}
+                type="button"
+                role="tab"
+                aria-selected={tab === t.id}
+                onClick={() => setTab(t.id)}
+                className={cn(
+                  'rounded-md px-2 py-1 text-xs text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-primary',
+                  tab === t.id && 'bg-muted font-medium text-foreground',
+                )}
+              >
+                {t.label}
+                {t.id === 'inbox' && unread > 0 && <span className="ml-1 tabular-nums opacity-70">{unread}</span>}
+              </button>
             ))}
-          </ul>
+          </div>
+        )}
+        {tab === 'comments' && project ? (
+          <div className="flex h-[min(560px,70dvh)] flex-col">
+            <ScopeNote flyout="comments" />
+            <div className="min-h-0 flex-1">
+              <CommentsFlyout projectId={project.id} projectName={project.name} onShowTarget={showTarget} />
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className="flex items-center justify-between border-b border-border px-3 py-2">
+              <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Inbox</span>
+              <button
+                type="button"
+                className="text-[11px] text-muted-foreground hover:text-foreground disabled:opacity-50"
+                disabled={unread === 0 || markAllRead.isPending}
+                onClick={() => markAllRead.mutate()}
+              >
+                Mark all read
+              </button>
+            </div>
+            {error ? (
+              <p role="alert" className="px-3 py-3 text-xs text-destructive">{error.message}</p>
+            ) : !data?.items.length ? (
+              <p className="px-3 py-3 text-xs leading-relaxed text-muted-foreground">
+                Nothing here yet. A mention of you, and a reply on a thread you started or replied to, show here.
+              </p>
+            ) : (
+              <ul className="max-h-96 divide-y divide-border overflow-y-auto">
+                {data.items.map((item) => (
+                  <li key={item.id}>
+                    <button
+                      type="button"
+                      onClick={() => openItem(item)}
+                      className={cn('flex w-full gap-2 px-3 py-2 text-left text-xs hover:bg-muted focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary', !item.readAt && 'bg-primary/5')}
+                    >
+                      <span aria-hidden="true" className={cn('mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full', item.readAt ? 'bg-transparent' : 'bg-primary')} />
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-foreground">
+                          <span className="font-medium">{item.authorName ?? 'Someone'}</span>
+                          {item.reason === 'mention' ? ' mentioned you on ' : ' replied on '}
+                          <span className="font-medium">{item.target.name}</span>
+                          {!item.readAt && <span className="sr-only"> (unread)</span>}
+                        </span>
+                        <span className="block truncate text-[11px] text-muted-foreground">
+                          {item.projectName}{item.draftId ? ' · draft' : ''} · {when(item.createdAt)}
+                        </span>
+                        <span className="mt-0.5 line-clamp-2 block text-muted-foreground">
+                          {item.excerpt ?? <em>Comment deleted.</em>}
+                        </span>
+                      </span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </>
         )}
       </PopoverContent>
     </Popover>

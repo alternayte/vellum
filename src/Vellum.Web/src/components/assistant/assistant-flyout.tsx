@@ -120,7 +120,7 @@ export function AssistantFlyout({ projectId, branchId, labels, playingScenarioId
               {mode === 'flow'
                 ? 'The answer is a proposal that uses only parts of your model. You review it before anything is saved.'
                 : 'The answer lists additions. You select which ones to add. Each is labelled inferred.'}
-              {' '}A proposal you close without a decision stays under Review, Assistant, Your proposals.
+              {' '}A proposal you close without a decision stays under Check, Review, Assistant, Your proposals.
             </p>
           </form>
         )}

@@ -23,7 +23,9 @@ import { BuildFlyout } from '@/components/build/build-flyout'
 import { StressFlyout } from '@/components/stress/stress-flyout'
 import { CostsFlyout } from '@/components/costs/costs-flyout'
 import { ReviewFlyout } from '@/components/design-review/review-flyout'
-import { CommentsFlyout } from '@/components/comments/comments-flyout'
+import { ShareLinksPanel } from '@/components/share/share-dialog'
+import { AssistantCanvasButton } from '@/components/assistant/assistant-canvas-button'
+import type { AreaAccess } from '@/lib/areas'
 import { openThreadMarkers, useThreads } from '@/hooks/use-threads'
 import { useRunScenario, useScenarios } from '@/hooks/use-scenarios'
 import { useTraceStore } from '@/stores/trace-store'
@@ -635,13 +637,9 @@ function ProjectWorkspace() {
   }, [elements, relationships, handleShortcutCreate, handleSmartDuplicate, readOnly])
 
   const activeFlyout = useShellStore((s) => s.activeFlyout)
-
-  useEffect(() => {
-    if (activeFlyout === 'search') {
-      useShellStore.getState().closeFlyout()
-      useShellStore.getState().toggleCommandPalette()
-    }
-  }, [activeFlyout])
+  const canShare = project?.yourRole === 'Editor' || project?.yourRole === 'Owner'
+  const hasElements = (elements?.length ?? 0) > 0
+  const access = useMemo<AreaAccess>(() => ({ hasElements, canShare }), [hasElements, canShare])
 
   if (modelLoading) {
     return (
@@ -668,7 +666,7 @@ function ProjectWorkspace() {
     <div className="flex h-screen flex-col">
       <TopBar projectId={projectId} projectName={projectName} project={project} activeDoc={activeDocForBreadcrumb} />
       <div className="flex flex-1 overflow-hidden">
-        <LeftToolbar>
+        <LeftToolbar access={access}>
           <div className="flex h-full flex-col">
           {/* Says which model the open panel reads when the workbench shows another model than main. */}
           <ScopeNote flyout={activeFlyout} />
@@ -693,6 +691,7 @@ function ProjectWorkspace() {
           )}
           {activeFlyout === 'create' && (
             <CreateFlyout
+              decisions={hasElements}
               onCreateDiagram={handleCreateDiagram}
               onCreateDoc={handleCreateDoc}
               onAddElement={() => handleOpenCreateDialog()}
@@ -710,6 +709,7 @@ function ProjectWorkspace() {
             <ReviewFlyout projectId={projectId} branchId={contractBranchId} revision={openRevision} references={scenarioReferences} elementIds={reviewElementIds} owners={reviewOwners} />
           )}
           {activeFlyout === 'build' && <BuildFlyout projectId={projectId} elements={elements ?? []} selection={() => selectedNodeIdsRef.current} />}
+          {activeFlyout === 'share' && project && <ShareLinksPanel projectId={projectId} workspaceId={project.workspaceId} />}
           {activeFlyout === 'stress' && <StressFlyout projectId={projectId} branchId={contractBranchId} scenarios={scenarioList ?? []} />}
           {activeFlyout === 'costs' && <CostsFlyout projectId={projectId} branchId={contractBranchId} references={scenarioReferences} />}
           {activeFlyout === 'assistant' && (
@@ -721,8 +721,6 @@ function ProjectWorkspace() {
               onPlayScenario={(scenarioId) => runScenario.mutate(scenarioId, { onSuccess: (run) => useTraceStore.getState().load(run, scenarioId) })}
             />
           )}
-          {activeFlyout === 'comments' && <CommentsFlyout projectId={projectId} projectName={projectName} />}
-          {activeFlyout === 'search' && null /* ⌘K handles search for now */}
           </div>
           </div>
         </LeftToolbar>
@@ -781,6 +779,7 @@ function ProjectWorkspace() {
               onEdgeSidesChange={activeView ? handleEdgeSidesChange : undefined}
             />
           )}
+          {!activeDocId && <AssistantCanvasButton />}
         </main>
         <DetailPanel
           projectId={projectId}
@@ -808,6 +807,7 @@ function ProjectWorkspace() {
       )}
       <CommandPalette
         elements={elements ?? []}
+        access={access}
         onAddElement={() => handleOpenCreateDialog()}
         onTidy={handleTidy}
         onZoomToFit={() => fitViewRef.current?.()}
@@ -833,7 +833,7 @@ function ProjectWorkspace() {
 /**
  * Opens the thread that the address names (`?thread=`, from the inbox or a webhook link). It
  * selects the draft of the thread first. A thread on an element, a relationship or a message
- * opens in the panel of its target; any other thread opens in the Comments flyout. A thread
+ * opens in the panel of its target; any other thread opens in the Comments tab of the bell panel. A thread
  * that a merge moved to main is looked for there. The address loses the parameters after.
  */
 function useOpenLinkedThread(
@@ -899,7 +899,7 @@ function useOpenLinkedThread(
       else if (kind === 'relationship') shell.selectRelationship(id)
       else shell.selectMessage(id)
     } else {
-      shell.openFlyout('comments')
+      shell.openComments()
     }
     shell.focusThread(found.id)
     done()

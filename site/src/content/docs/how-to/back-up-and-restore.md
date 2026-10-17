@@ -17,7 +17,7 @@ The model document is not a backup of a project. It holds the elements, the rela
 ## Export and import in the app
 
 1. Open the project.
-2. Select **Project files** in the left toolbar.
+2. Select **Model** in the sidebar, then the **Files** tab.
 3. Below **Model document**, select **Export JSON** or **Export YAML**. The browser saves the file.
 4. To put a file back, select **Import a document…**. You need the editor role. Read the preview, then select the import. [Model document format](/reference/model-document-format/#export-and-import-in-the-app) describes the dialog.
 

@@ -8,6 +8,7 @@ const NOT_BRANCHED: Partial<Record<Flyout, string>> = {
   import: 'An import from GitHub reads main and its proposals change main only.',
   promises: 'Promises belong to the project. A check that you run here plays on main.',
   build: 'The build export and Build Ready read main only.',
+  share: 'A share link shows main or a named revision, never a draft or a variant.',
 }
 
 /** Panels that follow a draft or a variant, with the part of them that does not. */
@@ -19,10 +20,10 @@ const BRANCHED: Partial<Record<Flyout, (model: string) => string>> = {
 }
 
 /** What a panel shows when the workbench shows another model than main. Null when the panel follows the model with nothing to say. */
-export function scopeNote(flyout: Flyout | null, selection: ModelSelection): string | null {
+export function scopeNote(flyout: Flyout | 'comments' | null, selection: ModelSelection): string | null {
   if (!flyout || selection.kind === 'main') return null
   const model = selectionName(selection)
-  if (NOT_BRANCHED[flyout]) return `This panel does not follow ${model}. ${NOT_BRANCHED[flyout]}`
+  if (flyout !== 'comments' && NOT_BRANCHED[flyout]) return `This panel does not follow ${model}. ${NOT_BRANCHED[flyout]}`
   if (selection.kind === 'revision') {
     if (flyout === 'review') return `The findings are of ${model}. Decisions and open questions belong to the project. The assistant reads main.`
     if (flyout === 'contracts') return `The contracts are of ${model}. A revision is read-only.`

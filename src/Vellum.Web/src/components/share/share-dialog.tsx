@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Check, Copy, Share2 } from 'lucide-react'
+import { Check, Copy, Plus, Share2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -28,6 +28,53 @@ export function ShareButton({ projectId, workspaceId, role }: { projectId: strin
       </Button>
       {open && <ShareDialog projectId={projectId} workspaceId={workspaceId} onClose={() => setOpen(false)} />}
     </>
+  )
+}
+
+/**
+ * The Share links tab of Ship: the links of the project, with the dialog that creates one.
+ * Shown to Editors and Owners only, like the Share button.
+ */
+export function ShareLinksPanel({ projectId, workspaceId }: { projectId: string; workspaceId: string }) {
+  const queryClient = useQueryClient()
+  const key = ['projects', projectId, 'share-links']
+  const links = useQuery({ queryKey: key, queryFn: () => shareLinksApi.list(projectId) })
+  const settings = useQuery({
+    queryKey: ['workspaces', workspaceId, 'settings'],
+    queryFn: () => api<WorkspaceSettings>('GET', `/api/workspaces/${workspaceId}/settings`),
+  })
+  const personName = usePersonName(projectId)
+  const [open, setOpen] = useState(false)
+  const policy = settings.data?.effective.sharing.linkPolicy
+  const refresh = () => queryClient.invalidateQueries({ queryKey: key })
+
+  return (
+    <div className="flex h-full flex-col">
+      <div className="flex items-center justify-between border-b border-border px-3 py-2">
+        <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Share links</span>
+        <Button variant="ghost" size="sm" className="h-6 gap-1 px-1.5 text-xs" onClick={() => setOpen(true)}>
+          <Plus className="h-3 w-3" aria-hidden="true" />
+          New link
+        </Button>
+      </div>
+      <div className="flex-1 space-y-2 overflow-y-auto p-3">
+        <p className="text-xs leading-relaxed text-muted-foreground">
+          A share link shows the project or one view, read-only, to people without an account.
+        </p>
+        {policy === 'off' && <p role="status" className="rounded-md border border-border px-3 py-2 text-xs">The workspace link policy is off. An Owner can change it in the workspace settings. Existing links answer 404.</p>}
+        {links.isLoading && <p className="text-xs text-muted-foreground">Loading…</p>}
+        {links.isError && <p role="alert" className="text-xs text-destructive">{links.error.message}</p>}
+        {links.data?.length === 0 && <p className="text-xs text-muted-foreground">No link yet.</p>}
+        {(links.data?.length ?? 0) > 0 && (
+          <ul aria-label="Links of this project" className="divide-y divide-border rounded-md border border-border">
+            {links.data?.map((link) => (
+              <LinkRow key={link.id} projectId={projectId} link={link} createdBy={personName(link.createdBy)} onChanged={refresh} />
+            ))}
+          </ul>
+        )}
+      </div>
+      {open && <ShareDialog projectId={projectId} workspaceId={workspaceId} onClose={() => setOpen(false)} />}
+    </div>
   )
 }
 

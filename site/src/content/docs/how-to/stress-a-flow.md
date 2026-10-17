@@ -15,7 +15,7 @@ You need the Editor role to save a profile and to run it. A Viewer can read prof
 
 ## Create a profile
 
-1. Open **Stress** in the left toolbar. The **Simulate** tab shows the profiles.
+1. Open **Check** in the sidebar, then the **Stress** tab. The **Simulate** tab shows the profiles.
 2. Select **New**.
 3. Give the profile a name.
 4. Select the scenario.
