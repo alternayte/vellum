@@ -13,7 +13,12 @@ namespace Vellum.Modules.Import.Extraction;
 /// service: the directory of its Dockerfile, else its build context, is the directory of one
 /// Service fact's project file, else exactly one such directory is under the build context. A
 /// compose service with no build is the one code service whose directory is named like it. A
-/// broker is no element.</para>
+/// broker is no element. A compose service that runs only an image Vellum does not know
+/// (<see cref="ComposeService.ExternalImage"/>) and that is no code service is an external
+/// system: rule <c>compose.external-system</c> gives an <see cref="FactKind.Element"/> fact
+/// <c>external:compose:&lt;project&gt;:&lt;service&gt;</c> of kind <c>system</c> with the tag
+/// <c>external</c>, named like the service, with the image without registry and digest as its
+/// technology. Its evidence is the lines of the service.</para>
 /// <list type="bullet">
 /// <item><c>relationship.message-flow</c> — <c>relationship:message-flow:&lt;producer&gt;-&gt;&lt;consumer&gt;:&lt;message&gt;</c>,
 /// label <c>publishes &lt;message&gt;</c>, behavioural. A Publication fact names the producer and the
@@ -35,11 +40,11 @@ namespace Vellum.Modules.Import.Extraction;
 /// a note <c>data-access-store-not-resolved</c>.</item>
 /// <item><c>relationship.compose-depends-on</c> — <c>relationship:depends-on:&lt;from&gt;-&gt;&lt;to&gt;</c>,
 /// label <c>depends on</c>, structural, for each <c>depends_on</c> item between two compose
-/// services that are elements.</item>
+/// services that are elements, an external system among them.</item>
 /// <item><c>relationship.http-call</c> — <c>relationship:http-call:&lt;app&gt;-&gt;&lt;app&gt;</c>, label
 /// <c>calls</c>, behavioural, <c>truthLabel=inferred</c>. A variable of a compose service of an app,
 /// or the base address key of an HTTP client of the app (<c>dotnet.http-client-base-address</c>),
-/// whose name is the name of another compose service that is an app followed by an address
+/// whose name is the name of another compose service that is an app or an external system followed by an address
 /// word (<c>PAYMENTS_URL</c>, <c>Payments__BaseUrl</c>, <c>Services:Payments:Endpoint</c> for the
 /// service <c>payments</c>). A name is a hint and not proof: the confidence is
 /// <see cref="NameConfidence"/> for a compose variable and <see cref="ClientConfidence"/> for an
@@ -50,8 +55,10 @@ internal sealed class RelationshipExtractor : IExtractor
 {
     internal static readonly ExtractionRule MessageFlow = new("relationship.message-flow", 1);
     internal static readonly ExtractionRule DataAccess = new("relationship.data-access", 1);
-    internal static readonly ExtractionRule DependsOn = new("relationship.compose-depends-on", 1);
-    internal static readonly ExtractionRule HttpCall = new("relationship.http-call", 1);
+    internal static readonly ExtractionRule DependsOn = new("relationship.compose-depends-on", 2);
+    internal static readonly ExtractionRule HttpCall = new("relationship.http-call", 2);
+    internal static readonly ExtractionRule ExternalSystem = new("compose.external-system", 1);
+
 
     /// <summary>
     /// The first line of each fact a relationship rests on besides its own lines: the element at
@@ -85,7 +92,7 @@ internal sealed class RelationshipExtractor : IExtractor
     private static readonly HashSet<string> GroupWords = new(StringComparer.Ordinal) { "services", "service", "clients", "client" };
 
     public string Id => "relationship";
-    public IReadOnlyList<ExtractionRule> Rules => [MessageFlow, DataAccess, DependsOn, HttpCall, Basis];
+    public IReadOnlyList<ExtractionRule> Rules => [MessageFlow, DataAccess, DependsOn, HttpCall, Basis, ExternalSystem];
 
     /// <summary>True for a relationship that this extractor derived, as opposed to one a model file declares.</summary>
     public static bool IsDerived(ExtractedFact fact) =>
@@ -118,6 +125,18 @@ internal sealed class RelationshipExtractor : IExtractor
         foreach (var fact in facts)
             byKey.TryAdd(fact.Key, fact);
         var map = new ComposeMap(context.ComposeServices, facts, byKey);
+        if (map.Externals.Any())
+        {
+            foreach (var external in map.Externals)
+            {
+                if (context.Stopped)
+                    return;
+                AddExternalSystem(context, external);
+            }
+            // The map finds an external system by its fact: one the limits left out is no element.
+            foreach (var fact in context.CurrentFacts())
+                byKey.TryAdd(fact.Key, fact);
+        }
         var edges = new SortedDictionary<string, Edge>(StringComparer.Ordinal);
 
         MessageFlows(facts, byKey, edges);
@@ -152,6 +171,20 @@ internal sealed class RelationshipExtractor : IExtractor
                 ("variables", edge.Variables.Count > 0 ? string.Join(",", edge.Variables) : null),
             ]);
         }
+    }
+
+    private static void AddExternalSystem(ExtractionContext context, ComposeService service)
+    {
+        var image = service.ExternalImage!;
+        var evidence = Cite(ExternalSystem, service.Evidence).ToList();
+        if (!context.Meter(evidence[0].Path).Charge(FactCost))
+            return;
+        context.Add(FactKind.Element, ComposeMap.ExternalKey(service), service.Name, evidence,
+        [
+            ("elementKind", "system"), ("technology", ImageReference.Name(image)),
+            ("description", $"Runs the image {image} in Docker Compose. This repository does not build it."),
+            ("tags", ElementTags.External), ("image", image),
+        ]);
     }
 
     private static Edge EdgeOf(SortedDictionary<string, Edge> edges, string key, string from, string to, string label, string kind)
@@ -359,7 +392,7 @@ internal sealed class RelationshipExtractor : IExtractor
                 continue;
             foreach (var variable in compose.Environment)
             {
-                if (AppNamedBy(map, compose.Project, variable.Name) is { } to && to != from)
+                if (CalleeNamedBy(map, compose.Project, variable.Name) is { } to && to != from)
                     Add(from, to, variable.Name, NameConfidence, [HttpCall.At(variable.Path, variable.Line, variable.Line)]);
             }
         }
@@ -369,7 +402,7 @@ internal sealed class RelationshipExtractor : IExtractor
             if (client.Attributes.GetValueOrDefault("service") is not { } from || !byKey.TryGetValue(from, out var app) || app.Kind != FactKind.Service
                 || client.Attributes.GetValueOrDefault("baseAddressKey") is not { } key)
                 continue;
-            var targets = map.Projects.Select(project => AppNamedBy(map, project, key)).Where(t => t is not null && t != from).Distinct().ToList();
+            var targets = map.Projects.Select(project => CalleeNamedBy(map, project, key)).Where(t => t is not null && t != from).Distinct().ToList();
             if (targets.Count != 1)
                 continue;
             var evidence = Cite(HttpCall, client.Evidence).ToList();
@@ -384,11 +417,11 @@ internal sealed class RelationshipExtractor : IExtractor
     }
 
     /// <summary>
-    /// The app element of the compose service of <paramref name="project"/> that a variable or key
+    /// The app or external system of the compose service of <paramref name="project"/> that a variable or key
     /// names: the longest service name whose words begin the name (after a group word such as
     /// <c>Services</c>) and are followed only by an address word. Null when none or two fit.
     /// </summary>
-    private static string? AppNamedBy(ComposeMap map, string project, string name)
+    private static string? CalleeNamedBy(ComposeMap map, string project, string name)
     {
         var words = Words(name);
         if (words.Length > 0 && GroupWords.Contains(words[0]))
@@ -407,7 +440,7 @@ internal sealed class RelationshipExtractor : IExtractor
             if (own.Length > best)
             {
                 (best, tie) = (own.Length, false);
-                found = map.ElementOf(service) is { } element && map.IsApp(element) ? element : null;
+                found = map.ElementOf(service) is { } element && (map.IsApp(element) || map.IsExternal(element)) ? element : null;
             }
             else if (own.Length == best)
                 tie = true;
@@ -428,6 +461,8 @@ internal sealed class RelationshipExtractor : IExtractor
     /// <summary>Which element each compose service is.</summary>
     private sealed class ComposeMap
     {
+        private const string ExternalPrefix = "external:compose:";
+
         private readonly Dictionary<string, ExtractedFact> _byKey;
         private readonly List<(string Key, string Directory)> _apps = [];
         private readonly Dictionary<ComposeService, string?> _elements = [];
@@ -461,9 +496,20 @@ internal sealed class RelationshipExtractor : IExtractor
                 ? store
                 : null;
 
-        public string? ElementOf(ComposeService service) => _elements.GetValueOrDefault(service);
+        /// <summary>The element of the service. An external system is one only once its fact is added.</summary>
+        public string? ElementOf(ComposeService service) =>
+            _elements.GetValueOrDefault(service) is { } key && _byKey.ContainsKey(key) ? key : null;
+
+        /// <summary>The compose services that are external systems, in the order of the services.</summary>
+        public IEnumerable<ComposeService> Externals =>
+            Services.Where(s => _elements.GetValueOrDefault(s) is { } key && key.StartsWith(ExternalPrefix, StringComparison.Ordinal));
+
+        public static string ExternalKey(ComposeService service) => $"{ExternalPrefix}{service.Project}:{service.Name}";
 
         public bool IsApp(string key) => _byKey.TryGetValue(key, out var fact) && fact.Kind == FactKind.Service;
+
+        public bool IsExternal(string key) =>
+            key.StartsWith(ExternalPrefix, StringComparison.Ordinal) && _byKey.TryGetValue(key, out var fact) && fact.Kind == FactKind.Element;
 
         /// <summary>The compose services that build the app.</summary>
         public IEnumerable<ComposeService> ComposeOf(string app) => Services.Where(s => ElementOf(s) == app);
@@ -476,7 +522,11 @@ internal sealed class RelationshipExtractor : IExtractor
                 return null;
             var project = service.Project == "." ? "" : service.Project;
             if (!service.HasBuild)
-                return One(_apps.Where(a => (a.Directory.LastIndexOf('/') is var slash and >= 0 ? a.Directory[(slash + 1)..] : a.Directory) == service.Name));
+            {
+                var named = _apps.Where(a => (a.Directory.LastIndexOf('/') is var slash and >= 0 ? a.Directory[(slash + 1)..] : a.Directory) == service.Name).ToList();
+                // An image that no code service of the scan is named like is a system outside the repository.
+                return named.Count == 0 && service.ExternalImage is not null ? ExternalKey(service) : One(named);
+            }
             if (service.Build is null || Join(project, service.Build) is not { } context)
                 return null;
             if (service.Dockerfile is { } dockerfile && Join(context, dockerfile) is { } path

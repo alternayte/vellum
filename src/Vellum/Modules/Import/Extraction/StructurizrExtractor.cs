@@ -133,8 +133,11 @@ internal sealed class StructurizrExtractor : IExtractor
                 continue;
             if (ModelFileText.Line(context, file, element.StartLine, "name", element.Name) is null)
                 continue;
+            // Structurizr's External is the tag Vellum gives a system outside the repository.
             var tags = element.Tags
-                .Where(t => !DefaultTags.Contains(t) && !(kind == "store" && t.Equals("Database", StringComparison.OrdinalIgnoreCase)));
+                .Where(t => !DefaultTags.Contains(t) && !(kind == "store" && t.Equals("Database", StringComparison.OrdinalIgnoreCase)))
+                .Select(t => t.Equals(ElementTags.External, StringComparison.OrdinalIgnoreCase) ? ElementTags.External : t)
+                .Distinct(StringComparer.Ordinal);
             context.Add(FactKind.Element, element.Key, element.Name, rule.At(file.Path, element.StartLine, element.EndLine),
                 ("elementKind", kind), ("parent", element.Parent?.Key), ("structurizr.type", element.Type),
                 ("description", ModelFileText.Lines(context, file, element.StartLine, "description", element.Description)),

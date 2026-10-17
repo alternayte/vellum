@@ -202,6 +202,55 @@ public class RelationshipExtractorTests
     }
 
     [Fact]
+    public void A_service_that_runs_only_an_unknown_image_is_an_external_system_that_apps_call_and_depend_on()
+    {
+        var result = Repo.Extract(
+            ("docker-compose.yml", """
+                services:
+                  db:
+                    image: postgres:16
+                  proxy:
+                    image: nginx:1.27
+                  migrate:
+                    image: ghcr.io/acme/schema-tool:2
+                    command: ["apply"]
+                  orders:
+                    image: ghcr.io/acme/orders:3
+                  payments:
+                    image: ghcr.io/acme/payments:1.4@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+                    ports:
+                      - "9000:8080"
+                  api:
+                    build: ./api
+                    environment:
+                      - PAYMENTS_URL=http://payments:8080
+                    depends_on:
+                      - payments
+                      - db
+                """),
+            ("api/go.mod", string.Format(GoMod, "api")), ("api/main.go", GoMain),
+            ("orders/go.mod", string.Format(GoMod, "orders")), ("orders/main.go", GoMain));
+
+        // Only payments: db is a store, nginx a tool, migrate runs once, orders is the code service of its name.
+        var external = Assert.Single(result.Facts, f => f.Kind == FactKind.Element);
+        Assert.Equal(("external:compose:.:payments", "payments"), (external.Key, external.Name));
+        Assert.Equal(("system", null, "external", "acme/payments:1.4"),
+            (external.Attr("elementKind"), external.Attr("parent"), external.Attr("tags"), external.Attr("technology")));
+        Assert.Contains("ghcr.io/acme/payments:1.4", external.Attr("description"), StringComparison.Ordinal);
+        Assert.Equal(["docker-compose.yml:11-14"], external.Lines());
+        Assert.Equal("compose.external-system", Assert.Single(external.Evidence).Rule);
+        Assert.Equal("datastore:.:db", result.Fact("datastore:.:db").Key);
+
+        var call = Assert.Single(Relationships(result), f => f.Attr("label") == "calls");
+        Assert.Equal(("service:api -> external:compose:.:payments: calls", "inferred", "0.6", "PAYMENTS_URL"),
+            (Edge(call), call.Attr("truthLabel"), call.Attr("confidence"), call.Attr("variables")));
+        Assert.Equal(
+            ["service:api -> datastore:.:db: depends on", "service:api -> external:compose:.:payments: depends on"],
+            Relationships(result).Where(f => f.Attr("label") == "depends on").Select(Edge).Order(StringComparer.Ordinal));
+        Assert.All(Relationships(result).Where(f => f.Attr("label") == "depends on"), f => Assert.Null(f.Attr("truthLabel")));
+    }
+
+    [Fact]
     public void Two_services_that_fit_a_name_equally_give_no_call()
     {
         var result = Repo.Extract(

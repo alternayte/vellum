@@ -11,7 +11,8 @@ namespace Vellum.Modules.Diagrams;
 /// <list type="bullet">
 /// <item>A top-level actor is a <c>person</c>; any other top-level element is a <c>softwareSystem</c>.</item>
 /// <item>An element inside a software system is a <c>container</c>; inside a container, a <c>component</c>.
-/// A store gets the tag <c>Database</c>; a behavioural relationship the tag <c>Behavioural</c>.</item>
+/// A store gets the tag <c>Database</c>; a behavioural relationship the tag <c>Behavioural</c>.
+/// The tag <c>external</c> of a system outside the repository is Structurizr's <c>External</c>, drawn grey.</item>
 /// <item>An element that Structurizr cannot nest where it stands (an actor inside anything, an
 /// element inside a person or a component) moves to the top level with its own inside.</item>
 /// <item>Identifiers come from <see cref="DiagramText.Identifiers"/> and are flat (Structurizr's default).</item>
@@ -220,6 +221,7 @@ public static class StructurizrDsl
         text.Append("\n        styles {\n")
             .Append("            element \"Person\" {\n                shape Person\n            }\n")
             .Append("            element \"Database\" {\n                shape Cylinder\n            }\n")
+            .Append(state.Elements.Values.Any(e => e.IsExternal) ? "            element \"External\" {\n                background #999999\n                color #ffffff\n            }\n" : "")
             .Append(derived.Count > 0 ? "            relationship \"Derived\" {\n                thickness 1\n                style dotted\n            }\n" : "")
             .Append("        }\n");
         text.Append("    }\n");
@@ -270,7 +272,7 @@ public static class StructurizrDsl
         if (e.Kind == ElementKind.Store) tags.Add("Database");
         foreach (var tag in e.Tags)
         {
-            var clean = DiagramText.OneLine(tag).Replace(',', ' ').Trim();
+            var clean = tag.Equals(ElementState.ExternalTag, StringComparison.OrdinalIgnoreCase) ? "External" : DiagramText.OneLine(tag).Replace(',', ' ').Trim();
             if (clean.Length > 0 && !tags.Contains(clean, StringComparer.Ordinal)) tags.Add(clean);
         }
         return string.Join(',', tags);

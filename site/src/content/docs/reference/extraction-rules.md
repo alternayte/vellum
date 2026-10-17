@@ -36,7 +36,7 @@ A fact never holds a value from the source: no environment value, no command arg
 |---|---|---|
 | OpenAPI 3.0 and 3.1 | Operations, component schemas, servers, whether security is required, optional or absent. | Swagger 2. References to other files. A request body or a response behind `$ref`. Path-level parameters, callbacks, webhooks and links. The security schemes. Two documents in one file. |
 | AsyncAPI 2 and 3 | Channels, messages, who sends and who receives, AMQP and Kafka bindings of channels and operations. | Traits. References to other files. A channel or an operation behind `$ref`. Server and message bindings. Other bindings. Correlation IDs, headers and reply operations. Server variables and security. Two documents in one file. |
-| Docker Compose | Services, images, ports, dependencies, names of environment variables. Known images as data stores and brokers. | `extends`, `include`, profiles, merge keys, variable substitution, networks, volumes and labels. |
+| Docker Compose | Services, images, ports, dependencies, names of environment variables. Known images as data stores and brokers. An unknown image that the repository does not build as an external system. See [Compose images](#compose-images). | `extends`, `include`, profiles, merge keys, variable substitution, networks, volumes and labels. |
 | .NET projects | A project as a service when its SDK is Web or Worker, or its output type is `Exe` or `WinExe`. Package references and project references. | `Directory.Build.props`, imports, `Condition` attributes, central package versions, transitive packages. |
 | .NET minimal API | `MapGet`, `MapPost`, `MapPut`, `MapPatch`, `MapDelete` and `MapGroup` with a fixed prefix on an application or route builder. | `MapMethods`, `MapFallback`. A route in an extension method. A route that is not one string. |
 | .NET controllers | `[Route]` with `[HttpGet]` and the other verb attributes, with base and partial classes when every part is in the scan. | `[AcceptVerbs]`, areas, conventional routing. |
@@ -61,14 +61,14 @@ Code inside `#if false` produces nothing. Code inside `#if SYMBOL` produces fact
 
 A code scan proposes a relationship between two elements when the facts of the other rules show it. The key of a relationship names its rule and its two ends, so a later scan finds the same relationship.
 
-A Compose service is an element when it is a data store, or when it builds one code service: the directory of its Dockerfile or of its build context holds the project file of that service. A Compose service with no build is the code service of the same name. A broker is no element.
+A Compose service is an element when it is a data store, or when it builds one code service: the directory of its Dockerfile or of its build context holds the project file of that service. A Compose service with no build is the code service of the same name. A Compose service that is an external system is an element too. A broker is no element.
 
 | Relationship | Label and kind | Truth label | Evidence |
 |---|---|---|---|
 | A producer to each consumer of the same message. A consumer listens to the message, or to a queue that the channel of the message reaches through its bindings. A binding with a routing key passes only a message with a matching key. | `publishes <message>`, behavioural | Observed in source | The publish lines and the subscribe lines, and the binding lines of the route. |
 | An app to the store it opens. The store is the one Compose store that the variable of the connection names as its host. Else it is the one store, of the same kind, that another variable names as its host or that `depends_on` names. Else it is the one store with the name of the connection. | `reads and writes`, behavioural | Observed in source | The lines that open the store, and the variable or `depends_on` line. |
 | A Compose `depends_on` between two services that are elements. | `depends on`, structural | Observed in source | The `depends_on` line. |
-| An app to another app whose Compose service name a variable or an HTTP client key names, followed by an address word: `PAYMENTS_URL`, `PAYMENTS__BASEURL`, `Services:Payments:Endpoint`. | `calls`, behavioural | Inferred, with confidence 0.6 for a variable and 0.8 for an HTTP client that reads it | The variable line and the HTTP client lines. |
+| An app to another app or to an external system whose Compose service name a variable or an HTTP client key names, followed by an address word: `PAYMENTS_URL`, `PAYMENTS__BASEURL`, `Services:Payments:Endpoint`. | `calls`, behavioural | Inferred, with confidence 0.6 for a variable and 0.8 for an HTTP client that reads it | The variable line and the HTTP client lines. |
 
 Each relationship also cites the first line of each element at its ends, and of the message of a message flow. Those lines are never its source pointer.
 
@@ -78,15 +78,42 @@ A scan proposes no relationship that the model holds already, with the same two 
 
 When an app opens a store and no rule names exactly one store, the scan proposes no relationship. A scan with a Compose file then adds the note `data-access-store-not-resolved`.
 
+## Compose images
+
+A scan reads the image of each Compose service. It uses the last part of the image path, without the tag. The image decides what the service is:
+
+| Image | The service is |
+|---|---|
+| `postgres`, `postgresql`, `postgis`, `timescaledb`, `pgvector`, `mysql`, `mariadb`, `redis`, `valkey`, `redis-stack`, `mongo`, `mongodb`, `elasticsearch`, `opensearch`, `cassandra`, `clickhouse-server`, `memcached`, `minio`, `mssql-server`, `azure-sql-edge`, `cockroach` | A data store. It is a store element in the system of the repository. |
+| `rabbitmq`, `kafka`, `cp-kafka`, `redpanda`, `nats`, `nats-streaming`, `activemq`, `pulsar` | A broker. It is no element. |
+| Proxies: `nginx`, `nginx-unprivileged`, `openresty`, `traefik`, `caddy`, `haproxy`, `envoy`, `kong`. Telemetry: `otel-collector`, `opentelemetry-collector`, `opentelemetry-collector-contrib`, `jaeger`, `all-in-one`, `zipkin`, `prometheus`, `grafana`, `loki`, `promtail`, `tempo`, `alertmanager`, `node-exporter`, `cadvisor`, `seq`, `aspire-dashboard`. Mail catchers: `mailhog`, `mailpit`, `maildev`, `smtp4dev`, `greenmail`. Emulators and mocks: `localstack`, `azurite`, `dynamodb-local`, `wiremock`, `mockserver`, `prism`, `toxiproxy`. Consoles: `adminer`, `pgadmin4`, `phpmyadmin`, `mongo-express`, `redis-commander`, `redisinsight`, `kafka-ui`, `akhq`, `kafdrop`, `kibana`. Broker helpers: `zookeeper`, `cp-zookeeper`, `schema-registry`, `cp-schema-registry`. Base images: `busybox`, `alpine`, `curl`, `debian`, `ubuntu`. | A tool around the architecture. It is no element. |
+| Any other image | An external system, when the service only runs that image. |
+
+A service that runs a store or broker image with a client tool, or that runs once, is a plain service and no element.
+
+A Compose service is an external system when all of these are true:
+
+- No Compose file builds it.
+- Every Compose file of the project names the same image, and the image name has no variable.
+- The image is in no row above.
+- The service does not run once: its name, command and entrypoint have no word such as `migrate`, `seed` or `init`.
+- No code service of the scan has a directory with the name of the service.
+
+An external system is a top-level system element with the tag `external`. Its name is the name of the service. Its technology is the image without the registry and the digest: `ghcr.io/acme/payments:1.4` gives `acme/payments:1.4`. Its description names the image. Its evidence is the lines of the service, and its rule is `compose.external-system`. Its truth label is observed in source.
+
+A scan applies an external system like every other observed fact. When the service is gone from the Compose files, the element is [not seen in latest scan](/how-to/import-a-repository/#not-seen-in-latest-scan). A `depends_on` to an external system is a `depends on` relationship. A URL variable that names it is an inferred `calls` suggestion.
+
+The canvas and the SVG export draw an external system in grey with an `external` chip. The Structurizr DSL export writes the tag as `External`. A Structurizr file with the tag `External`, in any case, gives the tag `external`.
+
 ## Rule identifiers
 
-Each rule has the version 2, but these: `go.sql-open` has the version 3; `go.struct-message`, `dotnet.db-client`, `dotnet.http-client-base-address` and the `relationship.*` rules have the version 1.
+Each rule has the version 2, but these: `go.sql-open` has the version 3; `go.struct-message`, `dotnet.db-client`, `dotnet.http-client-base-address`, `compose.external-system`, `relationship.message-flow`, `relationship.data-access` and `relationship.basis` have the version 1.
 
 | Area | Rule identifiers |
 |---|---|
 | OpenAPI | `openapi.document`, `openapi.operation`, `openapi.schema` |
 | AsyncAPI | `asyncapi.document`, `asyncapi.channel`, `asyncapi.message`, `asyncapi.operation`, `asyncapi.schema` |
-| Docker Compose | `compose.service` |
+| Docker Compose | `compose.service`, `compose.external-system` |
 | .NET | `dotnet.project`, `dotnet.package-reference`, `dotnet.minimal-api-route`, `dotnet.controller-route`, `dotnet.masstransit-consumer`, `dotnet.masstransit-receive-endpoint`, `dotnet.masstransit-publish`, `dotnet.masstransit-entity-name`, `dotnet.masstransit-outbox`, `dotnet.outbox-handwritten`, `dotnet.efcore-dbcontext`, `dotnet.message-contract`, `dotnet.db-client`, `dotnet.http-client-base-address` |
 | Go | `go.module`, `go.require`, `go.net-http-route`, `go.chi-route`, `go.gin-route`, `go.echo-route`, `go.amqp-exchange-declare`, `go.amqp-queue-declare`, `go.amqp-queue-bind`, `go.amqp-publish`, `go.amqp-consume`, `go.kafka-topic`, `go.nats-subject`, `go.sql-open`, `go.struct-message` |
 | Deployment | `docker.dockerfile`, `k8s.workload`, `k8s.service`, `k8s.ingress`, `github.workflow` |

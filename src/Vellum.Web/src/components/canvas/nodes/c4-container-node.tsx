@@ -2,7 +2,7 @@ import { memo } from 'react'
 import { NodeResizer, type Node, type NodeProps } from '@xyflow/react'
 import { SideHandles } from './side-handles'
 import { Plus } from 'lucide-react'
-import { kindColor } from '@/lib/kind-colors'
+import { elementColor } from '@/lib/kind-colors'
 import { defaultIconForKind, getIconComponent } from '@/lib/default-icons'
 
 export interface C4ContainerData extends Record<string, unknown> {
@@ -10,6 +10,7 @@ export interface C4ContainerData extends Record<string, unknown> {
   kind: string
   name: string
   icon?: string | null
+  tags?: string[]
   onResize?: (width: number, height: number) => void
   onAddChild?: () => void
 }
@@ -20,7 +21,7 @@ export const C4ContainerNode = memo(function C4ContainerNode({
   data,
   selected,
 }: NodeProps<C4ContainerNodeType>) {
-  const color = kindColor(data.kind)
+  const color = elementColor(data.kind, data.tags)
   const Icon = getIconComponent(data.icon || defaultIconForKind(data.kind))
 
   return (

@@ -133,6 +133,54 @@ public class RelationshipImportTests(AutoApplyImportHost import) : IClassFixture
         Assert.Single(await t.AllAsync(t.Model("relationships")), r => r.Text("toId") == elements.Single("name", "payments").Text("id"));
     }
 
+    /// <summary>The orders fixture with a <c>payments</c> service that only runs an image, and <c>PAYMENTS_URL</c> on orders-api.</summary>
+    private static SortedDictionary<string, byte[]> WithPaymentsImage(bool present)
+    {
+        var files = FixtureGitHub.Load("orders");
+        if (!present)
+            return files;
+        var compose = Encoding.UTF8.GetString(files["docker-compose.yml"]);
+        compose = compose.Replace("\nvolumes:\n", "\n  payments:\n    image: ghcr.io/acme/payments:1.4\n\nvolumes:\n", StringComparison.Ordinal);
+        const string anchor = "      - RabbitMq__Host=amqp://guest:guest@rabbitmq:5672\n    ports:\n      - \"8080:8080\"";
+        Assert.Contains(anchor, compose);
+        compose = compose.Replace(anchor, "      - RabbitMq__Host=amqp://guest:guest@rabbitmq:5672\n      - PAYMENTS_URL=http://payments:8080\n    ports:\n      - \"8080:8080\"", StringComparison.Ordinal);
+        files["docker-compose.yml"] = Encoding.UTF8.GetBytes(compose);
+        return files;
+    }
+
+    [Fact]
+    public async Task A_service_that_runs_only_an_unknown_image_is_an_external_system_that_a_suggested_call_reaches()
+    {
+        var s = await ImportScenario.CreateAsync(import);
+        s.GitHub.Commit(ImportScenario.Commit1, WithPaymentsImage(present: true));
+        var scan = await s.ScanAsync();
+
+        // The scan applied the external system: a top-level system, observed in source, with the tag and the compose lines.
+        var elements = await s.ElementsAsync();
+        var payments = elements.Single("name", "payments");
+        Assert.Equal(("system", null, "observed-in-source", "acme/payments:1.4"),
+            (payments.Text("kind"), payments.Text("parentId"), payments.Text("factStatus"), payments.Text("technology")));
+        Assert.Equal(["external"], payments["tags"]!.AsArray().Select(t => t!.GetValue<string>()));
+        Assert.Equal($"{s.GitHubHost}/acme/orders@{ImportScenario.Commit1}:docker-compose.yml:53-54", payments["provenance"]!["source"]!.GetValue<string>());
+        // The known images stay what they were: postgres a store, rabbitmq no element.
+        Assert.Equal("store", elements.Single("name", "postgres").Text("kind"));
+        Assert.DoesNotContain(elements, e => e.Text("name") == "rabbitmq");
+
+        // The call waits in Needs you; the scan did not apply it.
+        var suggestion = Assert.Single(await NeedsYouAsync(s));
+        Assert.Equal(("add", "relationship", "inferred", "Orders.Api → payments: calls"),
+            (suggestion.Text("action"), suggestion.Text("entityKind"), suggestion.Text("factStatus"), suggestion.Text("name")));
+        Assert.DoesNotContain(await LinesAsync(s), l => l.Contains("calls", StringComparison.Ordinal));
+        Assert.Empty((await s.DecideAsync(scan.Id(), accept: [suggestion.Id()]))["failed"]!.AsArray());
+        Assert.Contains("Orders.Api → payments: calls (inferred)", await LinesAsync(s));
+
+        // The service is gone: the external system is not seen in the latest scan, and stays.
+        s.GitHub.Commit(ImportScenario.Commit2, WithPaymentsImage(present: false));
+        await s.ScanAsync();
+        var gone = (await s.ElementsAsync()).Single("name", "payments");
+        Assert.Equal((ImportScenario.Commit2, "evidence-not-found"), (gone["stale"]!.AsObject().Text("sinceRevision"), gone["stale"]!.AsObject().Text("reason")));
+    }
+
     [Fact]
     public async Task Removing_a_consumer_marks_its_relationship_not_seen_and_keeps_it()
     {
