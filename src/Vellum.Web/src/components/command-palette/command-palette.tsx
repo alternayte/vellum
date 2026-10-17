@@ -4,6 +4,7 @@ import { useShellStore } from '@/stores/shell-store'
 import { useCanvasStore } from '@/stores/canvas-store'
 import { kindColor } from '@/lib/kind-colors'
 import { factStatusColor, factStatusLabel } from '@/lib/fact-status'
+import { visibleAreas, type AreaAccess } from '@/lib/areas'
 
 interface Element {
   id: string
@@ -15,13 +16,17 @@ interface Element {
 
 interface CommandPaletteProps {
   elements: Element[]
+  /** Which sidebar areas the person sees. The palette opens the same tools. */
+  access: AreaAccess
   onAddElement?: () => void
   onTidy?: () => void
   onZoomToFit?: () => void
 }
 
-export function CommandPalette({ elements, onAddElement, onTidy, onZoomToFit }: CommandPaletteProps) {
-  const { commandPaletteOpen, closeCommandPalette, selectElement } = useShellStore()
+const itemClass = 'flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-sm aria-selected:bg-muted'
+
+export function CommandPalette({ elements, access, onAddElement, onTidy, onZoomToFit }: CommandPaletteProps) {
+  const { commandPaletteOpen, closeCommandPalette, selectElement, openFlyout, openComments } = useShellStore()
   const { toggleLens, drillTo } = useCanvasStore()
 
   // The dialog primitive holds the focus inside the palette, gives it back to the control
@@ -84,6 +89,39 @@ export function CommandPalette({ elements, onAddElement, onTidy, onZoomToFit }: 
                 </span>
               </Command.Item>
             ))}
+          </Command.Group>
+
+          <Command.Separator className="my-1 h-px bg-border" />
+
+          {/* The assistant and the comments are actions, not sidebar areas; the palette reaches every tool. */}
+          <Command.Group heading="Open" className="text-xs text-muted-foreground">
+            <Command.Item
+              value="Ask the assistant"
+              keywords={['assistant', 'ai', 'propose', 'explain']}
+              onSelect={() => { openFlyout('assistant'); closeCommandPalette() }}
+              className={itemClass}
+            >
+              Ask the assistant
+            </Command.Item>
+            <Command.Item
+              value="Comments"
+              keywords={['threads', 'inbox']}
+              onSelect={() => { closeCommandPalette(); openComments() }}
+              className={itemClass}
+            >
+              Comments
+            </Command.Item>
+            {visibleAreas(access).flatMap((area) => area.tools.map((tool) => (
+              <Command.Item
+                key={tool.flyout}
+                value={`${area.label}: ${tool.label}`}
+                onSelect={() => { openFlyout(tool.flyout); closeCommandPalette() }}
+                className={itemClass}
+              >
+                {tool.label}
+                <span className="ml-auto text-[10px] text-muted-foreground">{area.label}</span>
+              </Command.Item>
+            )))}
           </Command.Group>
 
           <Command.Separator className="my-1 h-px bg-border" />

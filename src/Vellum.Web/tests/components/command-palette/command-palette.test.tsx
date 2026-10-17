@@ -25,13 +25,13 @@ beforeEach(() => {
 
 describe('CommandPalette', () => {
   it('does not render when closed', () => {
-    render(<CommandPalette elements={MOCK_ELEMENTS} />)
+    render(<CommandPalette elements={MOCK_ELEMENTS} access={{ hasElements: true, canShare: true }} />)
     expect(screen.queryByPlaceholderText('Search elements, actions...')).toBeNull()
   })
 
   it('renders when open with elements and actions', () => {
     useShellStore.getState().toggleCommandPalette()
-    render(<CommandPalette elements={MOCK_ELEMENTS} />)
+    render(<CommandPalette elements={MOCK_ELEMENTS} access={{ hasElements: true, canShare: true }} />)
     expect(screen.getByPlaceholderText('Search elements, actions...')).toBeTruthy()
     expect(screen.getByText('Orders')).toBeTruthy()
     expect(screen.getByText('Add element')).toBeTruthy()

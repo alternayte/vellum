@@ -67,7 +67,7 @@ The rest of this tutorial uses `Shop`, not the app or the store inside it.
 
 ## Declare the contracts
 
-1. Select **Contracts** in the left toolbar.
+1. Select **Model** in the sidebar, then the **Contracts** tab.
 2. Next to **Operations**, select **Add**. Give these values and select **Add operation**.
 
    | Field | Value |
@@ -117,7 +117,7 @@ The flyout lists the message as **Shop → Billing, Warehouse · no schema**. Th
 
 A scenario is the steps of one behaviour, in order. You build it in the scenario editor. You select each element and each contract by its name.
 
-1. Select **Scenarios** in the left toolbar, then **New**.
+1. Select **Flows** in the sidebar, then **New**.
 2. In **Name**, give `Place an order`.
 3. Below **Steps**, select **Call**. The editor adds a call step with the mark **Trigger**.
 4. In **Caller**, select `Customer`. In **Operation**, select `POST /orders`. The editor shows that Shop serves the operation, with its timeout of 1000 ms.

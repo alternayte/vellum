@@ -18,7 +18,7 @@ The `curl` examples use the session cookie of a signed-in person in the file `ve
 
 A marker with the number of open threads shows on the element on the canvas. Select the marker to open the threads of the element.
 
-To start a thread on the project, select **Comments** in the toolbar on the left, then select **On the project**. The **Comments** panel lists the threads of the model that is shown, with the tabs **Open**, **Resolved**, **Detached** and **All**.
+To start a thread on the project, select the bell in the top bar, then the **Comments** tab, then select **On the project**. You can also press `Ctrl+K` or `Cmd+K` and select **Comments**. The **Comments** tab lists the threads of the model that is shown, with the tabs **Open**, **Resolved**, **Detached** and **All**.
 
 ```sh
 curl -X POST "http://localhost:8080/api/projects/<project-id>/threads" \
@@ -48,8 +48,8 @@ The answer is `201` with the thread. The thread has `id`, `target` (`kind`, `id`
 
 Each of these has a **Comments** section with the same controls.
 
-- **Promise**: select **Promises** in the toolbar, open the promise, and go to **Comments** at the end of the dialog.
-- **Decision (ADR)**: select **Review**, then **Decisions**, open the decision, and go to **Comments**.
+- **Promise**: select **Check** in the sidebar, then the **Promises** tab, open the promise, and go to **Comments** at the end of the dialog.
+- **Decision (ADR)**: select **Check** in the sidebar, then the **Review** tab, then **Decisions**, open the decision, and go to **Comments**.
 - **Document page**: open the page and select **Comments** in its header. The threads show beside the page.
 - **Flow step**: select **Scenarios**, edit the scenario, and select the comment button beside the step ID. Only a saved step takes comments.
 
@@ -110,7 +110,7 @@ curl -X POST "http://localhost:8080/api/projects/<project-id>/threads/<thread-id
 
 `GET /api/projects/{projectId}/threads` gives the threads of main. Add `draftId=<draft-id>` for the threads of a draft, `targetId=<id>` for the threads of one target, and `status=open`, `resolved` or `detached`.
 
-A thread whose target was deleted has the status `detached` and the last name of the target. It has no marker on the canvas. Find it on the tab **Detached** of the **Comments** panel.
+A thread whose target was deleted has the status `detached` and the last name of the target. It has no marker on the canvas. Find it on the tab **Detached** of the **Comments** tab of the bell.
 
 ## Raise a thread as a question or a decision
 
@@ -134,7 +134,7 @@ When the first comment is deleted, the thread has no text to raise, and the answ
 
 The inbox lists the comments that mention you, and the replies on threads that you started or replied to. You get no entry for your own comment.
 
-1. In the top bar, select the bell. The number is the count of unread entries.
+1. In the top bar, select the bell. The number is the count of unread entries. In a project, select the **Inbox** tab.
 2. Select an entry to open the thread. The entry is then read.
 3. To mark all entries read, select **Mark all read**.
 

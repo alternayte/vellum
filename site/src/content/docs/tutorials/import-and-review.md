@@ -66,7 +66,7 @@ When you complete the tutorials, put the value `https://api.github.com` back.
 ## Scan the repository
 
 1. On the home screen, select your workspace, then select **+ New Project**. In **Project name**, give `Orders import`. Select **Create**. The project opens.
-2. Select **Import** in the left toolbar.
+2. Select **Sources** in the sidebar.
 3. In **Repository**, give `acme/orders`.
 4. In **Read**, select **Branch**. In **Branch or tag**, give `main`.
 5. Leave **Only these folders** empty.
@@ -108,7 +108,7 @@ The link **GitHub** on a source line opens the file on the web address of the re
 
 1. Close the dialog and the flyout. The canvas shows the system `orders`.
 2. Right-click `orders` and select **Drill into**. The canvas shows `Orders.Api`, `Billing`, `inventory-worker` and `postgres`.
-3. Select **Contracts** in the left toolbar. **Operations**, **Channels** and **Subscriptions** list what you accepted.
+3. Select **Model** in the sidebar, then the **Contracts** tab. **Operations**, **Channels** and **Subscriptions** list what you accepted.
 
 ![The canvas at the level Context, orders. A frame with the name orders holds the apps Billing (dotnet), inventory-worker (go) and Orders.Api (dotnet) and the store postgres. Each card shows its kind and its technology. No line connects them.](../../../assets/screenshots/canvas-orders-system.png)
 
@@ -120,7 +120,7 @@ Three things are true about this model:
 
 ## Scan again
 
-1. Open **Import** and select **Scan repository** again, with the same values.
+1. Open **Sources** and select **Scan repository** again, with the same values.
 2. Select **Open review** on the new scan. The dialog shows "The source matches the model. This scan proposes no change."
 
 A second scan of the same commit compares the source with the model and finds no difference.

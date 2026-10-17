@@ -20,8 +20,14 @@ const FILTERS: { id: Filter; label: string }[] = [
 /**
  * Every comment thread of the selected branch: on parts of the model, on the project, and
  * detached threads whose target was deleted. A thread on a part of the model selects it.
+ * The bell panel shows it on its Comments tab.
  */
-export function CommentsFlyout({ projectId, projectName }: { projectId: string; projectName: string }) {
+export function CommentsFlyout({ projectId, projectName, onShowTarget }: {
+  projectId: string
+  projectName: string
+  /** Called after a thread's target opened on the canvas or as its document. */
+  onShowTarget?: () => void
+}) {
   const access = useCommentAccess(projectId)
   const { data: threads, isLoading, error } = useThreads(projectId, access.draftId)
   const actions = useThreadActions(projectId, access.draftId)
@@ -92,7 +98,7 @@ export function CommentsFlyout({ projectId, projectName }: { projectId: string; 
         ) : (
           shown.map((thread) => (
             <div key={thread.id} className="space-y-1">
-              <TargetLink thread={thread} />
+              <TargetLink thread={thread} onShown={onShowTarget} />
               <ThreadCard projectId={projectId} thread={thread} access={access} showTarget />
             </div>
           ))
@@ -103,7 +109,7 @@ export function CommentsFlyout({ projectId, projectName }: { projectId: string; 
 }
 
 /** Selects the target of a thread on the canvas, or opens its document page. */
-function TargetLink({ thread }: { thread: Thread }) {
+function TargetLink({ thread, onShown }: { thread: Thread; onShown?: () => void }) {
   const { selectElement, selectRelationship, selectMessage, openDoc, focusThread } = useShellStore()
   const select = thread.status === 'detached' ? null
     : thread.target.kind === 'element' ? selectElement
@@ -119,6 +125,7 @@ function TargetLink({ thread }: { thread: Thread }) {
       onClick={() => {
         select(thread.target.id)
         focusThread(thread.id)
+        onShown?.()
       }}
     >
       Show {thread.target.name}

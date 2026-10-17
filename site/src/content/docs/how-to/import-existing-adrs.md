@@ -22,13 +22,13 @@ A file named `README.md` or `index.md`, or with `template` in its name, is not a
 Do one of these:
 
 - Scan the repository. See [Import a repository](/how-to/import-a-repository/).
-- Upload one ADR file. Select **Import** in the left toolbar. Under **Upload a model file**, choose the file. Set **Path in the Source** to a path in one of the folders above, for example `docs/adr/0001-use-postgres.md`. Select **Upload and read**.
+- Upload one ADR file. Select **Sources** in the sidebar. Under **Upload a model file**, choose the file. Set **Path in the Source** to a path in one of the folders above, for example `docs/adr/0001-use-postgres.md`. Select **Upload and read**.
 
 When the scan completes, each ADR becomes a decision with the status `proposed` and the origin `imported`. A scan of a pull request, a commit or another ref only previews and proposes no decision.
 
 ## Review a decision
 
-1. Select **Review** in the left toolbar.
+1. Select **Check** in the sidebar, then the **Review** tab.
 2. Select the **Decisions** tab.
 3. Open a decision with the origin `imported`.
 

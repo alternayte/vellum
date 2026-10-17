@@ -9,7 +9,7 @@ This guide shows you how to declare a promise. A promise is a requirement with a
 
 Each project has one prefix for its requirement IDs. You set it one time. It cannot change, because issued IDs contain it.
 
-1. Open **Promises** in the left toolbar.
+1. Open **Check** in the sidebar, then the **Promises** tab.
 2. In **Prefix (2 to 6 letters)**, enter the letters, for example `ORD`.
 3. In **First number**, enter the number of the first promise. Use a number above `1` when lower numbers are issued in another system. The line below the fields shows the first ID.
 4. Select **Set the prefix**.

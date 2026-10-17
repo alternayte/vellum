@@ -9,7 +9,7 @@ An archive Source works in the local profile and in the hosted profile.
 
 ## Add the Source and upload the file
 
-1. Open the project and select **Import from GitHub** in the left toolbar.
+1. Open the project and select **Sources** in the sidebar.
 2. Under **Sources**, select **Add Source**.
 3. Select **Archive**.
 4. In **Name**, give the Source a name, for example `orders-service`. Its citations carry the name.

@@ -90,7 +90,7 @@ export function TopBar({ projectId, projectName, project, activeDoc }: TopBarPro
         </kbd>
       </Button>
 
-      <InboxButton />
+      <InboxButton project={projectId && project ? { id: projectId, name: project.name } : undefined} />
 
       <button
         className="flex h-7 w-7 items-center justify-center rounded-full bg-primary text-[10px] font-medium text-primary-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"

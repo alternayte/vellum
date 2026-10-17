@@ -117,7 +117,7 @@ The import gave you what the source shows: services, operations, channels and on
    {"issues":0,"events":["RequestSent","DataWritten","DataWritten","ResponseReceived","RequestSent","Published","Routed","Delivered","ResponseReceived"],"passed":[true,true]}
    ```
 
-4. In the app, open the project, open **Scenarios** in the left toolbar and select the play button of **Place an order**. The dock at the bottom of the canvas plays the nine events.
+4. In the app, open the project, open **Flows** in the sidebar and select the play button of **Place an order**. The dock at the bottom of the canvas plays the nine events.
 
 The payload of `publish-order-created` matches the schema of `OrderCreated` that the import read from `asyncapi.yaml`. A payload that does not match the schema stops the playback with the problem `schema-mismatch`.
 
@@ -125,7 +125,7 @@ The payload of `publish-order-created` matches the schema of `OrderCreated` that
 
 In the app:
 
-1. Open the project and select **Promises** in the left toolbar.
+1. Open the project and select **Check** in the sidebar, then the **Promises** tab.
 2. In **Prefix (2 to 6 letters)**, enter `ORD`. In **First number**, enter `14`. The line below the fields shows `ORD-014`.
 3. Select **Set the prefix**. A project gets its prefix one time.
 4. Select **New**.
@@ -229,7 +229,7 @@ Only a workspace owner can approve. An agent token cannot.
 
 In the app:
 
-1. Open **Promises** in the left toolbar and select **ORD-014**. Read every field and every obligation.
+1. Open **Check** in the sidebar, then the **Promises** tab and select **ORD-014**. Read every field and every obligation.
 2. Read the box above the buttons. It says **Approval is blocked:** and gives each cause, or it says that nothing on the screen blocks approval.
 3. Select **Approve revision 1**.
 
@@ -304,7 +304,7 @@ The stand-in serves a second ref of `acme/orders`: `remove-outbox`. On that ref 
 
 In the app:
 
-1. Open **Import**. Enter `acme/orders` in **Repository**. In **Read**, select **Branch** and enter `remove-outbox` in **Branch or tag**. Select **Scan repository**. To compare pull request #1 of the stand-in in place of the branch, select **Pull request #** and enter `1`: the impact is the same, and the scan cannot be followed.
+1. Open **Sources**. Enter `acme/orders` in **Repository**. In **Read**, select **Branch** and enter `remove-outbox` in **Branch or tag**. Select **Scan repository**. To compare pull request #1 of the stand-in in place of the branch, select **Pull request #** and enter `1`: the impact is the same, and the scan cannot be followed.
 2. When the scan shows **Scan complete**, select **Impact** on it.
 3. Read **Changed in the source**. It has the changed schema and the changed message `OrderCreated`, and the line **Removed Transactional outbox**. Each line has the label **Definite**. Open a line to read the diff and the source lines.
 4. Read **Affected flows**. **Place an order** has the label **Definite**. Each step shows its own label and its reasons. `publish-order-created` is **Definite**: it names the changed schema. The other steps are **Possible**: they run in the service of the outbox. **4 reasons for the flow** opens the reasons of the flow as a whole.
@@ -393,7 +393,7 @@ The first line is `false`. The list holds these blockers for `ORD-014`:
 - `promise-evidence-stale`: `O2` has no result.
 - `review-CON-001`: two operations on the path of `ORD-014` have no request schema and no response schema.
 
-In the app, **Build** in the left toolbar shows the same list under **Blockers**, below the line that starts with **Not build ready**.
+In the app, the **Build** tab of **Ship** in the sidebar shows the same list under **Blockers**, below the line that starts with **Not build ready**.
 
 A blocker prevents **Build ready**. It does not prevent an export. [Stale results and Build Ready blockers](/troubleshooting/stale-results-and-build-ready/) tells you how to clear each kind.
 
@@ -403,7 +403,7 @@ A brief holds only the part of the model that one change needs: the promise, wha
 
 In the app:
 
-1. Open **Build** in the left toolbar.
+1. Open **Ship** in the sidebar, then the **Build** tab.
 2. Below **Brief for an agent**, select the scope **A change**. In **Scan**, select the scan of `remove-outbox`.
 3. Select **Preview the brief**. The dialog says **This scope is not build ready** and lists each blocker. Below, it shows the text of the brief.
 4. Select **Copy**, or select **Download**.

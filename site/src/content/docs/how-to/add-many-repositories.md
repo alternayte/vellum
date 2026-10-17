@@ -9,7 +9,7 @@ Bulk add reads GitHub, GitLab, Bitbucket Cloud and Azure DevOps. Connect the hos
 
 ## Add the repositories
 
-1. Open the project and select **Import from GitHub** in the left toolbar.
+1. Open the project and select **Sources** in the sidebar.
 2. Under **Sources**, select **Add many repositories**.
 3. In **Host**, select the git host. A host with no usable address shows **(not set up)** and the reason.
 4. Give the owner: the organization or user on GitHub, the group on GitLab, the workspace on Bitbucket, or the organization or `organization/project` on Azure DevOps.

@@ -19,7 +19,7 @@ A trace Source shows which services called which, and which services sent messag
 ## Add a trace Source and upload a file
 
 1. Open the project.
-2. Select **Import from GitHub** in the left toolbar.
+2. Select **Sources** in the sidebar.
 3. Under **Sources**, select **Add runtime Source**.
 4. Select **Trace file**.
 5. Type a **Name**, such as `checkout traces`.

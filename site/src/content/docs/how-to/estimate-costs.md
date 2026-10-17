@@ -63,7 +63,7 @@ Vellum records each added, fetched and deleted price in the audit log of the wor
 
 You need the editor role.
 
-1. Open a project and select **Costs** in the left toolbar.
+1. Open a project and select **Check** in the sidebar, then the **Costs** tab.
 2. Select **Add** next to **Resources**.
 3. Select the element that the resource runs on. Give the resource a name, a category and a provider.
 4. Under **Baseline**, enter the quantity for one month and its unit, for example `2` `instances` or `50` `GB`.

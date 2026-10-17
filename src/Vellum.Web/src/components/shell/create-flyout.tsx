@@ -10,11 +10,13 @@ interface CreateFlyoutProps {
   onCreateDoc: (title: string, content: string, type?: string) => void
   /** Opens the Add Element dialog, where the element's place and kind are chosen. */
   onAddElement?: () => void
+  /** False while the model holds no element: decisions live in Check, which shows from the first element. */
+  decisions?: boolean
 }
 
 type Mode = 'menu' | 'diagram' | 'doc-templates' | 'doc-title'
 
-export function CreateFlyout({ onCreateDiagram, onCreateDoc, onAddElement }: CreateFlyoutProps) {
+export function CreateFlyout({ onCreateDiagram, onCreateDoc, onAddElement, decisions = true }: CreateFlyoutProps) {
   const closeFlyout = useShellStore((s) => s.closeFlyout)
   const startDecision = useShellStore((s) => s.startDecision)
   const [mode, setMode] = useState<Mode>('menu')
@@ -81,13 +83,13 @@ export function CreateFlyout({ onCreateDiagram, onCreateDoc, onAddElement }: Cre
               New Doc
             </button>
             {/* An ADR is a Review decision: an owner accepts it, and the acceptance binds its text. */}
-            <button
+            {decisions && <button
               className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm hover:bg-muted"
               onClick={startDecision}
             >
               <Scale className="h-4 w-4 text-muted-foreground" />
               New Decision (ADR)
-            </button>
+            </button>}
           </div>
         )}
 

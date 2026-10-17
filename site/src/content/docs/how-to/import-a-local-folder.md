@@ -40,7 +40,7 @@ A change of the value needs a restart. If the value does not name a folder that 
 
 ## Add the Source and scan it
 
-1. Open the project and select **Import from GitHub** in the left toolbar.
+1. Open the project and select **Sources** in the sidebar.
 2. Under **Sources**, select **Add Source**.
 3. Select **Folder**. The field shows the sources root before the path. If **Folder** shows **Not available**, the dialog gives the reason.
 4. In **Folder**, give the folder as a path relative to the root, with `/` between its parts, for example `acme/orders`.
