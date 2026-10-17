@@ -398,8 +398,13 @@ internal sealed class ProposalApplier(
     private Provenance? Provenance(ProposalEntity proposal)
     {
         var evidence = ProposalJson.ReadEvidence(proposal.Evidence);
-        // A derived relationship cites the facts it rests on too; its pointer is a line of its own rule.
-        var first = evidence.FirstOrDefault(e => e.Rule != RelationshipExtractor.Basis.Id) ?? evidence.FirstOrDefault();
+        // A derived relationship cites the facts it rests on too; its pointer is a line of its own
+        // rule, and a line of code before a line of compose configuration, so "reads and writes"
+        // points at the code that opens the store, not at the service that names it.
+        var own = evidence.Where(e => e.Rule != RelationshipExtractor.Basis.Id).ToList();
+        var first = (proposal.EntityKind == StoredEntityKind.Relationship
+            ? own.FirstOrDefault(e => e.Rule != ComposeExtractor.Service.Id) ?? own.FirstOrDefault()
+            : own.FirstOrDefault()) ?? evidence.FirstOrDefault();
         var confidence = Label(proposal) == FactStatus.Inferred ? FactMapping.ConfidenceOf(ProposalJson.ReadAttributes(proposal.Attributes)) : null;
         return first is null
             ? null

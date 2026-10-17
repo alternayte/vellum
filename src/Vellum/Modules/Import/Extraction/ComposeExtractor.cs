@@ -65,7 +65,7 @@ namespace Vellum.Modules.Import.Extraction;
 /// </summary>
 internal sealed class ComposeExtractor : IExtractor
 {
-    private static readonly ExtractionRule Service = new("compose.service", 2);
+    internal static readonly ExtractionRule Service = new("compose.service", 2);
 
     /// <summary>Image repository name (the last path segment, without tag) to kind and role.</summary>
     private static readonly Dictionary<string, (string Kind, bool Broker)> Infrastructure = new(StringComparer.Ordinal)
