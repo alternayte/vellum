@@ -31,6 +31,18 @@ of an earlier release, so the data of each release upgrades to the next.
 - The canvas places imported elements with the auto layout and shows the badges "needs you"
   and "not seen". The review dialog, "Proposals by Source" and "Accept all from this Source"
   are removed.
+- A code scan proposes relationships: a producer to each consumer of a message ("publishes
+  <message>", through bindings as the trace engine routes), an app to the store it opens
+  ("reads and writes", matched through the Compose variable or `depends_on`), and each
+  Compose `depends_on` between two elements ("depends on"). They are `observed-in-source`,
+  apply like other facts and get "not seen in latest scan" when their evidence goes.
+- A variable such as `PAYMENTS_URL`, or an HTTP client base address key, that names another
+  app in the Compose file gives an `inferred` "calls" relationship with a confidence. A scan
+  never applies it; it waits in "Needs you" as a suggestion. HTTP API: a proposal has the
+  field `confidence`; `factStatus` can be `inferred`.
+- New extraction rules `dotnet.db-client`, `dotnet.http-client-base-address` and
+  `relationship.*`; `go.sql-open` (version 3) records the variable of `os.Getenv`. No scan
+  proposes a relationship the model holds with the same ends, kind and label.
 - HTTP API: `GET /api/projects/{projectId}/needs-you` and
   `POST /api/projects/{projectId}/needs-you/keep` are new.
   `POST /api/projects/{projectId}/sources/{sourceId}/accept` and the field

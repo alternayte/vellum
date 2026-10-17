@@ -13,7 +13,8 @@ namespace Vellum.Modules.Import.Proposals;
 /// output reaches the model without a review gate (§2.2 holds: each fact keeps its label, its
 /// Snapshot, file and line provenance, and the person who started the scan as its acceptor).
 /// <list type="bullet">
-/// <item>Every addition is applied, in dependency order.</item>
+/// <item>Every addition is applied, in dependency order, except an inferred one: an inference
+/// is a hint, and only a person promotes it (§2.2). It waits in "Needs you" as a suggestion.</item>
 /// <item>A change is applied only when this Source wrote the fact last and no person edited it
 /// since: the planner made it a <c>change</c> (not a <c>conflict</c>), the fact is linked to
 /// this Source, and no other Source holds it.</item>
@@ -108,8 +109,10 @@ internal static class AutoApply
             .Where(p => p.ScanId == scan.Id && p.Status == ProposalStatus.Pending
                 && (p.Action == ProposalAction.Add || (p.Action == ProposalAction.Change && p.OtherSources == "[]")))
             .OrderBy(p => p.Seq)
-            .Select(p => new { p.Id, p.Seq, p.Action, p.EntityKind, p.EntityId, p.Subject, p.FactKey, p.DependsOn, p.Fingerprint })
+            .Select(p => new { p.Id, p.Seq, p.Action, p.EntityKind, p.EntityId, p.Subject, p.FactKey, p.DependsOn, p.Fingerprint, p.Attributes, p.Evidence })
             .ToListAsync(ct);
+        // An inference is never applied by a scan. What depends on it waits with it.
+        pending.RemoveAll(p => FactMapping.LabelOf(ProposalJson.ReadAttributes(p.Attributes), ProposalJson.ReadEvidence(p.Evidence)) == FactMapping.Inferred);
 
         // A change is this Source's to make only on a fact this Source wrote: one linked to it.
         var changed = pending.Where(p => p.Action == ProposalAction.Change).Select(p => p.EntityId).Distinct().ToList();

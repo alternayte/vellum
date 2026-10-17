@@ -100,6 +100,7 @@ internal sealed record MappingResult(
 /// <item><term>Schema</term><description>A schema, when the fact holds a JSON Schema body. A contract document as a whole stays evidence.</description></item>
 /// <item><term>Code and contract</term><description>One thing has one entity. A message that a contract file declares (it has a <c>contract</c> attribute) is the code message with exactly the same name (ordinal) that a Publication names, when there is exactly one: the contract fact is then folded into that message's proposal, with its evidence, its payload schema and its attributes under <c>contract.*</c>. A channel that a contract file declares is the code channel of the same kind whose name is exactly the contract's <c>address</c>, in the same way. With no such code fact the contract fact maps by itself; with several it stays evidence. Names that differ in case or form (a Go struct <c>orderCreated</c>) are other facts.</description></item>
 /// <item><term>Interaction</term><description>A relationship of kind behavioural from the element of its <c>from</c> service to the element of its <c>to</c> service, labelled with what the Source says (<c>calls</c>, <c>sends messages to</c>). Both services must be facts of this scan. Only runtime Sources make it.</description></item>
+/// <item><term>Relationship of a code scan</term><description>A relationship that <see cref="RelationshipExtractor"/> derives (message flow, data access, compose <c>depends_on</c>, an inferred HTTP call) maps like one a model file declares. An inferred one keeps the label <c>inferred</c> and its confidence, and is never applied without a person (<see cref="AutoApply"/>).</description></item>
 /// <item><term>Every other kind</term><description>Evidence only: the model has no home for it yet.</description></item>
 /// </list>
 /// </summary>
@@ -116,10 +117,24 @@ internal static class FactMapping
 
     /// <summary>
     /// The attribute in which a runtime Source names the truth label of a fact (<c>measured</c>
-    /// or <c>declared</c>). Without it the fact is <c>observed-in-source</c>: an extractor read
-    /// it from a file. It is consumed by the mapping, so it is never an observed value.
+    /// or <c>declared</c>), or in which a rule marks a fact it infers (<c>inferred</c>, with a
+    /// <see cref="ConfidenceAttribute"/>). Without it the fact is <c>observed-in-source</c>: an
+    /// extractor read it from a file. It is consumed by the mapping, so it is never an observed value.
     /// </summary>
     public const string TruthLabelAttribute = "truthLabel";
+
+    /// <summary>The confidence of an inferred fact, from 0 to 1. An inferred fact without one is not applied.</summary>
+    public const string ConfidenceAttribute = "confidence";
+
+    public const string Inferred = "inferred";
+
+    /// <summary>The confidence an inferred fact states, or null when it states none that is a number from 0 to 1.</summary>
+    public static double? ConfidenceOf(IReadOnlyDictionary<string, string> attributes) =>
+        attributes.TryGetValue(ConfidenceAttribute, out var text)
+        && double.TryParse(text, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var value)
+        && value is >= 0 and <= 1
+            ? value
+            : null;
 
     /// <summary>
     /// Attributes whose names start with this describe one sample of a runtime Source (call
@@ -137,7 +152,7 @@ internal static class FactMapping
     /// file or an ADR is <c>declared</c>, code and configuration <c>observed-in-source</c>.
     /// </summary>
     public static string LabelOf(IReadOnlyDictionary<string, string> attributes, IEnumerable<string> rules) =>
-        attributes.TryGetValue(TruthLabelAttribute, out var label) && label is "measured" or "declared"
+        attributes.TryGetValue(TruthLabelAttribute, out var label) && label is "measured" or "declared" or Inferred
             ? label
             : TruthLabels.Of(rules);
 

@@ -170,6 +170,9 @@ internal sealed class ComposeExtractor : IExtractor
         var ports = new List<string>();
         var dependsOn = new List<string>();
         var environment = new List<string>();
+        var dependsAt = new List<ComposeReference>();
+        var variables = new List<ComposeVariable>();
+        var builds = new HashSet<(string? Build, string? Dockerfile)>();
         var evidence = new List<SourceEvidence>(parts.Count);
         var single = new List<(Part Part, List<(string, string?)> Attributes)>(parts.Count);
         var hasCommand = false;
@@ -210,9 +213,11 @@ internal sealed class ComposeExtractor : IExtractor
 
             if (service.Entry("build") is { } build)
             {
-                attributes.Add(("build", PathValue(context, file, build.Value.Kind == DocKind.Map ? build.Value.Entry("context") : build)));
-                if (build.Value.Kind == DocKind.Map)
-                    attributes.Add(("dockerfile", PathValue(context, file, build.Value.Entry("dockerfile"))));
+                var buildPath = PathValue(context, file, build.Value.Kind == DocKind.Map ? build.Value.Entry("context") : build);
+                var dockerfile = build.Value.Kind == DocKind.Map ? PathValue(context, file, build.Value.Entry("dockerfile")) : null;
+                attributes.Add(("build", buildPath));
+                attributes.Add(("dockerfile", dockerfile));
+                builds.Add((buildPath, dockerfile));
             }
 
             foreach (var key in (string[])["entrypoint", "command"])
@@ -261,21 +266,31 @@ internal sealed class ComposeExtractor : IExtractor
             {
                 if (!meter.Charge(depends.Entries.Count + depends.Items.Count))
                     return;
-                foreach (var dependency in depends.Kind == DocKind.Map ? depends.Entries.Select(e => e.Key) : depends.Items.Select(i => i.AsText() ?? ""))
+                foreach (var (dependency, line) in depends.Kind == DocKind.Map
+                    ? depends.Entries.Select(e => (e.Key, e.KeyLine))
+                    : depends.Items.Select(i => (i.AsText() ?? "", i.StartLine)))
                     if (CredentialGuard.IsIdentifierToken(dependency))
+                    {
                         dependsOn.Add(dependency);
+                        dependsAt.Add(new ComposeReference(dependency, file.Path, line));
+                    }
             }
 
-            if (service.Get("environment") is { } variables)
+            if (service.Get("environment") is { } environmentList)
             {
-                if (!meter.Charge(variables.Entries.Count + variables.Items.Count))
+                if (!meter.Charge(environmentList.Entries.Count + environmentList.Items.Count))
                     return;
-                foreach (var (variable, line) in variables.Kind == DocKind.Map
-                    ? variables.Entries.Select(e => (e.Key, e.KeyLine))
-                    : variables.Items.Where(i => i.AsText() is not null).Select(i => (NameOf(i.Text), i.StartLine)))
+                foreach (var (variable, line, value) in environmentList.Kind == DocKind.Map
+                    ? environmentList.Entries.Select(e => (e.Key, e.KeyLine, e.Value.AsText()))
+                    : environmentList.Items.Where(i => i.AsText() is not null).Select(i => (NameOf(i.Text), i.StartLine, ValueOf(i.Text))))
                 {
                     if (CommandLine.IsVariableName(variable))
+                    {
                         environment.Add(variable);
+                        // The value is read for one thing only: the compose service it names as
+                        // its host. The value itself is never kept.
+                        variables.Add(new ComposeVariable(variable, file.Path, line, value is null ? null : HostOf(value)));
+                    }
                     else
                         context.Note(NoteKind.Undecided, "invalid-environment-name", file.Path, line);
                 }
@@ -311,6 +326,70 @@ internal sealed class ComposeExtractor : IExtractor
         ]);
         foreach (var (part, attributes) in single)
             context.Add(factKind, factKey, name, [Service.At(part.File.Path, part.Entry.KeyLine, part.Entry.Value.EndLine)], attributes);
+
+        // Two files that build the service differently say no one build.
+        var (buildContext, buildFile) = builds.Count == 1 ? builds.First() : (null, null);
+        context.ComposeServices.Add(new ComposeService(
+            project, name, factKey, isStore, kind.Broker, at.Path, at.StartLine, builds.Count > 0, buildContext, buildFile, dependsAt, variables));
+    }
+
+    /// <summary>"NAME=value" gives "value", "NAME" gives null.</summary>
+    private static string? ValueOf(string item)
+    {
+        var equals = item.IndexOf('=');
+        return equals < 0 ? null : item[(equals + 1)..];
+    }
+
+    /// <summary>
+    /// The host that a variable value names, when it is a plain name: the host of a URL
+    /// (<c>postgres://u:p@db:5432/x</c>), the <c>Host</c>, <c>Server</c>, <c>Data Source</c> or
+    /// <c>Address</c> of a connection string (<c>Host=db;Database=x</c>), or <c>db:5432</c>.
+    /// Null for anything else, and for a list of hosts.
+    /// </summary>
+    internal static string? HostOf(string value)
+    {
+        value = value.Trim();
+        var scheme = value.IndexOf("://", StringComparison.Ordinal);
+        if (scheme > 0)
+        {
+            var authority = value[(scheme + 3)..];
+            var end = authority.IndexOfAny(['/', '?', '#']);
+            if (end >= 0)
+                authority = authority[..end];
+            var at = authority.LastIndexOf('@');
+            if (at >= 0)
+                authority = authority[(at + 1)..];
+            if (authority.Contains(','))
+                return null;
+            var colon = authority.IndexOf(':');
+            return Plain(colon >= 0 ? authority[..colon] : authority);
+        }
+        if (value.Contains('='))
+        {
+            foreach (var part in value.Split(';'))
+            {
+                var equals = part.IndexOf('=');
+                if (equals < 0)
+                    continue;
+                var key = part[..equals].Replace(" ", "", StringComparison.Ordinal).Trim().ToLowerInvariant();
+                if (key is not ("host" or "server" or "datasource" or "address" or "addr" or "hostname"))
+                    continue;
+                var host = part[(equals + 1)..].Trim();
+                if (host.StartsWith("tcp:", StringComparison.OrdinalIgnoreCase))
+                    host = host[4..];
+                if (host.Contains(',') && host.IndexOf(',') != host.LastIndexOf(','))
+                    return null;
+                var cut = host.IndexOfAny([',', ':']);
+                return Plain(cut >= 0 ? host[..cut] : host);
+            }
+            return null;
+        }
+        var port = value.LastIndexOf(':');
+        return port > 0 && port < value.Length - 1 && value.AsSpan(port + 1).IndexOfAnyExceptInRange('0', '9') < 0
+            ? Plain(value[..port])
+            : null;
+
+        static string? Plain(string host) => CredentialGuard.IsIdentifierToken(host) ? host : null;
     }
 
     private static bool HasOneShotWord(string[] parts)
@@ -366,6 +445,20 @@ internal sealed class ComposeExtractor : IExtractor
     private static readonly System.Buffers.SearchValues<char> PortCharacters =
         System.Buffers.SearchValues.Create("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789.:-/${}_");
 }
+
+/// <param name="Project">The directory of the compose files, <c>.</c> at the repository root.</param>
+/// <param name="FactKey">The key of the DataStore or Deployment fact of the service.</param>
+/// <param name="HasBuild">True when a file of the project builds the service. <paramref name="Build"/> is null when the files disagree.</param>
+internal sealed record ComposeService(
+    string Project, string Name, string FactKey, bool IsStore, bool IsBroker, string Path, int Line,
+    bool HasBuild, string? Build, string? Dockerfile,
+    IReadOnlyList<ComposeReference> DependsOn, IReadOnlyList<ComposeVariable> Environment);
+
+/// <summary>A <c>depends_on</c> item: the service it names, and its line.</summary>
+internal sealed record ComposeReference(string Service, string Path, int Line);
+
+/// <summary>A variable of a service: its name, its line, and the host its value names (<see cref="ComposeExtractor.HostOf"/>).</summary>
+internal sealed record ComposeVariable(string Name, string Path, int Line, string? Host);
 
 /// <summary>
 /// An image reference of a compose file, a Dockerfile or a Kubernetes manifest:

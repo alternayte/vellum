@@ -99,6 +99,8 @@ internal sealed record Plan(
 /// evidence the link was accepted with (<see cref="ScanCoverage"/>): <c>remove</c>, and a
 /// stale mark when the entity is <c>observed-in-source</c>. When the scan did not look, the
 /// fact is "not covered": no removal, no mark, and an existing mark stays.</item>
+/// <item>A relationship that no link holds is never matched by name. When the model holds one
+/// with the same ends, kind and label, nothing is proposed for it; otherwise it is an <c>add</c>.</item>
 /// <item>A proposal that a person rejected is not made again while it says the same thing.</item>
 /// </list>
 /// </summary>
@@ -112,6 +114,9 @@ internal static class ProposalPlanner
 
     /// <summary>The fact waits for a person to answer "same as X?".</summary>
     public const string BindingQuestion = "binding-question";
+
+    /// <summary>The model holds a relationship with the same ends, kind and label. No second one is proposed.</summary>
+    public const string RelationshipInModel = "relationship-in-model";
     private const int MaxChangeText = 2000;
 
     private sealed record Resolution(Guid? EntityId, Guid? AddProposalId, string? Name, string? Blocked);
@@ -206,13 +211,17 @@ internal static class ProposalPlanner
                 : null;
             var linked = entity is not null;
             var isElement = candidate.EntityKind == EntityKinds.Element;
+            var isRelationship = candidate.EntityKind == EntityKinds.Relationship;
             ModelEntity? sameAs = null;
             // A key that a person bound to an element targets that element.
             if (entity is null && blocked is null && isElement
                 && input.Model.BoundElement(input.SourceId, FactMapping.ExternalKey(candidate.FactKey)) is { } boundId
                 && !claimed.Contains(boundId) && !input.TakenEntityIds.Contains(boundId))
                 entity = input.Model.Find(EntityKinds.Element, boundId);
-            if (entity is null && blocked is null)
+            // A relationship is not matched to an entity by name: one with the same ends, kind
+            // and label is the same thing, and the model holds it already (below); one with
+            // another label or kind says another thing.
+            if (entity is null && blocked is null && !isRelationship)
             {
                 // An operation is matched on its route, which its attributes state more exactly than its name.
                 var matched = candidate.MatchRoute is null
@@ -259,6 +268,15 @@ internal static class ProposalPlanner
                     ToJson(values, names, candidate.Observed), sameAsJson, [], candidate.Evidence, candidate.Attributes,
                     candidate.ConsumerKeys, [], BindFingerprint(candidate.FactKey, sameAs.Id),
                     input.OthersOf(EntityKinds.Element, sameAs.Id)));
+                continue;
+            }
+
+            if (entity is null && blocked is null && isRelationship
+                && Guid.TryParse(values.GetValueOrDefault(Field.FromId), out var fromId) && Guid.TryParse(values.GetValueOrDefault(Field.ToId), out var toId)
+                && input.Model.HoldsRelationship(fromId, toId, values.GetValueOrDefault(Field.Kind) ?? "behavioural", values.GetValueOrDefault(Field.Label)))
+            {
+                resolved[candidate.FactKey] = new Resolution(null, null, null, RelationshipInModel);
+                Reclassify(candidate.FactKey, FactDisposition.EvidenceOnly, RelationshipInModel);
                 continue;
             }
 

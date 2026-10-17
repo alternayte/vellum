@@ -21,6 +21,15 @@ const ACTION: Record<ProposalAction, { label: string; color: string; sign: strin
   bind: { label: 'Same as?', color: 'var(--trace-data)', sign: '=' },
 }
 
+/** An addition that a rule inferred from a name. The scan never applies it; a person accepts or rejects it. */
+const SUGGESTION = { label: 'Suggestion', color: 'var(--trace-data)', sign: '≈' }
+
+const isSuggestion = (proposal: Proposal) => proposal.action === 'add' && proposal.factStatus === 'inferred'
+
+/** "60%" for 0.6. */
+const percent = (confidence: number | null | undefined) =>
+  confidence === null || confidence === undefined ? null : `${Math.round(confidence * 100)}%`
+
 /** The order a person reads the list in: questions and conflicts first, additions last. */
 const ORDER: ProposalAction[] = ['bind', 'conflict', 'relink', 'change', 'remove', 'add']
 
@@ -87,7 +96,8 @@ function NeedsYouRow({ projectId, source, proposal, readOnly }: { projectId: str
   const [link, setLink] = useState<string | null | undefined>(undefined)
   const decide = useNeedsYouDecision(projectId)
   const keep = useKeepFact(projectId)
-  const action = ACTION[proposal.action]
+  const suggestion = isSuggestion(proposal)
+  const action = suggestion ? SUGGESTION : ACTION[proposal.action]
   const send = (decision: NeedsYouDecision) => decide.mutate({ scanId: source.scanId, decision })
   const accept = (acknowledgeImpact = false) =>
     send({ accept: [...withDependencies(new Set([proposal.id]), source.items)], acknowledgeImpact })
@@ -115,6 +125,11 @@ function NeedsYouRow({ projectId, source, proposal, readOnly }: { projectId: str
           </span>
           {line && <span className="block truncate font-mono text-[10px] text-muted-foreground" title={line}>{line}</span>}
           {proposal.action === 'remove' && <span className="block text-[11px] text-muted-foreground">Not seen in the latest scan. Nothing was deleted.</span>}
+          {suggestion && (
+            <span className="block text-[11px] text-muted-foreground">
+              Inferred{percent(proposal.confidence) && `, confidence ${percent(proposal.confidence)}`}. Not in the model until you accept it.
+            </span>
+          )}
         </button>
       </div>
 
@@ -122,7 +137,11 @@ function NeedsYouRow({ projectId, source, proposal, readOnly }: { projectId: str
         <div className="mt-1.5 flex flex-wrap gap-1 pl-5">
           {(proposal.action === 'add' || proposal.action === 'change' || proposal.action === 'conflict') && (
             <>
-              <Button size="sm" variant="secondary" className="h-6 px-2 text-xs" disabled={busy} onClick={() => accept()}>Accept</Button>
+              <Button size="sm" variant="secondary" className="h-6 px-2 text-xs" disabled={busy}
+                title={suggestion ? 'Add it to the model, labelled inferred' : undefined}
+                onClick={() => accept()}>
+                Accept
+              </Button>
               <Button size="sm" variant="ghost" className="h-6 px-2 text-xs" disabled={busy}
                 title={proposal.action === 'conflict' ? 'Keep the model as it is. The same proposal is not made again.' : 'The same proposal is not made again.'}
                 onClick={() => send({ reject: [proposal.id] })}>
@@ -243,6 +262,12 @@ function ProposalDetail({ projectId, source, proposal: listed, link, onLink }: {
       )}
       {proposal.action === 'remove' && (
         <p className="text-muted-foreground">The latest Snapshot of {source.sourceName} no longer holds this. Remove takes it out of the model. Keep leaves it and clears the mark.</p>
+      )}
+      {isSuggestion(proposal) && (
+        <p className="text-muted-foreground">
+          A rule inferred this from a name in {source.sourceName}. A name is a hint, not proof. Accept adds it to the model, labelled inferred.
+          Reject keeps it out, and the same suggestion is not made again.
+        </p>
       )}
       {fields.length > 0 && (
         <dl className="space-y-1">

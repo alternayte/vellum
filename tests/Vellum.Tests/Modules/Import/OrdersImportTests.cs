@@ -53,7 +53,7 @@ public class OrdersImportTests(ImportHost import) : IClassFixture<ImportHost>
         var evidence = await s.EvidenceAsync(scan.Id());
         Assert.Equal(facts.MappedKeys, proposals.Values("factKey"));
         Assert.All(proposals, p => Assert.Equal(("add", "pending", false), (p.Text("action"), p.Text("status"), p["partial"]!.GetValue<bool>())));
-        Assert.Equal(21, proposals.Count);
+        Assert.Equal(27, proposals.Count);
         Assert.Equal(facts.EvidenceOnly, evidence.Count);
         // Folded: the publication that gives the message its producer, and the AsyncAPI
         // declarations of the message and of the exchange that the code also declares.
@@ -69,7 +69,7 @@ public class OrdersImportTests(ImportHost import) : IClassFixture<ImportHost>
         Assert.False(string.IsNullOrEmpty(outbox.Text("reason")));
         Assert.NotEmpty(outbox["evidence"]!.AsArray());
         Assert.Single(await s.EvidenceAsync(scan.Id(), "factKey=" + Uri.EscapeDataString(outbox.Text("factKey")!)));
-        Assert.Equal(21, scan["proposalCounts"]!["pending"]!.GetValue<int>());
+        Assert.Equal(27, scan["proposalCounts"]!["pending"]!.GetValue<int>());
 
         // The hero items, with their exact lines.
         var postOrders = proposals.Proposal("operation", "POST /orders");
@@ -102,7 +102,7 @@ public class OrdersImportTests(ImportHost import) : IClassFixture<ImportHost>
         // 4. One decision for everything, named in reverse order: the order is resolved for the caller.
         var decision = await s.DecideAsync(scan.Id(), accept: proposals.Select(p => p.Id()).Reverse());
         Assert.Empty(decision["failed"]!.AsArray());
-        Assert.Equal(21, decision["accepted"]!.AsArray().Count);
+        Assert.Equal(27, decision["accepted"]!.AsArray().Count);
         var me = (await s.Owner.GetFromJsonAsync<JsonObject>("/api/auth/me"))!.Text("id");
 
         var elements = await s.ElementsAsync();
@@ -134,6 +134,28 @@ public class OrdersImportTests(ImportHost import) : IClassFixture<ImportHost>
         var inventory = subscriptions.Single("consumerId", elements.Single("name", "inventory-worker").Text("id")!);
         Assert.Equal((channels.Single("name", "inventory.order-created").Text("id"), channels.Single("name", "order-events.dlx").Text("id")),
             (inventory.Text("channelId"), inventory.Text("deadLetterChannelId")));
+
+        // The lines between the cards: message flow, data access and compose startup order.
+        var relationships = await s.AllAsync(s.Model("relationships"));
+        string Line(JsonObject r) =>
+            $"{elements.Single("id", r.Text("fromId")!).Text("name")} → {elements.Single("id", r.Text("toId")!).Text("name")}: {r.Text("label")} ({r.Text("kind")}, {r.Text("factStatus")})";
+        Assert.Equal(
+        [
+            "Orders.Api → Billing: publishes OrderCreated (behavioural, observed-in-source)",
+            "Orders.Api → inventory-worker: publishes OrderCreated (behavioural, observed-in-source)",
+            "Orders.Api → postgres: depends on (structural, observed-in-source)",
+            "Orders.Api → postgres: reads and writes (behavioural, observed-in-source)",
+            "inventory-worker → postgres: depends on (structural, observed-in-source)",
+            "inventory-worker → postgres: reads and writes (behavioural, observed-in-source)",
+        ], relationships.Select(Line).Order(StringComparer.Ordinal));
+        // The pointer is a line of the relationship's own rule, never the line of an end.
+        var reads = relationships.Single(r => Line(r).StartsWith("Orders.Api → postgres: reads", StringComparison.Ordinal));
+        Assert.Equal($"{repository}@{ImportScenario.Commit1}:docker-compose.yml:24-24", reads["provenance"]!["source"]!.GetValue<string>());
+        var flow = proposals.Single(p => p.Text("entityKind") == "relationship" && p.Text("name")!.EndsWith("Billing: publishes OrderCreated", StringComparison.Ordinal));
+        Assert.Equal(
+            ["billing/OrderCreatedConsumer.cs:7-9", "billing/Program.cs:16-20", "orders-api/Program.cs:46-46"],
+            flow["evidence"]!.AsArray().Where(e => e!["rule"]!.GetValue<string>() == "relationship.message-flow")
+                .Select(e => $"{e!["path"]!.GetValue<string>()}:{e["startLine"]}-{e["endLine"]}"));
 
         var stored = Assert.Single(await s.AllAsync(s.Model("messages")));
         var schemas = await s.AllAsync(s.Model("schemas"));
@@ -169,7 +191,7 @@ public class OrdersImportTests(ImportHost import) : IClassFixture<ImportHost>
         Assert.Empty(await s.ProposalsAsync(again.Id()));
         Assert.Equal(fetched, s.GitHub.BlobRequests.Count);
         Assert.Equal(before, await s.Owner.GetStringAsync(s.Model("elements")));
-        Assert.Equal(21, (await s.GetAsync(scan.Id()))["proposalCounts"]!["accepted"]!.GetValue<int>());
+        Assert.Equal(27, (await s.GetAsync(scan.Id()))["proposalCounts"]!["accepted"]!.GetValue<int>());
 
         // 7. A commit that removes the outbox and renames a field of the event.
         s.GitHub.Commit(ImportScenario.Commit2, FixtureGitHub.Load("orders-outbox-removed"));

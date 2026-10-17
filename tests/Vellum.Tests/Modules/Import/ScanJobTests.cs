@@ -81,7 +81,7 @@ public class ScanJobTests(ImportHost import) : IClassFixture<ImportHost>
         var done = await s.GetAsync(id);
         Assert.Equal(("completed", true, ImportScenario.Commit1), (done.Text("status"), done["isComplete"]!.GetValue<bool>(), done.Text("commitSha")));
         Assert.Null(done["retryAt"]);
-        Assert.Equal(21, (await s.ProposalsAsync(id)).Count);
+        Assert.Equal(27, (await s.ProposalsAsync(id)).Count);
 
         // Only the refused blob was asked for twice; the ref and the file list once.
         var blobs = s.GitHub.BlobRequests;
@@ -141,7 +141,7 @@ public class ScanJobTests(ImportHost import) : IClassFixture<ImportHost>
         Assert.Equal("completed", (await s.GetAsync(id)).Text("status"));
         Assert.Equal(s.GitHub.BlobRequests.Distinct().Count(), s.GitHub.BlobRequests.Count);
         Assert.Equal(1, Count(s, "tree:"));
-        Assert.Equal(21, (await s.ProposalsAsync(id)).Count);
+        Assert.Equal(27, (await s.ProposalsAsync(id)).Count);
     }
 
     [Fact]
@@ -331,6 +331,6 @@ public class ScanJobTests(ImportHost import) : IClassFixture<ImportHost>
         }
 
         Assert.Equal(("completed", true), (scan.Text("status"), scan["isComplete"]!.GetValue<bool>()));
-        Assert.Equal(21, (await s.ProposalsAsync(id)).Count);
+        Assert.Equal(27, (await s.ProposalsAsync(id)).Count);
     }
 }

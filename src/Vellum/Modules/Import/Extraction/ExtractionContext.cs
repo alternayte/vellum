@@ -450,6 +450,25 @@ internal sealed class ExtractionContext(ExtractionLimits limits)
     /// </summary>
     public ExtractionResult Result(string repository, string commitSha)
     {
+        var facts = Facts(note: true);
+        var notes = _notes
+            .OrderBy(n => n.Path, StringComparer.Ordinal).ThenBy(n => n.Line)
+            .ThenBy(n => n.Kind).ThenBy(n => n.Reason, StringComparer.Ordinal).ToList();
+        return new ExtractionResult(repository, commitSha, facts, notes, !_incomplete);
+    }
+
+    /// <summary>
+    /// The facts added so far, as <see cref="Result"/> gives them, for a rule that reads the
+    /// facts of the other extractors (<see cref="RelationshipExtractor"/>). It adds no note: an
+    /// attribute that two sources disagree on is left out here and noted once by the result.
+    /// </summary>
+    public IReadOnlyList<ExtractedFact> CurrentFacts() => Facts(note: false);
+
+    /// <summary>The services of the compose files, as <see cref="ComposeExtractor"/> read them. Never written to a fact.</summary>
+    public List<ComposeService> ComposeServices { get; } = [];
+
+    private List<ExtractedFact> Facts(bool note)
+    {
         var facts = new List<ExtractedFact>(_facts.Count);
         foreach (var draft in _facts.Values.OrderBy(f => f.Kind.ToString(), StringComparer.Ordinal).ThenBy(f => f.Key, StringComparer.Ordinal))
         {
@@ -461,6 +480,8 @@ internal sealed class ExtractionContext(ExtractionLimits limits)
                     attributes[attribute] = values.Keys.First();
                     continue;
                 }
+                if (!note)
+                    continue;
                 var first = values.Values.Min(EvidenceOrder)!;
                 Note(NoteKind.Conflict, "attribute:" + attribute, first.Path, first.StartLine);
                 var listed = string.Join(" | ", values.Select(v => string.Create(
@@ -473,10 +494,7 @@ internal sealed class ExtractionContext(ExtractionLimits limits)
             facts.Add(new ExtractedFact(draft.Kind, draft.Key, draft.Name, attributes,
                 draft.Evidence.Distinct().Order(EvidenceOrder).ToList()));
         }
-        var notes = _notes
-            .OrderBy(n => n.Path, StringComparer.Ordinal).ThenBy(n => n.Line)
-            .ThenBy(n => n.Kind).ThenBy(n => n.Reason, StringComparer.Ordinal).ToList();
-        return new ExtractionResult(repository, commitSha, facts, notes, !_incomplete);
+        return facts;
     }
 }
 

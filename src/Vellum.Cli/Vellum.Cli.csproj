@@ -30,6 +30,7 @@
 
   <ItemGroup>
     <Compile Include="../Vellum/Modules/Import/Extraction/**/*.cs" Link="Shared/Extraction/%(RecursiveDir)%(Filename)%(Extension)" />
+    <Compile Include="../Vellum/Modules/Trace/Engine/RoutingKeys.cs" Link="Shared/Trace/RoutingKeys.cs" />
     <Compile Include="../Vellum/Modules/Import/Scans/ScanScope.cs" Link="Shared/Scans/ScanScope.cs" />
     <Compile Include="../Vellum/Modules/Import/Scans/ScanValues.cs" Link="Shared/Scans/ScanValues.cs" />
     <Compile Include="../Vellum/Modules/Import/Scans/ContentClearance.cs" Link="Shared/Scans/ContentClearance.cs" />

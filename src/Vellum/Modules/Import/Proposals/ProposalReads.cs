@@ -27,14 +27,15 @@ public sealed record ProposalChangeDto(string Field, string? From, string? To);
 /// <param name="CanDecideReason">Why a pending proposal cannot be decided.</param>
 /// <param name="Impact">What accepting would break, as the model and the scenarios are now. Null when nothing.</param>
 /// <param name="OtherSources">What other Sources of the project accepted for the same entity, each with its values and citation. A <c>conflict</c> shows them side by side; none wins by itself.</param>
-/// <param name="FactStatus">The truth label the fact gets when it is accepted: <c>declared</c> for a model file (Structurizr, Backstage), else <c>observed-in-source</c>.</param>
+/// <param name="FactStatus">The truth label the fact gets when it is accepted: <c>declared</c> for a model file (Structurizr, Backstage), <c>inferred</c> for a suggestion of a rule (an HTTP call named by a variable), else <c>observed-in-source</c>. A scan never applies an <c>inferred</c> addition: it waits for a person.</param>
+/// <param name="Confidence">For an <c>inferred</c> fact, the confidence from 0 to 1 that its rule states. Null for every other label.</param>
 /// <param name="Truncated">True when long values of <paramref name="Proposed"/>, <paramref name="Current"/> or <paramref name="Changes"/> are cut in this list. The whole proposal is at <c>GET …/proposals/{id}</c>.</param>
 public sealed record ProposalDto(
     Guid Id, string Action, string EntityKind, Guid EntityId, string Subject, string FactKey, string Name,
     JsonObject? Proposed, JsonObject? Current, IReadOnlyList<ProposalChangeDto> Changes,
     IReadOnlyList<EvidenceDto> Evidence, Guid[] DependsOn, string Status, bool Partial,
     bool CanDecide, string? CanDecideReason, ProposalImpactDto? Impact, bool Truncated,
-    IReadOnlyList<OtherSourceFact> OtherSources, Guid SourceId, string FactStatus = TruthLabels.ObservedInSource);
+    IReadOnlyList<OtherSourceFact> OtherSources, Guid SourceId, string FactStatus = TruthLabels.ObservedInSource, double? Confidence = null);
 
 /// <param name="NotCovered">
 /// The accepted facts of the repository that this scan could not judge, by reason. They are
@@ -225,13 +226,15 @@ public static class ProposalReads
             impact = found.IsEmpty ? null : found;
         }
 
+        var attributes = ProposalJson.ReadAttributes(p.Attributes);
+        var label = FactMapping.LabelOf(attributes, ProposalJson.ReadEvidence(p.Evidence));
         return new ProposalDto(
             p.Id, EnumText.Of(p.Action), EnumText.Of(p.EntityKind), p.EntityId, EnumText.Of(p.Subject), p.FactKey, p.Name, proposed, current,
             [.. changes.Select(c => new ProposalChangeDto(c.Field, c.From, c.To))],
             Evidence(context.SourceKind, context.Repository, context.CommitSha, p.Evidence), p.DependsOn, EnumText.Of(p.Status), p.Partial,
             pending && context.Decidable, pending ? context.Reason : null, impact, truncated,
             ProposalJson.ReadOtherSources(p.OtherSources), context.SourceId,
-            FactMapping.LabelOf(ProposalJson.ReadAttributes(p.Attributes), ProposalJson.ReadEvidence(p.Evidence)));
+            label, label == FactMapping.Inferred ? FactMapping.ConfidenceOf(attributes) : null);
     }
 
     private static string? Cut(string? value) =>
