@@ -58,18 +58,33 @@ if (args is ["health"])
     return await HealthCommand.RunAsync(builder.Configuration, Console.Error);
 
 // OpenAPI
-builder.Services.AddOpenApi(options => options.AddSchemaTransformer((schema, context, _) =>
+builder.Services.AddOpenApi(options =>
 {
-    // A typed architecture ID is a GUID string on the wire; its converter hides that from
-    // the schema generator.
-    if (typeof(IArchitectureId).IsAssignableFrom(context.JsonTypeInfo.Type))
+    options.AddSchemaTransformer((schema, context, _) =>
     {
-        schema.Type = JsonSchemaType.String;
-        schema.Format = "uuid";
-    }
+        // A typed architecture ID is a GUID string on the wire; its converter hides that from
+        // the schema generator.
+        if (typeof(IArchitectureId).IsAssignableFrom(context.JsonTypeInfo.Type))
+        {
+            schema.Type = JsonSchemaType.String;
+            schema.Format = "uuid";
+        }
 
-    return Task.CompletedTask;
-}));
+        return Task.CompletedTask;
+    });
+    // The committed openapi.json is diffed against the build output, so the document has one
+    // order: paths and tags sorted by name, not by the order the endpoints happen to register.
+    options.AddDocumentTransformer((document, _, _) =>
+    {
+        var paths = new OpenApiPaths();
+        foreach (var (path, item) in document.Paths.OrderBy(p => p.Key, StringComparer.Ordinal))
+            paths.Add(path, item);
+        document.Paths = paths;
+        if (document.Tags is { } tags)
+            document.Tags = new HashSet<OpenApiTag>(tags.OrderBy(t => t.Name, StringComparer.Ordinal));
+        return Task.CompletedTask;
+    });
+});
 
 // Exception handling. Every error answer is the shared envelope (Shared/ErrorEnvelope.cs);
 // an exception that no handler takes is a 500 with nothing of the exception in it.

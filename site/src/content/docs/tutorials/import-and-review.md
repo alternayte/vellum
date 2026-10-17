@@ -80,8 +80,8 @@ A scan reads one commit. It runs no code from the repository.
 
 When the scan completes, Vellum adds the 21 facts that it found to the model. The model was empty, so every fact is an addition, and no step needs you. **Needs you** in the **Sources** panel reads "Nothing needs you".
 
-1. Close the **Sources** panel. The canvas shows the top level of the view with the system `orders`. The auto layout placed it.
-2. Right-click `orders` and select **Drill into**. The canvas shows `Orders.Api`, `Billing`, `inventory-worker` and `postgres`.
+1. Close the **Sources** panel. The scan found one system, `orders`, so the canvas opens its inside. The canvas shows `Orders.Api`, `Billing`, `inventory-worker` and `postgres`, placed by the auto layout.
+2. To see the top level, select **Context** in the breadcrumb. The canvas shows the system `orders`.
 3. Select **Model** in the sidebar, then the **Contracts** tab. **Operations**, **Channels** and **Subscriptions** list the rest of the 21 facts.
 
 ![The canvas at the level Context, orders. A frame with the name orders holds, in one column, the apps Billing (dotnet), inventory-worker (go) and Orders.Api (dotnet) and the store postgres. Each card shows its kind and its technology. No line connects them.](../../../assets/screenshots/canvas-orders-system.png)
