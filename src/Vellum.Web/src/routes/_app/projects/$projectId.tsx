@@ -342,7 +342,12 @@ function ProjectWorkspace() {
         if (fresh.length === 0) return
         writeLayout([...activeView.positions, ...fresh])
         if (firstImport) {
-          useCanvasStore.getState().drillTo(-1)
+          // A repository is often one system: its top level would be a single card, so the
+          // first import opens that system's inside, where its apps and stores are.
+          const top = elements.filter((e) => !e.parentId)
+          const only = top.length === 1 && elements.some((e) => e.parentId === top[0].id) ? top[0] : null
+          if (only) useCanvasStore.getState().showInside([{ elementId: only.id, name: only.name, kind: only.kind }])
+          else useCanvasStore.getState().drillTo(-1)
           requestAnimationFrame(() => requestAnimationFrame(() => fitViewRef.current?.()))
         }
       })
