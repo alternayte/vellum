@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { getBezierPath, getStraightPath, getSmoothStepPath } from '@xyflow/react'
-import { computeEdgeOffset, computeLabelOffset, getEdgePathFn, facingEndpoints, relationshipEnds } from '../../src/lib/edge-utils'
+import { computeEdgeOffset, computeLabelOffset, getEdgePathFn, facingEndpoints, parseRoute, relationshipEnds, routeFits } from '../../src/lib/edge-utils'
 
 describe('getEdgePathFn', () => {
   it('returns getBezierPath for null lineShape', () => {
@@ -117,5 +117,31 @@ describe('relationshipEnds', () => {
   it('treats a word that names no side as auto', () => {
     const ends = relationshipEnds(box(0, 0), box(400, 0), 0, { sourceSide: 'middle', targetSide: 'auto' })
     expect([ends.sourcePosition, ends.targetPosition]).toEqual(['right', 'left'])
+  })
+})
+
+describe('saved routes', () => {
+  const route = {
+    from: { x: 40, y: 69, width: 264, height: 128 },
+    to: { x: 920, y: 64, width: 264, height: 128 },
+    points: [{ x: 304, y: 90 }, { x: 330, y: 90 }, { x: 330, y: 20 }, { x: 900, y: 20 }, { x: 900, y: 100 }, { x: 920, y: 100 }],
+    label: { x: 600, y: 20 },
+  }
+
+  it('holds while both cards keep the boxes it was laid out for', () => {
+    expect(routeFits(route, { ...route.from }, { ...route.to })).toBe(true)
+  })
+
+  it('falls back when either card moves or changes size', () => {
+    expect(routeFits(route, { ...route.from, x: route.from.x + 30 }, route.to)).toBe(false)
+    expect(routeFits(route, route.from, { ...route.to, y: route.to.y - 12 })).toBe(false)
+    expect(routeFits(route, route.from, { ...route.to, height: 160 })).toBe(false)
+  })
+
+  it('reads only a whole route from a saved value', () => {
+    expect(parseRoute(JSON.parse(JSON.stringify(route)))).toEqual(route)
+    expect(parseRoute({ ...route, points: [route.points[0]] })).toBeNull()
+    expect(parseRoute({ ...route, from: { x: 1, y: 2 } })).toBeNull()
+    expect(parseRoute([1, 2])).toBeNull()
   })
 })

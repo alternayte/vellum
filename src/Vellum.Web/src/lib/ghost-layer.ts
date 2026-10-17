@@ -294,7 +294,7 @@ export async function placeGhosts(
     ...ghosts.relationships.map((r) => ({ id: r.id, fromId: r.fromId, toId: r.toId })),
   ].filter((r) => shownIds.has(r.fromId) && shownIds.has(r.toId))
   const layoutOpen = new Set([...open, ...plan.ghostHosts])
-  const laid = new Map((await computeLayout(layoutElements, layoutRelationships, viewport, layoutOpen)).map((p) => [p.elementId, p]))
+  const laid = new Map((await computeLayout(layoutElements, layoutRelationships, viewport, layoutOpen)).positions.map((p) => [p.elementId, p]))
 
   const result = new Map<string, GhostPlace>()
   const hostSizes = new Map<string, { width: number; height: number }>()

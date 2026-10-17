@@ -62,6 +62,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : IdentityDbCo
     public DbSet<ViewEntity> Views => Set<ViewEntity>();
     public DbSet<LayoutPositionEntity> LayoutPositions => Set<LayoutPositionEntity>();
     public DbSet<LayoutEdgeEntity> LayoutEdges => Set<LayoutEdgeEntity>();
+    public DbSet<LayoutLineEntity> LayoutLines => Set<LayoutLineEntity>();
 
     // docs
     public DbSet<SpaceEntity> Spaces => Set<SpaceEntity>();

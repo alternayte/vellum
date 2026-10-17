@@ -3,13 +3,12 @@ import {
   EdgeLabelRenderer,
   useInternalNode,
   type Edge,
-  type InternalNode,
   type EdgeProps,
 } from '@xyflow/react'
 import { useCanvasStore } from '@/stores/canvas-store'
 import { cn } from '@/lib/utils'
 import { EdgeLabelCard } from './edge-label-card'
-import { computeEdgeOffset, computeLabelOffset, getEdgePathFn, relationshipEnds, type Rect } from '@/lib/edge-utils'
+import { computeEdgeOffset, computeLabelOffset, getEdgePathFn, labelZ, nodeBoxes, relationshipEnds, routeOnCanvas, type LayoutRoute } from '@/lib/edge-utils'
 import type { DiffState } from '@/stores/draft-store'
 
 export interface C4EdgeData extends Record<string, unknown> {
@@ -26,6 +25,8 @@ export interface C4EdgeData extends Record<string, unknown> {
   /** The saved side of each end in this view: top, right, bottom or left. Null is auto. */
   sourceSide?: string | null
   targetSide?: string | null
+  /** The route of the auto layout, when one applies (routeApplies). It holds while both cards stay. */
+  route?: LayoutRoute | null
 }
 
 const diffEdgeColor: Record<string, string> = {
@@ -36,13 +37,6 @@ const diffEdgeColor: Record<string, string> = {
 }
 
 export type C4EdgeType = Edge<C4EdgeData, 'c4-edge'>
-
-function nodeRect(node: InternalNode | undefined): Rect | null {
-  const width = node?.measured.width
-  const height = node?.measured.height
-  if (!node || !width || !height) return null
-  return { x: node.internals.positionAbsolute.x, y: node.internals.positionAbsolute.y, width, height }
-}
 
 export const C4Edge = memo(function C4Edge({
   id,
@@ -66,22 +60,26 @@ export const C4Edge = memo(function C4Edge({
   const totalParallel = d.totalParallel ?? 1
   const { sourceOffset } = computeEdgeOffset(edgeIndex, totalParallel)
 
-  // The path attaches to the saved side of each end, or to the side that faces the other card
-  // for an auto end, from the live boxes of the cards. Fall back to the handle coordinates
-  // until both nodes are measured.
-  const sourceRect = nodeRect(useInternalNode(source))
-  const targetRect = nodeRect(useInternalNode(target))
-  const ends = sourceRect && targetRect
-    ? relationshipEnds(sourceRect, targetRect, sourceOffset, { sourceSide: d.sourceSide, targetSide: d.targetSide })
+  // A saved route of the auto layout draws while both cards keep the boxes it was laid out for.
+  // Otherwise the path attaches to the saved side of each end, or to the side that faces the
+  // other card for an auto end, from the live boxes of the cards. Fall back to the handle
+  // coordinates until both nodes are measured.
+  const sourceBoxes = nodeBoxes(useInternalNode(source))
+  const targetBoxes = nodeBoxes(useInternalNode(target))
+  const routed = routeOnCanvas(d.route, sourceBoxes, targetBoxes)
+  const ends = sourceBoxes && targetBoxes
+    ? relationshipEnds(sourceBoxes.absolute, targetBoxes.absolute, sourceOffset, { sourceSide: d.sourceSide, targetSide: d.targetSide })
     : { sourceX: sourceX + sourceOffset, sourceY, sourcePosition, targetX: targetX + sourceOffset, targetY, targetPosition }
 
   const pathFn = getEdgePathFn(d.lineShape)
-  const [edgePath, defaultLabelX, defaultLabelY] = pathFn(ends)
+  const [autoPath, defaultLabelX, defaultLabelY] = pathFn(ends)
 
-  // Offset label position along the edge for parallel edges so labels don't stack
+  // Offset label position along the edge for parallel edges so labels don't stack. A routed
+  // line's label sits where the layout made room for it.
   const labelT = computeLabelOffset(edgeIndex, totalParallel)
-  const labelX = defaultLabelX + (ends.targetX - ends.sourceX) * (labelT - 0.5) * 0.3
-  const labelY = defaultLabelY + (ends.targetY - ends.sourceY) * (labelT - 0.5) * 0.3
+  const edgePath = routed?.path ?? autoPath
+  const labelX = routed?.labelX ?? defaultLabelX + (ends.targetX - ends.sourceX) * (labelT - 0.5) * 0.3
+  const labelY = routed?.labelY ?? defaultLabelY + (ends.targetY - ends.sourceY) * (labelT - 0.5) * 0.3
 
   const diff = d.diffState
   const isBehavioural = d.relationshipKind === 'behavioural'
@@ -131,6 +129,7 @@ export const C4Edge = memo(function C4Edge({
             x={labelX}
             y={labelY}
             below={d.labelBelow}
+            zIndex={labelZ(sourceBoxes, targetBoxes)}
           />
         </EdgeLabelRenderer>
       )}

@@ -1,7 +1,7 @@
 import { memo, useState } from 'react'
-import { EdgeLabelRenderer, getBezierPath, useInternalNode, type Edge, type EdgeProps, type InternalNode } from '@xyflow/react'
+import { EdgeLabelRenderer, getBezierPath, useInternalNode, type Edge, type EdgeProps } from '@xyflow/react'
 import { useShellStore } from '@/stores/shell-store'
-import { computeEdgeOffset, relationshipEnds, type Rect } from '@/lib/edge-utils'
+import { computeEdgeOffset, labelZ, nodeBoxes, relationshipEnds, routeOnCanvas, type LayoutRoute } from '@/lib/edge-utils'
 import { cn } from '@/lib/utils'
 
 export interface DerivedEdgeData extends Record<string, unknown> {
@@ -13,21 +13,17 @@ export interface DerivedEdgeData extends Record<string, unknown> {
   totalParallel?: number
   /** The line runs from the first card of its pair, in the order of IDs, to the second. */
   forward?: boolean
+  /** The route of the auto layout. It holds while both cards stay. */
+  route?: LayoutRoute | null
 }
 
 export type DerivedEdgeType = Edge<DerivedEdgeData, 'derived-edge'>
 
-function nodeRect(node: InternalNode | undefined): Rect | null {
-  const width = node?.measured.width
-  const height = node?.measured.height
-  if (!node || !width || !height) return null
-  return { x: node.internals.positionAbsolute.x, y: node.internals.positionAbsolute.y, width, height }
-}
-
 /**
  * A derived line: the relationships between parts hidden inside two visible cards, in one
- * direction. It is lighter than a relationship and carries a count badge. It follows the auto
- * sides and the default curve; it has no saved sides and no ends to drag.
+ * direction. It is lighter than a relationship and carries a count badge. It takes the route of
+ * the auto layout while its cards stay, and otherwise the auto sides and the default curve; it
+ * has no saved sides and no ends to drag.
  */
 export const DerivedEdge = memo(function DerivedEdge({
   id, source, target, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, data, markerEnd,
@@ -39,21 +35,24 @@ export const DerivedEdge = memo(function DerivedEdge({
   const edgeIndex = data?.edgeIndex ?? 0
   const totalParallel = data?.totalParallel ?? 1
   const { sourceOffset } = computeEdgeOffset(edgeIndex, totalParallel)
-  const sourceRect = nodeRect(useInternalNode(source))
-  const targetRect = nodeRect(useInternalNode(target))
-  const ends = sourceRect && targetRect
-    ? relationshipEnds(sourceRect, targetRect, sourceOffset)
+  const sourceBoxes = nodeBoxes(useInternalNode(source))
+  const targetBoxes = nodeBoxes(useInternalNode(target))
+  const routed = routeOnCanvas(data?.route, sourceBoxes, targetBoxes)
+  const ends = sourceBoxes && targetBoxes
+    ? relationshipEnds(sourceBoxes.absolute, targetBoxes.absolute, sourceOffset)
     : { sourceX: sourceX + sourceOffset, sourceY, sourcePosition, targetX: targetX + sourceOffset, targetY, targetPosition }
-  const [path, centerX, centerY] = getBezierPath(ends)
+  const [autoPath, centerX, centerY] = getBezierPath(ends)
   if (!data) return null
 
-  // The label carries a badge, so parallel labels move apart along the path as in the SVG
-  // export: by the index in the pair, measured in the direction of the pair, so two opposite
-  // lines between the same cards move apart too.
+  // A routed line takes the route of the auto layout and its label point. Otherwise the label
+  // carries a badge, so parallel labels move apart along the path as in the SVG export: by the
+  // index in the pair, measured in the direction of the pair, so two opposite lines between the
+  // same cards move apart too.
   const labelT = totalParallel <= 1 ? 0.5 : Math.min(0.8, Math.max(0.2, 0.5 + (edgeIndex - (totalParallel - 1) / 2) * 0.3))
   const shift = (labelT - 0.5) * (data.forward === false ? -1 : 1)
-  const labelX = centerX + (ends.targetX - ends.sourceX) * shift
-  const labelY = centerY + (ends.targetY - ends.sourceY) * shift
+  const path = routed?.path ?? autoPath
+  const labelX = routed?.labelX ?? centerX + (ends.targetX - ends.sourceX) * shift
+  const labelY = routed?.labelY ?? centerY + (ends.targetY - ends.sourceY) * shift
   const count = data.relationshipIds.length
   const stroke = selected ? 'var(--primary)' : hovered ? 'var(--foreground)' : 'var(--muted-foreground)'
 
@@ -77,7 +76,7 @@ export const DerivedEdge = memo(function DerivedEdge({
             selected ? 'border-primary' : 'border-border',
             !data.label && 'pr-0.5',
           )}
-          style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`, pointerEvents: 'all' }}
+          style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`, pointerEvents: 'all', zIndex: labelZ(sourceBoxes, targetBoxes) }}
           onMouseEnter={() => setHovered(true)}
           onMouseLeave={() => setHovered(false)}
           onClick={() => selectDerivedLine({ fromId: data.fromId, toId: data.toId, relationshipIds: data.relationshipIds })}

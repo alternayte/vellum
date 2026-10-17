@@ -53,7 +53,8 @@ import { TraceEdgeMarkers } from './edges/trace-edge'
 import { ImpactStepMarkers } from './edges/impact-step-edge'
 import { CERTAINTY, strongest } from '@/lib/impact'
 import type { ImpactCertainty } from '@/lib/import-api'
-import { cardSide, effectiveSides, type CardSide, type Rect } from '@/lib/edge-utils'
+import { cardSide, effectiveSides, parseRoute, routeApplies, routeFits, type CardSide, type LayoutRoute, type Rect } from '@/lib/edge-utils'
+import { derivedLabelSize, relationshipLabelSize } from '@/lib/layout'
 import { useGhostStore } from '@/stores/ghost-store'
 import {
   defaultCardPosition, defaultChildPosition, defaultContainerSize, ghostNodeId, ghostParts, isGhostNodeId, itemIdOf,
@@ -107,6 +108,15 @@ export interface EdgeSidesModel {
   relationshipId: string
   sourceSide?: string | null
   targetSide?: string | null
+  /** The saved route of the auto layout, as saved. A value that is not a route draws nothing. */
+  routePoints?: unknown
+}
+
+/** The saved route of the derived line from one card to another, as saved. */
+export interface LineRouteModel {
+  fromId: string
+  toId: string
+  route: unknown
 }
 
 interface MessageModel {
@@ -161,6 +171,8 @@ interface CanvasViewProps {
   commentMarkers?: Record<string, CommentMarker>
   /** The saved sides of the relationships in this view. A relationship without one is auto. */
   edgeSides?: EdgeSidesModel[]
+  /** The saved routes of the derived lines in this view. */
+  lineRoutes?: LineRouteModel[]
   /**
    * Saves the sides of a relationship in this view, after an end of it is dragged to another
    * side of the same card. The relationship's source and target in the model do not change.
@@ -211,7 +223,7 @@ export function CanvasView(props: CanvasViewProps) {
         onNodeDoubleClick: props.onNodeDoubleClick, onFitViewReady: props.onFitViewReady,
         onViewportCenterReady: props.onViewportCenterReady, onSelectionChange: props.onSelectionChange,
         searchOpen: props.searchOpen, onSearchClose: props.onSearchClose, readOnly: true,
-        commentMarkers: props.commentMarkers, edgeSides: props.edgeSides,
+        commentMarkers: props.commentMarkers, edgeSides: props.edgeSides, lineRoutes: props.lineRoutes,
       }
     : props
   return (
@@ -262,6 +274,7 @@ function CanvasViewInner({
   readOnly = false,
   commentMarkers,
   edgeSides,
+  lineRoutes,
   onEdgeSidesChange,
 }: CanvasViewProps) {
   const { currentRootId, zoomLevel, setZoom, activeLens, setLens, expandedNodeIds, toggleExpand } = useCanvasStore()
@@ -440,6 +453,10 @@ function CanvasViewInner({
   }, [lines, selectedDerivedLine])
 
   const sidesMap = useMemo(() => new Map((edgeSides ?? []).map((e) => [e.relationshipId, e])), [edgeSides])
+  const lineRouteMap = useMemo(
+    () => new Map((lineRoutes ?? []).map((l) => [`${l.fromId}>${l.toId}`, parseRoute(l.route)])),
+    [lineRoutes],
+  )
 
   const positionMap = useMemo(() => {
     const map = new Map<string, LayoutPosition>()
@@ -591,6 +608,8 @@ function CanvasViewInner({
           totalParallel: total,
           sourceSide: cardSide(sidesMap.get(rel.id)?.sourceSide),
           targetSide: cardSide(sidesMap.get(rel.id)?.targetSide),
+          // A side or a straight line a person chose wins over the route of the auto layout.
+          route: routeApplies(sidesMap.get(rel.id), rel.lineShape) ? parseRoute(sidesMap.get(rel.id)?.routePoints) : null,
         },
         // Only the selected relationship offers its ends to drag; see shownEdges.
         reconnectable: false,
@@ -611,10 +630,11 @@ function CanvasViewInner({
         relationshipIds: line.relationshipIds,
         label: line.label,
         ...place(line.fromId, line.toId),
+        route: lineRouteMap.get(`${line.fromId}>${line.toId}`) ?? null,
       } satisfies DerivedEdgeData,
     }))
     return [...direct, ...derived]
-  }, [lines, diffStateMap, isReviewMode, sidesMap])
+  }, [lines, diffStateMap, isReviewMode, sidesMap, lineRouteMap])
 
   // The ghosts of this level: dashed cards and lines. A ghost inside a node follows it, so
   // each node comes after the node it sits in.
@@ -967,16 +987,34 @@ function CanvasViewInner({
   const frameNode = useMemo<Node | null>(() => {
     if (!rootElement) return null
     let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity
+    const add = (x: number, y: number, width: number, height: number) => {
+      minX = Math.min(minX, x)
+      minY = Math.min(minY, y)
+      maxX = Math.max(maxX, x + width)
+      maxY = Math.max(maxY, y + height)
+    }
+    const boxes = new Map<string, Rect>()
     for (const n of rfNodes) {
       if (n.parentId || !ELEMENT_NODE_TYPES.has(n.type ?? '')) continue
       const width = n.measured?.width ?? (n.style?.width as number | undefined) ?? 264
       const height = n.measured?.height ?? (n.style?.height as number | undefined) ?? 112
-      minX = Math.min(minX, n.position.x)
-      minY = Math.min(minY, n.position.y)
-      maxX = Math.max(maxX, n.position.x + width)
-      maxY = Math.max(maxY, n.position.y + height)
+      add(n.position.x, n.position.y, width, height)
+      if (n.measured?.width && n.measured.height) boxes.set(n.id, { x: n.position.x, y: n.position.y, width, height })
     }
     if (!Number.isFinite(minX)) return null
+    // A routed line may pass above or beside the cards: the frame holds it and its label too, as
+    // in the SVG export.
+    for (const e of rfEdges) {
+      const data = e.data as { route?: LayoutRoute | null; label?: string | null; technology?: string | null; relationshipIds?: string[] } | undefined
+      const source = boxes.get(e.source)
+      const target = boxes.get(e.target)
+      if (!data?.route || !source || !target || !routeFits(data.route, source, target)) continue
+      for (const p of data.route.points) add(p.x, p.y, 0, 0)
+      const size = data.relationshipIds
+        ? derivedLabelSize(data.relationshipIds.length, data.label ?? null)
+        : relationshipLabelSize({ id: e.id, fromId: e.source, toId: e.target, label: data.label, technology: data.technology })
+      if (size && data.route.label) add(data.route.label.x - size.width / 2, data.route.label.y - size.height / 2, size.width, size.height)
+    }
     const width = maxX - minX + FRAME_INSET.x * 2
     const height = maxY - minY + FRAME_INSET.top + FRAME_INSET.bottom
     return {
@@ -995,7 +1033,7 @@ function CanvasViewInner({
       deletable: false,
       data: { kind: rootElement.kind, name: rootElement.name, icon: rootElement.icon, technology: rootElement.technology } satisfies C4BoundaryData,
     }
-  }, [rfNodes, rootElement])
+  }, [rfNodes, rfEdges, rootElement])
   const shownNodes = useMemo(() => (frameNode ? [frameNode, ...rfNodes] : rfNodes), [frameNode, rfNodes])
 
   // The selected relationship offers its two ends to drag. React Flow draws the drag anchors at

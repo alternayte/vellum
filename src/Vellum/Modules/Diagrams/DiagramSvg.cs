@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using Vellum.Modules.Modelling;
+using Vellum.Modules.Views;
 
 namespace Vellum.Modules.Diagrams;
 
@@ -52,16 +53,19 @@ public static class DiagramSvg
 
         var boxes = diagram.Elements.ToDictionary(e => e.Element.Id, e => new Rect(e.X, e.Y, e.Width, e.Height));
         foreach (var box in boxes.Values) bounds.Add(box);
+        var routes = Routed(diagram, boxes);
 
         if (diagram.Root is { } root && boxes.Count > 0)
         {
-            var frame = FrameRect(boxes.Values);
+            // The frame holds the cards and the routed lines between them with their labels: a
+            // route may pass above or beside the cards.
+            var frame = FrameRect([.. boxes.Values, .. routes.Areas]);
             bounds.Add(frame);
             WriteFrame(body, root, frame);
         }
 
         var labels = new StringBuilder();
-        WriteRelationships(body, labels, diagram, boxes, bounds);
+        WriteRelationships(body, labels, diagram, boxes, routes, bounds);
 
         foreach (var element in diagram.Elements)
             WriteCard(body, element);
@@ -209,8 +213,86 @@ public static class DiagramSvg
         svg.Append("</g>\n");
     }
 
+    /// <summary>The saved routes that a diagram draws, and the area each takes with its label.</summary>
+    private sealed record RoutedLines(
+        Dictionary<RelationshipId, LayoutRoute> Relationships,
+        Dictionary<(ElementId, ElementId), LayoutRoute> Derived,
+        List<Rect> Areas);
+
+    /// <summary>
+    /// The routes that hold, by the rule of the canvas (routeApplies and routeFits in
+    /// edge-utils.ts): a relationship without a saved side and with a curved or stepped line, or a
+    /// derived line, whose route has the boxes both its ends have now. Any other line falls back
+    /// to its auto sides.
+    /// </summary>
+    private static RoutedLines Routed(ViewDiagram diagram, Dictionary<ElementId, Rect> boxes)
+    {
+        var result = new RoutedLines([], [], []);
+        static RouteBox Box(Rect r) => new(r.X, r.Y, r.Width, r.Height);
+        foreach (var r in diagram.Relationships)
+        {
+            if (r.FromId == r.ToId || r.LineShape == "straight" || diagram.Sides.ContainsKey(r.Id)) continue;
+            if (!diagram.Routes.TryGetValue(r.Id, out var route) || !route.Fits(Box(boxes[r.FromId]), Box(boxes[r.ToId]))) continue;
+            result.Relationships[r.Id] = route;
+            result.Areas.Add(Hull([.. route.Points.Select(p => (p.X, p.Y))]));
+            if (LabelSize(r) is { } size && route.Label is { } at)
+                result.Areas.Add(new Rect(at.X - size.Width / 2, at.Y - size.Height / 2, size.Width, size.Height));
+        }
+        foreach (var line in diagram.DerivedLines)
+        {
+            if (!diagram.LineRoutes.TryGetValue((line.FromId, line.ToId), out var route) || !route.Fits(Box(boxes[line.FromId]), Box(boxes[line.ToId]))) continue;
+            result.Derived[(line.FromId, line.ToId)] = route;
+            result.Areas.Add(Hull([.. route.Points.Select(p => (p.X, p.Y))]));
+            if (route.Label is { } at)
+            {
+                var size = DerivedLabelSize(line);
+                result.Areas.Add(new Rect(at.X - size.Width / 2, at.Y - size.Height / 2, size.Width, size.Height));
+            }
+        }
+        return result;
+    }
+
+    /// <summary>The middle of a route, for a label the layout gave no place.</summary>
+    private static (double X, double Y) Middle(LayoutRoute route)
+    {
+        var p = route.Points[route.Points.Count / 2];
+        var q = route.Points[(route.Points.Count - 1) / 2];
+        return ((p.X + q.X) / 2, (p.Y + q.Y) / 2);
+    }
+
+    /// <summary>The radius of the corners of a drawn route, as ROUTE_CORNER in edge-utils.ts.</summary>
+    private const double RouteCorner = 10;
+
+    /// <summary>
+    /// The path of a route: straight runs with rounded corners, a corner's radius at most half of
+    /// each run next to it. The same path as routePath in edge-utils.ts.
+    /// </summary>
+    private static string RoutePath(LayoutRoute route, Bounds bounds)
+    {
+        var at = route.Points;
+        bounds.Add(Hull([.. at.Select(p => (p.X, p.Y))]));
+        var path = new StringBuilder($"M{N(at[0].X)},{N(at[0].Y)}");
+        for (var i = 1; i < at.Count - 1; i++)
+        {
+            var (a, b, c) = (at[i - 1], at[i], at[i + 1]);
+            var before = Math.Sqrt((b.X - a.X) * (b.X - a.X) + (b.Y - a.Y) * (b.Y - a.Y));
+            var after = Math.Sqrt((c.X - b.X) * (c.X - b.X) + (c.Y - b.Y) * (c.Y - b.Y));
+            var r = Math.Min(RouteCorner, Math.Min(before / 2, after / 2));
+            if (r <= 0)
+            {
+                path.Append(CultureInfo.InvariantCulture, $" L{N(b.X)},{N(b.Y)}");
+                continue;
+            }
+            var (x1, y1) = (b.X + (a.X - b.X) / before * r, b.Y + (a.Y - b.Y) / before * r);
+            var (x2, y2) = (b.X + (c.X - b.X) / after * r, b.Y + (c.Y - b.Y) / after * r);
+            path.Append(CultureInfo.InvariantCulture, $" L{N(x1)},{N(y1)} Q{N(b.X)},{N(b.Y)} {N(x2)},{N(y2)}");
+        }
+        path.Append(CultureInfo.InvariantCulture, $" L{N(at[^1].X)},{N(at[^1].Y)}");
+        return path.ToString();
+    }
+
     private static void WriteRelationships(
-        StringBuilder svg, StringBuilder labels, ViewDiagram diagram, Dictionary<ElementId, Rect> boxes, Bounds bounds)
+        StringBuilder svg, StringBuilder labels, ViewDiagram diagram, Dictionary<ElementId, Rect> boxes, RoutedLines routed, Bounds bounds)
     {
         // Parallel lines between one pair of elements are pushed apart: the relationships in ID
         // order, then the derived lines in their order, as on the canvas.
@@ -249,6 +331,17 @@ public static class DiagramSvg
             if (r.FromId == r.ToId)
                 continue; // a loop has no facing sides; the canvas does not draw one either
 
+            var behavioural = r.Kind == RelationshipKind.Behavioural;
+            if (routed.Relationships.TryGetValue(r.Id, out var route))
+            {
+                // The route of the auto layout, its label where the layout made room for it.
+                svg.Append(CultureInfo.InvariantCulture,
+                    $"<path class=\"relationship\" d=\"{RoutePath(route, bounds)}\" fill=\"none\" stroke=\"{(behavioural ? Behavioural : MutedForeground)}\" stroke-width=\"{(behavioural ? "2" : "1.5")}\" marker-end=\"url(#vellum-arrow-{(behavioural ? "behavioural" : "structural")})\"/>\n");
+                var (rx, ry) = route.Label is { } at ? (at.X, at.Y) : Middle(route);
+                WriteLabel(labels, r, rx, ry, bounds);
+                continue;
+            }
+
             var ends = Attach(source, target, offset, diagram.Sides.GetValueOrDefault(r.Id));
             var (path, centerX, centerY) = r.LineShape switch
             {
@@ -257,7 +350,6 @@ public static class DiagramSvg
                 _ => Bezier(ends, bounds),
             };
 
-            var behavioural = r.Kind == RelationshipKind.Behavioural;
             svg.Append(CultureInfo.InvariantCulture,
                 $"<path class=\"relationship\" d=\"{path}\" fill=\"none\" stroke=\"{(behavioural ? Behavioural : MutedForeground)}\" stroke-width=\"{(behavioural ? "2" : "1.5")}\" marker-end=\"url(#vellum-arrow-{(behavioural ? "behavioural" : "structural")})\"/>\n");
 
@@ -270,6 +362,14 @@ public static class DiagramSvg
         foreach (var line in diagram.DerivedLines)
         {
             var (index, total, pair, offset) = Place(line.FromId, line.ToId);
+            if (routed.Derived.TryGetValue((line.FromId, line.ToId), out var route))
+            {
+                svg.Append(CultureInfo.InvariantCulture,
+                    $"<path class=\"derived-line\" d=\"{RoutePath(route, bounds)}\" fill=\"none\" stroke=\"{MutedForeground}\" stroke-width=\"1\" stroke-opacity=\"0.7\" marker-end=\"url(#vellum-arrow-derived)\"/>\n");
+                var (rx, ry) = route.Label is { } at ? (at.X, at.Y) : Middle(route);
+                WriteDerivedLabel(labels, line, rx, ry, bounds);
+                continue;
+            }
             var ends = Attach(boxes[line.FromId], boxes[line.ToId], offset, null);
             var (path, centerX, centerY) = Bezier(ends, bounds);
             svg.Append(CultureInfo.InvariantCulture,
@@ -279,14 +379,29 @@ public static class DiagramSvg
         }
     }
 
+    private static (double Width, double Height) DerivedLabelSize(DerivedLine line)
+    {
+        var count = line.Relationships.Count.ToString(CultureInfo.InvariantCulture);
+        var label = Truncate(DiagramText.OneLine(line.Label), 240, LabelChar);
+        var badgeWidth = Math.Max(16, count.Length * 6.6 + 8);
+        return (6 + badgeWidth + (label.Length > 0 ? 6 + Length(label) * LabelChar : 0) + 6, 24);
+    }
+
+    private static (double Width, double Height)? LabelSize(RelationshipState r)
+    {
+        var label = Truncate(DiagramText.OneLine(r.Label), 240, LabelChar);
+        var technology = Truncate(DiagramText.OneLine(r.Technology), 240, 6.2);
+        if (label.Length == 0 && technology.Length == 0) return null;
+        return (Math.Max(Length(label) * LabelChar, Length(technology) * 6.2) + 20, 8 + (label.Length > 0 ? 16 : 0) + (technology.Length > 0 ? 14 : 0));
+    }
+
     private static void WriteDerivedLabel(StringBuilder svg, DerivedLine line, double cx, double cy, Bounds bounds)
     {
         var count = line.Relationships.Count.ToString(CultureInfo.InvariantCulture);
         var label = Truncate(DiagramText.OneLine(line.Label), 240, LabelChar);
         const double badge = 16;
         var badgeWidth = Math.Max(badge, count.Length * 6.6 + 8);
-        var width = 6 + badgeWidth + (label.Length > 0 ? 6 + Length(label) * LabelChar : 0) + 6;
-        const double height = 24;
+        var (width, height) = DerivedLabelSize(line);
         var x = cx - width / 2;
         var y = cy - height / 2;
         bounds.Add(new Rect(x, y, width, height));
@@ -309,10 +424,8 @@ public static class DiagramSvg
     {
         var label = Truncate(DiagramText.OneLine(r.Label), 240, LabelChar);
         var technology = Truncate(DiagramText.OneLine(r.Technology), 240, 6.2);
-        if (label.Length == 0 && technology.Length == 0) return;
-
-        var width = Math.Max(Length(label) * LabelChar, Length(technology) * 6.2) + 20;
-        var height = 8 + (label.Length > 0 ? 16 : 0) + (technology.Length > 0 ? 14 : 0);
+        if (LabelSize(r) is not { } size) return;
+        var (width, height) = size;
         var x = cx - width / 2;
         var y = cy - height / 2;
         bounds.Add(new Rect(x, y, width, height));

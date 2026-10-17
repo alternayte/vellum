@@ -31,7 +31,9 @@ public sealed record ViewDiagram(
     ModelPin Pin,
     string Layout,
     IReadOnlyDictionary<RelationshipId, RelationshipSides> Sides,
-    IReadOnlyList<DerivedLine> DerivedLines)
+    IReadOnlyList<DerivedLine> DerivedLines,
+    IReadOnlyDictionary<RelationshipId, LayoutRoute> Routes,
+    IReadOnlyDictionary<(ElementId From, ElementId To), LayoutRoute> LineRoutes)
 {
     /// <summary>The height of every card on the canvas.</summary>
     public const double CardHeight = 128;
@@ -61,11 +63,15 @@ public sealed record ViewDiagram(
     /// <item>Otherwise the grid starts at the left edge of the placed cards, 80 below the lowest
     /// of them, so an element without a place never covers one with a place.</item>
     /// </list>
+    /// The saved routes of the relationships and of the derived lines come with the diagram; a
+    /// writer draws a route only when it fits the boxes of both ends (<see cref="LayoutRoute.Fits"/>).
     /// </summary>
     public static ViewDiagram Project(
-        ViewEntity view, IEnumerable<LayoutPositionEntity> positions, PinnedModel model, IEnumerable<LayoutEdgeEntity>? edges = null)
+        ViewEntity view, IEnumerable<LayoutPositionEntity> positions, PinnedModel model, IEnumerable<LayoutEdgeEntity>? edges = null,
+        IEnumerable<LayoutLineEntity>? lines = null)
     {
         var edgeList = edges?.ToList() ?? [];
+        var lineList = lines?.ToList() ?? [];
         var state = model.State;
         ElementId? rootId = view.RootElementId is { } id ? new ElementId(id) : null;
         var root = rootId is { } r ? state.Elements.GetValueOrDefault(r) : null;
@@ -114,19 +120,33 @@ public sealed record ViewDiagram(
                 sides[new RelationshipId(edge.RelationshipId)] = saved;
         }
 
-        return new ViewDiagram(view.Name, root, shown, relationships, model.Pin, LayoutFingerprint(view, placed.Values, edgeList), sides, derived);
+        var routes = new Dictionary<RelationshipId, LayoutRoute>();
+        foreach (var edge in edgeList)
+            if (LayoutRoute.Read(edge.RoutePoints) is { } route)
+                routes[new RelationshipId(edge.RelationshipId)] = route;
+        var lineRoutes = new Dictionary<(ElementId, ElementId), LayoutRoute>();
+        foreach (var line in lineList)
+            if (LayoutRoute.Read(line.Route) is { } route)
+                lineRoutes[(new ElementId(line.FromId), new ElementId(line.ToId))] = route;
+
+        return new ViewDiagram(view.Name, root, shown, relationships, model.Pin, LayoutFingerprint(view, placed.Values, edgeList, lineList),
+            sides, derived, routes, lineRoutes);
     }
 
     /// <summary>
     /// The layout a diagram was drawn from, which a revision does not pin: <c>sha256:</c> and the
     /// SHA-256 of the view name, the root element, each saved place (element ID, x, y) in order of
     /// element ID, then each relationship with a saved side (<c>side</c>, relationship ID, source
-    /// side, target side, an empty word for auto) in order of relationship ID. A view without a
-    /// saved side has the fingerprint it had before sides existed. The same revision and the same
+    /// side, target side, an empty word for auto) in order of relationship ID, then each
+    /// relationship with a saved route (<c>route</c>, relationship ID, <see cref="LayoutRoute.Text"/>)
+    /// in order of relationship ID, then each derived line with a saved route (<c>line</c>, from ID,
+    /// to ID, the route) in order of from ID and to ID. A view without a saved side or route has
+    /// the fingerprint it had before sides and routes existed. The same revision and the same
     /// fingerprint give the same bytes.
     /// </summary>
     public static string LayoutFingerprint(
-        ViewEntity view, IEnumerable<LayoutPositionEntity> positions, IEnumerable<LayoutEdgeEntity>? edges = null)
+        ViewEntity view, IEnumerable<LayoutPositionEntity> positions, IEnumerable<LayoutEdgeEntity>? edges = null,
+        IEnumerable<LayoutLineEntity>? lines = null)
     {
         var text = new StringBuilder();
         text.Append(view.Name).Append('\n').Append(view.RootElementId?.ToString() ?? "").Append('\n');
@@ -135,6 +155,10 @@ public sealed record ViewDiagram(
         foreach (var e in (edges ?? []).Where(e => ParseSide(e.SourceSide) is not null || ParseSide(e.TargetSide) is not null).OrderBy(e => e.RelationshipId))
             text.Append("side,").Append(e.RelationshipId).Append(',')
                 .Append(SideWord(ParseSide(e.SourceSide))).Append(',').Append(SideWord(ParseSide(e.TargetSide))).Append('\n');
+        foreach (var (id, route) in (edges ?? []).Select(e => (e.RelationshipId, Route: LayoutRoute.Read(e.RoutePoints))).Where(e => e.Route is not null).OrderBy(e => e.RelationshipId))
+            text.Append("route,").Append(id).Append(',').Append(route!.Text()).Append('\n');
+        foreach (var (from, to, route) in (lines ?? []).Select(l => (l.FromId, l.ToId, Route: LayoutRoute.Read(l.Route))).Where(l => l.Route is not null).OrderBy(l => l.FromId).ThenBy(l => l.ToId))
+            text.Append("line,").Append(from).Append(',').Append(to).Append(',').Append(route!.Text()).Append('\n');
         return "sha256:" + Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(text.ToString())));
     }
 

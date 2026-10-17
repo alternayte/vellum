@@ -3938,6 +3938,40 @@ namespace Vellum.Migrations
                     b.ToTable("layout_edges", "views");
                 });
 
+            modelBuilder.Entity("Vellum.Modules.Views.LayoutLineEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("id");
+
+                    b.Property<Guid>("FromId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("from_id");
+
+                    b.Property<JsonDocument>("Route")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("route");
+
+                    b.Property<Guid>("ToId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("to_id");
+
+                    b.Property<Guid>("ViewId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("view_id");
+
+                    b.HasKey("Id")
+                        .HasName("pk_layout_lines");
+
+                    b.HasIndex("ViewId", "FromId", "ToId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_layout_lines_view_id_from_id_to_id");
+
+                    b.ToTable("layout_lines", "views");
+                });
+
             modelBuilder.Entity("Vellum.Modules.Views.LayoutPositionEntity", b =>
                 {
                     b.Property<Guid>("Id")
@@ -4390,6 +4424,16 @@ namespace Vellum.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_layout_edges_views_view_id");
+                });
+
+            modelBuilder.Entity("Vellum.Modules.Views.LayoutLineEntity", b =>
+                {
+                    b.HasOne("Vellum.Modules.Views.ViewEntity", null)
+                        .WithMany()
+                        .HasForeignKey("ViewId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_layout_lines_views_view_id");
                 });
 
             modelBuilder.Entity("Vellum.Modules.Views.LayoutPositionEntity", b =>

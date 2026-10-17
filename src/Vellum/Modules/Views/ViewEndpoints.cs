@@ -15,13 +15,20 @@ public sealed record UpdateViewRequest(
     bool SetRootElementId = false, bool SetActiveLens = false);
 
 public sealed record SaveLayoutPosition(Guid ElementId, double X, double Y, double? Width = null, double? Height = null);
+/// <param name="RoutePoints">A route from the auto layout (<see cref="LayoutRoute"/>), or null.</param>
 public sealed record SaveLayoutEdge(Guid RelationshipId, JsonDocument? RoutePoints, string? SourceSide = null, string? TargetSide = null);
+
+/// <summary>The route of the derived line from one card to another in a view (<see cref="LayoutRoute"/>).</summary>
+public sealed record SaveLayoutLine(Guid FromId, Guid ToId, JsonDocument Route);
 
 /// <summary>The sides of one relationship in a view: top, right, bottom or left, or null for auto.</summary>
 public sealed record SaveEdgeSidesRequest(string? SourceSide, string? TargetSide);
+/// <param name="Edges">The rows of the relationships: routes and sides. Null keeps the saved ones.</param>
+/// <param name="Lines">The routes of the derived lines. Null keeps the saved ones.</param>
 public sealed record SaveLayoutRequest(
     IReadOnlyList<SaveLayoutPosition> Positions,
-    IReadOnlyList<SaveLayoutEdge>? Edges);
+    IReadOnlyList<SaveLayoutEdge>? Edges,
+    IReadOnlyList<SaveLayoutLine>? Lines = null);
 
 public sealed record ViewDto(
     Guid Id, Guid ProjectId, string Name, Guid? RootElementId,
@@ -30,13 +37,15 @@ public sealed record ViewDto(
 
 public sealed record LayoutPositionDto(Guid ElementId, double X, double Y, double? Width = null, double? Height = null);
 public sealed record LayoutEdgeDto(Guid RelationshipId, object? RoutePoints, string? SourceSide = null, string? TargetSide = null);
+public sealed record LayoutLineDto(Guid FromId, Guid ToId, object Route);
 
 public sealed record ViewDetailDto(
     Guid Id, Guid ProjectId, string Name, Guid? RootElementId,
     Guid[] VisibleElementIds, string? ActiveLens, Guid? ActiveFlowId,
     DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt,
     IReadOnlyList<LayoutPositionDto> Positions,
-    IReadOnlyList<LayoutEdgeDto> Edges);
+    IReadOnlyList<LayoutEdgeDto> Edges,
+    IReadOnlyList<LayoutLineDto> Lines);
 
 /// <summary>
 /// The saved views of a project and their canvas layouts. A layout is presentation data: the
@@ -136,11 +145,15 @@ public static class ViewEndpoints
             .Where(e => e.ViewId == viewId)
             .ToListAsync(ct);
         var edges = rawEdges.Select(ToDto).ToList();
+        var lines = (await db.LayoutLines.AsNoTracking().Where(l => l.ViewId == viewId).ToListAsync(ct))
+            .OrderBy(l => l.FromId).ThenBy(l => l.ToId)
+            .Select(l => new LayoutLineDto(l.FromId, l.ToId, JsonSerializer.Deserialize<object>(l.Route.RootElement.GetRawText())!))
+            .ToList();
 
         return Results.Ok(new ViewDetailDto(
             view.Id, view.ProjectId, view.Name, view.RootElementId,
             view.VisibleElementIds, view.ActiveLens, view.ActiveFlowId,
-            view.CreatedAt, view.UpdatedAt, positions, edges));
+            view.CreatedAt, view.UpdatedAt, positions, edges, lines));
     }
 
     private static async Task<IResult> Update(
@@ -196,7 +209,7 @@ public static class ViewEndpoints
         return Results.NoContent();
     }
 
-    /// <summary>Replaces the positions, and the edge routes when the request has them.</summary>
+    /// <summary>Replaces the positions, the rows of the relationships when the request has them, and the routes of the derived lines when the request has them.</summary>
     private static async Task<IResult> SaveLayout(
         Guid projectId, Guid viewId,
         SaveLayoutRequest request,
@@ -213,8 +226,17 @@ public static class ViewEndpoints
             {
                 SideError($"edges[{i}].sourceSide", e.SourceSide),
                 SideError($"edges[{i}].targetSide", e.TargetSide),
+                LayoutRoute.IsAbsent(e.RoutePoints) || LayoutRoute.Read(e.RoutePoints) is not null ? null : new ValidationError($"edges[{i}].routePoints", LayoutRoute.Shape),
             })]) is { } refusal)
             return refusal;
+
+        if (request.Lines is not null
+            && Refusal([.. request.Lines.Select((l, i) =>
+                l.Route is null || LayoutRoute.Read(l.Route) is null ? new ValidationError($"lines[{i}].route", LayoutRoute.Shape)
+                : l.FromId == l.ToId ? new ValidationError($"lines[{i}].toId", "must name a card other than fromId")
+                : request.Lines.Take(i).Any(o => o.FromId == l.FromId && o.ToId == l.ToId) ? new ValidationError($"lines[{i}]", "names a line from the same card to the same card twice")
+                : null)]) is { } lineRefusal)
+            return lineRefusal;
 
         var view = await db.Views.FindAsync([viewId], ct);
         if (view is null || view.ProjectId != projectId)
@@ -246,9 +268,23 @@ public static class ViewEndpoints
                 Id = Guid.NewGuid(),
                 ViewId = viewId,
                 RelationshipId = e.RelationshipId,
-                RoutePoints = e.RoutePoints,
+                RoutePoints = LayoutRoute.IsAbsent(e.RoutePoints) ? null : e.RoutePoints,
                 SourceSide = e.SourceSide,
                 TargetSide = e.TargetSide,
+            }));
+        }
+
+        if (request.Lines is not null)
+        {
+            var existingLines = await db.LayoutLines.Where(l => l.ViewId == viewId).ToListAsync(ct);
+            db.LayoutLines.RemoveRange(existingLines);
+            db.LayoutLines.AddRange(request.Lines.Select(l => new LayoutLineEntity
+            {
+                Id = Guid.NewGuid(),
+                ViewId = viewId,
+                FromId = l.FromId,
+                ToId = l.ToId,
+                Route = l.Route,
             }));
         }
 
