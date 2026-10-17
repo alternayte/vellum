@@ -101,9 +101,9 @@ When you delete an assumption, a usage line that names it stays. The estimate li
 
 ## Read the estimate
 
-The flyout shows one total for each currency. Vellum converts no currency.
+The **Costs** tab shows one total for each currency. Vellum converts no currency.
 
-![The Costs flyout of the project Online shop on the branch main. The estimate for one month is 894.65 USD, known lines only, as of 2026-10-14. A line in orange says that 1 line is unknown and in no total. Below Unknown 1, the resource Shipping worker has No price. Below Resources, each resource is in a group with the name of its element: Storefront API, Instances, 246.74 USD; Catalogue DB, Server, 129.94 USD; Orders API, Instances, 246.74 USD; Order worker, Instance, 123.37 USD and Messages, 3.20 USD.](../../../assets/screenshots/costs-flyout-estimate.png)
+![The Costs tab of the Check area in the project Online shop, on the branch main. The estimate for one month is 894.65 USD, known lines only, as of 2026-10-17. A line in orange says that 1 line is unknown and in no total. Below Unknown 1, the resource Instance has No price. Below Resources, each resource is in a group with the name of its element: Shipping worker, Instance, unknown; Orders DB, Server, 129.94 USD and Storage, 14.72 USD; Storefront API, Instances, 246.74 USD; Orders API, Instances, 246.74 USD. The canvas is at the right of the panel.](../../../assets/screenshots/costs-estimate.png)
 
 - The total holds known lines only.
 - **Unknown** lists each line that has no amount, with the reason.
@@ -141,7 +141,7 @@ A branch holds 100 saved estimates at most. Select **Delete** on a saved estimat
 
 ## Compare two variants
 
-1. In the **Costs** flyout, select **New variant from main**. Give the variant a name and select **Create**. The cost sheet of the variant starts as a copy of the sheet that you see. Vellum makes the variant and the copy together. If one of them fails, Vellum makes neither.
+1. In the **Costs** tab, select **New variant from main**. Give the variant a name and select **Create**. The cost sheet of the variant starts as a copy of the sheet that you see. Vellum makes the variant and the copy together. If one of them fails, Vellum makes neither.
 2. Change the resources of the variant.
 3. Select **Lines, saved estimates and compare**, then **Compare**.
 4. Select the two branches in **Left** and **Right**.
@@ -154,7 +154,7 @@ An empty cost sheet is not a cost of zero. When one side has no lines, Vellum sh
 
 ## Use a cost sheet in a draft
 
-A draft has its own cost sheet. The sheet is empty at first. Open the **Costs** flyout while the draft is active, or select the draft in **Branch**. Then select **Copy the sheet of main** to start the sheet. The copy leaves out a resource when its element is not in the model of the draft.
+A draft has its own cost sheet. The sheet is empty at first. Open the **Costs** tab while the draft is active, or select the draft in **Branch**. Then select **Copy the sheet of main** to start the sheet. The copy leaves out a resource when its element is not in the model of the draft.
 
 When you merge the draft, Vellum merges its cost sheet into the sheet of main in the same step:
 

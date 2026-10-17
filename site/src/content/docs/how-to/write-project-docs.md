@@ -58,7 +58,7 @@ A space is a folder of documents. A space holds no other space. You need the edi
 
 When you delete a space, its documents move to the top level. Vellum deletes no document with the space.
 
-![The Files panel. It lists the diagrams Checkout flow and Default, then the space Design with one document, Orders design, then the documents SDD and Template check at the top level. The button New space is at the top right.](../../../assets/screenshots/files-flyout-spaces.png)
+![The Files tab of the Model area, next to the tabs Catalog, Contracts and Create. It lists the diagrams Checkout flow and Default, then the space Design with one document, Orders design, then the documents SDD and Template check at the top level. The button New space is at the top right. Below the list, Model document has the buttons Export JSON, Export YAML, Export Structurizr DSL and Import a document.](../../../assets/screenshots/files-spaces.png)
 
 ## Edit the text
 
@@ -69,7 +69,7 @@ The editor has two modes. **Edit** shows the Markdown source. **Read** shows the
 3. Select **Read** to see the result.
 4. Select **Edit** to go back to the source.
 
-![The document Online shop design in the mode Read. It has the headings Overview, Orders and Open questions. A card links to the diagram Default. In the text, Orders API, Orders DB and Order worker show as element links with a coloured dot. Open questions is a task list with one open item and one done item. The button Edit is at the top right.](../../../assets/screenshots/project-doc-read.png)
+![The document Online shop design in the mode Read, in place of the canvas. The sidebar at the left shows Model, Flows, Check, Ship and Sources. The document has the headings Overview, Orders and Open questions. A card links to the diagram Default. In the text, Orders API, Orders DB and Order worker show as element links with a coloured dot. Open questions is a task list with one open item and one done item. The button Edit is at the top right.](../../../assets/screenshots/project-doc-read.png)
 
 Vellum saves the document 300 ms after your last change. There is no save button.
 

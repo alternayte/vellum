@@ -198,7 +198,7 @@ A person changes a label in two ways only. No control sets **Measured** or **Obs
 1. Select the element or the relationship. In the **Details** tab, find **Truth**.
 2. Select **Accept as declared** or **Mark as unknown**.
 
-![The detail panel of the system Payments System after Accept as declared. Below Truth it shows the label Declared and the button Mark as unknown. Below the label are the source github.com/acme/shop@4f2a91c:payments/Client.cs:12-40, the source revision 4f2a91c, the confidence 70%, and Accepted by Dev User on 14/10/2026, 19:37:14 at model version 14.](../../../assets/screenshots/detail-panel-truth.png)
+![The detail panel of the system Payments System after Accept as declared. Below Truth it shows the label Declared and the button Mark as unknown. Below the label are the source github.com/acme/shop@4f2a91c:payments/Client.cs:12-40, the source revision 4f2a91c, the confidence 70%, and Accepted by Dev User on 17/10/2026, 19:12:31 at model version 16. The canvas at the left shows the systems of Sample Architecture in one column.](../../../assets/screenshots/detail-panel-truth.png)
 
 You can also right-click the element or the relationship on the canvas and select the action. For an operation, a channel, a subscription or a binding, use the action on its row in **Contracts**.
 
