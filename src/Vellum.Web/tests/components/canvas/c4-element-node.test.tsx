@@ -213,14 +213,14 @@ describe('C4ElementNode', () => {
   })
 })
 
-describe('C4ElementNode stale mark', () => {
-  it('shows the mark and the revision when a rescan lost the evidence', () => {
+describe('C4ElementNode not-seen mark', () => {
+  it('shows the mark and the revision when the latest Snapshot no longer holds the fact', () => {
     renderNode({ ...mockData, stale: { sinceRevision: '38035b90ae71d6d3', reason: 'evidence-not-found' } })
-    expect(screen.getByText('stale').getAttribute('title')).toContain('38035b90ae')
+    expect(screen.getByText('not seen').getAttribute('title')).toContain('38035b90ae')
   })
 
   it('shows no mark for a fact with current evidence', () => {
     renderNode({ ...mockData, stale: null })
-    expect(screen.queryByText('stale')).toBeNull()
+    expect(screen.queryByText('not seen')).toBeNull()
   })
 })

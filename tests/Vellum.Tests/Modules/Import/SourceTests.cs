@@ -170,13 +170,9 @@ public class SourceTests(ImportHost import) : IClassFixture<ImportHost>
         Assert.NotEqual(byName["Billing"], billing.Text("entityId"));
         Assert.Equal("bind", after.Single(p => p.Text("name") == "inventory-worker").Text("action"));
 
-        // Accept all from B takes neither the conflict nor the open question, nor a fact that
+        // B's auto-apply takes neither the conflict nor the open question, nor a fact that
         // another Source holds.
-        var bulk = await s.Owner.PostAsJsonAsync($"/api/projects/{s.ProjectId}/sources/{b.Id()}/accept", new { acknowledgeImpact = true });
-        var bulkResult = (await bulk.Content.ReadFromJsonAsync<JsonObject>())!;
-        Assert.True(bulkResult["failed"]!.AsArray().Count == 0, bulkResult.ToJsonString());
-        Assert.Empty(bulkResult["failed"]!.AsArray());
-        var accepted = bulkResult["accepted"]!.AsArray().Select(id => id!.GetValue<Guid>()).ToHashSet();
+        var accepted = await s.AutoApplyAsync(scanB);
         Assert.DoesNotContain(api.Id(), accepted);
         Assert.Contains(billing.Id(), accepted);
         Assert.DoesNotContain(store.Id(), accepted);

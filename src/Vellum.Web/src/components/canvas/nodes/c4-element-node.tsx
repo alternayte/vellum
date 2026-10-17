@@ -23,6 +23,8 @@ export interface C4ElementData extends Record<string, unknown> {
   icon?: string | null
   factStatus?: string | null
   stale?: StaleMark | null
+  /** A change of a Source to this fact, or a fact of it, waits for a person ("Needs you"). */
+  needsYou?: boolean
   provenance?: Provenance | null
   lod?: 'full' | 'compact' | 'chip'
   diffState?: DiffState
@@ -187,12 +189,20 @@ export const C4ElementNode = memo(function C4ElementNode({ data }: NodeProps<C4E
             {diff === 'conflict' && (
               <span className="text-[12px]" title="Conflict">⚠</span>
             )}
+            {d.needsYou && (
+              <span
+                className="rounded bg-[var(--trace-event)]/15 px-1 font-mono text-[9px] uppercase tracking-wider text-[var(--trace-event)]"
+                title="Needs you: a Source changed this fact after a person edited it, or asks a question about it. Decide it in the Sources panel or the detail panel."
+              >
+                needs you
+              </span>
+            )}
             {d.stale && (
               <span
-                className="rounded border border-dashed border-[var(--trace-retry)] px-1 font-mono text-[9px] uppercase tracking-wider text-[var(--trace-retry)]"
+                className="whitespace-nowrap rounded border border-dashed border-[var(--trace-retry)] px-1 font-mono text-[9px] uppercase tracking-wider text-[var(--trace-retry)]"
                 title={staleSummary(d.stale)}
               >
-                stale
+                not seen
               </span>
             )}
             {d.factStatus && d.factStatus !== 'declared' && (

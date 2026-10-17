@@ -11,7 +11,7 @@ You declare the flow in the terminal. After that, each step has two ways: **In t
 
 ## Before you start
 
-- Complete [Import a repository and review the proposals](/tutorials/import-and-review/). You then have the project **Orders import**, with every proposal of `acme/orders` at `main` accepted, and the GitHub stand-in is running.
+- Complete [Import a repository and read the result](/tutorials/import-and-review/). You then have the project **Orders import**, with every fact of `acme/orders` at `main` in the model, and the GitHub stand-in is running.
 - You need `curl`, `jq` and `uuidgen`.
 
 ## Sign in from the terminal

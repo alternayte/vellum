@@ -21,60 +21,63 @@ public class ImportDecisionTests(ImportHost import) : IClassFixture<ImportHost>
         [.. proposal["changes"]!.AsArray().Select(c => c!["field"]!.GetValue<string>()).Order(StringComparer.Ordinal)];
 
     [Fact]
-    public async Task A_fact_that_a_person_edited_or_declared_gets_a_conflict_and_stays_until_it_is_accepted()
+    public async Task A_fact_that_a_person_edited_or_declared_is_left_alone_until_the_source_changes_it_and_then_gets_a_conflict()
     {
         var s = await ImportScenario.CreateAsync(import);
         await s.ScanAndAcceptAllAsync();
         var api = (await s.ElementsAsync()).Single("name", "Orders.Api");
         var billing = (await s.ElementsAsync()).Single("name", "Billing");
+        var store = (await s.ElementsAsync()).Single("name", "postgres");
 
-        // A person renames one imported app and writes intent on it, and takes over another as declared.
+        // A person renames one imported app and writes intent on it, takes over another as
+        // declared, and edits the technology of the store.
         await PatchAsync(s, $"elements/{api.Id()}", new { name = "Orders API", description = "Takes orders", tags = new[] { "core" } });
         await PatchAsync(s, $"elements/{billing.Id()}", new { technology = "java", factStatus = "declared" });
+        await PatchAsync(s, $"elements/{store.Id()}", new { technology = "PostgreSQL 16" });
         var edited = await s.Owner.GetStringAsync(s.Model("elements"));
 
+        // The source says what it said when its facts were accepted: there is nothing to decide.
         var second = await s.ScanAsync();
-        var conflicts = await s.ProposalsAsync(second.Id());
-        Assert.Equal(["element Billing", "element Orders.Api"], conflicts.Subjects());
-        Assert.All(conflicts, c => Assert.Equal(("conflict", "pending"), (c.Text("action"), c.Text("status"))));
+        Assert.Empty(await s.ProposalsAsync(second.Id()));
+        Assert.Equal(edited, await s.Owner.GetStringAsync(s.Model("elements")));
 
-        // Both values and both sources are shown; intent fields are never part of a proposal.
-        var apiConflict = conflicts.Proposal("element", "Orders.Api");
-        Assert.Equal(["name"], Fields(apiConflict));
-        Assert.Equal(("Orders API", "Orders.Api", "observed-in-source"),
-            (apiConflict["current"]!["name"]!.GetValue<string>(), apiConflict["proposed"]!["name"]!.GetValue<string>(), apiConflict["current"]!["factStatus"]!.GetValue<string>()));
-        Assert.Equal("orders-api/Orders.Api.csproj", apiConflict["evidence"]![0]!["path"]!.GetValue<string>());
-        Assert.DoesNotContain("Takes orders", apiConflict.ToJsonString());
-        var billingConflict = conflicts.Proposal("element", "Billing");
-        Assert.Equal(["factStatus", "technology"], Fields(billingConflict));
-        Assert.Equal(("java", "dotnet", "declared"),
-            (billingConflict["current"]!["technology"]!.GetValue<string>(), billingConflict["proposed"]!["technology"]!.GetValue<string>(), billingConflict["current"]!["factStatus"]!.GetValue<string>()));
+        // The source changes the edited store: a conflict that shows both values.
+        s.GitHub.Commit(ImportScenario.Commit2, FixtureGitHub.OrdersWithMySql());
+        var third = await s.ScanAsync();
+        var conflicts = await s.ProposalsAsync(third.Id());
+        Assert.Equal(["element postgres"], conflicts.Subjects());
+        var conflict = conflicts.Proposal("element", "postgres");
+        Assert.Equal(("conflict", "pending"), (conflict.Text("action"), conflict.Text("status")));
+        Assert.Equal(["observed.image", "technology"], Fields(conflict));
+        Assert.Equal(("PostgreSQL 16", "mysql", "observed-in-source"),
+            (conflict["current"]!["technology"]!.GetValue<string>(), conflict["proposed"]!["technology"]!.GetValue<string>(), conflict["current"]!["factStatus"]!.GetValue<string>()));
+        Assert.Equal("docker-compose.yml", conflict["evidence"]![0]!["path"]!.GetValue<string>());
 
         // The scan resolved nothing: the model is what the person left.
         Assert.Equal(edited, await s.Owner.GetStringAsync(s.Model("elements")));
 
         // A rejected proposal is not made again while it says the same thing.
-        var rejected = await s.DecideAsync(second.Id(), reject: [apiConflict.Id()]);
-        Assert.Equal([apiConflict.Id()], rejected["rejected"]!.AsArray().Select(r => r!.GetValue<Guid>()));
-        var third = await s.ScanAsync();
-        Assert.Equal(["element Billing"], (await s.ProposalsAsync(third.Id())).Subjects());
-        Assert.Equal("superseded", (await s.ProposalsAsync(second.Id())).Proposal("element", "Billing").Text("status"));
-        Assert.Equal((0, 0, 1), Counts(await s.GetAsync(second.Id())));
+        var rejected = await s.DecideAsync(third.Id(), reject: [conflict.Id()]);
+        Assert.Equal([conflict.Id()], rejected["rejected"]!.AsArray().Select(r => r!.GetValue<Guid>()));
+        var fourth = await s.ScanAsync();
+        Assert.Empty(await s.ProposalsAsync(fourth.Id()));
+        Assert.Equal((0, 0, 1), Counts(await s.GetAsync(third.Id())));
 
         // A changed fact is proposed again: here the person edits the entity once more.
-        await PatchAsync(s, $"elements/{api.Id()}", new { name = "Orders HTTP API" });
-        var fourth = await s.ScanAsync();
-        var again = await s.ProposalsAsync(fourth.Id());
-        Assert.Equal(["element Billing", "element Orders.Api"], again.Subjects());
+        await PatchAsync(s, $"elements/{store.Id()}", new { technology = "PostgreSQL 17" });
+        var fifth = await s.ScanAsync();
+        var again = await s.ProposalsAsync(fifth.Id());
+        Assert.Equal(["element postgres"], again.Subjects());
 
-        // Accepting a conflict is an explicit act for that item. It writes the observed
-        // values and the source label, and leaves the intent a person wrote.
-        Assert.Empty((await s.DecideAsync(fourth.Id(), accept: again.Select(p => p.Id())))["failed"]!.AsArray());
+        // Accepting a conflict is an explicit act for that item. It writes the observed value
+        // and the source label, and leaves the intent and the other edits a person wrote.
+        Assert.Empty((await s.DecideAsync(fifth.Id(), accept: again.Select(p => p.Id())))["failed"]!.AsArray());
         var elements = await s.ElementsAsync();
+        Assert.Equal(("mysql", "observed-in-source"), (elements.Single("id", store.Text("id")!).Text("technology"), elements.Single("id", store.Text("id")!).Text("factStatus")));
         var apiNow = elements.Single("id", api.Text("id")!);
-        Assert.Equal(("Orders.Api", "Takes orders", "core"), (apiNow.Text("name"), apiNow.Text("description"), apiNow["tags"]![0]!.GetValue<string>()));
+        Assert.Equal(("Orders API", "Takes orders", "core"), (apiNow.Text("name"), apiNow.Text("description"), apiNow["tags"]![0]!.GetValue<string>()));
         var billingNow = elements.Single("id", billing.Text("id")!);
-        Assert.Equal(("dotnet", "observed-in-source"), (billingNow.Text("technology"), billingNow.Text("factStatus")));
+        Assert.Equal(("java", "declared"), (billingNow.Text("technology"), billingNow.Text("factStatus")));
         Assert.Empty(await s.ProposalsAsync((await s.ScanAsync()).Id()));
     }
 

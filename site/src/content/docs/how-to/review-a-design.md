@@ -132,6 +132,6 @@ While the setting `privacy.sendPrivateCodeToAi` is off, the assistant gets no pa
 - [Record a decision](/how-to/record-a-decision/) to settle a blocking finding.
 - [Review rules](/reference/review-rules/) for what each rule reads and how to settle it.
 - [Findings are not proof](/concepts/findings-are-not-proof/) for what a result means.
-- [Import and review](/tutorials/import-and-review/) for a full example.
+- [Import a repository and read the result](/tutorials/import-and-review/) for a full example.
 - [Conflicts](/troubleshooting/conflicts/) when Vellum refuses an answer with the status 409.
 - [Export for an agent](/how-to/export-for-an-agent/) for the blockers in the Build manifest.

@@ -218,7 +218,7 @@ export interface SourceSnapshot {
 export const CONTENT_NOT_HELD =
   'Content not held: vellum scan pushed this Snapshot from the machine that holds the code. Vellum has its manifest, facts and citations, and no file content, so it cannot show source lines.'
 
-/** The pending proposals of a Source: those of its newest completed tracking scan. */
+/** The pending proposals of a Source ("Needs you"): those of its newest completed tracking scan that it did not apply by itself. */
 export interface SourceReview {
   scanId: string | null
   pending: number
@@ -229,8 +229,6 @@ export interface SourceReview {
   crossSourceConflicts: number
   bindQuestions: number
   relinks: number
-  /** What "accept all from this Source" would accept. */
-  acceptable: number
   /** Dependencies this Source declares that another Source does not see, or that it does not see while another declares them. */
   unconfirmed: number
 }
@@ -637,9 +635,27 @@ export const sourcesApi = {
   upload: (projectId: string, path: string, content: string) =>
     api<{ sourceId: string; scanId: string }>('POST', `${sourcesBase(projectId)}/upload`, { path, content }),
   documents: (projectId: string, id: string) => api<SourceDocument[]>('GET', `${sourcesBase(projectId)}/${id}/documents`),
-  /** Accepts every pending addition, change and removal of the Source. Conflicts and questions stay for a person. */
-  acceptAll: (projectId: string, id: string, acknowledgeImpact: boolean) =>
-    api<DecisionResult>('POST', `${sourcesBase(projectId)}/${id}/accept`, { acknowledgeImpact }),
+}
+
+/** The proposals of one Source that wait for a person. Decide them on the scan `scanId`. */
+export interface NeedsYouSource {
+  sourceId: string
+  sourceName: string
+  sourceKind: SourceKind
+  scanId: string
+  /** How many wait; `items` holds at most 200 of them. */
+  pending: number
+  items: Proposal[]
+}
+
+export const needsYouKey = (projectId: string) => ['projects', projectId, 'needs-you'] as const
+
+export const needsYouApi = {
+  /** What the scans did not apply by themselves, per Source: changes of edited facts, removals, questions. */
+  list: async (projectId: string) => (await api<{ sources: NeedsYouSource[] }>('GET', `/api/projects/${projectId}/needs-you`)).sources,
+  /** Keeps a fact that the latest Snapshot of its Source no longer holds: the mark goes, and its removal is rejected. */
+  keep: (projectId: string, entityKind: string, entityId: string) =>
+    api<void>('POST', `/api/projects/${projectId}/needs-you/keep`, { entityKind, entityId }),
 }
 
 /** One line that says what a Source waits for. */
@@ -647,9 +663,9 @@ export function describeReview(source: SourceSummary): string {
   const r = source.review
   if (!source.latestSnapshot) return source.latestScan ? 'No Snapshot yet' : 'Not scanned yet'
   const unconfirmed = r.unconfirmed > 0 ? `${r.unconfirmed} ${r.unconfirmed === 1 ? 'dependency' : 'dependencies'} not seen by another Source` : null
-  if (r.pending === 0) return unconfirmed ?? 'Nothing waits for a decision'
+  if (r.pending === 0) return unconfirmed ?? 'Nothing needs you'
   return [
-    `${r.pending} pending`,
+    `${r.pending} ${r.pending === 1 ? 'needs' : 'need'} you`,
     r.bindQuestions > 0 && `${r.bindQuestions} “same as?”`,
     r.crossSourceConflicts > 0 && `${r.crossSourceConflicts} ${r.crossSourceConflicts === 1 ? 'conflict' : 'conflicts'} with other Sources`,
   ].filter(Boolean).join(' · ')

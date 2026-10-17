@@ -7931,6 +7931,99 @@
         }
       }
     },
+    "/api/projects/{projectId}/needs-you": {
+      "get": {
+        "tags": [
+          "Imports"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NeedsYouDto"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/needs-you/keep": {
+      "post": {
+        "tags": [
+          "Imports"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KeepFactRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "204": {
+            "description": "No Content"
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Conflict",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/projects/{projectId}/sources": {
       "get": {
         "tags": [
@@ -9249,75 +9342,6 @@
           },
           "429": {
             "description": "Too Many Requests",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/projects/{projectId}/sources/{sourceId}/accept": {
-      "post": {
-        "tags": [
-          "Sources"
-        ],
-        "parameters": [
-          {
-            "name": "projectId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          },
-          {
-            "name": "sourceId",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            }
-          }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/AcceptSourceRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DecideProposalsResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Not Found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Conflict",
             "content": {
               "application/json": {
                 "schema": {
@@ -14925,15 +14949,6 @@
           "scenarioId": {
             "type": "string",
             "format": "uuid"
-          }
-        }
-      },
-      "AcceptSourceRequest": {
-        "type": "object",
-        "properties": {
-          "acknowledgeImpact": {
-            "type": "boolean",
-            "default": false
           }
         }
       },
@@ -24676,6 +24691,25 @@
           }
         }
       },
+      "KeepFactRequest": {
+        "required": [
+          "entityKind",
+          "entityId"
+        ],
+        "type": "object",
+        "properties": {
+          "entityKind": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "entityId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
       "KeepQuestionRequest": {
         "required": [
           "proposalId",
@@ -25874,6 +25908,61 @@
           "expiresAt": {
             "type": "string",
             "format": "date-time"
+          }
+        }
+      },
+      "NeedsYouDto": {
+        "required": [
+          "sources"
+        ],
+        "type": "object",
+        "properties": {
+          "sources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NeedsYouSourceDto"
+            }
+          }
+        }
+      },
+      "NeedsYouSourceDto": {
+        "required": [
+          "sourceId",
+          "sourceName",
+          "sourceKind",
+          "scanId",
+          "pending",
+          "items"
+        ],
+        "type": "object",
+        "properties": {
+          "sourceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sourceName": {
+            "type": "string"
+          },
+          "sourceKind": {
+            "type": "string"
+          },
+          "scanId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "pending": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ProposalDto"
+            }
           }
         }
       },
@@ -34363,8 +34452,7 @@
           "conflicts",
           "crossSourceConflicts",
           "bindQuestions",
-          "relinks",
-          "acceptable"
+          "relinks"
         ],
         "type": "object",
         "properties": {
@@ -34432,14 +34520,6 @@
             "format": "int32"
           },
           "relinks": {
-            "pattern": "^-?(?:0|[1-9]\\d*)$",
-            "type": [
-              "integer",
-              "string"
-            ],
-            "format": "int32"
-          },
-          "acceptable": {
             "pattern": "^-?(?:0|[1-9]\\d*)$",
             "type": [
               "integer",

@@ -102,6 +102,20 @@ public static class ImportModule
             .Produces<ErrorResponse>(StatusCodes.Status404NotFound)
             .Produces<ErrorResponse>(StatusCodes.Status409Conflict);
 
+        // "Needs you": what the scans did not apply by themselves, for a person to decide.
+        var needsYou = app.MapGroup("/api/projects/{projectId}/needs-you")
+            .RequireAuthorization()
+            .WithTags("Imports");
+
+        needsYou.MapGet("/", ProposalReads.NeedsYou)
+            .Produces<NeedsYouDto>();
+
+        needsYou.MapPost("/keep", KeepFact.Handle).RequireHuman()
+            .Produces(StatusCodes.Status204NoContent)
+            .Produces<ErrorResponse>(StatusCodes.Status400BadRequest)
+            .Produces<ErrorResponse>(StatusCodes.Status404NotFound)
+            .Produces<ErrorResponse>(StatusCodes.Status409Conflict);
+
         var sources = app.MapGroup("/api/projects/{projectId}/sources")
             .RequireAuthorization()
             .WithTags("Sources");
@@ -225,11 +239,6 @@ public static class ImportModule
             .Produces<ErrorResponse>(StatusCodes.Status409Conflict)
             .Produces<ErrorResponse>(StatusCodes.Status413PayloadTooLarge)
             .Produces<ErrorResponse>(StatusCodes.Status429TooManyRequests);
-
-        sources.MapPost("/{sourceId}/accept", SourceRequests.AcceptAll).RequireHuman()
-            .Produces<DecideProposalsResponse>()
-            .Produces<ErrorResponse>(StatusCodes.Status404NotFound)
-            .Produces<ErrorResponse>(StatusCodes.Status409Conflict);
 
         return app;
     }

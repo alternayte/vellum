@@ -13,6 +13,8 @@ vi.mock('../../../src/api/client', () => ({}))
 vi.mock('../../../src/components/docs/element-docs', () => ({ ElementDocs: () => null }))
 // The truth label reads and writes through the API; these tests are about the other fields.
 vi.mock('../../../src/components/shell/fact-truth', () => ({ FactTruth: () => null }))
+// What the Sources say about a fact reads "Needs you" from the server; these tests are about the other fields.
+vi.mock('../../../src/components/import/fact-import-state', () => ({ FactImportState: () => null }))
 
 const ELEMENTS = [
   {

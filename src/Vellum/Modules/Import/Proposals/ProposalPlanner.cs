@@ -377,6 +377,14 @@ internal static class ProposalPlanner
             var editedSince = linked && compared.Any(field =>
                 link!.Accepted.TryGetValue(field, out var accepted)
                 && !string.Equals(accepted, entity.Values.GetValueOrDefault(field), StringComparison.Ordinal));
+            // A person edited the fact, or took it over with another label, and this Source
+            // still says what it wrote last. The Source changed nothing, so there is nothing to
+            // decide: the person's edit stands and nothing is proposed.
+            var sourceUnchanged = linked && compared.All(field =>
+                values.GetValueOrDefault(field) is not { } said
+                || (link!.Accepted.TryGetValue(field, out var wrote) && string.Equals(said, wrote, StringComparison.Ordinal)));
+            if (sourceUnchanged && (editedSince || status != sourceLabel))
+                continue;
             // Another Source holds the entity with other values: the Sources disagree, and the
             // review lists every side. Accepting this one is a person's choice, never a default.
             var others = input.OthersOf(candidate.EntityKind, entity.Id);
@@ -471,14 +479,16 @@ internal static class ProposalPlanner
             // fact accepted from a model file keeps the label "declared" of that file, and the
             // file no longer says it: it gets the mark like an observed fact. A schema is no
             // fact of the model stream and holds no mark.
+            // A person who kept the fact (a rejected removal) said it stays without the
+            // evidence: no mark and no removal, until the fact's values change.
+            var fingerprint = RemoveFingerprint(link.EntityKind, link.FactKey, entity.Values);
+            if (input.Rejections.Contains((link.FactKey, fingerprint)))
+                continue;
+
             var others = input.OthersOf(link.EntityKind, entity.Id);
             if (link.EntityKind != EntityKinds.Schema
                 && entity.FactStatus == FactMapping.LabelOf(link.Attributes, link.Evidence) && entity.Stale is null && others.Count == 0)
                 markStale.Add(entity.Id);
-
-            var fingerprint = Hash([EnumText.Of(ProposalAction.Remove), link.EntityKind, link.FactKey, Canonical(entity.Values)]);
-            if (input.Rejections.Contains((link.FactKey, fingerprint)))
-                continue;
 
             var current = ToJson(entity.Values, ReferenceNames(input.Model, entity.Values), Sorted(link.Attributes));
             if (entity.FactStatus is not null)
@@ -651,6 +661,11 @@ internal static class ProposalPlanner
     /// <summary>What a "same as X?" question asks: this key of this Source and that element. A "no" is remembered by it.</summary>
     public static string BindFingerprint(string factKey, Guid elementId) =>
         Hash([EnumText.Of(ProposalAction.Bind), EntityKinds.Element, factKey, elementId.ToString()]);
+
+    /// <summary>What a removal says: this fact of the Source, with these values of its entity, is gone. A rejection of it is a person's "keep".</summary>
+    /// <param name="factKey">The in-memory key (<see cref="FactMapping.KeyOf"/>).</param>
+    public static string RemoveFingerprint(string entityKind, string factKey, IReadOnlyDictionary<string, string?> values) =>
+        Hash([EnumText.Of(ProposalAction.Remove), entityKind, factKey, Canonical(values)]);
 
     private static string Canonical(IReadOnlyDictionary<string, string?> values) =>
         Hash(values.OrderBy(v => v.Key, StringComparer.Ordinal).Select(v => $"{v.Key}={v.Value}"));

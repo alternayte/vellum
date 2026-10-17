@@ -42,7 +42,8 @@ import { useCanvasStore } from '@/stores/canvas-store'
 import { useDraftStore } from '@/stores/draft-store'
 import { useUndoStore } from '@/stores/undo-store'
 import type { DiffState } from '@/stores/draft-store'
-import { computeLayout } from '@/lib/layout'
+import { computeLayout, placeNew } from '@/lib/layout'
+import { useNeedsYouByEntity, useScanCompletion } from '@/hooks/use-needs-you'
 import { cardSize } from '@/lib/card-size'
 import { visibleCanvasRect } from '@/lib/canvas-insets'
 import { canContain, pathTo, validKindsForContext } from '@/lib/containment-rules'
@@ -239,6 +240,47 @@ function ProjectWorkspace() {
     // The layout moves every node, so show the result: fit once the nodes have their new places.
     requestAnimationFrame(() => requestAnimationFrame(() => fitViewRef.current?.()))
   }
+
+  // A completed scan applied what it observed: the model and "Needs you" are read again.
+  useScanCompletion(projectId)
+  const needsYou = useNeedsYouByEntity(projectId)
+  // A card shows "needs you" for its own fact and for a contract it owns.
+  const needsYouCards = useMemo(() => {
+    const ids = new Set<string>()
+    // A fact not seen in the latest scan has its own badge; the removal item adds none.
+    for (const [id, items] of needsYou) {
+      if (items.some((i) => i.proposal.action !== 'remove')) ids.add(reviewOwners[id] ?? id)
+    }
+    return ids
+  }, [needsYou, reviewOwners])
+
+  // An imported element without a place on the open view gets one from the auto layout, so the
+  // canvas shows a diagram and not a pile. Nothing a person placed moves. The first import of a
+  // view opens its top level (the Context view) and fits it.
+  const placing = useRef<string | null>(null)
+  useEffect(() => {
+    if (readOnly || activeDraftStreamId || isReviewMode || !activeView || !elements || !relationships) return
+    const placed = new Set(activeView.positions.map((p) => p.elementId))
+    const imported = elements.filter((e) => !placed.has(e.id) && e.provenance?.revision && e.factStatus !== 'inferred')
+    if (imported.length === 0) return
+    const key = `${activeView.id}:${imported.map((e) => e.id).sort().join(',')}`
+    if (placing.current === key) return
+    placing.current = key
+    const firstImport = activeView.positions.length === 0
+    const free = visibleCanvasRect()
+    const sized = elements
+      .filter((e) => placed.has(e.id) || imported.some((i) => i.id === e.id))
+      .map((e) => ({ id: e.id, parentId: e.parentId ?? null, ...cardSize(e.kind) }))
+    void placeNew(sized, relationships, activeView.positions, free ? { width: free.width, height: free.height } : undefined, useCanvasStore.getState().expandedNodeIds)
+      .then((fresh) => {
+        if (fresh.length === 0) return
+        writeLayout([...activeView.positions, ...fresh])
+        if (firstImport) {
+          useCanvasStore.getState().drillTo(-1)
+          requestAnimationFrame(() => requestAnimationFrame(() => fitViewRef.current?.()))
+        }
+      })
+  }, [readOnly, activeDraftStreamId, isReviewMode, activeView, elements, relationships, writeLayout])
 
   // The parent is a fact of the model: the command carries it. Showing the parent's inside
   // is view state only, so the new child is on the canvas when the command returns.
@@ -704,7 +746,7 @@ function ProjectWorkspace() {
           {activeFlyout === 'scenarios' && (
             <ScenariosFlyout projectId={projectId} branchId={contractBranchId} references={scenarioReferences} revision={openRevision} />
           )}
-          {activeFlyout === 'import' && <ImportFlyout projectId={projectId} owners={reviewOwners} labels={referenceLabels} />}
+          {activeFlyout === 'import' && <ImportFlyout projectId={projectId} owners={reviewOwners} labels={referenceLabels} readOnly={readOnly} />}
           {activeFlyout === 'promises' && <PromisesFlyout projectId={projectId} references={scenarioReferences} scenarios={scenarioList ?? []} owners={reviewOwners} />}
           {activeFlyout === 'review' && (
             <ReviewFlyout projectId={projectId} branchId={contractBranchId} revision={openRevision} references={scenarioReferences} elementIds={reviewElementIds} owners={reviewOwners} />
@@ -731,7 +773,7 @@ function ProjectWorkspace() {
             <DocEditor projectId={projectId} docId={activeDocId} />
           ) : (
             <CanvasView
-              elements={(elements ?? []).map((e) => ({ ...e, ownerId: e.ownerId ?? null }))}
+              elements={(elements ?? []).map((e) => ({ ...e, ownerId: e.ownerId ?? null, needsYou: needsYouCards.has(e.id) }))}
               relationships={relationships ?? []}
               positions={positions}
               diffStateMap={diffStateMap}

@@ -3,7 +3,7 @@ title: Connect New Relic
 description: Read the entities of a New Relic account and the relationships between them through NerdGraph, with a read-only key at the fixed US or EU endpoint.
 ---
 
-This guide shows you how to add a New Relic account as a Source. Vellum reads the entities of the account and the relationships between them, and proposes them as elements and relationships. It reads no metrics, traces, logs or attributes.
+This guide shows you how to add a New Relic account as a Source. Vellum reads the entities of the account and the relationships between them, and adds them to the model as elements and relationships. It reads no metrics, traces, logs or attributes.
 
 :::caution[Experimental]
 The New Relic Source is tested against sample NerdGraph responses, not against a live account. If an import fails on your account, [open an issue](https://github.com/alternayte/vellum/issues).
@@ -43,13 +43,13 @@ The queries are in [Runtime sources](/reference/runtime-sources/).
 - An **entity** becomes an `app` element labelled `measured`: New Relic makes an entity from what its agents report. Its GUID is the external key of the source binding.
 - A **relationship** is labelled `declared`. New Relic makes some relationships itself and lets users make others. The NerdGraph answer that its documentation describes does not say which, so Vellum labels every relationship `declared`.
 
-When an entity has the name of an element that another Source holds, such as a service that a code scan found, the review asks **Same as?**. Answer **Same** to bind the element to the GUID. Vellum never joins two elements by name alone.
+When an entity has the name of an element that another Source holds, such as a service that a code scan found, **Needs you** asks **Same as?**. Answer **Same** to bind the element to the GUID. Vellum never joins two elements by name alone.
 
 ## Read the account again
 
 Select **Read again** on the Source. Each read is a new Snapshot. Its ID is the SHA-256 of the sorted entities and relationships.
 
-A complete read that no longer finds an accepted entity or relationship gives it a stale mark and a removal proposal. A partial read concludes nothing from an absence. A read is partial when New Relic answers part of a query with errors or a bound is reached.
+A complete read that no longer finds an entity or a relationship gives it the mark **not seen in latest scan**. It deletes nothing. A partial read concludes nothing from an absence. A read is partial when New Relic answers part of a query with errors or a bound is reached.
 
 ## When a read stops
 

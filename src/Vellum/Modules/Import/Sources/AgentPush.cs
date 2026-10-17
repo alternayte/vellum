@@ -69,7 +69,7 @@ public static partial class AgentPush
 
     public static async Task<IResult> Push(
         Guid projectId, AgentPushRequest request, ClaimsPrincipal user, HttpContext http,
-        WorkspaceAuthorizationService auth, SettingsResolver settings, AppDbContext db, TimeProvider time, CancellationToken ct)
+        WorkspaceAuthorizationService auth, SettingsResolver settings, AppDbContext db, ScanWorkerOptions worker, TimeProvider time, CancellationToken ct)
     {
         var userId = user.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
@@ -189,6 +189,9 @@ public static partial class AgentPush
                 return Results.Conflict(new ErrorResponse("scan_changed", "The push was failed while it was planned. Push again."));
         }
 
+        // The push applies what it observed as the person the token acts for; the rest waits for a person.
+        if (worker.AutoApply)
+            await AutoApply.RunAsync(http.RequestServices, scan.Id, null, time, ct);
         var pending = await db.ImportProposals.CountAsync(p => p.ScanId == scan.Id && p.Status == ProposalStatus.Pending, ct);
         var completed = await db.Scans.AsNoTracking().FirstAsync(s => s.Id == scan.Id, ct);
         return Results.Created($"/api/projects/{projectId}/imports/{scan.Id}", new AgentPushResponse(

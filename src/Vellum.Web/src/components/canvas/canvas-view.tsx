@@ -69,6 +69,8 @@ interface ElementModel {
   factStatus?: string | null
   stale?: StaleMark | null
   provenance?: Provenance | null
+  /** A change of a Source to this fact, or a fact of it, waits for a person ("Needs you"). */
+  needsYou?: boolean
 }
 
 interface RelationshipModel {
@@ -412,6 +414,7 @@ function CanvasViewInner({
               icon: child.icon,
               factStatus: child.factStatus ?? null,
               stale: child.stale ?? null,
+              needsYou: child.needsYou ?? false,
               provenance: child.provenance ?? null,
               lod: tier,
               diffState: childDiffState,
@@ -439,6 +442,7 @@ function CanvasViewInner({
             icon: el.icon,
             factStatus: el.factStatus ?? null,
             stale: el.stale ?? null,
+            needsYou: el.needsYou ?? false,
             provenance: el.provenance ?? null,
             lod: tier,
             diffState: entityDiffState,

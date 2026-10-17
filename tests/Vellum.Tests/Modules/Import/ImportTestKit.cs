@@ -74,6 +74,16 @@ internal sealed class FixtureGitHub
         return files;
     }
 
+    /// <summary>The orders fixture whose compose service <c>postgres</c> runs MySQL: the store's technology changes, its key stays.</summary>
+    public static SortedDictionary<string, byte[]> OrdersWithMySql()
+    {
+        var files = Load("orders");
+        var compose = Encoding.UTF8.GetString(files["docker-compose.yml"]);
+        Assert.Contains("image: postgres:16-alpine", compose);
+        files["docker-compose.yml"] = Encoding.UTF8.GetBytes(compose.Replace("image: postgres:16-alpine", "image: mysql:8"));
+        return files;
+    }
+
     /// <summary>Adds a commit and makes it the head.</summary>
     public FixtureGitHub Commit(string sha, IDictionary<string, byte[]> files)
     {
@@ -206,7 +216,7 @@ internal sealed class FixtureGitHub
 /// One app for the import tests. No worker loop runs in it: a test runs the worker itself, so
 /// each step of a scan happens when the test says. The clock is the test's.
 /// </summary>
-public sealed class ImportHost : IAsyncLifetime, IDisposable
+public class ImportHost : IAsyncLifetime, IDisposable
 {
     private readonly bool _ownsFixture;
 
@@ -214,11 +224,23 @@ public sealed class ImportHost : IAsyncLifetime, IDisposable
     public OutboundHost Host { get; private set; } = null!;
     public IntegrationFixture Fixture { get; }
 
-    /// <summary>The class fixture: a database of the class and the app over it.</summary>
-    public ImportHost()
+    /// <summary>
+    /// True when a completed tracking scan applies its additions and untouched changes by
+    /// itself, as it does outside tests. The tests of the decision rules turn it off, so a
+    /// scan leaves every proposal pending for them to decide.
+    /// </summary>
+    private readonly bool _autoApply;
+
+    /// <summary>The class fixture: a database of the class and the app over it. Scans leave their proposals pending.</summary>
+    public ImportHost() : this(autoApply: false)
+    {
+    }
+
+    protected ImportHost(bool autoApply)
     {
         Fixture = new IntegrationFixture();
         _ownsFixture = true;
+        _autoApply = autoApply;
     }
 
     public async Task InitializeAsync()
@@ -262,11 +284,15 @@ public sealed class ImportHost : IAsyncLifetime, IDisposable
                 PollInterval = TimeSpan.FromMilliseconds(100),
                 WatchInterval = TimeSpan.FromMilliseconds(50),
                 LeaseDuration = TimeSpan.FromSeconds(60),
+                AutoApply = _autoApply,
             });
         });
 
     public void Dispose() => Host?.Dispose();
 }
+
+/// <summary>The import app as it runs outside tests: a completed tracking scan applies what it observed.</summary>
+public sealed class AutoApplyImportHost() : ImportHost(autoApply: true);
 
 /// <summary>One user, one project and one stub GitHub of their own.</summary>
 internal sealed record ImportScenario(
@@ -368,6 +394,18 @@ internal sealed record ImportScenario(
         });
         Assert.True(response.StatusCode == HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
         return (await response.Content.ReadFromJsonAsync<JsonObject>())!;
+    }
+
+    /// <summary>
+    /// Runs what a completed tracking scan applies by itself (<see cref="AutoApply"/>), on a host
+    /// that leaves it off. Returns the proposals it accepted.
+    /// </summary>
+    public async Task<HashSet<Guid>> AutoApplyAsync(Guid importId)
+    {
+        var before = (await ProposalsAsync(importId, "status=accepted")).Select(p => p.Id()).ToHashSet();
+        await using (var scope = Import.Host.Factory.Services.CreateAsyncScope())
+            await AutoApply.RunAsync(scope.ServiceProvider, importId, null, Import.Time, CancellationToken.None);
+        return [.. (await ProposalsAsync(importId, "status=accepted")).Select(p => p.Id()).Where(id => !before.Contains(id))];
     }
 
     /// <summary>Scans, then accepts every proposal in one decision. Returns the scan.</summary>

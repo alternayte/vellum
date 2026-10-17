@@ -85,7 +85,7 @@ export function AddSourceDialog({ projectId, onClose }: { projectId: string; onC
         <DialogHeader>
           <DialogTitle>Add a Source</DialogTitle>
           <DialogDescription>
-            Vellum reads the files of a Source and proposes what it finds. It does not run the code, and it changes the model only when you accept a proposal.
+            Vellum reads the files of a Source and does not run the code. Each scan adds what it observes to the model; a change to a fact you edited waits in Needs you.
           </DialogDescription>
         </DialogHeader>
 

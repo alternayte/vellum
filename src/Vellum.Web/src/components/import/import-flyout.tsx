@@ -6,9 +6,9 @@ import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import { shownInline } from '@/lib/mutation-errors'
 import { describeScan, importApi, isActive, pullRequestState, scanSubject, type ScanSummary, type SourceSummary } from '@/lib/import-api'
-import { ProposalReview } from './proposal-review'
 import { ImpactDialog } from './impact-dialog'
-import { SourcesList, SourcesReview } from './sources-review'
+import { SourcesList } from './sources-review'
+import { NeedsYouList } from './needs-you'
 import { DocumentProposalDialog, ModelFileUpload } from './model-files'
 import { AddSourceDialog } from './add-source-dialog'
 import { BulkAddDialog } from './bulk-add-dialog'
@@ -34,16 +34,19 @@ const TARGETS: { value: Target; label: string; field: string; placeholder: strin
 ]
 
 /**
- * Imports read a Source, such as a GitHub repository at one commit, and propose what they
- * found. Each completed scan is a Snapshot of its Source. Nothing reaches the model until a
- * person accepts it in the review.
+ * The Sources panel. A scan reads a Source, such as a GitHub repository at one commit; each
+ * completed scan is a Snapshot of its Source. The scan applies what it observed as the person
+ * who started it: every addition, and each change of a fact that only this Source wrote. What
+ * it does not apply waits in "Needs you" for a person.
  */
-export function ImportFlyout({ projectId, owners, labels = {} }: {
+export function ImportFlyout({ projectId, owners, labels = {}, readOnly = false }: {
   projectId: string
   /** The element that owns an operation, a subscription or a message: what the canvas shows for it. */
   owners: Record<string, string>
   /** Names of the things of the model by ID, for a proposal read from a document. */
   labels?: Record<string, string>
+  /** The person cannot change the model: "Needs you" shows its items without actions. */
+  readOnly?: boolean
 }) {
   const [proseOf, setProseOf] = useState<SourceSummary | null>(null)
   const queryClient = useQueryClient()
@@ -51,9 +54,6 @@ export function ImportFlyout({ projectId, owners, labels = {} }: {
   const [target, setTarget] = useState<Target>('ref')
   const [ref, setRef] = useState('')
   const [folders, setFolders] = useState('')
-  const [reviewing, setReviewing] = useState<{ scan: ScanSummary; sourceName?: string } | null>(null)
-  const [bySource, setBySource] = useState(false)
-  const [opening, setOpening] = useState<string | null>(null)
   const [impactOf, setImpactOf] = useState<ScanSummary | null>(null)
   const [adding, setAdding] = useState<'one' | 'many' | 'runtime' | null>(null)
 
@@ -71,15 +71,6 @@ export function ImportFlyout({ projectId, owners, labels = {} }: {
     queryClient.invalidateQueries({ queryKey: ['projects', projectId, 'imports'] }),
     queryClient.invalidateQueries({ queryKey: sourcesKey(projectId) }),
   ])
-  /** Opens the full review of the scan whose proposals a Source waits on. */
-  const openScan = async (scanId: string, source: SourceSummary) => {
-    setOpening(scanId)
-    try {
-      setReviewing({ scan: await importApi.get(projectId, scanId), sourceName: source.name })
-    } finally {
-      setOpening(null)
-    }
-  }
   const start = useMutation({
     mutationFn: () => {
       const includePaths = folders.split(/[,\n]/).map((f) => f.trim()).filter(Boolean)
@@ -96,7 +87,12 @@ export function ImportFlyout({ projectId, owners, labels = {} }: {
   })
   const cancel = useMutation({ mutationFn: (id: string) => importApi.cancel(projectId, id), onSuccess: refresh, onError: shownInline })
   const resume = useMutation({ mutationFn: (id: string) => importApi.resume(projectId, id), onSuccess: refresh, onError: shownInline })
-  const track = useMutation({ mutationFn: (id: string) => importApi.track(projectId, id), onSuccess: refresh, onError: shownInline })
+  // Following a ref applies what its scan observed: the model changes too.
+  const track = useMutation({
+    mutationFn: (id: string) => importApi.track(projectId, id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['projects', projectId] }),
+    onError: shownInline,
+  })
   const failure = start.error ?? cancel.error ?? resume.error ?? track.error
 
   const submit = (e: FormEvent) => {
@@ -107,7 +103,7 @@ export function ImportFlyout({ projectId, owners, labels = {} }: {
   return (
     <div className="flex h-full flex-col">
       <div className="border-b border-border px-3 py-2">
-        <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Import</span>
+        <span className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Sources</span>
       </div>
 
       <form onSubmit={submit} className="space-y-2 border-b border-border p-3" aria-labelledby="scan-github">
@@ -160,18 +156,18 @@ export function ImportFlyout({ projectId, owners, labels = {} }: {
           {start.isPending ? 'Starting…' : 'Scan repository'}
         </Button>
         <p className="text-[11px] leading-relaxed text-muted-foreground">
-          Vellum reads the files at one commit. The repository becomes a Source of this project, and each scan a Snapshot of it. Vellum does not run the code, and it does not change the model until you accept a proposal.
+          Vellum reads the files at one commit and does not run the code. The repository becomes a Source of this project, and each scan a Snapshot of it. A scan adds what it observes to the model; a change to a fact you edited waits in Needs you.
         </p>
       </form>
       {failure && <p role="alert" className="border-b border-border px-3 py-2 text-xs text-[var(--trace-failure)]">{failure.message}</p>}
 
       <div className="flex-1 overflow-y-auto">
+        <NeedsYouList projectId={projectId} readOnly={readOnly} />
         <ModelFileUpload projectId={projectId} onUploaded={() => void refresh()} />
         <section aria-labelledby="import-sources" className="border-b border-border pt-2">
           <div className="flex flex-wrap items-center gap-x-1 gap-y-0.5 px-3 pb-1.5">
             <h3 id="import-sources" className="flex-1 basis-full text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Sources</h3>
             <Button size="sm" variant="ghost" className="h-6 px-1.5 text-xs" onClick={() => setAdding('runtime')}>Add runtime Source</Button>
-            <Button size="sm" variant="ghost" className="h-6 px-1.5 text-xs" onClick={() => setBySource(true)}>Proposals by Source</Button>
           </div>
           <div className="flex gap-1.5 px-2 pb-2">
             <Button size="sm" variant="secondary" className="h-6 flex-1 gap-1 px-2 text-xs" onClick={() => setAdding('one')}>
@@ -181,8 +177,7 @@ export function ImportFlyout({ projectId, owners, labels = {} }: {
               Add many repositories
             </Button>
           </div>
-          <SourcesList projectId={projectId} onReview={(source) => openScan(source.review.scanId!, source)} onProse={setProseOf} />
-          {opening && <p role="status" className="px-3 pb-2 text-xs text-muted-foreground">Opening the review…</p>}
+          <SourcesList projectId={projectId} onProse={setProseOf} />
         </section>
         <h3 className="px-3 pb-1 pt-2 text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Scans</h3>
         <div className="px-2 pb-2">
@@ -220,11 +215,6 @@ export function ImportFlyout({ projectId, owners, labels = {} }: {
               </p>
               <div className="mt-2 flex flex-wrap items-center gap-1.5">
                 {scan.status === 'completed' && (
-                  <Button size="sm" variant="secondary" className="h-6 px-2 text-xs" onClick={() => setReviewing({ scan })}>
-                    {scan.proposalCounts.pending > 0 ? `Review ${scan.proposalCounts.pending} ${scan.proposalCounts.pending === 1 ? 'proposal' : 'proposals'}` : 'Open review'}
-                  </Button>
-                )}
-                {scan.status === 'completed' && (
                   <Button
                     size="sm" variant="secondary" className="h-6 px-2 text-xs"
                     title="What this scan changes, and which flows and promises that reaches"
@@ -236,7 +226,7 @@ export function ImportFlyout({ projectId, owners, labels = {} }: {
                 {scan.status === 'completed' && scan.kind === 'comparison' && scan.ref && (
                   <Button
                     size="sm" variant="ghost" className="h-6 px-2 text-xs" disabled={track.isPending}
-                    title="Make this ref the one the model follows. Its proposals can then be accepted."
+                    title="Make this ref the one the model follows. What its scan observed is then applied."
                     onClick={() => track.mutate(scan.id)}
                   >
                     Follow this ref
@@ -264,12 +254,6 @@ export function ImportFlyout({ projectId, owners, labels = {} }: {
       {adding === 'many' && <BulkAddDialog projectId={projectId} onClose={() => setAdding(null)} />}
       {adding === 'runtime' && <AddRuntimeSourceDialog projectId={projectId} onClose={() => { setAdding(null); refresh() }} />}
       {impactOf && <ImpactDialog projectId={projectId} scan={impactOf} owners={owners} onClose={() => setImpactOf(null)} />}
-      {bySource && !reviewing && (
-        <SourcesReview projectId={projectId} onOpenScan={(scanId, source) => openScan(scanId, source)} onClose={() => { setBySource(false); refresh() }} />
-      )}
-      {reviewing && (
-        <ProposalReview projectId={projectId} scan={reviewing.scan} sourceName={reviewing.sourceName} onClose={() => { setReviewing(null); refresh() }} />
-      )}
     </div>
   )
 }

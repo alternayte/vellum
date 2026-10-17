@@ -53,7 +53,7 @@ A schema has a label and a provenance, like a fact of the model. A schema has no
 - A schema from a model file of a Source has the label of that file, `declared`.
 - The import of a model document keeps the label that the document gives each schema.
 
-Version 0.1.0 gave every schema the label `declared`, also a schema from a scan. Vellum does not change the label of such a schema when it reads the stored events again. The next scan of its Source proposes the change from `declared` to `observed-in-source`. The change applies when a person accepts the proposal. **Accept all from this Source** does not accept it.
+Version 0.1.0 gave every schema the label `declared`, also a schema from a scan. Vellum does not change the label of such a schema when it reads the stored events again. The next scan of its Source changes the label from `declared` to `observed-in-source` when no person edited the schema since. When a person edited it, the change waits in **Needs you**.
 
 The Build document and the brief show the label and the provenance of each schema. A schema that is inferred or unknown prevents Build Ready, as a fact does. The section `2.4 Schemas` of a brief leaves it out.
 

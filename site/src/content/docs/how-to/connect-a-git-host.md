@@ -121,7 +121,7 @@ The examples need the cookie file, `$VELLUM_URL` and `$PROJECT` from [Use the HT
 
 To scan the Source again at its default ref, select **Scan again** on the Source.
 
-The scan reads like a GitHub scan. Vellum finds the commit that the ref points to, lists the files of that commit and reads the files in the scope. It applies the same [limits](/how-to/import-a-repository/#limits), the same exclusions and the same secret filter. You review the proposals in the same way. See [Import a repository](/how-to/import-a-repository/#watch-the-scan).
+The scan reads like a GitHub scan. Vellum finds the commit that the ref points to, lists the files of that commit and reads the files in the scope. It applies the same [limits](/how-to/import-a-repository/#limits), the same exclusions and the same secret filter. It applies what it observes in the same way. See [Import a repository](/how-to/import-a-repository/#what-a-scan-applies).
 
 A scan of a pull request reads GitHub only. On another host Vellum refuses it with `pull_request_github_only`. Scan a branch, a tag or a commit.
 

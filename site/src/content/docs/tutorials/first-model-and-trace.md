@@ -202,6 +202,6 @@ To see a lost message, move the fault to the subscription of the warehouse, whic
 
 ## Next
 
-- [Import a repository and review the proposals](/tutorials/import-and-review/)
+- [Import a repository and read the result](/tutorials/import-and-review/)
 - [Trace a scenario](/how-to/trace-a-scenario/)
 - [Scenario format](/reference/scenario-format/)

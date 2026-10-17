@@ -57,12 +57,14 @@ export function provenanceSummary(provenance: Provenance | null | undefined): st
   return parts.length > 0 ? parts.join(' · ') : null
 }
 
-/** Set when a complete rescan no longer finds the source evidence of an accepted fact. */
+/** "Not seen in latest scan": set when the latest Snapshot of a Source no longer holds an accepted fact. Nothing is deleted. */
 export interface StaleMark {
   sinceRevision: string
   reason: string
+  /** The Source whose Snapshot no longer holds the fact. */
+  sourceId?: string | null
 }
 
 export function staleSummary(stale: StaleMark): string {
-  return `Stale: the last complete scan (${stale.sinceRevision.slice(0, 10)}) did not find this in the source`
+  return `Not seen in latest scan: the Snapshot ${stale.sinceRevision.slice(0, 10)} of its Source does not hold this. Nothing was deleted; remove or keep it in the detail panel.`
 }

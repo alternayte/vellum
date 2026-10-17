@@ -21,14 +21,14 @@ public class SourceGateTests(ImportHost import) : IClassFixture<ImportHost>
         Assert.Contains(await s.ProposalsAsync(catalog.ScanId), p => p.Text("action") == "add" && p.Text("name") == "payments");
         Assert.Contains(await s.ProposalsAsync(traces.ScanId), p => p.Text("action") == "add" && p.Text("name") == "payments");
 
-        await AcceptAllAsync(s, catalog.SourceId);
+        await s.AutoApplyAsync(catalog.ScanId);
         // The traces were planned again: payments is a question now, not a second addition.
         var pending = (await s.ProposalsAsync(traces.ScanId)).Where(p => p.Text("status") == "pending").ToList();
         Assert.DoesNotContain(pending, p => p.Text("action") == "add" && p.Text("entityKind") == "element"
             && p.Text("name")!.Equals("payments", StringComparison.OrdinalIgnoreCase));
         Assert.Contains(pending, p => p.Text("action") == "bind" && p.Text("name") == "payments");
 
-        await AcceptAllAsync(s, traces.SourceId);
+        await s.AutoApplyAsync(traces.ScanId);
         var elements = await s.ElementsAsync();
         Assert.Single(elements, e => e.Text("name")!.Equals("payments", StringComparison.OrdinalIgnoreCase));
         Assert.Single(elements, e => e.Text("name")!.Equals("orders", StringComparison.OrdinalIgnoreCase));
@@ -58,7 +58,7 @@ public class SourceGateTests(ImportHost import) : IClassFixture<ImportHost>
     {
         var s = await ImportScenario.CreateAsync(import, fixture: null);
         var catalog = await UploadModelFileAsync(s, "catalog-info.yaml", Fixture("ModelFiles", "catalog-info.yaml"));
-        await AcceptAllAsync(s, catalog.SourceId);
+        await s.AutoApplyAsync(catalog.ScanId);
         var traces = await TracesAsync(s);
         var question = (await s.ProposalsAsync(traces.ScanId)).Single(p => p.Text("action") == "bind" && p.Text("name") == "orders");
         var answered = await s.Owner.PostAsJsonAsync(s.Url($"/{traces.ScanId}/proposals/decide"), new { bind = new[] { new { id = question.Id(), same = true } } });
@@ -78,7 +78,7 @@ public class SourceGateTests(ImportHost import) : IClassFixture<ImportHost>
     }
 
     [Fact]
-    public async Task Identical_values_of_two_Sources_are_no_conflict_and_bulk_accept_still_leaves_them_to_a_person()
+    public async Task Identical_values_of_two_Sources_are_no_conflict_and_auto_apply_still_leaves_them_to_a_person()
     {
         var s = await ImportScenario.CreateAsync(import);
         await s.ScanAndAcceptAllAsync();
@@ -95,8 +95,7 @@ public class SourceGateTests(ImportHost import) : IClassFixture<ImportHost>
         var channel = (await s.ProposalsAsync(scanB)).Single(p => p.Text("entityKind") == "channel" && p.Text("name") == "billing.order-created");
         Assert.Equal("change", channel.Text("action"));
         Assert.NotEmpty(channel["otherSources"]!.AsArray());
-        var bulk = await AcceptAllAsync(s, mirror);
-        Assert.DoesNotContain(bulk["accepted"]!.AsArray(), id => id!.GetValue<Guid>() == channel.Id());
+        Assert.DoesNotContain(channel.Id(), await s.AutoApplyAsync(scanB));
     }
 
     private sealed record Uploaded(Guid SourceId, Guid ScanId);
@@ -125,13 +124,6 @@ public class SourceGateTests(ImportHost import) : IClassFixture<ImportHost>
         return new Uploaded(sourceId, scanId);
     }
 
-    private static async Task<JsonObject> AcceptAllAsync(ImportScenario s, Guid sourceId)
-    {
-        var response = await s.Owner.PostAsJsonAsync($"/api/projects/{s.ProjectId}/sources/{sourceId}/accept", new { acknowledgeImpact = true });
-        var body = (await response.Content.ReadFromJsonAsync<JsonObject>())!;
-        Assert.True(response.StatusCode == HttpStatusCode.OK && body["failed"]!.AsArray().Count == 0, body.ToJsonString());
-        return body;
-    }
 
     private static async Task<List<JsonObject>> SourcesAsync(ImportScenario s) =>
         [.. (await s.Owner.GetFromJsonAsync<JsonArray>($"/api/projects/{s.ProjectId}/sources"))!.Select(x => x!.AsObject())];

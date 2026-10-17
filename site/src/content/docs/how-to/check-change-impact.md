@@ -83,10 +83,10 @@ A pull request from a fork is scanned when GitHub serves its head commit through
 
 `GET /api/projects/{projectId}/imports/{importId}` gives `kind`, `trackedRef`, `canDecide` and `canDecideReason`.
 
-| Scan | `kind` | Can you accept from it? |
+| Scan | `kind` | Does it apply to the model? |
 |---|---|---|
-| The ref that the accepted facts follow | `tracking` | Yes. |
-| A ref, when the repository has no tracked ref yet | `tracking` | Yes. |
+| The ref that the accepted facts follow | `tracking` | Yes: its additions and the changes of facts that nobody edited. The rest waits in **Needs you**. |
+| A ref, when the repository has no tracked ref yet | `tracking` | Yes, as above. |
 | Another branch or tag | `comparison` | No. |
 | A commit SHA | `comparison` | No, and it cannot become the tracked ref. |
 | A pull request | `comparison` | No, and it cannot become the tracked ref. Scan the tracked branch after the merge. |
@@ -95,9 +95,8 @@ A comparison scan writes nothing to the model. It marks no fact stale.
 
 ## Read the comparison
 
-1. On the completed scan, select **Review <n> proposals** or **Open review**.
-2. Read the note at the top. It names the ref that the model follows.
-3. Read the proposals.
+1. On the completed scan, select **Impact**.
+2. Read **Changed in the source**. It lists each proposal of the scan.
 
 | Action | Meaning for the change |
 |---|---|
@@ -107,8 +106,8 @@ A comparison scan writes nothing to the model. It marks no fact stale.
 | **Remove** | The scan looked at the source of an accepted fact and did not find it. |
 | **Match** | Vellum cannot tell which found fact is the one in the model. |
 
-4. Select a proposal. Read the source lines that support it.
-5. Read **Accepting this breaks:**. This list shows what the model loses if the proposal is accepted.
+3. Select a change. Read the diff and the source lines that support it.
+4. Read **Affected flows**. It shows what the model loses if the change reaches the tracked ref.
 
 The list has these items.
 
@@ -118,7 +117,7 @@ The list has these items.
 
 Vellum computes the list from the model and the scenarios as they are now.
 
-If the scan shows **The source matches the model. This scan proposes no change.**, the other ref changes nothing that the extraction rules read.
+If **Changed in the source** is empty, the other ref changes nothing that the extraction rules read.
 
 ## Read the impact
 
@@ -277,8 +276,8 @@ When the change merges into the tracked branch, you do not need **Follow this re
 
 ## What goes stale after you accept
 
-- A tracking scan that no longer finds the source of a fact with the label **Observed in source** marks the fact stale and proposes its removal. The fact stays in the model until you accept the removal.
-- Each accepted proposal changes the model. A promise result records the model version that it read. After the model changes, the result is stale. A stale pass is not a pass.
+- A tracking scan that no longer finds the source of a fact with the label **Observed in source** marks the fact **not seen in latest scan**. The fact stays in the model until you remove it.
+- Each applied or accepted proposal changes the model. A promise result records the model version that it read. After the model changes, the result is stale. A stale pass is not a pass.
 - A review snapshot, a stress run and a bundle also record the model that they read.
 
 Run the checks again after you accept. See [Stale results and Build Ready](/troubleshooting/stale-results-and-build-ready/).

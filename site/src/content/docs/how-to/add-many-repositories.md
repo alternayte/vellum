@@ -85,7 +85,7 @@ The scans wait in the one scan queue of the instance. Vellum runs at most 2 scan
 
 Each Source shows its own progress and its own failure. A scan that a limit stopped is partial. Vellum never shows a partial scan as complete. Resume or rescan each failed Source by itself. See [Watch the scan](/how-to/import-a-repository/#watch-the-scan).
 
-Review the proposals of each Source by itself. [Review by Source](/how-to/import-a-repository/#review-by-source) lists the pending proposals of all Sources, one group for each Source.
+Each scan applies what it observes. [Needs you](/how-to/import-a-repository/#needs-you) lists what waits for a person, one group for each Source.
 
 ## See also
 

@@ -1,9 +1,9 @@
 ---
 title: Import runtime edges from a trace export
-description: Upload an OTLP JSON, Jaeger or Tempo trace export, review the measured call and messaging edges it shows, and accept them into the model.
+description: Upload an OTLP JSON, Jaeger or Tempo trace export. Vellum adds the measured call and messaging edges it shows to the model.
 ---
 
-This guide shows you how to turn a trace export into proposed services and edges. Vellum labels each one `measured`. Nothing reaches the model until you accept it.
+This guide shows you how to turn a trace export into services and edges of the model. Vellum labels each one `measured`. A change of a fact that a person edited waits in **Needs you**.
 
 A trace Source shows which services called which, and which services sent messages to which, in the window of the export. It does not show latency. It does not show an edge that no span in the file shows.
 
@@ -56,17 +56,17 @@ Each edge lists its operation names (at most 50) and has these sample values: th
 
 For the full list of the fields Vellum keeps and drops, see [Runtime sources](/reference/runtime-sources/).
 
-## Review and accept
+## What the upload adds
 
-1. Select **Review** on the Source.
-2. Each service is an `app` element. They sit in a `system` element named after the Source. Each edge is a behavioural relationship.
-3. Select a proposal to see its values and its citation. The citation reads `traces/<source>@<snapshot>:traces/<file>:<line>-<line>`. The cited line is the derived line that Vellum kept for the fact.
-4. Select the proposals and select **Accept**.
+When the read completes, Vellum adds what it found, with you as the person who accepted it:
 
-An accepted fact is labelled `measured`. Its provenance names the Source, the Snapshot, the file and the line.
+- Each service is an `app` element. They sit in a `system` element named after the Source.
+- Each edge is a behavioural relationship.
 
-When a service of the export has the name of an element that another Source holds, such as a service that a code scan found, the review asks **Same as?**. Answer **Same** to bind the element to the trace service. Vellum never joins two elements by name alone.
+Each fact is labelled `measured`. Its provenance names the Source, the Snapshot, the file and the line. The citation reads `traces/<source>@<snapshot>:traces/<file>:<line>-<line>`. The cited line is the derived line that Vellum kept for the fact.
+
+When a service of the export has the name of an element that another Source holds, such as a service that a code scan found, **Needs you** asks **Same as?**. Answer **Same** to bind the element to the trace service. Vellum never joins two elements by name alone.
 
 ## Read a later export
 
-Upload the next export to the same Source. A complete read looks at the whole Source, so an accepted edge that the new export does not show gets a stale mark and a removal proposal. The mark deletes nothing. Upload an export of the same scope as the first one, or the edges of services outside it show as stale.
+Upload the next export to the same Source. A complete read looks at the whole Source, so an edge that the new export does not show gets the mark **not seen in latest scan**. The mark deletes nothing: you remove or keep the edge. Upload an export of the same scope as the first one, or the edges of services outside it show as not seen. See [Not seen in latest scan](/how-to/import-a-repository/#not-seen-in-latest-scan).

@@ -249,10 +249,9 @@ public sealed class CodeSourceTests : IClassFixture<ImportHost>, IDisposable
             File.WriteAllBytes(Path.Combine(folder, path), content);
         }
         var source = await CreateAsync(s, new { kind = "directory", path = "locked" });
-        await StartAsync(s, source);
+        var first = await StartAsync(s, source);
         await s.DrainAsync();
-        var accepted = await s.Owner.PostAsJsonAsync($"/api/projects/{s.ProjectId}/sources/{source}/accept", new { acknowledgeImpact = true });
-        Assert.True(accepted.StatusCode == HttpStatusCode.OK, await accepted.Content.ReadAsStringAsync());
+        Assert.NotEmpty(await s.AutoApplyAsync(first));
 
         // The folder of one service can no longer be listed.
         var service = Path.Combine(folder, "orders-api");

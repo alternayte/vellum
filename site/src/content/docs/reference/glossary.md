@@ -81,6 +81,12 @@ Each entry gives the meaning of a term in Vellum and the page that defines it.
 
 **Message**: A fact of the model: a named payload that one element produces and other elements consume, with an optional schema. See [Model document format](/reference/model-document-format/#message).
 
+## N
+
+**Needs you**: The list of what the scans did not apply by themselves: a change of a fact that a person edited, a fact not seen in the latest scan, and each question. A person accepts or rejects each item. See [Import a repository](/how-to/import-a-repository/#needs-you).
+
+**Not seen in latest scan**: Of a fact: the latest Snapshot of its Source does not hold it. Nothing is deleted; a person removes or keeps the fact. See [Import a repository](/how-to/import-a-repository/#not-seen-in-latest-scan).
+
 ## O
 
 **Obligation**: One named check of a promise, with a recipe and an ID such as `ORD-014/O2`. See [Promises and evidence](/reference/promises-and-evidence/#kinds-of-obligation).
@@ -123,7 +129,7 @@ Each entry gives the meaning of a term in Vellum and the page that defines it.
 
 **Source binding**: A pair of a Source and an external key that links an element to its counterpart in that Source. Vellum never adds one by name alone. See [Sources, Snapshots and bindings](/concepts/sources-and-snapshots/#a-source-binding-links-an-element-to-a-source).
 
-**Stale**: Of a fact: the last complete scan that looked did not find its evidence. Of a result: an input of the check moved after the run. See [Import a repository](/how-to/import-a-repository/#stale-facts) and [Promises and evidence](/reference/promises-and-evidence/#staleness).
+**Stale**: Of a result: an input of the check moved after the run. See [Promises and evidence](/reference/promises-and-evidence/#staleness). Of a fact, see **Not seen in latest scan**.
 
 **Store**: An element kind: a place that holds data, such as a database. Its parent is a system. See [Model a system](/how-to/model-a-system/#know-the-element-kinds).
 
@@ -135,7 +141,7 @@ Each entry gives the meaning of a term in Vellum and the page that defines it.
 
 **Trace**: The replay of a scenario over the contracts of the model. It shows declared behaviour and is not a measurement. See [A trace is declared behaviour](/concepts/traces-are-declared/).
 
-**Tracked ref**: The branch or tag of a repository that the model follows. The first decision in which you accept a proposal sets it. See [Import a repository](/how-to/import-a-repository/#scan-again).
+**Tracked ref**: The branch or tag of a repository that the model follows. The first scan that applies a fact sets it. See [Import a repository](/how-to/import-a-repository/#scan-again).
 
 ## U
 

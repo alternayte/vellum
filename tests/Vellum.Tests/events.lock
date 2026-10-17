@@ -70,4 +70,5 @@ stream scenario (ScenarioState)
 stream schema (SchemaState)
   schema.schema_created v1 { content: string, description: string?, id: uuid, name: string, projectId: uuid, version: int32 }
   schema.schema_deleted v1 { schemaId: uuid }
+  schema.schema_provenance_recorded v1 { provenance: { acceptedAt: date-time?, acceptedAtVersion: int64?, acceptedBy: uuid?, acceptedOnBranch: uuid?, confidence: float64?, contentNotHeld: bool?, revision: string?, source: string? }?, schemaId: uuid, status: enum{Declared=0, ObservedInSource=1, Inferred=2, Measured=3, Unknown=4} }
   schema.schema_updated v1 { content: string?, description: string?, name: string?, schemaId: uuid, version: int32? }
