@@ -3,6 +3,7 @@ import { ArrowDown, ArrowUp, GitBranch, Plus, Send, Split, Trash2, Database, Pho
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
+import { inlineEditKeys } from '@/lib/inline-edit'
 import {
   OUTCOMES, finalBefore, move, newStep, nextStepId,
   type BranchStep, type CallStep, type Outcome, type ParallelStep, type PublishStep, type Step, type StepType, type WriteStep,
@@ -500,6 +501,7 @@ export function HeadersField({ headers, onChange }: { headers: Record<string, st
           <li key={name} className="flex items-center gap-1.5">
             <Input
               aria-label={`Header ${index + 1} name`} className="h-7 w-40 font-mono text-xs" defaultValue={name} maxLength={200}
+              enterKeyHint="done" onKeyDown={inlineEditKeys(name)}
               onBlur={(e) => { const next = e.target.value.trim(); if (next && next !== name && !(next in headers)) rename(name, next); else e.target.value = name }}
             />
             <Input aria-label={`Header ${name} value`} className="h-7 flex-1 font-mono text-xs" value={value} maxLength={2000} onChange={(e) => onChange({ ...headers, [name]: e.target.value })} />

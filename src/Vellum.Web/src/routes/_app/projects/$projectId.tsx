@@ -909,6 +909,8 @@ function ProjectWorkspace() {
               relationships={relationships ?? []}
               onWritten={() => relayoutAfterStart(false)}
               onClose={() => setTypeItOpen(false)}
+              // The panel covers the bottom of the canvas; the fit keeps the cards clear of it.
+              onRoomChange={() => { if (!showStarts) fitViewRef.current?.() }}
             />
           )}
         </main>
