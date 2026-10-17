@@ -48,21 +48,37 @@ export interface Thread {
   comments: ThreadComment[]
 }
 
+/** A proposal that an agent submitted, as an inbox entry names it. */
+export interface InboxProposal {
+  id: string
+  kind: 'architecture' | 'flow'
+  name: string
+  /** For additions: how many items it holds. */
+  items: number | null
+  /** True while something of it waits for a decision. */
+  pending: boolean
+}
+
+/** A mention, a reply, or a proposal that an agent submitted. */
 export interface InboxItem {
   id: string
-  reason: 'mention' | 'reply'
+  reason: 'mention' | 'reply' | 'proposal'
   workspaceId: string
   projectId: string
   projectName: string
   draftId: string | null
-  threadId: string
-  commentId: string
-  target: ThreadTarget
+  /** The thread and the comment of a mention or a reply. Null for a proposal. */
+  threadId: string | null
+  commentId: string | null
+  target: ThreadTarget | null
+  /** Who wrote the comment, or `agent-token:<id>` for a proposal. */
   author: string
   authorName: string | null
+  /** The start of the comment, or of the request of a proposal. */
   excerpt: string | null
   createdAt: string
   readAt: string | null
+  proposal?: InboxProposal | null
 }
 
 export interface Inbox {

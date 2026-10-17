@@ -50,11 +50,23 @@ A scenario that came from a proposal records that origin.
 2. Describe what to add. For example: "Add a notification service that listens to OrderCreated."
 3. Select **Propose additions**.
 
-The proposal lists each addition with the confidence the assistant states and its reason. Select the ones you want and select the accept button, for example **Accept 3**. Accepting an item also accepts what it needs.
+The proposal opens on the canvas as a ghost layer. Each proposed element is a dashed card, and each proposed relationship is a dashed line. Vellum places them with the auto layout of **Tidy**, beside the cards of the current view. A proposed element inside a parent shows inside that parent when the view shows the parent open. The real cards do not move.
 
-![The dialog Proposed additions. It says that the suggestion is from stand-in-model, and that accepted items are added as inferred facts. The summary reads: A Notifications app in Fulfilment hears about each shipment and emails the customer a tracking link. Three items are selected: the element Notifications (app, Go, inside Fulfilment), the relationship Shipping worker to Notifications (reports shipments) and the relationship Notifications to Customer (emails tracking links). Each item has the label inferred and a confidence of 80% or 70%. The buttons are Close, Reject selected and Accept 3.](../../../assets/screenshots/assistant-proposed-additions.png)
+![The canvas with the ghost layer open. The bar at the top says Proposed additions, 22 pending, and has the buttons Accept all (22), Reject all and Close. Below the summary it says that 4 items are not drawn on this level. The real cards Customer, Orders System, Payments System and Web Application are solid. The proposed systems Delivery System and Alerts System are dashed frames around dashed cards such as Courier, Delivery API and Alert Log. Dashed lines join them to the real cards.](../../../assets/screenshots/assistant-ghost-layer.png)
 
-Each accepted item is added with the label **inferred**. A proposal never changes or removes what is in the model.
+Decide on the ghost layer:
+
+- Point to a dashed card or line, or move the keyboard focus to it. Select the tick to accept the item, or the cross to reject it. Accepting an item also accepts what it needs. Rejecting an item also rejects the pending items that need it.
+- Select a dashed card or line to read its rationale, confidence, alias and citation in the detail panel. The panel also lists what the item needs and what needs it.
+- Select **Accept all** to accept every pending item in one decision. Vellum applies them in the order of what they need.
+- Select **Reject all** to reject every pending item.
+- Select **Close** to hide the layer. The proposal stays undecided.
+
+The bar lists the items that the canvas does not draw on this level: items on another level, items inside a parent that the view shows closed, and operations, channels, subscriptions, bindings and messages. Each one has the same tick and cross. **Details** shows who made the proposal, its open questions and the parts that Vellum left out.
+
+If Vellum refuses a decision, it applies nothing. The refused cards turn red and show the reason. Select **Deselect refused, accept the rest** to accept the rest of the decision. Select **Reject refused items** to reject the refused items and the items that need them.
+
+An accepted card stays where its ghost was. Each accepted item is added with the label **inferred**. A proposal never changes or removes what is in the model.
 
 The confidence is what the assistant claims. It is not a measurement.
 
@@ -62,8 +74,8 @@ The confidence is what the assistant claims. It is not a measurement.
 
 Select **Review** in the left toolbar, then the **Assistant** tab.
 
-- **Your proposals** lists the flows and additions that the assistant made for you and that nobody decided. Select one to open it and decide. Select the bin to discard it. A discarded proposal is deleted.
-- **History** lists every decided proposal of the project: the decision, who decided and when. Select one to read it.
+- **Your proposals** lists the flows and additions that the assistant made for you and that nobody decided. Select one to open it and decide. Additions open as the ghost layer. Select the bin to discard it. A discarded proposal is deleted.
+- **History** lists every decided proposal of the project: the decision, who decided and when. Select one to read it. Additions open below the line as a list of items, each with its decision.
 
 Additions are decided item by item. Each item records who accepted or rejected it, and when. A proposal with a decided item cannot be discarded. Reject its other items to close it.
 
@@ -93,10 +105,13 @@ A project holds at most 50 undecided proposals. Accept, reject or discard old on
 
 A coding agent with the `propose` scope can submit a flow or additions to the model. Vellum checks such a proposal as it checks a proposal of the assistant. A part that refers to an ID that names nothing is left out and listed. Nothing is in the model and no scenario is saved until you accept.
 
-1. Open the assistant panel.
-2. Below **Waiting for you**, select a proposal. Each line shows the token that submitted it.
-3. Read the proposal. The line below the title names the token.
-4. Accept or reject it, as you do for a proposal of the assistant.
+A proposal from an agent puts an entry in the inbox of the person who created the agent token. The bell in the top bar shows the count of unread entries.
+
+1. Select the bell. The entry names the token, the number of additions and the proposal.
+2. Select the entry. The project opens. Additions open as the ghost layer on the canvas. A flow opens in its dialog.
+3. Accept or reject it, as you do for a proposal of the assistant.
+
+The assistant panel also lists these proposals below **Waiting for you**. Each line shows the token that submitted it.
 
 A part of the model that you accept from such a proposal has the label `inferred`. Its source names the token and the proposal. An agent token cannot accept or reject a proposal.
 

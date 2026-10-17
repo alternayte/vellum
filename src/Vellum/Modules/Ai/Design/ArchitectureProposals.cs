@@ -359,6 +359,10 @@ public static partial class ArchitectureProposals
             db, projectId, RowKind, cursor, limit, new ProposalStore.ProposalFilter(status, submitted, mine == true ? userId : null, decided), ct));
     }
 
+    /// <summary>How many items the stored document holds.</summary>
+    internal static int ItemCount(string document) =>
+        JsonSerializer.Deserialize<ArchitectureDocument>(document, DesignJson.Options)!.Items.Count;
+
     /// <summary>The summary with the item counts of the stored document.</summary>
     internal static ProposalSummary WithCounts(ProposalSummary summary, string document)
     {

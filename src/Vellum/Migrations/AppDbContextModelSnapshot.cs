@@ -40,7 +40,7 @@ namespace Vellum.Migrations
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "ai", "design_proposal_kind", new[] { "architecture", "flow" });
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "ai", "design_proposal_status", new[] { "accepted", "decided", "draft", "rejected" });
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "comments", "delivery_status", new[] { "delivered", "failed", "pending" });
-            NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "comments", "inbox_reason", new[] { "mention", "reply" });
+            NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "comments", "inbox_reason", new[] { "mention", "proposal", "reply" });
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "comments", "target_kind", new[] { "channel", "decision", "document", "element", "message", "operation", "project", "promise", "relationship", "step" });
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "comments", "thread_status", new[] { "open", "resolved" });
             NpgsqlModelBuilderExtensions.HasPostgresEnum(modelBuilder, "costs", "price_source_kind", new[] { "custom", "fetched" });
@@ -584,7 +584,7 @@ namespace Vellum.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("id");
 
-                    b.Property<Guid>("CommentId")
+                    b.Property<Guid?>("CommentId")
                         .HasColumnType("uuid")
                         .HasColumnName("comment_id");
 
@@ -596,6 +596,10 @@ namespace Vellum.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("project_id");
 
+                    b.Property<Guid?>("ProposalId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("proposal_id");
+
                     b.Property<DateTimeOffset?>("ReadAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("read_at");
@@ -604,7 +608,7 @@ namespace Vellum.Migrations
                         .HasColumnType("comments.inbox_reason")
                         .HasColumnName("reason");
 
-                    b.Property<Guid>("ThreadId")
+                    b.Property<Guid?>("ThreadId")
                         .HasColumnType("uuid")
                         .HasColumnName("thread_id");
 
@@ -629,6 +633,10 @@ namespace Vellum.Migrations
 
                     b.HasIndex("UserId", "CreatedAt")
                         .HasDatabaseName("ix_inbox_items_user_id_created_at");
+
+                    b.HasIndex("UserId", "ProposalId")
+                        .IsUnique()
+                        .HasDatabaseName("ix_inbox_items_user_id_proposal_id");
 
                     b.ToTable("inbox_items", "comments");
                 });
@@ -4282,7 +4290,6 @@ namespace Vellum.Migrations
                         .WithMany()
                         .HasForeignKey("CommentId")
                         .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired()
                         .HasConstraintName("fk_inbox_items_comments_comment_id");
                 });
 

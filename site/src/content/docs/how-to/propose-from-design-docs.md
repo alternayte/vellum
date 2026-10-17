@@ -25,10 +25,12 @@ Without an AI provider, the dialog says that this Source needs one. Nothing is s
 
 ## Accept or reject
 
-The proposal lists each item with its confidence, its reason and the lines it cites. An item that cites no lines of the document is dropped and listed with the reason.
+The proposal opens on the canvas as a ghost layer of dashed cards and lines. An item that cites no lines of the document is dropped. **Details** in the bar of the layer lists it with the reason.
 
-1. Select the items that you accept.
-2. Select **Accept**.
+1. Select a dashed card or line. The detail panel shows its confidence, its reason and the lines it cites.
+2. Select the tick on the card to accept the item, or **Accept all** in the bar to accept every item.
+
+See [Ask for additions to the model](/how-to/design-with-the-assistant/#ask-for-additions-to-the-model).
 
 An accepted item is an `inferred` fact. Its source pointer is the citation, `<source>@<revision>:path:start-end`. Vellum never changes or removes a fact that exists.
 

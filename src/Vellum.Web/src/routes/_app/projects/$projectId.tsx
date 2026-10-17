@@ -51,11 +51,19 @@ import { buildDuplicateSet } from '@/lib/duplicate'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Button } from '@/components/ui/button'
 import { branchesApi, canEditModel } from '@/lib/branches-api'
+import { designApi, type FlowProposal } from '@/lib/design-api'
+import { FlowProposalDialog } from '@/components/assistant/flow-proposal-dialog'
+import { useGhostStore } from '@/stores/ghost-store'
 
-/** `thread` opens one comment thread, from the inbox or a webhook link; `draft` is the draft it is on. */
+/**
+ * `thread` opens one comment thread, from the inbox or a webhook link; `draft` is the draft it is on.
+ * `proposal` opens additions as the ghost layer, and `flowProposal` a proposed flow, from the inbox.
+ */
 interface ProjectSearch {
   thread?: string
   draft?: string
+  proposal?: string
+  flowProposal?: string
 }
 
 export const Route = createFileRoute('/_app/projects/$projectId')({
@@ -63,6 +71,8 @@ export const Route = createFileRoute('/_app/projects/$projectId')({
   validateSearch: (search: Record<string, unknown>): ProjectSearch => ({
     thread: typeof search.thread === 'string' ? search.thread : undefined,
     draft: typeof search.draft === 'string' ? search.draft : undefined,
+    proposal: typeof search.proposal === 'string' ? search.proposal : undefined,
+    flowProposal: typeof search.flowProposal === 'string' ? search.flowProposal : undefined,
   }),
 })
 
@@ -178,6 +188,22 @@ function ProjectWorkspace() {
   )
   const createView = useCreateView(projectId)
   const autoViewRef = useRef(false)
+
+  // An accepted ghost keeps its place: the layer saves it in the open view, with the sizes of
+  // the cards that it opened. A layer belongs to its project.
+  useEffect(() => {
+    useGhostStore.getState().setViewPlaceWriter((places, sizes) => {
+      const ids = new Set(places.map((p) => p.elementId))
+      const current = (activeView?.positions ?? [])
+        .filter((p) => !ids.has(p.elementId))
+        .map((p) => (sizes.has(p.elementId) ? { ...p, ...sizes.get(p.elementId)! } : p))
+      saveLayout([...current, ...places])
+    })
+    return () => useGhostStore.getState().setViewPlaceWriter(null)
+  }, [activeView, saveLayout])
+  useEffect(() => () => useGhostStore.getState().close(), [projectId])
+  const linkedFlow = useOpenLinkedProposal(projectId)
+  const runLinkedFlow = useRunScenario(projectId, contractBranchId)
 
   // The Add Element dialog, with the parent and the kind it starts with. Null when it is closed.
   const [addElementRequest, setAddElementRequest] = useState<{ parentId: string | null; kind?: string } | null>(null)
@@ -796,8 +822,21 @@ function ProjectWorkspace() {
           onAddChild={handleOpenCreateDialog}
           edgeSides={activeView?.edges}
           onUpdateEdgeSides={activeView ? handleEdgeSidesChange : undefined}
+          labels={referenceLabels}
         />
       </div>
+      {linkedFlow.flow && (
+        <FlowProposalDialog
+          projectId={projectId}
+          proposal={linkedFlow.flow}
+          labels={referenceLabels}
+          onClose={linkedFlow.close}
+          onAccepted={(scenarioId) => {
+            linkedFlow.close()
+            runLinkedFlow.mutate(scenarioId, { onSuccess: (run) => useTraceStore.getState().load(run, scenarioId) })
+          }}
+        />
+      )}
       {!activeDocId && <TraceDock />}
       {activeDocId ? null : (
         isReviewMode ? (
@@ -828,6 +867,44 @@ function ProjectWorkspace() {
       )}
     </div>
   )
+}
+
+/**
+ * Opens the proposal that the address names, from the inbox: additions open as the ghost layer
+ * on the canvas, a flow opens in its dialog. The address loses the parameter after.
+ */
+function useOpenLinkedProposal(projectId: string) {
+  const { proposal: proposalId, flowProposal: flowId } = Route.useSearch()
+  const navigate = useNavigate()
+  const [flow, setFlow] = useState<FlowProposal | null>(null)
+
+  useEffect(() => {
+    if (!proposalId && !flowId) return
+    let current = true
+    const done = () => navigate({ to: '/projects/$projectId', params: { projectId }, search: {}, replace: true })
+    const failed = () => {
+      if (!current) return
+      toast.error('The proposal is not on this project any more.')
+      done()
+    }
+    if (proposalId) {
+      designApi.getArchitecture(projectId, proposalId).then((proposal) => {
+        if (!current) return
+        if (!proposal.items.some((item) => item.status === 'pending')) toast.info('Every item of this proposal is decided. Review, Assistant, History holds the record.')
+        else useGhostStore.getState().open(projectId, proposal)
+        done()
+      }, failed)
+    } else if (flowId) {
+      designApi.getFlow(projectId, flowId).then((proposal) => {
+        if (!current) return
+        setFlow(proposal)
+        done()
+      }, failed)
+    }
+    return () => { current = false }
+  }, [proposalId, flowId, projectId, navigate])
+
+  return { flow, close: () => setFlow(null) }
 }
 
 /**

@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json.Nodes;
+using Vellum.Modules.Comments;
 using Vellum.Modules.Identity.AgentTokens;
 using Vellum.Tests.Modules.Promises;
 
@@ -106,6 +107,40 @@ public class McpProposalToolTests(IntegrationFixture fixture) : IClassFixture<In
         Assert.Equal("ORD-014/O1", Assert.Single(runs)!["obligationId"]!.GetValue<string>());
         Assert.Empty((await DataAsync(mcp, "list_promise_runs", Project(("promiseId", promiseId), ("obligation", "O9"))))["items"]!.AsArray());
         Assert.Equal("not_found", ErrorType((await mcp.ToolAsync("list_promise_runs", Project(("promiseId", Guid.NewGuid())))).Text));
+    }
+
+    [Fact]
+    public async Task A_proposal_that_an_agent_submits_reaches_the_inbox_of_the_person_it_acts_for()
+    {
+        var factory = fixture.Factory;
+        var owner = await TestHost.SignInAsync(factory);
+        var (workspaceId, projectId) = await TestHost.CreateProjectAsync(owner);
+        var agent = await TestHost.CreateAgentAsync(factory, owner, workspaceId, ["read", "propose"]);
+        JsonObject Additions(string name) => new()
+        {
+            ["request"] = $"Add {name}.",
+            ["proposal"] = new JsonObject
+            {
+                ["summary"] = name,
+                ["items"] = new JsonArray(new JsonObject
+                {
+                    ["alias"] = "N1", ["entityKind"] = "element", ["name"] = name, ["elementKind"] = "system", ["confidence"] = 0.8, ["rationale"] = "It is needed.",
+                }),
+            },
+        };
+        var url = $"/api/projects/{projectId}/ai/architecture-proposals/submit";
+
+        var submitted = await Json(agent.Client.PostAsJsonAsync(url, Additions("Notifications")), HttpStatusCode.Created);
+        // A proposal that a person submits makes no entry: that person needs no notice of it.
+        await Json(owner.PostAsJsonAsync(url, Additions("Billing")), HttpStatusCode.Created);
+
+        var inbox = (await owner.GetFromJsonAsync<InboxResponse>("/api/inbox"))!;
+        var entry = Assert.Single(inbox.Items);
+        Assert.Equal(1, inbox.Unread);
+        Assert.Equal(("proposal", projectId, $"agent-token:{agent.TokenId}", "Test agent"), (entry.Reason, entry.ProjectId, entry.Author, entry.AuthorName));
+        Assert.Equal((submitted["id"]!.GetValue<Guid>(), "architecture", "Notifications", (int?)1, true),
+            (entry.Proposal!.Id, entry.Proposal.Kind, entry.Proposal.Name, entry.Proposal.Items, entry.Proposal.Pending));
+        Assert.Null(entry.ThreadId);
     }
 
     [Fact]

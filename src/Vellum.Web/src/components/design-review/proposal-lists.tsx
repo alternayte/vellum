@@ -1,10 +1,11 @@
 import { useState } from 'react'
-import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Trash2 } from 'lucide-react'
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { ChevronDown, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { ArchitectureProposalDialog } from '@/components/assistant/architecture-proposal-dialog'
 import { FlowProposalDialog } from '@/components/assistant/flow-proposal-dialog'
-import { designApi, mergeProposalPages, type ArchitectureProposal, type FlowProposal, type PendingProposal, type ProposalKind, type ProposalSummary } from '@/lib/design-api'
+import { useGhostStore } from '@/stores/ghost-store'
+import { cn } from '@/lib/utils'
+import { describeOrigin, designApi, mergeProposalPages, type ArchitectureProposal, type FlowProposal, type PendingProposal, type ProposalKind, type ProposalSummary } from '@/lib/design-api'
 import { shownInline } from '@/lib/mutation-errors'
 import { usePersonName } from '@/hooks/use-person-name'
 import { useRunScenario } from '@/hooks/use-scenarios'
@@ -44,13 +45,14 @@ const rowClass = 'w-full rounded-md border border-border px-2.5 py-1.5 text-left
 
 /**
  * The proposals that the assistant made for you and that nobody decided, and the record of
- * decided proposals. A proposal costs tokens, so closing its dialog does not lose it; and a
- * decision stays with who made it and when.
+ * decided proposals. A proposal costs tokens, so closing it does not lose it; and a decision
+ * stays with who made it and when. Additions open as the ghost layer on the canvas; a decided
+ * one opens here as its record.
  */
 export function ProposalLists({ projectId, branchId, labels }: Props) {
   const queryClient = useQueryClient()
   const [flow, setFlow] = useState<FlowProposal | null>(null)
-  const [architecture, setArchitecture] = useState<ArchitectureProposal | null>(null)
+  const [record, setRecord] = useState<string | null>(null)
   const yours = useProposals(projectId, 'mine', 'mine=true&submitted=false&decided=false')
   const history = useProposals(projectId, 'history', 'decided=true')
   const who = usePersonName(projectId)
@@ -61,7 +63,7 @@ export function ProposalLists({ projectId, branchId, labels }: Props) {
   const open = useMutation({
     mutationFn: (item: PendingProposal): Promise<FlowProposal | ArchitectureProposal> =>
       item.kind === 'flow' ? designApi.getFlow(projectId, item.id) : designApi.getArchitecture(projectId, item.id),
-    onSuccess: (result) => { if ('scenario' in result) setFlow(result); else setArchitecture(result) },
+    onSuccess: (result) => { if ('scenario' in result) setFlow(result); else useGhostStore.getState().open(projectId, result) },
     onError: shownInline,
   })
   const discard = useMutation({
@@ -127,7 +129,11 @@ export function ProposalLists({ projectId, branchId, labels }: Props) {
         <ul className="mt-1.5 space-y-1">
           {history.merged?.items.map((item) => (
             <li key={item.id}>
-              <button type="button" className={rowClass} disabled={open.isPending} onClick={() => open.mutate(item)}>
+              <button
+                type="button" className={rowClass} disabled={open.isPending}
+                aria-expanded={item.kind === 'architecture' ? record === item.id : undefined}
+                onClick={() => (item.kind === 'architecture' ? setRecord(record === item.id ? null : item.id) : open.mutate(item))}
+              >
                 <p className="flex items-baseline gap-2">
                   {kindLabel(item)}
                   <span className="min-w-0 flex-1 truncate text-xs text-foreground">{item.name || item.request}</span>
@@ -136,8 +142,10 @@ export function ProposalLists({ projectId, branchId, labels }: Props) {
                 <p className="mt-0.5 font-mono text-[10px] text-muted-foreground">
                   {item.decidedBy ? who(item.decidedBy) : 'unknown'} · {item.decidedAt ? when(item.decidedAt) : 'unknown time'}
                   {item.origin !== 'ai' ? ' · submitted by an agent' : ''}
+                  {item.kind === 'architecture' && <ChevronDown className={cn('ml-1 inline h-3 w-3 transition-transform', record === item.id && 'rotate-180')} aria-hidden="true" />}
                 </p>
               </button>
+              {record === item.id && <AdditionsRecord projectId={projectId} proposalId={item.id} />}
             </li>
           ))}
         </ul>
@@ -157,9 +165,37 @@ export function ProposalLists({ projectId, branchId, labels }: Props) {
           }}
         />
       )}
-      {architecture && (
-        <ArchitectureProposalDialog projectId={projectId} proposal={architecture} labels={labels} onClose={() => { setArchitecture(null); void refresh() }} />
-      )}
     </>
+  )
+}
+
+/** The record of decided additions: each item, its decision, who made it and when. */
+function AdditionsRecord({ projectId, proposalId }: { projectId: string; proposalId: string }) {
+  const who = usePersonName(projectId)
+  const proposal = useQuery({ queryKey: ['projects', projectId, 'proposals', 'record', proposalId], queryFn: () => designApi.getArchitecture(projectId, proposalId) })
+  if (proposal.isError) return <p role="alert" className="mt-1 px-2.5 text-xs text-destructive">{proposal.error.message}</p>
+  if (!proposal.data) return <p className="mt-1 px-2.5 text-[11px] text-muted-foreground">Loading…</p>
+  return (
+    <div className="mt-1 space-y-1 rounded-md border border-border px-2.5 py-1.5 text-[11px]">
+      {/* Text that the assistant or an agent wrote. It is shown as text. */}
+      {proposal.data.summary && <p className="text-muted-foreground">{proposal.data.summary}</p>}
+      <p className="text-muted-foreground">{describeOrigin(proposal.data)}</p>
+      <ul className="space-y-1">
+        {proposal.data.items.map((i) => (
+          <li key={i.id}>
+            <p className="flex items-baseline gap-2">
+              <span className="shrink-0 font-mono text-[10px] text-muted-foreground">{i.alias}</span>
+              <span className="min-w-0 flex-1 truncate text-foreground">{i.name}</span>
+              <span className={i.status === 'accepted' ? 'shrink-0 text-[var(--trace-request)]' : 'shrink-0 text-muted-foreground'}>{i.status}</span>
+            </p>
+            {i.decidedBy && (
+              <p className="font-mono text-[10px] text-muted-foreground">
+                {who(i.decidedBy)}{i.decidedAt ? ` · ${new Date(i.decidedAt).toLocaleString()}` : ''} · {i.entityKind} · {Math.round(i.confidence * 100)}%
+              </p>
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
   )
 }

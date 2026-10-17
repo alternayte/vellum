@@ -3,12 +3,25 @@ using Vellum.Shared;
 
 namespace Vellum.Modules.Comments;
 
-/// <param name="Reason"><c>mention</c> or <c>reply</c>.</param>
-/// <param name="Excerpt">The start of the comment text, or null when the comment is deleted.</param>
+/// <param name="Reason"><c>mention</c>, <c>reply</c>, or <c>proposal</c> for a proposal that an agent submitted.</param>
+/// <param name="ThreadId">The thread of a comment. Null for a proposal.</param>
+/// <param name="CommentId">The comment. Null for a proposal.</param>
+/// <param name="Target">What the thread is about. Null for a proposal.</param>
+/// <param name="Author">Who wrote the comment, or <c>agent-token:&lt;id&gt;</c> for a proposal.</param>
+/// <param name="AuthorName">The name of the author, or of the agent token.</param>
+/// <param name="Excerpt">The start of the comment text, or null when the comment is deleted. For a proposal: the start of its request.</param>
+/// <param name="Proposal">The proposal of a <c>proposal</c> entry. Null for a comment.</param>
 public sealed record InboxItemDto(
     Guid Id, string Reason, Guid WorkspaceId, Guid ProjectId, string ProjectName, Guid? DraftId,
-    Guid ThreadId, Guid CommentId, ThreadTargetDto Target, string Author, string? AuthorName,
-    string? Excerpt, DateTimeOffset CreatedAt, DateTimeOffset? ReadAt);
+    Guid? ThreadId, Guid? CommentId, ThreadTargetDto? Target, string Author, string? AuthorName,
+    string? Excerpt, DateTimeOffset CreatedAt, DateTimeOffset? ReadAt, InboxProposalDto? Proposal = null);
+
+/// <summary>A proposal that an inbox entry names.</summary>
+/// <param name="Kind"><c>architecture</c> for additions to the model, or <c>flow</c>.</param>
+/// <param name="Name">The name of the proposal, from its summary.</param>
+/// <param name="Items">For additions: how many items the proposal holds. Null for a flow.</param>
+/// <param name="Pending">True while a person has something of it to decide.</param>
+public sealed record InboxProposalDto(Guid Id, string Kind, string Name, int? Items, bool Pending);
 
 public sealed record InboxResponse(int Unread, IReadOnlyList<InboxItemDto> Items);
 
@@ -54,6 +67,33 @@ internal static class CommentNotices
 }
 
 /// <summary>
+/// Who hears of a proposal that an agent submitted: the person whose agent token submitted it.
+/// The agent acts for that person, and the person decides in the app. A proposal that a person
+/// submitted, or that the in-app assistant made, makes no entry.
+/// </summary>
+internal static class ProposalNotices
+{
+    public const string AgentOrigin = "agent-token:";
+
+    /// <summary>Adds the entry to the unit of work of <paramref name="db"/>, so it is saved with the proposal or not at all.</summary>
+    public static void Add(AppDbContext db, Guid workspaceId, Guid projectId, Guid proposalId, string? origin, string userId, DateTimeOffset now)
+    {
+        if (origin is null || !origin.StartsWith(AgentOrigin, StringComparison.Ordinal))
+            return;
+        db.InboxItems.Add(new InboxItemEntity
+        {
+            Id = Guid.NewGuid(),
+            UserId = userId,
+            WorkspaceId = workspaceId,
+            ProjectId = projectId,
+            ProposalId = proposalId,
+            Reason = InboxReason.Proposal,
+            CreatedAt = now,
+        });
+    }
+}
+
+/// <summary>
 /// The inbox of the signed-in person, across their workspaces. An entry of a workspace the
 /// person is no member of any more is not shown.
 /// </summary>
@@ -71,25 +111,48 @@ public static class InboxEndpoints
         var items = await query.OrderByDescending(i => i.CreatedAt).ThenBy(i => i.Id).Take(MaxItems).ToListAsync(ct);
         var unread = await Visible(db, userId).CountAsync(i => i.ReadAt == null, ct);
 
-        var threadIds = items.Select(i => i.ThreadId).Distinct().ToList();
-        var commentIds = items.Select(i => i.CommentId).ToList();
+        var threadIds = items.Where(i => i.ThreadId is not null).Select(i => i.ThreadId!.Value).Distinct().ToList();
+        var commentIds = items.Where(i => i.CommentId is not null).Select(i => i.CommentId!.Value).ToList();
+        var proposalIds = items.Where(i => i.ProposalId is not null).Select(i => i.ProposalId!.Value).ToList();
         var projectIds = items.Select(i => i.ProjectId).Distinct().ToList();
         var threads = await db.CommentThreads.AsNoTracking().Where(t => threadIds.Contains(t.Id)).ToDictionaryAsync(t => t.Id, ct);
         var comments = await db.Comments.AsNoTracking().Where(c => commentIds.Contains(c.Id)).ToDictionaryAsync(c => c.Id, ct);
+        // A proposal that was discarded is gone, and so is its entry.
+        var proposals = await db.DesignProposals.AsNoTracking().Where(p => proposalIds.Contains(p.Id))
+            .Select(p => new { p.Id, p.Kind, p.Name, p.Request, p.Status, p.Origin, p.Document }).ToDictionaryAsync(p => p.Id, ct);
         var projects = await db.Projects.AsNoTracking().Where(p => projectIds.Contains(p.Id)).ToDictionaryAsync(p => p.Id, p => p.Name, ct);
         var names = await ThreadReads.NamesAsync(db, comments.Values.Select(c => c.Author), ct);
-
-        var dtos = items
-            .Where(i => threads.ContainsKey(i.ThreadId) && comments.ContainsKey(i.CommentId) && projects.ContainsKey(i.ProjectId))
-            .Select(i =>
-            {
-                var (thread, comment) = (threads[i.ThreadId], comments[i.CommentId]);
-                return new InboxItemDto(
-                    i.Id, EnumText.Of(i.Reason), i.WorkspaceId, i.ProjectId, projects[i.ProjectId], thread.DraftId,
-                    i.ThreadId, i.CommentId, ThreadReads.TargetOf(thread), comment.Author, names.GetValueOrDefault(comment.Author),
-                    comment.DeletedAt is null ? Excerpt(comment.Body) : null, i.CreatedAt, i.ReadAt);
-            })
+        var tokenIds = proposals.Values
+            .Select(p => p.Origin is { } o && o.StartsWith(ProposalNotices.AgentOrigin, StringComparison.Ordinal) && Guid.TryParse(o[ProposalNotices.AgentOrigin.Length..], out var id) ? id : Guid.Empty)
             .ToList();
+        var tokenNames = await db.AgentTokens.AsNoTracking().Where(t => tokenIds.Contains(t.Id)).ToDictionaryAsync(t => $"{ProposalNotices.AgentOrigin}{t.Id}", t => t.Name, ct);
+
+        var dtos = new List<InboxItemDto>();
+        foreach (var i in items.Where(i => projects.ContainsKey(i.ProjectId)))
+        {
+            if (i.ProposalId is { } proposalId)
+            {
+                if (!proposals.TryGetValue(proposalId, out var proposal))
+                    continue;
+                var architecture = proposal.Kind == Ai.DesignProposalKind.Architecture;
+                var origin = proposal.Origin ?? "";
+                dtos.Add(new InboxItemDto(
+                    i.Id, EnumText.Of(i.Reason), i.WorkspaceId, i.ProjectId, projects[i.ProjectId], null,
+                    null, null, null, origin, tokenNames.GetValueOrDefault(origin),
+                    Excerpt(proposal.Request), i.CreatedAt, i.ReadAt,
+                    new InboxProposalDto(proposalId, architecture ? Ai.Design.ArchitectureProposals.Kind : Ai.Design.FlowProposals.Kind, proposal.Name,
+                        architecture ? Ai.Design.ArchitectureProposals.ItemCount(proposal.Document) : null,
+                        proposal.Status == Ai.DesignProposalStatus.Draft)));
+                continue;
+            }
+            if (i.ThreadId is not { } threadId || i.CommentId is not { } commentId
+                || !threads.TryGetValue(threadId, out var thread) || !comments.TryGetValue(commentId, out var comment))
+                continue;
+            dtos.Add(new InboxItemDto(
+                i.Id, EnumText.Of(i.Reason), i.WorkspaceId, i.ProjectId, projects[i.ProjectId], thread.DraftId,
+                threadId, commentId, ThreadReads.TargetOf(thread), comment.Author, names.GetValueOrDefault(comment.Author),
+                comment.DeletedAt is null ? Excerpt(comment.Body) : null, i.CreatedAt, i.ReadAt));
+        }
         return Results.Ok(new InboxResponse(unread, dtos));
     }
 

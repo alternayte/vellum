@@ -9,8 +9,9 @@ const when = (iso: string) =>
   new Date(iso).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
 
 /**
- * The inbox of the signed-in person: mentions of them, and replies on threads they started
- * or replied to, across their workspaces. An entry opens its thread in its project.
+ * The inbox of the signed-in person: mentions of them, replies on threads they started or
+ * replied to, and proposals that their agents submitted, across their workspaces. An entry
+ * opens its thread in its project; a proposal opens on the canvas of its project.
  */
 export function InboxButton() {
   const [open, setOpen] = useState(false)
@@ -24,10 +25,18 @@ export function InboxButton() {
     if (!item.readAt) markRead.mutate(item.id)
     opened.current = true
     setOpen(false)
+    if (item.proposal) {
+      navigate({
+        to: '/projects/$projectId',
+        params: { projectId: item.projectId },
+        search: item.proposal.kind === 'architecture' ? { proposal: item.proposal.id } : { flowProposal: item.proposal.id },
+      })
+      return
+    }
     navigate({
       to: '/projects/$projectId',
       params: { projectId: item.projectId },
-      search: { thread: item.threadId, draft: item.draftId ?? undefined },
+      search: { thread: item.threadId ?? undefined, draft: item.draftId ?? undefined },
     })
   }
 
@@ -73,7 +82,7 @@ export function InboxButton() {
           <p role="alert" className="px-3 py-3 text-xs text-destructive">{error.message}</p>
         ) : !data?.items.length ? (
           <p className="px-3 py-3 text-xs leading-relaxed text-muted-foreground">
-            Nothing here yet. A mention of you, and a reply on a thread you started or replied to, show here.
+            Nothing here yet. A mention of you, a reply on a thread you started or replied to, and a proposal that your agent submitted show here.
           </p>
         ) : (
           <ul className="max-h-96 divide-y divide-border overflow-y-auto">
@@ -86,12 +95,25 @@ export function InboxButton() {
                 >
                   <span aria-hidden="true" className={cn('mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full', item.readAt ? 'bg-transparent' : 'bg-primary')} />
                   <span className="min-w-0 flex-1">
-                    <span className="block text-foreground">
-                      <span className="font-medium">{item.authorName ?? 'Someone'}</span>
-                      {item.reason === 'mention' ? ' mentioned you on ' : ' replied on '}
-                      <span className="font-medium">{item.target.name}</span>
-                      {!item.readAt && <span className="sr-only"> (unread)</span>}
-                    </span>
+                    {item.proposal ? (
+                      <span className="block text-foreground">
+                        <span className="font-medium">Agent {item.authorName ?? 'token'}</span>
+                        {item.proposal.kind === 'architecture'
+                          ? ` proposed ${item.proposal.items ?? ''} ${item.proposal.items === 1 ? 'addition' : 'additions'}: `
+                          : ' proposed a flow: '}
+                        {/* The name is text that the agent wrote. It is shown as text. */}
+                        <span className="font-medium">{item.proposal.name}</span>
+                        {!item.proposal.pending && <span className="text-muted-foreground"> (decided)</span>}
+                        {!item.readAt && <span className="sr-only"> (unread)</span>}
+                      </span>
+                    ) : (
+                      <span className="block text-foreground">
+                        <span className="font-medium">{item.authorName ?? 'Someone'}</span>
+                        {item.reason === 'mention' ? ' mentioned you on ' : ' replied on '}
+                        <span className="font-medium">{item.target?.name}</span>
+                        {!item.readAt && <span className="sr-only"> (unread)</span>}
+                      </span>
+                    )}
                     <span className="block truncate text-[11px] text-muted-foreground">
                       {item.projectName}{item.draftId ? ' · draft' : ''} · {when(item.createdAt)}
                     </span>

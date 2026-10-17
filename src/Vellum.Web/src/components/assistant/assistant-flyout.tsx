@@ -10,7 +10,7 @@ import {
 } from '@/lib/design-api'
 import { useShellStore } from '@/stores/shell-store'
 import { currentTraceEvent, useTraceStore } from '@/stores/trace-store'
-import { ArchitectureProposalDialog } from './architecture-proposal-dialog'
+import { useGhostStore } from '@/stores/ghost-store'
 import { FlowProposalDialog } from './flow-proposal-dialog'
 import { UnavailableNote } from './unavailable-note'
 
@@ -43,7 +43,6 @@ export function AssistantFlyout({ projectId, branchId, labels, playingScenarioId
   const [request, setRequest] = useState('')
   const [unavailable, setUnavailable] = useState<Unavailable | null>(null)
   const [flow, setFlow] = useState<FlowProposal | null>(null)
-  const [architecture, setArchitecture] = useState<ArchitectureProposal | null>(null)
   const closeFlyout = useShellStore((s) => s.closeFlyout)
   const queryClient = useQueryClient()
 
@@ -54,9 +53,14 @@ export function AssistantFlyout({ projectId, branchId, labels, playingScenarioId
   const open = useMutation({
     mutationFn: (item: PendingProposal): Promise<FlowProposal | ArchitectureProposal> =>
       item.kind === 'flow' ? designApi.getFlow(projectId, item.id) : designApi.getArchitecture(projectId, item.id),
-    onSuccess: (result) => { if ('scenario' in result) setFlow(result); else setArchitecture(result) },
+    onSuccess: (result) => { if ('scenario' in result) setFlow(result); else openGhosts(result) },
     onError: shownInline,
   })
+  // Additions open as the ghost layer on the canvas. A person decides there.
+  const openGhosts = (proposal: ArchitectureProposal) => {
+    useGhostStore.getState().open(projectId, proposal)
+    void refreshPending()
+  }
 
   const propose = useMutation({
     mutationFn: (): Promise<FlowProposal | ArchitectureProposal | Unavailable> =>
@@ -64,7 +68,7 @@ export function AssistantFlyout({ projectId, branchId, labels, playingScenarioId
     onSuccess: (result) => {
       if (isUnavailable(result)) setUnavailable(result)
       else if ('scenario' in result) setFlow(result)
-      else setArchitecture(result)
+      else openGhosts(result)
     },
     onError: shownInline,
   })
@@ -119,7 +123,7 @@ export function AssistantFlyout({ projectId, branchId, labels, playingScenarioId
             <p className="text-[11px] leading-relaxed text-muted-foreground">
               {mode === 'flow'
                 ? 'The answer is a proposal that uses only parts of your model. You review it before anything is saved.'
-                : 'The answer lists additions. You select which ones to add. Each is labelled inferred.'}
+                : 'The answer shows on the canvas as dashed cards and lines. You accept or reject each one, or all. Each accepted one is labelled inferred.'}
               {' '}A proposal you close without a decision stays under Review, Assistant, Your proposals.
             </p>
           </form>
@@ -170,9 +174,6 @@ export function AssistantFlyout({ projectId, branchId, labels, playingScenarioId
           onClose={() => { setFlow(null); void refreshPending() }}
           onAccepted={(scenarioId) => { setFlow(null); void refreshPending(); closeFlyout(); onPlayScenario(scenarioId) }}
         />
-      )}
-      {architecture && (
-        <ArchitectureProposalDialog projectId={projectId} proposal={architecture} labels={labels} onClose={() => { setArchitecture(null); void refreshPending() }} />
       )}
     </div>
   )

@@ -914,6 +914,9 @@ internal static class ProposalStore
             return false;
 
         db.DesignProposals.Add(row);
+        // A draft from an agent reaches the person the agent acts for, in the inbox.
+        if (row.Status == DesignProposalStatus.Draft)
+            Comments.ProposalNotices.Add(db, row.WorkspaceId, row.ProjectId, row.Id, row.Origin, row.CreatedBy, row.CreatedAt);
         await db.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
         return true;

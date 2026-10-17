@@ -43,6 +43,8 @@ interface ShellState {
   selectedElementId: string | null
   selectedRelationshipId: string | null
   selectedMessageId: string | null
+  /** The item of the open ghost layer whose ghost is selected. Its rationale shows in the detail panel. */
+  selectedGhostItemId: string | null
   activeViewId: string | null
   activeDocId: string | null
   commandPaletteOpen: boolean
@@ -61,6 +63,7 @@ interface ShellState {
   selectElement: (id: string | null) => void
   selectRelationship: (id: string | null) => void
   selectMessage: (id: string | null) => void
+  selectGhost: (itemId: string | null) => void
   setActiveView: (id: string | null) => void
   openDoc: (id: string) => void
   closeDoc: () => void
@@ -85,6 +88,7 @@ export const useShellStore = create<ShellState>((set) => ({
   selectedElementId: null,
   selectedRelationshipId: null,
   selectedMessageId: null,
+  selectedGhostItemId: null,
   activeViewId: null,
   activeDocId: null,
   commandPaletteOpen: false,
@@ -113,6 +117,7 @@ export const useShellStore = create<ShellState>((set) => ({
       selectedElementId: id,
       selectedRelationshipId: null,
       selectedMessageId: null,
+      selectedGhostItemId: null,
       detailPanelOpen: id !== null,
     }),
 
@@ -121,6 +126,7 @@ export const useShellStore = create<ShellState>((set) => ({
       selectedRelationshipId: id,
       selectedElementId: null,
       selectedMessageId: null,
+      selectedGhostItemId: null,
       detailPanelOpen: id !== null,
     }),
 
@@ -129,7 +135,17 @@ export const useShellStore = create<ShellState>((set) => ({
       selectedMessageId: id,
       selectedElementId: null,
       selectedRelationshipId: null,
+      selectedGhostItemId: null,
       detailPanelOpen: id !== null,
+    }),
+
+  selectGhost: (itemId) =>
+    set({
+      selectedGhostItemId: itemId,
+      selectedElementId: null,
+      selectedRelationshipId: null,
+      selectedMessageId: null,
+      detailPanelOpen: itemId !== null,
     }),
 
   setActiveView: (id) => set({ activeViewId: id, activeDocId: null }),
@@ -158,6 +174,7 @@ export const useShellStore = create<ShellState>((set) => ({
       selectedElementId: null,
       selectedRelationshipId: null,
       selectedMessageId: null,
+      selectedGhostItemId: null,
       activeViewId: null,
       activeDocId: null,
       commandPaletteOpen: false,

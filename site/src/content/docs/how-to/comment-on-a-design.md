@@ -132,7 +132,7 @@ When the first comment is deleted, the thread has no text to raise, and the answ
 
 ## Read the inbox
 
-The inbox lists the comments that mention you, and the replies on threads that you started or replied to. You get no entry for your own comment.
+The inbox lists the comments that mention you, and the replies on threads that you started or replied to. You get no entry for your own comment. The inbox also lists the proposals that an agent submitted with an agent token that you created. See [Decide on a proposal from an agent](/how-to/design-with-the-assistant/#decide-on-a-proposal-from-an-agent).
 
 1. In the top bar, select the bell. The number is the count of unread entries.
 2. Select an entry to open the thread. The entry is then read.
@@ -144,7 +144,7 @@ curl -X POST "http://localhost:8080/api/inbox/<item-id>/read" -b vellum.cookies
 curl -X POST "http://localhost:8080/api/inbox/read-all" -b vellum.cookies
 ```
 
-The answer of `GET /api/inbox` has `unread` and `items`. Add `unreadOnly=true` for the unread entries only. The inbox shows no entry of a workspace that you are no longer a member of.
+The answer of `GET /api/inbox` has `unread` and `items`. An item of a proposal has the reason `proposal` and a `proposal` member with its `id`, `kind`, `name`, `items` and `pending`. Its `threadId`, `commentId` and `target` are null. Add `unreadOnly=true` for the unread entries only. The inbox shows no entry of a workspace that you are no longer a member of.
 
 ## Send comment events to a webhook
 
