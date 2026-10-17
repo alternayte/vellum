@@ -31,6 +31,10 @@ export interface SelectedDerivedLine {
   fromId: string
   toId: string
   relationshipIds: string[]
+  /** How many relationships under the line a share link does not share. Missing is none. */
+  hiddenCount?: number
+  /** The label the line shows. */
+  label?: string | null
 }
 
 /** The tabs of the bell panel: the inbox of the person, and the comment threads of the open project. */

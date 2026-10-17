@@ -8,6 +8,8 @@ export interface DerivedEdgeData extends Record<string, unknown> {
   fromId: string
   toId: string
   relationshipIds: string[]
+  /** How many relationships under the line a share link does not share. */
+  hiddenCount?: number
   label: string | null
   edgeIndex?: number
   totalParallel?: number
@@ -53,7 +55,7 @@ export const DerivedEdge = memo(function DerivedEdge({
   const path = routed?.path ?? autoPath
   const labelX = routed?.labelX ?? centerX + (ends.targetX - ends.sourceX) * shift
   const labelY = routed?.labelY ?? centerY + (ends.targetY - ends.sourceY) * shift
-  const count = data.relationshipIds.length
+  const count = data.relationshipIds.length + (data.hiddenCount ?? 0)
   const stroke = selected ? 'var(--primary)' : hovered ? 'var(--foreground)' : 'var(--muted-foreground)'
 
   return (
@@ -79,7 +81,7 @@ export const DerivedEdge = memo(function DerivedEdge({
           style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`, pointerEvents: 'all', zIndex: labelZ(sourceBoxes, targetBoxes) }}
           onMouseEnter={() => setHovered(true)}
           onMouseLeave={() => setHovered(false)}
-          onClick={() => selectDerivedLine({ fromId: data.fromId, toId: data.toId, relationshipIds: data.relationshipIds })}
+          onClick={() => selectDerivedLine({ fromId: data.fromId, toId: data.toId, relationshipIds: data.relationshipIds, hiddenCount: data.hiddenCount ?? 0, label: data.label })}
           aria-label={`Derived line of ${count} ${count === 1 ? 'relationship' : 'relationships'}${data.label && count === 1 ? `: ${data.label}` : ''}`}
           title="Derived line: relationships between parts inside these cards"
         >

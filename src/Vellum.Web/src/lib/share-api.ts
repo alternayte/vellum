@@ -140,12 +140,26 @@ export interface SharedSubscription {
   stale: boolean
 }
 
+/** The path of a line from the auto layout: coordinates only. */
+export interface SharedRoute {
+  from: { x: number; y: number; width: number; height: number }
+  to: { x: number; y: number; width: number; height: number }
+  points: { x: number; y: number }[]
+  label: { x: number; y: number } | null
+}
 export interface SharedView {
   id: string
   name: string
   positions: { elementId: string; x: number; y: number; width: number | null; height: number | null }[]
-  /** The saved sides of the relationships on the diagram. Null on a page pinned before sides existed. */
-  edges?: { relationshipId: string; sourceSide: string | null; targetSide: string | null }[] | null
+  /** The saved sides and routes of the relationships on the diagram. Null on a page pinned before sides existed. */
+  edges?: { relationshipId: string; sourceSide: string | null; targetSide: string | null; route?: SharedRoute | null }[] | null
+  /** The saved routes of the derived lines. Null on a page pinned before routes existed. */
+  lines?: { fromId: string; toId: string; route: SharedRoute }[] | null
+  /**
+   * View link only: the relationships the link does not share, by pair of shared cards. A count
+   * and, for one, its label: never the ID or the name of a hidden part.
+   */
+  hiddenLines?: { fromId: string; toId: string; label: string | null; count: number }[] | null
 }
 export interface SharedSchema { id: string; name: string; description: string | null; content: string; version: number }
 /** One step of a flow. Payloads, headers and write changes are not shared. */
