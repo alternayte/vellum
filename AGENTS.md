@@ -33,3 +33,6 @@ It is a .NET 10 modular monolith in src/Vellum with a React 19 SPA in src/Vellum
 - share link: a read-only URL to a project or view for people without an account, either live or pinned to a revision. Avoid: public link, guest access.
 - Commenter: the workspace role between Viewer and Editor that can comment but not edit. Avoid: reviewer.
 - detached: the status of a comment thread whose target was deleted. Avoid: orphaned.
+- ghost layer: the dashed canvas overlay that shows a pending AI proposal, where a person accepts or rejects its items. Avoid: preview, draft overlay, suggestion layer.
+- Needs you: the list of rescan changes to facts a person edited, each waiting for that person's decision. Avoid: conflicts, review queue, inbox.
+- not seen in latest scan: the status of a model fact that the latest Snapshot of its Source no longer holds. Avoid: stale, removed.
