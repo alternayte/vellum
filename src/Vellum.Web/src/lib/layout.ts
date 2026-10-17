@@ -112,6 +112,56 @@ async function layoutLevel(
   return { positions, width, height }
 }
 
+/** The gap between what a person placed on a level and the elements placed next to it. */
+const PLACE_GAP = 120
+
+/**
+ * Places the elements that have no saved position, with the same layout as `computeLayout`, and
+ * moves nothing that has one. A view with no saved position is laid out whole. On a level that
+ * has saved positions, the new elements of the level are laid out as one group to the right of
+ * them. Returns the positions of the new elements only (with a size for a new parent).
+ */
+export async function placeNew(
+  elements: LayoutElement[],
+  relationships: LayoutRelationship[],
+  saved: LayoutPosition[],
+  viewport: Viewport = { width: 1392, height: 820 },
+  expanded: ReadonlySet<string> = new Set(),
+): Promise<LayoutPosition[]> {
+  const placed = new Map(saved.map((p) => [p.elementId, p]))
+  const fresh = elements.filter((e) => !placed.has(e.id))
+  if (fresh.length === 0) return []
+  const full = await computeLayout(elements, relationships, viewport, expanded)
+  if (placed.size === 0) return full
+
+  // A level without a saved position takes the whole layout's places; a new parent its size.
+  const byId = new Map(full.map((p) => [p.elementId, p]))
+  const levelOf = (e: LayoutElement) => e.parentId ?? null
+  const result: LayoutPosition[] = []
+  const levels = new Map<string | null, LayoutElement[]>()
+  for (const el of fresh) levels.set(levelOf(el), [...(levels.get(levelOf(el)) ?? []), el])
+  const view = viewport.width > 2 * FIT_MARGIN + 100 && viewport.height > 2 * FIT_MARGIN + 100 ? viewport : { width: 1392, height: 820 }
+  for (const [parentId, members] of levels) {
+    const kept = elements.filter((e) => levelOf(e) === parentId && placed.has(e.id)).map((e) => placed.get(e.id)!)
+    if (kept.length === 0) {
+      for (const el of members) result.push(byId.get(el.id)!)
+      continue
+    }
+    const sized = members.map((el) => {
+      const size = byId.get(el.id)
+      return expanded.has(el.id) && size?.width && size.height ? { ...el, width: size.width, height: size.height } : el
+    })
+    const { positions } = await layoutLevel(sized, relationships, view)
+    const right = Math.max(...kept.map((p) => p.x + (p.width ?? DEFAULT_SIZE.width)))
+    const top = Math.min(...kept.map((p) => p.y))
+    for (const p of positions) {
+      const size = byId.get(p.elementId)
+      result.push({ ...p, x: p.x + right + PLACE_GAP, y: p.y + top, width: size?.width, height: size?.height })
+    }
+  }
+  return result
+}
+
 /**
  * Lays out every level of the model on its own: the top level, and the children of each
  * element. Only relationships between siblings shape a level, since the canvas draws a level

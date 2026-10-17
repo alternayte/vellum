@@ -15,7 +15,7 @@ import { RESULT_COLOR, RESULT_LABEL, promisesApi } from '@/lib/promises-api'
 import { promiseElementIds, scenarioSteps, stepEnds } from '@/lib/scenario-parts'
 import { useShellStore, type CanvasHighlight, type HighlightStep } from '@/stores/shell-store'
 import { useTraceStore } from '@/stores/trace-store'
-import { SourceLines } from './proposal-review'
+import { SourceLines } from './source-lines'
 
 const STANDING: Record<ImpactPromise['standing'], { label: string; color: string; meaning: string }> = {
   broken: { label: 'Broken', color: 'var(--trace-failure)', meaning: 'A check of this promise failed against this scan.' },

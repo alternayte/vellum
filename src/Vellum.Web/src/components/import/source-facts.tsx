@@ -60,39 +60,6 @@ export function SourceSides({ proposal, sourceName }: { proposal: Proposal; sour
 }
 
 /**
- * "Same as X?": the element of another Source has the name of a fact of this scan. Vellum
- * never joins them by name. Yes binds the element to this Source's key; no adds a new element.
- */
-export function BindQuestion({ proposal, sourceName, answer, onAnswer }: {
-  proposal: Proposal
-  sourceName: string
-  answer: boolean | undefined
-  onAnswer: (same: boolean) => void
-}) {
-  const element = (proposal.current?.name as string | undefined) ?? 'this element'
-  const holders = [...new Set(proposal.otherSources.map((o) => o.sourceName))]
-  const name = `bind-${proposal.id}`
-  return (
-    <fieldset className="mt-2 space-y-2 pb-1 text-xs">
-      <legend className="text-foreground">
-        Is “{proposal.name}” in {sourceName} the same as the element “{element}”{holders.length > 0 ? ` that ${holders.join(', ')} holds` : ''}?
-      </legend>
-      <SourceSides proposal={proposal} sourceName={sourceName} />
-      <div className="grid gap-1.5 sm:grid-cols-2">
-        <label className="flex items-start gap-2 rounded-md border border-border px-2.5 py-1.5">
-          <input type="radio" name={name} className="mt-0.5 accent-[var(--primary)]" checked={answer === true} onChange={() => onAnswer(true)} />
-          <span><span className="text-foreground">Yes, the same element.</span> <span className="text-muted-foreground">Bind it to this Source. Its values come back as a proposal.</span></span>
-        </label>
-        <label className="flex items-start gap-2 rounded-md border border-border px-2.5 py-1.5">
-          <input type="radio" name={name} className="mt-0.5 accent-[var(--primary)]" checked={answer === false} onChange={() => onAnswer(false)} />
-          <span><span className="text-foreground">No, another thing.</span> <span className="text-muted-foreground">Propose it as a new element.</span></span>
-        </label>
-      </div>
-    </fieldset>
-  )
-}
-
-/**
  * Dependencies that one Source declares and another Source does not see, each side by side:
  * the declaration with its citation, and the Source that observes the start and has no such
  * edge. It is listed for a person to judge; it does not stop an accept.

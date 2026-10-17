@@ -95,7 +95,7 @@ public static class DecideProposals
         var scan = await db.Scans.AsNoTracking().FirstOrDefaultAsync(s => s.Id == importId && s.ProjectId == projectId, ct);
         if (scan is null)
             return Results.NotFound(new ErrorResponse("not_found", "Import not found"));
-        return await DecideAsync(http, db, scan, new DecisionInput(accept, reject, relink, bind, request.AcknowledgeImpact), userId, time, ct);
+        return await DecideAsync(http.RequestServices, db, scan, new DecisionInput(accept, reject, relink, bind, request.AcknowledgeImpact), userId, time, ct);
     }
 
     /// <summary>What one decision names. Each list holds distinct IDs, and no ID is in two lists.</summary>
@@ -107,7 +107,7 @@ public static class DecideProposals
     /// commit, so a "yes" targets the bound element and a "no" proposes a new one.
     /// </summary>
     internal static async Task<IResult> DecideAsync(
-        HttpContext http, AppDbContext db, ScanEntity scan, DecisionInput decision, string userId, TimeProvider time, CancellationToken ct)
+        IServiceProvider requestServices, AppDbContext db, ScanEntity scan, DecisionInput decision, string userId, TimeProvider time, CancellationToken ct)
     {
         var (accept, reject, relink, bind) = (decision.Accept, decision.Reject, decision.Relink, decision.Bind);
         var projectId = scan.ProjectId;
@@ -128,7 +128,7 @@ public static class DecideProposals
             return Invalid("accept", "A schema proposal names the ID of the project's model stream.");
 
         var now = time.GetUtcNow();
-        var result = await SharedTransaction.RunAsync(http.RequestServices, services =>
+        var result = await SharedTransaction.RunAsync(requestServices, services =>
             ApplyAsync(services, scan, project.StreamId, schemaIds, accept, reject, relink, bind, decision.AcknowledgeImpact, userId, now, ct), ct);
         if (result is not Microsoft.AspNetCore.Http.HttpResults.Ok<DecideProposalsResponse> { Value: { } done })
             return result;
@@ -144,14 +144,14 @@ public static class DecideProposals
         if (!planSelf && !planOthers)
             return result;
 
-        http.RequestServices.GetRequiredService<DeedboxContext>().Metadata = new EventMetadata
+        requestServices.GetRequiredService<DeedboxContext>().Metadata = new EventMetadata
         {
             Actor = "system:import-scan",
             CorrelationId = scan.Id.ToString(),
         };
         var replanned = false;
         if (planSelf)
-            replanned = await PlanAgainAsync(http.RequestServices, db, scan, time, ct) == SnapshotOutcome.Written;
+            replanned = await PlanAgainAsync(requestServices, db, scan, time, ct) == SnapshotOutcome.Written;
         if (planOthers)
         {
             var others = await db.Sources.AsNoTracking().Where(s => s.ProjectId == projectId && s.Id != scan.SourceId).ToListAsync(ct);
@@ -159,7 +159,7 @@ public static class DecideProposals
             {
                 if (await Sources.SourceRequests.ReviewScanAsync(db, other, ct) is { } review
                     && await db.ImportProposals.AnyAsync(p => p.ScanId == review.Id && p.Status == ProposalStatus.Pending, ct))
-                    await PlanAgainAsync(http.RequestServices, db, review, time, ct);
+                    await PlanAgainAsync(requestServices, db, review, time, ct);
             }
         }
         return Results.Ok(done with { Replanned = replanned });

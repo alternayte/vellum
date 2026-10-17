@@ -14,14 +14,14 @@ namespace Vellum.Tests.Modules.Import;
 
 /// <summary>
 /// What two Sources of one project may and may not do to each other's facts, and what a
-/// bulk accept, a "same as?" answer and a re-plan may never do.
+/// scan's auto-apply, a "same as?" answer and a re-plan may never do.
 /// </summary>
 public class SourceReviewTests(ImportHost import) : IClassFixture<ImportHost>
 {
     private const string Mirror = "acme/orders-mirror";
 
     [Fact]
-    public async Task A_removal_of_an_entity_that_another_Source_holds_unlinks_only_and_bulk_accept_skips_it()
+    public async Task A_removal_of_an_entity_that_another_Source_holds_unlinks_only_and_auto_apply_skips_it()
     {
         var (s, a, b) = await TwoSourcesAsync();
         var billing = (await s.ElementsAsync()).Single("name", "Billing").Text("id")!;
@@ -34,19 +34,21 @@ public class SourceReviewTests(ImportHost import) : IClassFixture<ImportHost>
         Assert.Equal(b.Text("id"), removal["otherSources"]![0]!["sourceId"]!.GetValue<string>());
         Assert.Null((await s.ElementsAsync()).Single("name", "Billing")["stale"] as JsonObject);
 
-        var bulk = await AcceptAllAsync(s, a.Id());
-        Assert.DoesNotContain(removal.Id(), Ids(bulk["accepted"]));
+        Assert.DoesNotContain(removal.Id(), await s.AutoApplyAsync(rescan.Id()));
 
         // Accepted by a person, the removal drops A's fact and leaves the element B holds.
-        var decided = await s.DecideAsync(rescan.Id(), accept: [removal.Id()], acknowledgeImpact: true);
-        Assert.Empty(decided["failed"]!.AsArray());
+        // Auto-apply removes nothing, so the removals the element waits for are the person's too.
+        var pending = (await PendingAsync(s, rescan.Id())).Select(p => p.Id()).ToHashSet();
+        var needed = removal["dependsOn"]!.AsArray().Select(d => d!.GetValue<Guid>()).Where(pending.Contains);
+        var decided = await s.DecideAsync(rescan.Id(), accept: [removal.Id(), .. needed], acknowledgeImpact: true);
+        Assert.True(decided["failed"]!.AsArray().Count == 0, decided.ToJsonString());
         Assert.Contains(await s.ElementsAsync(), e => e.Text("id") == billing);
         Assert.False(await DbAsync(db => db.FactLinks.AnyAsync(l => l.ProjectId == s.ProjectId && l.Repository == "acme/orders" && l.EntityId == Guid.Parse(billing))));
         Assert.True(await DbAsync(db => db.FactLinks.AnyAsync(l => l.ProjectId == s.ProjectId && l.Repository == Mirror && l.EntityId == Guid.Parse(billing))));
     }
 
     [Fact]
-    public async Task A_name_match_with_any_entity_of_another_Source_names_that_Source_and_bulk_accept_leaves_it_to_a_person()
+    public async Task A_name_match_with_any_entity_of_another_Source_names_that_Source_and_auto_apply_leaves_it_to_a_person()
     {
         var (s, _, b) = await TwoSourcesAsync();
         var scanB = b["review"]!["scanId"]!.GetValue<Guid>();
@@ -58,9 +60,8 @@ public class SourceReviewTests(ImportHost import) : IClassFixture<ImportHost>
         Assert.NotEmpty(onA);
         Assert.All(onA, p => Assert.NotEmpty(p["otherSources"]!.AsArray()));
 
-        var source = (await SourcesAsync(s)).Single("id", b.Text("id")!);
-        var bulk = await AcceptAllAsync(s, source.Id());
-        Assert.DoesNotContain(onA, p => Ids(bulk["accepted"]).Contains(p.Id()));
+        var applied = await s.AutoApplyAsync(scanB);
+        Assert.DoesNotContain(onA, p => applied.Contains(p.Id()));
     }
 
     [Fact]
@@ -112,17 +113,13 @@ public class SourceReviewTests(ImportHost import) : IClassFixture<ImportHost>
     }
 
     [Fact]
-    public async Task Bulk_accept_leaves_out_what_depends_on_a_rejected_proposal_and_accepts_the_rest()
+    public async Task Auto_apply_leaves_out_what_depends_on_a_rejected_proposal_and_applies_the_rest()
     {
         var s = await ImportScenario.CreateAsync(import);
         var scan = await s.ScanAsync();
         var service = (await s.ProposalsAsync(scan.Id())).Proposal("element", "Orders.Api");
         await s.DecideAsync(scan.Id(), reject: [service.Id()]);
-        var source = Assert.Single(await SourcesAsync(s));
-
-        var bulk = await AcceptAllAsync(s, source.Id());
-        Assert.Empty(bulk["failed"]!.AsArray());
-        Assert.NotEmpty(bulk["accepted"]!.AsArray());
+        Assert.NotEmpty(await s.AutoApplyAsync(scan.Id()));
         var left = await PendingAsync(s, scan.Id());
         Assert.All(left, p => Assert.Contains(service.Id(), p["dependsOn"]!.AsArray().Select(d => d!.GetValue<Guid>())));
     }
@@ -157,7 +154,7 @@ public class SourceReviewTests(ImportHost import) : IClassFixture<ImportHost>
     }
 
     [Fact]
-    public async Task A_name_match_with_a_hand_made_element_asks_and_bulk_accept_never_takes_a_label_change()
+    public async Task A_name_match_with_a_hand_made_element_asks_and_auto_apply_never_takes_a_label_change()
     {
         var s = await ImportScenario.CreateAsync(import);
         var system = Guid.NewGuid();
@@ -167,8 +164,7 @@ public class SourceReviewTests(ImportHost import) : IClassFixture<ImportHost>
         Assert.Equal(("bind", system.ToString()), (question.Text("action"), question.Text("entityId")));
 
         var source = Assert.Single(await SourcesAsync(s));
-        var bulk = await AcceptAllAsync(s, source.Id());
-        Assert.DoesNotContain(bulk["accepted"]!.AsArray(), id => id!.GetValue<Guid>() == question.Id());
+        Assert.DoesNotContain(question.Id(), await s.AutoApplyAsync(scan.Id()));
         Assert.DoesNotContain((await s.Owner.GetFromJsonAsync<JsonArray>($"/api/projects/{s.ProjectId}/sources/{source.Id()}/bindings"))!,
             x => x!["elementId"]!.GetValue<string>() == system.ToString());
 
@@ -176,8 +172,7 @@ public class SourceReviewTests(ImportHost import) : IClassFixture<ImportHost>
         await AnswerAsync(s, scan.Id(), question.Id(), same: true);
         var relabel = (await PendingAsync(s, scan.Id())).Single(p => p.Text("entityId") == system.ToString());
         Assert.Contains(relabel["changes"]!.AsArray(), c => c!["field"]!.GetValue<string>() == "factStatus");
-        var second = await AcceptAllAsync(s, source.Id());
-        Assert.DoesNotContain(relabel.Id(), Ids(second["accepted"]));
+        Assert.DoesNotContain(relabel.Id(), await s.AutoApplyAsync(scan.Id()));
         Assert.Equal("declared", (await s.ElementsAsync()).Single("id", system.ToString()).Text("factStatus"));
     }
 
@@ -228,16 +223,6 @@ public class SourceReviewTests(ImportHost import) : IClassFixture<ImportHost>
 
     private static async Task<List<JsonObject>> PendingAsync(ImportScenario s, Guid scanId) =>
         [.. (await s.ProposalsAsync(scanId)).Where(p => p.Text("status") == "pending").OrderBy(p => p.Text("id"), StringComparer.Ordinal)];
-
-    private static async Task<JsonObject> AcceptAllAsync(ImportScenario s, Guid sourceId)
-    {
-        var response = await s.Owner.PostAsJsonAsync($"/api/projects/{s.ProjectId}/sources/{sourceId}/accept", new { acknowledgeImpact = true });
-        var body = (await response.Content.ReadFromJsonAsync<JsonObject>())!;
-        Assert.True(response.StatusCode is HttpStatusCode.OK or HttpStatusCode.Conflict, body.ToJsonString());
-        return response.StatusCode == HttpStatusCode.OK ? body : new JsonObject { ["accepted"] = new JsonArray(), ["failed"] = new JsonArray() };
-    }
-
-    private static HashSet<Guid> Ids(JsonNode? array) => [.. array!.AsArray().Select(id => id!.GetValue<Guid>())];
 
     private static SortedDictionary<string, byte[]> Without(string prefix)
     {

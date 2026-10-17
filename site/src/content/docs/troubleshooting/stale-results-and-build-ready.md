@@ -84,7 +84,7 @@ A stale pass counts as stale. It does not count as passed.
 3. If the fact is still true, find why the scan did not see it: a moved file, a changed folder scope or a changed pattern. A later scan that finds the evidence clears the mark.
 4. If a person confirms the fact, change it in the model so that it is declared.
 
-A comparison scan marks no fact stale. See [Import a repository](/how-to/import-a-repository/#stale-facts).
+A comparison scan marks no fact as not seen. See [Not seen in latest scan](/how-to/import-a-repository/#not-seen-in-latest-scan).
 
 ## An assistant answer in the review is stale
 

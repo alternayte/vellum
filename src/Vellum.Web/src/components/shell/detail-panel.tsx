@@ -19,7 +19,8 @@ import { DiffDetail } from '@/components/review/diff-detail'
 import { ConflictResolver } from '@/components/review/conflict-resolver'
 import { TargetThreads } from '@/components/comments/target-threads'
 import { ElementDocs } from '@/components/docs/element-docs'
-import type { Provenance } from '@/lib/fact-status'
+import type { Provenance, StaleMark } from '@/lib/fact-status'
+import { FactImportState } from '@/components/import/fact-import-state'
 import { FactTruth } from './fact-truth'
 
 interface ElementData {
@@ -34,6 +35,7 @@ interface ElementData {
   icon: string | null
   factStatus?: string
   provenance?: Provenance | null
+  stale?: StaleMark | null
 }
 
 interface RelationshipData {
@@ -46,6 +48,7 @@ interface RelationshipData {
   kind?: string
   factStatus?: string
   provenance?: Provenance | null
+  stale?: StaleMark | null
 }
 
 interface MessageData {
@@ -371,6 +374,10 @@ export function DetailPanel({
                     projectId={projectId} entityType="element" entityId={selectedElement.id}
                     factStatus={selectedElement.factStatus} provenance={selectedElement.provenance} readOnly={readOnly}
                   />
+                  <FactImportState
+                    projectId={projectId} entityKind="element" entityId={selectedElement.id} stale={selectedElement.stale} readOnly={readOnly}
+                    onRemove={onDeleteElement ? () => onDeleteElement(selectedElement.id) : undefined}
+                  />
                 </section>
                 <section aria-labelledby={idFor('element-tags')}>
                   <h3 id={idFor('element-tags')} className={SECTION_HEADING}>Tags</h3>
@@ -550,6 +557,10 @@ export function DetailPanel({
                   <FactTruth
                     projectId={projectId} entityType="relationship" entityId={selectedRel.id}
                     factStatus={selectedRel.factStatus} provenance={selectedRel.provenance} readOnly={readOnly}
+                  />
+                  <FactImportState
+                    projectId={projectId} entityKind="relationship" entityId={selectedRel.id} stale={selectedRel.stale} readOnly={readOnly}
+                    onRemove={onDeleteRelationship ? () => onDeleteRelationship(selectedRel.id) : undefined}
                   />
                 </section>
               </div>

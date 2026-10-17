@@ -1,6 +1,6 @@
 ---
 title: Import a Structurizr workspace or Backstage catalog
-description: Upload a Structurizr DSL or workspace JSON file, or a Backstage catalog, and accept its elements and relationships as declared facts.
+description: Upload a Structurizr DSL or workspace JSON file, or a Backstage catalog. Vellum adds its elements and relationships as declared facts.
 ---
 
 This guide shows you how to bring a model that your team already keeps into Vellum. You need the Editor role. No AI provider is necessary.
@@ -28,14 +28,13 @@ An upload holds at most 256 KiB. Vellum refuses a file whose path looks like a s
 
 A scan of a GitHub repository reads model files too. Scan the repository as usual. See [Import a repository](/how-to/import-a-repository/). The facts of a model file keep the label `declared`, and the facts of the code keep `observed-in-source`.
 
-## Review and accept
+## What the upload adds
 
-1. Under **Sources**, select **Review** on the Source.
-2. Each row shows the label that the fact gets when you accept it: `declared`.
-3. Open a row to see the cited lines of the file.
-4. Select the rows that you accept. Then select **Accept**.
+When the scan of the file completes, Vellum adds its elements and relationships to the model with the label `declared`, and you as the person who accepted them. Each fact cites its file and lines.
 
-Vellum accepts nothing by itself. When another Source holds an element of the same name, the row asks **Same as?**. Answer the question before you accept the row. Nothing is merged by name alone.
+A model file is a deterministic Source, as code is. A later upload of the same path changes a fact only when no person edited it since. A change of a fact that a person edited waits in **Needs you**. See [Needs you](/how-to/import-a-repository/#needs-you).
+
+When another Source holds an element of the same name, **Needs you** asks **Same as?**. Vellum adds nothing for that element until you answer. Nothing is merged by name alone.
 
 ## What the reader does not do
 

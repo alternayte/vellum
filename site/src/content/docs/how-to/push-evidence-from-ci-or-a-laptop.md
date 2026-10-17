@@ -59,7 +59,7 @@ vellum scan ./services/orders ./services/billing \
 
 Each directory is one Source. The folder name is the Source name. To give another name, add `--name ./services/orders=Orders API`. A second push with the same name goes to the same Source and makes a new Snapshot.
 
-The CLI prints one line for each directory: the counts, the Snapshot ID and how many proposals wait for review.
+The CLI prints one line for each directory: the counts, the Snapshot ID and how many items wait in **Needs you**.
 
 ## Push from CI
 
@@ -90,22 +90,21 @@ jobs:
 
 The job fails when the exit code is not `0`. See [vellum CLI](/reference/vellum-cli/#exit-codes).
 
-## Review the proposals
+## What a push adds
 
-A push accepts nothing. It makes proposals, as a scan does.
+A push is a scan of the machine that pushed. It applies what it observed as the person who made the agent token: every addition, and each change of a fact that only this Source wrote and that no person edited. The rest waits in **Needs you**. See [Needs you](/how-to/import-a-repository/#needs-you).
 
-1. Open the project and the import screen.
+1. Open the project and the **Sources** panel.
 2. Under **Sources**, find the Source. Its kind is `agent-push`, and its Snapshot says **content not held**.
-3. Select **Review**, and accept or reject each proposal.
 
-The facts that you accept are `observed-in-source`. Their citations name the Snapshot: `agent-push/orders@<snapshot>:path:lines`.
+The facts of a push are `observed-in-source`. Their citations name the Snapshot: `agent-push/orders@<snapshot>:path:lines`.
 
 Vellum does not hold the files, so these features are off for a pushed Snapshot, and the app says why:
 
-- The source view next to a proposal. Open the file on the machine that pushed.
+- The source view next to an item of **Needs you**. Open the file on the machine that pushed.
 - **Scan again** on the Source. Run `vellum scan` again.
 
-A later push of the same Source compares with the last one. A fact that the new push no longer finds where it looked gets a stale mark. A changed value is a proposal. A push never changes an accepted fact.
+A later push of the same Source compares with the last one. A fact that the new push no longer finds where it looked gets the mark **not seen in latest scan**. A push deletes nothing, and it never changes a fact that a person edited.
 
 ## Limit what is scanned
 

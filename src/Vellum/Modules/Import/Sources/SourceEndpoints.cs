@@ -25,17 +25,17 @@ public sealed record SourceSnapshotDto(
     bool ContentHeld, string? ReportedCommitSha, string? PushedBy);
 
 /// <summary>
-/// The proposals of a Source that wait for a person: those of its newest completed tracking
-/// scan. Earlier scans of the same ref have no pending proposals left; they were superseded.
+/// The proposals of a Source that wait for a person ("Needs you"): those of its newest
+/// completed tracking scan that the scan did not apply by itself. Earlier scans of the same
+/// ref have no pending proposals left; they were superseded.
 /// </summary>
 /// <param name="ScanId">The scan whose proposals these are. Null when the Source has no completed tracking scan.</param>
 /// <param name="CrossSourceConflicts">Conflicts where another Source of the project holds the entity with other values.</param>
 /// <param name="BindQuestions">"Same as X?" questions: an element of another Source has the name of an element fact of this one.</param>
-/// <param name="Acceptable">Pending proposals that "accept all from this Source" would accept: additions, changes and removals that no other Source holds and that change no truth label, with no conflict, question or relink, and every dependency accepted or in the set.</param>
 /// <param name="Unconfirmed">Dependencies this Source declares that another Source does not see, or that this Source does not see while another declares them (<see cref="SourceDisagreementDto"/>).</param>
 public sealed record SourceReviewDto(
     Guid? ScanId, int Pending, int Additions, int Changes, int Removals, int Conflicts, int CrossSourceConflicts,
-    int BindQuestions, int Relinks, int Acceptable, int Unconfirmed = 0);
+    int BindQuestions, int Relinks, int Unconfirmed = 0);
 
 /// <param name="Kind">One of <c>github</c>, <c>gitlab</c>, <c>bitbucket</c>, <c>azure-devops</c>, <c>directory</c>, <c>archive</c>, <c>agent-push</c>, <c>model-file</c>, <c>traces</c>, <c>newrelic</c>. This instance reads the first six.</param>
 /// <param name="Citation">The <c>&lt;source&gt;</c> part of a citation <c>&lt;source&gt;@&lt;revision&gt;:path:start-end</c>.</param>
@@ -91,7 +91,6 @@ public sealed record SnapshotComparisonDto(
 public sealed record SourceBindingDto(Guid ElementId, string ElementName, string ElementKind, string ExternalKey);
 
 /// <param name="AcknowledgeImpact">Must be true when an accepted removal or change breaks a scenario or leaves an entity pointing at what is removed.</param>
-public sealed record AcceptSourceRequest(bool AcknowledgeImpact = false);
 
 /// <summary>
 /// Sources of a project: the list with what each waits for, a new Source, a scan of a Source,
@@ -493,34 +492,6 @@ public static class SourceRequests
     }
 
     /// <summary>
-    /// Accepts every pending addition, change and removal of the Source's review scan in one
-    /// decision. Conflicts, "same as X?" questions and relinks stay for a person to decide one
-    /// by one, and so does every proposal that depends on one of them.
-    /// </summary>
-    public static async Task<IResult> AcceptAll(
-        Guid projectId, Guid sourceId, AcceptSourceRequest request, ClaimsPrincipal user, HttpContext http,
-        WorkspaceAuthorizationService auth, AppDbContext db, TimeProvider time, CancellationToken ct)
-    {
-        var userId = user.UserId();
-        await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
-        var source = await db.Sources.AsNoTracking().FirstOrDefaultAsync(s => s.Id == sourceId && s.ProjectId == projectId, ct);
-        if (source is null)
-            return NotFound("Source");
-        if (await ReviewScanAsync(db, source, ct) is not { } scan)
-            return Results.Conflict(new ErrorResponse("nothing_to_accept", "This Source has no completed scan whose proposals can be decided."));
-
-        var pending = await PendingAsync(db, scan.Id, ct);
-        var accept = (await AcceptableAsync(db, pending, ct)).ToArray();
-        if (accept.Length == 0)
-        {
-            return Results.Conflict(new ErrorResponse("nothing_to_accept",
-                "No pending proposal of this Source can be accepted in bulk. Decide its conflicts, questions and relinks one by one."));
-        }
-        return await DecideProposals.DecideAsync(http, db, scan,
-            new DecideProposals.DecisionInput(accept, [], [], [], request.AcknowledgeImpact), userId, time, ct);
-    }
-
-    /// <summary>
     /// The github Source of a repository in a project, created with the repository's name when
     /// the project has none yet. Two requests at once create one Source.
     /// </summary>
@@ -535,49 +506,14 @@ public static class SourceRequests
         return await db.Sources.AsNoTracking().FirstAsync(s => s.ProjectId == projectId && s.Host == host && s.Locator == repository, ct);
     }
 
-    private sealed record PendingRow(Guid Id, ProposalAction Action, Guid[] DependsOn, string OtherSources, string Changes);
+    private sealed record PendingRow(ProposalAction Action, string OtherSources);
 
     private static Task<List<PendingRow>> PendingAsync(AppDbContext db, Guid scanId, CancellationToken ct) =>
         db.ImportProposals.AsNoTracking()
             .Where(p => p.ScanId == scanId && p.Status == ProposalStatus.Pending)
             .OrderBy(p => p.Seq)
-            .Select(p => new PendingRow(p.Id, p.Action, p.DependsOn, p.OtherSources, p.Changes))
+            .Select(p => new PendingRow(p.Action, p.OtherSources))
             .ToListAsync(ct);
-
-    /// <summary>
-    /// What a bulk accept takes: pending additions, changes and removals that no other Source
-    /// holds and that do not change a truth label, at most <see cref="DecideProposals.MaxProposals"/>
-    /// in the order of the scan. Then every one whose dependency is neither accepted nor in the
-    /// set drops out, until no more do. A rejected or superseded dependency is not met.
-    /// </summary>
-    private static async Task<List<Guid>> AcceptableAsync(AppDbContext db, List<PendingRow> pending, CancellationToken ct)
-    {
-        var set = pending
-            .Where(p => p.Action is ProposalAction.Add or ProposalAction.Change or ProposalAction.Remove
-                && p.OtherSources == "[]"
-                && !ProposalJson.ReadChanges(p.Changes).Any(c => c.Field == "factStatus"))
-            .Take(DecideProposals.MaxProposals)
-            .ToDictionary(p => p.Id);
-        var outside = set.Values.SelectMany(p => p.DependsOn).Where(d => !set.ContainsKey(d)).Distinct().ToList();
-        var accepted = (await db.ImportProposals.AsNoTracking()
-            .Where(p => outside.Contains(p.Id) && p.Status == ProposalStatus.Accepted)
-            .Select(p => p.Id).ToListAsync(ct)).ToHashSet();
-        bool changed;
-        do
-        {
-            changed = false;
-            foreach (var row in set.Values.ToList())
-            {
-                if (row.DependsOn.Any(d => !set.ContainsKey(d) && !accepted.Contains(d)))
-                {
-                    set.Remove(row.Id);
-                    changed = true;
-                }
-            }
-        }
-        while (changed);
-        return [.. pending.Where(p => set.ContainsKey(p.Id)).Select(p => p.Id)];
-    }
 
     /// <summary>The newest completed scan of the Source whose proposals can be decided, or null.</summary>
     internal static async Task<ScanEntity?> ReviewScanAsync(AppDbContext db, SourceEntity source, CancellationToken ct)
@@ -605,7 +541,7 @@ public static class SourceRequests
 
         var snapshot = (await SnapshotRowsAsync(db, source.Id, null, 1, ct)).FirstOrDefault();
 
-        var review = new SourceReviewDto(null, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+        var review = new SourceReviewDto(null, 0, 0, 0, 0, 0, 0, 0, 0);
         if (await ReviewScanAsync(db, source, ct) is { } scan)
         {
             var pending = await PendingAsync(db, scan.Id, ct);
@@ -613,7 +549,7 @@ public static class SourceRequests
             review = new SourceReviewDto(
                 scan.Id, pending.Count, Count(ProposalAction.Add), Count(ProposalAction.Change), Count(ProposalAction.Remove),
                 Count(ProposalAction.Conflict), pending.Count(p => p.Action == ProposalAction.Conflict && p.OtherSources != "[]"),
-                Count(ProposalAction.Bind), Count(ProposalAction.Relink), (await AcceptableAsync(db, pending, ct)).Count);
+                Count(ProposalAction.Bind), Count(ProposalAction.Relink));
         }
 
         return new SourceDto(

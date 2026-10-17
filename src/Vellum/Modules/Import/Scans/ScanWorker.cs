@@ -26,7 +26,8 @@ namespace Vellum.Modules.Import.Scans;
 /// </param>
 public sealed record ScanWorkerOptions(
     bool Enabled, TimeSpan PollInterval, TimeSpan LeaseDuration, TimeSpan WatchInterval, int MaxAttempts = 50,
-    int Parallelism = 2, int MaxInternalFailures = 5, TimeSpan? RetentionInterval = null, int MaxRunningPerHost = 2)
+    int Parallelism = 2, int MaxInternalFailures = 5, TimeSpan? RetentionInterval = null, int MaxRunningPerHost = 2,
+    bool AutoApply = true)
 {
     public static readonly ScanWorkerOptions Default = new(true, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(60), TimeSpan.FromSeconds(2));
 
@@ -395,9 +396,30 @@ public sealed class ScanWorker(
             case SnapshotOutcome.ModelBusy:
                 throw ScanStop.Failed(ScanFailures.ModelBusy);
             case SnapshotOutcome.Written:
+                await AutoApplyAsync(scanId);
                 await ProposeDecisionsAsync(scanId, result.Facts);
                 await DropUnusedBlobsAsync(scan.WorkspaceId, CancellationToken.None);
                 break;
+        }
+    }
+
+    /// <summary>
+    /// A completed tracking scan applies its additions and its untouched changes as the person
+    /// who started it (<see cref="AutoApply"/>). The scan is complete whatever happens here: a
+    /// failure is logged, and what was not applied stays pending for a person.
+    /// </summary>
+    private async Task AutoApplyAsync(Guid scanId)
+    {
+        if (!options.AutoApply)
+            return;
+        try
+        {
+            await using var scope = scopes.CreateAsyncScope();
+            await AutoApply.RunAsync(scope.ServiceProvider, scanId, null, time, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError("Scan {ScanId}: its proposals could not be applied ({ExceptionType}).", scanId, ex.GetType().FullName);
         }
     }
 
@@ -474,6 +496,7 @@ public sealed class ScanWorker(
             case SnapshotOutcome.ModelBusy:
                 throw ScanStop.Failed(ScanFailures.ModelBusy);
             case SnapshotOutcome.Written:
+                await AutoApplyAsync(scan.Id);
                 await DropUnusedBlobsAsync(scan.WorkspaceId, CancellationToken.None);
                 break;
         }

@@ -10,7 +10,7 @@ of an earlier release, so the data of each release upgrades to the next.
 - A schema accepted from a scan of code or configuration has the truth label
   `observed-in-source` and a provenance that cites its file and lines, like a channel.
   Version 0.1.0 labelled it `declared` (#5). A stored schema keeps its label; the next
-  scan of its Source proposes the change, and a person accepts it.
+  scan of its Source changes it when nobody edited the schema since.
 - HTTP API: a schema has the new fields `factStatus` and `provenance`. The model document
   carries both for each schema; a document without them keeps the label a schema has.
 - Relationship sides (#7): each card has a handle on each side. An end of a relationship
@@ -20,6 +20,21 @@ of an earlier release, so the data of each release upgrades to the next.
   `edges[]` of a view and of a layout save carry `sourceSide` and `targetSide`; a shared
   view has `edges`. Migration `LayoutEdgeSides` adds two nullable columns. The layout
   fingerprint of a view without a saved side does not change.
+- Imports apply what they observe. A completed scan of the tracked ref of a deterministic
+  Source (git hosts, folder, archive, push, model file, traces, New Relic) applies every
+  addition, and each change of a fact that only this Source wrote and nobody edited since,
+  with the person who started the scan as the acceptor. A change of a fact a person edited,
+  a removal and each question wait in "Needs you". A scan of unchanged source proposes
+  nothing for a fact a person edited. Proposals from an AI provider are never applied.
+- A rescan deletes nothing. A fact the latest Snapshot no longer holds is marked "not seen
+  in latest scan"; a person removes or keeps it. Keep clears the mark until the fact changes.
+- The canvas places imported elements with the auto layout and shows the badges "needs you"
+  and "not seen". The review dialog, "Proposals by Source" and "Accept all from this Source"
+  are removed.
+- HTTP API: `GET /api/projects/{projectId}/needs-you` and
+  `POST /api/projects/{projectId}/needs-you/keep` are new.
+  `POST /api/projects/{projectId}/sources/{sourceId}/accept` and the field
+  `review.acceptable` of a Source are removed.
 
 ## 0.1.0 - 2026-10-15
 

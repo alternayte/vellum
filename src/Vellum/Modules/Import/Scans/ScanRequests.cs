@@ -448,7 +448,7 @@ public static partial class ScanRequests
     /// </summary>
     public static async Task<IResult> Track(
         Guid projectId, Guid importId, ClaimsPrincipal user, HttpContext http,
-        WorkspaceAuthorizationService auth, AppDbContext db, TimeProvider time, CancellationToken ct)
+        WorkspaceAuthorizationService auth, AppDbContext db, ScanWorkerOptions worker, TimeProvider time, CancellationToken ct)
     {
         var userId = user.UserId();
         await auth.RequireProjectRoleAsync(projectId, userId, WorkspaceRole.Editor, ct);
@@ -500,6 +500,9 @@ public static partial class ScanRequests
                 return Results.Conflict(new ErrorResponse("scan_changed", "The scan changed while it was planned again. Nothing was written. Try again."));
         }
 
+        // The ref a person follows now is the line the model takes, as a first scan of it is.
+        if (worker.AutoApply)
+            await AutoApply.RunAsync(http.RequestServices, scan.Id, userId, time, ct);
         var after = await db.Scans.AsNoTracking().FirstAsync(s => s.Id == importId, ct);
         return Results.Ok(await DetailAsync(db, after, ct));
     }

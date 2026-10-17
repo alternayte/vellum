@@ -72,7 +72,7 @@ curl -sS --fail-with-body -b vellum.cookies -H 'content-type: application/json' 
 
 A folder has no refs. Leave `ref` out. Vellum refuses a scan with a ref.
 
-The scan applies the same [limits](/how-to/import-a-repository/#limits), the same exclusions and the same secret filter as a repository scan. You review the proposals in the same way. See [Import a repository](/how-to/import-a-repository/#review-the-proposals).
+The scan applies the same [limits](/how-to/import-a-repository/#limits), the same exclusions and the same secret filter as a repository scan. It applies what it observes in the same way. See [What a scan applies](/how-to/import-a-repository/#what-a-scan-applies).
 
 ## What Vellum reads
 
@@ -86,7 +86,7 @@ A folder with more than 200,000 entries, or with more than 64 levels of folders,
 
 A file that disappears during the scan makes the scan partial. A file that becomes a link or a pipe before Vellum opens it is not read.
 
-A folder that the server cannot list also makes the scan partial. The scan shows the note `folder-unreadable` with the path of that folder. Vellum proposes no removal and marks no fact stale for anything under that folder. Fix the permissions, then scan again.
+A folder that the server cannot list also makes the scan partial. The scan shows the note `folder-unreadable` with the path of that folder. Vellum marks no fact under that folder as not seen. Fix the permissions, then scan again.
 
 ## Cite a folder
 

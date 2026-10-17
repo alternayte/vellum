@@ -47,6 +47,14 @@ public sealed record EvidenceItemDto(
     string FactKey, string Kind, string Name, IReadOnlyDictionary<string, string> Attributes,
     IReadOnlyList<EvidenceDto> Evidence, string Reason);
 
+/// <summary>The proposals of one Source that wait for a person.</summary>
+/// <param name="ScanId">The tracking scan they belong to: decide them at <c>POST …/imports/{scanId}/proposals/decide</c>.</param>
+/// <param name="Pending">How many wait. <paramref name="Items"/> holds at most <see cref="ProposalReads.MaxNeedsYou"/> of them.</param>
+public sealed record NeedsYouSourceDto(Guid SourceId, string SourceName, string SourceKind, Guid ScanId, int Pending, IReadOnlyList<ProposalDto> Items);
+
+/// <summary>"Needs you": what the Sources of a project found that a person decides. Sources with nothing waiting are left out.</summary>
+public sealed record NeedsYouDto(IReadOnlyList<NeedsYouSourceDto> Sources);
+
 public static class ProposalReads
 {
     /// <summary>A proposal whose bodies are larger than this is cut in the list.</summary>
@@ -122,6 +130,50 @@ public static class ProposalReads
         var context = await ContextAsync(http.RequestServices, db, scan, [row], ct);
         return Results.Ok(ToDto(row, context, cut: false, out _));
     }
+
+    /// <summary>The most items of one Source that the "Needs you" list shows. <see cref="NeedsYouSourceDto.Pending"/> counts them all.</summary>
+    public const int MaxNeedsYou = 200;
+
+    /// <summary>
+    /// "Needs you": for each Source of the project, the pending proposals of its newest tracking
+    /// scan. The scan applied its additions and its untouched changes by itself; these are the
+    /// rest, which a person accepts or rejects one by one. A proposal about an entity that is no
+    /// longer in the model is left out: there is nothing left to decide.
+    /// </summary>
+    public static async Task<IResult> NeedsYou(
+        Guid projectId, ClaimsPrincipal user, HttpContext http,
+        WorkspaceAuthorizationService auth, AppDbContext db, CancellationToken ct)
+    {
+        await auth.RequireProjectRoleAsync(projectId, user.UserId(), WorkspaceRole.Viewer, ct);
+        var streamId = await db.Projects.AsNoTracking().Where(p => p.Id == projectId).Select(p => p.StreamId).FirstAsync(ct);
+        var (model, _) = await http.RequestServices.GetRequiredService<IEventStore>().ForProject(projectId).Load<ModelState>(StreamId.From(streamId), ct);
+
+        var result = new List<NeedsYouSourceDto>();
+        var sources = await db.Sources.AsNoTracking().Where(s => s.ProjectId == projectId).OrderBy(s => s.Name).ThenBy(s => s.Id).ToListAsync(ct);
+        foreach (var source in sources)
+        {
+            if (await Sources.SourceRequests.ReviewScanAsync(db, source, ct) is not { } scan)
+                continue;
+            var rows = (await db.ImportProposals.AsNoTracking()
+                    .Where(p => p.ScanId == scan.Id && p.Status == ProposalStatus.Pending)
+                    .OrderBy(p => p.Seq).ToListAsync(ct))
+                .Where(p => StillThere(model, p))
+                .ToList();
+            if (rows.Count == 0)
+                continue;
+            var shown = rows.Take(MaxNeedsYou).ToList();
+            var context = await ContextAsync(http.RequestServices, db, scan, shown, ct);
+            result.Add(new NeedsYouSourceDto(
+                source.Id, source.Name, EnumText.Of(source.Kind), scan.Id, rows.Count,
+                [.. shown.Select(p => ToDto(p, context, cut: true, out _))]));
+        }
+        return Results.Ok(new NeedsYouDto(result));
+    }
+
+    /// <summary>False when the proposal names an entity that the model no longer has. An addition and a schema are always there to decide.</summary>
+    private static bool StillThere(ModelState model, ProposalEntity p) =>
+        p.Action is ProposalAction.Add || p.EntityKind is StoredEntityKind.Schema
+        || ModelIndex.Read(model, EnumText.Of(p.EntityKind), p.EntityId) is not null;
 
     private sealed record ReadContext(string Repository, string CommitSha, bool Decidable, string? Reason, ProposalImpact? Impact, Guid SourceId, SourceKind SourceKind);
 

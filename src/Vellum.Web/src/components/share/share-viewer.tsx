@@ -230,7 +230,7 @@ function Truth({ label, citation, stale }: { label: string; citation: string | n
         {factStatusLabel(label)}
       </span>
       {citation && <p className="font-mono text-[11px] text-muted-foreground" title="Where the evidence is. The source text is not shared.">{citation}</p>}
-      {stale && <p className="text-[11px] text-[var(--trace-retry)]">Stale: the latest complete scan did not find the evidence.</p>}
+      {stale && <p className="text-[11px] text-[var(--trace-retry)]">Not seen in latest scan: the latest Snapshot of its Source does not hold this.</p>}
     </div>
   )
 }

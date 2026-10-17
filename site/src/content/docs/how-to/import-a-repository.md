@@ -1,17 +1,17 @@
 ---
 title: Import a repository
-description: Scan a GitHub repository at one commit, review what Vellum found and accept it into the model.
+description: Scan a GitHub repository at one commit. Vellum adds what it observes to the model, and a change to a fact you edited waits for you.
 ---
 
-This guide shows you how to import a GitHub repository into a project. You need the editor role. A viewer can read the scans and the proposals.
+This guide shows you how to import a GitHub repository into a project. You need the editor role. A viewer can read the scans and the **Needs you** list.
 
-An import proposes. It changes nothing in the model until you accept a proposal.
+A scan adds what it observes to the model, with you as the person who accepted it. It does not overwrite a fact that a person edited, and it deletes nothing. What it does not apply waits in **Needs you**.
 
 A repository is a **Source** of the project, and each completed scan is a **Snapshot** of it. See [Sources, Snapshots and bindings](/concepts/sources-and-snapshots/).
 
 ## Other kinds of Source
 
-The review, the limits and the stale marks on this page apply to each kind of Source. To read code from another place, see these guides:
+The rules for what a scan applies, **Needs you**, the limits and the mark "not seen in latest scan" on this page apply to each kind of Source. To read code from another place, see these guides:
 
 - A repository on GitLab, Bitbucket Cloud or Azure DevOps: [Connect GitLab, Bitbucket or Azure DevOps](/how-to/connect-a-git-host/).
 - A folder on the machine that runs a local instance: [Import a local folder](/how-to/import-a-local-folder/).
@@ -54,91 +54,77 @@ The list updates by itself while a scan runs, also when the browser window is in
 
 You can resume one scan 3 times. A scan that stopped more than 7 days ago cannot be resumed. Start a new scan.
 
-## Review the proposals
+## What a scan applies
 
-On a completed scan, select the button that shows the number of pending proposals, for example **Review 20 proposals**. The button reads **Open review** when no proposal is pending.
+When a scan of the tracked ref completes, Vellum applies to the model, in dependency order:
 
-Vellum lists one proposal for each thing it found. The list has one group for each kind of thing.
+- Every addition: a thing that the source has and the model does not have.
+- Every change of a fact that this Source wrote last and that no person edited since.
 
-| Action | Meaning |
-|---|---|
-| Add | The source has a thing that the model does not have. |
-| Change | The source differs from a fact that an earlier import wrote. |
-| Conflict | The source differs from a value that a person set. The review shows both values. Neither wins until you decide. |
-| Remove | A scan that looked at the source of an accepted fact no longer finds it. |
-| Match | The extraction rules changed and Vellum cannot tell which found fact is the one in the model. You choose. |
-| Same as? | An element of this scan has the name of an element in the model. Vellum asks if they are the same element. |
+Vellum labels each applied fact **Observed in source**. A fact from a model file keeps the label of the file, **Declared**. Vellum records the Source, the commit or the Snapshot, the file and the lines, the person who started the scan and the time. An applied element is bound to its key in the Source. See [Evidence and truth labels](/concepts/evidence-and-truth-labels/).
 
-Select a proposal to see its fields and the source lines that support it. The **GitHub** link opens the same lines on GitHub at the scanned commit.
+After the first scan, the canvas opens the top level of the view and places the new elements with the auto layout. A later scan places only the new elements. It does not move an element that already has a place.
+
+A scan applies nothing from an AI provider. A proposal from a document or from the assistant always waits for a person.
 
 A proposal states only what the source shows. A route in the code shows that the route is declared. It does not show that the route works.
 
-The [extraction rules](/reference/extraction-rules/) list what Vellum reads and what each rule proposes.
+The [extraction rules](/reference/extraction-rules/) list what Vellum reads and what each rule finds.
 
-## Review by Source
+## Needs you
 
-**Proposals by Source** in the **Sources** section lists the pending proposals of every Source, one group for each Source. A group starts with its "same as?" questions and its conflicts.
+**Needs you** at the top of the **Sources** panel lists what the scans did not apply, one group for each Source. A card on the canvas shows the badge **needs you** when an item is about it or about a contract it owns.
 
-- Select **Same** when the element of this Source is the element that the other Source holds. Vellum binds the element to this Source and plans the proposals of the scan again. The values of this Source then come back as a change or a conflict.
-- Select **Not the same** when it is another thing. Vellum proposes it as a new element and does not ask again.
-- Select a conflict to see the value in the model, the value of this scan and the value of each other Source side by side.
-- Select **Accept all from this Source** to accept every addition, change and removal of the Source in one decision. It does not accept a conflict, a question, a match, a proposal about an entity that another Source holds, a change of a truth label, or anything that depends on one of them or on a rejected proposal. If an accepted item breaks something, the group names it. Select **I accept what this breaks. Accept all** to accept anyway.
+| Item | Meaning | What you can do |
+|---|---|---|
+| Conflict | The source changed a fact that a person edited, or the value of another Source differs. The item shows both values. Neither wins until you decide. | **Accept** takes the value of the source. **Reject** keeps the model as it is. |
+| Change | The source matches an entity that this Source did not write, such as a channel with the same name. | **Accept** links the entity to this Source and takes its values. **Reject** keeps the model. |
+| Not seen | The latest Snapshot no longer holds a fact. See [Not seen in latest scan](#not-seen-in-latest-scan). | **Remove** or **Keep**. |
+| Same as? | An element of this scan has the name of an element in the model. | **Same** binds the element to this Source. **Not the same** proposes a new element. |
+| Match | The extraction rules changed and Vellum cannot tell which found fact is the one in the model. | Select **Choose**, select the fact or **None of these**, then select **Apply**. |
+| Add | An addition that the model refused, for example because an element of that name came into the model after the scan. | **Accept** or **Reject**. The item says why the model refused it. |
 
-Select **Open full review** to decide the proposals of one Source one by one.
+Select an item to see its fields and the source lines that support it. The **GitHub** link opens the same lines on GitHub at the scanned commit. The detail panel of a selected element also shows its items, with **Accept** and **Reject**.
 
-## Accept or reject
+Accepting an item also accepts the items it depends on. For example, an operation needs its service.
 
-1. Select the proposals. **Select all without conflicts** selects every add, change and remove that you can decide.
-2. Select the accept button, for example **Accept 3**, or select **Reject selected**.
+If an accepted item breaks something, such as a scenario that uses a removed operation, the item names what breaks. Select **I accept what this breaks** to accept it anyway.
 
-![The dialog Review acme/orders, read at commit 54f955480d. It says 21 pending of 21. The proposals are in groups: Binding 1, Channel 4, Element 5, Message 1 and Operation 4. Each row has a checkbox, the action Add, the name and the file and line, for example billing/Program.cs:16. All rows are selected. The buttons at the bottom are Close, Reject selected and Accept 21.](../../../assets/screenshots/import-review-select-all.png)
+Vellum remembers a rejection. It proposes the same thing again when the source or the fact changes. It can also propose it again when a change to the extraction rules gives the fact a new key.
 
-The accept button shows the number of proposals that it applies. Accepting a proposal also accepts what it depends on. For example, an operation needs its service.
+A person edits an imported fact, and the source does not change it: Vellum proposes nothing. The edit stays. Only a later change of the same fact in the source puts an item in **Needs you**.
 
-If an accepted proposal breaks something, such as a scenario that uses a removed operation, the review names what breaks. Tick the acknowledgement before you accept.
-
-A decision is applied as a whole. If one item fails, Vellum applies none and names the item. One decision holds at most 1,000 proposals.
-
-To decide a match:
-
-1. Select the match proposal.
-2. Select the fact of this scan that is the thing in the model, or select **None of these. The source no longer has it.**
-3. Select **Apply matches**.
-
-A match changes only the link between the fact and the model. It does not change the model.
-
-To answer a "same as?" question in the full review:
-
-1. Select the question.
-2. Select **Yes, the same element** or **No, another thing**.
-3. Select **Apply answers**.
-
-Vellum labels each accepted fact **Observed in source**. It records the repository, the commit, the file and lines, your account and the time. An accepted element is bound to its key in the Source. See [Evidence and truth labels](/concepts/evidence-and-truth-labels/).
-
-Vellum remembers a rejection. It proposes the same thing again when the source changes. It can also propose it again when a change to the extraction rules gives the fact a new key.
+`GET /api/projects/{projectId}/needs-you` returns the list. Decide an item with `POST /api/projects/{projectId}/imports/{scanId}/proposals/decide`, on the `scanId` of its Source.
 
 ## Scan again
 
 Start a new scan of the same repository to compare the model with newer code.
 
-- The first decision in which you accept a proposal sets the **tracked ref**: the branch or tag that the model follows.
-- A scan of the tracked ref proposes changes and removals. It replaces the pending proposals of earlier scans of the same ref.
-- A scan of another branch or tag is a **comparison**. You can read its proposals and you cannot accept them. Select **Follow this ref** to make that ref the tracked ref. Only the newest completed scan of a ref has this effect.
+- The first scan that applies a fact sets the **tracked ref**: the branch or tag that the model follows.
+- A scan of the tracked ref applies its additions and the changes of facts that nobody edited. It replaces the items of earlier scans of the same ref in **Needs you**.
+- A scan of another branch or tag is a **comparison**. It applies nothing. Select **Impact** to read what it would change. Select **Follow this ref** to make that ref the tracked ref: Vellum then applies its scan as you. Only the newest completed scan of a ref has this effect.
 - A scan of a bare commit or of a pull request is always a comparison. It cannot become the tracked ref.
 
-To see what a change in the code does to the model before you accept it, see [Check change impact](/how-to/check-change-impact/).
+To see what a change in the code does to the model before it reaches the tracked ref, see [Check change impact](/how-to/check-change-impact/).
 
-## Stale facts
+## Not seen in latest scan
 
-When a scan looks at the source of an accepted fact and no longer finds it, Vellum marks the fact **stale** and proposes its removal. Only a scan of the same Source can do this. A fact that another Source still holds gets no mark. The canvas shows the mark. The fact stays in the model until you accept the removal.
+A scan deletes nothing. When a scan looks at the source of an applied fact and no longer finds it, Vellum marks the fact **not seen in latest scan**. Only a scan of the same Source can do this. A fact that another Source still holds gets no mark. The card shows the badge **not seen**, and **Needs you** lists the fact.
 
-Vellum sets the mark only on a fact with the label **Observed in source**. A fact that a person declared gets a removal proposal and no mark.
+Select the element. The detail panel shows **Not seen in latest scan** with two actions:
 
-A scan judges a fact only when it read the files that the fact came from. A scan with fewer paths, a partial scan, or a scan that left a file out says nothing about the facts in those files. The review tells you how many facts the scan did not look at, and why.
+- **Remove** takes the fact out of the model.
+- **Keep** leaves the fact and clears the mark. Later scans do not mark it again while its values stay the same. A later change of the fact, by a Snapshot or by a person, makes the mark possible again.
 
-A scan of some folders can find a thing that the model already has, and not see all of it. An example is a consumer whose message contract is in another folder. Vellum does not propose that thing as new. Scan all folders to judge it.
+Vellum sets the mark only on a fact whose label is the label of its Source. A fact that a person took over as **Declared** gets no mark.
+
+A scan judges a fact only when it read the files that the fact came from. A scan with fewer paths, a partial scan, or a scan that left a file out says nothing about the facts in those files.
+
+A scan of some folders can find a thing that the model already has, and not see all of it. An example is a consumer whose message contract is in another folder. Vellum does not add that thing again. Scan all folders to judge it.
 
 A later scan that finds the evidence again clears the mark.
+
+`POST /api/projects/{projectId}/needs-you/keep` with `entityKind` and `entityId` keeps a fact.
 
 ## Limits
 
@@ -155,14 +141,12 @@ A scan uses the limits that were set when it started.
 
 **Settings → Usage limits** sets **Repository scans per day**. The default is 20 for one workspace. The day is a UTC day. A resume that must ask GitHub for files again counts as one scan. When the limit is reached, Vellum refuses the scan with status `429` and the code `scan_limit_reached`.
 
-The review shows proposals only for things that have a place in the model. Other facts, such as an operation that has no owning service in the source, are kept as evidence and get no proposal. Open **Facts with no proposal** at the end of the review to read them. Each fact shows its kind, its name, the reason, the attributes the source states and a link to the cited lines. The section is read-only. `GET /api/projects/{projectId}/imports/{importId}/evidence` returns the same facts.
-
-The review shows a value that is not text as unformatted JSON.
+A scan applies only things that have a place in the model. Other facts, such as an operation that has no owning service in the source, are kept as evidence. `GET /api/projects/{projectId}/imports/{importId}/evidence` returns them, each with its kind, its name, the reason, the attributes the source states and the cited lines.
 
 ## See also
 
 - [Sources, Snapshots and bindings](/concepts/sources-and-snapshots/)
-- [Import and review](/tutorials/import-and-review/)
+- [Import a repository and read the result](/tutorials/import-and-review/)
 - [Connect GitHub](/how-to/connect-github/)
 - [Connect GitLab, Bitbucket or Azure DevOps](/how-to/connect-a-git-host/)
 - [Import a local folder](/how-to/import-a-local-folder/)

@@ -1,9 +1,9 @@
 ---
-title: Import a repository and review the proposals
-description: Scan the Orders fixture repository through a local GitHub stand-in, read each proposal with its source lines, and accept them.
+title: Import a repository and read the result
+description: Scan the Orders fixture repository through a local GitHub stand-in, see the diagram it gives, and read each fact with its source lines.
 ---
 
-In this tutorial you scan a repository, read what Vellum found in it, and accept the findings into a model. The repository is the Orders fixture that the Vellum tests use. You need no GitHub account and no AI provider.
+In this tutorial you scan a repository, see the diagram that Vellum makes of it, and read where each fact comes from. The repository is the Orders fixture that the Vellum tests use. You need no GitHub account and no AI provider.
 
 ## Before you start
 
@@ -72,45 +72,38 @@ When you complete the tutorials, put the value `https://api.github.com` back.
 5. Leave **Only these folders** empty.
 6. Select **Scan repository**.
 
-The scan shows "Listing files", then "Reading files", then "Scan complete". The button on the scan reads **Review 21 proposals**.
+The scan shows "Listing files", then "Reading files", then "Scan complete".
 
-A scan reads one commit. It runs no code from the repository. It does not change the model.
+A scan reads one commit. It runs no code from the repository.
 
-## Review the proposals
+## See the diagram
 
-1. Select **Review 21 proposals**. The dialog **Review acme/orders** opens. The line below the title gives the commit that the scan read.
-2. Read the list. Vellum groups the proposals by kind. Each row has an action, a name and the first source line. In this scan every action is **Add**, because the model is empty.
+When the scan completes, Vellum adds the 21 facts that it found to the model. The model was empty, so every fact is an addition, and no step needs you. **Needs you** in the **Sources** panel reads "Nothing needs you".
 
-   | Kind | Proposals |
-   |---|---|
-   | Element | `orders`, `postgres`, `Billing`, `inventory-worker`, `Orders.Api` |
-   | Channel | `billing.order-created`, `inventory.order-created`, `order-events`, `order-events.dlx` |
-   | Schema | `OrderCreated`, `CreateOrder`, `Order`, `OrderLine` |
-   | Operation | `GET /healthz` (two services), `GET /orders/{id}`, `POST /orders` |
-   | Binding | `inventory.order-created` bound to `order-events` |
-   | Subscription | The consumer of Billing and the consumer of the inventory worker |
-   | Message | `OrderCreated` |
-
-3. Select the row **POST /orders**. The row opens. The table shows each field that the source gives. Below it, Vellum shows the lines that it read: `orders-api/Program.cs`, lines 40 to 50. The rule that found them is `dotnet.minimal-api-route`.
-4. Select the row of the message **OrderCreated**. It has more than one source: the C# record in `contracts/OrderCreated.cs`, the message in `asyncapi.yaml`, the line that publishes it and the consumer in Billing.
-5. Select **Select all without conflicts**.
-6. Select **Accept 21**.
-
-![The dialog Review acme/orders with the proposal POST /orders open. A table lists the fields that the source gives. Below it are lines 40 to 49 of orders-api/Program.cs and the rule dotnet.minimal-api-route.](../../../assets/screenshots/import-proposal-review.png)
-
-Vellum writes the 21 facts to the model. Each fact gets the label `observed-in-source`, the commit, the file and the lines, and your account as the person who accepted it.
-
-To refuse a proposal, select it and select **Reject selected**. A later scan does not propose a rejected fact again while the source stays the same.
-
-The link **GitHub** on a source line opens the file on the web address of the repository. The stand-in serves the API only, so the link does not open a page in this tutorial.
-
-## Read what the model now holds
-
-1. Close the dialog and the flyout. The canvas shows the system `orders`.
+1. Close the **Sources** panel. The canvas shows the top level of the view with the system `orders`. The auto layout placed it.
 2. Right-click `orders` and select **Drill into**. The canvas shows `Orders.Api`, `Billing`, `inventory-worker` and `postgres`.
-3. Select **Model** in the sidebar, then the **Contracts** tab. **Operations**, **Channels** and **Subscriptions** list what you accepted.
+3. Select **Model** in the sidebar, then the **Contracts** tab. **Operations**, **Channels** and **Subscriptions** list the rest of the 21 facts.
 
 ![The canvas at the level Context, orders. A frame with the name orders holds the apps Billing (dotnet), inventory-worker (go) and Orders.Api (dotnet) and the store postgres. Each card shows its kind and its technology. No line connects them.](../../../assets/screenshots/canvas-orders-system.png)
+
+| Kind | Facts |
+|---|---|
+| Element | `orders`, `postgres`, `Billing`, `inventory-worker`, `Orders.Api` |
+| Channel | `billing.order-created`, `inventory.order-created`, `order-events`, `order-events.dlx` |
+| Schema | `OrderCreated`, `CreateOrder`, `Order`, `OrderLine` |
+| Operation | `GET /healthz` (two services), `GET /orders/{id}`, `POST /orders` |
+| Binding | `inventory.order-created` bound to `order-events` |
+| Subscription | The consumer of Billing and the consumer of the inventory worker |
+| Message | `OrderCreated` |
+
+## Read where a fact comes from
+
+1. Select the card `Orders.Api`. The detail panel opens.
+2. Read **Truth**. The label is **Observed in source**. The provenance gives the file `orders-api/Orders.Api.csproj` at the commit of the scan, your account as the person who accepted it, and the time.
+
+Each fact has the label `observed-in-source`, the commit, the file and the lines, and your account. You started the scan, so you are the person who accepted its facts.
+
+The link **GitHub** on a source line opens the file on the web address of the repository. The stand-in serves the API only, so the link does not open a page in this tutorial.
 
 Three things are true about this model:
 
@@ -120,16 +113,23 @@ Three things are true about this model:
 
 ## Scan again
 
-1. Open **Sources** and select **Scan repository** again, with the same values.
-2. Select **Open review** on the new scan. The dialog shows "The source matches the model. This scan proposes no change."
+1. Open **Sources** and select **Scan again** on the Source `acme/orders`.
+2. Wait for "Scan complete". **Needs you** still reads "Nothing needs you", and the canvas does not change.
 
 A second scan of the same commit compares the source with the model and finds no difference.
+
+## Edit a fact and scan again
+
+1. Select the card `postgres`. In the detail panel, change **Technology** to `PostgreSQL 16`.
+2. Select **Scan again** on the Source.
+
+The source still says `postgres`, but it did not change since the first scan. Vellum keeps your edit and puts nothing in **Needs you**. When a later commit of the repository changes a fact that you edited, the change waits in **Needs you**, and the card shows the badge **needs you**. Imported code never overwrites what a person decided.
 
 ## What you did
 
 - You scanned one commit of a repository with no GitHub account.
-- You read proposals with the file, the lines and the rule behind each one.
-- You accepted them, and the model now labels each fact `observed-in-source`.
+- Vellum added what it found, labelled `observed-in-source`, with you as the acceptor, and drew it with the auto layout.
+- You read where a fact comes from, and saw that a scan keeps your edit.
 
 ## Next
 
