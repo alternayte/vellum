@@ -22,6 +22,7 @@ import { ElementDocs } from '@/components/docs/element-docs'
 import type { Provenance, StaleMark } from '@/lib/fact-status'
 import { FactImportState } from '@/components/import/fact-import-state'
 import { FactTruth } from './fact-truth'
+import { inlineEditKeys } from '@/lib/inline-edit'
 
 interface ElementData {
   id: string
@@ -158,6 +159,10 @@ export function DetailPanel({
         // The panel sits beside the canvas and does not trap focus: focus stays on the node
         // that opened it, so a field does not look active before anyone edits it.
         onOpenAutoFocus={(event) => event.preventDefault()}
+        // Escape in a field of the panel leaves the field first; the next Escape closes the panel.
+        onEscapeKeyDown={(event) => {
+          if ((event.target as Element | null)?.matches?.('input, textarea')) event.preventDefault()
+        }}
         // A drag of an end of the selected relationship changes its sides, shown in this panel.
         onPointerDownOutside={(event) => {
           if ((event.target as Element | null)?.closest?.('.react-flow__edgeupdater')) event.preventDefault()
@@ -327,7 +332,10 @@ export function DetailPanel({
                   aria-label="Description"
                   placeholder="Add a description"
                   defaultValue={selectedElement.description ?? ''}
-                  onBlur={(e) => onUpdateElement?.(selectedElement.id, { description: e.target.value || null })}
+                  onKeyDown={inlineEditKeys(selectedElement.description ?? '', true)}
+                  onBlur={(e) => {
+                    if (e.target.value !== (selectedElement.description ?? '')) onUpdateElement?.(selectedElement.id, { description: e.target.value || null })
+                  }}
                   rows={2}
                   className={`${INLINE_FIELD} min-h-0 resize-none text-sm leading-relaxed`}
                 />
@@ -337,7 +345,14 @@ export function DetailPanel({
                     <Input
                       id={idFor('element-name')}
                       defaultValue={selectedElement.name}
-                      onBlur={(e) => onUpdateElement?.(selectedElement.id, { name: e.target.value })}
+                      enterKeyHint="done"
+                      onKeyDown={inlineEditKeys(selectedElement.name)}
+                      onBlur={(e) => {
+                        // An element has a name: an empty field goes back to the saved one.
+                        const name = e.target.value.trim()
+                        if (!name) e.target.value = selectedElement.name
+                        else if (name !== selectedElement.name) onUpdateElement?.(selectedElement.id, { name })
+                      }}
                       className={INLINE_FIELD}
                     />
                   </dd>
@@ -347,7 +362,11 @@ export function DetailPanel({
                       id={idFor('element-technology')}
                       placeholder="None"
                       defaultValue={selectedElement.technology ?? ''}
-                      onBlur={(e) => onUpdateElement?.(selectedElement.id, { technology: e.target.value || null })}
+                      enterKeyHint="done"
+                      onKeyDown={inlineEditKeys(selectedElement.technology ?? '')}
+                      onBlur={(e) => {
+                        if (e.target.value !== (selectedElement.technology ?? '')) onUpdateElement?.(selectedElement.id, { technology: e.target.value || null })
+                      }}
                       className={INLINE_FIELD}
                     />
                   </dd>
@@ -479,9 +498,11 @@ export function DetailPanel({
                   <Input
                     id={idFor('relationship-label')}
                     defaultValue={selectedRel.label ?? ''}
-                    onBlur={(e) =>
-                      onUpdateRelationship?.(selectedRel.id, { label: e.target.value || null })
-                    }
+                    enterKeyHint="done"
+                    onKeyDown={inlineEditKeys(selectedRel.label ?? '')}
+                    onBlur={(e) => {
+                      if (e.target.value !== (selectedRel.label ?? '')) onUpdateRelationship?.(selectedRel.id, { label: e.target.value || null })
+                    }}
                   />
                 </div>
                 <div>
@@ -489,9 +510,11 @@ export function DetailPanel({
                   <Input
                     id={idFor('relationship-technology')}
                     defaultValue={selectedRel.technology ?? ''}
-                    onBlur={(e) =>
-                      onUpdateRelationship?.(selectedRel.id, { technology: e.target.value || null })
-                    }
+                    enterKeyHint="done"
+                    onKeyDown={inlineEditKeys(selectedRel.technology ?? '')}
+                    onBlur={(e) => {
+                      if (e.target.value !== (selectedRel.technology ?? '')) onUpdateRelationship?.(selectedRel.id, { technology: e.target.value || null })
+                    }}
                   />
                 </div>
                 <div>
@@ -748,9 +771,14 @@ function TagEditor({ tags, onChange }: { tags: string[]; onChange: (tags: string
           enterKeyHint="done"
           className="h-6 min-w-0 flex-1 rounded-md border border-dashed border-border bg-transparent px-2 text-xs text-foreground placeholder:text-muted-foreground hover:border-input focus-visible:border-ring focus-visible:outline-none"
           onKeyDown={(e) => {
+            if (e.nativeEvent.isComposing) return
             if (e.key === 'Enter') {
               e.preventDefault()
               submit()
+            } else if (e.key === 'Escape') {
+              e.preventDefault()
+              setDraft('')
+              e.currentTarget.blur()
             }
           }}
         />

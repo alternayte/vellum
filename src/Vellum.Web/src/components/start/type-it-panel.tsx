@@ -17,6 +17,8 @@ interface Props {
   /** Runs after each Enter that wrote something: the page reloads the model and lays it out. */
   onWritten: () => Promise<void>
   onClose: () => void
+  /** Runs when the panel opens, changes height or closes: the canvas fits again to keep clear of it. */
+  onRoomChange?: () => void
 }
 
 interface Entry {
@@ -43,12 +45,35 @@ async function write(projectId: string, branchId: string | null, change: ModelWr
  * the model out. A line that fails stays in the box with its reason, so the person can fix it.
  * Works with no AI provider.
  */
-export function TypeItPanel({ projectId, branchId, defaultSystem, elements, relationships, onWritten, onClose }: Props) {
+export function TypeItPanel({ projectId, branchId, defaultSystem, elements, relationships, onWritten, onClose, onRoomChange }: Props) {
   const [text, setText] = useState('')
   const [entries, setEntries] = useState<Entry[]>([])
   const [busy, setBusy] = useState(false)
   const box = useRef<HTMLTextAreaElement>(null)
+  const panel = useRef<HTMLElement>(null)
   useEffect(() => box.current?.focus(), [])
+
+  // The panel covers the bottom of the canvas (lib/canvas-insets). Each change of its height
+  // and its close change the free canvas, so the canvas fits again.
+  const roomChange = useRef(onRoomChange)
+  useEffect(() => { roomChange.current = onRoomChange })
+  useEffect(() => {
+    const el = panel.current
+    if (!el) return
+    let height = -1
+    const observer = new ResizeObserver(() => {
+      const next = Math.round(el.getBoundingClientRect().height)
+      if (next === height) return
+      height = next
+      roomChange.current?.()
+    })
+    observer.observe(el)
+    return () => {
+      observer.disconnect()
+      // The fit runs a frame later, after the panel has left the page.
+      roomChange.current?.()
+    }
+  }, [])
 
   const submit = async () => {
     if (busy || text.trim() === '') return
@@ -104,8 +129,11 @@ export function TypeItPanel({ projectId, branchId, defaultSystem, elements, rela
 
   return (
     <section
+      ref={panel}
       aria-labelledby="type-it-title"
-      className="absolute bottom-4 left-1/2 z-20 w-[min(36rem,calc(100%-2rem))] -translate-x-1/2 rounded-lg border border-border bg-card p-3 shadow-lg"
+      data-canvas-occluder="bottom"
+      // It sits above the "Ask the assistant" button, which stays at the bottom of the canvas.
+      className="absolute bottom-14 left-1/2 z-20 w-[min(36rem,calc(100%-2rem))] -translate-x-1/2 rounded-lg border border-border bg-card p-3 shadow-lg"
     >
       <div className="flex items-start justify-between gap-2">
         <div>
