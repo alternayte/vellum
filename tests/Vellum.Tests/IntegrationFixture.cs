@@ -35,7 +35,7 @@ public class IntegrationFixture : IAsyncLifetime
     {
         if (_factory.IsValueCreated)
             await _factory.Value.DisposeAsync();
-        TestDatabase.Release(ConnectionString);
+        await TestDatabase.DropAsync(ConnectionString);
     }
 }
 
@@ -122,11 +122,17 @@ internal static class TestDatabase
         await command.ExecuteNonQueryAsync();
     }
 
-    /// <summary>Closes the idle connections of a database that no test uses any more.</summary>
-    public static void Release(string? connectionString)
+    /// <summary>
+    /// Drops a database that no test uses any more. The server keeps its data in memory, so a
+    /// run that kept every copy would run the container out of memory.
+    /// </summary>
+    public static async Task DropAsync(string? connectionString)
     {
-        if (connectionString is not null)
-            NpgsqlConnection.ClearPool(new NpgsqlConnection(connectionString));
+        if (connectionString is null)
+            return;
+        NpgsqlConnection.ClearPool(new NpgsqlConnection(connectionString));
+        var database = new NpgsqlConnectionStringBuilder(connectionString).Database;
+        await ExecuteAsync($"DROP DATABASE IF EXISTS {database} WITH (FORCE)");
     }
 
     /// <summary>

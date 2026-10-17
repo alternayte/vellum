@@ -253,7 +253,7 @@ public class CommentThreadTests(IntegrationFixture fixture) : IClassFixture<Inte
         var mention = Assert.Single(bobInbox.Items);
         Assert.Equal("mention", mention.Reason);
         Assert.Equal(thread.Id, mention.ThreadId);
-        Assert.Equal("Search", mention.Target.Name);
+        Assert.Equal("Search", mention.Target!.Name);
         Assert.Equal("@Bob please look", mention.Excerpt);
 
         // The owner replies: alice started the thread and hears of it; the owner does not hear of their own reply.
