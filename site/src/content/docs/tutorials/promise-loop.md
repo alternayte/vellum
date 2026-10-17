@@ -310,7 +310,7 @@ In the app:
 4. Read **Affected flows**. **Place an order** has the label **Definite**. Each step shows its own label and its reasons. `publish-order-created` is **Definite**: it names the changed schema. The other steps are **Possible**: they run in the service of the outbox. **4 reasons for the flow** opens the reasons of the flow as a whole.
 5. Read **Affected promises**. `ORD-014` has the label **At risk**.
 6. Under **Gate**, select **Run checks against this scan**. It runs the source pattern checks of the approved promises against this commit. `ORD-014/O3` has the label **Failed**, and `ORD-014` has the label **Broken**. The scan read every file of the commit, so the absence of the pattern is established. The result is for this commit only: `ORD-014` keeps its result against `main`.
-7. Close the dialog. On the scan, select **Follow this ref**. This is what happens when the change is merged.
+7. Close the dialog. On the scan, select **Follow this ref**. This is what happens when the change is merged. Vellum applies the scan as you: the message `OrderCreated` now cites the source of `remove-outbox`. The changed schema `OrderCreated` waits in **Needs you**, because it breaks the step `publish-order-created` of **Place an order**.
 8. Select **Impact** again and select **Run checks against this scan** again. The check has the label **Failed**, and `ORD-014` has the label **Broken**. The result now counts for the ref that the model follows.
 
    ![The dialog Impact of remove-outbox on acme/orders, scrolled to the end. Affected flows lists the steps of Place an order: place, save-order, save-outbox and relay have the label Possible, and publish-order-created has the label Definite through the changed schema OrderCreated. Affected promises has ORD-014 with the label Broken, and ORD-014/O3 with the label Failed.](../../../assets/screenshots/impact-view.png)
@@ -359,6 +359,8 @@ With the HTTP API:
    {"kind":"tracking","trackedRef":"remove-outbox","canDecide":true}
    ```
 
+   Vellum applies the scan as you. The message `OrderCreated` now cites the source of `remove-outbox`, where its field `Total` has the name `TotalAmount`. The model gets a new version. The changed schema `OrderCreated` is not applied: it breaks the step `publish-order-created` of **Place an order**, so it waits in **Needs you**.
+
 4. Run the source check again.
 
    <!-- snippet: live -->
@@ -370,14 +372,16 @@ With the HTTP API:
    The result is `failed`. The detail starts with `A tracking scan that covers the whole repository at this commit found no such fact.` and names the line where the pattern was found before. The counts are now:
 
    ```json
-   {"passed":1,"failed":1,"notRun":1,"unsupported":0,"stale":0}
+   {"passed":0,"failed":1,"notRun":1,"unsupported":0,"stale":1}
    ```
+
+   The result of `O1` is stale. It ran on the model version before you followed the ref.
 
 5. In the app, open **Promises** and select **ORD-014**. The dialog shows the failed obligation with what it checked and against which commit. **Evidence gaps** lists what has no evidence.
 
-![The dialog of ORD-014 with its three obligations. ORD-014/O1 has the label Passed, with the faults played, the model version, the trace hash and the two assertions that check nothing. ORD-014/O2 has the label Not run and the note that the plan names no evidence source. ORD-014/O3 has the label Failed against the tracking scan of remove-outbox. The texts name the scenario and the operation, not their IDs.](../../../assets/screenshots/promise-obligations-results.png)
+![The dialog of ORD-014, scrolled to the obligations. ORD-014/O2 has the label Not run and the note that the plan names no evidence source. ORD-014/O3 has the label Failed against the tracking scan of remove-outbox, with the source line where the pattern was found before. Evidence gaps lists five gaps: the stale result of ORD-014/O1, its two vacuous assertions, the test plan ORD-014/O2 with no evidence source, and the linked message OrderCreated that changed after the approval.](../../../assets/screenshots/promise-obligations-results.png)
 
-The scenario check still passes. The scenario is your declared design, and you did not change it. Vellum does not change a declared flow because the source changed. The source check is the evidence that the code no longer has what the promise needs.
+The scenario check passed, but its result is stale: the message `OrderCreated` that the promise links changed after you approved the promise. The scenario is your declared design, and you did not change it. Vellum does not change a declared flow because the source changed. The source check is the evidence that the code no longer has what the promise needs.
 
 ## Read the blockers
 
@@ -386,12 +390,17 @@ The scenario check still passes. The scenario is your declared design, and you d
 api GET build/manifest | jq -r '.buildReady, (.blockers[] | "\(.code)  \(.message)")'
 ```
 
-The first line is `false`. The list holds these blockers for `ORD-014`:
+The first line is `false`. The list holds these nine blockers for `ORD-014`:
 
+- `promise-gap`: the result of `O1` is stale, because it ran on the model version before you followed the ref.
+- `promise-gap`: the assertion `order-accepted` of `O1` is vacuous.
+- `promise-gap`: the assertion `forbidden-1-Dropped` of `O1` is vacuous.
+- `promise-gap`: `O2` is a test plan with no evidence source.
+- `promise-gap`: the linked message `OrderCreated` changed after the promise was approved.
 - `promise-check-failed`: one obligation failed its newest check.
-- `promise-gap`: two assertions of `O1` are vacuous, and `O2` is a test plan with no evidence source.
-- `promise-evidence-stale`: `O2` has no result.
-- `review-CON-001`: two operations on the path of `ORD-014` have no request schema and no response schema.
+- `promise-evidence-stale`: the newest result of `O1` is not for the pinned inputs, and `O2` has no result.
+- `review-CON-001`: the operation `POST /orders` has no request schema and no response schema.
+- `review-CON-001`: the operation `Relay outbox` has no request schema and no response schema.
 
 In the app, the **Build** tab of **Ship** in the sidebar shows the same list under **Blockers**, below the line that starts with **Not build ready**.
 
@@ -423,7 +432,7 @@ head -n 3 brief.md
 ```
 
 ```text
-{"format":"vellum-brief/1","buildReady":false,"blockers":7}
+{"format":"vellum-brief/1","buildReady":false,"blockers":9}
 # Orders import: build brief
 
 Pinned model: branch stream `<stream ID>` at version <number>.
