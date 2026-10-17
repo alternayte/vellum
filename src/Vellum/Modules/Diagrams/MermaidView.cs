@@ -12,6 +12,8 @@ namespace Vellum.Modules.Diagrams;
 /// then the kind and the technology on a second line.</item>
 /// <item>A structural relationship is <c>--&gt;</c>, a behavioural one <c>==&gt;</c>; the label
 /// and the technology in brackets are the link text.</item>
+/// <item>A derived line is a dotted link <c>-.-&gt;</c>. Its link text is the label of its one
+/// relationship, or "N relationships" for more.</item>
 /// <item>Node IDs come from <see cref="DiagramText.Identifiers"/>.</item>
 /// </list>
 /// The export is one-way: the header lists what it drops.
@@ -37,6 +39,8 @@ public static class MermaidView
         text.Append("%% From ").Append(Comment(ViewDiagram.PinText(diagram.Pin))).Append(", with layout ").Append(diagram.Layout)
             .Append(" (the layout is not part of a revision).\n");
         text.Append("%% One-way export. It drops: ").Append(Dropped).Append(".\n");
+        if (diagram.DerivedLines.Count > 0)
+            text.Append("%% A dotted link (-.->) is a derived line: the relationships between elements inside the two ends. It is not a relationship of the model.\n");
         text.Append("flowchart TB\n");
 
         var taken = new HashSet<string>(StringComparer.Ordinal);
@@ -77,6 +81,14 @@ public static class MermaidView
             text.Append("    ").Append(ids[r.FromId.Value]).Append(' ').Append(arrow);
             if (linkText.Length > 0) text.Append("|\"").Append(Label(linkText)).Append("\"|");
             text.Append(' ').Append(ids[r.ToId.Value]).Append('\n');
+        }
+
+        foreach (var line in diagram.DerivedLines)
+        {
+            var label = DiagramText.OneLine(line.Label);
+            text.Append("    ").Append(ids[line.FromId.Value]).Append(" -.->");
+            if (label.Length > 0) text.Append("|\"").Append(Label(label)).Append("\"|");
+            text.Append(' ').Append(ids[line.ToId.Value]).Append('\n');
         }
 
         return text.ToString();

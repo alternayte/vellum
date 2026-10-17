@@ -23,6 +23,7 @@ import type { Provenance, StaleMark } from '@/lib/fact-status'
 import { FactImportState } from '@/components/import/fact-import-state'
 import { FactTruth } from './fact-truth'
 import { inlineEditKeys } from '@/lib/inline-edit'
+import { DerivedLineDetail } from '@/components/canvas/derived-line-detail'
 
 interface ElementData {
   id: string
@@ -110,7 +111,7 @@ export function DetailPanel({
   onUpdateEdgeSides,
   labels = {},
 }: DetailPanelProps) {
-  const { detailPanelOpen, selectedElementId, selectedRelationshipId, selectedMessageId, selectedGhostItemId, selectElement, selectRelationship, selectMessage, selectGhost } =
+  const { detailPanelOpen, selectedElementId, selectedRelationshipId, selectedDerivedLine, selectedMessageId, selectedGhostItemId, selectElement, selectRelationship, selectMessage, selectGhost } =
     useShellStore()
   const ghostProposal = useGhostStore((s) => s.proposal)
   const { isReviewMode, reviewData } = useDraftStore()
@@ -172,7 +173,24 @@ export function DetailPanel({
         {selectedGhostItemId && ghostProposal && (
           <GhostDetail key={selectedGhostItemId} proposal={ghostProposal} itemId={selectedGhostItemId} labels={labels} canDecide={!readOnly} />
         )}
-        {readOnly && !selectedGhostItemId && <p role="note" className="mx-4 mt-10 rounded-md border border-dashed border-border px-2.5 py-1.5 text-[11px] text-muted-foreground">Read-only. The fields show the values and take no change.</p>}
+        {/* A derived line has nothing to edit, so it sits outside the read-only fieldset: its entries open relationships. */}
+        {selectedDerivedLine && (
+          <div>
+            <SheetHeader className="pr-12">
+              <SheetTitle className="font-display">Derived line</SheetTitle>
+            </SheetHeader>
+            <div className="mt-2 px-4 pb-4">
+              <DerivedLineDetail
+                line={selectedDerivedLine}
+                elements={elements}
+                relationships={relationships}
+                onSelectElement={selectElement}
+                onSelectRelationship={selectRelationship}
+              />
+            </div>
+          </div>
+        )}
+        {readOnly && !selectedGhostItemId && !selectedDerivedLine && <p role="note" className="mx-4 mt-10 rounded-md border border-dashed border-border px-2.5 py-1.5 text-[11px] text-muted-foreground">Read-only. The fields show the values and take no change.</p>}
         <fieldset disabled={readOnly} className="m-0 min-w-0 border-0 p-0">
         {selectedMessage && (
           <div key={selectedMessage.id}>

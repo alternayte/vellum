@@ -14,7 +14,7 @@ A link shows:
 - the contracts: operations, channels, messages and payload schemas;
 - for a project link: the flows, the docs of main and the accepted decisions (ADRs). A flow shows its steps without payload samples or headers. A flow that names a hidden fact is not shown.
 
-A view link shows the elements that the view places, with their parents, and the facts and schemas between them. A view that places no element shows the whole model, as the canvas does.
+A view link shows the elements that the view places, with their parents, and the facts and schemas between them. A view that places no element shows the whole model, as the canvas does. The diagram draws derived lines for the relationships that the link shares. A relationship with an end that the view does not place is not shared, and a view link draws no derived line for it.
 
 Two parts are off by default. You turn each one on for each link:
 

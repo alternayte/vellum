@@ -12,7 +12,8 @@ namespace Vellum.Modules.Import.Extraction;
 /// <c>softwareSystem</c> is a <c>system</c>; a <c>container</c> is an <c>app</c>, or a
 /// <c>store</c> when it has the tag <c>Database</c>; a <c>component</c> is a <c>component</c>.
 /// A relationship keeps its description (the label), its technology, and is behavioural when
-/// it has the tag <c>Behavioural</c>. An element keeps its description, its technology (a
+/// it has the tag <c>Behavioural</c>. A relationship with the tag <c>Derived</c> is a derived
+/// line that the export wrote for a view, not a fact, and is not read. An element keeps its description, its technology (a
 /// container or a component) and its own tags; the Structurizr default tags
 /// (<c>Element</c>, <c>Person</c>, …) and <c>Database</c> of a store are left out. Groups and
 /// enterprises are ignored with a note; their elements are read as if no group were there.
@@ -145,6 +146,9 @@ internal sealed class StructurizrExtractor : IExtractor
         foreach (var relationship in relationships)
         {
             if (relationship.From is not { } from || relationship.To is not { } to || !added.Contains(from) || !added.Contains(to))
+                continue;
+            // A derived line of a Vellum view stands for relationships the file holds already.
+            if (relationship.Tags.Any(t => t.Equals("Derived", StringComparison.OrdinalIgnoreCase)))
                 continue;
             var behavioural = relationship.Tags.Any(t => t.Equals("Behavioural", StringComparison.OrdinalIgnoreCase));
             var label = ModelFileText.Line(context, file, relationship.StartLine, "label", relationship.Label);

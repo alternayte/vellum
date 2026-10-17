@@ -346,7 +346,9 @@ public class DiagramExportEndpointTests(IntegrationFixture fixture) : IClassFixt
         Assert.Contains("systemLandscape \"landscape\" \"Landscape\"", dsl);
         Assert.Contains("container shop \"shop\" \"Shop\"", dsl);
         Assert.Contains("orders_db = container \"Orders DB\"", dsl);
-        Assert.Equal(5, Regex.Matches(dsl, "^ +[a-z0-9_]+ -> [a-z0-9_]+ ", RegexOptions.Multiline).Count);
+        // The five relationships of the model, and the two derived lines of the landscape.
+        Assert.Equal(7, Regex.Matches(dsl, "^ +[a-z0-9_]+ -> [a-z0-9_]+ ", RegexOptions.Multiline).Count);
+        Assert.Equal(2, Regex.Matches(dsl, " \"Derived\"$", RegexOptions.Multiline).Count);
 
         // A Viewer reads every export; an unknown view or revision is refused.
         var viewer = await TestHost.SignInMemberAsync(fixture.Factory, client, workspaceId, "Viewer");

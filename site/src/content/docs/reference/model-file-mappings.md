@@ -16,12 +16,13 @@ The facts of a model file and of an ADR have the truth label `declared`. The fac
 | `component` | element of kind `component` |
 | relationship | relationship, with its description as the label |
 | relationship with the tag `Behavioural` | behavioural relationship |
+| relationship with the tag `Derived` | nothing: it is a derived line of a Vellum view |
 
 This is the reverse of the [Structurizr DSL export](/reference/diagram-export-formats/). An export of a model reads back as the same elements and relationships.
 
 **Kept:** names, nesting, descriptions, the technology of a container or a component, the technology of a relationship, and the tags of an element. The DSL and the workspace JSON of one workspace give the same keys.
 
-**Dropped:** groups and enterprises (their elements stay, with a note), views, styles, themes, deployment environments and nodes, properties, perspectives, URLs, custom elements, the default tags (`Element`, `Person`, `Software System`, `Container`, `Component`), the tags of a relationship except `Behavioural`, the technology of a person or a software system, implied relationships of the JSON, and a component inside a database container (a note).
+**Dropped:** groups and enterprises (their elements stay, with a note), views, styles, themes, deployment environments and nodes, properties, perspectives, URLs, custom elements, the default tags (`Element`, `Person`, `Software System`, `Container`, `Component`), the tags of a relationship except `Behavioural`, the technology of a person or a software system, implied relationships of the JSON, relationships with the tag `Derived`, and a component inside a database container (a note).
 
 **Not followed, run or applied:** `!include`, `workspace extends`, `!script`, `!plugin`, `!docs`, `!adrs`, `!constant`, `!const`, `!var`, `!ref`, `!extend`, every other directive, `${NAME}` and every URL. Each gives a note.
 

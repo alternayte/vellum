@@ -26,6 +26,13 @@ export interface CanvasHighlight {
   steps?: HighlightStep[]
 }
 
+/** A derived line the person selected: the two visible cards it joins and the relationships under it. */
+export interface SelectedDerivedLine {
+  fromId: string
+  toId: string
+  relationshipIds: string[]
+}
+
 /** The tabs of the bell panel: the inbox of the person, and the comment threads of the open project. */
 export type InboxTab = 'inbox' | 'comments'
 
@@ -51,6 +58,8 @@ interface ShellState {
   detailPanelOpen: boolean
   selectedElementId: string | null
   selectedRelationshipId: string | null
+  /** The derived line whose relationships the detail panel lists. It is a projection, not a fact. */
+  selectedDerivedLine: SelectedDerivedLine | null
   selectedMessageId: string | null
   /** The item of the open ghost layer whose ghost is selected. Its rationale shows in the detail panel. */
   selectedGhostItemId: string | null
@@ -77,6 +86,7 @@ interface ShellState {
   toggleFlyout: (flyout: Flyout) => void
   selectElement: (id: string | null) => void
   selectRelationship: (id: string | null) => void
+  selectDerivedLine: (line: SelectedDerivedLine | null) => void
   selectMessage: (id: string | null) => void
   selectGhost: (itemId: string | null) => void
   setActiveView: (id: string | null) => void
@@ -111,6 +121,7 @@ export const useShellStore = create<ShellState>((set) => ({
   detailPanelOpen: false,
   selectedElementId: null,
   selectedRelationshipId: null,
+  selectedDerivedLine: null,
   selectedMessageId: null,
   selectedGhostItemId: null,
   activeViewId: null,
@@ -147,6 +158,7 @@ export const useShellStore = create<ShellState>((set) => ({
     set({
       selectedElementId: id,
       selectedRelationshipId: null,
+      selectedDerivedLine: null,
       selectedMessageId: null,
       selectedGhostItemId: null,
       detailPanelOpen: id !== null,
@@ -155,10 +167,21 @@ export const useShellStore = create<ShellState>((set) => ({
   selectRelationship: (id) =>
     set({
       selectedRelationshipId: id,
+      selectedDerivedLine: null,
       selectedElementId: null,
       selectedMessageId: null,
       selectedGhostItemId: null,
       detailPanelOpen: id !== null,
+    }),
+
+  selectDerivedLine: (line) =>
+    set({
+      selectedDerivedLine: line,
+      selectedElementId: null,
+      selectedRelationshipId: null,
+      selectedMessageId: null,
+      selectedGhostItemId: null,
+      detailPanelOpen: line !== null,
     }),
 
   selectMessage: (id) =>
@@ -166,6 +189,7 @@ export const useShellStore = create<ShellState>((set) => ({
       selectedMessageId: id,
       selectedElementId: null,
       selectedRelationshipId: null,
+      selectedDerivedLine: null,
       selectedGhostItemId: null,
       detailPanelOpen: id !== null,
     }),
@@ -175,6 +199,7 @@ export const useShellStore = create<ShellState>((set) => ({
       selectedGhostItemId: itemId,
       selectedElementId: null,
       selectedRelationshipId: null,
+      selectedDerivedLine: null,
       selectedMessageId: null,
       detailPanelOpen: itemId !== null,
     }),
@@ -207,6 +232,7 @@ export const useShellStore = create<ShellState>((set) => ({
       detailPanelOpen: false,
       selectedElementId: null,
       selectedRelationshipId: null,
+      selectedDerivedLine: null,
       selectedMessageId: null,
       selectedGhostItemId: null,
       activeViewId: null,

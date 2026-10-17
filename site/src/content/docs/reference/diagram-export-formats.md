@@ -32,9 +32,22 @@ A view shows one level of the model.
 
 - A view without a root element shows the top-level elements.
 - A view with a root element shows the children of that element, inside a frame that has the name, the kind and the technology of the root.
-- A relationship shows when both of its ends show.
+- A relationship shows as itself when both of its ends show.
+- A relationship with an end hidden inside a shown element is part of a derived line. See [Derived lines](#derived-lines).
 
-The order of the elements is the ordinal order of the names, then of the IDs.
+An export shows the level with every card collapsed. The order of the elements is the ordinal order of the names, then of the IDs.
+
+## Derived lines
+
+A derived line joins two shown elements for the relationships between the parts inside them. The canvas and the exports use the same rules. [Views, levels and derived lines](/concepts/views-levels-and-derived-lines/) explains them.
+
+1. A relationship whose two ends show is direct. It draws as itself.
+2. Each other end attaches to its nearest ancestor that shows. A relationship with an end that has no such ancestor draws nothing.
+3. A relationship whose two ends attach to the same element draws nothing.
+4. The relationships between the same two elements, in one direction, merge into one derived line.
+5. The label of a derived line with one relationship is the label of that relationship. A derived line with more relationships has the label "N relationships".
+
+The relationships of a derived line are in the ordinal order of their IDs. The derived lines are in the ordinal order of the ID of the source element, then of the target element. A derived line is not stored and does not change the layout fingerprint.
 
 ## Positions
 
@@ -62,7 +75,7 @@ The same revision and the same layout fingerprint give the same bytes. When some
 
 ## SVG
 
-The SVG looks like the canvas in the dark theme: the cards, the frame of the root, the relationships and their labels.
+The SVG looks like the canvas in the dark theme: the cards, the frame of the root, the relationships and their labels, and the derived lines.
 
 | On the canvas | In the SVG |
 |---|---|
@@ -72,6 +85,8 @@ The SVG looks like the canvas in the dark theme: the cards, the frame of the roo
 | Elements inside | A badge with the count |
 | Relationship | A path with an arrow. A behavioural relationship is teal and thicker. The line shape (curve, straight or step) is kept. Each end attaches to its saved side, or to the side that faces the other card when the side is auto, as on the canvas. |
 | Relationship label | A label card with the label and the technology |
+| Derived line | A thin, lighter path (`class="derived-line"`) with its own arrow. It attaches to the facing sides and is a curve. Parallel lines between the same two cards move apart, the relationships first. |
+| Derived line label | A round label (`class="derived-line-label"`) with a dashed border, a count badge and the label |
 
 The same revision and the same layout fingerprint give the same bytes:
 
@@ -97,10 +112,11 @@ A Mermaid export is a flowchart from top to bottom.
 | System, app | Rectangle `id["..."]` |
 | Structural relationship | `a -->\|"label [technology]"\| b` |
 | Behavioural relationship | `a ==>\|"label [technology]"\| b` |
+| Derived line | Dotted link `a -.->\|"label"\| b`. A derived line with no label has no link text. |
 
 A node label is the name, a line break (`<br/>`), then the kind and the technology.
 
-The first three lines are comments. They name the view, the revision and the layout fingerprint, and list what the export drops: layout and positions, icons, truth labels and provenance, element status, descriptions, tags, owners, line shapes, elements on other levels, messages, contracts, schemas, scenarios, promises, costs and comments.
+The first three lines are comments. A fourth comment line explains the dotted link when the file has a derived line. The comments name the view, the revision and the layout fingerprint, and list what the export drops: layout and positions, icons, truth labels and provenance, element status, descriptions, tags, owners, line shapes, elements on other levels, messages, contracts, schemas, scenarios, promises, costs and comments.
 
 A label is always in double quotes. In a label, each of these characters becomes a Mermaid entity code, such as `#quot;` or `#lt;`: `#`, `"`, `&`, `<`, `>`, `|`, the backtick, `[`, `]`, `(`, `)`, `{`, `}`, `;`, `%` and `\`. A name cannot close the label, add markup or start a directive. In a comment line, a space follows each `%`, so a name cannot form `%%{`.
 
@@ -153,13 +169,16 @@ The Structurizr DSL export is a workspace with the whole model and the views.
 | Store | The tag `Database`, drawn as a cylinder |
 | Relationship | `a -> b "label" "technology"` |
 | Behavioural relationship | The tag `Behavioural` |
+| Derived line of a written view | `a -> b "label" "" "Derived"`, drawn thin and dotted |
 | View without a root element | `systemLandscape` |
 | View whose root is a software system | `container` view |
 | View whose root is a container | `component` view |
 
 Each view has `include *` and `autoLayout`. A view with another root is named in a comment and not written.
 
-The `model` block starts with `!impliedRelationships false`. Structurizr then shows only the relationships that Vellum holds.
+The `model` block starts with `!impliedRelationships false`. Structurizr then shows the relationships that Vellum holds and the derived lines that the file writes.
+
+The file writes the derived lines of each view that it writes, as the canvas draws them with every card collapsed. A derived line between two elements is the same in each view that shows both, so the file writes it once. A derived line is a relationship with the tag `Derived`, after the relationships of the model. A header comment explains the tag. The Structurizr reader of Vellum does not read a relationship with the tag `Derived`, so an export reads back as the same relationships. A derived line with the label of a relationship between the same two elements is named in a comment and not written.
 
 Structurizr needs a unique name among the people and software systems, among the containers of one software system and among the components of one container. Vellum does not. A later element with a name that is already used gets ` (2)`, then ` (3)`, in the order of the file. A header comment names each element that the export renamed.
 

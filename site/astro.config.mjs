@@ -113,6 +113,7 @@ export default defineConfig({
           label: 'Concepts',
           items: [
             'concepts/model-is-the-source-of-truth',
+            'concepts/views-levels-and-derived-lines',
             'concepts/evidence-and-truth-labels',
             'concepts/sources-and-snapshots',
             'concepts/promises-and-evidence',

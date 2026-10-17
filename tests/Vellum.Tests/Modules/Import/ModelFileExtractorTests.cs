@@ -64,7 +64,10 @@ public class ModelFileExtractorTests
     public void The_Structurizr_DSL_that_Vellum_exports_reads_back_as_the_same_elements_and_relationships()
     {
         var model = DiagramExportTests.FixedModel();
-        var dsl = StructurizrDsl.Write("Orders", model, [], new Dictionary<Guid, IReadOnlyList<Vellum.Modules.Views.LayoutPositionEntity>>());
+        // The landscape gets a derived line from the Customer to the Shop: it reads back as nothing.
+        var landscape = new Vellum.Modules.Views.ViewEntity { Id = Guid.NewGuid(), Name = "Landscape" };
+        var dsl = StructurizrDsl.Write("Orders", model, [landscape], new Dictionary<Guid, IReadOnlyList<Vellum.Modules.Views.LayoutPositionEntity>>());
+        Assert.Contains("\"Derived\"", dsl);
         var result = Repo.Extract(("workspace.dsl", dsl));
         Assert.True(result.IsComplete);
 
