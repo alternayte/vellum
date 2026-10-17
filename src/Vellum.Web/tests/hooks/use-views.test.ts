@@ -133,7 +133,7 @@ describe('useSaveLayout', () => {
 
     expect(putApiProjectsByProjectIdViewsByViewIdLayout).toHaveBeenCalledWith({
       path: { projectId: PROJECT_ID, viewId: VIEW_ID },
-      body: { positions, edges: null },
+      body: { positions, edges: null, lines: null },
     })
 
     vi.useRealTimers()

@@ -84,7 +84,7 @@ When the scan completes, Vellum adds the 27 facts that it found to the model. Th
 2. To see the top level, select **Context** in the breadcrumb. The canvas shows the system `orders`.
 3. Select **Model** in the sidebar, then the **Contracts** tab. **Operations**, **Channels** and **Subscriptions** list the rest of the 27 facts.
 
-![The canvas at the level Context, orders. A frame with the name orders holds the apps Billing (dotnet), inventory-worker (go) and Orders.Api (dotnet) and the store postgres. Each card shows its kind and its technology. Lines labelled publishes OrderCreated go from Orders.Api to Billing and to inventory-worker. Lines labelled reads and writes and depends on go from Orders.Api and from inventory-worker to postgres.](../../../assets/screenshots/canvas-orders-system.png)
+![The canvas at the level Context with the system orders open. A frame with the name orders holds the apps Orders.Api (dotnet), inventory-worker (go) and Billing (dotnet) and the store postgres. Each card shows its kind and its technology. Lines labelled publishes OrderCreated go from Orders.Api to inventory-worker and to Billing. Lines labelled reads and writes and depends on go from Orders.Api and from inventory-worker to postgres. Each line runs in the gaps between the cards, and its label sits on the line.](../../../assets/screenshots/canvas-orders-system.png)
 
 | Kind | Facts |
 |---|---|

@@ -112,6 +112,42 @@ public class DiagramExportTests
         Assert.DoesNotContain("d=\"M264,64 C", svg);
     }
 
+    // The route Tidy saved for "reads and writes": from the right side of the Orders API (0,0) to
+    // the left side of the Orders DB (420.5,260.25), around a corner, its label on the way down.
+    private static System.Text.Json.JsonDocument ApiDbRoute() => System.Text.Json.JsonDocument.Parse("""
+        {"from":{"x":0,"y":0,"width":264,"height":128},"to":{"x":420.5,"y":260.25,"width":264,"height":128},
+         "points":[{"x":264,"y":64},{"x":300,"y":64},{"x":300,"y":324.25},{"x":420.5,"y":324.25}],"label":{"x":300,"y":200}}
+        """);
+
+    [Fact]
+    public void A_saved_route_draws_in_the_svg_while_its_cards_stay_and_enters_the_fingerprint()
+    {
+        var api = new RelationshipId(new Guid(1, 0, 0, new byte[8]));
+        LayoutEdgeEntity[] routed = [new() { RelationshipId = api.Value, RoutePoints = ApiDbRoute() }];
+
+        var plain = ViewDiagram.LayoutFingerprint(ShopView(), ShopLayout());
+        Assert.NotEqual(plain, ViewDiagram.LayoutFingerprint(ShopView(), ShopLayout(), routed));
+
+        // The path runs through the points with rounded corners, and the label sits where the
+        // layout made room for it, not in the middle of a curve.
+        var svg = DiagramSvg.Write(ViewDiagram.Project(ShopView(), ShopLayout(), FixedModel(), routed));
+        Assert.Contains("d=\"M264,64 L290,64 Q300,64 300,74 L300,314.25 Q300,324.25 310,324.25 L420.5,324.25\"", svg);
+        Assert.DoesNotContain("d=\"M264,64 C", svg);
+        Assert.Contains(">reads and writes</text>", svg);
+        var label = XDocument.Parse(svg).Descendants().First(e => e.Name.LocalName == "text" && e.Value == "reads and writes");
+        Assert.Equal("300", (string?)label.Attribute("x"));
+
+        // The Orders DB moved: the route no longer fits, and the line takes its auto sides again.
+        LayoutPositionEntity[] moved = [ShopLayout()[0], new() { ElementId = Db, X = 520, Y = 260.25 }];
+        var fallback = DiagramSvg.Write(ViewDiagram.Project(ShopView(), moved, FixedModel(), routed));
+        Assert.DoesNotContain("Q300,64 300,74", fallback);
+        Assert.Contains("d=\"M264,64 C", fallback);
+
+        // A saved side wins over the route.
+        LayoutEdgeEntity[] sided = [new() { RelationshipId = api.Value, RoutePoints = ApiDbRoute(), SourceSide = "top" }];
+        Assert.DoesNotContain("Q300,64 300,74", DiagramSvg.Write(ViewDiagram.Project(ShopView(), ShopLayout(), FixedModel(), sided)));
+    }
+
     private const string Script = "<script>alert(1)</script>";
     private const string Quotes = "Say \"hi\" & 'bye'";
     private const string Lines = "first\nsecond\r\nthird";

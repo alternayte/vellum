@@ -13,6 +13,7 @@ import {
 import '@/api/client' // ensure client is configured
 import { unwrap } from '@/hooks/use-contracts'
 import { shownInline } from '@/lib/mutation-errors'
+import type { LineRoute } from '@/lib/layout'
 
 export interface View {
   id: string
@@ -30,6 +31,15 @@ export interface ViewDetail extends View {
   positions: { elementId: string; x: number; y: number; width?: number; height?: number }[]
   /** The saved route and sides of each relationship that has one in this view. A null side is auto. */
   edges: { relationshipId: string; routePoints: unknown; sourceSide?: string | null; targetSide?: string | null }[]
+  /** The saved route of each derived line that has one in this view, by its two cards. */
+  lines: LayoutLine[]
+}
+
+/** The route of the derived line from one card to another. A route that does not parse draws nothing. */
+export interface LayoutLine {
+  fromId: string
+  toId: string
+  route: unknown
 }
 
 export function useViews(projectId: string) {
@@ -112,31 +122,61 @@ export function useDeleteView(projectId: string) {
   })
 }
 
+type SavedPosition = ViewDetail['positions'][number]
+type SavedEdge = ViewDetail['edges'][number]
+
+/**
+ * The rows of a layout that a whole layout (Tidy) writes: each relationship keeps its saved
+ * sides, and a relationship without a saved side takes the route of the layout. A side a person
+ * chose wins over the layout, so a relationship with a side keeps no route.
+ */
+export function layoutRows(saved: SavedEdge[], routes: LineRoute[]): { edges: SavedEdge[]; lines: LayoutLine[] } {
+  const byRelationship = new Map(routes.filter((r) => r.relationshipId).map((r) => [r.relationshipId!, r.route]))
+  const edges: SavedEdge[] = saved.filter((e) => e.sourceSide || e.targetSide).map((e) => ({ ...e, routePoints: null }))
+  const sided = new Set(edges.map((e) => e.relationshipId))
+  for (const [relationshipId, route] of byRelationship) {
+    if (!sided.has(relationshipId)) edges.push({ relationshipId, routePoints: route, sourceSide: null, targetSide: null })
+  }
+  const lines = routes.filter((r) => !r.relationshipId).map((r) => ({ fromId: r.fromId, toId: r.toId, route: r.route }))
+  return { edges, lines }
+}
+
+/**
+ * Saves the places of the cards of the open view, after a short pause. With `routes` (from a
+ * whole layout) it saves the routes of the lines too; without, the saved routes stay, and a
+ * route whose cards moved falls back on the canvas.
+ */
 export function useSaveLayout(projectId: string, viewId: string | null) {
   const queryClient = useQueryClient()
   const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  // The routes of a layout not yet written: a save of places in the pause after it keeps them.
+  const pendingRowsRef = useRef<{ edges: SavedEdge[]; lines: LayoutLine[] } | null>(null)
 
   const saveFn = useCallback(
-    async (positions: { elementId: string; x: number; y: number; width?: number; height?: number }[]) => {
+    async (positions: SavedPosition[], rows: { edges: SavedEdge[]; lines: LayoutLine[] } | null) => {
       if (!viewId) return
       await putApiProjectsByProjectIdViewsByViewIdLayout({
         path: { projectId, viewId },
-        body: { positions, edges: null },
+        body: { positions, edges: rows?.edges ?? null, lines: rows?.lines ?? null },
       })
     },
     [projectId, viewId],
   )
 
   const debouncedSave = useCallback(
-    (positions: { elementId: string; x: number; y: number; width?: number; height?: number }[]) => {
+    (positions: SavedPosition[], routes?: LineRoute[]) => {
       if (viewId) {
-        queryClient.setQueryData<ViewDetail>(
-          ['projects', projectId, 'views', viewId],
-          (old) => old ? { ...old, positions } : old,
-        )
+        const key = ['projects', projectId, 'views', viewId]
+        const rows = routes ? layoutRows(queryClient.getQueryData<ViewDetail>(key)?.edges ?? [], routes) : null
+        if (rows) pendingRowsRef.current = rows
+        queryClient.setQueryData<ViewDetail>(key, (old) => (old ? { ...old, positions, ...(rows ?? {}) } : old))
       }
       if (timerRef.current) clearTimeout(timerRef.current)
-      timerRef.current = setTimeout(() => saveFn(positions), 300)
+      timerRef.current = setTimeout(() => {
+        const rows = pendingRowsRef.current
+        pendingRowsRef.current = null
+        void saveFn(positions, rows)
+      }, 300)
     },
     [saveFn, viewId, projectId, queryClient],
   )

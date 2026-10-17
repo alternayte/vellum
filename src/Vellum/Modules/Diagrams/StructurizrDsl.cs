@@ -47,7 +47,8 @@ public static class StructurizrDsl
     public static string Write(
         string projectName, PinnedModel model, IEnumerable<ViewEntity> views,
         IReadOnlyDictionary<Guid, IReadOnlyList<LayoutPositionEntity>> positions,
-        IReadOnlyDictionary<Guid, IReadOnlyList<LayoutEdgeEntity>>? edges = null)
+        IReadOnlyDictionary<Guid, IReadOnlyList<LayoutEdgeEntity>>? edges = null,
+        IReadOnlyDictionary<Guid, IReadOnlyList<LayoutLineEntity>>? lines = null)
     {
         var state = model.State;
         var ids = DiagramText.Identifiers(state.Elements.Values.Select(e => (e.Id.Value, e.Name)), "element", Reserved);
@@ -229,7 +230,7 @@ public static class StructurizrDsl
         header.Append("// From ").Append(ViewDiagram.PinText(model.Pin)).Append(".\n");
         foreach (var view in orderedViews)
             header.Append("// View \"").Append(DiagramText.OneLine(view.Name)).Append("\" with layout ")
-                .Append(ViewDiagram.LayoutFingerprint(view, positions.GetValueOrDefault(view.Id) ?? [], edges?.GetValueOrDefault(view.Id))).Append(".\n");
+                .Append(ViewDiagram.LayoutFingerprint(view, positions.GetValueOrDefault(view.Id) ?? [], edges?.GetValueOrDefault(view.Id), lines?.GetValueOrDefault(view.Id))).Append(".\n");
         header.Append("// One-way export. It drops: ").Append(Dropped).Append(".\n");
         if (derived.Count > 0)
             header.Append("// A relationship tagged Derived is a derived line of a view: the relationships between elements inside its two ends, ")

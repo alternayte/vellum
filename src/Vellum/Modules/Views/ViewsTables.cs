@@ -42,7 +42,40 @@ public static class ViewsTables
                 .HasForeignKey(e => e.ViewId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
+
+        modelBuilder.Entity<LayoutLineEntity>(b =>
+        {
+            b.ToTable("layout_lines", Schema);
+            b.HasKey(l => l.Id);
+            b.HasIndex(l => new { l.ViewId, l.FromId, l.ToId }).IsUnique();
+            b.Property(l => l.Route).HasColumnType("jsonb");
+            b.HasOne<ViewEntity>()
+                .WithMany()
+                .HasForeignKey(l => l.ViewId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
     }
+}
+
+/// <summary>
+/// The route of a derived line in a view, from the auto layout: the line between two cards, in
+/// one direction, for the relationships hidden inside them. The derived line itself is never
+/// stored: it is drawn again from the model each time. Only the path the layout gave it is kept
+/// here, as presentation, like the route of a relationship in <see cref="LayoutEdgeEntity"/>.
+/// </summary>
+public class LayoutLineEntity
+{
+    public Guid Id { get; set; }
+    public Guid ViewId { get; set; }
+
+    /// <summary>The card the line starts at: an element of the view.</summary>
+    public Guid FromId { get; set; }
+
+    /// <summary>The card the line ends at.</summary>
+    public Guid ToId { get; set; }
+
+    /// <summary>A <see cref="LayoutRoute"/> as JSON.</summary>
+    public JsonDocument Route { get; set; } = null!;
 }
 
 public class ViewEntity

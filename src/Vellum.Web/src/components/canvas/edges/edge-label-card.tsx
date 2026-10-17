@@ -6,9 +6,11 @@ interface EdgeLabelCardProps {
   y: number
   /** Below the point instead of centred on it: a trace label holds the space above. */
   below?: boolean
+  /** The stacking order of the line, so the line passes under the label. */
+  zIndex?: number
 }
 
-export function EdgeLabelCard({ label, technology, showTechnology, x, y, below = false }: EdgeLabelCardProps) {
+export function EdgeLabelCard({ label, technology, showTechnology, x, y, below = false, zIndex }: EdgeLabelCardProps) {
   if (!label && !technology) return null
 
   return (
@@ -17,6 +19,7 @@ export function EdgeLabelCard({ label, technology, showTechnology, x, y, below =
       style={{
         transform: below ? `translate(-50%, 0) translate(${x}px, ${y + 6}px)` : `translate(-50%, -50%) translate(${x}px, ${y}px)`,
         pointerEvents: 'all',
+        zIndex,
       }}
     >
       {label && (

@@ -30983,6 +30983,27 @@
           }
         }
       },
+      "SaveLayoutLine": {
+        "required": [
+          "fromId",
+          "toId",
+          "route"
+        ],
+        "type": "object",
+        "properties": {
+          "fromId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "toId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "route": {
+            "$ref": "#/components/schemas/JsonDocument"
+          }
+        }
+      },
       "SaveLayoutPosition": {
         "required": [
           "elementId",
@@ -31051,6 +31072,15 @@
             ],
             "items": {
               "$ref": "#/components/schemas/SaveLayoutEdge"
+            }
+          },
+          "lines": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/SaveLayoutLine"
             }
           }
         }

@@ -51,6 +51,7 @@ import { useDraftStore } from '@/stores/draft-store'
 import { useUndoStore } from '@/stores/undo-store'
 import type { DiffState } from '@/stores/draft-store'
 import { computeLayout, placeNew } from '@/lib/layout'
+import { parseRoute, type LayoutRoute } from '@/lib/edge-utils'
 import { useNeedsYouByEntity, useScanCompletion } from '@/hooks/use-needs-you'
 import { cardSize } from '@/lib/card-size'
 import { visibleCanvasRect } from '@/lib/canvas-insets'
@@ -195,7 +196,7 @@ function ProjectWorkspace() {
   const removeRelationship = guard(useRemoveRelationship(projectId, activeDraftStreamId))
   const factLabel = guard(useFactLabel(projectId, activeDraftStreamId))
   const { saveLayout: writeLayout } = useSaveLayout(projectId, activeViewId)
-  const saveLayout = useCallback<typeof writeLayout>((positions) => (readOnly ? refuseWrite() : writeLayout(positions)), [readOnly, writeLayout])
+  const saveLayout = useCallback<typeof writeLayout>((positions, routes) => (readOnly ? refuseWrite() : writeLayout(positions, routes)), [readOnly, writeLayout])
   const saveEdgeSides = guard(useSaveEdgeSides(projectId, activeViewId))
   const handleEdgeSidesChange = useCallback(
     (relationshipId: string, sides: { sourceSide: string | null; targetSide: string | null }) => saveEdgeSides.mutate({ relationshipId, ...sides }),
@@ -279,8 +280,9 @@ function ProjectWorkspace() {
       ...cardSize(e.kind),
     }))
     const free = visibleCanvasRect()
-    const newPositions = await computeLayout(sized, relationships, free ? { width: free.width, height: free.height } : undefined, useCanvasStore.getState().expandedNodeIds)
-    saveLayout(newPositions)
+    // The layout saves the route of each line with the places, so a line passes the cards between its ends.
+    const { positions, routes } = await computeLayout(sized, relationships, free ? { width: free.width, height: free.height } : undefined, useCanvasStore.getState().expandedNodeIds)
+    saveLayout(positions, routes)
     // The layout moves every node, so show the result: fit once the nodes have their new places.
     requestAnimationFrame(() => requestAnimationFrame(() => fitViewRef.current?.()))
   }
@@ -321,8 +323,10 @@ function ProjectWorkspace() {
   }, [needsYou, reviewOwners])
 
   // An imported element without a place on the open view gets one from the auto layout, so the
-  // canvas shows a diagram and not a pile. Nothing a person placed moves. The first import of a
-  // view opens its top level (the Context view) and fits it.
+  // canvas shows a diagram and not a pile. Nothing a person placed moves: a new card lands in free
+  // space beside the cards and the routed lines of its level, and an open parent grows to hold it.
+  // The first import of a view lays out the whole view with its routes, opens its top level (the
+  // Context view) and fits it.
   const placing = useRef<string | null>(null)
   useEffect(() => {
     if (readOnly || activeDraftStreamId || isReviewMode || !activeView || !elements || !relationships) return
@@ -337,10 +341,17 @@ function ProjectWorkspace() {
     const sized = elements
       .filter((e) => placed.has(e.id) || imported.some((i) => i.id === e.id))
       .map((e) => ({ id: e.id, parentId: e.parentId ?? null, ...cardSize(e.kind) }))
-    void placeNew(sized, relationships, activeView.positions, free ? { width: free.width, height: free.height } : undefined, useCanvasStore.getState().expandedNodeIds)
-      .then((fresh) => {
+    const fromOf = new Map(relationships.map((r) => [r.id, r.fromId]))
+    const savedRoutes = [
+      ...activeView.edges.map((e) => ({ fromId: fromOf.get(e.relationshipId), route: parseRoute(e.routePoints) })),
+      ...(activeView.lines ?? []).map((l) => ({ fromId: l.fromId, route: parseRoute(l.route) })),
+    ].filter((r): r is { fromId: string; route: LayoutRoute } => !!r.fromId && r.route !== null)
+    void placeNew(sized, relationships, activeView.positions, free ? { width: free.width, height: free.height } : undefined, useCanvasStore.getState().expandedNodeIds, savedRoutes)
+      .then(({ positions: fresh, routes }) => {
         if (fresh.length === 0) return
-        writeLayout([...activeView.positions, ...fresh])
+        // A parent that grows comes back with its new size, in place of its saved row.
+        const changed = new Set(fresh.map((p) => p.elementId))
+        writeLayout([...activeView.positions.filter((p) => !changed.has(p.elementId)), ...fresh], routes ?? undefined)
         if (firstImport) {
           // A repository is often one system: its top level would be a single card, so the
           // first import opens that system's inside, where its apps and stores are.
@@ -896,6 +907,7 @@ function ProjectWorkspace() {
               onSearchClose={() => setSearchOpen(false)}
               commentMarkers={commentMarkers}
               edgeSides={activeView?.edges}
+              lineRoutes={activeView?.lines}
               onEdgeSidesChange={activeView ? handleEdgeSidesChange : undefined}
             />
           )}
