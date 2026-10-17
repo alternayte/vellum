@@ -41,7 +41,7 @@ import { Button } from '@/components/ui/button'
 import type { C4ElementData } from './nodes/c4-element-node'
 import type { C4ContainerData } from './nodes/c4-container-node'
 import type { C4BoundaryData } from './nodes/c4-boundary-node'
-import { canvasOcclusion } from '@/lib/canvas-insets'
+import { canvasOcclusion, visibleCanvasRect } from '@/lib/canvas-insets'
 import type { DiffState } from '@/stores/draft-store'
 import type { Provenance, StaleMark } from '@/lib/fact-status'
 import { kindColor } from '@/lib/kind-colors'
@@ -54,6 +54,13 @@ import { ImpactStepMarkers } from './edges/impact-step-edge'
 import { CERTAINTY, strongest } from '@/lib/impact'
 import type { ImpactCertainty } from '@/lib/import-api'
 import { cardSide, effectiveSides, type CardSide, type Rect } from '@/lib/edge-utils'
+import { useGhostStore } from '@/stores/ghost-store'
+import {
+  defaultCardPosition, defaultChildPosition, defaultContainerSize, ghostNodeId, ghostParts, isGhostNodeId, itemIdOf,
+  ghostItemData, planGhosts, placeGhosts, type GhostPlaces,
+} from '@/lib/ghost-layer'
+import type { GhostEdgeData } from './edges/ghost-edge'
+import { GhostBar } from './ghost-bar'
 
 interface ElementModel {
   id: string
@@ -188,7 +195,7 @@ function fitPadding(pane: HTMLElement | null, margin: number): FitViewOptions['p
   return { top: `${i.top + margin}px`, right: `${i.right + margin}px`, bottom: `${i.bottom + margin}px`, left: `${i.left + margin}px` }
 }
 // Element kinds drawn as cards; the frame of the level and message pills are not.
-const ELEMENT_NODE_TYPES = new Set(['c4-element', 'c4-label-chip', 'c4-container'])
+const ELEMENT_NODE_TYPES = new Set(['c4-element', 'c4-label-chip', 'c4-container', 'ghost-element', 'ghost-container'])
 /** Space between the frame of a level and the cards inside it; the top holds the frame's title. */
 const FRAME_INSET = { x: 40, top: 64, bottom: 40 }
 export function CanvasView(props: CanvasViewProps) {
@@ -281,7 +288,7 @@ function CanvasViewInner({
     rootId: string | null
   } | null>(null)
   const [searchMatchIds, setSearchMatchIds] = useState<string[]>([])
-  const { selectElement, selectRelationship, selectMessage, focusElementId, clearFocusElement } = useShellStore()
+  const { selectElement, selectRelationship, selectMessage, selectGhost, focusElementId, clearFocusElement } = useShellStore()
 
   useEffect(() => {
     // The click on Fit can close the detail sheet. The fit waits a frame, so it measures the
@@ -319,6 +326,80 @@ function CanvasViewInner({
     }
     return elements.filter((e) => e.parentId === currentRootId)
   }, [elements, currentRootId])
+
+  // The ghost layer: the pending items of an open proposal, drawn over this level.
+  const ghostProposal = useGhostStore((s) => s.proposal)
+  const ghostRefusal = useGhostStore((s) => s.refusal)
+  const ghosts = useMemo(() => (ghostProposal ? ghostParts(ghostProposal) : null), [ghostProposal])
+  const ghostPlan = useMemo(
+    () => (ghosts ? planGhosts(ghosts, elements, currentRootId, expandedNodeIds) : null),
+    [ghosts, elements, currentRootId, expandedNodeIds],
+  )
+
+  // A card of the level that an accept of this proposal added opens, once per layer, when
+  // pending ghosts of the same proposal belong inside it: they are drawn where the view nests.
+  const openedForGhosts = useRef<{ key: string; ids: Set<string> }>({ key: '', ids: new Set() })
+  useEffect(() => {
+    if (!ghostProposal || !ghosts) return
+    const key = `${ghostProposal.id}|${currentRootId ?? ''}`
+    if (openedForGhosts.current.key !== key) openedForGhosts.current = { key, ids: new Set() }
+    const accepted = new Set(ghostProposal.items.filter((i) => i.status === 'accepted' && i.entityKind === 'element').map((i) => i.id))
+    const onLevel = new Set(visibleElements.map((e) => e.id))
+    for (const g of ghosts.elements) {
+      const parent = g.parentId
+      if (!parent || !accepted.has(parent) || !onLevel.has(parent) || expandedNodeIds.has(parent) || openedForGhosts.current.ids.has(parent)) continue
+      openedForGhosts.current.ids.add(parent)
+      toggleExpand(parent)
+    }
+  }, [ghostProposal, ghosts, currentRootId, visibleElements, expandedNodeIds, toggleExpand])
+
+  // The places of the ghosts come from the auto layout, which runs off the render. A ghost keeps
+  // its place while the same proposal is open on the same level, so a decision moves nothing
+  // that stays.
+  const [ghostPlaces, setGhostPlaces] = useState<(GhostPlaces & { key: string }) | null>(null)
+  const ghostLevelKey = ghostProposal ? `${ghostProposal.id}|${currentRootId ?? ''}` : ''
+  const ghostLayoutKey = useMemo(() => {
+    if (!ghostPlan || !ghosts) return ''
+    return JSON.stringify([
+      ghostLevelKey,
+      [...ghostPlan.hosts.entries()],
+      ghosts.relationships.map((r) => r.id),
+      elements.map((e) => [e.id, e.parentId, e.kind]),
+      relationships.map((r) => [r.fromId, r.toId]),
+      positions,
+      [...expandedNodeIds],
+    ])
+  }, [ghostPlan, ghosts, ghostLevelKey, elements, relationships, positions, expandedNodeIds])
+  useEffect(() => {
+    // Without a layer the old places stay unused: the ghosts are drawn only for the key they were placed for.
+    if (!ghostLayoutKey || !ghostPlan || !ghosts) return
+    let current = true
+    const free = visibleCanvasRect()
+    placeGhosts(ghostPlan, ghosts, { elements, relationships, positions }, currentRootId, expandedNodeIds, free ? { width: free.width, height: free.height } : undefined)
+      .then((placed) => {
+        if (!current) return
+        setGhostPlaces((previous) => {
+          if (previous?.key !== ghostLevelKey) return { ...placed, key: ghostLevelKey }
+          // What was placed before and sits in the same node stays where it was.
+          const kept = new Map(placed.ghosts)
+          for (const [id, place] of previous.ghosts) if (kept.has(id)) kept.set(id, place)
+          const hostSizes = new Map(placed.hostSizes)
+          for (const [id, size] of previous.hostSizes) {
+            const next = hostSizes.get(id)
+            if (next) hostSizes.set(id, { width: Math.max(next.width, size.width), height: Math.max(next.height, size.height) })
+          }
+          return { ghosts: kept, hostSizes, unsaved: placed.unsaved, key: ghostLevelKey }
+        })
+      })
+      .catch(() => { if (current) setGhostPlaces(null) })
+    return () => { current = false }
+  // The key holds every input of the layout.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ghostLayoutKey])
+  const ghostHostSizes = ghostPlaces?.key === ghostLevelKey ? ghostPlaces.hostSizes : null
+  useEffect(() => {
+    useGhostStore.getState().setPlaces(ghostPlaces?.ghosts ?? new Map(), ghostPlaces?.hostSizes ?? new Map(), ghostPlaces?.unsaved ?? new Map())
+  }, [ghostPlaces])
 
   const visibleIds = useMemo(() => {
     const ids = new Set(visibleElements.map((e) => e.id))
@@ -358,18 +439,17 @@ function CanvasViewInner({
 
     for (const [index, el] of visibleElements.entries()) {
       const isExpanded = expandedNodeIds.has(el.id)
-      const col = index % 3
-      const row = Math.floor(index / 3)
       const savedPos = positionMap.get(el.id)
-      const position = savedPos ? { x: savedPos.x, y: savedPos.y } : { x: col * 340, y: row * 200 }
+      const position = savedPos ? { x: savedPos.x, y: savedPos.y } : defaultCardPosition(index)
       const entityDiffState = diffStateMap?.get(el.id) ?? (isReviewMode ? 'unchanged' : undefined)
 
       if (isExpanded) {
         const children = elements.filter((child) => child.parentId === el.id)
         // Without a saved size the boundary is as large as the default grid of its children,
-        // so a child is not pushed onto its neighbour by the boundary's edge.
-        const columns = Math.min(3, Math.max(1, children.length))
-        const rows = Math.max(1, Math.ceil(children.length / 3))
+        // so a child is not pushed onto its neighbour by the boundary's edge. Around ghosts it
+        // takes the room they need.
+        const grid = defaultContainerSize(children.length)
+        const roomForGhosts = ghostHostSizes?.get(el.id)
         // Render as container boundary
         result.push({
           id: el.id,
@@ -384,15 +464,15 @@ function CanvasViewInner({
             onAddChild: addInside(el),
           } satisfies C4ContainerData,
           style: {
-            width: savedPos?.width ?? 40 + columns * 300 + 20,
-            height: savedPos?.height ?? 60 + rows * 180 + 20,
+            width: Math.max(savedPos?.width ?? grid.width, roomForGhosts?.width ?? 0),
+            height: Math.max(savedPos?.height ?? grid.height, roomForGhosts?.height ?? 0),
           },
         })
 
         // Add children inside the container
         children.forEach((child, ci) => {
           const savedChildPos = positionMap.get(child.id)
-          const childPos = savedChildPos ? { x: savedChildPos.x, y: savedChildPos.y } : { x: 40 + (ci % 3) * 300, y: 60 + Math.floor(ci / 3) * 180 }
+          const childPos = savedChildPos ? { x: savedChildPos.x, y: savedChildPos.y } : defaultChildPosition(ci)
           const childDiffState = diffStateMap?.get(child.id) ?? (isReviewMode ? 'unchanged' : undefined)
           result.push({
             id: child.id,
@@ -451,7 +531,7 @@ function CanvasViewInner({
     }
 
     return result
-  }, [visibleElements, elements, positionMap, tier, diffStateMap, isReviewMode, expandedNodeIds, onRenameElement, onNodeResize, onAddChild])
+  }, [visibleElements, elements, positionMap, tier, diffStateMap, isReviewMode, expandedNodeIds, ghostHostSizes, onRenameElement, onNodeResize, onAddChild])
 
   const edges: Edge[] = useMemo(() => {
     // Count parallel edges between each pair of nodes (ignoring direction)
@@ -494,6 +574,83 @@ function CanvasViewInner({
       }
     })
   }, [visibleRelationships, diffStateMap, isReviewMode, sidesMap])
+
+  // The ghosts of this level: dashed cards and lines. A ghost inside a node follows it, so
+  // each node comes after the node it sits in.
+  const ghostData = useMemo(
+    () => (ghostProposal ? ghostItemData(ghostProposal, ghostRefusal?.reasons ?? null, !readOnly) : null),
+    [ghostProposal, ghostRefusal, readOnly],
+  )
+
+  const ghostNodes: Node[] = useMemo(() => {
+    if (!ghostPlan || !ghostData || ghostPlaces?.key !== ghostLevelKey) return []
+    const depth = (id: string): number => {
+      let d = 0
+      for (let host = ghostPlan.hosts.get(id); host && ghostPlan.hosts.has(host); host = ghostPlan.hosts.get(host)) d++
+      return d
+    }
+    return [...ghostPlan.hosts.keys()]
+      .filter((id) => ghostPlaces.ghosts.has(id))
+      .sort((a, b) => depth(a) - depth(b))
+      .map((id) => {
+        const place = ghostPlaces.ghosts.get(id)!
+        const host = ghostPlan.hosts.get(id) ?? null
+        const container = ghostPlan.ghostHosts.has(id)
+        return {
+          id: ghostNodeId(id),
+          type: container ? 'ghost-container' : 'ghost-element',
+          position: { x: place.x, y: place.y },
+          ...(host ? { parentId: ghostPlan.hosts.has(host) ? ghostNodeId(host) : host } : {}),
+          ...(container ? { style: { width: place.width, height: place.height } } : {}),
+          draggable: false,
+          connectable: false,
+          deletable: false,
+          data: ghostData(id),
+        }
+      })
+  }, [ghostPlan, ghostData, ghostPlaces, ghostLevelKey])
+
+  const ghostEdges: Edge[] = useMemo(() => {
+    if (!ghostPlan || !ghostData || !ghosts || ghostNodes.length === 0) return []
+    const shown = new Set(ghostNodes.map((n) => n.id))
+    return ghostPlan.edges
+      .filter((e) => (!isGhostNodeId(e.source) || shown.has(e.source)) && (!isGhostNodeId(e.target) || shown.has(e.target)))
+      .map((e) => {
+        const rel = ghosts.relationships.find((r) => r.id === e.id)!
+        return {
+          id: ghostNodeId(e.id),
+          source: e.source,
+          target: e.target,
+          type: 'ghost-edge',
+          markerEnd: { type: MarkerType.ArrowClosed, color: 'var(--muted-foreground)' },
+          deletable: false,
+          reconnectable: false,
+          zIndex: 5,
+          data: { ...ghostData(e.id), label: rel.label, behavioural: rel.relationshipKind === 'behavioural' } satisfies GhostEdgeData,
+        }
+      })
+  }, [ghostPlan, ghostData, ghosts, ghostNodes])
+
+  // A newly opened layer shows whole: the view fits the cards and the ghosts once the ghosts are placed.
+  const fittedGhostKey = useRef('')
+  useEffect(() => {
+    if (!ghostLevelKey || ghostNodes.length === 0 || fittedGhostKey.current === ghostLevelKey) return
+    fittedGhostKey.current = ghostLevelKey
+    let inner = 0
+    // The bar of the layer lies over the top of the canvas, so the fit keeps clear of it too.
+    const fitClearOfBar = () => {
+      const pane = paneRef.current
+      const bar = pane?.querySelector('.vellum-ghost-bar')
+      if (!pane || !bar) return fitView(fitAll())
+      const rect = pane.getBoundingClientRect()
+      const i = canvasOcclusion(rect)
+      const margin = isSmallScreen() ? FIT_MARGIN_SMALL : FIT_MARGIN
+      const top = Math.max(i.top, bar.getBoundingClientRect().bottom - rect.top) + margin / 2
+      return fitView({ ...fitAll(), padding: { top: `${top}px`, right: `${i.right + margin}px`, bottom: `${i.bottom + margin}px`, left: `${i.left + margin}px` } })
+    }
+    const outer = requestAnimationFrame(() => { inner = requestAnimationFrame(() => void fitClearOfBar()) })
+    return () => { cancelAnimationFrame(outer); cancelAnimationFrame(inner) }
+  }, [ghostLevelKey, ghostNodes.length, fitView, fitAll])
 
   const messageNodes: Node[] = useMemo(() => {
     if (activeLens !== 'messages' || !messages) return []
@@ -697,7 +854,7 @@ function CanvasViewInner({
 
   // Derive the combined node/edge arrays from domain data (same as before)
   const derivedNodes = useMemo(() => {
-    const all = [...nodes, ...messageNodes]
+    const all = [...nodes, ...ghostNodes, ...messageNodes]
     // A playback shows one event at a time, so it takes the rings while it runs.
     if (traceOverlay) {
       return all.map((n) =>
@@ -716,20 +873,21 @@ function CanvasViewInner({
         style: { ...n.style, '--vellum-trace': mark ? CERTAINTY[mark].color : 'var(--primary)', '--vellum-ring-style': mark ? CERTAINTY[mark].line : 'solid' },
       }
     })
-  }, [nodes, messageNodes, traceOverlay, highlight])
+  }, [nodes, ghostNodes, messageNodes, traceOverlay, highlight])
   const derivedEdges = useMemo(() => {
     const traceEdge = traceOverlay?.edge
-    if (!traceEdge) return [...edges, ...messageEdges, ...(highlight?.stepEdges ?? [])]
+    if (!traceEdge) return [...edges, ...ghostEdges, ...messageEdges, ...(highlight?.stepEdges ?? [])]
     // A relationship between the two parts the trace event joins moves its label below the
     // path, so the label of the trace above the path does not cover it.
     const traced = (e: Edge) =>
       (e.source === traceEdge.source && e.target === traceEdge.target) || (e.source === traceEdge.target && e.target === traceEdge.source)
     return [
       ...edges.map((e) => (traced(e) ? { ...e, data: { ...e.data, labelBelow: true } } : e)),
+      ...ghostEdges,
       ...messageEdges,
       traceEdge,
     ]
-  }, [edges, messageEdges, traceOverlay, highlight])
+  }, [edges, ghostEdges, messageEdges, traceOverlay, highlight])
 
   // Local state that React Flow controls — synced from derived data,
   // but RF can update positions during drag without waiting for server round-trip
@@ -899,25 +1057,27 @@ function CanvasViewInner({
 
   const handleNodeClick: NodeMouseHandler = useCallback(
     (_event, node) => {
-      if (node.id.startsWith('msg-')) {
+      if (isGhostNodeId(node.id)) {
+        selectGhost(itemIdOf(node.id))
+      } else if (node.id.startsWith('msg-')) {
         selectMessage(node.id.replace('msg-', ''))
       } else {
         selectElement(node.id)
       }
     },
-    [selectElement, selectMessage],
+    [selectElement, selectMessage, selectGhost],
   )
 
   const handleNodeDoubleClick: NodeMouseHandler = useCallback(
     (_event, node) => {
-      if (!node.id.startsWith('msg-')) onNodeDoubleClick?.(node.id)
+      if (!node.id.startsWith('msg-') && !isGhostNodeId(node.id)) onNodeDoubleClick?.(node.id)
     },
     [onNodeDoubleClick],
   )
 
   const handleEdgeClick = useCallback(
-    (_event: React.MouseEvent, edge: Edge) => selectRelationship(edge.id),
-    [selectRelationship],
+    (_event: React.MouseEvent, edge: Edge) => (isGhostNodeId(edge.id) ? selectGhost(itemIdOf(edge.id)) : selectRelationship(edge.id)),
+    [selectRelationship, selectGhost],
   )
 
   const handleConnect: OnConnect = useCallback(
@@ -998,17 +1158,18 @@ function CanvasViewInner({
     selectElement(null)
     selectRelationship(null)
     selectMessage(null)
-  }, [selectElement, selectRelationship, selectMessage])
+    selectGhost(null)
+  }, [selectElement, selectRelationship, selectMessage, selectGhost])
 
   const handleSelectionChange = useCallback(({ nodes }: { nodes: Node[] }) => {
-    const ids = nodes.map((n) => n.id).filter((id) => !id.startsWith('msg-'))
+    const ids = nodes.map((n) => n.id).filter((id) => !id.startsWith('msg-') && !isGhostNodeId(id))
     setSelectedNodeIds(ids)
     onSelectionChange?.(ids)
   }, [onSelectionChange])
 
   const handleNodesDelete = useCallback(
     (deleted: Node[]) => {
-      const ids = deleted.map((n) => n.id).filter((id) => !id.startsWith('msg-'))
+      const ids = deleted.map((n) => n.id).filter((id) => !id.startsWith('msg-') && !isGhostNodeId(id))
       if (ids.length > 0) onBulkDelete?.(ids)
     },
     [onBulkDelete],
@@ -1017,7 +1178,7 @@ function CanvasViewInner({
   const handleEdgesDelete = useCallback(
     (deleted: Edge[]) => {
       for (const edge of deleted) {
-        onDeleteRelationship?.(edge.id)
+        if (!isGhostNodeId(edge.id)) onDeleteRelationship?.(edge.id)
       }
     },
     [onDeleteRelationship],
@@ -1026,6 +1187,8 @@ function CanvasViewInner({
   const handleNodeContextMenu = useCallback(
     (event: React.MouseEvent, node: Node) => {
       event.preventDefault()
+      // A ghost has its decisions on its card and in the detail panel; it has no menu.
+      if (isGhostNodeId(node.id)) return
       setContextMenu({ type: 'node', nodeId: node.id, position: { x: event.clientX, y: event.clientY } })
     },
     [],
@@ -1038,6 +1201,7 @@ function CanvasViewInner({
   const handleEdgeContextMenu = useCallback(
     (event: React.MouseEvent, edge: Edge) => {
       event.preventDefault()
+      if (isGhostNodeId(edge.id)) return
       setContextMenu({ type: 'edge', edgeId: edge.id, position: { x: event.clientX, y: event.clientY } })
     },
     [],
@@ -1051,7 +1215,8 @@ function CanvasViewInner({
     [],
   )
 
-  if (visibleElements.length === 0) {
+  // With a ghost layer open the canvas shows, even on a level that has no element yet.
+  if (visibleElements.length === 0 && !ghostProposal) {
     const isTopLevel = currentRootId === null
     return (
       <div className="flex h-full items-center justify-center">
@@ -1140,6 +1305,15 @@ function CanvasViewInner({
         <TraceEdgeMarkers />
         <ImpactStepMarkers />
         {commentMarkers && <CommentMarkers markers={commentMarkers} />}
+        {ghostProposal && ghostPlan && ghosts && (
+          <GhostBar
+            proposal={ghostProposal}
+            offCanvas={[...ghostPlan.elsewhere, ...ghosts.others.map((item) => item.id)]}
+            shownOnLevel={ghostNodes.length}
+            currentRootId={currentRootId}
+            canDecide={!readOnly}
+          />
+        )}
         {canvasHighlight && highlight && (
           <Panel position="top-center" className="max-w-[calc(100%-1.5rem)] rounded-lg border border-border bg-card/95 px-3 py-1.5 text-xs shadow-md backdrop-blur">
             <div className="flex items-center gap-3">

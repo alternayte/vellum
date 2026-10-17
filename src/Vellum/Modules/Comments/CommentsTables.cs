@@ -50,6 +50,7 @@ public static class CommentsTables
             b.HasIndex(i => new { i.UserId, i.CreatedAt });
             // One entry per person and comment: a mention that is also a reply is one entry.
             b.HasIndex(i => new { i.UserId, i.CommentId }).IsUnique();
+            b.HasIndex(i => new { i.UserId, i.ProposalId }).IsUnique();
             b.HasOne<CommentEntity>()
                 .WithMany()
                 .HasForeignKey(i => i.CommentId)
@@ -133,8 +134,11 @@ public class InboxItemEntity
     public string UserId { get; set; } = null!;
     public Guid WorkspaceId { get; set; }
     public Guid ProjectId { get; set; }
-    public Guid ThreadId { get; set; }
-    public Guid CommentId { get; set; }
+    /// <summary>The thread and the comment of a <c>mention</c> or a <c>reply</c>. Null for a <c>proposal</c>.</summary>
+    public Guid? ThreadId { get; set; }
+    public Guid? CommentId { get; set; }
+    /// <summary>The proposal of a <c>proposal</c> entry. Null for a comment.</summary>
+    public Guid? ProposalId { get; set; }
     public InboxReason Reason { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset? ReadAt { get; set; }
@@ -187,6 +191,8 @@ public enum InboxReason
 {
     Mention,
     Reply,
+    /// <summary>An agent submitted a proposal. The entry names the proposal, not a thread.</summary>
+    Proposal,
 }
 
 public enum DeliveryStatus

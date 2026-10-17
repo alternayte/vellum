@@ -162,6 +162,8 @@ export interface ArchitectureProposal {
   /** Set when the proposal was read from a document of a Source. */
   document?: DocumentSource | null
   id: string
+  /** The draft or variant (its stream) the proposal adds to. Null for the main model. */
+  branchId?: string | null
   origin: ProposalOrigin
   status: 'draft' | 'decided'
   request: string

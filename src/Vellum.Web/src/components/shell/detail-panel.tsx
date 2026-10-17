@@ -2,6 +2,8 @@ import { createElement, useId, useState } from 'react'
 import { useShellStore } from '@/stores/shell-store'
 import { useDraftStore } from '@/stores/draft-store'
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet'
+import { GhostDetail } from '@/components/canvas/ghost-detail'
+import { useGhostStore } from '@/stores/ghost-store'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Badge } from '@/components/ui/badge'
@@ -84,6 +86,8 @@ interface DetailPanelProps {
   edgeSides?: { relationshipId: string; sourceSide?: string | null; targetSide?: string | null }[]
   /** Saves the sides of a relationship in the open diagram. Null is auto. */
   onUpdateEdgeSides?: (relationshipId: string, sides: { sourceSide: string | null; targetSide: string | null }) => void
+  /** Names of the things of the model by ID, for the detail of a ghost. */
+  labels?: Record<string, string>
 }
 
 export function DetailPanel({
@@ -100,9 +104,11 @@ export function DetailPanel({
   readOnly = false,
   edgeSides,
   onUpdateEdgeSides,
+  labels = {},
 }: DetailPanelProps) {
-  const { detailPanelOpen, selectedElementId, selectedRelationshipId, selectedMessageId, selectElement, selectRelationship, selectMessage } =
+  const { detailPanelOpen, selectedElementId, selectedRelationshipId, selectedMessageId, selectedGhostItemId, selectElement, selectRelationship, selectMessage, selectGhost } =
     useShellStore()
+  const ghostProposal = useGhostStore((s) => s.proposal)
   const { isReviewMode, reviewData } = useDraftStore()
   // Each control has its label tied to it by ID, so a screen reader names the field.
   const fieldId = useId()
@@ -130,6 +136,7 @@ export function DetailPanel({
     selectElement(null)
     selectRelationship(null)
     selectMessage(null)
+    selectGhost(null)
   }
 
   const producer = selectedMessage ? elements.find((e) => e.id === selectedMessage.producerId) : null
@@ -154,7 +161,10 @@ export function DetailPanel({
         }}
         className="w-80 overflow-y-auto border-l border-border bg-card"
       >
-        {readOnly && <p role="note" className="mx-4 mt-10 rounded-md border border-dashed border-border px-2.5 py-1.5 text-[11px] text-muted-foreground">Read-only. The fields show the values and take no change.</p>}
+        {selectedGhostItemId && ghostProposal && (
+          <GhostDetail key={selectedGhostItemId} proposal={ghostProposal} itemId={selectedGhostItemId} labels={labels} canDecide={!readOnly} />
+        )}
+        {readOnly && !selectedGhostItemId && <p role="note" className="mx-4 mt-10 rounded-md border border-dashed border-border px-2.5 py-1.5 text-[11px] text-muted-foreground">Read-only. The fields show the values and take no change.</p>}
         <fieldset disabled={readOnly} className="m-0 min-w-0 border-0 p-0">
         {selectedMessage && (
           <div key={selectedMessage.id}>

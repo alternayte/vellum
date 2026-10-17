@@ -24161,15 +24161,28 @@
             "format": "uuid"
           },
           "threadId": {
-            "type": "string",
+            "type": [
+              "null",
+              "string"
+            ],
             "format": "uuid"
           },
           "commentId": {
-            "type": "string",
+            "type": [
+              "null",
+              "string"
+            ],
             "format": "uuid"
           },
           "target": {
-            "$ref": "#/components/schemas/ThreadTargetDto"
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ThreadTargetDto"
+              }
+            ]
           },
           "author": {
             "type": "string"
@@ -24196,6 +24209,50 @@
               "string"
             ],
             "format": "date-time"
+          },
+          "proposal": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/InboxProposalDto"
+              }
+            ]
+          }
+        }
+      },
+      "InboxProposalDto": {
+        "required": [
+          "id",
+          "kind",
+          "name",
+          "items",
+          "pending"
+        ],
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "items": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "null",
+              "integer",
+              "string"
+            ],
+            "format": "int32"
+          },
+          "pending": {
+            "type": "boolean"
           }
         }
       },

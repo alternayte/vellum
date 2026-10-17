@@ -9,7 +9,7 @@ import { shownInline } from '@/lib/mutation-errors'
 import { sourcesApi, type SourceSummary } from '@/lib/import-api'
 import { designApi, isUnavailable, type ArchitectureProposal, type FlowProposal, type Unavailable } from '@/lib/design-api'
 import { UnavailableNote } from '@/components/assistant/unavailable-note'
-import { ArchitectureProposalDialog } from '@/components/assistant/architecture-proposal-dialog'
+import { useGhostStore } from '@/stores/ghost-store'
 import { FlowProposalDialog } from '@/components/assistant/flow-proposal-dialog'
 
 /** The largest file an upload takes (the server's bound). */
@@ -96,7 +96,6 @@ export function DocumentProposalDialog({ projectId, source, labels, onClose }: {
   const [focus, setFocus] = useState('')
   const [mode, setMode] = useState<'additions' | 'flow'>('additions')
   const [unavailable, setUnavailable] = useState<Unavailable | null>(null)
-  const [proposal, setProposal] = useState<ArchitectureProposal | null>(null)
   const [flow, setFlow] = useState<FlowProposal | null>(null)
   const documents = useQuery({ queryKey: ['projects', projectId, 'sources', source.id, 'documents'], queryFn: () => sourcesApi.documents(projectId, source.id) })
   const prose = (documents.data ?? []).filter((d) => !d.isAdr)
@@ -109,12 +108,15 @@ export function DocumentProposalDialog({ projectId, source, labels, onClose }: {
       if (isUnavailable(answer)) { setUnavailable(answer); return }
       setUnavailable(null)
       if ('flow' in result) setFlow(result.flow as FlowProposal)
-      else setProposal(result.additions as ArchitectureProposal)
+      else {
+        // Additions open as the ghost layer on the canvas, where a person decides.
+        useGhostStore.getState().open(projectId, result.additions as ArchitectureProposal)
+        onClose()
+      }
     },
     onError: shownInline,
   })
 
-  if (proposal) return <ArchitectureProposalDialog projectId={projectId} proposal={proposal} labels={labels} onClose={onClose} />
   if (flow) return <FlowProposalDialog projectId={projectId} proposal={flow} labels={labels} onClose={onClose} onAccepted={onClose} />
 
   const notSetUp = unavailable && (unavailable.reason.code === 'not_configured' || unavailable.reason.code === 'disabled')
