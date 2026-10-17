@@ -16,7 +16,8 @@
     "ignoreDeprecations": "6.0",
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@examples/*": ["../../examples/*"]
     }
   },
   "include": ["src", "tests"]

@@ -15,8 +15,15 @@ namespace Vellum.Modules.Settings;
 /// setup token that the operator set). It is null when the instance needs no setup.
 /// </summary>
 public sealed record SetupStatusResponse(bool NeedsSetup, string Profile, bool RequiresSetupToken, string? SetupTokenHint);
+/// <summary>
+/// Setup needs the email address, the password and, where the instance asks for one, the setup
+/// token. Without <paramref name="DisplayName"/> the name is the part of the email address before
+/// the "@"; without <paramref name="WorkspaceName"/> the workspace is called "My workspace".
+/// </summary>
 public sealed record SetupRequest(string? Email, string? Password, string? DisplayName, string? WorkspaceName, string? SetupToken);
-public sealed record SetupResponse(string UserId, Guid WorkspaceId);
+
+/// <summary><paramref name="ProjectId"/> is the empty project that setup made in the new workspace. The app opens it.</summary>
+public sealed record SetupResponse(string UserId, Guid WorkspaceId, Guid ProjectId);
 
 /// <summary>An instance needs setup while it has no user.</summary>
 public static class SetupState
@@ -78,14 +85,14 @@ public static class RunSetup
             errors.Add(new("email", "Must be an email address of at most 256 characters."));
         if (string.IsNullOrEmpty(request.Password) || request.Password.Length > 256)
             errors.Add(new("password", "Must be 1 to 256 characters."));
-        if (string.IsNullOrWhiteSpace(request.DisplayName) || request.DisplayName.Length > 100)
-            errors.Add(new("displayName", "Must be 1 to 100 characters."));
-        if (string.IsNullOrWhiteSpace(request.WorkspaceName) || request.WorkspaceName.Length > 100)
-            errors.Add(new("workspaceName", "Must be 1 to 100 characters."));
+        if (request.DisplayName is { Length: > 100 })
+            errors.Add(new("displayName", "Must be at most 100 characters."));
+        if (request.WorkspaceName is { Length: > 100 })
+            errors.Add(new("workspaceName", "Must be at most 100 characters."));
         if (errors.Count > 0)
             return Results.BadRequest(new ErrorResponse("validation_error", "Validation failed", Errors: errors));
 
-        // The user, the workspace and the admin grant commit together or not at all. The
+        // The user, the workspace, its project and the admin grant commit together or not at all. The
         // advisory lock makes two callers take turns; the second one then finds a user.
         await using var transaction = await db.Database.BeginTransactionAsync(ct);
         await db.Database.ExecuteSqlAsync($"SELECT pg_advisory_xact_lock({LockKey})", ct);
@@ -93,37 +100,36 @@ public static class RunSetup
         if (!await SetupState.NeedsSetupAsync(db, ct))
             return AlreadySetUp();
 
+        var email = request.Email!.Trim();
         var user = new ApplicationUser
         {
-            UserName = request.Email!.Trim(),
-            Email = request.Email.Trim(),
-            DisplayName = request.DisplayName!.Trim(),
+            UserName = email,
+            Email = email,
+            DisplayName = string.IsNullOrWhiteSpace(request.DisplayName) ? NameFromEmail(email) : request.DisplayName.Trim(),
         };
         var created = await users.CreateAsync(user, request.Password!);
         if (!created.Succeeded)
             return Results.BadRequest(new ErrorResponse("validation_error", "Setup failed",
                 Errors: created.Errors.Select(e => new FieldError(e.Code, e.Description)).ToList()));
 
-        var workspaceId = Guid.NewGuid();
-        db.Workspaces.Add(new WorkspaceEntity { Id = workspaceId, Name = request.WorkspaceName!.Trim(), CreatedBy = user.Id });
-        db.Memberships.Add(new MembershipEntity
-        {
-            Id = Guid.NewGuid(),
-            WorkspaceId = workspaceId,
-            UserId = user.Id,
-            Role = WorkspaceRole.Owner,
-            CreatedAt = time.GetUtcNow(),
-        });
         db.InstanceAdmins.Add(new InstanceAdminEntity { UserId = user.Id });
         await db.SaveChangesAsync(ct);
         await AuditLog.AppendAsync(db, null, user.Id, AuditLog.InstanceSetup, $"user:{user.Id}", ct);
-        await AuditLog.AppendAsync(db, workspaceId, user.Id, AuditLog.MemberAdded, $"user:{user.Id} role:owner", ct);
+        var starter = await StarterWorkspace.AddAsync(db, user.Id, request.WorkspaceName, time, ct);
 
         await transaction.CommitAsync(ct);
 
         access.Complete();
         await signIn.SignInAsync(user, isPersistent: true);
-        return Results.Created("/api/auth/me", new SetupResponse(user.Id, workspaceId));
+        return Results.Created("/api/auth/me", new SetupResponse(user.Id, starter.WorkspaceId, starter.ProjectId));
+    }
+
+    /// <summary>The part of the address before the "@", as the name of a person who gave none.</summary>
+    public static string NameFromEmail(string email)
+    {
+        var at = email.IndexOf('@');
+        var local = at > 0 ? email[..at] : email;
+        return local.Length > 100 ? local[..100] : local;
     }
 
     private static IResult AlreadySetUp() =>

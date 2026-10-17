@@ -52,7 +52,12 @@ export function TopBar({ projectId, projectName, project, activeDoc }: TopBarPro
         <span className="flex min-w-0 items-center gap-0.5 max-sm:hidden">
           <span className="min-w-0 truncate text-sm font-medium">{projectName}</span>
           {project && (
-            <ProjectMenu project={project} role={project.yourRole} onDeleted={() => navigate({ to: '/' })} />
+            <ProjectMenu
+              project={project}
+              role={project.yourRole}
+              onDeleted={() => navigate({ to: '/' })}
+              onOpenProject={(id) => (id ? navigate({ to: '/projects/$projectId', params: { projectId: id } }) : navigate({ to: '/' }))}
+            />
           )}
         </span>
       )}

@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite'
+import { defineConfig, searchForWorkspaceRoot } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { TanStackRouterVite } from '@tanstack/router-plugin/vite'
@@ -16,6 +16,8 @@ export default defineConfig({
     tailwindcss(),
   ],
   server: {
+    // The sample project (examples/orders) is bundled from the root of the repository.
+    fs: { allow: [searchForWorkspaceRoot(process.cwd()), path.resolve(__dirname, '../../examples')] },
     // VELLUM_API moves the proxy to an API on another port.
     proxy: {
       '/api': process.env.VELLUM_API ?? 'http://localhost:5195',
@@ -24,6 +26,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
+      '@examples': path.resolve(__dirname, '../../examples'),
     },
   },
   build: {

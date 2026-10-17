@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Identity;
 using Vellum.Modules.Identity.AgentTokens;
 using Vellum.Modules.Settings;
+using Vellum.Modules.Workspaces;
 using Vellum.Shared;
 using Vellum.Shared.Telemetry;
 
@@ -10,6 +11,9 @@ namespace Vellum.Modules.Identity;
 public sealed record RegisterRequest(string Email, string Password, string? DisplayName);
 public sealed record LoginRequest(string Email, string Password);
 public sealed record UserInfoResponse(string Id, string Email, string? DisplayName);
+
+/// <summary>The new account, and the workspace and the empty project that registration made for it. The app opens the project.</summary>
+public sealed record RegisterResponse(string Id, string Email, string? DisplayName, Guid WorkspaceId, Guid ProjectId);
 
 /// <summary>
 /// What the sign-in screen of this instance offers. <paramref name="Providers"/> holds the
@@ -36,11 +40,15 @@ public static class IdentityEndpoints
             UserManager<ApplicationUser> userManager,
             SignInManager<ApplicationUser> signInManager,
             RegistrationPolicy registration,
+            AppDbContext db,
+            TimeProvider time,
             CancellationToken ct) =>
         {
             if (await registration.RefusalAsync(ct) is { } refusal)
                 return Results.Json(refusal, statusCode: StatusCodes.Status403Forbidden);
 
+            // The account, its workspace and its project commit together or not at all.
+            await using var transaction = await db.Database.BeginTransactionAsync(ct);
             var user = new ApplicationUser
             {
                 UserName = request.Email,
@@ -57,9 +65,14 @@ public static class IdentityEndpoints
                 return Results.BadRequest(new ErrorResponse("validation_error", "Registration failed", Errors: errors));
             }
 
+            var starter = await StarterWorkspace.AddAsync(db, user.Id, null, time, ct);
+            await transaction.CommitAsync(ct);
+
             await signInManager.SignInAsync(user, isPersistent: true);
-            return Results.Created($"/api/auth/me", new UserInfoResponse(user.Id, user.Email!, user.DisplayName));
+            return Results.Created($"/api/auth/me",
+                new RegisterResponse(user.Id, user.Email!, user.DisplayName, starter.WorkspaceId, starter.ProjectId));
         })
+        .Produces<RegisterResponse>(StatusCodes.Status201Created)
         .WithBodyLimit(MaxLoginBodyBytes)
         .RequireRateLimiting(RequestLimits.RegistrationPolicy);
 
@@ -135,6 +148,8 @@ public static class IdentityEndpoints
             SignInManager<ApplicationUser> signInManager,
             UserManager<ApplicationUser> userManager,
             RegistrationPolicy registration,
+            AppDbContext db,
+            TimeProvider time,
             CancellationToken ct) =>
         {
             var info = await signInManager.GetExternalLoginInfoAsync();
@@ -167,6 +182,8 @@ public static class IdentityEndpoints
             if (await registration.RefusalAsync(ct) is { } refusal)
                 return Results.Json(refusal, statusCode: StatusCodes.Status403Forbidden);
 
+            // The account, its link to the provider, its workspace and its project commit together.
+            await using var transaction = await db.Database.BeginTransactionAsync(ct);
             var user = new ApplicationUser
             {
                 UserName = email,
@@ -182,8 +199,10 @@ public static class IdentityEndpoints
             if (!linkResult.Succeeded)
                 return Results.Json(new ErrorResponse("account_not_linked", "Failed to link the external account",
                     string.Join("; ", linkResult.Errors.Select(e => e.Description))), statusCode: StatusCodes.Status500InternalServerError);
+            var starter = await StarterWorkspace.AddAsync(db, user.Id, null, time, ct);
+            await transaction.CommitAsync(ct);
             await signInManager.SignInAsync(user, isPersistent: true);
-            return Results.Redirect("/");
+            return Results.Redirect($"/projects/{starter.ProjectId}");
         }).RequireRateLimiting(RequestLimits.CredentialPolicy);
 
         app.MapAgentTokenEndpoints();

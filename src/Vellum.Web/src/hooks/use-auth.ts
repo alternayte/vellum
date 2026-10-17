@@ -38,7 +38,8 @@ export function useAuth() {
         body: { email: data.email, password: data.password, displayName: data.displayName ?? null },
       })
       if (!result.response?.ok) throw new Error('Registration failed')
-      return result.data as User
+      // The server makes a workspace with an empty project for the new account.
+      return result.data as User & { workspaceId: string; projectId: string }
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['auth'] }),
   })

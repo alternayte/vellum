@@ -5,6 +5,8 @@ description: Scan a folder on the machine that runs a local Vellum instance, as 
 
 This guide shows you how to scan a folder on the machine that runs Vellum. A folder is a `directory` Source. You need the editor role.
 
+To read a folder from your own browser with no server setting, use **Choose folder** on an empty project or on an archive Source instead. [Start a project](/how-to/start-a-project/#choose-a-folder) explains it. The browser packs the files and uploads them as an archive Source.
+
 A directory Source works in the local profile only. A hosted instance reads no folder of its own machine. It refuses the kind with the code `source_kind_not_in_profile`. Upload an archive or connect a git host there.
 
 ## Give the instance a sources root

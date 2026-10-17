@@ -94,7 +94,7 @@ describe('useAuth', () => {
       error: undefined,
     })
     vi.mocked(postApiAuthRegister).mockResolvedValue({
-      data: MOCK_USER,
+      data: { ...MOCK_USER, workspaceId: 'w1', projectId: 'p1' },
       response: { ok: true } as Response,
       error: undefined,
     })

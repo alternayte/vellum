@@ -4,6 +4,7 @@ import { useAuth } from '@/hooks/use-auth'
 import { useSignInMethods } from '@/hooks/use-sign-in-methods'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { pendingInvitation } from '@/lib/invitation-link'
 
 export const Route = createFileRoute('/_auth/register')({
   component: RegisterPage,
@@ -20,8 +21,10 @@ function RegisterPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     try {
-      await register({ email, password, displayName: displayName || undefined })
-      navigate({ to: '/' })
+      const created = await register({ email, password, displayName: displayName || undefined })
+      // A sign-up that started at an invitation link goes on to the link from the start page.
+      if (pendingInvitation()) navigate({ to: '/' })
+      else navigate({ to: '/projects/$projectId', params: { projectId: created.projectId } })
     } catch {
       // error surfaced via registerError
     }

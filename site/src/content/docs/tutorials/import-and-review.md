@@ -65,7 +65,7 @@ When you complete the tutorials, put the value `https://api.github.com` back.
 
 ## Scan the repository
 
-1. On the home screen, select your workspace, then select **+ New Project**. In **Project name**, give `Orders import`. Select **Create**. The project opens.
+1. In an open project, select the project menu (**⋯**), then **New project…**. In **Name**, give `Orders import`. Select **Create**. The project opens.
 2. Select **Sources** in the sidebar.
 3. In **Repository**, give `acme/orders`.
 4. In **Read**, select **Branch**. In **Branch or tag**, give `main`.

@@ -26,6 +26,13 @@ import { ReviewFlyout } from '@/components/design-review/review-flyout'
 import { ShareLinksPanel } from '@/components/share/share-dialog'
 import { AssistantCanvasButton } from '@/components/assistant/assistant-canvas-button'
 import type { AreaAccess } from '@/lib/areas'
+import { EmptyProject } from '@/components/start/empty-project'
+import { TypeItPanel } from '@/components/start/type-it-panel'
+import { ArchitectureProposalDialog } from '@/components/assistant/architecture-proposal-dialog'
+import { designApi, isUnavailable, type ArchitectureProposal } from '@/lib/design-api'
+import { useQueryClient } from '@tanstack/react-query'
+import type { Element } from '@/hooks/use-elements'
+import type { Relationship } from '@/hooks/use-relationships'
 import { openThreadMarkers, useThreads } from '@/hooks/use-threads'
 import { useRunScenario, useScenarios } from '@/hooks/use-scenarios'
 import { useTraceStore } from '@/stores/trace-store'
@@ -103,7 +110,8 @@ function ProjectPage() {
 
   return (
     <>
-      <ProjectWorkspace />
+      {/* Each project starts on a fresh workbench: its own view, level and panels. */}
+      <ProjectWorkspace key={project.id} />
       {/* A failed refetch keeps what loaded; the query tries again on its own schedule. */}
       {error && (
         <div role="status" className="fixed bottom-10 left-1/2 z-50 max-w-md -translate-x-1/2 rounded-md border border-border bg-background px-3 py-2 text-xs text-muted-foreground shadow-md">
@@ -126,7 +134,13 @@ function ProjectWorkspace() {
   // A named revision never changes, and a viewer changes nothing.
   const readOnly = selection.kind === 'revision' || !canEditModel(project?.yourRole)
   // The selected model belongs to this project. Another project starts on its own main.
-  useEffect(() => () => useDraftStore.getState().reset(), [projectId])
+  // The open view, document, panel and canvas level belong to this project too: a project opened
+  // from the project menu must not read the view of the last one.
+  useEffect(() => () => {
+    useDraftStore.getState().reset()
+    useShellStore.getState().reset()
+    useCanvasStore.getState().reset()
+  }, [projectId])
   const scenarioReferences = useMemo<ScenarioReference[]>(() => {
     const elementName = (id: string) => elements?.find((e) => e.id === id)?.name ?? 'Unknown element'
     const channelName = (id: string) => channels?.find((c) => c.id === id)?.name ?? 'Unknown channel'
@@ -226,8 +240,12 @@ function ProjectWorkspace() {
     return map
   }, [isReviewMode, reviewData])
 
-  const handleTidy = async () => {
+  const handleTidy = () => {
     if (!elements || !relationships) return
+    return layoutModel(elements, relationships)
+  }
+
+  const layoutModel = async (elements: Element[], relationships: Relationship[]) => {
     // Each card gets the room it takes on the canvas, and each level takes the shape of the
     // canvas that no panel covers.
     const sized = elements.map((e) => ({
@@ -241,6 +259,27 @@ function ProjectWorkspace() {
     // The layout moves every node, so show the result: fit once the nodes have their new places.
     requestAnimationFrame(() => requestAnimationFrame(() => fitViewRef.current?.()))
   }
+
+  // A start of the empty project wrote to the model: read the model again and lay it out.
+  const queryClient = useQueryClient()
+  const [typeItOpen, setTypeItOpen] = useState(false)
+  const [describedProposal, setDescribedProposal] = useState<ArchitectureProposal | null>(null)
+  const relayoutAfterStart = async (everything: boolean) => {
+    const branch = { branchId: activeDraftStreamId ?? undefined }
+    await queryClient.invalidateQueries({ queryKey: everything ? ['projects', projectId] : ['projects', projectId, 'elements'] })
+    if (!everything) await queryClient.invalidateQueries({ queryKey: ['projects', projectId, 'relationships'] })
+    const fresh = queryClient.getQueryData<Element[]>(['projects', projectId, 'elements', branch]) ?? []
+    const freshRelationships = queryClient.getQueryData<Relationship[]>(['projects', projectId, 'relationships', branch]) ?? []
+    if (fresh.length > 0) await layoutModel(fresh, freshRelationships)
+  }
+  const handleDescribe = async (prose: string) => {
+    const result = await designApi.proposeArchitecture(projectId, prose, contractBranchId)
+    if (isUnavailable(result)) throw new Error(result.reason.message)
+    setDescribedProposal(result)
+  }
+  // An empty main model offers the starts instead of a blank canvas. A draft or a revision
+  // that is empty shows the canvas: its starts would write to main.
+  const showStarts = !readOnly && !isReviewMode && selection.kind === 'main' && (elements?.length ?? 0) === 0
 
   // The parent is a fact of the model: the command carries it. Showing the parent's inside
   // is view state only, so the new child is on the canvas when the command returns.
@@ -727,6 +766,15 @@ function ProjectWorkspace() {
         <main className="relative flex-1">
           {activeDocId ? (
             <DocEditor projectId={projectId} docId={activeDocId} />
+          ) : showStarts ? (
+            <EmptyProject
+              projectId={projectId}
+              onTypeIt={() => setTypeItOpen(true)}
+              onDescribe={handleDescribe}
+              onSourceStarted={() => useShellStore.getState().openFlyout('import')}
+              onSampleOpened={() => relayoutAfterStart(true)}
+              onAddSystem={() => handleOpenCreateDialog()}
+            />
           ) : (
             <CanvasView
               elements={(elements ?? []).map((e) => ({ ...e, ownerId: e.ownerId ?? null }))}
@@ -780,6 +828,17 @@ function ProjectWorkspace() {
             />
           )}
           {!activeDocId && <AssistantCanvasButton />}
+          {typeItOpen && !activeDocId && !readOnly && (
+            <TypeItPanel
+              projectId={projectId}
+              branchId={activeDraftStreamId}
+              defaultSystem={projectName}
+              elements={elements ?? []}
+              relationships={relationships ?? []}
+              onWritten={() => relayoutAfterStart(false)}
+              onClose={() => setTypeItOpen(false)}
+            />
+          )}
         </main>
         <DetailPanel
           projectId={projectId}
@@ -812,6 +871,15 @@ function ProjectWorkspace() {
         onTidy={handleTidy}
         onZoomToFit={() => fitViewRef.current?.()}
       />
+
+      {describedProposal && (
+        <ArchitectureProposalDialog
+          projectId={projectId}
+          proposal={describedProposal}
+          labels={referenceLabels}
+          onClose={() => { setDescribedProposal(null); void relayoutAfterStart(true) }}
+        />
+      )}
 
       {addElementRequest && (
         <AddElementDialog
