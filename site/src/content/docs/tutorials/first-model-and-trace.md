@@ -19,14 +19,14 @@ You need no AI provider and no repository.
 
 Vellum opens the project. The model has no element, so the project shows three starts: **Choose folder / GitHub URL**, **Describe it / Type it** and **Open the sample**. Below them is the link **Add a system**. This tutorial draws the model by hand. [Start a project](/how-to/start-a-project/) explains the three starts.
 
-![The empty project. The heading reads Start your diagram. Three cards follow: Choose folder / GitHub URL, with the button Choose folder and a field for a GitHub address; Describe it / Type it, with a text box and the buttons Describe it and Type it; Open the sample, with the button Open the sample. Below the cards is the line Or draw it yourself: Add a system.](../../../assets/screenshots/tutorial-empty-project.png)
+![The empty project. The sidebar shows the areas Model, Flows and Sources. The heading reads Start your diagram. Three cards follow: Choose folder / GitHub URL, with the button Choose folder and a field for a GitHub address; Describe it / Type it, with a text box and the buttons Describe it and Type it; Open the sample, with the button Open the sample. Below the cards is the line Or draw it yourself: Add a system. The button Ask the assistant is at the bottom of the canvas.](../../../assets/screenshots/tutorial-empty-project.png)
 
 ## Add the elements
 
 1. Select **Add a system**. The dialog **Add Element** opens.
 2. In **Name**, give `Shop`. Select **Add**.
 
-   ![The dialog Add Element over the empty canvas. Inside is Top level, Kind is System and Name holds Shop. The button Add is at the bottom right.](../../../assets/screenshots/tutorial-add-element.png)
+   ![The dialog Add Element over the empty project. Inside is Top level, Kind is System and Name holds Shop. The button Add is at the bottom right.](../../../assets/screenshots/tutorial-add-element.png)
 
 3. Press `N`. The dialog opens again.
 4. Select the kind **Actor**. Give the name `Customer`. Select **Add**.
@@ -34,7 +34,7 @@ Vellum opens the project. The model has no element, so the project shows three s
 6. Press `N`. Keep the kind **System**. Give the name `Warehouse`. Select **Add**.
 7. Select **Tidy** at the bottom of the screen. Vellum arranges the four elements.
 
-![The canvas after Tidy. The actor Customer and the systems Billing, Shop and Warehouse each have a card with the name and the kind. Each system card has the button Add an app or a store inside.](../../../assets/screenshots/tutorial-four-elements.png)
+![The canvas after Tidy. The actor Customer and the systems Billing, Shop and Warehouse each have a card with the name and the kind, in one column. Each system card has the button Add an app or a store inside. The sidebar now shows the areas Model, Flows, Check, Ship and Sources.](../../../assets/screenshots/tutorial-four-elements.png)
 
 You now have one actor and three systems. Each has the label `declared`, because you state it.
 
@@ -46,7 +46,7 @@ The positions on the canvas are layout. They are not part of the model, and they
 2. Drag from the handle on the right side of `Customer` to the handle at the top of `Shop`. A line starts at a handle on the left or the right side, and ends at a handle at the top or the bottom.
 3. Select the new line. In the **Relationship** panel, give the **Label** `places orders`.
 
-![The canvas with a line from Customer to Shop. The label of the line reads places orders. The Relationship panel at the right shows From Customer, To Shop, the Label places orders, an empty Technology field and the Line Style Curved (Bezier).](../../../assets/screenshots/tutorial-relationship.png)
+![The canvas with a line from Customer to Shop. The label of the line reads places orders. The Relationship panel at the right shows From Customer, To Shop, the Label places orders, an empty Technology field, the Kind Structural, the Line Style Curved (Bezier), Source side and Target side Auto, and the truth label Declared.](../../../assets/screenshots/tutorial-relationship.png)
 
 A relationship states structure: the customer uses the shop. It does not state behaviour. The line alone plays nothing. The contracts and the scenario of the next sections state the behaviour.
 
@@ -93,7 +93,7 @@ The rest of this tutorial uses `Shop`, not the app or the store inside it.
 
 6. Select **Add** again. Give the **Channel** `order-events` and the **Consumer** `Warehouse`. Keep **Attempts** at `1`. Keep **Dead-letter channel** at **None: a failed message is lost**. Select **Add subscription**.
 
-The flyout now lists one operation, two channels and two subscriptions: **Billing on order-events** and **Warehouse on order-events**.
+The **Contracts** tab now lists one operation, two channels and two subscriptions: **Billing on order-events** and **Warehouse on order-events**.
 
 ## Add the message
 
@@ -109,9 +109,9 @@ A publish step names a message.
    | **Schema** | **None** |
    | **Consumers** | `Billing` and `Warehouse` |
 
-The flyout lists the message as **Shop → Billing, Warehouse · no schema**. The message has the label `declared`.
+The tab lists the message as **Shop → Billing, Warehouse · no schema**. The message has the label `declared`.
 
-![The Contracts flyout at the left of the canvas. Operations lists POST /orders: Shop, http, 1000 ms, 1 attempt, no schema. Channels lists order-events (topic) and order-events.dlq (queue). Subscriptions lists Warehouse on order-events with 1 attempt and no DLQ, and Billing on order-events with 2 attempts and the DLQ order-events.dlq. Messages lists OrderCreated: Shop to Billing and Warehouse, no schema.](../../../assets/screenshots/tutorial-contracts.png)
+![The Contracts tab of the Model area, next to the tabs Catalog, Create and Files, at the left of the canvas. Operations lists POST /orders: Shop, http, 1000 ms, 1 attempt, no schema. Channels lists order-events (topic) and order-events.dlq (queue). Subscriptions lists Warehouse on order-events with 1 attempt and no DLQ, and Billing on order-events with 2 attempts and the DLQ order-events.dlq. Messages lists OrderCreated: Shop to Billing and Warehouse, no schema.](../../../assets/screenshots/tutorial-contracts.png)
 
 ## Write the scenario
 

@@ -19,11 +19,11 @@ import canvas from '../../assets/screenshots/canvas-online-shop.png'
 import connections from '../../assets/screenshots/canvas-detail-panel-connections.png'
 import trace from '../../assets/screenshots/trace-dock-playback.png'
 import promise from '../../assets/screenshots/promise-obligations-results.png'
-import importReview from '../../assets/screenshots/import-review-select-all.png'
+import sources from '../../assets/screenshots/sources-needs-you.png'
 import review from '../../assets/screenshots/review-findings.png'
-import costs from '../../assets/screenshots/costs-flyout-estimate.png'
+import costs from '../../assets/screenshots/costs-estimate.png'
 
-<Image src={canvas} alt="The Vellum canvas with the model of an online shop. The actor Customer uses the system Storefront. Storefront places orders with the system Orders. Orders is expanded: a frame holds the apps Orders API and Order worker and the store Orders DB. Orders requests payment from Payments, and sends paid orders to Fulfilment. Payments authorises cards with the external system Card network. Each card shows the kind, the technology and a description, and each line has a label." />
+<Image src={canvas} alt="The Vellum canvas with the model of an online shop. The sidebar at the left has the five areas Model, Flows, Check, Ship and Sources. The actor Customer uses the system Storefront. Storefront places orders with the system Orders. Orders is expanded: a frame holds the apps Orders API and Order worker and the store Orders DB. Orders requests payment from Payments, and sends paid orders to Fulfilment. Payments authorises cards with the external system Card network. Each card shows the kind, the technology and a description, and each line has a label." />
 
 Vellum is a web app with one database. `docker compose up -d` starts both. An AI provider is optional, and so is GitHub.
 
@@ -35,7 +35,7 @@ Vellum is a web app with one database. `docker compose up -d` starts both. An AI
     <figcaption><strong>Model.</strong> Select an element to edit it. The tab Connections lists each relationship of the element.</figcaption>
   </figure>
   <figure>
-    <Image src={trace} alt="The trace dock at event 5 of 7. Billing fails to handle the message. The canvas rings Orders.Api and Billing in red inside the frame of the system orders. The dock says 1 of 2 expectations fail." />
+    <Image src={trace} alt="The trace dock at event 3 of 4. Billing fails to handle the message. The canvas rings Orders.Api and Billing in red inside the frame of the system orders. The dock says 1 of 2 expectations fail." />
     <figcaption><strong>Trace.</strong> A scenario plays one event at a time on the canvas. A failure, a retry and a dead letter show as events.</figcaption>
   </figure>
   <figure>
@@ -43,15 +43,15 @@ Vellum is a web app with one database. `docker compose up -d` starts both. An AI
     <figcaption><strong>Promises.</strong> A promise has a stable ID. Each obligation shows its evidence: passed, failed or not run.</figcaption>
   </figure>
   <figure>
-    <Image src={importReview} alt="The dialog Review acme/orders with 21 proposals in groups: binding, channel, element, message and operation. Each row names the file and the line in the repository." />
-    <figcaption><strong>Import.</strong> A scan reads a GitHub repository at one commit. Each proposal names its file and line. You accept or reject it.</figcaption>
+    <Image src={sources} alt="The Sources panel of the project Orders import, next to the canvas with the system orders. Below the form Scan a GitHub repository, Needs you lists one change from the Source acme/orders: the schema OrderCreated, with the buttons Accept and Reject." />
+    <figcaption><strong>Sources.</strong> A scan reads a GitHub repository at one commit and adds what it observes to the model. A change to a fact that a person edited waits in Needs you.</figcaption>
   </figure>
   <figure>
-    <Image src={review} alt="The Review flyout on the tab Findings. One finding blocks Build Ready: CON-001 for the operation POST /orders, with the button Settle with a decision." />
+    <Image src={review} alt="The Review tab of the Check area on the tab Findings. Two findings block Build Ready: CON-001 for the operations Relay outbox and POST /orders, each with the button Settle with a decision." />
     <figcaption><strong>Review.</strong> Fixed rules report concerns about the design. A decision that an owner accepts settles a finding.</figcaption>
   </figure>
   <figure>
-    <Image src={costs} alt="The Costs flyout. The estimate for one month is 894.65 USD for the known lines. One line is unknown because it has no price. The resources show in groups by element." />
+    <Image src={costs} alt="The Costs tab of the Check area. The estimate for one month is 894.65 USD for the known lines. One line is unknown because it has no price. The resources show in groups by element." />
     <figcaption><strong>Costs.</strong> An estimate uses only the prices in your price book. A line with no price is unknown, never zero.</figcaption>
   </figure>
 </div>

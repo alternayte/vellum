@@ -408,7 +408,7 @@ In the app:
 3. Select **Preview the brief**. The dialog says **This scope is not build ready** and lists each blocker. Below, it shows the text of the brief.
 4. Select **Copy**, or select **Download**.
 
-![The Build flyout. The first box says Not build ready: 7 blockers and gives the model version and the bundle hash. Below Brief for an agent, the scope A change is selected with the scan of remove-outbox. The list Blockers starts below the button Preview the brief.](../../../assets/screenshots/build-flyout-brief.png)
+![The Build tab of the Ship area, next to the tab Share links. The first box says Not build ready: 9 blockers and gives the model version and the bundle hash. Below Brief for an agent, the scope A change is selected with the scan of remove-outbox. The list Blockers starts below the button Preview the brief. Its first entries are promise-gap blockers of ORD-014.](../../../assets/screenshots/build-brief.png)
 
 The brief of a change has one more section, **8. Change under review**. It holds the impact report of the scan. The scope **A promise** gives the brief of the command below.
 

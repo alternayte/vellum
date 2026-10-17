@@ -148,7 +148,7 @@ If a pinned version is no longer stored, the status is `409` and the type is `pi
 
 ## The build shows Not build ready
 
-**Symptom:** The **Build** flyout shows **Not build ready: <n> blockers** and the list **Blockers**. In the manifest, `buildReady` is `false`.
+**Symptom:** The **Build** tab shows **Not build ready: <n> blockers** and the list **Blockers**. In the manifest, `buildReady` is `false`.
 
 A blocker prevents Build Ready. It does not prevent an export. The SDD lists each blocker.
 

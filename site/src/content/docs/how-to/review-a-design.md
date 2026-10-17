@@ -15,7 +15,7 @@ A finding says what the declared model shows. It is not evidence about a running
 2. Read the summary. It says how many findings block Build Ready.
 3. Read the list. The list shows concerns and unknowns first.
 
-![The Review flyout on the tab Findings. The summary says that 1 finding blocks Build Ready and gives the model version, the rule set and the hash of the findings. The group Blocking shows CON-001 for the operation POST /orders with the button Settle with a decision. The group Warning starts below it. The canvas at the right shows Customer and orders clear of the flyout.](../../../assets/screenshots/review-findings.png)
+![The Review tab of the Check area, next to the tabs Promises, Stress and Costs, on the inner tab Findings. The summary says that 2 findings block Build Ready and gives the model version, the rule set and the hash of the findings. The group Blocking shows CON-001 for the operations Relay outbox and POST /orders, each with the button Settle with a decision. The canvas at the right shows the frame of the system orders clear of the panel.](../../../assets/screenshots/review-findings.png)
 
 Each finding has one of four results:
 

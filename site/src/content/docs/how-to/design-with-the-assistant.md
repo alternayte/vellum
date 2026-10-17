@@ -52,7 +52,7 @@ A scenario that came from a proposal records that origin.
 
 The proposal opens on the canvas as a ghost layer. Each proposed element is a dashed card, and each proposed relationship is a dashed line. Vellum places them with the auto layout of **Tidy**, beside the cards of the current view. A proposed element inside a parent shows inside that parent when the view shows the parent open. The real cards do not move.
 
-![The canvas with the ghost layer open. The bar at the top says Proposed additions, 22 pending, and has the buttons Accept all (22), Reject all and Close. Below the summary it says that 4 items are not drawn on this level. The real cards Customer, Orders System, Payments System and Web Application are solid. The proposed systems Delivery System and Alerts System are dashed frames around dashed cards such as Courier, Delivery API and Alert Log. Dashed lines join them to the real cards.](../../../assets/screenshots/assistant-ghost-layer.png)
+![The canvas with the ghost layer open. The bar at the top says Proposed additions, 22 pending, and has the buttons Accept all (22), Reject all and Close. Below the summary it says that 4 items are not drawn on this level. The real cards Customer, Notifications System, Orders System, Payments System and Web Application are solid. The proposed actor Ops Agent is a dashed card. The proposed systems Delivery System and Alerts System are dashed frames around dashed cards such as Courier, Delivery API and Alert Log. Each dashed card and line shows proposed, its alias and its confidence. Dashed lines join them to the real cards.](../../../assets/screenshots/assistant-ghost-layer.png)
 
 Decide on the ghost layer:
 
@@ -81,7 +81,7 @@ Additions are decided item by item. Each item records who accepted or rejected i
 
 Each list shows 20 proposals of each kind. Select **Show more** for older ones.
 
-![The Assistant tab of the Review panel. Below Stored answers, Your proposals says that no proposal waits for you. History lists one proposal: model, Add notifications and an audit trail, 1 accepted, 1 rejected, decided by Dev User on 14/10/2026 at 19:26:09.](../../../assets/screenshots/review-assistant-proposals.png)
+![The inner tab Assistant of the Review tab in the Check area. Below Stored answers, Your proposals says that no proposal waits for you. History lists one proposal: model, Notifications and an audit trail for orders, 1 accepted, 1 rejected, decided by Dev User on 17/10/2026 at 19:11:23, submitted by an agent.](../../../assets/screenshots/review-assistant-proposals.png)
 
 ## Ask for an explanation
 

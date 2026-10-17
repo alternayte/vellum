@@ -40,7 +40,7 @@ The scenario editor builds the scenario from the parts of the model. You select 
 6. Add the next steps in the order that they occur. To change the order, use the up and down arrows of a step.
 7. Select **Save and play**.
 
-![The scenario editor. The first step is a call with the mark Trigger: the caller Customer calls the operation POST /orders. Below the call fields are the request and the response as JSON, the timeout and the retries of the operation, and the two step lists of the call. The second step publishes OrderCreated to order-events.](../../../assets/screenshots/scenario-editor-steps.png)
+![The scenario editor. The first step is a call with the mark Trigger: the caller Customer calls the operation POST /orders. Below the call fields are the request and the response as JSON, the timeout and the retries of the operation, and the two step lists of the call. The second step publishes OrderCreated to order-events. Each step has a comment button next to its arrows.](../../../assets/screenshots/scenario-editor-steps.png)
 
 ### Step types
 
@@ -112,9 +112,9 @@ If the scenario has an invalid reference or payload, the dock says "This scenari
 
 Add the failure in **Failures to inject** of the scenario editor. See [Failures to inject](#failures-to-inject). Then select **Save and play**.
 
-![The lower part of the scenario editor. Failures to inject has one failure: the target Billing on order-events, the kind Error, and Fails set to every attempt. Expected results has a step outcome (place ends Succeeded) and an event count (exactly 2 deliveries for any part).](../../../assets/screenshots/scenario-editor-failure.png)
+![The lower part of the scenario editor. Consumers lists Warehouse on order-events and Billing on order-events. Failures to inject has one failure: the target Billing on order-events, the kind Error, and Fails set to every attempt. Expected results has a step outcome (place ends Succeeded) and an event count (exactly 2 deliveries for any part).](../../../assets/screenshots/scenario-editor-failure.png)
 
-![The trace dock at event 5 of 7 of a scenario with an error injected on Billing. The canvas is inside the system orders. Event reads: Billing fails to handle the message, the consumer did not acknowledge the message. Payload reads: None. The dock says 1 of 2 expectations fail. The canvas rings Orders.Api and Billing in red, with the edge message · not handled between them. On the timeline only the event in focus and the failures have colour.](../../../assets/screenshots/trace-dock-playback.png)
+![The trace dock at event 3 of 4 of a scenario with an error injected on Billing. The canvas is inside the system orders. Event reads: Billing fails to handle the message, the consumer did not acknowledge the message. Payload reads: None. The dock says 1 of 2 expectations fail. The canvas rings Orders.Api and Billing in red, with the edge message · not handled between them. On the timeline only the event in focus and the failures have colour.](../../../assets/screenshots/trace-dock-playback.png)
 
 ## Limits
 
