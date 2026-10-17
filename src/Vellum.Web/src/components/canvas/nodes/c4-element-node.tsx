@@ -115,7 +115,8 @@ export const C4ElementNode = memo(function C4ElementNode({ data }: NodeProps<C4E
   const showChips = showMetadata && !!d.technology && !compact
   // Every card has the same height, so cards in a row line up and their edges run straight.
   // The add-inside row takes the second line of the description.
-  const addInside = !!d.onAddChild && d.childCount === 0
+  // An external system is a service the team does not own: the card offers no inside to model.
+  const addInside = !!d.onAddChild && d.childCount === 0 && !external
 
   return (
     <div

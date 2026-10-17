@@ -40,7 +40,9 @@
       "technology": null,
       "status": "current",
       "parentId": null,
-      "tags": [],
+      "tags": [
+        "external"
+      ],
       "icon": null,
       "factStatus": "declared",
       "provenance": null,

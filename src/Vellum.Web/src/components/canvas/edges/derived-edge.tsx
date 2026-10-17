@@ -23,7 +23,7 @@ export type DerivedEdgeType = Edge<DerivedEdgeData, 'derived-edge'>
 
 /**
  * A derived line: the relationships between parts hidden inside two visible cards, in one
- * direction. It is lighter than a relationship and carries a count badge. It takes the route of
+ * direction. It is lighter than a relationship and carries a count badge when it holds more than one relationship. It takes the route of
  * the auto layout while its cards stay, and otherwise the auto sides and the default curve; it
  * has no saved sides and no ends to drag.
  */
@@ -76,7 +76,7 @@ export const DerivedEdge = memo(function DerivedEdge({
           className={cn(
             'nodrag nopan absolute flex max-w-56 items-center gap-1.5 rounded-full border border-dashed bg-card/95 py-0.5 pl-0.5 pr-2 shadow-sm backdrop-blur-sm focus-visible:outline-2 focus-visible:outline-primary',
             selected ? 'border-primary' : 'border-border',
-            !data.label && 'pr-0.5',
+            count === 1 && 'pl-2',
           )}
           style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`, pointerEvents: 'all', zIndex: labelZ(sourceBoxes, targetBoxes) }}
           onMouseEnter={() => setHovered(true)}
@@ -85,15 +85,15 @@ export const DerivedEdge = memo(function DerivedEdge({
           aria-label={`Derived line of ${count} ${count === 1 ? 'relationship' : 'relationships'}${data.label && count === 1 ? `: ${data.label}` : ''}`}
           title="Derived line: relationships between parts inside these cards"
         >
-          <span aria-hidden="true" className="flex h-4 min-w-4 items-center justify-center rounded-full bg-muted px-1 font-mono text-[10px] tabular-nums text-foreground">
-            {count}
-          </span>
-          {/* The badge carries the count, so a merged line reads "3 relationships", not "3 3 relationships". */}
-          {data.label && (
-            <span aria-hidden="true" className="min-w-0 truncate text-xs text-muted-foreground">
-              {count === 1 ? data.label : 'relationships'}
+          {count > 1 && (
+            <span aria-hidden="true" className="flex h-4 min-w-4 items-center justify-center rounded-full bg-muted px-1 font-mono text-[10px] tabular-nums text-foreground">
+              {count}
             </span>
           )}
+          {/* The badge carries the count of a merged line, so it reads "3 relationships", not "3 3 relationships". */}
+          <span aria-hidden="true" className="min-w-0 truncate text-xs text-muted-foreground">
+            {count === 1 ? (data.label ?? 'relationship') : 'relationships'}
+          </span>
         </button>
       </EdgeLabelRenderer>
     </>

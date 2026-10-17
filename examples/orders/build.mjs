@@ -242,7 +242,7 @@ await post('schemas', { id: ids.chargeRequest, name: 'ChargeRequest', descriptio
 const element = (elementId, kind, name, more = {}) => post('elements', { id: elementId, kind, name, tags: [], ...more })
 await element(ids.shop, 'system', 'Shop', { description: 'Takes orders and fulfils them.' })
 await element(ids.customer, 'actor', 'Customer', { description: 'A person who places an order.' })
-await element(ids.paymentProvider, 'system', 'Payment provider', { description: 'An external service that charges a card.' })
+await element(ids.paymentProvider, 'system', 'Payment provider', { description: 'An external service that charges a card.', tags: ['external'] })
 await element(ids.ordersApi, 'app', 'Orders API', { description: 'Accepts orders, stores them and publishes OrderCreated.', technology: 'ASP.NET Core', parentId: ids.shop })
 await element(ids.ordersDb, 'store', 'Orders DB', { description: 'Holds the orders.', technology: 'PostgreSQL', parentId: ids.shop })
 await element(ids.inventory, 'app', 'Inventory', { description: 'Reserves stock for an order.', technology: 'Go', parentId: ids.shop })
