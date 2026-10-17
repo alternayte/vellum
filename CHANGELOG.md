@@ -5,8 +5,46 @@ release notes. Vellum uses semantic versions: before 1.0, a minor version can ch
 HTTP API, and its section lists each change. A release never changes a database migration
 of an earlier release, so the data of each release upgrades to the next.
 
-## Unreleased
+## 0.2.0 - 2026-10-17
 
+A new project reaches a connected diagram of its code in three steps: set up, choose a
+folder, see the diagram.
+
+- First run: setup asks for email, password and the setup code. Each new account gets the
+  workspace "My workspace" and the empty project "My system", and opens it.
+- An empty project offers three starts: **Choose folder / GitHub URL**, **Describe it /
+  Type it** and **Open the sample**. **Choose folder** reads a copy of a local folder in the
+  browser, applies `.gitignore`, uploads only the files a scan reads as an archive Source,
+  and never writes to the folder. **Type it** writes `declared` elements and relationships
+  from lines such as `Web app -> Orders API: places orders`, with no AI key.
+- The project menu has **New project…**, **New workspace…** and **All projects**.
+- The sidebar has five areas: Model, Flows, Check, Ship and Sources. The former tools are
+  tabs in them. Check and Ship show when the model holds an element. The assistant opens
+  from a button on the canvas and from ⌘K; comments are a tab of the bell. The sidebar
+  collapses to icons, with tooltips.
+- AI proposals from the assistant and from `propose_architecture` show as a ghost layer of
+  dashed cards and lines on the canvas, with **Accept all**, **Reject all** and accept or
+  reject on each item. Accepting an item accepts what it depends on. The proposal dialog is
+  removed. A proposal an agent submits notifies the person who made its token.
+- A refused accept lists every refused item with its reason (#1). Proposals have select
+  all and accept all (#3).
+- `propose_architecture` drops an item that an accept would refuse, such as a store with
+  no system parent (#2), and lists a relationship the model holds already in
+  `resolvedToExisting` (#4).
+- A scenario exports as a Mermaid `sequenceDiagram` and as SVG (#6). API:
+  `GET /api/projects/{projectId}/scenarios/{scenarioId}/export/mermaid` and `/export/svg`.
+- Derived lines: a relationship whose ends are hidden inside collapsed cards draws as a line
+  between their nearest visible cards, merged per direction ("3 relationships"). Selecting
+  it lists the relationships. Exports and share links draw the same lines; a view share
+  link shows the label and count only and names no hidden part. Structurizr DSL exports
+  them with the tag `Derived`, which an import skips.
+- Tidy routes lines around cards and keeps a label on each line. Migration `LayoutLines`
+  adds `views.layout_lines` for the routes of derived lines; `PUT …/layout` takes `lines`.
+  A card that a later import adds lands in free space.
+- A Compose service that runs only an image Vellum does not recognise becomes a top-level
+  system tagged `external`. Tools such as proxies, telemetry and mail catchers do not.
+- Enter saves a single-line field of the detail panel and Escape reverts it.
+- The OpenAPI document sorts its paths and tags, so a build always gives the same file.
 - A schema accepted from a scan of code or configuration has the truth label
   `observed-in-source` and a provenance that cites its file and lines, like a channel.
   Version 0.1.0 labelled it `declared` (#5). A stored schema keeps its label; the next

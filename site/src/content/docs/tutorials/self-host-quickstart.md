@@ -24,7 +24,7 @@ Start the app and the database:
 docker compose up -d --wait
 ```
 
-The first start downloads the image `ghcr.io/alternayte/vellum`. `--wait` returns when both services are ready. To run one version, set `VELLUM_VERSION`, for example `VELLUM_VERSION=0.1.0`. With no value, Compose runs `latest`.
+The first start downloads the image `ghcr.io/alternayte/vellum`. `--wait` returns when both services are ready. To run one version, set `VELLUM_VERSION`, for example `VELLUM_VERSION=0.2.0`. With no value, Compose runs `latest`.
 
 Vellum listens on `http://localhost:8080`. To use other ports, set `VELLUM_PORT` and `VELLUM_POSTGRES_PORT` before the command.
 

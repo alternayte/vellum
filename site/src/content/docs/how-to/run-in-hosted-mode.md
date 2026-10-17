@@ -142,7 +142,7 @@ docker run -d --name vellum \
   ghcr.io/alternayte/vellum:<version>
 ```
 
-`<version>` is a release, for example `0.1.0`. The app user in the container must be able to read the key file. `<proxy-address>` is the address that Vellum sees for your reverse proxy.
+`<version>` is a release, for example `0.2.0`. The app user in the container must be able to read the key file. `<proxy-address>` is the address that Vellum sees for your reverse proxy.
 
 The image runs as a user that is not root. `docker run` does not add the other limits of the Compose files. To add them, use the options `--read-only`, `--tmpfs /tmp`, `--cap-drop ALL` and `--security-opt no-new-privileges:true`.
 
