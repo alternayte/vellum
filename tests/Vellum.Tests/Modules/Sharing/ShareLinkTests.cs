@@ -336,6 +336,90 @@ public class ShareLinkTests(IntegrationFixture fixture) : IClassFixture<Integrat
     }
 
     [Fact]
+    public async Task A_view_link_draws_derived_lines_for_hidden_children_and_names_no_hidden_part()
+    {
+        var owner = await TestHost.SignInAsync(fixture.Factory);
+        var (_, projectId) = await TestHost.CreateProjectAsync(owner);
+        var shop = await AddElementAsync(owner, projectId, "Shop");
+        var bank = await AddElementAsync(owner, projectId, "Bank");
+        async Task<Guid> Child(Guid parent, string name)
+        {
+            var id = Guid.NewGuid();
+            await TestHost.Created(owner.PostAsJsonAsync($"/api/projects/{projectId}/elements", new { id, kind = "app", name, parentId = parent }));
+            return id;
+        }
+        async Task<Guid> Relate(Guid from, Guid to, string label)
+        {
+            var id = Guid.NewGuid();
+            await TestHost.Created(owner.PostAsJsonAsync($"/api/projects/{projectId}/relationships",
+                new { id, fromId = from, toId = to, label, kind = "behavioural" }));
+            return id;
+        }
+        var checkout = await Child(shop, "Hidden Checkout");
+        var basket = await Child(shop, "Hidden Basket");
+        var ledger = await Child(bank, "Hidden Ledger");
+        var payments = await Child(bank, "Hidden Payments");
+        // Two relationships from Shop to Bank merge into one line of 2; one from Bank to Shop draws with its label.
+        var charge = await Relate(checkout, ledger, "Secret charge label");
+        var refund = await Relate(basket, payments, "Secret refund label");
+        var notify = await Relate(payments, checkout, "Sends receipts");
+        var inside = await Relate(checkout, basket, "Secret inner label");
+
+        var view = Guid.NewGuid();
+        await TestHost.Created(owner.PostAsJsonAsync($"/api/projects/{projectId}/views", new { id = view, name = "Context" }));
+        object Route(double fromX, double toX) => new
+        {
+            from = new { x = fromX, y = 0.0, width = 288.0, height = 128.0 },
+            to = new { x = toX, y = 0.0, width = 288.0, height = 128.0 },
+            points = new[] { new { x = fromX + 288, y = 64.0 }, new { x = toX, y = 64.0 } },
+            label = new { x = (fromX + 288 + toX) / 2, y = 64.0 },
+        };
+        var layout = await owner.PutAsJsonAsync($"/api/projects/{projectId}/views/{view}/layout", new
+        {
+            positions = new[] { new { elementId = shop, x = 0.0, y = 0.0 }, new { elementId = bank, x = 500.0, y = 0.0 } },
+            // A row of a hidden relationship, from a level the link does not share, must not leak its ID.
+            edges = new[] { new { relationshipId = charge, routePoints = Route(0, 500), sourceSide = (string?)"right", targetSide = (string?)null } },
+            lines = new[] { new { fromId = shop, toId = bank, route = Route(0, 500) }, new { fromId = checkout, toId = ledger, route = Route(0, 500) } },
+        });
+        Assert.True(layout.IsSuccessStatusCode, await layout.Content.ReadAsStringAsync());
+
+        foreach (var mode in new[] { "live", "pinned" })
+        {
+            Guid? revision = null;
+            if (mode == "pinned")
+            {
+                revision = Guid.NewGuid();
+                await TestHost.Created(owner.PostAsJsonAsync($"/api/projects/{projectId}/revisions", new { id = revision, name = "r1" }));
+            }
+            var (_, token) = await CreateLinkAsync(owner, projectId,
+                new { scope = "view", viewId = view, mode, revisionId = revision, showCosts = true, showPromises = true });
+            using var visitor = Anonymous();
+            var body = await visitor.GetStringAsync($"/api/share/{token}");
+
+            foreach (var hidden in new[]
+                     {
+                         "Hidden Checkout", "Hidden Basket", "Hidden Ledger", "Hidden Payments",
+                         "Secret charge label", "Secret refund label", "Secret inner label",
+                         checkout.ToString(), basket.ToString(), ledger.ToString(), payments.ToString(),
+                         charge.ToString(), refund.ToString(), notify.ToString(), inside.ToString(),
+                     })
+            {
+                Assert.DoesNotContain(hidden, body, StringComparison.OrdinalIgnoreCase);
+            }
+
+            var shared = JsonNode.Parse(body)!["views"]![0]!;
+            var lines = shared["hiddenLines"]!.AsArray()
+                .Select(l => (From: l!["fromId"]!.GetValue<Guid>(), To: l["toId"]!.GetValue<Guid>(), Label: l["label"]?.GetValue<string>(), Count: l["count"]!.GetValue<int>()))
+                .OrderBy(l => l.Count).ToArray();
+            Assert.Equal([(bank, shop, "Sends receipts", 1), (shop, bank, (string?)null, 2)], lines);
+            Assert.Empty(shared["edges"]!.AsArray());
+            var route = Assert.Single(shared["lines"]!.AsArray())!;
+            Assert.Equal(shop, route["fromId"]!.GetValue<Guid>());
+            Assert.Equal(2, route["route"]!["points"]!.AsArray().Count);
+        }
+    }
+
+    [Fact]
     public void A_flow_that_names_a_hidden_fact_is_not_shared_and_a_shared_flow_carries_no_payload()
     {
         var (caller, operation) = (Guid.NewGuid(), Guid.NewGuid());

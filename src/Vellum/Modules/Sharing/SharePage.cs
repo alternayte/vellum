@@ -7,6 +7,7 @@ using Vellum.Modules.Modelling;
 using Vellum.Modules.Promises;
 using Vellum.Modules.Review;
 using Vellum.Modules.Trace.Engine;
+using Vellum.Modules.Views;
 using Vellum.Shared;
 
 namespace Vellum.Modules.Sharing;
@@ -57,14 +58,54 @@ public sealed record SharedModel(
 
 public sealed record SharedPosition(Guid ElementId, double X, double Y, double? Width, double? Height);
 
-/// <summary>The saved sides of one relationship on a diagram: top, right, bottom or left, or null for auto.</summary>
-public sealed record SharedEdgeSides(Guid RelationshipId, string? SourceSide, string? TargetSide);
+public sealed record SharedRoutePoint(double X, double Y);
+
+public sealed record SharedRouteBox(double X, double Y, double Width, double Height);
 
 /// <summary>
-/// A saved diagram: the place of each element on it and the saved sides of its relationships.
-/// Presentation only. <paramref name="Edges"/> is null on a page pinned before sides existed.
+/// The path of a line from the auto layout (Tidy), as the canvas saved it: the boxes of the two
+/// cards when the layout ran, the points and the centre of the label. The page draws it only
+/// while both cards keep those boxes. Coordinates only: a route names nothing.
 /// </summary>
-public sealed record SharedView(Guid Id, string Name, IReadOnlyList<SharedPosition> Positions, IReadOnlyList<SharedEdgeSides>? Edges = null);
+public sealed record SharedRoute(SharedRouteBox From, SharedRouteBox To, IReadOnlyList<SharedRoutePoint> Points, SharedRoutePoint? Label)
+{
+    public static SharedRoute? Of(JsonDocument? saved) => LayoutRoute.Read(saved) is { } route
+        ? new SharedRoute(Box(route.From), Box(route.To), [.. route.Points.Select(p => new SharedRoutePoint(p.X, p.Y))],
+            route.Label is { } l ? new SharedRoutePoint(l.X, l.Y) : null)
+        : null;
+
+    private static SharedRouteBox Box(RouteBox b) => new(b.X, b.Y, b.Width, b.Height);
+}
+
+/// <summary>
+/// The saved sides of one relationship on a diagram: top, right, bottom or left, or null for
+/// auto, and its route from the auto layout, or null.
+/// </summary>
+public sealed record SharedEdgeSides(Guid RelationshipId, string? SourceSide, string? TargetSide, SharedRoute? Route = null);
+
+/// <summary>The saved route of the derived line from one card to another on a diagram.</summary>
+public sealed record SharedLineRoute(Guid FromId, Guid ToId, SharedRoute Route);
+
+/// <summary>
+/// The relationships a view link does not share, between the parts hidden inside two shared
+/// cards, in one direction: only how many there are and, for one, its label. The page merges
+/// them into the derived line between the cards it draws. No ID or name of a hidden part is here.
+/// </summary>
+/// <param name="FromId">The nearest shared card that holds the source of each relationship.</param>
+/// <param name="ToId">The nearest shared card that holds the target of each relationship.</param>
+/// <param name="Label">The label of the one relationship. Null for more than one.</param>
+public sealed record SharedHiddenLine(Guid FromId, Guid ToId, string? Label, int Count);
+
+/// <summary>
+/// A saved diagram: the place of each element on it, the saved sides and routes of its
+/// relationships and the saved routes of its derived lines. Presentation only.
+/// <paramref name="Edges"/> is null on a page pinned before sides existed, and
+/// <paramref name="Lines"/> on a page pinned before routes existed: the lines then take auto
+/// curves. <paramref name="HiddenLines"/> is set on a view link only.
+/// </summary>
+public sealed record SharedView(
+    Guid Id, string Name, IReadOnlyList<SharedPosition> Positions, IReadOnlyList<SharedEdgeSides>? Edges = null,
+    IReadOnlyList<SharedLineRoute>? Lines = null, IReadOnlyList<SharedHiddenLine>? HiddenLines = null);
 
 /// <summary>A payload schema: a JSON Schema document.</summary>
 public sealed record SharedSchema(Guid Id, string Name, string? Description, string Content, int Version);
@@ -210,6 +251,7 @@ public sealed record SharedPage(
     private SharedPage OnlyView(SharedView view)
     {
         var model = Model;
+        view = view with { HiddenLines = [] };
         if (view.Positions.Count > 0)
         {
             var parents = Model.Elements.ToDictionary(e => e.Id, e => e.ParentId);
@@ -219,6 +261,13 @@ public sealed record SharedPage(
                 for (Guid? id = position.ElementId; id is { } at && kept.Add(at);)
                     id = parents.GetValueOrDefault(at);
             }
+            var keptRelationships = Model.Relationships.Where(r => kept.Contains(r.FromId) && kept.Contains(r.ToId)).Select(r => r.Id).ToHashSet();
+            view = view with
+            {
+                Edges = view.Edges?.Where(e => keptRelationships.Contains(e.RelationshipId)).ToList(),
+                Lines = view.Lines?.Where(l => kept.Contains(l.FromId) && kept.Contains(l.ToId)).ToList(),
+                HiddenLines = HiddenLines(parents, kept),
+            };
 
             var messages = Model.Messages.Where(m => kept.Contains(m.ProducerId))
                 .Select(m => m with { ConsumerIds = [.. m.ConsumerIds.Where(kept.Contains)] }).ToList();
@@ -251,6 +300,48 @@ public sealed record SharedPage(
             Costs = Costs is null ? null : SharedCosts.Of(Costs, shownElements),
             Promises = null,
         };
+    }
+
+    /// <summary>
+    /// The relationships of the whole page that a view link does not share, by the rules of
+    /// derived lines (DerivedLines.cs): each end attaches to its nearest shared card, an end with
+    /// none draws nothing, two ends on the same card draw nothing, and the rest merge by pair of
+    /// cards in one direction. A visitor sees only shared cards, so the canvas merges each of
+    /// these into the derived line of the cards it draws and the lines are the same as in the app.
+    /// An inferred relationship is not on the page, so it is not counted.
+    /// </summary>
+    private List<SharedHiddenLine> HiddenLines(IReadOnlyDictionary<Guid, Guid?> parents, IReadOnlySet<Guid> kept)
+    {
+        var resolved = new Dictionary<Guid, Guid?>();
+        Guid? NearestKept(Guid id)
+        {
+            if (resolved.TryGetValue(id, out var known)) return known;
+            Guid? found = null;
+            var seen = new HashSet<Guid>();
+            for (Guid? at = id; at is { } current && parents.ContainsKey(current) && seen.Add(current); at = parents[current])
+            {
+                if (kept.Contains(current))
+                {
+                    found = current;
+                    break;
+                }
+            }
+            resolved[id] = found;
+            return found;
+        }
+
+        var groups = new Dictionary<(Guid From, Guid To), List<SharedRelationship>>();
+        foreach (var r in Model.Relationships)
+        {
+            if (kept.Contains(r.FromId) && kept.Contains(r.ToId)) continue;
+            if (NearestKept(r.FromId) is not { } from || NearestKept(r.ToId) is not { } to || from == to) continue;
+            if (!groups.TryGetValue((from, to), out var group)) groups[(from, to)] = group = [];
+            group.Add(r);
+        }
+        return [.. groups
+            .OrderBy(g => g.Key.From.ToString(), StringComparer.Ordinal)
+            .ThenBy(g => g.Key.To.ToString(), StringComparer.Ordinal)
+            .Select(g => new SharedHiddenLine(g.Key.From, g.Key.To, g.Value.Count == 1 ? g.Value[0].Label : null, g.Value.Count))];
     }
 }
 
@@ -294,16 +385,27 @@ public sealed partial class SharePageReader(IServiceProvider services, AppDbCont
             .Where(p => shown.Contains(p.ElementId))
             .ToLookup(p => p.ViewId);
         var shownRelationships = model.Relationships.Select(r => r.Id).ToHashSet();
-        var sides = (await db.LayoutEdges.AsNoTracking()
-                .Where(e => viewIds.Contains(e.ViewId) && (e.SourceSide != null || e.TargetSide != null))
-                .Select(e => new { e.ViewId, e.RelationshipId, e.SourceSide, e.TargetSide })
+        var edges = (await db.LayoutEdges.AsNoTracking()
+                .Where(e => viewIds.Contains(e.ViewId) && (e.SourceSide != null || e.TargetSide != null || e.RoutePoints != null))
+                .Select(e => new { e.ViewId, e.RelationshipId, e.SourceSide, e.TargetSide, e.RoutePoints })
                 .ToListAsync(ct))
             .Where(e => shownRelationships.Contains(e.RelationshipId))
-            .ToLookup(e => e.ViewId);
+            .Select(e => new { e.ViewId, Edge = new SharedEdgeSides(e.RelationshipId, e.SourceSide, e.TargetSide, SharedRoute.Of(e.RoutePoints)) })
+            .Where(e => e.Edge.SourceSide is not null || e.Edge.TargetSide is not null || e.Edge.Route is not null)
+            .ToLookup(e => e.ViewId, e => e.Edge);
+        var lines = (await db.LayoutLines.AsNoTracking()
+                .Where(l => viewIds.Contains(l.ViewId))
+                .Select(l => new { l.ViewId, l.FromId, l.ToId, l.Route })
+                .ToListAsync(ct))
+            .Where(l => shown.Contains(l.FromId) && shown.Contains(l.ToId))
+            .Select(l => (l.ViewId, Route: SharedRoute.Of(l.Route) is { } route ? new SharedLineRoute(l.FromId, l.ToId, route) : null))
+            .Where(l => l.Route is not null)
+            .ToLookup(l => l.ViewId, l => l.Route!);
         var sharedViews = views
             .Select(v => new SharedView(v.Id, v.Name,
                 [.. positions[v.Id].OrderBy(p => p.ElementId).Select(p => new SharedPosition(p.ElementId, p.X, p.Y, p.Width, p.Height))],
-                [.. sides[v.Id].OrderBy(e => e.RelationshipId).Select(e => new SharedEdgeSides(e.RelationshipId, e.SourceSide, e.TargetSide))]))
+                [.. edges[v.Id].OrderBy(e => e.RelationshipId)],
+                [.. lines[v.Id].OrderBy(l => l.FromId).ThenBy(l => l.ToId)]))
             .ToList();
 
         var schemas = input.Schemas.OrderBy(s => s.Name, StringComparer.Ordinal).ThenBy(s => s.Id)

@@ -62,7 +62,7 @@ import {
 } from '@/lib/ghost-layer'
 import type { GhostEdgeData } from './edges/ghost-edge'
 import { GhostBar } from './ghost-bar'
-import { isDerivedLineId, projectLines } from '@/lib/derived-lines'
+import { isDerivedLineId, projectLines, type HiddenLine } from '@/lib/derived-lines'
 import type { DerivedEdgeData } from './edges/derived-edge'
 
 interface ElementModel {
@@ -174,6 +174,11 @@ interface CanvasViewProps {
   /** The saved routes of the derived lines in this view. */
   lineRoutes?: LineRouteModel[]
   /**
+   * The relationships a view share link does not share, by pair of shared cards. They add to
+   * the derived lines and never draw as relationships.
+   */
+  hiddenLines?: HiddenLine[]
+  /**
    * Saves the sides of a relationship in this view, after an end of it is dragged to another
    * side of the same card. The relationship's source and target in the model do not change.
    */
@@ -223,7 +228,7 @@ export function CanvasView(props: CanvasViewProps) {
         onNodeDoubleClick: props.onNodeDoubleClick, onFitViewReady: props.onFitViewReady,
         onViewportCenterReady: props.onViewportCenterReady, onSelectionChange: props.onSelectionChange,
         searchOpen: props.searchOpen, onSearchClose: props.onSearchClose, readOnly: true,
-        commentMarkers: props.commentMarkers, edgeSides: props.edgeSides, lineRoutes: props.lineRoutes,
+        commentMarkers: props.commentMarkers, edgeSides: props.edgeSides, lineRoutes: props.lineRoutes, hiddenLines: props.hiddenLines,
       }
     : props
   return (
@@ -275,6 +280,7 @@ function CanvasViewInner({
   commentMarkers,
   edgeSides,
   lineRoutes,
+  hiddenLines,
   onEdgeSidesChange,
 }: CanvasViewProps) {
   const { currentRootId, zoomLevel, setZoom, activeLens, setLens, expandedNodeIds, toggleExpand } = useCanvasStore()
@@ -436,7 +442,7 @@ function CanvasViewInner({
   // A relationship with both ends on the canvas draws as itself. The rest attach to the nearest
   // card on the canvas that holds each end and merge into derived lines, a projection of this
   // view that is never stored.
-  const lines = useMemo(() => projectLines(elements, relationships, visibleIds), [elements, relationships, visibleIds])
+  const lines = useMemo(() => projectLines(elements, relationships, visibleIds, hiddenLines), [elements, relationships, visibleIds, hiddenLines])
   const visibleRelationships = lines.direct
   // The detail panel lists the relationships of the selected derived line. A change of the model
   // or of the open cards changes the line, so the list follows it, and a line that is no longer
@@ -447,8 +453,8 @@ function CanvasViewInner({
     const line = lines.derived.find((l) => l.fromId === selectedDerivedLine.fromId && l.toId === selectedDerivedLine.toId)
     const { selectDerivedLine } = useShellStore.getState()
     if (!line) selectDerivedLine(null)
-    else if (line.relationshipIds.join() !== selectedDerivedLine.relationshipIds.join()) {
-      selectDerivedLine({ fromId: line.fromId, toId: line.toId, relationshipIds: line.relationshipIds })
+    else if (line.relationshipIds.join() !== selectedDerivedLine.relationshipIds.join() || line.hiddenCount !== (selectedDerivedLine.hiddenCount ?? 0) || line.label !== (selectedDerivedLine.label ?? null)) {
+      selectDerivedLine({ fromId: line.fromId, toId: line.toId, relationshipIds: line.relationshipIds, hiddenCount: line.hiddenCount, label: line.label })
     }
   }, [lines, selectedDerivedLine])
 
@@ -628,6 +634,7 @@ function CanvasViewInner({
         fromId: line.fromId,
         toId: line.toId,
         relationshipIds: line.relationshipIds,
+        hiddenCount: line.hiddenCount,
         label: line.label,
         ...place(line.fromId, line.toId),
         route: lineRouteMap.get(`${line.fromId}>${line.toId}`) ?? null,
@@ -1005,13 +1012,13 @@ function CanvasViewInner({
     // A routed line may pass above or beside the cards: the frame holds it and its label too, as
     // in the SVG export.
     for (const e of rfEdges) {
-      const data = e.data as { route?: LayoutRoute | null; label?: string | null; technology?: string | null; relationshipIds?: string[] } | undefined
+      const data = e.data as { route?: LayoutRoute | null; label?: string | null; technology?: string | null; relationshipIds?: string[]; hiddenCount?: number } | undefined
       const source = boxes.get(e.source)
       const target = boxes.get(e.target)
       if (!data?.route || !source || !target || !routeFits(data.route, source, target)) continue
       for (const p of data.route.points) add(p.x, p.y, 0, 0)
       const size = data.relationshipIds
-        ? derivedLabelSize(data.relationshipIds.length, data.label ?? null)
+        ? derivedLabelSize(data.relationshipIds.length + (data.hiddenCount ?? 0), data.label ?? null)
         : relationshipLabelSize({ id: e.id, fromId: e.source, toId: e.target, label: data.label, technology: data.technology })
       if (size && data.route.label) add(data.route.label.x - size.width / 2, data.route.label.y - size.height / 2, size.width, size.height)
     }
@@ -1159,8 +1166,8 @@ function CanvasViewInner({
     (_event: React.MouseEvent, edge: Edge) => {
       if (isGhostNodeId(edge.id)) return selectGhost(itemIdOf(edge.id))
       if (isDerivedLineId(edge.id)) {
-        const { fromId, toId, relationshipIds } = edge.data as DerivedEdgeData
-        return selectDerivedLine({ fromId, toId, relationshipIds })
+        const { fromId, toId, relationshipIds, hiddenCount, label } = edge.data as DerivedEdgeData
+        return selectDerivedLine({ fromId, toId, relationshipIds, hiddenCount: hiddenCount ?? 0, label })
       }
       selectRelationship(edge.id)
     },

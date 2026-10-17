@@ -8,7 +8,7 @@ import { renderPage } from '@/components/docs/page-tree'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { useCanvasStore } from '@/stores/canvas-store'
-import { useShellStore } from '@/stores/shell-store'
+import { useShellStore, type SelectedDerivedLine } from '@/stores/shell-store'
 import { canContain } from '@/lib/containment-rules'
 import { factStatusColor, factStatusLabel } from '@/lib/fact-status'
 import { cn } from '@/lib/utils'
@@ -189,6 +189,13 @@ function Diagram({ page, view, views, onView }: { page: SharedPage; view: Shared
   const positions = useMemo(() => (view?.positions ?? []).map((p) => ({
     elementId: p.elementId, x: p.x, y: p.y, width: p.width ?? undefined, height: p.height ?? undefined,
   })), [view])
+  // The routes of the auto layout draw as on the canvas: a route that no longer fits its two
+  // cards falls back to the auto curve there.
+  const edgeSides = useMemo(() => view?.edges?.map((e) => ({
+    relationshipId: e.relationshipId, sourceSide: e.sourceSide, targetSide: e.targetSide, routePoints: e.route ?? null,
+  })), [view])
+  const lineRoutes = useMemo(() => view?.lines ?? undefined, [view])
+  const hiddenLines = useMemo(() => view?.hiddenLines ?? undefined, [view])
   const selectedElementId = useShellStore((s) => s.selectedElementId)
   const selectedRelationshipId = useShellStore((s) => s.selectedRelationshipId)
   const selectedDerivedLine = useShellStore((s) => s.selectedDerivedLine)
@@ -209,7 +216,9 @@ function Diagram({ page, view, views, onView }: { page: SharedPage; view: Shared
           elements={elements}
           relationships={relationships}
           positions={positions}
-          edgeSides={view?.edges ?? undefined}
+          edgeSides={edgeSides}
+          lineRoutes={lineRoutes}
+          hiddenLines={hiddenLines}
           messages={page.model.messages}
           onNodeDoubleClick={(id) => {
             const el = page.model.elements.find((e) => e.id === id)
@@ -303,7 +312,10 @@ function Details({ page, elementId, relationshipId }: { page: SharedPage; elemen
           <Field label="Truth"><Truth label={relationship.truthLabel} citation={relationship.citation} stale={relationship.stale} /></Field>
         </dl>
       )}
-      {!element && !relationship && derivedLine && (
+      {!element && !relationship && derivedLine && (derivedLine.hiddenCount ?? 0) > 0 && (
+        <HiddenLineDetail line={derivedLine} elements={model.elements} />
+      )}
+      {!element && !relationship && derivedLine && (derivedLine.hiddenCount ?? 0) === 0 && (
         <DerivedLineDetail
           line={derivedLine}
           elements={model.elements}
@@ -313,6 +325,25 @@ function Details({ page, elementId, relationshipId }: { page: SharedPage; elemen
         />
       )}
     </aside>
+  )
+}
+
+/**
+ * A derived line with relationships the link does not share: its two cards, its label and how
+ * many relationships it holds. The parts inside the cards are not on the page, so it lists none.
+ */
+function HiddenLineDetail({ line, elements }: { line: SelectedDerivedLine; elements: SharedPage['model']['elements'] }) {
+  const name = (id: string) => elements.find((e) => e.id === id)?.name ?? 'Not shared'
+  const count = line.relationshipIds.length + (line.hiddenCount ?? 0)
+  return (
+    <dl className="space-y-3">
+      <Field label="Between">{name(line.fromId)} → {name(line.toId)}</Field>
+      {count === 1 && line.label && <Field label="Label">{line.label}</Field>}
+      <Field label="Relationships"><span className="font-mono tabular-nums">{count}</span></Field>
+      <p className="text-xs leading-relaxed text-muted-foreground">
+        A derived line joins two cards for the relationships between the parts inside them. This link does not share those parts.
+      </p>
+    </dl>
   )
 }
 

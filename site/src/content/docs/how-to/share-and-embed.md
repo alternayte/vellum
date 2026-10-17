@@ -14,7 +14,11 @@ A link shows:
 - the contracts: operations, channels, messages and payload schemas;
 - for a project link: the flows, the docs of main and the accepted decisions (ADRs). A flow shows its steps without payload samples or headers. A flow that names a hidden fact is not shown.
 
-A view link shows the elements that the view places, with their parents, and the facts and schemas between them. A view that places no element shows the whole model, as the canvas does. The diagram draws derived lines for the relationships that the link shares. A relationship with an end that the view does not place is not shared, and a view link draws no derived line for it.
+A view link shows the elements that the view places, with their parents, and the facts and schemas between them. A view that places no element shows the whole model, as the canvas does.
+
+A view link does not share the parts that the view does not place, such as the children inside a card. It still draws a derived line for the relationships between those hidden parts, between the two shared cards that hold them. The line shows the number of relationships. A line of one relationship also shows its label, as the SVG export does. When you select the line, the details show the two cards, the label and the number. The page never shows the names or the IDs of the hidden parts or of the hidden relationships. An inferred relationship that no person accepted is not counted.
+
+The diagram draws the lines along the routes that **Tidy** saved, as the canvas does. When a card is no longer in the place where Tidy put it, its lines take the automatic curve. A pinned link uses the layout of the moment you created the link.
 
 Two parts are off by default. You turn each one on for each link:
 
@@ -96,7 +100,7 @@ A hosted instance starts with **Password only**. A local instance starts with **
 <iframe src="https://vellum.example.com/embed/<token>" width="100%" height="600" style="border:0" title="Architecture view"></iframe>
 ```
 
-The embedded page shows the diagram, pan, zoom, drill-in and the details of each element. It has no app shell. A password link asks for the password inside the frame.
+The embedded page shows the diagram, pan, zoom, drill-in and the details of each element. It draws the same derived lines and routes as the view link. It has no app shell. A password link asks for the password inside the frame.
 
 Only the page `/embed/{token}` of a view link can be shown in a frame, and only by the origins in the list. The list starts empty, so no site can frame a view until an Owner adds its origin. Every other page of Vellum refuses every frame.
 
