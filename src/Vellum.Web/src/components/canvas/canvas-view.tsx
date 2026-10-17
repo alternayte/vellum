@@ -61,6 +61,8 @@ import {
 } from '@/lib/ghost-layer'
 import type { GhostEdgeData } from './edges/ghost-edge'
 import { GhostBar } from './ghost-bar'
+import { isDerivedLineId, projectLines } from '@/lib/derived-lines'
+import type { DerivedEdgeData } from './edges/derived-edge'
 
 interface ElementModel {
   id: string
@@ -418,11 +420,24 @@ function CanvasViewInner({
     return ids
   }, [visibleElements, elements, expandedNodeIds])
 
-  const visibleRelationships = useMemo(() => {
-    return relationships.filter(
-      (r) => visibleIds.has(r.fromId) && visibleIds.has(r.toId),
-    )
-  }, [relationships, visibleIds])
+  // A relationship with both ends on the canvas draws as itself. The rest attach to the nearest
+  // card on the canvas that holds each end and merge into derived lines, a projection of this
+  // view that is never stored.
+  const lines = useMemo(() => projectLines(elements, relationships, visibleIds), [elements, relationships, visibleIds])
+  const visibleRelationships = lines.direct
+  // The detail panel lists the relationships of the selected derived line. A change of the model
+  // or of the open cards changes the line, so the list follows it, and a line that is no longer
+  // drawn is no longer selected.
+  const selectedDerivedLine = useShellStore((s) => s.selectedDerivedLine)
+  useEffect(() => {
+    if (!selectedDerivedLine) return
+    const line = lines.derived.find((l) => l.fromId === selectedDerivedLine.fromId && l.toId === selectedDerivedLine.toId)
+    const { selectDerivedLine } = useShellStore.getState()
+    if (!line) selectDerivedLine(null)
+    else if (line.relationshipIds.join() !== selectedDerivedLine.relationshipIds.join()) {
+      selectDerivedLine({ fromId: line.fromId, toId: line.toId, relationshipIds: line.relationshipIds })
+    }
+  }, [lines, selectedDerivedLine])
 
   const sidesMap = useMemo(() => new Map((edgeSides ?? []).map((e) => [e.relationshipId, e])), [edgeSides])
 
@@ -538,19 +553,23 @@ function CanvasViewInner({
   }, [visibleElements, elements, positionMap, tier, diffStateMap, isReviewMode, expandedNodeIds, ghostHostSizes, onRenameElement, onNodeResize, onAddChild])
 
   const edges: Edge[] = useMemo(() => {
-    // Count parallel edges between each pair of nodes (ignoring direction)
+    // Count parallel edges between each pair of nodes (ignoring direction): the relationships,
+    // then the derived lines, as the SVG export does.
     const pairCounts = new Map<string, number>()
     const pairIndex = new Map<string, number>()
-    for (const rel of visibleRelationships) {
-      const pairKey = [rel.fromId, rel.toId].sort().join('|')
+    for (const line of [...lines.direct, ...lines.derived]) {
+      const pairKey = [line.fromId, line.toId].sort().join('|')
       pairCounts.set(pairKey, (pairCounts.get(pairKey) ?? 0) + 1)
     }
-
-    return visibleRelationships.map((rel) => {
-      const pairKey = [rel.fromId, rel.toId].sort().join('|')
-      const total = pairCounts.get(pairKey) ?? 1
+    const place = (fromId: string, toId: string) => {
+      const pairKey = [fromId, toId].sort().join('|')
       const idx = pairIndex.get(pairKey) ?? 0
       pairIndex.set(pairKey, idx + 1)
+      return { edgeIndex: idx, totalParallel: pairCounts.get(pairKey) ?? 1, forward: fromId <= toId }
+    }
+
+    const direct: Edge[] = lines.direct.map((rel) => {
+      const { edgeIndex: idx, totalParallel: total } = place(rel.fromId, rel.toId)
 
       return {
         id: rel.id,
@@ -577,7 +596,25 @@ function CanvasViewInner({
         reconnectable: false,
       }
     })
-  }, [visibleRelationships, diffStateMap, isReviewMode, sidesMap])
+    // A derived line is no fact: it has no ends to drag, no menu, and nothing to delete.
+    const derived: Edge[] = lines.derived.map((line) => ({
+      id: line.id,
+      source: line.fromId,
+      target: line.toId,
+      type: 'derived-edge',
+      markerEnd: { type: MarkerType.ArrowClosed, color: 'var(--muted-foreground)' },
+      reconnectable: false,
+      deletable: false,
+      data: {
+        fromId: line.fromId,
+        toId: line.toId,
+        relationshipIds: line.relationshipIds,
+        label: line.label,
+        ...place(line.fromId, line.toId),
+      } satisfies DerivedEdgeData,
+    }))
+    return [...direct, ...derived]
+  }, [lines, diffStateMap, isReviewMode, sidesMap])
 
   // The ghosts of this level: dashed cards and lines. A ghost inside a node follows it, so
   // each node comes after the node it sits in.
@@ -1079,9 +1116,17 @@ function CanvasViewInner({
     [onNodeDoubleClick],
   )
 
+  const selectDerivedLine = useShellStore((s) => s.selectDerivedLine)
   const handleEdgeClick = useCallback(
-    (_event: React.MouseEvent, edge: Edge) => (isGhostNodeId(edge.id) ? selectGhost(itemIdOf(edge.id)) : selectRelationship(edge.id)),
-    [selectRelationship, selectGhost],
+    (_event: React.MouseEvent, edge: Edge) => {
+      if (isGhostNodeId(edge.id)) return selectGhost(itemIdOf(edge.id))
+      if (isDerivedLineId(edge.id)) {
+        const { fromId, toId, relationshipIds } = edge.data as DerivedEdgeData
+        return selectDerivedLine({ fromId, toId, relationshipIds })
+      }
+      selectRelationship(edge.id)
+    },
+    [selectRelationship, selectGhost, selectDerivedLine],
   )
 
   const handleConnect: OnConnect = useCallback(
@@ -1182,7 +1227,7 @@ function CanvasViewInner({
   const handleEdgesDelete = useCallback(
     (deleted: Edge[]) => {
       for (const edge of deleted) {
-        if (!isGhostNodeId(edge.id)) onDeleteRelationship?.(edge.id)
+        if (!isGhostNodeId(edge.id) && !isDerivedLineId(edge.id)) onDeleteRelationship?.(edge.id)
       }
     },
     [onDeleteRelationship],
@@ -1205,7 +1250,7 @@ function CanvasViewInner({
   const handleEdgeContextMenu = useCallback(
     (event: React.MouseEvent, edge: Edge) => {
       event.preventDefault()
-      if (isGhostNodeId(edge.id)) return
+      if (isGhostNodeId(edge.id) || isDerivedLineId(edge.id)) return
       setContextMenu({ type: 'edge', edgeId: edge.id, position: { x: event.clientX, y: event.clientY } })
     },
     [],

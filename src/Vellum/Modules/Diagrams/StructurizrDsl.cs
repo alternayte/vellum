@@ -19,6 +19,8 @@ namespace Vellum.Modules.Diagrams;
 /// a <c>container</c> view; one whose root is a container, a <c>component</c> view. Each has
 /// <c>include *</c> and <c>autoLayout</c>. Any other view is named in a comment.</item>
 /// </list>
+/// <item>Each derived line of a written view (<see cref="DerivedLines"/>) is a relationship with
+/// the tag <c>Derived</c>, drawn thin and dotted. A derived line that two views share is written once.</item>
 /// The export is one-way: the header lists what it drops, and a comment names each relationship
 /// that Structurizr refuses.
 /// </summary>
@@ -61,8 +63,9 @@ public static class StructurizrDsl
         var text = new StringBuilder();
         text.Append("workspace ").Append(Quote(projectName)).Append(' ').Append(Quote("Exported from Vellum")).Append(" {\n\n");
         text.Append("    model {\n");
-        // Vellum draws only the relationships it holds. Implied relationships would also make
-        // the file fail when two children of one parent point at the same element.
+        // Vellum draws the relationships it holds and the derived lines of its views, which are
+        // written out below. Implied relationships would also make the file fail when two
+        // children of one parent point at the same element.
         text.Append("        !impliedRelationships false\n\n");
 
         var types = new Dictionary<ElementId, DslType>();
@@ -147,10 +150,48 @@ public static class StructurizrDsl
                 .Append(' ').Append(Quote(r.Kind == RelationshipKind.Behavioural ? "Behavioural" : ""))
                 .Append('\n');
         }
+
+        var orderedViews = views.OrderBy(v => v.Name, StringComparer.Ordinal).ThenBy(v => v.Id).ToList();
+
+        // The derived lines of each view that is written, as the canvas draws them with every card
+        // closed. The line between two elements is the same in every view that shows both.
+        var derived = new Dictionary<(ElementId From, ElementId To), DerivedLine>();
+        foreach (var view in orderedViews)
+        {
+            ElementId? root = view.RootElementId is { } r ? new ElementId(r) : null;
+            if (root is { } at && (!types.TryGetValue(at, out var type) || type is not (DslType.SoftwareSystem or DslType.Container)))
+                continue;
+            var level = state.Elements.Values.Where(e => e.ParentId == root).Select(e => e.Id).ToHashSet();
+            foreach (var line in DerivedLines.Project(state.Elements, state.Relationships.Values, level).Derived)
+                derived.TryAdd((line.FromId, line.ToId), line);
+        }
+        if (derived.Count > 0) text.Append('\n');
+        foreach (var line in derived.Values
+                     .OrderBy(l => l.FromId.Value.ToString(), StringComparer.Ordinal).ThenBy(l => l.ToId.Value.ToString(), StringComparer.Ordinal))
+        {
+            var from = ids[line.FromId.Value];
+            var to = ids[line.ToId.Value];
+            var label = DiagramText.OneLine(line.Label);
+            if (!types.ContainsKey(line.FromId) || !types.ContainsKey(line.ToId)
+                || IsAncestor(dslParent, line.FromId, line.ToId) || IsAncestor(dslParent, line.ToId, line.FromId))
+            {
+                text.Append("        // Derived line not written: ").Append(from).Append(" -> ").Append(to)
+                    .Append(". Structurizr does not allow a relationship between an element and its parent.\n");
+                continue;
+            }
+            if (!written.Add((line.FromId, line.ToId, label)))
+            {
+                text.Append("        // Derived line not written: ").Append(from).Append(" -> ").Append(to)
+                    .Append(" has the label of a relationship between the same two elements. Structurizr allows one.\n");
+                continue;
+            }
+            text.Append("        ").Append(from).Append(" -> ").Append(to)
+                .Append(' ').Append(Quote(line.Label)).Append(' ').Append(Quote(null)).Append(' ').Append(Quote("Derived"))
+                .Append('\n');
+        }
         text.Append("    }\n\n");
 
         text.Append("    views {\n");
-        var orderedViews = views.OrderBy(v => v.Name, StringComparer.Ordinal).ThenBy(v => v.Id).ToList();
         var keys = DiagramText.Identifiers(orderedViews.Select(v => (v.Id, v.Name)), "view", new HashSet<string>(StringComparer.Ordinal));
         foreach (var view in orderedViews)
         {
@@ -178,6 +219,7 @@ public static class StructurizrDsl
         text.Append("\n        styles {\n")
             .Append("            element \"Person\" {\n                shape Person\n            }\n")
             .Append("            element \"Database\" {\n                shape Cylinder\n            }\n")
+            .Append(derived.Count > 0 ? "            relationship \"Derived\" {\n                thickness 1\n                style dotted\n            }\n" : "")
             .Append("        }\n");
         text.Append("    }\n");
         text.Append("}\n");
@@ -189,6 +231,9 @@ public static class StructurizrDsl
             header.Append("// View \"").Append(DiagramText.OneLine(view.Name)).Append("\" with layout ")
                 .Append(ViewDiagram.LayoutFingerprint(view, positions.GetValueOrDefault(view.Id) ?? [], edges?.GetValueOrDefault(view.Id))).Append(".\n");
         header.Append("// One-way export. It drops: ").Append(Dropped).Append(".\n");
+        if (derived.Count > 0)
+            header.Append("// A relationship tagged Derived is a derived line of a view: the relationships between elements inside its two ends, ")
+            .Append("labelled with the one relationship's label or \"N relationships\". It is not a relationship of the Vellum model.\n");
         foreach (var (identifier, from, to) in renames)
             header.Append("// Renamed for unique names: ").Append(identifier).Append(" \"").Append(from)
                 .Append("\" is \"").Append(to).Append("\".\n");

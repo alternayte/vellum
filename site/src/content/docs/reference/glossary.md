@@ -47,6 +47,8 @@ Each entry gives the meaning of a term in Vellum and the page that defines it.
 
 **Declared**: A truth label: a person states that this is so. See [Evidence and truth labels](/concepts/evidence-and-truth-labels/#the-five-labels).
 
+**Derived line**: A line that a diagram and its exports draw between two visible cards for the relationships whose ends are hidden inside them. It shows the label of its one relationship or "N relationships". It is never stored. See [Views, levels and derived lines](/concepts/views-levels-and-derived-lines/).
+
 **Detached**: The status of a comment thread whose target was deleted. The thread keeps the last name of the target. See [Comments are not facts](/concepts/comments-are-not-facts/#the-status-of-a-thread).
 
 **Disposition**: The answer of a person to one review finding, for example "accepted by a decision" or "won't fix". See [Review rules](/reference/review-rules/).

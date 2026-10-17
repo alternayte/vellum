@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 're
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Lock, X } from 'lucide-react'
 import { CanvasView } from '@/components/canvas/canvas-view'
+import { DerivedLineDetail } from '@/components/canvas/derived-line-detail'
 import { StrataBreadcrumb } from '@/components/shell/strata-breadcrumb'
 import { renderPage } from '@/components/docs/page-tree'
 import { Button } from '@/components/ui/button'
@@ -190,6 +191,7 @@ function Diagram({ page, view, views, onView }: { page: SharedPage; view: Shared
   })), [view])
   const selectedElementId = useShellStore((s) => s.selectedElementId)
   const selectedRelationshipId = useShellStore((s) => s.selectedRelationshipId)
+  const selectedDerivedLine = useShellStore((s) => s.selectedDerivedLine)
 
   return (
     <div className="flex min-h-0 flex-1">
@@ -215,7 +217,7 @@ function Diagram({ page, view, views, onView }: { page: SharedPage; view: Shared
           }}
         />
       </main>
-      {(selectedElementId || selectedRelationshipId) && (
+      {(selectedElementId || selectedRelationshipId || selectedDerivedLine) && (
         <Details page={page} elementId={selectedElementId} relationshipId={selectedRelationshipId} />
       )}
     </div>
@@ -248,18 +250,19 @@ function Details({ page, elementId, relationshipId }: { page: SharedPage; elemen
   const model = page.model
   const name = (id: string | null) => (id ? model.elements.find((e) => e.id === id)?.name ?? 'Not shared' : '—')
   const schema = (id: string | null) => (id ? page.schemas.find((s) => s.id === id)?.name ?? 'Unknown schema' : null)
+  const derivedLine = useShellStore((s) => s.selectedDerivedLine)
   const close = () => {
     useShellStore.getState().selectElement(null)
     useShellStore.getState().selectRelationship(null)
   }
   const element = elementId ? model.elements.find((e) => e.id === elementId) : null
   const relationship = !element && relationshipId ? model.relationships.find((r) => r.id === relationshipId) : null
-  if (!element && !relationship) return null
+  if (!element && !relationship && !derivedLine) return null
 
   return (
     <aside aria-label="Details" className="w-80 max-w-[85vw] shrink-0 overflow-y-auto border-l border-border bg-card p-4">
       <div className="mb-3 flex items-start justify-between gap-2">
-        <h2 className="text-sm font-medium">{element ? element.name : `${name(relationship!.fromId)} → ${name(relationship!.toId)}`}</h2>
+        <h2 className="text-sm font-medium">{element ? element.name : relationship ? `${name(relationship.fromId)} → ${name(relationship.toId)}` : 'Derived line'}</h2>
         <button type="button" onClick={close} aria-label="Close details" className="rounded p-0.5 text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-primary">
           <X className="h-4 w-4" />
         </button>
@@ -299,6 +302,15 @@ function Details({ page, elementId, relationshipId }: { page: SharedPage; elemen
           <Field label="Kind">{relationship.kind}</Field>
           <Field label="Truth"><Truth label={relationship.truthLabel} citation={relationship.citation} stale={relationship.stale} /></Field>
         </dl>
+      )}
+      {!element && !relationship && derivedLine && (
+        <DerivedLineDetail
+          line={derivedLine}
+          elements={model.elements}
+          relationships={model.relationships}
+          onSelectElement={(id) => useShellStore.getState().selectElement(id)}
+          onSelectRelationship={(id) => useShellStore.getState().selectRelationship(id)}
+        />
       )}
     </aside>
   )

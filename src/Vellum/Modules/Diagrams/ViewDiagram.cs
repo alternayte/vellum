@@ -17,9 +17,11 @@ public enum CardSide { Left, Right, Top, Bottom }
 public sealed record RelationshipSides(CardSide? Source, CardSide? Target);
 
 /// <summary>
-/// One view of a model as the canvas shows it: the elements of the view's level, the frame of
-/// the element whose inside the level is, and the relationships between two shown elements.
-/// Every list has a fixed order, so the same model and the same layout give the same diagram.
+/// One view of a model as the canvas shows it with every card closed: the elements of the view's
+/// level, the frame of the element whose inside the level is, the relationships between two shown
+/// elements, and the derived lines of the relationships whose ends are hidden inside shown
+/// elements (<see cref="Vellum.Modules.Diagrams.DerivedLines"/>). Every list has a fixed order, so the same model and the
+/// same layout give the same diagram.
 /// </summary>
 public sealed record ViewDiagram(
     string ViewName,
@@ -28,7 +30,8 @@ public sealed record ViewDiagram(
     IReadOnlyList<RelationshipState> Relationships,
     ModelPin Pin,
     string Layout,
-    IReadOnlyDictionary<RelationshipId, RelationshipSides> Sides)
+    IReadOnlyDictionary<RelationshipId, RelationshipSides> Sides,
+    IReadOnlyList<DerivedLine> DerivedLines)
 {
     /// <summary>The height of every card on the canvas.</summary>
     public const double CardHeight = 128;
@@ -100,10 +103,8 @@ public sealed record ViewDiagram(
         }
 
         var ids = shown.Select(e => e.Element.Id).ToHashSet();
-        var relationships = state.Relationships.Values
-            .Where(rel => ids.Contains(rel.FromId) && ids.Contains(rel.ToId))
-            .OrderBy(rel => rel.Id.Value)
-            .ToList();
+        var (direct, derived) = Diagrams.DerivedLines.Project(state.Elements, state.Relationships.Values, ids);
+        var relationships = direct.OrderBy(rel => rel.Id.Value).ToList();
 
         var sides = new Dictionary<RelationshipId, RelationshipSides>();
         foreach (var edge in edgeList)
@@ -113,7 +114,7 @@ public sealed record ViewDiagram(
                 sides[new RelationshipId(edge.RelationshipId)] = saved;
         }
 
-        return new ViewDiagram(view.Name, root, shown, relationships, model.Pin, LayoutFingerprint(view, placed.Values, edgeList), sides);
+        return new ViewDiagram(view.Name, root, shown, relationships, model.Pin, LayoutFingerprint(view, placed.Values, edgeList), sides, derived);
     }
 
     /// <summary>

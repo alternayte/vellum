@@ -76,6 +76,8 @@ Except for the **Add Element** dialog, a new element has the name `New <kind>`. 
 
 **Expand** in the same menu shows the children in place, inside a frame on the current level. **Collapse** hides them again. An element with no child has no **Expand**.
 
+A relationship between parts hidden inside two collapsed cards shows as a derived line between those cards. It is thinner than a relationship and has a count badge. Its label is the label of its one relationship, or "N relationships". Select it to list the relationships in the detail panel, then select an entry to open that relationship. A derived line is not stored. See [Views, levels and derived lines](/concepts/views-levels-and-derived-lines/).
+
 ![The canvas at the level Context with the system Orders expanded. The frame Orders holds Orders API, Order worker and Orders DB. Around the frame are the actor Customer and the systems Storefront, Payments, Card network and Fulfilment. Each line has a label, for example places orders, requests payment and sends paid orders.](../../../assets/screenshots/canvas-online-shop.png)
 
 To add the first child of a system or an app, right-click it and select **Add app inside**, **Add store inside** or **Add component inside**. As an alternative, select it and use the buttons below **Inside this system** in the detail panel, or select **Add an app or a store inside** on its card.

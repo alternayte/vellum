@@ -6,7 +6,8 @@ namespace Vellum.Modules.Diagrams;
 
 /// <summary>
 /// A view as one SVG document that looks like the canvas in its dark theme: the cards, the frame
-/// of the level's root, the relationships with their labels. The same diagram always gives the
+/// of the level's root, the relationships with their labels, and the derived lines with their
+/// count badges. The same diagram always gives the
 /// same bytes: the lists are ordered, numbers are written in the invariant culture with two
 /// decimals at most, every ID in the file is a fixed word, and nothing holds a time. Fonts are
 /// named by family, not embedded, so a viewer without them shows a fallback font.
@@ -92,6 +93,8 @@ public static class DiagramSvg
         svg.Append("<defs>\n");
         Marker(svg, "vellum-arrow-structural", MutedForeground);
         Marker(svg, "vellum-arrow-behavioural", Behavioural);
+        // Only a picture with a derived line holds its marker, so the bytes of one without stay as they were.
+        if (diagram.DerivedLines.Count > 0) Marker(svg, "vellum-arrow-derived", MutedForeground);
         svg.Append("</defs>\n");
         svg.Append(CultureInfo.InvariantCulture,
             $"<rect x=\"{N(minX)}\" y=\"{N(minY)}\" width=\"{N(width)}\" height=\"{N(height)}\" fill=\"{Background}\"/>\n");
@@ -209,19 +212,37 @@ public static class DiagramSvg
     private static void WriteRelationships(
         StringBuilder svg, StringBuilder labels, ViewDiagram diagram, Dictionary<ElementId, Rect> boxes, Bounds bounds)
     {
-        // Parallel relationships between one pair of elements are pushed apart, in ID order.
-        static (Guid, Guid) Pair(RelationshipState r) =>
-            r.FromId.Value.CompareTo(r.ToId.Value) <= 0 ? (r.FromId.Value, r.ToId.Value) : (r.ToId.Value, r.FromId.Value);
-        var totals = diagram.Relationships.GroupBy(Pair).ToDictionary(g => g.Key, g => g.Count());
+        // Parallel lines between one pair of elements are pushed apart: the relationships in ID
+        // order, then the derived lines in their order, as on the canvas.
+        static (Guid, Guid) Pair(ElementId from, ElementId to) =>
+            from.Value.CompareTo(to.Value) <= 0 ? (from.Value, to.Value) : (to.Value, from.Value);
+        var totals = diagram.Relationships.Select(r => Pair(r.FromId, r.ToId))
+            .Concat(diagram.DerivedLines.Select(d => Pair(d.FromId, d.ToId)))
+            .GroupBy(p => p).ToDictionary(g => g.Key, g => g.Count());
         var seen = new Dictionary<(Guid, Guid), int>();
 
-        foreach (var r in diagram.Relationships)
+        (int Index, int Total, (Guid, Guid) Pair, double Offset) Place(ElementId from, ElementId to)
         {
-            var pair = Pair(r);
+            var pair = Pair(from, to);
             var total = totals[pair];
             var index = seen.GetValueOrDefault(pair);
             seen[pair] = index + 1;
-            var offset = total <= 1 ? 0 : (index - (total - 1) / 2.0) * ParallelOffset;
+            return (index, total, pair, total <= 1 ? 0 : (index - (total - 1) / 2.0) * ParallelOffset);
+        }
+
+        // The labels of parallel lines move along the path, apart from each other. The canvas
+        // moves them less; a picture has no hover to tell two labels apart. The shift is measured
+        // in the direction of the pair, so two opposite lines move apart too.
+        static (double X, double Y) LabelPoint(Ends ends, double centerX, double centerY, int index, int total, bool forward)
+        {
+            var labelT = total <= 1 ? 0.5 : Math.Clamp(0.5 + (index - (total - 1) / 2.0) * 0.3, 0.2, 0.8);
+            var shift = (labelT - 0.5) * (forward ? 1 : -1);
+            return (centerX + (ends.TargetX - ends.SourceX) * shift, centerY + (ends.TargetY - ends.SourceY) * shift);
+        }
+
+        foreach (var r in diagram.Relationships)
+        {
+            var (index, total, pair, offset) = Place(r.FromId, r.ToId);
 
             var source = boxes[r.FromId];
             var target = boxes[r.ToId];
@@ -240,15 +261,48 @@ public static class DiagramSvg
             svg.Append(CultureInfo.InvariantCulture,
                 $"<path class=\"relationship\" d=\"{path}\" fill=\"none\" stroke=\"{(behavioural ? Behavioural : MutedForeground)}\" stroke-width=\"{(behavioural ? "2" : "1.5")}\" marker-end=\"url(#vellum-arrow-{(behavioural ? "behavioural" : "structural")})\"/>\n");
 
-            // The labels of parallel relationships move along the path, apart from each other.
-            // The canvas moves them less; a picture has no hover to tell two labels apart.
-            var labelT = total <= 1 ? 0.5 : Math.Clamp(0.5 + (index - (total - 1) / 2.0) * 0.3, 0.2, 0.8);
-            // Measured in the direction of the pair, so two opposite relationships move apart too.
-            var shift = (labelT - 0.5) * (r.FromId.Value == pair.Item1 ? 1 : -1);
-            var lx = centerX + (ends.TargetX - ends.SourceX) * shift;
-            var ly = centerY + (ends.TargetY - ends.SourceY) * shift;
+            var (lx, ly) = LabelPoint(ends, centerX, centerY, index, total, r.FromId.Value == pair.Item1);
             WriteLabel(labels, r, lx, ly, bounds);
         }
+
+        // A derived line is lighter than a relationship and carries a count badge. It follows
+        // the auto sides and the default curve: it has no saved sides and no line shape.
+        foreach (var line in diagram.DerivedLines)
+        {
+            var (index, total, pair, offset) = Place(line.FromId, line.ToId);
+            var ends = Attach(boxes[line.FromId], boxes[line.ToId], offset, null);
+            var (path, centerX, centerY) = Bezier(ends, bounds);
+            svg.Append(CultureInfo.InvariantCulture,
+                $"<path class=\"derived-line\" d=\"{path}\" fill=\"none\" stroke=\"{MutedForeground}\" stroke-width=\"1\" stroke-opacity=\"0.7\" marker-end=\"url(#vellum-arrow-derived)\"/>\n");
+            var (lx, ly) = LabelPoint(ends, centerX, centerY, index, total, line.FromId.Value == pair.Item1);
+            WriteDerivedLabel(labels, line, lx, ly, bounds);
+        }
+    }
+
+    private static void WriteDerivedLabel(StringBuilder svg, DerivedLine line, double cx, double cy, Bounds bounds)
+    {
+        var count = line.Relationships.Count.ToString(CultureInfo.InvariantCulture);
+        var label = Truncate(DiagramText.OneLine(line.Label), 240, LabelChar);
+        const double badge = 16;
+        var badgeWidth = Math.Max(badge, count.Length * 6.6 + 8);
+        var width = 6 + badgeWidth + (label.Length > 0 ? 6 + Length(label) * LabelChar : 0) + 6;
+        const double height = 24;
+        var x = cx - width / 2;
+        var y = cy - height / 2;
+        bounds.Add(new Rect(x, y, width, height));
+
+        svg.Append(CultureInfo.InvariantCulture,
+            $"<g class=\"derived-line-label\"><rect x=\"{N(x)}\" y=\"{N(y)}\" width=\"{N(width)}\" height=\"{N(height)}\" rx=\"12\" fill=\"{Card}\" fill-opacity=\"0.95\" stroke=\"{Border}\" stroke-dasharray=\"3 2\"/>");
+        svg.Append(CultureInfo.InvariantCulture,
+            $"<rect x=\"{N(x + 6)}\" y=\"{N(cy - badge / 2)}\" width=\"{N(badgeWidth)}\" height=\"{N(badge)}\" rx=\"8\" fill=\"{Muted}\"/>");
+        svg.Append(CultureInfo.InvariantCulture,
+            $"<text x=\"{N(x + 6 + badgeWidth / 2)}\" y=\"{N(cy + 3.5)}\" text-anchor=\"middle\" font-family=\"{MonoFont}\" font-size=\"10\" fill=\"{Foreground}\">{count}</text>");
+        if (label.Length > 0)
+        {
+            svg.Append(CultureInfo.InvariantCulture,
+                $"<text x=\"{N(x + 6 + badgeWidth + 6)}\" y=\"{N(cy + 4)}\" font-size=\"12\" fill=\"{MutedForeground}\">{Xml(label)}</text>");
+        }
+        svg.Append("</g>\n");
     }
 
     private static void WriteLabel(StringBuilder svg, RelationshipState r, double cx, double cy, Bounds bounds)

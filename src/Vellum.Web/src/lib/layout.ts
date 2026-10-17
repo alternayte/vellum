@@ -1,4 +1,5 @@
 import ELK, { type ElkNode } from 'elkjs/lib/elk.bundled.js'
+import { projectLines } from '@/lib/derived-lines'
 
 const elk = new ELK()
 
@@ -70,10 +71,14 @@ async function layoutLevel(
   level: LayoutElement[],
   relationships: LayoutRelationship[],
   viewport: Viewport,
+  all: LayoutElement[],
 ): Promise<{ positions: LayoutPosition[]; width: number; height: number }> {
   const ids = new Set(level.map((e) => e.id))
-  const edges = relationships
-    .filter((r) => ids.has(r.fromId) && ids.has(r.toId) && r.fromId !== r.toId)
+  // A level is shaped by the lines the canvas draws on it with every card closed: the
+  // relationships between its elements and the derived lines of those between their insides.
+  const lines = projectLines(all.map((e) => ({ id: e.id, parentId: e.parentId ?? null })), relationships, ids)
+  const edges = [...lines.direct, ...lines.derived]
+    .filter((r) => r.fromId !== r.toId)
     .map((r) => ({ id: r.id, sources: [r.fromId], targets: [r.toId] }))
   const children = level.map((el) => ({
     id: el.id,
@@ -151,7 +156,7 @@ export async function placeNew(
       const size = byId.get(el.id)
       return expanded.has(el.id) && size?.width && size.height ? { ...el, width: size.width, height: size.height } : el
     })
-    const { positions } = await layoutLevel(sized, relationships, view)
+    const { positions } = await layoutLevel(sized, relationships, view, elements)
     const right = Math.max(...kept.map((p) => p.x + (p.width ?? DEFAULT_SIZE.width)))
     const top = Math.min(...kept.map((p) => p.y))
     for (const p of positions) {
@@ -164,8 +169,8 @@ export async function placeNew(
 
 /**
  * Lays out every level of the model on its own: the top level, and the children of each
- * element. Only relationships between siblings shape a level, since the canvas draws a level
- * with only its own elements. `viewport` is the size of the visible canvas in screen pixels.
+ * element. The relationships between siblings and the derived lines between them shape a level,
+ * since the canvas draws a level with only its own elements. `viewport` is the size of the visible canvas in screen pixels.
  *
  * Children are placed from `BOUNDARY_INSET`, and their parent gets the size that holds them,
  * so an expanded parent draws its children inside its boundary. An element in `expanded` is
@@ -197,7 +202,7 @@ export async function computeLayout(
   const sizes = new Map<string, { width: number; height: number }>()
   for (const [parentId, members] of ordered) {
     const level = members.map((el) => (expanded.has(el.id) && sizes.has(el.id) ? { ...el, ...sizes.get(el.id) } : el))
-    const { positions, width, height } = await layoutLevel(level, relationships, view)
+    const { positions, width, height } = await layoutLevel(level, relationships, view, elements)
     const dx = parentId === null ? 0 : BOUNDARY_INSET.x
     const dy = parentId === null ? 0 : BOUNDARY_INSET.y
     for (const p of positions) result.set(p.elementId, { ...p, x: p.x + dx, y: p.y + dy })
