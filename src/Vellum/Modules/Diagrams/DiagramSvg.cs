@@ -387,12 +387,20 @@ public static class DiagramSvg
         }
     }
 
+    // As on the canvas: a line of one relationship reads its label with no count; a merged line
+    // carries the count in a badge and reads "relationships", not "3 3 relationships".
+    private static string DerivedText(DerivedLine line) => line.Relationships.Count == 1
+        ? Truncate(DiagramText.OneLine(line.Label is { Length: > 0 } one ? one : "relationship"), 240, LabelChar)
+        : "relationships";
+
+    private static double DerivedBadgeWidth(DerivedLine line) => line.Relationships.Count == 1
+        ? 0
+        : Math.Max(16, line.Relationships.Count.ToString(CultureInfo.InvariantCulture).Length * 6.6 + 8);
+
     private static (double Width, double Height) DerivedLabelSize(DerivedLine line)
     {
-        var count = line.Relationships.Count.ToString(CultureInfo.InvariantCulture);
-        var label = Truncate(DiagramText.OneLine(line.Label), 240, LabelChar);
-        var badgeWidth = Math.Max(16, count.Length * 6.6 + 8);
-        return (6 + badgeWidth + (label.Length > 0 ? 6 + Length(label) * LabelChar : 0) + 6, 24);
+        var badgeWidth = DerivedBadgeWidth(line);
+        return (6 + (badgeWidth > 0 ? badgeWidth + 6 : 2) + Length(DerivedText(line)) * LabelChar + 6, 24);
     }
 
     private static (double Width, double Height)? LabelSize(RelationshipState r)
@@ -406,9 +414,9 @@ public static class DiagramSvg
     private static void WriteDerivedLabel(StringBuilder svg, DerivedLine line, double cx, double cy, Bounds bounds)
     {
         var count = line.Relationships.Count.ToString(CultureInfo.InvariantCulture);
-        var label = Truncate(DiagramText.OneLine(line.Label), 240, LabelChar);
+        var text = DerivedText(line);
         const double badge = 16;
-        var badgeWidth = Math.Max(badge, count.Length * 6.6 + 8);
+        var badgeWidth = DerivedBadgeWidth(line);
         var (width, height) = DerivedLabelSize(line);
         var x = cx - width / 2;
         var y = cy - height / 2;
@@ -416,15 +424,16 @@ public static class DiagramSvg
 
         svg.Append(CultureInfo.InvariantCulture,
             $"<g class=\"derived-line-label\"><rect x=\"{N(x)}\" y=\"{N(y)}\" width=\"{N(width)}\" height=\"{N(height)}\" rx=\"12\" fill=\"{Card}\" fill-opacity=\"0.95\" stroke=\"{Border}\" stroke-dasharray=\"3 2\"/>");
-        svg.Append(CultureInfo.InvariantCulture,
-            $"<rect x=\"{N(x + 6)}\" y=\"{N(cy - badge / 2)}\" width=\"{N(badgeWidth)}\" height=\"{N(badge)}\" rx=\"8\" fill=\"{Muted}\"/>");
-        svg.Append(CultureInfo.InvariantCulture,
-            $"<text x=\"{N(x + 6 + badgeWidth / 2)}\" y=\"{N(cy + 3.5)}\" text-anchor=\"middle\" font-family=\"{MonoFont}\" font-size=\"10\" fill=\"{Foreground}\">{count}</text>");
-        if (label.Length > 0)
+        if (badgeWidth > 0)
         {
             svg.Append(CultureInfo.InvariantCulture,
-                $"<text x=\"{N(x + 6 + badgeWidth + 6)}\" y=\"{N(cy + 4)}\" font-size=\"12\" fill=\"{MutedForeground}\">{Xml(label)}</text>");
+                $"<rect x=\"{N(x + 6)}\" y=\"{N(cy - badge / 2)}\" width=\"{N(badgeWidth)}\" height=\"{N(badge)}\" rx=\"8\" fill=\"{Muted}\"/>");
+            svg.Append(CultureInfo.InvariantCulture,
+                $"<text x=\"{N(x + 6 + badgeWidth / 2)}\" y=\"{N(cy + 3.5)}\" text-anchor=\"middle\" font-family=\"{MonoFont}\" font-size=\"10\" fill=\"{Foreground}\">{count}</text>");
         }
+        var textX = badgeWidth > 0 ? x + 6 + badgeWidth + 6 : x + 8;
+        svg.Append(CultureInfo.InvariantCulture,
+            $"<text x=\"{N(textX)}\" y=\"{N(cy + 4)}\" font-size=\"12\" fill=\"{MutedForeground}\">{Xml(text)}</text>");
         svg.Append("</g>\n");
     }
 

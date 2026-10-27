@@ -61,7 +61,7 @@ public class DerivedLinesTests
     private static readonly ViewEntity TopLevel = new() { Id = Guid.Parse("33333333-3333-3333-3333-333333333333"), Name = "Landscape", RootElementId = null };
 
     [Fact]
-    public void The_svg_draws_each_derived_line_with_its_count_badge()
+    public void The_svg_draws_a_count_badge_only_on_a_merged_derived_line()
     {
         var diagram = ViewDiagram.Project(TopLevel, [], Model());
         var svg = XDocument.Parse(DiagramSvg.Write(diagram));
@@ -72,7 +72,7 @@ public class DerivedLinesTests
         var labels = svg.Descendants().Where(e => (string?)e.Attribute("class") == "derived-line-label")
             .Select(g => string.Join('|', g.Elements().Where(t => t.Name.LocalName == "text").Select(t => t.Value)))
             .ToList();
-        Assert.Equal(["3|3 relationships", "1|replies", "1", "1|places orders"], labels);
+        Assert.Equal(["3|relationships", "replies", "relationship", "places orders"], labels);
         Assert.Contains(svg.Descendants(), e => e.Name.LocalName == "marker" && (string?)e.Attribute("id") == "vellum-arrow-derived");
     }
 
