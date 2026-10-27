@@ -15,6 +15,8 @@ interface AddElementDialogProps {
   parentId: string | null
   /** The kind the dialog starts with, when the parent can hold it. */
   kind?: string
+  /** The name of the Create tab entry that opened the dialog, such as "External system". */
+  label?: string
   elements: ElementChoice[]
   pending: boolean
   onClose: () => void
@@ -36,7 +38,7 @@ const selectClass =
  * Adds one element at the top level or inside a system or an app. The kinds on offer are
  * the kinds the chosen parent can hold; the server holds the same rule.
  */
-export function AddElementDialog({ parentId: startParentId, kind: startKind, elements, pending, onClose, onAdd }: AddElementDialogProps) {
+export function AddElementDialog({ parentId: startParentId, kind: startKind, label, elements, pending, onClose, onAdd }: AddElementDialogProps) {
   const parents = elements.filter((element) => canContain(element.kind))
   const [parentId, setParentId] = useState(parents.some((p) => p.id === startParentId) ? startParentId : null)
   const [kind, setKind] = useState(startKind)
@@ -50,7 +52,7 @@ export function AddElementDialog({ parentId: startParentId, kind: startKind, ele
     <Dialog open onOpenChange={(open) => { if (!open) onClose() }}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Add Element</DialogTitle>
+          <DialogTitle>{label && chosenKind === startKind ? `Add ${label}` : 'Add Element'}</DialogTitle>
           <DialogDescription>
             {parent
               ? `The element goes inside ${parent.name}. A ${parent.kind} holds ${kinds.map((k) => `${k}s`).join(' and ')}.`

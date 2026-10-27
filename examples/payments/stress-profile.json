@@ -1,0 +1,113 @@
+{
+  "name": "Sale day",
+  "scenarioId": "e0a1d5c0-15ed-4000-8003-000000000100",
+  "seed": "2026",
+  "arrivals": {
+    "kind": "poisson",
+    "ratePerSecond": 60,
+    "durationSeconds": 120,
+    "warmUpSeconds": 10
+  },
+  "resources": [
+    {
+      "elementId": "e0a1d5c0-15ed-4000-8003-000000000012",
+      "concurrency": 100,
+      "queueCapacity": null
+    },
+    {
+      "elementId": "e0a1d5c0-15ed-4000-8003-000000000020",
+      "concurrency": 64,
+      "queueCapacity": 500
+    },
+    {
+      "elementId": "e0a1d5c0-15ed-4000-8003-000000000021",
+      "concurrency": 8,
+      "queueCapacity": null
+    },
+    {
+      "elementId": "e0a1d5c0-15ed-4000-8003-000000000022",
+      "concurrency": 8,
+      "queueCapacity": 500
+    },
+    {
+      "elementId": "e0a1d5c0-15ed-4000-8003-000000000024",
+      "concurrency": 4,
+      "queueCapacity": null
+    }
+  ],
+  "serviceTimes": [
+    {
+      "target": "e0a1d5c0-15ed-4000-8003-000000000040",
+      "time": {
+        "kind": "lognormal",
+        "medianMs": 5,
+        "p95Ms": 20
+      }
+    },
+    {
+      "target": "e0a1d5c0-15ed-4000-8003-000000000041",
+      "time": {
+        "kind": "lognormal",
+        "medianMs": 40,
+        "p95Ms": 120
+      }
+    },
+    {
+      "target": "e0a1d5c0-15ed-4000-8003-000000000042",
+      "time": {
+        "kind": "lognormal",
+        "medianMs": 350,
+        "p95Ms": 1200
+      }
+    },
+    {
+      "target": "e0a1d5c0-15ed-4000-8003-000000000021",
+      "time": {
+        "kind": "exponential",
+        "meanMs": 5
+      }
+    },
+    {
+      "target": "e0a1d5c0-15ed-4000-8003-000000000024",
+      "time": {
+        "kind": "exponential",
+        "meanMs": 8
+      }
+    },
+    {
+      "target": "e0a1d5c0-15ed-4000-8003-000000000060",
+      "time": {
+        "kind": "fixed",
+        "ms": 3
+      }
+    },
+    {
+      "target": "e0a1d5c0-15ed-4000-8003-000000000061",
+      "time": {
+        "kind": "uniform",
+        "minMs": 20,
+        "maxMs": 200
+      }
+    }
+  ],
+  "subscriptions": [
+    {
+      "subscriptionId": "e0a1d5c0-15ed-4000-8003-000000000060",
+      "consumers": 2,
+      "queueCapacity": null
+    },
+    {
+      "subscriptionId": "e0a1d5c0-15ed-4000-8003-000000000061",
+      "consumers": 16,
+      "queueCapacity": 10000
+    }
+  ],
+  "branches": [
+    {
+      "stepId": "authorized",
+      "probability": 0.92
+    }
+  ],
+  "overrides": [],
+  "outages": []
+}

@@ -1,0 +1,172 @@
+{
+  "id": "e0a1d5c0-15ed-4000-8003-000000000101",
+  "name": "Take a payment when the card network times out",
+  "steps": [
+    {
+      "type": "call",
+      "id": "pay",
+      "from": "e0a1d5c0-15ed-4000-8003-000000000011",
+      "operation": "e0a1d5c0-15ed-4000-8003-000000000040",
+      "request": {
+        "amount": 1999,
+        "currency": "EUR",
+        "cardToken": "tok_visa"
+      },
+      "response": {
+        "paymentId": "p-1",
+        "status": "pending"
+      },
+      "then": [
+        {
+          "type": "write",
+          "id": "save-payment",
+          "by": "e0a1d5c0-15ed-4000-8003-000000000020",
+          "store": "e0a1d5c0-15ed-4000-8003-000000000021",
+          "dataset": "payments",
+          "change": {
+            "paymentId": "p-1",
+            "amount": 1999,
+            "currency": "EUR",
+            "status": "pending"
+          }
+        },
+        {
+          "type": "call",
+          "id": "check-risk",
+          "from": "e0a1d5c0-15ed-4000-8003-000000000020",
+          "operation": "e0a1d5c0-15ed-4000-8003-000000000041",
+          "request": {
+            "paymentId": "p-1",
+            "amount": 1999,
+            "currency": "EUR"
+          },
+          "response": null,
+          "then": [],
+          "onError": []
+        },
+        {
+          "type": "call",
+          "id": "authorize",
+          "from": "e0a1d5c0-15ed-4000-8003-000000000020",
+          "operation": "e0a1d5c0-15ed-4000-8003-000000000042",
+          "request": {
+            "paymentId": "p-1",
+            "amount": 1999,
+            "currency": "EUR",
+            "cardToken": "tok_visa"
+          },
+          "response": null,
+          "then": [],
+          "onError": [
+            {
+              "type": "write",
+              "id": "mark-unknown",
+              "by": "e0a1d5c0-15ed-4000-8003-000000000020",
+              "store": "e0a1d5c0-15ed-4000-8003-000000000021",
+              "dataset": "payments",
+              "change": {
+                "paymentId": "p-1",
+                "status": "unknown"
+              }
+            }
+          ]
+        },
+        {
+          "type": "branch",
+          "id": "authorized",
+          "whenStep": "authorize",
+          "is": "Succeeded",
+          "then": [
+            {
+              "type": "write",
+              "id": "mark-captured",
+              "by": "e0a1d5c0-15ed-4000-8003-000000000020",
+              "store": "e0a1d5c0-15ed-4000-8003-000000000021",
+              "dataset": "payments",
+              "change": {
+                "paymentId": "p-1",
+                "status": "captured"
+              }
+            },
+            {
+              "type": "publish",
+              "id": "publish-captured",
+              "from": "e0a1d5c0-15ed-4000-8003-000000000020",
+              "channel": "e0a1d5c0-15ed-4000-8003-000000000050",
+              "message": "e0a1d5c0-15ed-4000-8003-000000000080",
+              "payload": {
+                "paymentId": "p-1",
+                "amount": 1999,
+                "currency": "EUR"
+              },
+              "headers": {
+                "idempotency-key": "p-1"
+              },
+              "handlers": {
+                "e0a1d5c0-15ed-4000-8003-000000000060": [
+                  {
+                    "type": "write",
+                    "id": "book-entries",
+                    "by": "e0a1d5c0-15ed-4000-8003-000000000023",
+                    "store": "e0a1d5c0-15ed-4000-8003-000000000024",
+                    "dataset": "entries",
+                    "change": {
+                      "paymentId": "p-1",
+                      "debit": "merchant-receivable",
+                      "credit": "card-clearing",
+                      "amount": 1999
+                    }
+                  }
+                ],
+                "e0a1d5c0-15ed-4000-8003-000000000061": []
+              }
+            }
+          ],
+          "else": []
+        }
+      ],
+      "onError": []
+    }
+  ],
+  "faults": [
+    {
+      "target": "e0a1d5c0-15ed-4000-8003-000000000042",
+      "kind": "Timeout",
+      "failFirst": null
+    }
+  ],
+  "assertions": [
+    {
+      "type": "outcome",
+      "id": "payment-is-still-accepted",
+      "step": "pay",
+      "expected": "Succeeded"
+    },
+    {
+      "type": "outcome",
+      "id": "authorization-fails",
+      "step": "authorize",
+      "expected": "Failed"
+    },
+    {
+      "type": "outcome",
+      "id": "payment-waits-as-unknown",
+      "step": "mark-unknown",
+      "expected": "Succeeded"
+    },
+    {
+      "type": "event-count",
+      "id": "one-attempt-only",
+      "kind": "RequestTimedOut",
+      "target": "e0a1d5c0-15ed-4000-8003-000000000042",
+      "expected": 1
+    },
+    {
+      "type": "event-count",
+      "id": "nothing-is-captured",
+      "kind": "Published",
+      "target": null,
+      "expected": 0
+    }
+  ]
+}

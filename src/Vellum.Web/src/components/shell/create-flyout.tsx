@@ -1,15 +1,21 @@
-import { useState, useEffect } from 'react'
+import { createElement, useState, useEffect } from 'react'
 import { useShellStore } from '@/stores/shell-store'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Box, LayoutDashboard, FileText, Scale } from 'lucide-react'
+import { LayoutDashboard, FileText, Scale, Cloud, Box } from 'lucide-react'
 import { loadTemplates, type DocTemplate } from '@/lib/doc-templates'
+import { PALETTE, PALETTE_DRAG_TYPE, type PaletteEntry } from '@/lib/element-palette'
+import { defaultIconForKind, getIconComponent } from '@/lib/default-icons'
+import { elementColor } from '@/lib/kind-colors'
 
 interface CreateFlyoutProps {
   onCreateDiagram: (name: string) => void
   onCreateDoc: (title: string, content: string, type?: string) => void
-  /** Opens the Add Element dialog, where the element's place and kind are chosen. */
-  onAddElement?: () => void
+  /**
+   * Opens the Add Element dialog with the entry's kind, where the element's place and name are
+   * chosen. Without it the tab lists no kinds: a read-only model takes no new element.
+   */
+  onAddElement?: (entry: PaletteEntry) => void
   /** False while the model holds no element: decisions live in Check, which shows from the first element. */
   decisions?: boolean
 }
@@ -60,13 +66,32 @@ export function CreateFlyout({ onCreateDiagram, onCreateDoc, onAddElement, decis
         {mode === 'menu' && (
           <div className="space-y-1">
             {onAddElement && (
-              <button
-                className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm hover:bg-muted"
-                onClick={() => { closeFlyout(); onAddElement() }}
-              >
-                <Box className="h-4 w-4 text-muted-foreground" />
-                New Element
-              </button>
+              <section aria-label="Elements" className="mb-3">
+                <h3 className="px-3 pb-1 text-[11px] font-medium text-muted-foreground">Elements</h3>
+                <ul className="space-y-0.5">
+                  {PALETTE.map((entry) => (
+                    <li key={entry.id}>
+                      <button
+                        type="button"
+                        draggable
+                        onDragStart={(e) => {
+                          e.dataTransfer.setData(PALETTE_DRAG_TYPE, entry.id)
+                          e.dataTransfer.effectAllowed = 'copy'
+                        }}
+                        className="flex w-full cursor-grab items-start gap-3 rounded-md px-3 py-1.5 text-left hover:bg-muted active:cursor-grabbing"
+                        onClick={() => { closeFlyout(); onAddElement(entry) }}
+                      >
+                        <PaletteIcon entry={entry} />
+                        <span className="min-w-0">
+                          <span className="block text-sm">{entry.name}</span>
+                          <span className="block text-[11px] leading-snug text-muted-foreground">{entry.description}</span>
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+                <p className="px-3 pt-1 text-[11px] text-muted-foreground">Drag a kind onto the canvas, or click it to name it first.</p>
+              </section>
             )}
             <button
               className="flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm hover:bg-muted"
@@ -160,5 +185,18 @@ export function CreateFlyout({ onCreateDiagram, onCreateDoc, onAddElement, decis
         )}
       </div>
     </div>
+  )
+}
+
+function PaletteIcon({ entry }: { entry: PaletteEntry }) {
+  const icon = entry.id === 'external' ? Cloud : getIconComponent(defaultIconForKind(entry.kind)) ?? Box
+  return (
+    <span
+      className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-md border"
+      style={{ borderColor: elementColor(entry.kind, entry.tags), color: elementColor(entry.kind, entry.tags) }}
+      aria-hidden="true"
+    >
+      {createElement(icon, { className: 'h-3.5 w-3.5' })}
+    </span>
   )
 }

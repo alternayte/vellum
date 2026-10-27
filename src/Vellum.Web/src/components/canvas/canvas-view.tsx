@@ -46,7 +46,9 @@ import type { C4BoundaryData } from './nodes/c4-boundary-node'
 import { canvasOcclusion, visibleCanvasRect } from '@/lib/canvas-insets'
 import type { DiffState } from '@/stores/draft-store'
 import type { Provenance, StaleMark } from '@/lib/fact-status'
-import { elementColor } from '@/lib/kind-colors'
+import { elementColor, isExternal } from '@/lib/kind-colors'
+import { dropPlace, PALETTE, PALETTE_DRAG_TYPE, type PaletteEntry } from '@/lib/element-palette'
+import { toast } from 'sonner'
 import { CONTAINMENT_RULES, canContain } from '@/lib/containment-rules'
 import { prefersReducedMotion } from '@/lib/utils'
 import { traceEdgeLabel, traceFamily } from '@/lib/trace'
@@ -161,6 +163,13 @@ interface CanvasViewProps {
   onRenameElement?: (id: string, newName: string) => void
   onConnectToBlank?: (kind: string, position: { x: number; y: number }, sourceId: string) => void
   onAddElementAtFlowPosition?: (kind: string, position: { x: number; y: number }) => void
+  /**
+   * A kind dragged from the Create tab was dropped: add it inside `parentId` (null is the top
+   * level) at `position`, which is relative to the parent's card when the drop was on it. A
+   * closed card shows no inside to point at: `position` is null, and the new element takes free
+   * space inside it.
+   */
+  onDropElement?: (entry: PaletteEntry, parentId: string | null, position: { x: number; y: number } | null) => void
   onViewportCenterReady?: (fn: () => { x: number; y: number }) => void
   onBulkStatusChange?: (ids: string[], status: string) => void
   onBulkAddTag?: (ids: string[], tag: string) => void
@@ -284,6 +293,7 @@ function CanvasViewInner({
   onRenameElement,
   onConnectToBlank,
   onAddElementAtFlowPosition,
+  onDropElement,
   onViewportCenterReady,
   onBulkStatusChange,
   onBulkAddTag,
@@ -301,7 +311,7 @@ function CanvasViewInner({
   lineControls = false,
 }: CanvasViewProps) {
   const { currentRootId, zoomLevel, setZoom, activeLens, setLens, expandedNodeIds, toggleExpand } = useCanvasStore()
-  const { fitView, screenToFlowPosition, getViewport, setViewport, getInternalNode } = useReactFlow()
+  const { fitView, screenToFlowPosition, getViewport, setViewport, getInternalNode, getIntersectingNodes } = useReactFlow()
   // The zoom is read from the viewport itself: a fit or a programmatic move changes it with no
   // move event of the pane. It is stored once the viewport has settled, so an animated fit
   // does not change the level of detail on every frame.
@@ -1277,6 +1287,52 @@ function CanvasViewInner({
     [screenToFlowPosition, readOnly, currentRootId],
   )
 
+  // A kind dragged from the Create tab. It goes inside the innermost card under the pointer that
+  // the containment rules allow, otherwise on the level the canvas shows, otherwise nowhere.
+  const handlePaletteDragOver = useCallback((event: React.DragEvent) => {
+    if (readOnly || !onDropElement || !event.dataTransfer.types.includes(PALETTE_DRAG_TYPE)) return
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'copy'
+  }, [readOnly, onDropElement])
+
+  const handlePaletteDrop = useCallback((event: React.DragEvent, onEmptyLevel = false) => {
+    const entry = PALETTE.find((p) => p.id === event.dataTransfer.getData(PALETTE_DRAG_TYPE))
+    if (readOnly || !onDropElement || !entry) return
+    event.preventDefault()
+    const byId = new Map(elements.map((e) => [e.id, e]))
+    const level = rootElement ? { id: rootElement.id, kind: rootElement.kind } : null
+    // An empty level draws no canvas: the element goes on that level, at its origin.
+    if (onEmptyLevel) {
+      const place = dropPlace(entry.kind, [], level)
+      if ('refused' in place) toast.error(place.refused)
+      else onDropElement(entry, place.parentId, { x: 0, y: 0 })
+      return
+    }
+    const point = screenToFlowPosition({ x: event.clientX, y: event.clientY })
+    const depth = (id: string) => {
+      let d = 0
+      for (let current = byId.get(id); current?.parentId && d < byId.size; current = byId.get(current.parentId)) d++
+      return d
+    }
+    const cards = getIntersectingNodes({ x: point.x, y: point.y, width: 1, height: 1 })
+      .filter((n) => (n.type === 'c4-element' || n.type === 'c4-label-chip' || n.type === 'c4-container') && byId.has(n.id))
+      .sort((a, b) => depth(b.id) - depth(a.id))
+      .map((n) => ({ id: n.id, kind: byId.get(n.id)!.kind, external: isExternal(byId.get(n.id)!.tags) }))
+    const place = dropPlace(entry.kind, cards, level)
+    if ('refused' in place) {
+      toast.error(place.refused)
+      return
+    }
+    if (place.cardId && !expandedNodeIds.has(place.cardId)) {
+      // A closed card on this level opens in place, so the new element shows inside it.
+      if (visibleElements.some((e) => e.id === place.cardId)) toggleExpand(place.cardId)
+      onDropElement(entry, place.parentId, null)
+      return
+    }
+    const origin = place.cardId ? getInternalNode(place.cardId)?.internals.positionAbsolute ?? { x: 0, y: 0 } : { x: 0, y: 0 }
+    onDropElement(entry, place.parentId, { x: Math.round(point.x - origin.x), y: Math.round(point.y - origin.y) })
+  }, [readOnly, onDropElement, elements, rootElement, screenToFlowPosition, getIntersectingNodes, getInternalNode, expandedNodeIds, visibleElements, toggleExpand])
+
   // The menu belongs to the level and the spot where it opened: it shows only on that level.
   useEffect(() => {
     if (!createPopover) return
@@ -1378,7 +1434,7 @@ function CanvasViewInner({
   if (visibleElements.length === 0 && !ghostProposal) {
     const isTopLevel = currentRootId === null
     return (
-      <div className="flex h-full items-center justify-center">
+      <div className="flex h-full items-center justify-center" onDragOver={handlePaletteDragOver} onDrop={(e) => handlePaletteDrop(e, true)}>
         <div className="text-center">
           <p className="text-sm text-muted-foreground">
             {readOnly
@@ -1405,7 +1461,7 @@ function CanvasViewInner({
   return (
     // Wrapper div captures double-click for canvas creation; pointer-events:none not needed
     // as the div fills the parent and React Flow handles its own pointer events internally
-    <div ref={paneRef} className="h-full w-full" onDoubleClick={handlePaneDoubleClick}>
+    <div ref={paneRef} className="h-full w-full" onDoubleClick={handlePaneDoubleClick} onDragOver={handlePaletteDragOver} onDrop={(e) => handlePaletteDrop(e)}>
       <StressOverlayContext.Provider value={stressValue}>
       <ReactFlow
         nodes={shownNodes}
