@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Pencil, Play, Plus, Trash2 } from 'lucide-react'
+import { Layers, Pencil, Play, Plus, Trash2 } from 'lucide-react'
+import { useStressOverlayStore } from '@/stores/stress-overlay-store'
 import { Button } from '@/components/ui/button'
 import { shownInline } from '@/lib/mutation-errors'
 import { formatMs, formatNumber, stressApi, StressRefused, type StressIssue, type StressProfileDefaults, type StressProfileDetail, type StressRun } from '@/lib/stress-api'
@@ -65,6 +66,8 @@ export function StressFlyout({ projectId, branchId, scenarios }: StressFlyoutPro
     mutationFn: (runId: string) => stressApi.removeRun(projectId, runId),
     onSuccess: (_, runId) => {
       setShown((current) => (current?.run.id === runId ? null : current))
+      // A deleted run is not drawn any more.
+      if (useStressOverlayStore.getState().open?.run.run.id === runId) useStressOverlayStore.getState().close()
       refresh()
     },
     onError: (e) => { setError(e.message); shownInline() },
@@ -80,6 +83,11 @@ export function StressFlyout({ projectId, branchId, scenarios }: StressFlyoutPro
   }
   const scenarioName = (id: string) => scenarios.find((s) => s.id === id)?.name ?? 'a deleted scenario'
   const profileName = (id: string) => profiles.data?.find((p) => p.id === id)?.name ?? 'Stress run'
+  const onCanvas = useStressOverlayStore((s) => s.open?.run.run.id ?? null)
+  const showOnCanvas = (stored: StressRun) => {
+    useStressOverlayStore.getState().show(projectId, branchId ?? null, profileName(stored.run.profileId), stored)
+    setShown(null)
+  }
 
   return (
     <div className="flex h-full flex-col">
@@ -192,6 +200,7 @@ export function StressFlyout({ projectId, branchId, scenarios }: StressFlyoutPro
                           >
                             <p className="flex items-baseline gap-1.5 text-[11px] text-muted-foreground">
                               <span className="min-w-0 flex-1 truncate">{new Date(stored.at).toLocaleString()} · v{stored.profileVersion}</span>
+                              {stored.summary.failedElement && <span className="shrink-0 rounded-full border border-[var(--trace-failure)] px-1.5 text-[10px] text-[var(--trace-failure)]">{stored.summary.failedElement} down</span>}
                               {stored.outdated && <span className="shrink-0 rounded-full border border-[var(--trace-retry)] px-1.5 text-[10px] text-[var(--trace-retry)]">outdated</span>}
                             </p>
                             <p className="font-mono text-[11px] text-foreground">
@@ -202,6 +211,15 @@ export function StressFlyout({ projectId, branchId, scenarios }: StressFlyoutPro
                               estimated · {stored.summary.bottleneck ? `bottleneck: ${stored.summary.bottleneck}` : `no bottleneck by the rule of engine ${stored.engineVersion}`}
                             </p>
                           </button>
+                          <Button
+                            variant="ghost" size="sm"
+                            className={`mt-1 h-6 w-6 shrink-0 p-0 ${onCanvas === stored.id ? 'text-primary' : 'text-muted-foreground'}`}
+                            aria-label={`Show the run of ${new Date(stored.at).toLocaleString()} on the canvas`} title="Show on the canvas"
+                            aria-pressed={onCanvas === stored.id}
+                            onClick={() => open(async () => showOnCanvas(await stressApi.getRun(projectId, stored.id)))}
+                          >
+                            <Layers className="h-3 w-3" />
+                          </Button>
                           <Button
                             variant="ghost" size="sm" className="mt-1 h-6 w-6 shrink-0 p-0 text-muted-foreground"
                             aria-label={`Delete the run of ${new Date(stored.at).toLocaleString()}`} title="Delete this run"
@@ -237,6 +255,7 @@ export function StressFlyout({ projectId, branchId, scenarios }: StressFlyoutPro
           projectId={projectId} profileName={profileName(shown.run.profileId)} run={shown}
           runs={expanded === shown.run.profileId ? (runs.data ?? []) : []}
           onClose={() => setShown(null)}
+          onShowOnCanvas={() => showOnCanvas(shown)}
         />
       )}
     </div>

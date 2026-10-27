@@ -52,6 +52,9 @@ import { prefersReducedMotion } from '@/lib/utils'
 import { traceEdgeLabel, traceFamily } from '@/lib/trace'
 import { currentTraceEvent, useTraceStore } from '@/stores/trace-store'
 import { TraceEdgeMarkers } from './edges/trace-edge'
+import { StressOverlayContext, type StressOverlayValue } from './stress-overlay-context'
+import { stressOverlay } from '@/lib/stress-overlay'
+import { useStressOverlayStore } from '@/stores/stress-overlay-store'
 import { ImpactStepMarkers } from './edges/impact-step-edge'
 import { CERTAINTY, strongest } from '@/lib/impact'
 import type { ImpactCertainty } from '@/lib/import-api'
@@ -473,6 +476,21 @@ function CanvasViewInner({
     [showHiddenLines, visibleLines],
   )
   const visibleRelationships = lines.direct
+
+  // An open Stress run draws its estimated load on the cards and its rates on the lines of this
+  // view. It reads the stored run only; the model and the layout do not change.
+  const stressRun = useStressOverlayStore((s) => s.open?.run ?? null)
+  const stressFailing = useStressOverlayStore((s) => s.failing)
+  const stressProjection = useMemo(
+    () => (stressRun
+      ? stressOverlay(stressRun, elements, relationships, [...lines.direct.map((r) => ({ id: r.id, relationshipIds: [r.id] })), ...lines.derived], visibleIds)
+      : null),
+    [stressRun, elements, relationships, lines, visibleIds],
+  )
+  const stressValue = useMemo<StressOverlayValue | null>(
+    () => (stressProjection ? { overlay: stressProjection, canFail: !readOnly, failing: stressFailing } : null),
+    [stressProjection, readOnly, stressFailing],
+  )
   // The detail panel lists the relationships of the selected derived line. A change of the model
   // or of the open cards changes the line, so the list follows it, and a line that is no longer
   // drawn is no longer selected.
@@ -1388,6 +1406,7 @@ function CanvasViewInner({
     // Wrapper div captures double-click for canvas creation; pointer-events:none not needed
     // as the div fills the parent and React Flow handles its own pointer events internally
     <div ref={paneRef} className="h-full w-full" onDoubleClick={handlePaneDoubleClick}>
+      <StressOverlayContext.Provider value={stressValue}>
       <ReactFlow
         nodes={shownNodes}
         edges={shownEdges}
@@ -1516,6 +1535,7 @@ function CanvasViewInner({
           />
         )}
       </ReactFlow>
+      </StressOverlayContext.Provider>
 
       {contextMenu?.type === 'node' && (() => {
         const nodeId = contextMenu.nodeId

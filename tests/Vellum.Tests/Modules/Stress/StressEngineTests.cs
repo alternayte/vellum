@@ -397,6 +397,50 @@ public class StressEngineTests
     }
 
     [Fact]
+    public void The_traffic_between_elements_is_the_same_for_the_same_seed_and_names_each_pair_once()
+    {
+        var (model, scenario, profile) = FanOut();
+        var first = Run(model, scenario, profile);
+        var second = Run(model, scenario, profile);
+
+        Assert.NotNull(first.Traffic);
+        Assert.Equal(
+            JsonSerializer.Serialize(first.Traffic, StressJson.Options),
+            JsonSerializer.Serialize(second.Traffic, StressJson.Options));
+        // The client calls the server, the server writes the store and publishes to the exchange; the exchange and
+        // the binding reach Inventory and Billing. Each pair is listed once, in the order of the IDs.
+        Assert.Equal(
+            [(Client.Value, Server.Value, "call"), (Server.Value, Store.Value, "write"), (Server.Value, Billing.Value, "message"), (Server.Value, Inventory.Value, "message")],
+            first.Traffic!.Select(t => (t.FromId, t.ToId, t.Kind)).OrderBy(t => t.Item1).ThenBy(t => t.Item2).ToList());
+        Assert.All(first.Traffic!, t => Assert.Equal(StressResult.Estimated, t.Label));
+        // Each flow sends one of each, so every pair carries about the 60 flows a second of the profile.
+        Assert.All(first.Traffic!, t => Assert.InRange(t.PerSecond, 50, 70));
+        Assert.Equal(first.Traffic!.Single(t => t.Kind == "call").Sent / 25.0, first.Traffic!.Single(t => t.Kind == "call").PerSecond, 12);
+        // A subscription names the element that consumes it.
+        Assert.Equal([Billing.Value, Inventory.Value], first.Subscriptions.Select(s => s.ConsumerId!.Value).Order());
+        Assert.All(first.Elements, e => Assert.Null(e.ConsumerId));
+    }
+
+    [Fact]
+    public void Traffic_counts_every_attempt_and_the_capacity_is_the_rate_at_which_the_first_resource_is_busy_all_the_time()
+    {
+        // One call each second for 10 s, 300 ms each on one worker: 10 calls, and the worker is busy all the time at 1 / 0.3 flows a second.
+        var result = Run(Model(), Flow(CallServe()), Profile(Constant(1, 10), Fixed(300)));
+        var call = Assert.Single(result.Traffic!);
+        Assert.Equal((Client.Value, Server.Value, "call", 10L, 1.0), (call.FromId, call.ToId, call.Kind, call.Sent, call.PerSecond));
+        Assert.Equal((Server.Value, "Server"), (result.Capacity!.Id, result.Capacity.Name));
+        Assert.Equal(1 / 0.3, result.Capacity.FlowsPerSecond!.Value, 9);
+        Assert.Equal(StressEngine.CapacityRule, result.Capacity.Rule);
+
+        // Down for the whole run: the attempts still leave the caller, and a resource that served nothing has no rate.
+        var down = Run(Model(), Flow(CallServe()), Profile(Constant(1, 10), Fixed(300), outages: [new Outage(Server, 0, 10 + StressLimits.Default.MaxDrainSeconds)]));
+        Assert.Equal(10, Assert.Single(down.Traffic!).Sent);
+        Assert.Equal(10, down.Flow.Counts.Failed);
+        Assert.Null(down.Capacity!.FlowsPerSecond);
+        Assert.Null(down.Capacity.Id);
+    }
+
+    [Fact]
     public void The_order_in_which_the_model_and_the_profile_were_built_does_not_change_the_result()
     {
         var (model, scenario, profile) = FanOut();

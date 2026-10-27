@@ -1,4 +1,4 @@
-import { memo, useCallback, useRef, useState } from 'react'
+import { memo, useCallback, useContext, useRef, useState } from 'react'
 import type { Node, NodeProps } from '@xyflow/react'
 import { SideHandles } from './side-handles'
 import { Plus } from 'lucide-react'
@@ -10,6 +10,8 @@ import { useCanvasStore } from '@/stores/canvas-store'
 import { cn } from '@/lib/utils'
 import { factStatusColor, factStatusLabel, provenanceSummary, staleSummary, type Provenance, type StaleMark } from '@/lib/fact-status'
 import type { DiffState } from '@/stores/draft-store'
+import { StressCardRow } from '../stress-overlay'
+import { StressOverlayContext } from '../stress-overlay-context'
 
 export interface C4ElementData extends Record<string, unknown> {
   id: string
@@ -117,6 +119,8 @@ export const C4ElementNode = memo(function C4ElementNode({ data }: NodeProps<C4E
   // The add-inside row takes the second line of the description.
   // An external system is a service the team does not own: the card offers no inside to model.
   const addInside = !!d.onAddChild && d.childCount === 0 && !external
+  // While a Stress run is open, a card with load in the run shows it in its last row.
+  const stressLoad = useContext(StressOverlayContext)?.overlay.cards.has(d.id) ?? false
 
   return (
     <div
@@ -238,12 +242,12 @@ export const C4ElementNode = memo(function C4ElementNode({ data }: NodeProps<C4E
         </div>
 
         {d.description && (
-          <p className={cn('mt-2 text-[12.5px] leading-[1.4] text-muted-foreground', addInside ? 'mb-2.5 line-clamp-1' : 'line-clamp-2')} title={d.description}>
+          <p className={cn('mt-2 text-[12.5px] leading-[1.4] text-muted-foreground', addInside ? 'mb-2.5 line-clamp-1' : stressLoad ? 'mb-2 line-clamp-1' : 'line-clamp-2')} title={d.description}>
             {d.description}
           </p>
         )}
 
-        {addInside && (
+        {addInside && !stressLoad && (
           <button
             type="button"
             className="nodrag nopan mt-auto flex w-full items-center gap-1.5 rounded-md border border-dashed border-border px-2 py-1 text-left text-xs text-muted-foreground hover:border-primary hover:text-foreground focus-visible:outline-2 focus-visible:outline-primary"
@@ -267,6 +271,8 @@ export const C4ElementNode = memo(function C4ElementNode({ data }: NodeProps<C4E
             ))}
           </div>
         )}
+
+        <StressCardRow id={d.id} name={d.name} />
       </div>
     </div>
   )

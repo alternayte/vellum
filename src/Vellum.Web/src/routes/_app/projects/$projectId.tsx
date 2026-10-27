@@ -21,6 +21,7 @@ import { AssistantFlyout } from '@/components/assistant/assistant-flyout'
 import { PromisesFlyout } from '@/components/promises/promises-flyout'
 import { BuildFlyout } from '@/components/build/build-flyout'
 import { StressFlyout } from '@/components/stress/stress-flyout'
+import { StressDock } from '@/components/stress/stress-dock'
 import { CostsFlyout } from '@/components/costs/costs-flyout'
 import { ReviewFlyout } from '@/components/design-review/review-flyout'
 import { ShareLinksPanel } from '@/components/share/share-dialog'
@@ -964,6 +965,7 @@ function ProjectWorkspace() {
         />
       )}
       {!activeDocId && <TraceDock />}
+      <StressDock projectId={projectId} hidden={!!activeDocId} />
       {activeDocId ? null : (
         isReviewMode ? (
           <ReviewBar projectId={projectId} />

@@ -8,6 +8,8 @@ import {
 import { useCanvasStore } from '@/stores/canvas-store'
 import { cn } from '@/lib/utils'
 import { EdgeLabelCard } from './edge-label-card'
+import { StressRatePill } from '../stress-overlay'
+import { useLineRate } from '../stress-overlay-context'
 import { computeEdgeOffset, computeLabelOffset, getEdgePathFn, labelZ, nodeBoxes, relationshipEnds, routeOnCanvas, type LayoutRoute } from '@/lib/edge-utils'
 import type { DiffState } from '@/stores/draft-store'
 
@@ -57,6 +59,7 @@ export const C4Edge = memo(function C4Edge({
   const d = data ?? { label: null, technology: null }
   const activeLens = useCanvasStore((s) => s.activeLens)
   const [hovered, setHovered] = useState(false)
+  const rate = useLineRate(id)
 
   const edgeIndex = d.edgeIndex ?? 0
   const totalParallel = d.totalParallel ?? 1
@@ -134,6 +137,11 @@ export const C4Edge = memo(function C4Edge({
             faint={d.hiddenInView}
             zIndex={labelZ(sourceBoxes, targetBoxes)}
           />
+        </EdgeLabelRenderer>
+      )}
+      {rate !== null && (
+        <EdgeLabelRenderer>
+          <StressRatePill rate={rate} x={labelX} y={labelY} zIndex={labelZ(sourceBoxes, targetBoxes)} />
         </EdgeLabelRenderer>
       )}
     </>
