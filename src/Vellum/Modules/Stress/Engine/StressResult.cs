@@ -36,7 +36,38 @@ public sealed record StressResult(
     string Hash)
 {
     public const string Estimated = "estimated";
+
+    /// <summary>
+    /// The work sent from one element to another in the measured window. Null in a result of
+    /// engine version 1, 2 or 3: those engines did not count it.
+    /// </summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public IReadOnlyList<TrafficStats>? Traffic { get; init; }
+
+    /// <summary>The flow rate at which the first resource runs out of workers. Null in a result of engine version 1, 2 or 3.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public CapacityEstimate? Capacity { get; init; }
 }
+
+/// <summary>
+/// Work that one element sent to another between the warm-up and the end of the arrivals: the
+/// attempts of calls from the caller to the owner of the operation, the writes from the writer
+/// to the store, and the deliveries of messages from the publisher to the consumer. Retries and
+/// redeliveries are in it; work that never left the sender (a closed route) is not.
+/// </summary>
+/// <param name="Kind"><c>call</c>, <c>write</c> or <c>message</c>.</param>
+/// <param name="Sent">Attempts that started in the measured window.</param>
+/// <param name="PerSecond"><paramref name="Sent"/> per second of the measured window.</param>
+public sealed record TrafficStats(string Label, Guid FromId, Guid ToId, string Kind, long Sent, double PerSecond);
+
+/// <summary>
+/// The flow rate at which the first resource has every worker busy all the time, by
+/// <see cref="StressEngine.CapacityRule"/>. It extrapolates this run; it does not say what a
+/// running system does.
+/// </summary>
+/// <param name="FlowsPerSecond">Null when no resource served work in the measured window.</param>
+/// <param name="Id">The resource that runs out first.</param>
+public sealed record CapacityEstimate(string Label, double? FlowsPerSecond, Guid? Id, string? Name, string? Kind, string Rule);
 
 /// <summary>
 /// The limits that the run used. A limit can change a result (the drain limit, the series
@@ -109,7 +140,12 @@ public sealed record ResourceStats(
     string Label, Guid Id, string Name, string Kind, int Workers, int? QueueCapacity,
     long Arrived, long Waited, Counts Counts, long Retries, long Overflowed, long WastedCount, double WastedMs,
     double Utilisation, double ThroughputPerSecond, QueueStats Queue, LatencySummary Wait, LatencySummary Latency,
-    long? FailedInside, Saturation? Saturation);
+    long? FailedInside, Saturation? Saturation)
+{
+    /// <summary>For a subscription: the element that consumes its messages. Null for an element and in a result of engine version 1, 2 or 3.</summary>
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public Guid? ConsumerId { get; init; }
+}
 
 /// <summary>
 /// The inputs and the outcome of the saturation rule for one resource

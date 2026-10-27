@@ -5,6 +5,7 @@ import { elementColor } from '@/lib/kind-colors'
 import { cn } from '@/lib/utils'
 import { factStatusColor, factStatusLabel, provenanceSummary } from '@/lib/fact-status'
 import type { C4ElementNodeType } from './c4-element-node'
+import { StressChipDot } from '../stress-overlay'
 
 const diffBorderColor: Record<string, string> = {
   added: '#2F855A',
@@ -44,6 +45,7 @@ export const C4LabelChipNode = memo(function C4LabelChipNode({ data }: NodeProps
         />
       )}
       <span className="text-xs font-medium text-foreground">{d.name}</span>
+      <StressChipDot id={d.id} />
       {diff === 'conflict' && <span className="text-[10px]" title="Conflict">⚠</span>}
     </div>
   )

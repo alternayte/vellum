@@ -11615,6 +11615,22 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/StressRunRequest"
+                  }
+                ]
+              }
+            }
+          }
+        },
         "responses": {
           "201": {
             "description": "Created",
@@ -18233,6 +18249,53 @@
             "type": "string"
           },
           "description": {
+            "type": "string"
+          }
+        }
+      },
+      "CapacityEstimate": {
+        "required": [
+          "label",
+          "flowsPerSecond",
+          "id",
+          "name",
+          "kind",
+          "rule"
+        ],
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "flowsPerSecond": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "id": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "name": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "kind": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "rule": {
             "type": "string"
           }
         }
@@ -30090,6 +30153,13 @@
                 "$ref": "#/components/schemas/Saturation"
               }
             ]
+          },
+          "consumerId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
           }
         }
       },
@@ -35826,6 +35896,25 @@
           },
           "hash": {
             "type": "string"
+          },
+          "traffic": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/TrafficStats"
+            }
+          },
+          "capacity": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CapacityEstimate"
+              }
+            ]
           }
         }
       },
@@ -35845,6 +35934,21 @@
           },
           "result": {
             "$ref": "#/components/schemas/StressResult"
+          }
+        }
+      },
+      "StressRunRequest": {
+        "required": [
+          "fail"
+        ],
+        "type": "object",
+        "properties": {
+          "fail": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
           }
         }
       },
@@ -35937,6 +36041,19 @@
           },
           "drained": {
             "type": "boolean"
+          },
+          "failedElementId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "failedElement": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -36899,6 +37016,49 @@
           },
           "format": {
             "type": "string"
+          }
+        }
+      },
+      "TrafficStats": {
+        "required": [
+          "label",
+          "fromId",
+          "toId",
+          "kind",
+          "sent",
+          "perSecond"
+        ],
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "fromId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "toId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "sent": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "perSecond": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
           }
         }
       },

@@ -3,6 +3,8 @@ import { EdgeLabelRenderer, getBezierPath, useInternalNode, type Edge, type Edge
 import { useShellStore } from '@/stores/shell-store'
 import { computeEdgeOffset, labelZ, nodeBoxes, relationshipEnds, routeOnCanvas, type LayoutRoute } from '@/lib/edge-utils'
 import { cn } from '@/lib/utils'
+import { StressRatePill } from '../stress-overlay'
+import { useLineRate } from '../stress-overlay-context'
 
 export interface DerivedEdgeData extends Record<string, unknown> {
   fromId: string
@@ -31,6 +33,7 @@ export const DerivedEdge = memo(function DerivedEdge({
   id, source, target, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, data, markerEnd,
 }: EdgeProps<DerivedEdgeType>) {
   const [hovered, setHovered] = useState(false)
+  const rate = useLineRate(id)
   const selectDerivedLine = useShellStore((s) => s.selectDerivedLine)
   // Selected while the detail panel lists it, from a click on the line or on its label.
   const selected = useShellStore((s) => !!data && s.selectedDerivedLine?.fromId === data.fromId && s.selectedDerivedLine.toId === data.toId)
@@ -95,6 +98,7 @@ export const DerivedEdge = memo(function DerivedEdge({
             {count === 1 ? (data.label ?? 'relationship') : 'relationships'}
           </span>
         </button>
+        {rate !== null && <StressRatePill rate={rate} x={labelX} y={labelY} zIndex={labelZ(sourceBoxes, targetBoxes)} />}
       </EdgeLabelRenderer>
     </>
   )

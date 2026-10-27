@@ -50,8 +50,12 @@ public static class StressEngine
     /// host found no doubt about its measurement (<see cref="MeasurementDoubt"/>), and each
     /// assumption with a measurement states whether the measurement is stale. A stored result
     /// of version 2 keeps its level and its rule.
+    /// Version 4 adds the work that each element sends to another (<see cref="StressResult.Traffic"/>),
+    /// the consumer of each subscription, and the estimate of the flow rate at which the first
+    /// resource runs out of workers (<see cref="StressResult.Capacity"/>). No number of version 3
+    /// changes. A stored result of version 3 has none of the three.
     /// </summary>
-    public const string Version = "3";
+    public const string Version = "4";
 
     private const long NsPerMs = 1_000_000;
     private const double NsPerSecond = 1e9;
@@ -120,6 +124,15 @@ public static class StressEngine
         + "A backlog window is a time in which work waits without a break; it is listed when its peak is at or above the noise bound. "
         + "The bottleneck is the saturated resource with the highest utilisation; the lower ID wins a tie. "
         + "The bound assumes service times without a long tail: a lognormal service time with a wide spread can pass it by chance more often.";
+
+    public const string CapacityRule =
+        "For each resource: the mean time that a worker held one piece of work that it served in the measured window, and the "
+        + "pieces of work that arrived at it for each flow that started in the window, retries included. The resource has every worker "
+        + "busy all the time at workers / (mean time held × pieces for each flow) flows per second. The estimate is the lowest of these "
+        + "rates, and the resource that gives it runs out first. It assumes that the time held and the pieces for each flow stay as "
+        + "they were in this run at another rate. A time held includes the wait for the calls that the work makes, so a slow resource "
+        + "behind it lowers the rate of the resource in front. A resource that served no work in the window, such as one that is down, "
+        + "has no rate.";
 
     public const string GrowthRule =
         "The queue of a resource grows when its depth at the end of the arrivals is above its depth at the middle of the "
@@ -527,6 +540,11 @@ public static class StressEngine
             _squares += (Int128)ns * ns;
         }
 
+        public readonly long Count => _count;
+
+        /// <summary>The mean in nanoseconds; 0 without a sample.</summary>
+        public readonly double Mean => _count == 0 ? 0 : (double)_sum / _count;
+
         /// <summary>Variance divided by the square of the mean. 1, the value of an exponential distribution, when there is no sample or the mean is 0.</summary>
         public readonly double SquaredVariation()
         {
@@ -760,6 +778,8 @@ public static class StressEngine
         private readonly Dictionary<Guid, List<(long From, long To)>> _outages = [];
         private readonly List<Pool> _pools = [];
         private readonly Samples _flowLatency;
+        /// <summary>Attempts in the measured window, by sender, receiver and kind. Sorted when the result is made.</summary>
+        private readonly Dictionary<(Guid From, Guid To, string Kind), long> _traffic = [];
 
         private long _now, _events, _open, _lastIdleAt, _queued;
         private long _arrivals, _counted, _completed, _failed, _completedInWindow;
@@ -901,6 +921,15 @@ public static class StressEngine
         }
 
         private void After(long delay, Action work) => _heap.Push(_now + delay, work);
+
+        /// <summary>Counts one attempt from <paramref name="from"/> to <paramref name="to"/> when it starts in the measured window.</summary>
+        private void Send(Guid from, Guid to, string kind)
+        {
+            if (!InWindow)
+                return;
+            var key = (from, to, kind);
+            _traffic[key] = _traffic.GetValueOrDefault(key) + 1;
+        }
 
         private bool InWindow => _now >= _warmUp && _now < _duration;
 
@@ -1097,6 +1126,7 @@ public static class StressEngine
             Timer? timeout = null;
             var issuedAt = _now;
             if (flow.Counted) operation.Attempts++;
+            Send(step.From, pool.Id, "call");
 
             if (Down(operation.Contract.Id) || Down(pool.Id))
             {
@@ -1237,7 +1267,7 @@ public static class StressEngine
                 }
 
                 Open();
-                After(0, () => Deliver(subscription, route.Handler, 1, flow, publishedAt));
+                After(0, () => Deliver(subscription, route.Handler, 1, flow, publishedAt, step.From));
             }
 
             done(true);
@@ -1250,9 +1280,10 @@ public static class StressEngine
         /// the queue is full, the message is dead-lettered, or dropped when the subscription
         /// declares no dead-letter channel or that channel is down.
         /// </summary>
-        private void Deliver(SubscriptionRun subscription, IReadOnlyList<Step> handler, int attempt, Flow flow, long publishedAt)
+        private void Deliver(SubscriptionRun subscription, IReadOnlyList<Step> handler, int attempt, Flow flow, long publishedAt, Guid publisher)
         {
             var pool = subscription.Pool;
+            Send(publisher, subscription.Contract.ConsumerId, "message");
             var job = new Job(_now, flow.Counted, () =>
             {
                 if (Down(subscription.Contract.Id) || Down(subscription.Contract.ConsumerId))
@@ -1294,7 +1325,7 @@ public static class StressEngine
                 if (attempt < subscription.Retry.MaxAttempts)
                 {
                     if (flow.Counted) pool.Retries++;
-                    After(subscription.Retry.BackoffMs * NsPerMs, () => Deliver(subscription, handler, attempt + 1, flow, publishedAt));
+                    After(subscription.Retry.BackoffMs * NsPerMs, () => Deliver(subscription, handler, attempt + 1, flow, publishedAt, publisher));
                     return;
                 }
                 Lose();
@@ -1317,6 +1348,7 @@ public static class StressEngine
         private void Write(WriteStep step, Flow flow, Action<bool> done)
         {
             var pool = _elements[step.Store];
+            Send(step.By, pool.Id, "write");
             if (Down(pool.Id))
             {
                 if (flow.Counted) pool.Failed++;
@@ -1440,7 +1472,7 @@ public static class StressEngine
             }
 
             var elements = _elements.Values.Select(Stats).ToList();
-            var subscriptions = _consumers.Values.Select(Stats).ToList();
+            var subscriptions = _consumers.Values.Select(p => Stats(p) with { ConsumerId = _subscriptions[p.Id].Contract.ConsumerId }).ToList();
             var operations = _operations.Values.Select(o => new OperationStats(
                 StressResult.Estimated, o.Contract.Id, o.Contract.Name, o.Contract.OwnerId,
                 o.TimeoutMs, o.Retry.MaxAttempts, o.Retry.BackoffMs,
@@ -1481,7 +1513,29 @@ public static class StressEngine
                 new EffectiveLimits(
                     _limits.MaxDurationSeconds, _limits.MaxDrainSeconds, _limits.MaxArrivals, _limits.MaxEvents,
                     _limits.MaxQueued, _limits.MaxPendingEvents, _limits.MaxSamples, _limits.MaxSeriesPoints, _limits.MaxTargets),
-                "");
+                "")
+            {
+                Traffic = [.. _traffic.OrderBy(t => t.Key.From).ThenBy(t => t.Key.To).ThenBy(t => t.Key.Kind, StringComparer.Ordinal)
+                    .Select(t => new TrafficStats(StressResult.Estimated, t.Key.From, t.Key.To, t.Key.Kind, t.Value, t.Value / windowSeconds))],
+                Capacity = CapacityOf(),
+            };
+        }
+
+        /// <summary>The estimate of <see cref="CapacityRule"/>. Pools in the order elements, then subscriptions, each by ID; the first wins a tie.</summary>
+        private CapacityEstimate CapacityOf()
+        {
+            Pool? first = null;
+            double? lowest = null;
+            foreach (var pool in _pools)
+            {
+                if (_counted == 0 || pool.WindowArrivals == 0 || pool.Services.Count == 0 || pool.Services.Mean <= 0)
+                    continue;
+                var piecesPerFlow = pool.WindowArrivals / (double)_counted;
+                var rate = pool.Workers * NsPerSecond / (pool.Services.Mean * piecesPerFlow);
+                if (lowest is null || rate < lowest)
+                    (lowest, first) = (rate, pool);
+            }
+            return new CapacityEstimate(StressResult.Estimated, lowest, first?.Id, first?.Name, first?.Kind, CapacityRule);
         }
 
         /// <summary>The saturated resources in the order of the rule: the highest utilisation first, then the lower ID.</summary>

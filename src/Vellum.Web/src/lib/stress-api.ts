@@ -127,6 +127,29 @@ export interface ResourceStats {
   failedInside: number | null
   /** Null in a result of engine version 1. */
   saturation: Saturation | null
+  /** For a subscription: the element that consumes it. Absent for an element and in a result of engine version 1 to 3. */
+  consumerId?: string | null
+}
+
+/** Attempts that one element sent to another in the measured window: calls, writes or message deliveries. */
+export interface TrafficStats {
+  label: string
+  fromId: string
+  toId: string
+  kind: 'call' | 'write' | 'message'
+  sent: number
+  perSecond: number
+}
+
+/** The flow rate at which the first resource has every worker busy all the time. */
+export interface CapacityEstimate {
+  label: string
+  /** Null when no resource served work in the measured window. */
+  flowsPerSecond: number | null
+  id: string | null
+  name: string | null
+  kind: string | null
+  rule: string
 }
 
 export interface OperationStats {
@@ -205,6 +228,10 @@ export interface StressResult {
     maxTargets: number
   } | null
   hash: string
+  /** Absent in a result of engine version 1 to 3. */
+  traffic?: TrafficStats[] | null
+  /** Absent in a result of engine version 1 to 3. */
+  capacity?: CapacityEstimate | null
 }
 
 export interface StressRunSummary {
@@ -232,6 +259,9 @@ export interface StressRunSummary {
     bottleneck: string | null
     confidence: string
     drained: boolean
+    /** The element that the run failed for the whole run, on top of the profile. */
+    failedElementId?: string | null
+    failedElement?: string | null
   }
   outdated: boolean
   outdatedBecause: ('model' | 'scenario')[]
@@ -303,7 +333,9 @@ export const stressApi = {
   create: (projectId: string, profile: StressProfile) => call<StressProfileDetail>('POST', `${base(projectId)}/profiles`, profile),
   update: (projectId: string, id: string, profile: StressProfile) => call<StressProfileDetail>('PUT', `${base(projectId)}/profiles/${id}`, profile),
   remove: (projectId: string, id: string) => call<void>('DELETE', `${base(projectId)}/profiles/${id}`),
-  run: (projectId: string, id: string, branchId?: string | null) => call<StressRun>('POST', `${base(projectId)}/profiles/${id}/runs${branch(branchId)}`),
+  /** `fail`: an element of the flow that is down for the whole run, on top of the profile. The profile does not change. */
+  run: (projectId: string, id: string, branchId?: string | null, fail?: string) =>
+    call<StressRun>('POST', `${base(projectId)}/profiles/${id}/runs${branch(branchId)}`, fail ? { fail } : undefined),
   runs: (projectId: string, id: string) => call<StressRunSummary[]>('GET', `${base(projectId)}/profiles/${id}/runs`),
   getRun: (projectId: string, runId: string) => call<StressRun>('GET', `${base(projectId)}/runs/${runId}`),
   removeRun: (projectId: string, runId: string) => call<void>('DELETE', `${base(projectId)}/runs/${runId}`),

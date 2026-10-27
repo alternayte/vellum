@@ -16,9 +16,22 @@ using static Vellum.Shared.ResultExtensions;
 namespace Vellum.Modules.Stress;
 
 /// <summary>The headline of a run, for lists. Every number is an estimate.</summary>
+/// <param name="FailedElementId">The element that the run failed for the whole run on top of the profile (<see cref="StressRunRequest.Fail"/>). Null for a run of the profile as it is, and in a run stored before it existed.</param>
+/// <param name="FailedElement">The name of that element when the run started.</param>
 public sealed record StressRunSummary(
     string Label, long Arrivals, long Completed, long Failed, double ThroughputPerSecond,
-    double? P50Ms, double? P95Ms, double? P99Ms, string? Bottleneck, string Confidence, bool Drained);
+    double? P50Ms, double? P95Ms, double? P99Ms, string? Bottleneck, string Confidence, bool Drained,
+    Guid? FailedElementId = null, string? FailedElement = null);
+
+/// <summary>
+/// What a run adds to its stored profile. The profile itself does not change: the stored run
+/// keeps the profile document it ran, with the added outage in it.
+/// </summary>
+/// <param name="Fail">
+/// An element that takes work in the flow. The run adds an outage of it from 0 s to the end of
+/// the arrivals plus the drain limit, so it is down for the whole run.
+/// </param>
+public sealed record StressRunRequest(Guid? Fail);
 
 /// <summary>
 /// A stored run and what pins it: the version of the profile, of the model stream and of the
@@ -47,7 +60,7 @@ public static class StressRuns
     /// nothing and gets 422 with the issues.
     /// </summary>
     public static Task<IResult> Run(
-        Guid projectId, Guid profileId, Guid? branchId,
+        Guid projectId, Guid profileId, Guid? branchId, StressRunRequest? request,
         HttpContext http, IEventStore store, AppDbContext db,
         WorkspaceAuthorizationService auth, StressRunGate gate, StressLimits limits, StressRunPolicy policy, SettingsResolver settings, TimeProvider time,
         CancellationToken ct) =>
@@ -82,6 +95,25 @@ public static class StressRuns
                     "The scenario of this profile does not exist any more. Choose another scenario.")]);
             }
 
+            // A failed element is an outage on top of the profile, for the whole run. Only an element that takes work
+            // in this flow can fail: an outage of any other element changes nothing but the list of inputs.
+            string? failedName = null;
+            if (request?.Fail is { } fail)
+            {
+                var target = StressEngine.Requirements(world.Model, world.Scenario).OutageTargets
+                    .FirstOrDefault(t => t.Id == fail && t.Kind == "element");
+                if (target is null)
+                {
+                    return Refused([new StressIssue("unknown-target", fail.ToString(),
+                        "Only an element that serves calls, writes or messages in this flow can be failed.")]);
+                }
+                failedName = target.Name;
+                profile = profile with
+                {
+                    Outages = [.. profile.Outages, new Outage(fail, 0, profile.Arrivals.DurationSeconds + limits.MaxDrainSeconds)],
+                };
+            }
+
             // A measured service time counts for the confidence level only when its k6 result is of the model
             // version and the scenario version of this run. A result is never changed, so the same profile
             // version, model version and scenario version give the same doubts and the same hash.
@@ -105,8 +137,8 @@ public static class StressRuns
                 ScenarioId = profile.ScenarioId, ScenarioVersion = world.ScenarioVersion,
                 Seed = profile.Seed, EngineVersion = result.EngineVersion, Hash = result.Hash,
                 At = time.GetUtcNow(), RanBy = userId,
-                Summary = JsonSerializer.Serialize(Summarise(result), StressJson.Options),
-                Profile = row.Document,
+                Summary = JsonSerializer.Serialize(Summarise(result, request?.Fail, failedName), StressJson.Options),
+                Profile = failedName is null ? row.Document : JsonSerializer.Serialize(profile, StressJson.Options),
                 Result = JsonSerializer.Serialize(result, StressJson.Options),
             };
 
@@ -202,10 +234,11 @@ public static class StressRuns
             JsonSerializer.Deserialize<StressResult>(row.Result, StressJson.Options)!);
     }
 
-    private static StressRunSummary Summarise(StressResult result) => new(
+    private static StressRunSummary Summarise(StressResult result, Guid? failed, string? failedName) => new(
         StressResult.Estimated, result.Flow.Arrivals, result.Flow.Counts.Completed, result.Flow.Counts.Failed,
         result.Flow.ThroughputPerSecond, result.Flow.Latency.P50Ms, result.Flow.Latency.P95Ms, result.Flow.Latency.P99Ms,
-        result.Bottleneck.Name, result.Confidence.Level, result.Drain.Drained);
+        result.Bottleneck.Name, result.Confidence.Level, result.Drain.Drained,
+        failedName is null ? null : failed, failedName);
 
     private static StressRunSummaryDto Dto(StressRunEntity row, int profileVersion, long modelVersion, long? scenarioVersion)
     {

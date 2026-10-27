@@ -13,7 +13,7 @@ A stress run simulates one scenario under a load that you declare. It reads no c
 
 The result is the output of a queueing model. The inputs are your numbers: the arrival rate, the workers, the service times and the queue capacities. The model applies them to the flow, the timeouts and the retry policies of the design.
 
-Every number in the result has the label `estimated`. Vellum never changes that label to `measured`.
+Every number in the result has the label `estimated`. Vellum never changes that label to `measured`. The canvas can show a run over the cards and lines of a view; each number there has the label `estimated` too, and the model does not change.
 
 A result can show:
 
