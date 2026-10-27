@@ -5,6 +5,40 @@ release notes. Vellum uses semantic versions: before 1.0, a minor version can ch
 HTTP API, and its section lists each change. A release never changes a database migration
 of an earlier release, so the data of each release upgrades to the next.
 
+## 0.3.0 - 2026-10-27
+
+A busy view can be cleaned up for everyone, the canvas has the right-click menus of a
+diagramming tool, and a Stress result shows its numbers on the diagram.
+
+- Line visibility per view: derived lines, structural lines, behavioural lines and
+  cross-level lines turn on and off, and a single relationship or derived line hides from
+  one view. A chip "N lines hidden" opens the controls; "Show hidden lines" shows them for
+  you alone. Exports and share links follow the view. Migration `LineVisibility` adds
+  `views.line_visibility`. API: a view has `lineVisibility`;
+  `PUT /api/projects/{projectId}/views/{viewId}/layout/visibility` is new.
+- A card hides from one view and stays in the model. Exports and share links leave it out.
+  Migration `ViewHiddenElements` adds `views.hidden_element_ids`; a view has
+  `hiddenElementIds`, set with `PATCH` on the view.
+- Right-click menus: the pane adds an element at the pointer, pastes, selects all, tidies,
+  fits, sets lines, exports and copies a link to the view (`?view=`). A card adds Open
+  inside, Add a relationship from here, Select connected, Hide from this view, Copy and
+  Copy ID. A selection of cards aligns, distributes, tidies, hides and deletes with a typed
+  confirmation. A derived line lists its relationships and hides.
+- The avatar opens an account menu: Account, Workspace settings, Switch workspace, All
+  projects, Instance settings (admins) and Log out. A new Account page lists the person's
+  workspaces and invitations.
+- Stress on the canvas: a stored run shows each card's estimated utilisation and status,
+  each line's estimated rate, and a strip with offered, goodput, success rate, p95, busiest
+  and estimated limit. ⏸ on a card runs the same profile with that element down. Engine
+  version 4 adds `traffic`, `capacity` and `consumerId` to a result; older runs load
+  without them. API: the run endpoint takes an optional body `{ "fail": elementId }`.
+- The Create tab describes each kind, adds External system, and drags a kind onto the
+  canvas, inside the card under the pointer when the containment rules allow it.
+- "Start from a template" offers Orders, URL shortener, Chat service and Payments, each with
+  scenarios and a Stress profile.
+- A derived line of one relationship shows its label with no count, on the canvas and in the
+  SVG export.
+
 ## 0.2.0 - 2026-10-17
 
 A new project reaches a connected diagram of its code in three steps: set up, choose a

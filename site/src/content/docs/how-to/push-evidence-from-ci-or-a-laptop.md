@@ -22,11 +22,11 @@ vellum scan ./services/orders --dry-run --payload push.json
 
 ## Get the CLI
 
-The CLI is one file with no other dependency. Each [release](https://github.com/alternayte/vellum/releases) has a file for `linux-x64`, `linux-arm64`, `osx-arm64`, `osx-x64` and `win-x64`, and a `SHA256SUMS` file. For example, version 0.2.0 on a Linux runner:
+The CLI is one file with no other dependency. Each [release](https://github.com/alternayte/vellum/releases) has a file for `linux-x64`, `linux-arm64`, `osx-arm64`, `osx-x64` and `win-x64`, and a `SHA256SUMS` file. For example, version 0.3.0 on a Linux runner:
 
 <!-- snippet: syntax -->
 ```sh
-curl -fsSL https://github.com/alternayte/vellum/releases/download/v0.2.0/vellum-0.2.0-linux-x64.tar.gz | tar -xz
+curl -fsSL https://github.com/alternayte/vellum/releases/download/v0.3.0/vellum-0.3.0-linux-x64.tar.gz | tar -xz
 ./vellum --version
 ```
 
