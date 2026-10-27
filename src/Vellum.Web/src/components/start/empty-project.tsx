@@ -1,6 +1,6 @@
 import { useState, type FormEvent, type ReactNode } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { BookOpen, FolderOpen, GitBranch, Keyboard, Sparkles } from 'lucide-react'
+import { FolderOpen, GitBranch, Keyboard, LayoutTemplate, Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
@@ -9,7 +9,7 @@ import { useFolderUpload } from '@/hooks/use-folder-upload'
 import { sourcesKey } from '@/hooks/use-sources'
 import { errorText, sourcesApi } from '@/lib/import-api'
 import { shownInline } from '@/lib/mutation-errors'
-import { openSample } from '@/lib/sample-project'
+import { openTemplate, TEMPLATES } from '@/lib/templates'
 
 interface Props {
   projectId: string
@@ -19,17 +19,17 @@ interface Props {
   onDescribe: (prose: string) => Promise<void>
   /** A scan of a new folder or repository was queued: the page shows the Sources. */
   onSourceStarted: () => void
-  /** The sample is in the model: the page reloads it and lays it out. */
-  onSampleOpened: () => Promise<void>
+  /** A template is in the model: the page reloads it and lays it out. */
+  onTemplateOpened: () => Promise<void>
   /** Opens the Add Element dialog for a first system, as the blank canvas did. */
   onAddSystem: () => void
 }
 
 /**
  * The screen of a project whose model holds no element. It offers three starts: point at
- * code, describe or type the system, or open the sample.
+ * code, describe or type the system, or start from a template.
  */
-export function EmptyProject({ projectId, onTypeIt, onDescribe, onSourceStarted, onSampleOpened, onAddSystem }: Props) {
+export function EmptyProject({ projectId, onTypeIt, onDescribe, onSourceStarted, onTemplateOpened, onAddSystem }: Props) {
   return (
     // m-auto, not items-center: a screen shorter than the starts scrolls from their top.
     <div className="flex h-full overflow-y-auto p-4 sm:p-6">
@@ -39,7 +39,7 @@ export function EmptyProject({ projectId, onTypeIt, onDescribe, onSourceStarted,
         <div className="mt-6 grid gap-4 md:grid-cols-3">
           <FromCode projectId={projectId} onStarted={onSourceStarted} />
           <FromWords onTypeIt={onTypeIt} onDescribe={onDescribe} />
-          <FromSample projectId={projectId} onOpened={onSampleOpened} />
+          <FromTemplate projectId={projectId} onOpened={onTemplateOpened} />
         </div>
         <p className="mt-4 text-xs text-muted-foreground">
           Or draw it yourself:{' '}
@@ -173,25 +173,41 @@ function FromWords({ onTypeIt, onDescribe }: { onTypeIt: () => void; onDescribe:
   )
 }
 
-function FromSample({ projectId, onOpened }: { projectId: string; onOpened: () => Promise<void> }) {
-  const sample = useMutation({
-    mutationFn: async () => {
-      await openSample(projectId)
+function FromTemplate({ projectId, onOpened }: { projectId: string; onOpened: () => Promise<void> }) {
+  const open = useMutation({
+    mutationFn: async (templateId: string) => {
+      await openTemplate(projectId, templateId)
       await onOpened()
     },
     onError: shownInline,
   })
   return (
     <Start
-      icon={<BookOpen className="h-4 w-4" aria-hidden="true" />}
-      title="Open the sample"
-      text="A small shop: an Orders API, its database, Inventory, Billing and a payment provider, with two scenarios to play."
+      icon={<LayoutTemplate className="h-4 w-4" aria-hidden="true" />}
+      title="Start from a template"
+      text="A small design with contracts, scenarios to play and a Stress profile to run. It is a copy: change it as you like."
     >
-      <div className="flex-1" />
-      <Button type="button" variant="outline" disabled={sample.isPending} onClick={() => sample.mutate()}>
-        <BookOpen className="h-4 w-4" aria-hidden="true" /> {sample.isPending ? 'Opening the sample…' : 'Open the sample'}
-      </Button>
-      {sample.isError && <p role="alert" className="text-xs text-destructive">{errorText(sample.error)}</p>}
+      <ul className="flex flex-col gap-1.5" aria-label="Templates">
+        {TEMPLATES.map((template) => (
+          <li key={template.id}>
+            <button
+              type="button"
+              disabled={open.isPending}
+              onClick={() => open.mutate(template.id)}
+              className="w-full rounded-md border border-border px-2.5 py-1.5 text-left transition-colors hover:border-primary/60 hover:bg-muted disabled:opacity-60"
+            >
+              <span className="flex items-baseline justify-between gap-2">
+                <span className="text-sm font-medium">{template.name}</span>
+                <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">
+                  {open.isPending && open.variables === template.id ? 'Opening…' : `${template.elements} elements`}
+                </span>
+              </span>
+              <span className="mt-0.5 block text-[11px] leading-snug text-muted-foreground">{template.description}</span>
+            </button>
+          </li>
+        ))}
+      </ul>
+      {open.isError && <p role="alert" className="text-xs text-destructive">{errorText(open.error)}</p>}
     </Start>
   )
 }

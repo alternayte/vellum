@@ -1,0 +1,113 @@
+{
+  "name": "Busy hour",
+  "scenarioId": "e0a1d5c0-15ed-4000-8000-000000000100",
+  "seed": "42",
+  "arrivals": {
+    "kind": "poisson",
+    "ratePerSecond": 25,
+    "durationSeconds": 120,
+    "warmUpSeconds": 10
+  },
+  "resources": [
+    {
+      "elementId": "e0a1d5c0-15ed-4000-8000-000000000012",
+      "concurrency": 16,
+      "queueCapacity": null
+    },
+    {
+      "elementId": "e0a1d5c0-15ed-4000-8000-000000000020",
+      "concurrency": 8,
+      "queueCapacity": 200
+    },
+    {
+      "elementId": "e0a1d5c0-15ed-4000-8000-000000000021",
+      "concurrency": 4,
+      "queueCapacity": null
+    },
+    {
+      "elementId": "e0a1d5c0-15ed-4000-8000-000000000022",
+      "concurrency": 4,
+      "queueCapacity": 200
+    },
+    {
+      "elementId": "e0a1d5c0-15ed-4000-8000-000000000023",
+      "concurrency": 4,
+      "queueCapacity": null
+    }
+  ],
+  "serviceTimes": [
+    {
+      "target": "e0a1d5c0-15ed-4000-8000-000000000040",
+      "time": {
+        "kind": "lognormal",
+        "medianMs": 15,
+        "p95Ms": 60
+      }
+    },
+    {
+      "target": "e0a1d5c0-15ed-4000-8000-000000000041",
+      "time": {
+        "kind": "lognormal",
+        "medianMs": 10,
+        "p95Ms": 40
+      }
+    },
+    {
+      "target": "e0a1d5c0-15ed-4000-8000-000000000042",
+      "time": {
+        "kind": "lognormal",
+        "medianMs": 180,
+        "p95Ms": 600
+      }
+    },
+    {
+      "target": "e0a1d5c0-15ed-4000-8000-000000000021",
+      "time": {
+        "kind": "exponential",
+        "meanMs": 4
+      }
+    },
+    {
+      "target": "e0a1d5c0-15ed-4000-8000-000000000023",
+      "time": {
+        "kind": "exponential",
+        "meanMs": 4
+      }
+    },
+    {
+      "target": "e0a1d5c0-15ed-4000-8000-000000000060",
+      "time": {
+        "kind": "uniform",
+        "minMs": 5,
+        "maxMs": 20
+      }
+    },
+    {
+      "target": "e0a1d5c0-15ed-4000-8000-000000000061",
+      "time": {
+        "kind": "fixed",
+        "ms": 20
+      }
+    }
+  ],
+  "subscriptions": [
+    {
+      "subscriptionId": "e0a1d5c0-15ed-4000-8000-000000000060",
+      "consumers": 2,
+      "queueCapacity": null
+    },
+    {
+      "subscriptionId": "e0a1d5c0-15ed-4000-8000-000000000061",
+      "consumers": 8,
+      "queueCapacity": 1000
+    }
+  ],
+  "branches": [
+    {
+      "stepId": "stock-reserved",
+      "probability": 0.97
+    }
+  ],
+  "overrides": [],
+  "outages": []
+}

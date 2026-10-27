@@ -1,0 +1,118 @@
+{
+  "id": "e0a1d5c0-15ed-4000-8002-000000000101",
+  "name": "Send a message when the push service is down",
+  "steps": [
+    {
+      "type": "call",
+      "id": "send",
+      "from": "e0a1d5c0-15ed-4000-8002-000000000011",
+      "operation": "e0a1d5c0-15ed-4000-8002-000000000040",
+      "request": {
+        "conversationId": "c-42",
+        "text": "Lunch at noon?"
+      },
+      "response": {
+        "messageId": "m-1",
+        "status": "accepted"
+      },
+      "then": [
+        {
+          "type": "call",
+          "id": "store",
+          "from": "e0a1d5c0-15ed-4000-8002-000000000020",
+          "operation": "e0a1d5c0-15ed-4000-8002-000000000041",
+          "request": {
+            "conversationId": "c-42",
+            "messageId": "m-1",
+            "senderId": "u-7",
+            "text": "Lunch at noon?"
+          },
+          "response": null,
+          "then": [
+            {
+              "type": "write",
+              "id": "save-message",
+              "by": "e0a1d5c0-15ed-4000-8002-000000000021",
+              "store": "e0a1d5c0-15ed-4000-8002-000000000022",
+              "dataset": "messages",
+              "change": {
+                "conversationId": "c-42",
+                "messageId": "m-1",
+                "senderId": "u-7",
+                "text": "Lunch at noon?"
+              }
+            },
+            {
+              "type": "publish",
+              "id": "publish-message-sent",
+              "from": "e0a1d5c0-15ed-4000-8002-000000000021",
+              "channel": "e0a1d5c0-15ed-4000-8002-000000000050",
+              "message": "e0a1d5c0-15ed-4000-8002-000000000080",
+              "routingKey": "message.sent",
+              "payload": {
+                "conversationId": "c-42",
+                "messageId": "m-1",
+                "recipientIds": [
+                  "u-8",
+                  "u-9"
+                ]
+              },
+              "headers": {},
+              "handlers": {
+                "e0a1d5c0-15ed-4000-8002-000000000060": [
+                  {
+                    "type": "call",
+                    "id": "push",
+                    "from": "e0a1d5c0-15ed-4000-8002-000000000024",
+                    "operation": "e0a1d5c0-15ed-4000-8002-000000000042",
+                    "request": {
+                      "deviceTokens": [
+                        "d-8",
+                        "d-9"
+                      ],
+                      "title": "New message",
+                      "body": "Lunch at noon?"
+                    },
+                    "response": null,
+                    "then": [],
+                    "onError": []
+                  }
+                ]
+              }
+            }
+          ],
+          "onError": []
+        }
+      ],
+      "onError": []
+    }
+  ],
+  "faults": [
+    {
+      "target": "e0a1d5c0-15ed-4000-8002-000000000042",
+      "kind": "Outage",
+      "failFirst": null
+    }
+  ],
+  "assertions": [
+    {
+      "type": "outcome",
+      "id": "message-is-still-accepted",
+      "step": "send",
+      "expected": "Succeeded"
+    },
+    {
+      "type": "outcome",
+      "id": "message-is-still-stored",
+      "step": "save-message",
+      "expected": "Succeeded"
+    },
+    {
+      "type": "event-count",
+      "id": "the-push-goes-to-dead-letters",
+      "kind": "DeadLettered",
+      "target": null,
+      "expected": 1
+    }
+  ]
+}

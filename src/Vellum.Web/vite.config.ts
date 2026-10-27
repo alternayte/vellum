@@ -16,7 +16,7 @@ export default defineConfig({
     tailwindcss(),
   ],
   server: {
-    // The sample project (examples/orders) is bundled from the root of the repository.
+    // The templates of an empty project (examples/<name>) are bundled from the root of the repository.
     fs: { allow: [searchForWorkspaceRoot(process.cwd()), path.resolve(__dirname, '../../examples')] },
     // VELLUM_API moves the proxy to an API on another port.
     proxy: {

@@ -1,0 +1,91 @@
+{
+  "name": "Evening peak",
+  "scenarioId": "e0a1d5c0-15ed-4000-8002-000000000100",
+  "seed": "11",
+  "arrivals": {
+    "kind": "burst",
+    "ratePerSecond": 120,
+    "bursts": [
+      {
+        "fromSeconds": 60,
+        "toSeconds": 75,
+        "ratePerSecond": 600
+      }
+    ],
+    "durationSeconds": 120,
+    "warmUpSeconds": 10
+  },
+  "resources": [
+    {
+      "elementId": "e0a1d5c0-15ed-4000-8002-000000000012",
+      "concurrency": 64,
+      "queueCapacity": null
+    },
+    {
+      "elementId": "e0a1d5c0-15ed-4000-8002-000000000020",
+      "concurrency": 32,
+      "queueCapacity": 2000
+    },
+    {
+      "elementId": "e0a1d5c0-15ed-4000-8002-000000000021",
+      "concurrency": 16,
+      "queueCapacity": 1000
+    },
+    {
+      "elementId": "e0a1d5c0-15ed-4000-8002-000000000022",
+      "concurrency": 12,
+      "queueCapacity": null
+    }
+  ],
+  "serviceTimes": [
+    {
+      "target": "e0a1d5c0-15ed-4000-8002-000000000040",
+      "time": {
+        "kind": "lognormal",
+        "medianMs": 2,
+        "p95Ms": 8
+      }
+    },
+    {
+      "target": "e0a1d5c0-15ed-4000-8002-000000000041",
+      "time": {
+        "kind": "lognormal",
+        "medianMs": 3,
+        "p95Ms": 10
+      }
+    },
+    {
+      "target": "e0a1d5c0-15ed-4000-8002-000000000042",
+      "time": {
+        "kind": "lognormal",
+        "medianMs": 120,
+        "p95Ms": 400
+      }
+    },
+    {
+      "target": "e0a1d5c0-15ed-4000-8002-000000000022",
+      "time": {
+        "kind": "lognormal",
+        "medianMs": 6,
+        "p95Ms": 25
+      }
+    },
+    {
+      "target": "e0a1d5c0-15ed-4000-8002-000000000060",
+      "time": {
+        "kind": "fixed",
+        "ms": 2
+      }
+    }
+  ],
+  "subscriptions": [
+    {
+      "subscriptionId": "e0a1d5c0-15ed-4000-8002-000000000060",
+      "consumers": 32,
+      "queueCapacity": 20000
+    }
+  ],
+  "branches": [],
+  "overrides": [],
+  "outages": []
+}

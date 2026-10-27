@@ -1,9 +1,10 @@
-import { type ReactNode, useEffect, useRef, useSyncExternalStore } from 'react'
+import { type ReactNode, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { useShellStore, type Area } from '@/stores/shell-store'
 import { Boxes, Route, ShieldCheck, PackageOpen, GitPullRequestArrow, PanelLeftClose, PanelLeftOpen } from 'lucide-react'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { areaOf, isToolVisible, visibleAreas, type AreaAccess } from '@/lib/areas'
 import { cn } from '@/lib/utils'
+import { PALETTE_DRAG_TYPE } from '@/lib/element-palette'
 
 interface LeftToolbarProps {
   /** What the person sees: Check and Ship wait for the first element, Share links for an Editor. */
@@ -62,6 +63,21 @@ export function LeftToolbar({ access, children }: LeftToolbarProps) {
   const narrow = useSyncExternalStore(subscribeNarrow, isNarrow)
   const collapsed = sidebarCollapsed || narrow
   const panel = useRef<HTMLDivElement>(null)
+  // A kind dragged from the Create tab passes through the backdrop to the canvas under it, from
+  // the start of the drag to its end.
+  const [dragThrough, setDragThrough] = useState(false)
+  useEffect(() => {
+    const start = (e: DragEvent) => { if (e.dataTransfer?.types.includes(PALETTE_DRAG_TYPE)) setDragThrough(true) }
+    const end = () => setDragThrough(false)
+    window.addEventListener('dragstart', start)
+    window.addEventListener('dragend', end)
+    window.addEventListener('drop', end)
+    return () => {
+      window.removeEventListener('dragstart', start)
+      window.removeEventListener('dragend', end)
+      window.removeEventListener('drop', end)
+    }
+  }, [])
   const buttons = useRef(new Map<Area, HTMLButtonElement>())
   const areas = visibleAreas(access)
   const activeArea = activeFlyout ? areaOf(activeFlyout) : null
@@ -175,7 +191,7 @@ export function LeftToolbar({ access, children }: LeftToolbarProps) {
           {activeFlyout !== 'assistant' && activeFlyout !== 'review' && (
             <div
               data-testid="flyout-backdrop"
-              className="fixed inset-0 z-10"
+              className={cn('fixed inset-0 z-10', dragThrough && 'pointer-events-none')}
               onClick={closeFlyout}
             />
           )}

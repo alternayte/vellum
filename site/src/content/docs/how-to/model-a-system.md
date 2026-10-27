@@ -61,10 +61,23 @@ Use one of these methods.
 - Double-click an empty part of the canvas. Select a kind.
 - Right-click an empty part of the canvas. Select **Add Actor** or **Add System** (at the top level), or the kinds that the level permits.
 - Press `N`. In **Add Element**, select the kind, enter a **Name** and select **Add**.
+- Select **Model** in the sidebar, then the **Create** tab. Below **Elements**, each kind has a one-line description. Drag a kind onto the canvas, or select it to open **Add Element** with that kind.
 - Open the command palette with `Ctrl+K` or `Cmd+K`. Select **Add element**.
 - Drag from the handle of an element to an empty part of the canvas. Select a kind. Vellum adds the element and a relationship from the first element to it.
 
 Except for the **Add Element** dialog, a new element has the name `New <kind>`. Rename it in the detail panel.
+
+### Drag a kind from the Create tab
+
+The **Create** tab also lists **External system**: a system with the tag `external`, for a service that you do not own, such as a payment provider.
+
+When you drop a kind on the canvas, Vellum chooses the parent from the cards under the pointer:
+
+1. The innermost card under the pointer that can hold the kind. An external system holds nothing. An open card keeps the element at the drop point. A closed card opens, and the element goes into free space inside it.
+2. Otherwise, the level that the canvas shows, at the drop point, when the level permits the kind.
+3. Otherwise, Vellum adds nothing and shows the rule, for example `A store goes inside a system. Drop it on a system card.`
+
+Undo removes the element.
 
 ## Go into a system or an app
 

@@ -1,6 +1,6 @@
 ---
 title: Start a project
-description: Get a first diagram into an empty project from a folder, a GitHub repository, a description, typed lines or the sample.
+description: Get a first diagram into an empty project from a folder, a GitHub repository, a description, typed lines or a template.
 ---
 
 This guide shows you the three starts of an empty project. You need the editor role in the workspace.
@@ -9,7 +9,7 @@ A project whose model has no element shows the heading **Start your diagram** an
 
 - **Choose folder / GitHub URL** reads code.
 - **Describe it / Type it** takes your words.
-- **Open the sample** loads the Orders example.
+- **Start from a template** loads one of four small designs.
 
 Below the cards, the link **Add a system** opens the dialog **Add Element**, as the blank canvas did.
 
@@ -101,11 +101,24 @@ Each end of a relationship can have a kind and `in`, as an element line can: `Or
 - Vellum refuses a line that breaks these rules, for example a store inside an actor.
 - Vellum writes no second relationship with the same ends and the same label.
 
-## Open the sample
+## Start from a template
 
-Select **Open the sample**. Vellum imports the Orders example (`examples/orders` in the repository): 8 elements, 5 relationships, the contracts and the two scenarios **Place an order** and **Place an order when Inventory is down**. Every fact has the truth label `declared`. Vellum then lays out the model.
+The card **Start from a template** lists four designs. Each entry shows the name, a one-line description and the number of elements.
 
-The sample is a copy in this project. A change to it changes nothing else.
+| Template | Design | Scenarios | Stress profile |
+|---|---|---|---|
+| **Orders** | A small shop: an Orders API, its database, Inventory, Billing and an external payment provider. | **Place an order**, **Place an order when Inventory is down** | **Busy hour** |
+| **URL shortener** | A Links API with its database and cache, and Analytics that counts each click. | **Follow a short link**, **Shorten a link** | **Campaign launch** |
+| **Chat service** | A chat gateway, a Messages service with its database, a Notifier and an external push service. | **Send a message**, **Send a message when the push service is down** | **Evening peak** |
+| **Payments** | A Payments API, a Risk engine, a Ledger, Webhooks and an external card network. | **Take a payment**, **Take a payment when the card network times out** | **Sale day** |
+
+1. Select a template. Its entry shows **Opening…**.
+2. Vellum imports the model, then saves the scenarios and the stress profile.
+3. Vellum lays out the model.
+
+Each template holds elements, relationships, contracts, scenarios and a stress profile. Every fact has the truth label `declared`. To play a scenario, open **Flows**. To run the profile, open **Check**, select **Stress** and select **Run**. The numbers of a run are estimates.
+
+The files of each template are in `examples/` in the repository. A template is a copy in this project. A change to it changes nothing else.
 
 ## Next
 

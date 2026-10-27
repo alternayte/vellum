@@ -7,8 +7,8 @@
 #
 # What it does, in order:
 #   1. Starts a new, empty instance with the commands of the self-host quickstart.
-#   2. Completes first-run setup and builds examples/orders through the API. The files of the
-#      example must come out unchanged. Runs the commands of the how-to "Use the HTTP API"
+#   2. Completes first-run setup and builds the templates in examples/ through the API. The files
+#      of each example must come out unchanged. Runs the commands of the how-to "Use the HTTP API"
 #      and of the tutorial "Model your first system and trace a flow", and plays the two
 #      scenario documents that the tutorial writes.
 #   3. Starts the GitHub stand-in, scans acme/orders at main and accepts every proposal
@@ -83,11 +83,13 @@ docker compose down -v >/dev/null 2>&1 || true
 live tutorials/self-host-quickstart
 wait_healthy
 
-step "2. First-run setup, then build examples/orders through the API"
+step "2. First-run setup, then build the templates in examples/ through the API"
 set_up
-(cd "$repo/examples/orders" && node build.mjs)
-git -C "$repo" diff --exit-code --stat -- examples/orders/model.json examples/orders/scenarios
-echo "examples/orders: the built files are the committed files"
+for example in orders url-shortener chat-service payments; do
+  (cd "$repo/examples/$example" && node build.mjs)
+  git -C "$repo" diff --exit-code --stat -- "examples/$example/model.json" "examples/$example/scenarios" "examples/$example/stress-profile.json"
+  echo "examples/$example: the built files are the committed files"
+done
 
 workspace=$(api GET /api/workspaces | jq -r '.[0].id')
 new_id() { uuidgen | tr '[:upper:]' '[:lower:]'; }

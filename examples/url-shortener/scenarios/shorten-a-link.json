@@ -1,0 +1,60 @@
+{
+  "id": "e0a1d5c0-15ed-4000-8001-000000000101",
+  "name": "Shorten a link",
+  "steps": [
+    {
+      "type": "call",
+      "id": "shorten",
+      "from": "e0a1d5c0-15ed-4000-8001-000000000011",
+      "operation": "e0a1d5c0-15ed-4000-8001-000000000040",
+      "request": {
+        "url": "https://example.com/spring-sale"
+      },
+      "response": {
+        "code": "spring",
+        "shortUrl": "https://sho.rt/spring"
+      },
+      "then": [
+        {
+          "type": "write",
+          "id": "save-link",
+          "by": "e0a1d5c0-15ed-4000-8001-000000000020",
+          "store": "e0a1d5c0-15ed-4000-8001-000000000021",
+          "dataset": "links",
+          "change": {
+            "code": "spring",
+            "url": "https://example.com/spring-sale"
+          }
+        },
+        {
+          "type": "write",
+          "id": "cache-link",
+          "by": "e0a1d5c0-15ed-4000-8001-000000000020",
+          "store": "e0a1d5c0-15ed-4000-8001-000000000022",
+          "dataset": "links",
+          "change": {
+            "code": "spring",
+            "url": "https://example.com/spring-sale"
+          }
+        }
+      ],
+      "onError": []
+    }
+  ],
+  "faults": [],
+  "assertions": [
+    {
+      "type": "outcome",
+      "id": "link-is-created",
+      "step": "shorten",
+      "expected": "Succeeded"
+    },
+    {
+      "type": "event-count",
+      "id": "link-is-stored-and-cached",
+      "kind": "DataWritten",
+      "target": null,
+      "expected": 2
+    }
+  ]
+}
