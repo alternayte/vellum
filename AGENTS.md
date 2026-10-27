@@ -36,4 +36,5 @@ It is a .NET 10 modular monolith in src/Vellum with a React 19 SPA in src/Vellum
 - ghost layer: the dashed canvas overlay that shows a pending AI proposal, where a person accepts or rejects its items. Avoid: preview, draft overlay, suggestion layer.
 - Needs you: the list of rescan changes to facts a person edited, each waiting for that person's decision. Avoid: conflicts, review queue, inbox.
 - derived line: a line the canvas and the exports draw between two visible cards for relationships whose ends are hidden inside them; it is never a model fact, and only its route is stored, as layout data. Avoid: implied relationship, lifted edge, rolled-up edge.
+- cross-level line: a direct relationship whose two visible ends sit at different nesting depths on the canvas. Avoid: mixed-level edge, level-crossing line.
 - not seen in latest scan: the status of a model fact that the latest Snapshot of its Source no longer holds. Avoid: stale, removed.
