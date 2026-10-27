@@ -22,6 +22,8 @@ export interface C4EdgeData extends Record<string, unknown> {
   totalParallel?: number
   /** A trace event runs along this relationship now; its label goes below the path. */
   labelBelow?: boolean
+  /** The view hides this relationship; it is drawn faint because the person asked to see hidden lines. */
+  hiddenInView?: boolean
   /** The saved side of each end in this view: top, right, bottom or left. Null is auto. */
   sourceSide?: string | null
   targetSide?: string | null
@@ -129,6 +131,7 @@ export const C4Edge = memo(function C4Edge({
             x={labelX}
             y={labelY}
             below={d.labelBelow}
+            faint={d.hiddenInView}
             zIndex={labelZ(sourceBoxes, targetBoxes)}
           />
         </EdgeLabelRenderer>

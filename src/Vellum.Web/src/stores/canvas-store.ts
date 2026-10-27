@@ -14,6 +14,11 @@ interface CanvasState {
   activeLens: Lens
   zoomLevel: number
   expandedNodeIds: Set<string>
+  /**
+   * Draws the lines the view hides, faint, for this person only. It is not saved: the view keeps
+   * its hidden lines for everyone else.
+   */
+  showHiddenLines: boolean
 
   drillInto: (element: DrillSegment) => void
   drillTo: (index: number) => void
@@ -27,6 +32,7 @@ interface CanvasState {
    * canvas goes into any other element. The current level's own element needs nothing.
    */
   showInside: (path: DrillSegment[]) => void
+  setShowHiddenLines: (show: boolean) => void
   reset: () => void
 }
 
@@ -36,6 +42,7 @@ export const useCanvasStore = create<CanvasState>((set) => ({
   activeLens: 'none',
   zoomLevel: 1,
   expandedNodeIds: new Set(),
+  showHiddenLines: false,
 
   drillInto: (element) =>
     set((state) => ({
@@ -84,8 +91,11 @@ export const useCanvasStore = create<CanvasState>((set) => ({
       return { drillPath: path, currentRootId: target.elementId }
     }),
 
+  setShowHiddenLines: (show) => set({ showHiddenLines: show }),
+
   reset: () =>
     set({
+      showHiddenLines: false,
       drillPath: [],
       currentRootId: null,
       activeLens: 'none',

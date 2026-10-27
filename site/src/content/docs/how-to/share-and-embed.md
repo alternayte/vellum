@@ -18,6 +18,8 @@ A view link shows the elements that the view places, with their parents, and the
 
 A view link does not share the parts that the view does not place, such as the children inside a card. It still draws a derived line for the relationships between those hidden parts, between the two shared cards that hold them. The line shows the number of relationships. A line of one relationship also shows its label, as the SVG export does. When you select the line, the details show the two cards, the label and the number. The page never shows the names or the IDs of the hidden parts or of the hidden relationships. An inferred relationship that no person accepted is not counted.
 
+A link does not draw the lines that the view hides. A view link does not share a relationship that the view hides one at a time or by its kind. A project link shares the whole model, and each diagram leaves out the lines that its view hides. See [Views, levels and derived lines](/concepts/views-levels-and-derived-lines/#hidden-lines). A pinned link uses the hidden lines of the moment you created the link.
+
 The diagram draws the lines along the routes that **Tidy** saved, as the canvas does. When a card is no longer in the place where Tidy put it, its lines take the automatic curve. A pinned link uses the layout of the moment you created the link.
 
 Two parts are off by default. You turn each one on for each link:

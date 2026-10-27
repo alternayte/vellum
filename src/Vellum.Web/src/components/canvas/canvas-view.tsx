@@ -28,6 +28,8 @@ import { labelAction } from '@/lib/fact-labels'
 import { NodeContextMenu } from './context-menus/node-context-menu'
 import { EdgeContextMenu } from './context-menus/edge-context-menu'
 import { CanvasContextMenu } from './context-menus/canvas-context-menu'
+import { DerivedLineContextMenu } from './context-menus/derived-line-context-menu'
+import { LineControlsChip, type LineControls } from './line-controls'
 import { CreatePopover } from './create-popover'
 import '@xyflow/react/dist/style.css'
 import { nodeTypes } from './nodes/node-types'
@@ -63,6 +65,7 @@ import {
 import type { GhostEdgeData } from './edges/ghost-edge'
 import { GhostBar } from './ghost-bar'
 import { isDerivedLineId, projectLines, type HiddenLine } from '@/lib/derived-lines'
+import { ALL_LINES_SHOWN, applyLineVisibility, withDerivedLine, withRelationship, withSwitch, type LineVisibility } from '@/lib/line-visibility'
 import type { DerivedEdgeData } from './edges/derived-edge'
 
 interface ElementModel {
@@ -183,6 +186,12 @@ interface CanvasViewProps {
    * side of the same card. The relationship's source and target in the model do not change.
    */
   onEdgeSidesChange?: (relationshipId: string, sides: { sourceSide: CardSide | null; targetSide: CardSide | null }) => void
+  /** Which lines the view draws. Without it every line is drawn. */
+  lineVisibility?: LineVisibility
+  /** Saves which lines the view draws, for everyone. Without it the line controls only look. */
+  onLineVisibilityChange?: (visibility: LineVisibility) => void
+  /** Offers the line controls and the chip "N lines hidden". A share page draws the curated view only. */
+  lineControls?: boolean
 }
 
 function minimapNodeColor(node: Node): string {
@@ -229,6 +238,7 @@ export function CanvasView(props: CanvasViewProps) {
         onViewportCenterReady: props.onViewportCenterReady, onSelectionChange: props.onSelectionChange,
         searchOpen: props.searchOpen, onSearchClose: props.onSearchClose, readOnly: true,
         commentMarkers: props.commentMarkers, edgeSides: props.edgeSides, lineRoutes: props.lineRoutes, hiddenLines: props.hiddenLines,
+        lineVisibility: props.lineVisibility, lineControls: props.lineControls,
       }
     : props
   return (
@@ -241,6 +251,7 @@ export function CanvasView(props: CanvasViewProps) {
 type ContextMenuState =
   | { type: 'node'; nodeId: string; position: { x: number; y: number } }
   | { type: 'edge'; edgeId: string; position: { x: number; y: number } }
+  | { type: 'derived'; line: DerivedEdgeData; position: { x: number; y: number } }
   | { type: 'canvas'; position: { x: number; y: number } }
   | null
 
@@ -282,6 +293,9 @@ function CanvasViewInner({
   lineRoutes,
   hiddenLines,
   onEdgeSidesChange,
+  lineVisibility = ALL_LINES_SHOWN,
+  onLineVisibilityChange,
+  lineControls = false,
 }: CanvasViewProps) {
   const { currentRootId, zoomLevel, setZoom, activeLens, setLens, expandedNodeIds, toggleExpand } = useCanvasStore()
   const { fitView, screenToFlowPosition, getViewport, setViewport, getInternalNode } = useReactFlow()
@@ -441,8 +455,23 @@ function CanvasViewInner({
 
   // A relationship with both ends on the canvas draws as itself. The rest attach to the nearest
   // card on the canvas that holds each end and merge into derived lines, a projection of this
-  // view that is never stored.
-  const lines = useMemo(() => projectLines(elements, relationships, visibleIds, hiddenLines), [elements, relationships, visibleIds, hiddenLines])
+  // view that is never stored. The view leaves out the lines it hides; a person who asks to see
+  // them gets every line, the hidden ones faint.
+  const showHiddenLines = useCanvasStore((s) => s.showHiddenLines) && lineControls
+  const setShowHiddenLines = useCanvasStore((s) => s.setShowHiddenLines)
+  const visibleLines = useMemo(
+    () => applyLineVisibility(elements, relationships, visibleIds, lineVisibility, hiddenLines),
+    [elements, relationships, visibleIds, lineVisibility, hiddenLines],
+  )
+  const hiddenLineCount = visibleLines.hiddenDirect.length + visibleLines.hiddenDerived.length
+  const lines = useMemo(
+    () => (showHiddenLines && hiddenLineCount > 0 ? projectLines(elements, relationships, visibleIds, hiddenLines) : visibleLines),
+    [showHiddenLines, hiddenLineCount, elements, relationships, visibleIds, hiddenLines, visibleLines],
+  )
+  const faintLineIds = useMemo(
+    () => new Set(showHiddenLines ? [...visibleLines.hiddenDirect.map((r) => r.id), ...visibleLines.hiddenDerived.map((l) => l.id)] : []),
+    [showHiddenLines, visibleLines],
+  )
   const visibleRelationships = lines.direct
   // The detail panel lists the relationships of the selected derived line. A change of the model
   // or of the open cards changes the line, so the list follows it, and a line that is no longer
@@ -617,9 +646,11 @@ function CanvasViewInner({
           targetSide: cardSide(sidesMap.get(rel.id)?.targetSide),
           // A side or a straight line a person chose wins over the route of the auto layout.
           route: routeApplies(sidesMap.get(rel.id), rel.lineShape) ? parseRoute(sidesMap.get(rel.id)?.routePoints) : null,
+          hiddenInView: faintLineIds.has(rel.id),
         },
         // Only the selected relationship offers its ends to drag; see shownEdges.
         reconnectable: false,
+        ...(faintLineIds.has(rel.id) ? { className: 'vellum-hidden-line' } : {}),
       }
     })
     // A derived line is no fact: it has no ends to drag, no menu, and nothing to delete.
@@ -631,6 +662,7 @@ function CanvasViewInner({
       markerEnd: { type: MarkerType.ArrowClosed, color: 'var(--muted-foreground)' },
       reconnectable: false,
       deletable: false,
+      ...(faintLineIds.has(line.id) ? { className: 'vellum-hidden-line' } : {}),
       data: {
         fromId: line.fromId,
         toId: line.toId,
@@ -639,10 +671,11 @@ function CanvasViewInner({
         label: line.label,
         ...place(line.fromId, line.toId),
         route: lineRouteMap.get(`${line.fromId}>${line.toId}`) ?? null,
+        hiddenInView: faintLineIds.has(line.id),
       } satisfies DerivedEdgeData,
     }))
     return [...direct, ...derived]
-  }, [lines, diffStateMap, isReviewMode, sidesMap, lineRouteMap])
+  }, [lines, diffStateMap, isReviewMode, sidesMap, lineRouteMap, faintLineIds])
 
   // The ghosts of this level: dashed cards and lines. A ghost inside a node follows it, so
   // each node comes after the node it sits in.
@@ -1296,10 +1329,23 @@ function CanvasViewInner({
   const handleEdgeContextMenu = useCallback(
     (event: React.MouseEvent, edge: Edge) => {
       event.preventDefault()
-      if (isGhostNodeId(edge.id) || isDerivedLineId(edge.id)) return
+      if (isGhostNodeId(edge.id)) return
+      if (isDerivedLineId(edge.id)) {
+        setContextMenu({ type: 'derived', line: edge.data as DerivedEdgeData, position: { x: event.clientX, y: event.clientY } })
+        return
+      }
       setContextMenu({ type: 'edge', edgeId: edge.id, position: { x: event.clientX, y: event.clientY } })
     },
     [],
+  )
+
+  // The line controls of the view: its switches and hidden lines, which only an editor changes,
+  // and the faint display of the hidden lines, which is the person's own and is not saved.
+  const lineControlsState = useMemo<LineControls | undefined>(
+    () => (lineControls
+      ? { visibility: lineVisibility, onChange: onLineVisibilityChange, showHidden: showHiddenLines, onShowHidden: setShowHiddenLines }
+      : undefined),
+    [lineControls, lineVisibility, onLineVisibilityChange, showHiddenLines, setShowHiddenLines],
   )
 
   const handlePaneContextMenu = useCallback(
@@ -1400,6 +1446,9 @@ function CanvasViewInner({
         <TraceEdgeMarkers />
         <ImpactStepMarkers />
         {commentMarkers && <CommentMarkers markers={commentMarkers} />}
+        {lineControlsState && (
+          <LineControlsChip controls={lineControlsState} hiddenCount={hiddenLineCount} elements={elements} relationships={relationships} />
+        )}
         {ghostProposal && ghostPlan && ghosts && (
           <GhostBar
             proposal={ghostProposal}
@@ -1513,6 +1562,20 @@ function CanvasViewInner({
             const action = labelAction(relationships.find((r) => r.id === contextMenu.edgeId)?.factStatus)
             if (action) onFactLabel('relationship', contextMenu.edgeId, action)
           })}
+          onHideFromView={onLineVisibilityChange && (() => onLineVisibilityChange(withRelationship(lineVisibility, contextMenu.edgeId, true)))}
+        />
+      )}
+
+      {contextMenu?.type === 'derived' && (
+        <DerivedLineContextMenu
+          position={contextMenu.position}
+          onClose={() => setContextMenu(null)}
+          onListRelationships={() => {
+            const { fromId, toId, relationshipIds, hiddenCount, label } = contextMenu.line
+            selectDerivedLine({ fromId, toId, relationshipIds, hiddenCount: hiddenCount ?? 0, label })
+          }}
+          onHideLine={onLineVisibilityChange && (() => onLineVisibilityChange(withDerivedLine(lineVisibility, contextMenu.line, true)))}
+          onHideAllDerived={onLineVisibilityChange && (() => onLineVisibilityChange(withSwitch(lineVisibility, 'derivedLines', false)))}
         />
       )}
 
@@ -1525,6 +1588,7 @@ function CanvasViewInner({
           onAddElement={(kind) => onAddElementAtPosition?.(kind)}
           onTidy={() => onTidy?.()}
           onZoomToFit={() => fitView(fitAll())}
+          lines={lineControlsState}
         />
       )}
 

@@ -1,7 +1,9 @@
 import { LayoutGrid, Maximize } from 'lucide-react'
 import { validKindsForContext } from '@/lib/containment-rules'
 import { kindColor } from '@/lib/kind-colors'
-import { ContextMenu, MenuItem, MenuSeparator } from './menu'
+import { ContextMenu, MenuCheckItem, MenuGroup, MenuItem, MenuSeparator } from './menu'
+import { LINE_SWITCHES, withSwitch } from '@/lib/line-visibility'
+import type { LineControls } from '../line-controls'
 
 interface CanvasContextMenuProps {
   open: boolean
@@ -11,6 +13,8 @@ interface CanvasContextMenuProps {
   onAddElement: (kind: string) => void
   onTidy: () => void
   onZoomToFit: () => void
+  /** The line controls of the open view. Without them the menu has no Lines group. */
+  lines?: LineControls
 }
 
 export function CanvasContextMenu({
@@ -21,6 +25,7 @@ export function CanvasContextMenu({
   onAddElement,
   onTidy,
   onZoomToFit,
+  lines,
 }: CanvasContextMenuProps) {
   if (!open) return null
 
@@ -39,6 +44,22 @@ export function CanvasContextMenu({
       {kinds.length > 0 && <MenuSeparator />}
       <MenuItem icon={<LayoutGrid className="h-3.5 w-3.5" />} label="Tidy layout" onSelect={() => { onTidy(); onClose() }} />
       <MenuItem icon={<Maximize className="h-3.5 w-3.5" />} label="Zoom to fit" onSelect={() => { onZoomToFit(); onClose() }} />
+      {lines && (
+        <>
+          <MenuSeparator />
+          <MenuGroup label="Lines">
+            {lines.onChange && LINE_SWITCHES.map(({ key, label }) => (
+              <MenuCheckItem
+                key={key}
+                label={label}
+                checked={lines.visibility[key]}
+                onToggle={(shown) => lines.onChange?.(withSwitch(lines.visibility, key, shown))}
+              />
+            ))}
+            <MenuCheckItem label="Show hidden lines" checked={lines.showHidden} onToggle={lines.onShowHidden} />
+          </MenuGroup>
+        </>
+      )}
     </ContextMenu>
   )
 }
