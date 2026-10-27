@@ -2,7 +2,8 @@
 
 A model of a small shop that you can import into Vellum. It is the Orders reference case:
 a customer places an order, the Orders API reserves stock, and `OrderCreated` goes to
-Inventory and Billing.
+Inventory and Billing. It is also the template **Orders** of an empty project, with the
+templates in `../url-shortener`, `../chat-service` and `../payments`.
 
 ## Files
 
@@ -11,8 +12,9 @@ Inventory and Billing.
 | `model.json` | A Vellum model document: 8 elements, 5 relationships, 5 JSON schemas, 3 operations, 4 channels, 2 bindings, 2 subscriptions and 1 message. |
 | `scenarios/place-an-order.json` | The flow with no fault. It has 15 events. |
 | `scenarios/place-an-order-inventory-down.json` | The same flow with an outage of `POST /reservations`. The failure branch runs: the order waits for stock, and no event is published. It has 13 events. |
+| `stress-profile.json` | The stress profile **Busy hour** of `Place an order`: 25 orders each second for two minutes. Every number is declared. |
 | `import.sh` | Imports the model and the scenarios into a running Vellum and plays the scenarios. |
-| `build.mjs` | Builds the model through the HTTP API and writes the files above. Maintainers use it. |
+| `build.mjs` | Builds the model through the HTTP API and writes the files above, with `../build-kit.mjs`. Maintainers use it. |
 
 ## What the model holds
 
@@ -67,10 +69,12 @@ The script makes three kinds of call, which you can also make by hand:
 
 ## Keep it working
 
-The test `OrdersExampleTests` imports `model.json` through the real endpoint, compares the
-export with the file, and plays both scenarios. It fails when a change to the model
-document format, the scenario format or the trace engine breaks the example.
+The test `ExampleTests` opens each template as an empty project does: it imports
+`model.json` through the real endpoint, compares the export with the file, plays every
+scenario and runs the stress profile twice with the same hash. It fails when a change to the
+model document format, the scenario format, the trace engine or the stress engine breaks an
+example.
 
-To build the files again, start a throwaway instance and run `build.mjs`. The header of the
-file gives the command. `site/scripts/verify-live.sh` does this and checks that the files
+To build the files again, start a throwaway instance and run `build.mjs`. The header of
+`../build-kit.mjs` gives the command. `site/scripts/verify-live.sh` does this and checks that the files
 do not change.

@@ -1,5 +1,6 @@
 import ELK, { type ElkExtendedEdge, type ElkNode } from 'elkjs/lib/elk.bundled.js'
-import { derivedLineLabel, projectLines } from '@/lib/derived-lines'
+import { derivedLineLabel } from '@/lib/derived-lines'
+import { ALL_LINES_SHOWN, applyLineVisibility, type LineVisibility } from '@/lib/line-visibility'
 import type { LayoutRoute, Rect, RoutePoint } from '@/lib/edge-utils'
 
 const elk = new ELK()
@@ -18,6 +19,8 @@ export interface LayoutRelationship {
   label?: string | null
   technology?: string | null
   lineShape?: string | null
+  /** `structural` or `behavioural`: a view can hide each kind. */
+  kind?: string | null
 }
 
 export interface LayoutPosition {
@@ -153,11 +156,13 @@ async function layoutLevel(
   relationships: LayoutRelationship[],
   viewport: Viewport,
   all: LayoutElement[],
+  visibility: LineVisibility,
 ): Promise<LevelLayout> {
   const ids = new Set(level.map((e) => e.id))
   // A level is shaped by the lines the canvas draws on it with every card closed: the
-  // relationships between its elements and the derived lines of those between their insides.
-  const lines = projectLines(all.map((e) => ({ id: e.id, parentId: e.parentId ?? null })), relationships, ids)
+  // relationships between its elements and the derived lines of those between their insides,
+  // less the lines the view hides.
+  const lines = applyLineVisibility(all.map((e) => ({ id: e.id, parentId: e.parentId ?? null })), relationships, ids, visibility)
   const byLine = new Map<string, { relationshipId: string | null; fromId: string; toId: string; label: { width: number; height: number } | null; routed: boolean }>()
   for (const r of lines.direct) {
     if (r.fromId === r.toId) continue
@@ -317,11 +322,12 @@ export async function placeNew(
   viewport: Viewport = { width: 1392, height: 820 },
   expanded: ReadonlySet<string> = new Set(),
   savedRoutes: { fromId: string; route: LayoutRoute }[] = [],
+  visibility: LineVisibility = ALL_LINES_SHOWN,
 ): Promise<{ positions: LayoutPosition[]; routes: LineRoute[] | null }> {
   const placed = new Map(saved.map((p) => [p.elementId, p]))
   const fresh = elements.filter((e) => !placed.has(e.id))
   if (fresh.length === 0) return { positions: [], routes: null }
-  const full = await computeLayout(elements, relationships, viewport, expanded)
+  const full = await computeLayout(elements, relationships, viewport, expanded, visibility)
   if (placed.size === 0) return full
 
   const byId = new Map(full.positions.map((p) => [p.elementId, p]))
@@ -383,7 +389,7 @@ export async function placeNew(
       const size = out.get(el.id) ?? byId.get(el.id)
       return expanded.has(el.id) && size?.width && size.height ? { ...el, width: size.width, height: size.height } : el
     })
-    const group = await layoutLevel(sized, relationships, view, elements)
+    const group = await layoutLevel(sized, relationships, view, elements, visibility)
     const there = hull(taken)
     const candidates = [
       { x: there.x + there.width + PLACE_GAP, y: there.y },
@@ -429,12 +435,14 @@ export async function placeNew(
  *
  * Each line of a level gets the route the layout drew for it, in the coordinates of its level:
  * the relationships between two cards of the level (except a straight line) and its derived lines.
+ * A line the view hides (`visibility`) does not shape its level and gets no route.
  */
 export async function computeLayout(
   elements: LayoutElement[],
   relationships: LayoutRelationship[],
   viewport: Viewport = { width: 1392, height: 820 },
   expanded: ReadonlySet<string> = new Set(),
+  visibility: LineVisibility = ALL_LINES_SHOWN,
 ): Promise<Layout> {
   const levels = new Map<string | null, LayoutElement[]>()
   for (const el of elements) {
@@ -457,7 +465,7 @@ export async function computeLayout(
   const sizes = new Map<string, { width: number; height: number }>()
   for (const [parentId, members] of ordered) {
     const level = members.map((el) => (expanded.has(el.id) && sizes.has(el.id) ? { ...el, ...sizes.get(el.id) } : el))
-    const laid = await layoutLevel(level, relationships, view, elements)
+    const laid = await layoutLevel(level, relationships, view, elements, visibility)
     const dx = parentId === null ? 0 : BOUNDARY_INSET.x
     const dy = parentId === null ? 0 : BOUNDARY_INSET.y
     for (const p of laid.positions) result.set(p.elementId, { ...p, x: p.x + dx, y: p.y + dy })

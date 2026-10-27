@@ -1,4 +1,4 @@
-import { ArrowLeftRight, BadgeCheck, CircleHelp, Pencil, Trash2, Spline, Minus, CornerDownRight } from 'lucide-react'
+import { ArrowLeftRight, BadgeCheck, CircleHelp, EyeOff, Pencil, Trash2, Spline, Minus, CornerDownRight } from 'lucide-react'
 import { ContextMenu, MenuGroup, MenuItem, MenuSeparator } from './menu'
 import { LABEL_ACTION_TEXT } from '@/lib/fact-labels'
 
@@ -14,6 +14,8 @@ interface EdgeContextMenuProps {
   /** The one label change a person can make to this fact, or null. */
   labelAction?: 'accept' | 'mark-unknown' | null
   onLabelAction?: () => void
+  /** Hides the relationship in the open view only. The model and the other views keep it. */
+  onHideFromView?: () => void
 }
 
 export function EdgeContextMenu({
@@ -27,6 +29,7 @@ export function EdgeContextMenu({
   onLineShapeChange,
   labelAction = null,
   onLabelAction,
+  onHideFromView,
 }: EdgeContextMenuProps) {
   if (!open) return null
   const shape = currentLineShape || 'bezier'
@@ -53,6 +56,9 @@ export function EdgeContextMenu({
         />
       )}
       <MenuItem icon={<ArrowLeftRight className="h-3.5 w-3.5" />} label="Reverse direction" onSelect={() => { onReverse(); onClose() }} />
+      {onHideFromView && (
+        <MenuItem icon={<EyeOff className="h-3.5 w-3.5" />} label="Hide from this view" onSelect={() => { onHideFromView(); onClose() }} />
+      )}
       <MenuSeparator />
       <MenuItem icon={<Trash2 className="h-3.5 w-3.5" />} label="Delete" destructive onSelect={() => { onDelete(); onClose() }} />
     </ContextMenu>

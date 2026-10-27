@@ -29,6 +29,8 @@ import { NodeContextMenu } from './context-menus/node-context-menu'
 import { EdgeContextMenu } from './context-menus/edge-context-menu'
 import { CanvasContextMenu, type ViewExport } from './context-menus/canvas-context-menu'
 import { SelectionContextMenu } from './context-menus/selection-context-menu'
+import { DerivedLineContextMenu } from './context-menus/derived-line-context-menu'
+import { LineControlsChip, type LineControls } from './line-controls'
 import { align, distribute, type AlignEdge, type Box, type DistributeAxis, type Move } from '@/lib/arrange'
 import { computeLayout } from '@/lib/layout'
 import { useClipboardStore } from '@/stores/clipboard-store'
@@ -49,12 +51,16 @@ import type { C4BoundaryData } from './nodes/c4-boundary-node'
 import { canvasOcclusion, visibleCanvasRect } from '@/lib/canvas-insets'
 import type { DiffState } from '@/stores/draft-store'
 import type { Provenance, StaleMark } from '@/lib/fact-status'
-import { elementColor } from '@/lib/kind-colors'
+import { elementColor, isExternal } from '@/lib/kind-colors'
+import { dropPlace, PALETTE, PALETTE_DRAG_TYPE, type PaletteEntry } from '@/lib/element-palette'
 import { CONTAINMENT_RULES, canContain, validKindsForContext } from '@/lib/containment-rules'
 import { prefersReducedMotion } from '@/lib/utils'
 import { traceEdgeLabel, traceFamily } from '@/lib/trace'
 import { currentTraceEvent, useTraceStore } from '@/stores/trace-store'
 import { TraceEdgeMarkers } from './edges/trace-edge'
+import { StressOverlayContext, type StressOverlayValue } from './stress-overlay-context'
+import { stressOverlay } from '@/lib/stress-overlay'
+import { useStressOverlayStore } from '@/stores/stress-overlay-store'
 import { ImpactStepMarkers } from './edges/impact-step-edge'
 import { CERTAINTY, strongest } from '@/lib/impact'
 import type { ImpactCertainty } from '@/lib/import-api'
@@ -68,6 +74,7 @@ import {
 import type { GhostEdgeData } from './edges/ghost-edge'
 import { GhostBar } from './ghost-bar'
 import { isDerivedLineId, projectLines, type HiddenLine } from '@/lib/derived-lines'
+import { ALL_LINES_SHOWN, applyLineVisibility, withDerivedLine, withRelationship, withSwitch, type LineVisibility } from '@/lib/line-visibility'
 import type { DerivedEdgeData } from './edges/derived-edge'
 
 interface ElementModel {
@@ -160,6 +167,13 @@ interface CanvasViewProps {
   onConnectToBlank?: (kind: string, position: { x: number; y: number }, sourceId: string) => void
   /** Adds an element at a point of the canvas: inside `parentId`, or on the level the canvas shows. The point is relative to the parent's card when the parent is open on the canvas. */
   onAddElementAtFlowPosition?: (kind: string, position: { x: number; y: number }, parentId?: string | null) => void
+  /**
+   * A kind dragged from the Create tab was dropped: add it inside `parentId` (null is the top
+   * level) at `position`, which is relative to the parent's card when the drop was on it. A
+   * closed card shows no inside to point at: `position` is null, and the new element takes free
+   * space inside it.
+   */
+  onDropElement?: (entry: PaletteEntry, parentId: string | null, position: { x: number; y: number } | null) => void
   onViewportCenterReady?: (fn: () => { x: number; y: number }) => void
   onBulkStatusChange?: (ids: string[], status: string) => void
   onBulkAddTag?: (ids: string[], tag: string) => void
@@ -203,6 +217,12 @@ interface CanvasViewProps {
   onPaste?: (parentId: string | null, position: { x: number; y: number }) => void
   /** The open view: export it, and copy a link to it. */
   viewActions?: { onExport: (format: ViewExport) => void; onCopyLink: () => void }
+  /** Which lines the view draws. Without it every line is drawn. */
+  lineVisibility?: LineVisibility
+  /** Saves which lines the view draws, for everyone. Without it the line controls only look. */
+  onLineVisibilityChange?: (visibility: LineVisibility) => void
+  /** Offers the line controls and the chip "N lines hidden". A share page draws the curated view only. */
+  lineControls?: boolean
 }
 
 function minimapNodeColor(node: Node): string {
@@ -250,6 +270,7 @@ export function CanvasView(props: CanvasViewProps) {
         searchOpen: props.searchOpen, onSearchClose: props.onSearchClose, readOnly: true,
         commentMarkers: props.commentMarkers, edgeSides: props.edgeSides, lineRoutes: props.lineRoutes, hiddenLines: props.hiddenLines,
         hiddenElementIds: props.hiddenElementIds, viewActions: props.viewActions,
+        lineVisibility: props.lineVisibility, lineControls: props.lineControls,
       }
     : props
   return (
@@ -262,6 +283,7 @@ export function CanvasView(props: CanvasViewProps) {
 type ContextMenuState =
   | { type: 'node'; nodeId: string; position: { x: number; y: number }; flowPosition: { x: number; y: number } }
   | { type: 'edge'; edgeId: string; position: { x: number; y: number } }
+  | { type: 'derived'; line: DerivedEdgeData; position: { x: number; y: number } }
   | { type: 'canvas'; position: { x: number; y: number }; flowPosition: { x: number; y: number } }
   | { type: 'selection'; ids: string[]; position: { x: number; y: number } }
   | null
@@ -291,6 +313,7 @@ function CanvasViewInner({
   onRenameElement,
   onConnectToBlank,
   onAddElementAtFlowPosition,
+  onDropElement,
   onViewportCenterReady,
   onBulkStatusChange,
   onBulkAddTag,
@@ -311,9 +334,12 @@ function CanvasViewInner({
   onAddRelationshipFrom,
   onPaste,
   viewActions,
+  lineVisibility = ALL_LINES_SHOWN,
+  onLineVisibilityChange,
+  lineControls = false,
 }: CanvasViewProps) {
   const { currentRootId, zoomLevel, setZoom, activeLens, setLens, expandedNodeIds, toggleExpand } = useCanvasStore()
-  const { fitView, screenToFlowPosition, getViewport, setViewport, getInternalNode } = useReactFlow()
+  const { fitView, screenToFlowPosition, getViewport, setViewport, getInternalNode, getIntersectingNodes } = useReactFlow()
   const hiddenCards = useMemo(() => new Set(hiddenElementIds ?? []), [hiddenElementIds])
   // The zoom is read from the viewport itself: a fit or a programmatic move changes it with no
   // move event of the pane. It is stored once the viewport has settled, so an animated fit
@@ -470,9 +496,39 @@ function CanvasViewInner({
 
   // A relationship with both ends on the canvas draws as itself. The rest attach to the nearest
   // card on the canvas that holds each end and merge into derived lines, a projection of this
-  // view that is never stored.
-  const lines = useMemo(() => projectLines(elements, relationships, visibleIds, hiddenLines), [elements, relationships, visibleIds, hiddenLines])
+  // view that is never stored. The view leaves out the lines it hides; a person who asks to see
+  // them gets every line, the hidden ones faint.
+  const showHiddenLines = useCanvasStore((s) => s.showHiddenLines) && lineControls
+  const setShowHiddenLines = useCanvasStore((s) => s.setShowHiddenLines)
+  const visibleLines = useMemo(
+    () => applyLineVisibility(elements, relationships, visibleIds, lineVisibility, hiddenLines),
+    [elements, relationships, visibleIds, lineVisibility, hiddenLines],
+  )
+  const hiddenLineCount = visibleLines.hiddenDirect.length + visibleLines.hiddenDerived.length
+  const lines = useMemo(
+    () => (showHiddenLines && hiddenLineCount > 0 ? projectLines(elements, relationships, visibleIds, hiddenLines) : visibleLines),
+    [showHiddenLines, hiddenLineCount, elements, relationships, visibleIds, hiddenLines, visibleLines],
+  )
+  const faintLineIds = useMemo(
+    () => new Set(showHiddenLines ? [...visibleLines.hiddenDirect.map((r) => r.id), ...visibleLines.hiddenDerived.map((l) => l.id)] : []),
+    [showHiddenLines, visibleLines],
+  )
   const visibleRelationships = lines.direct
+
+  // An open Stress run draws its estimated load on the cards and its rates on the lines of this
+  // view. It reads the stored run only; the model and the layout do not change.
+  const stressRun = useStressOverlayStore((s) => s.open?.run ?? null)
+  const stressFailing = useStressOverlayStore((s) => s.failing)
+  const stressProjection = useMemo(
+    () => (stressRun
+      ? stressOverlay(stressRun, elements, relationships, [...lines.direct.map((r) => ({ id: r.id, relationshipIds: [r.id] })), ...lines.derived], visibleIds)
+      : null),
+    [stressRun, elements, relationships, lines, visibleIds],
+  )
+  const stressValue = useMemo<StressOverlayValue | null>(
+    () => (stressProjection ? { overlay: stressProjection, canFail: !readOnly, failing: stressFailing } : null),
+    [stressProjection, readOnly, stressFailing],
+  )
   // The detail panel lists the relationships of the selected derived line. A change of the model
   // or of the open cards changes the line, so the list follows it, and a line that is no longer
   // drawn is no longer selected.
@@ -652,9 +708,11 @@ function CanvasViewInner({
           targetSide: cardSide(sidesMap.get(rel.id)?.targetSide),
           // A side or a straight line a person chose wins over the route of the auto layout.
           route: routeApplies(sidesMap.get(rel.id), rel.lineShape) ? parseRoute(sidesMap.get(rel.id)?.routePoints) : null,
+          hiddenInView: faintLineIds.has(rel.id),
         },
         // Only the selected relationship offers its ends to drag; see shownEdges.
         reconnectable: false,
+        ...(faintLineIds.has(rel.id) ? { className: 'vellum-hidden-line' } : {}),
       }
     })
     // A derived line is no fact: it has no ends to drag, no menu, and nothing to delete.
@@ -666,6 +724,7 @@ function CanvasViewInner({
       markerEnd: { type: MarkerType.ArrowClosed, color: 'var(--muted-foreground)' },
       reconnectable: false,
       deletable: false,
+      ...(faintLineIds.has(line.id) ? { className: 'vellum-hidden-line' } : {}),
       data: {
         fromId: line.fromId,
         toId: line.toId,
@@ -674,10 +733,11 @@ function CanvasViewInner({
         label: line.label,
         ...place(line.fromId, line.toId),
         route: lineRouteMap.get(`${line.fromId}>${line.toId}`) ?? null,
+        hiddenInView: faintLineIds.has(line.id),
       } satisfies DerivedEdgeData,
     }))
     return [...direct, ...derived]
-  }, [lines, diffStateMap, isReviewMode, sidesMap, lineRouteMap])
+  }, [lines, diffStateMap, isReviewMode, sidesMap, lineRouteMap, faintLineIds])
 
   // The ghosts of this level: dashed cards and lines. A ghost inside a node follows it, so
   // each node comes after the node it sits in.
@@ -1265,6 +1325,52 @@ function CanvasViewInner({
     [screenToFlowPosition, readOnly, currentRootId],
   )
 
+  // A kind dragged from the Create tab. It goes inside the innermost card under the pointer that
+  // the containment rules allow, otherwise on the level the canvas shows, otherwise nowhere.
+  const handlePaletteDragOver = useCallback((event: React.DragEvent) => {
+    if (readOnly || !onDropElement || !event.dataTransfer.types.includes(PALETTE_DRAG_TYPE)) return
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'copy'
+  }, [readOnly, onDropElement])
+
+  const handlePaletteDrop = useCallback((event: React.DragEvent, onEmptyLevel = false) => {
+    const entry = PALETTE.find((p) => p.id === event.dataTransfer.getData(PALETTE_DRAG_TYPE))
+    if (readOnly || !onDropElement || !entry) return
+    event.preventDefault()
+    const byId = new Map(elements.map((e) => [e.id, e]))
+    const level = rootElement ? { id: rootElement.id, kind: rootElement.kind } : null
+    // An empty level draws no canvas: the element goes on that level, at its origin.
+    if (onEmptyLevel) {
+      const place = dropPlace(entry.kind, [], level)
+      if ('refused' in place) toast.error(place.refused)
+      else onDropElement(entry, place.parentId, { x: 0, y: 0 })
+      return
+    }
+    const point = screenToFlowPosition({ x: event.clientX, y: event.clientY })
+    const depth = (id: string) => {
+      let d = 0
+      for (let current = byId.get(id); current?.parentId && d < byId.size; current = byId.get(current.parentId)) d++
+      return d
+    }
+    const cards = getIntersectingNodes({ x: point.x, y: point.y, width: 1, height: 1 })
+      .filter((n) => (n.type === 'c4-element' || n.type === 'c4-label-chip' || n.type === 'c4-container') && byId.has(n.id))
+      .sort((a, b) => depth(b.id) - depth(a.id))
+      .map((n) => ({ id: n.id, kind: byId.get(n.id)!.kind, external: isExternal(byId.get(n.id)!.tags) }))
+    const place = dropPlace(entry.kind, cards, level)
+    if ('refused' in place) {
+      toast.error(place.refused)
+      return
+    }
+    if (place.cardId && !expandedNodeIds.has(place.cardId)) {
+      // A closed card on this level opens in place, so the new element shows inside it.
+      if (visibleElements.some((e) => e.id === place.cardId)) toggleExpand(place.cardId)
+      onDropElement(entry, place.parentId, null)
+      return
+    }
+    const origin = place.cardId ? getInternalNode(place.cardId)?.internals.positionAbsolute ?? { x: 0, y: 0 } : { x: 0, y: 0 }
+    onDropElement(entry, place.parentId, { x: Math.round(point.x - origin.x), y: Math.round(point.y - origin.y) })
+  }, [readOnly, onDropElement, elements, rootElement, screenToFlowPosition, getIntersectingNodes, getInternalNode, expandedNodeIds, visibleElements, toggleExpand])
+
   // The menu belongs to the level and the spot where it opened: it shows only on that level.
   useEffect(() => {
     if (!createPopover) return
@@ -1446,10 +1552,23 @@ function CanvasViewInner({
   const handleEdgeContextMenu = useCallback(
     (event: React.MouseEvent, edge: Edge) => {
       event.preventDefault()
-      if (isGhostNodeId(edge.id) || isDerivedLineId(edge.id)) return
+      if (isGhostNodeId(edge.id)) return
+      if (isDerivedLineId(edge.id)) {
+        setContextMenu({ type: 'derived', line: edge.data as DerivedEdgeData, position: { x: event.clientX, y: event.clientY } })
+        return
+      }
       setContextMenu({ type: 'edge', edgeId: edge.id, position: { x: event.clientX, y: event.clientY } })
     },
     [],
+  )
+
+  // The line controls of the view: its switches and hidden lines, which only an editor changes,
+  // and the faint display of the hidden lines, which is the person's own and is not saved.
+  const lineControlsState = useMemo<LineControls | undefined>(
+    () => (lineControls
+      ? { visibility: lineVisibility, onChange: onLineVisibilityChange, showHidden: showHiddenLines, onShowHidden: setShowHiddenLines }
+      : undefined),
+    [lineControls, lineVisibility, onLineVisibilityChange, showHiddenLines, setShowHiddenLines],
   )
 
   const handlePaneContextMenu = useCallback(
@@ -1465,7 +1584,7 @@ function CanvasViewInner({
   if (visibleElements.length === 0 && !ghostProposal) {
     const isTopLevel = currentRootId === null
     return (
-      <div className="flex h-full items-center justify-center">
+      <div className="flex h-full items-center justify-center" onDragOver={handlePaletteDragOver} onDrop={(e) => handlePaletteDrop(e, true)}>
         <div className="text-center">
           <p className="text-sm text-muted-foreground">
             {readOnly
@@ -1499,7 +1618,8 @@ function CanvasViewInner({
   return (
     // Wrapper div captures double-click for canvas creation; pointer-events:none not needed
     // as the div fills the parent and React Flow handles its own pointer events internally
-    <div ref={paneRef} className="h-full w-full" onDoubleClick={handlePaneDoubleClick}>
+    <div ref={paneRef} className="h-full w-full" onDoubleClick={handlePaneDoubleClick} onDragOver={handlePaletteDragOver} onDrop={(e) => handlePaletteDrop(e)}>
+      <StressOverlayContext.Provider value={stressValue}>
       <ReactFlow
         nodes={shownNodes}
         edges={shownEdges}
@@ -1559,6 +1679,9 @@ function CanvasViewInner({
         <TraceEdgeMarkers />
         <ImpactStepMarkers />
         {commentMarkers && <CommentMarkers markers={commentMarkers} />}
+        {lineControlsState && (
+          <LineControlsChip controls={lineControlsState} hiddenCount={hiddenLineCount} elements={elements} relationships={relationships} />
+        )}
         {ghostProposal && ghostPlan && ghosts && (
           <GhostBar
             proposal={ghostProposal}
@@ -1626,6 +1749,7 @@ function CanvasViewInner({
           />
         )}
       </ReactFlow>
+      </StressOverlayContext.Provider>
 
       {contextMenu?.type === 'node' && (() => {
         const nodeId = contextMenu.nodeId
@@ -1695,6 +1819,20 @@ function CanvasViewInner({
             const action = labelAction(relationships.find((r) => r.id === contextMenu.edgeId)?.factStatus)
             if (action) onFactLabel('relationship', contextMenu.edgeId, action)
           })}
+          onHideFromView={onLineVisibilityChange && (() => onLineVisibilityChange(withRelationship(lineVisibility, contextMenu.edgeId, true)))}
+        />
+      )}
+
+      {contextMenu?.type === 'derived' && (
+        <DerivedLineContextMenu
+          position={contextMenu.position}
+          onClose={() => setContextMenu(null)}
+          onListRelationships={() => {
+            const { fromId, toId, relationshipIds, hiddenCount, label } = contextMenu.line
+            selectDerivedLine({ fromId, toId, relationshipIds, hiddenCount: hiddenCount ?? 0, label })
+          }}
+          onHideLine={onLineVisibilityChange && (() => onLineVisibilityChange(withDerivedLine(lineVisibility, contextMenu.line, true)))}
+          onHideAllDerived={onLineVisibilityChange && (() => onLineVisibilityChange(withSwitch(lineVisibility, 'derivedLines', false)))}
         />
       )}
 
@@ -1709,6 +1847,7 @@ function CanvasViewInner({
           onSelectAll={selectAll}
           onTidy={readOnly ? undefined : onTidy}
           onZoomToFit={() => fitView(fitAll())}
+          lines={lineControlsState}
           hiddenCardCount={hiddenHere.length}
           onShowHiddenCards={onShowCards && !readOnly ? () => onShowCards(hiddenHere) : undefined}
           onExport={viewActions?.onExport}

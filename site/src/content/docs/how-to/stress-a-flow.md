@@ -78,6 +78,32 @@ Vellum stores the run. A profile keeps its 20 newest runs. To delete one run, se
 
 ![The result of a stress run, with the label Estimated on each part. The first line gives the profile version, the model version, the seed 42 and the result hash. The headline numbers are throughput 9.62 for each second, latency p50 and p95 of 40.0 ms and 529 completed flows. The part Bottleneck gives the rule in one sentence with the link Show the full rule, and says that no resource is saturated by the rule.](../../../assets/screenshots/stress-result.png)
 
+## See a run on the canvas
+
+1. In the list of runs, select the layers icon on a run. Or select **Show on the canvas** in the result.
+2. Read the canvas and the strip under it.
+
+The canvas does not change the model while it shows a run. It reads the stored run only.
+
+- Each card with work in the run shows its utilisation as a bar and a status: **ok**, **busy**, **saturated** or **down**. **Busy** is 70 % of worker time or more. **Saturated** comes from the saturation rule of the engine. A closed card shows the highest load of the parts inside it. Hover the row to see each part.
+- Each line shows the work per second between its two cards in the run: calls, writes and message deliveries, retries included. A line with no work in the run shows no number. A derived line shows the sum for its relationships, each pair of elements once.
+- The strip shows six numbers: **Offered**, **Goodput**, **Success rate**, **p95 latency**, **Busiest** and **Limit**. **Limit** is the flow rate at which the first resource has every worker busy all the time. The [stress model](/reference/stress-model/#estimated-limit) gives the rule.
+
+Every number has the label `estimated`. Select the seed on the strip to open the stored run. Select the cross to close the overlay.
+
+A run of engine version 3 or earlier has no traffic and no limit. The canvas shows the load of its elements only. Run the profile again to get the rest.
+
+## Fail one card
+
+You need the Editor role.
+
+1. Show a run on the canvas.
+2. Select the pause button on a card.
+
+Vellum runs the same profile again with that element down for the whole run, and shows the new run. The strip names the element that is down, and the card shows **down**. The profile does not change: the stored run keeps the profile that it ran, with the added outage. Select **Back** to show the run before the failure again.
+
+Only an element that serves calls, writes or messages in the flow has the pause button.
+
 ## Compare two runs
 
 1. Change one input of the profile.

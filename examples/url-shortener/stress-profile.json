@@ -1,0 +1,72 @@
+{
+  "name": "Campaign launch",
+  "scenarioId": "e0a1d5c0-15ed-4000-8001-000000000100",
+  "seed": "7",
+  "arrivals": {
+    "kind": "ramp",
+    "ratePerSecond": 50,
+    "toRatePerSecond": 400,
+    "durationSeconds": 120,
+    "warmUpSeconds": 10
+  },
+  "resources": [
+    {
+      "elementId": "e0a1d5c0-15ed-4000-8001-000000000020",
+      "concurrency": 16,
+      "queueCapacity": 500
+    },
+    {
+      "elementId": "e0a1d5c0-15ed-4000-8001-000000000021",
+      "concurrency": 8,
+      "queueCapacity": 500
+    },
+    {
+      "elementId": "e0a1d5c0-15ed-4000-8001-000000000024",
+      "concurrency": 4,
+      "queueCapacity": null
+    }
+  ],
+  "serviceTimes": [
+    {
+      "target": "e0a1d5c0-15ed-4000-8001-000000000041",
+      "time": {
+        "kind": "lognormal",
+        "medianMs": 3,
+        "p95Ms": 12
+      }
+    },
+    {
+      "target": "e0a1d5c0-15ed-4000-8001-000000000021",
+      "time": {
+        "kind": "lognormal",
+        "medianMs": 12,
+        "p95Ms": 40
+      }
+    },
+    {
+      "target": "e0a1d5c0-15ed-4000-8001-000000000024",
+      "time": {
+        "kind": "exponential",
+        "meanMs": 2
+      }
+    },
+    {
+      "target": "e0a1d5c0-15ed-4000-8001-000000000060",
+      "time": {
+        "kind": "uniform",
+        "minMs": 1,
+        "maxMs": 4
+      }
+    }
+  ],
+  "subscriptions": [
+    {
+      "subscriptionId": "e0a1d5c0-15ed-4000-8001-000000000060",
+      "consumers": 4,
+      "queueCapacity": null
+    }
+  ],
+  "branches": [],
+  "overrides": [],
+  "outages": []
+}

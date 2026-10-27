@@ -288,6 +288,14 @@
   opacity: 0.35;
 }
 
+/* A line the view hides, drawn because the person asked to see the hidden lines. */
+.react-flow__edge.vellum-hidden-line {
+  opacity: 0.3;
+}
+.react-flow__edge.vellum-hidden-line path {
+  stroke-dasharray: 3 5;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .vellum-trace-particle {
     display: none;

@@ -1,0 +1,89 @@
+{
+  "id": "e0a1d5c0-15ed-4000-8001-000000000100",
+  "name": "Follow a short link",
+  "steps": [
+    {
+      "type": "call",
+      "id": "follow",
+      "from": "e0a1d5c0-15ed-4000-8001-000000000012",
+      "operation": "e0a1d5c0-15ed-4000-8001-000000000041",
+      "request": {
+        "code": "spring"
+      },
+      "response": {
+        "location": "https://example.com/spring-sale"
+      },
+      "then": [
+        {
+          "type": "write",
+          "id": "touch-link",
+          "by": "e0a1d5c0-15ed-4000-8001-000000000020",
+          "store": "e0a1d5c0-15ed-4000-8001-000000000021",
+          "dataset": "links",
+          "change": {
+            "code": "spring",
+            "lastVisitedAt": "2026-04-01T09:00:00Z"
+          }
+        },
+        {
+          "type": "publish",
+          "id": "publish-click",
+          "from": "e0a1d5c0-15ed-4000-8001-000000000020",
+          "channel": "e0a1d5c0-15ed-4000-8001-000000000050",
+          "message": "e0a1d5c0-15ed-4000-8001-000000000080",
+          "payload": {
+            "code": "spring",
+            "at": "2026-04-01T09:00:00Z"
+          },
+          "headers": {},
+          "handlers": {
+            "e0a1d5c0-15ed-4000-8001-000000000060": [
+              {
+                "type": "write",
+                "id": "count-click",
+                "by": "e0a1d5c0-15ed-4000-8001-000000000023",
+                "store": "e0a1d5c0-15ed-4000-8001-000000000024",
+                "dataset": "clicks",
+                "change": {
+                  "code": "spring",
+                  "at": "2026-04-01T09:00:00Z"
+                }
+              }
+            ]
+          }
+        }
+      ],
+      "onError": []
+    }
+  ],
+  "faults": [],
+  "assertions": [
+    {
+      "type": "outcome",
+      "id": "visitor-is-redirected",
+      "step": "follow",
+      "expected": "Succeeded"
+    },
+    {
+      "type": "event-count",
+      "id": "one-click-is-published",
+      "kind": "Published",
+      "target": "e0a1d5c0-15ed-4000-8001-000000000050",
+      "expected": 1
+    },
+    {
+      "type": "event-count",
+      "id": "analytics-gets-the-click",
+      "kind": "Delivered",
+      "target": null,
+      "expected": 1
+    },
+    {
+      "type": "event-count",
+      "id": "nothing-is-lost",
+      "kind": "Dropped",
+      "target": null,
+      "expected": 0
+    }
+  ]
+}

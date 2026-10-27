@@ -1,6 +1,8 @@
 import { BoxSelect, ClipboardPaste, Eye, FileCode, FileImage, Image, LayoutGrid, Link, Maximize, Network } from 'lucide-react'
 import { kindColor } from '@/lib/kind-colors'
-import { ContextMenu, MenuGroup, MenuItem, MenuSeparator } from './menu'
+import { ContextMenu, MenuCheckItem, MenuGroup, MenuItem, MenuSeparator } from './menu'
+import { LINE_SWITCHES, withSwitch } from '@/lib/line-visibility'
+import type { LineControls } from '../line-controls'
 
 export type ViewExport = 'svg' | 'png' | 'mermaid' | 'dsl'
 
@@ -16,6 +18,8 @@ interface CanvasContextMenuProps {
   onSelectAll: () => void
   onTidy?: () => void
   onZoomToFit: () => void
+  /** The line controls of the open view. Without them the menu has no Lines group. */
+  lines?: LineControls
   /** The cards of this level that a person hid from the view. */
   hiddenCardCount: number
   onShowHiddenCards?: () => void
@@ -39,6 +43,7 @@ export function CanvasContextMenu({
   onSelectAll,
   onTidy,
   onZoomToFit,
+  lines,
   hiddenCardCount,
   onShowHiddenCards,
   onExport,
@@ -68,12 +73,31 @@ export function CanvasContextMenu({
       <MenuSeparator />
       {onTidy && <MenuItem icon={<LayoutGrid className={icon} />} label="Tidy layout" onSelect={run(onTidy)} />}
       <MenuItem icon={<Maximize className={icon} />} label="Zoom to fit" onSelect={run(onZoomToFit)} />
+      {lines && (
+        <>
+          <MenuSeparator />
+          <MenuGroup label="Lines">
+            {lines.onChange && LINE_SWITCHES.map(({ key, label }) => (
+              <MenuCheckItem
+                key={key}
+                label={label}
+                checked={lines.visibility[key]}
+                onToggle={(shown) => lines.onChange?.(withSwitch(lines.visibility, key, shown))}
+              />
+            ))}
+            <MenuCheckItem label="Show hidden lines" checked={lines.showHidden} onToggle={lines.onShowHidden} />
+          </MenuGroup>
+        </>
+      )}
       {hiddenCardCount > 0 && onShowHiddenCards && (
-        <MenuItem
-          icon={<Eye className={icon} />}
-          label={`Show ${hiddenCardCount} hidden ${hiddenCardCount === 1 ? 'card' : 'cards'}`}
-          onSelect={run(onShowHiddenCards)}
-        />
+        <>
+          <MenuSeparator />
+          <MenuItem
+            icon={<Eye className={icon} />}
+            label={`Show ${hiddenCardCount} hidden ${hiddenCardCount === 1 ? 'card' : 'cards'}`}
+            onSelect={run(onShowHiddenCards)}
+          />
+        </>
       )}
       {onExport && (
         <>

@@ -22,6 +22,9 @@ namespace Vellum.Modules.Diagrams;
 /// </list>
 /// <item>Each derived line of a written view (<see cref="DerivedLines"/>) is a relationship with
 /// the tag <c>Derived</c>, drawn thin and dotted. A derived line that two views share is written once.</item>
+/// <item>A relationship or derived line that a view hides (<see cref="LineVisibility"/>) gets an
+/// identifier and an <c>exclude</c> in that view. The model keeps every relationship; a derived line
+/// that no view draws is not written.</item>
 /// The export is one-way: the header lists what it drops, and a comment names each relationship
 /// that Structurizr refuses.
 /// </summary>
@@ -49,7 +52,8 @@ public static class StructurizrDsl
         string projectName, PinnedModel model, IEnumerable<ViewEntity> views,
         IReadOnlyDictionary<Guid, IReadOnlyList<LayoutPositionEntity>> positions,
         IReadOnlyDictionary<Guid, IReadOnlyList<LayoutEdgeEntity>>? edges = null,
-        IReadOnlyDictionary<Guid, IReadOnlyList<LayoutLineEntity>>? lines = null)
+        IReadOnlyDictionary<Guid, IReadOnlyList<LayoutLineEntity>>? lines = null,
+        IReadOnlyDictionary<Guid, LineVisibility>? visibility = null)
     {
         var state = model.State;
         var ids = DiagramText.Identifiers(state.Elements.Values.Select(e => (e.Id.Value, e.Name)), "element", Reserved);
@@ -124,6 +128,46 @@ public static class StructurizrDsl
         while (topLevel.TryDequeue(out var element))
             Write(element, element.Kind == ElementKind.Actor ? DslType.Person : DslType.SoftwareSystem, null, 2);
 
+        var orderedViews = views.OrderBy(v => v.Name, StringComparer.Ordinal).ThenBy(v => v.Id).ToList();
+
+        // The derived lines of each view that is written, as the canvas draws them with every card
+        // closed, less the lines the view hides. The line between two elements is written once,
+        // as the first view in order that draws it has it. A line or a relationship that a view
+        // hides gets an identifier and is excluded from that view.
+        var derived = new Dictionary<(ElementId From, ElementId To), DerivedLine>();
+        var excluded = new Dictionary<Guid, (HashSet<RelationshipId> Relationships, HashSet<(ElementId, ElementId)> Lines)>();
+        foreach (var view in orderedViews)
+        {
+            ElementId? root = view.RootElementId is { } r ? new ElementId(r) : null;
+            if (root is { } at && (!types.TryGetValue(at, out var type) || type is not (DslType.SoftwareSystem or DslType.Container)))
+                continue;
+            var hiddenCards = view.HiddenElementIds.ToHashSet();
+            var level = state.Elements.Values.Where(e => e.ParentId == root && !hiddenCards.Contains(e.Id.Value)).Select(e => e.Id).ToHashSet();
+            var shown = DerivedLines.Project(state.Elements, state.Relationships.Values, level,
+                visibility?.GetValueOrDefault(view.Id) ?? LineVisibility.AllShown);
+            foreach (var line in shown.Derived)
+                derived.TryAdd((line.FromId, line.ToId), line);
+
+            var all = DerivedLines.Project(state.Elements, state.Relationships.Values, level);
+            var shownIds = shown.Direct.Select(rel => rel.Id).ToHashSet();
+            var shownPairs = shown.Derived.Select(l => (l.FromId, l.ToId)).ToHashSet();
+            var hiddenRelationships = all.Direct.Where(rel => !shownIds.Contains(rel.Id)).Select(rel => rel.Id).ToHashSet();
+            var hiddenLines = all.Derived.Select(l => (l.FromId, l.ToId)).Where(p => !shownPairs.Contains(p)).ToHashSet();
+            if (hiddenRelationships.Count > 0 || hiddenLines.Count > 0) excluded[view.Id] = (hiddenRelationships, hiddenLines);
+        }
+        var excludedRelationships = excluded.Values.SelectMany(e => e.Relationships).ToHashSet();
+        var excludedLines = excluded.Values.SelectMany(e => e.Lines).ToHashSet();
+        var takenIdentifiers = new HashSet<string>(ids.Values, StringComparer.Ordinal);
+        var relationshipIds = new Dictionary<RelationshipId, string>();
+        var lineIds = new Dictionary<(ElementId, ElementId), string>();
+        string Identifier(string stem)
+        {
+            var candidate = stem;
+            for (var n = 2; Reserved.Contains(candidate) || !takenIdentifiers.Add(candidate); n++)
+                candidate = string.Create(CultureInfo.InvariantCulture, $"{stem}_{n}");
+            return candidate;
+        }
+
         var relationships = state.Relationships.Values
             .Where(r => types.ContainsKey(r.FromId) && types.ContainsKey(r.ToId))
             .OrderBy(r => r.Id.Value)
@@ -147,26 +191,15 @@ public static class StructurizrDsl
                     .Append(" with the same label. Structurizr allows one.\n");
                 continue;
             }
-            text.Append("        ").Append(from).Append(" -> ").Append(to)
+            text.Append("        ");
+            if (excludedRelationships.Contains(r.Id))
+                text.Append(relationshipIds[r.Id] = Identifier($"rel_{from}_{to}")).Append(" = ");
+            text.Append(from).Append(" -> ").Append(to)
                 .Append(' ').Append(Quote(r.Label)).Append(' ').Append(Quote(r.Technology))
                 .Append(' ').Append(Quote(r.Kind == RelationshipKind.Behavioural ? "Behavioural" : ""))
                 .Append('\n');
         }
 
-        var orderedViews = views.OrderBy(v => v.Name, StringComparer.Ordinal).ThenBy(v => v.Id).ToList();
-
-        // The derived lines of each view that is written, as the canvas draws them with every card
-        // closed. The line between two elements is the same in every view that shows both.
-        var derived = new Dictionary<(ElementId From, ElementId To), DerivedLine>();
-        foreach (var view in orderedViews)
-        {
-            ElementId? root = view.RootElementId is { } r ? new ElementId(r) : null;
-            if (root is { } at && (!types.TryGetValue(at, out var type) || type is not (DslType.SoftwareSystem or DslType.Container)))
-                continue;
-            var level = state.Elements.Values.Where(e => e.ParentId == root).Select(e => e.Id).ToHashSet();
-            foreach (var line in DerivedLines.Project(state.Elements, state.Relationships.Values, level).Derived)
-                derived.TryAdd((line.FromId, line.ToId), line);
-        }
         if (derived.Count > 0) text.Append('\n');
         foreach (var line in derived.Values
                      .OrderBy(l => l.FromId.Value.ToString(), StringComparer.Ordinal).ThenBy(l => l.ToId.Value.ToString(), StringComparer.Ordinal))
@@ -187,7 +220,10 @@ public static class StructurizrDsl
                     .Append(" has the label of a relationship between the same two elements. Structurizr allows one.\n");
                 continue;
             }
-            text.Append("        ").Append(from).Append(" -> ").Append(to)
+            text.Append("        ");
+            if (excludedLines.Contains((line.FromId, line.ToId)))
+                text.Append(lineIds[(line.FromId, line.ToId)] = Identifier($"derived_{from}_{to}")).Append(" = ");
+            text.Append(from).Append(" -> ").Append(to)
                 .Append(' ').Append(Quote(line.Label)).Append(' ').Append(Quote(null)).Append(' ').Append(Quote("Derived"))
                 .Append('\n');
         }
@@ -218,6 +254,15 @@ public static class StructurizrDsl
             // A card hidden from the view is left out of it, as on the canvas.
             foreach (var hidden in view.HiddenElementIds.Distinct().Where(ids.ContainsKey).Select(h => ids[h]).Order(StringComparer.Ordinal))
                 text.Append("            exclude ").Append(hidden).Append('\n');
+            if (excluded.TryGetValue(view.Id, out var hiddenHere))
+            {
+                foreach (var id in hiddenHere.Relationships.OrderBy(id => id.Value))
+                    if (relationshipIds.TryGetValue(id, out var identifier))
+                        text.Append("            exclude ").Append(identifier).Append('\n');
+                foreach (var pair in hiddenHere.Lines.OrderBy(p => p.Item1.Value.ToString(), StringComparer.Ordinal).ThenBy(p => p.Item2.Value.ToString(), StringComparer.Ordinal))
+                    if (lineIds.TryGetValue(pair, out var identifier))
+                        text.Append("            exclude ").Append(identifier).Append('\n');
+            }
             text.Append("            autoLayout\n")
                 .Append("        }\n");
         }
@@ -235,7 +280,8 @@ public static class StructurizrDsl
         header.Append("// From ").Append(ViewDiagram.PinText(model.Pin)).Append(".\n");
         foreach (var view in orderedViews)
             header.Append("// View \"").Append(DiagramText.OneLine(view.Name)).Append("\" with layout ")
-                .Append(ViewDiagram.LayoutFingerprint(view, positions.GetValueOrDefault(view.Id) ?? [], edges?.GetValueOrDefault(view.Id), lines?.GetValueOrDefault(view.Id))).Append(".\n");
+                .Append(ViewDiagram.LayoutFingerprint(view, positions.GetValueOrDefault(view.Id) ?? [], edges?.GetValueOrDefault(view.Id), lines?.GetValueOrDefault(view.Id),
+                    visibility?.GetValueOrDefault(view.Id))).Append(".\n");
         header.Append("// One-way export. It drops: ").Append(Dropped).Append(".\n");
         if (derived.Count > 0)
             header.Append("// A relationship tagged Derived is a derived line of a view: the relationships between elements inside its two ends, ")

@@ -1,0 +1,395 @@
+{
+  "version": "1.0",
+  "project": {
+    "name": "Payments"
+  },
+  "elements": [
+    {
+      "id": "e0a1d5c0-15ed-4000-8003-000000000010",
+      "kind": "system",
+      "name": "Payments",
+      "description": "Takes card payments for merchants and books them.",
+      "technology": null,
+      "status": "current",
+      "parentId": null,
+      "tags": [],
+      "icon": null,
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    },
+    {
+      "id": "e0a1d5c0-15ed-4000-8003-000000000011",
+      "kind": "actor",
+      "name": "Merchant",
+      "description": "A shop that takes payments through the API.",
+      "technology": null,
+      "status": "current",
+      "parentId": null,
+      "tags": [],
+      "icon": null,
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    },
+    {
+      "id": "e0a1d5c0-15ed-4000-8003-000000000012",
+      "kind": "system",
+      "name": "Card network",
+      "description": "An external network that authorises a card payment, such as Visa or Mastercard.",
+      "technology": null,
+      "status": "current",
+      "parentId": null,
+      "tags": [
+        "external"
+      ],
+      "icon": null,
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    },
+    {
+      "id": "e0a1d5c0-15ed-4000-8003-000000000020",
+      "kind": "app",
+      "name": "Payments API",
+      "description": "Takes a payment, checks its risk and asks the card network to authorise it.",
+      "technology": "Java",
+      "status": "current",
+      "parentId": "e0a1d5c0-15ed-4000-8003-000000000010",
+      "tags": [],
+      "icon": null,
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    },
+    {
+      "id": "e0a1d5c0-15ed-4000-8003-000000000021",
+      "kind": "store",
+      "name": "Payments DB",
+      "description": "Holds each payment and its status.",
+      "technology": "PostgreSQL",
+      "status": "current",
+      "parentId": "e0a1d5c0-15ed-4000-8003-000000000010",
+      "tags": [],
+      "icon": null,
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    },
+    {
+      "id": "e0a1d5c0-15ed-4000-8003-000000000022",
+      "kind": "app",
+      "name": "Risk engine",
+      "description": "Scores a payment for fraud.",
+      "technology": "Python",
+      "status": "current",
+      "parentId": "e0a1d5c0-15ed-4000-8003-000000000010",
+      "tags": [],
+      "icon": null,
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    },
+    {
+      "id": "e0a1d5c0-15ed-4000-8003-000000000023",
+      "kind": "app",
+      "name": "Ledger",
+      "description": "Books a double entry for each captured payment.",
+      "technology": "Java",
+      "status": "current",
+      "parentId": "e0a1d5c0-15ed-4000-8003-000000000010",
+      "tags": [],
+      "icon": null,
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    },
+    {
+      "id": "e0a1d5c0-15ed-4000-8003-000000000024",
+      "kind": "store",
+      "name": "Ledger DB",
+      "description": "Holds the entries. An entry is never changed.",
+      "technology": "PostgreSQL",
+      "status": "current",
+      "parentId": "e0a1d5c0-15ed-4000-8003-000000000010",
+      "tags": [],
+      "icon": null,
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    },
+    {
+      "id": "e0a1d5c0-15ed-4000-8003-000000000025",
+      "kind": "app",
+      "name": "Webhooks",
+      "description": "Tells the merchant that a payment is captured.",
+      "technology": "Go",
+      "status": "current",
+      "parentId": "e0a1d5c0-15ed-4000-8003-000000000010",
+      "tags": [],
+      "icon": null,
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    }
+  ],
+  "relationships": [
+    {
+      "id": "e0a1d5c0-15ed-4000-8003-000000000090",
+      "fromId": "e0a1d5c0-15ed-4000-8003-000000000011",
+      "toId": "e0a1d5c0-15ed-4000-8003-000000000020",
+      "label": "takes payments",
+      "technology": "HTTPS",
+      "kind": "structural",
+      "lineShape": null,
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    },
+    {
+      "id": "e0a1d5c0-15ed-4000-8003-000000000091",
+      "fromId": "e0a1d5c0-15ed-4000-8003-000000000020",
+      "toId": "e0a1d5c0-15ed-4000-8003-000000000021",
+      "label": "reads and writes",
+      "technology": "SQL",
+      "kind": "structural",
+      "lineShape": null,
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    },
+    {
+      "id": "e0a1d5c0-15ed-4000-8003-000000000092",
+      "fromId": "e0a1d5c0-15ed-4000-8003-000000000020",
+      "toId": "e0a1d5c0-15ed-4000-8003-000000000022",
+      "label": "checks risk",
+      "technology": "HTTP",
+      "kind": "structural",
+      "lineShape": null,
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    },
+    {
+      "id": "e0a1d5c0-15ed-4000-8003-000000000093",
+      "fromId": "e0a1d5c0-15ed-4000-8003-000000000020",
+      "toId": "e0a1d5c0-15ed-4000-8003-000000000012",
+      "label": "authorises cards",
+      "technology": "ISO 8583",
+      "kind": "structural",
+      "lineShape": null,
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    },
+    {
+      "id": "e0a1d5c0-15ed-4000-8003-000000000094",
+      "fromId": "e0a1d5c0-15ed-4000-8003-000000000020",
+      "toId": "e0a1d5c0-15ed-4000-8003-000000000023",
+      "label": "sends PaymentCaptured",
+      "technology": "Kafka",
+      "kind": "structural",
+      "lineShape": null,
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    },
+    {
+      "id": "e0a1d5c0-15ed-4000-8003-000000000095",
+      "fromId": "e0a1d5c0-15ed-4000-8003-000000000023",
+      "toId": "e0a1d5c0-15ed-4000-8003-000000000024",
+      "label": "appends entries",
+      "technology": "SQL",
+      "kind": "structural",
+      "lineShape": null,
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    },
+    {
+      "id": "e0a1d5c0-15ed-4000-8003-000000000096",
+      "fromId": "e0a1d5c0-15ed-4000-8003-000000000020",
+      "toId": "e0a1d5c0-15ed-4000-8003-000000000025",
+      "label": "sends PaymentCaptured",
+      "technology": "Kafka",
+      "kind": "structural",
+      "lineShape": null,
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    },
+    {
+      "id": "e0a1d5c0-15ed-4000-8003-000000000097",
+      "fromId": "e0a1d5c0-15ed-4000-8003-000000000025",
+      "toId": "e0a1d5c0-15ed-4000-8003-000000000011",
+      "label": "notifies",
+      "technology": "HTTPS",
+      "kind": "structural",
+      "lineShape": null,
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    }
+  ],
+  "messages": [
+    {
+      "id": "e0a1d5c0-15ed-4000-8003-000000000080",
+      "name": "PaymentCaptured",
+      "description": "A payment is authorised and captured.",
+      "producerId": "e0a1d5c0-15ed-4000-8003-000000000020",
+      "consumerIds": [
+        "e0a1d5c0-15ed-4000-8003-000000000023",
+        "e0a1d5c0-15ed-4000-8003-000000000025"
+      ],
+      "schemaId": "e0a1d5c0-15ed-4000-8003-000000000034",
+      "tags": [],
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    }
+  ],
+  "schemas": [
+    {
+      "id": "e0a1d5c0-15ed-4000-8003-000000000030",
+      "name": "PaymentRequest",
+      "description": "The body of POST /payments. The amount is in minor units.",
+      "content": "{\"type\":\"object\",\"required\":[\"amount\",\"currency\",\"cardToken\"],\"properties\":{\"amount\":{\"type\":\"integer\",\"minimum\":1},\"currency\":{\"type\":\"string\",\"pattern\":\"^[A-Z]{3}$\"},\"cardToken\":{\"type\":\"string\",\"minLength\":1}},\"additionalProperties\":false}",
+      "version": 1,
+      "factStatus": "declared",
+      "provenance": null
+    },
+    {
+      "id": "e0a1d5c0-15ed-4000-8003-000000000031",
+      "name": "PaymentResult",
+      "description": "The answer of POST /payments.",
+      "content": "{\"type\":\"object\",\"required\":[\"paymentId\",\"status\"],\"properties\":{\"paymentId\":{\"type\":\"string\",\"pattern\":\"^p-[0-9]+$\"},\"status\":{\"enum\":[\"pending\",\"captured\",\"declined\"]}},\"additionalProperties\":false}",
+      "version": 1,
+      "factStatus": "declared",
+      "provenance": null
+    },
+    {
+      "id": "e0a1d5c0-15ed-4000-8003-000000000032",
+      "name": "RiskRequest",
+      "description": "The body of POST /risk-checks.",
+      "content": "{\"type\":\"object\",\"required\":[\"paymentId\",\"amount\",\"currency\"],\"properties\":{\"paymentId\":{\"type\":\"string\",\"pattern\":\"^p-[0-9]+$\"},\"amount\":{\"type\":\"integer\",\"minimum\":1},\"currency\":{\"type\":\"string\",\"pattern\":\"^[A-Z]{3}$\"}},\"additionalProperties\":false}",
+      "version": 1,
+      "factStatus": "declared",
+      "provenance": null
+    },
+    {
+      "id": "e0a1d5c0-15ed-4000-8003-000000000033",
+      "name": "AuthorizationRequest",
+      "description": "The body of POST /authorizations.",
+      "content": "{\"type\":\"object\",\"required\":[\"paymentId\",\"amount\",\"currency\",\"cardToken\"],\"properties\":{\"paymentId\":{\"type\":\"string\",\"pattern\":\"^p-[0-9]+$\"},\"amount\":{\"type\":\"integer\",\"minimum\":1},\"currency\":{\"type\":\"string\",\"pattern\":\"^[A-Z]{3}$\"},\"cardToken\":{\"type\":\"string\",\"minLength\":1}},\"additionalProperties\":false}",
+      "version": 1,
+      "factStatus": "declared",
+      "provenance": null
+    },
+    {
+      "id": "e0a1d5c0-15ed-4000-8003-000000000034",
+      "name": "PaymentCaptured",
+      "description": "A payment is authorised and captured.",
+      "content": "{\"type\":\"object\",\"required\":[\"paymentId\",\"amount\",\"currency\"],\"properties\":{\"paymentId\":{\"type\":\"string\",\"pattern\":\"^p-[0-9]+$\"},\"amount\":{\"type\":\"integer\",\"minimum\":1},\"currency\":{\"type\":\"string\",\"pattern\":\"^[A-Z]{3}$\"}},\"additionalProperties\":false}",
+      "version": 1,
+      "factStatus": "declared",
+      "provenance": null
+    }
+  ],
+  "operations": [
+    {
+      "id": "e0a1d5c0-15ed-4000-8003-000000000040",
+      "ownerId": "e0a1d5c0-15ed-4000-8003-000000000020",
+      "name": "POST /payments",
+      "transport": "http",
+      "requestSchemaId": "e0a1d5c0-15ed-4000-8003-000000000030",
+      "responseSchemaId": "e0a1d5c0-15ed-4000-8003-000000000031",
+      "timeoutMs": 10000,
+      "retry": {
+        "maxAttempts": 1,
+        "backoffMs": 0
+      },
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    },
+    {
+      "id": "e0a1d5c0-15ed-4000-8003-000000000041",
+      "ownerId": "e0a1d5c0-15ed-4000-8003-000000000022",
+      "name": "POST /risk-checks",
+      "transport": "http",
+      "requestSchemaId": "e0a1d5c0-15ed-4000-8003-000000000032",
+      "responseSchemaId": null,
+      "timeoutMs": 300,
+      "retry": {
+        "maxAttempts": 2,
+        "backoffMs": 50
+      },
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    },
+    {
+      "id": "e0a1d5c0-15ed-4000-8003-000000000042",
+      "ownerId": "e0a1d5c0-15ed-4000-8003-000000000012",
+      "name": "POST /authorizations",
+      "transport": "http",
+      "requestSchemaId": "e0a1d5c0-15ed-4000-8003-000000000033",
+      "responseSchemaId": null,
+      "timeoutMs": 5000,
+      "retry": {
+        "maxAttempts": 1,
+        "backoffMs": 0
+      },
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    }
+  ],
+  "channels": [
+    {
+      "id": "e0a1d5c0-15ed-4000-8003-000000000050",
+      "name": "payment-events",
+      "kind": "topic",
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    },
+    {
+      "id": "e0a1d5c0-15ed-4000-8003-000000000051",
+      "name": "payment-events.dlq",
+      "kind": "queue",
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    }
+  ],
+  "subscriptions": [
+    {
+      "id": "e0a1d5c0-15ed-4000-8003-000000000060",
+      "channelId": "e0a1d5c0-15ed-4000-8003-000000000050",
+      "consumerId": "e0a1d5c0-15ed-4000-8003-000000000023",
+      "retry": {
+        "maxAttempts": 5,
+        "backoffMs": 200
+      },
+      "deadLetterChannelId": "e0a1d5c0-15ed-4000-8003-000000000051",
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    },
+    {
+      "id": "e0a1d5c0-15ed-4000-8003-000000000061",
+      "channelId": "e0a1d5c0-15ed-4000-8003-000000000050",
+      "consumerId": "e0a1d5c0-15ed-4000-8003-000000000025",
+      "retry": {
+        "maxAttempts": 8,
+        "backoffMs": 1000
+      },
+      "deadLetterChannelId": "e0a1d5c0-15ed-4000-8003-000000000051",
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    }
+  ],
+  "bindings": []
+}

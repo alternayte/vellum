@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, type KeyboardEvent, type ReactNode } from 'react'
+import { Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 const ITEM = '[role^="menuitem"]:not([aria-disabled="true"])'
@@ -123,6 +124,31 @@ export function MenuItem({
 
 export function MenuSeparator() {
   return <div role="separator" className="my-1 h-px bg-border" />
+}
+
+/** A setting that is on or off (menuitemcheckbox). The menu stays open, so several can change. */
+export function MenuCheckItem({
+  label, checked, onToggle,
+}: {
+  label: string
+  checked: boolean
+  onToggle: (checked: boolean) => void
+}) {
+  return (
+    <button
+      type="button"
+      role="menuitemcheckbox"
+      aria-checked={checked}
+      tabIndex={-1}
+      className={cn(itemClass, 'text-popover-foreground')}
+      onClick={() => onToggle(!checked)}
+    >
+      <span aria-hidden="true" className="flex h-3.5 w-3.5 items-center justify-center">
+        <Check className={cn('h-3.5 w-3.5', !checked && 'invisible')} />
+      </span>
+      {label}
+    </button>
+  )
 }
 
 /** A labelled group of items, such as the choices of one setting. */

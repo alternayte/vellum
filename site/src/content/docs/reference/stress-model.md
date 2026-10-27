@@ -3,7 +3,15 @@ title: Stress model
 description: "The exact rules of the stress engine: events, arrivals, distributions, statistics and limits."
 ---
 
-This page states what the stress engine does. The engine version is `3`. A change to any rule on this page is a new engine version.
+This page states what the stress engine does. The engine version is `4`. A change to any rule on this page is a new engine version.
+
+Version 4 adds three parts to the result. No number of version 3 changes.
+
+- `traffic`: the work that each element sends to another. See [Traffic](#traffic).
+- `capacity`: the estimated limit of the flow rate. See [Estimated limit](#estimated-limit).
+- `consumerId` on each subscription: the element that consumes it.
+
+A stored run of version 3 or earlier stays readable. It has none of the three parts.
 
 Version 3 differs from version 2 in two points:
 
@@ -204,6 +212,31 @@ The run has three parts: the warm-up, the measured window and the drain. The mea
 - **Subscription latency** is from the publish to the end of the handler, for deliveries that succeeded.
 - **Element latency** is from the arrival of a call or a write at the element to the release of the worker.
 - **Wait** is from the arrival at a resource to the start of service.
+
+### Traffic
+
+`traffic` lists the work that one element sends to another in the measured window. Each entry has `fromId`, `toId`, `kind`, `sent` and `perSecond`. The kinds are:
+
+| Kind | From | To |
+|---|---|---|
+| `call` | The `from` element of the call step | The owner of the operation |
+| `write` | The `by` element of the write step | The store |
+| `message` | The `from` element of the publish step | The consumer of each subscription that the message reaches |
+
+`sent` counts the attempts that start in the measured window. Retries and redeliveries count. A message on a closed route does not count. `perSecond` is `sent` divided by the length of the measured window. The list is in the order of `fromId`, then `toId`, then `kind`.
+
+### Estimated limit
+
+`capacity` estimates the flow rate at which the first resource has every worker busy all the time. For each resource the engine takes two numbers from the measured window:
+
+- The mean time that a worker held one piece of work that it served.
+- The pieces of work that arrived at the resource for each flow that started in the window. Retries count.
+
+The rate of the resource is `workers / (mean time held × pieces for each flow)` flows per second. `flowsPerSecond` is the lowest rate. `id`, `name` and `kind` name the resource that gives it. A tie goes to the first resource in the order elements, then subscriptions, each by ID.
+
+The time held includes the wait for the calls that the work makes. A slow resource behind a resource lowers the rate of both. A resource that served no work in the window has no rate. When no resource has a rate, `flowsPerSecond` is null.
+
+The estimate assumes that the time held and the pieces for each flow stay as they were at another rate. It is an extrapolation of one run.
 
 ### Percentiles
 
@@ -462,6 +495,8 @@ A create of profile 51 gets status 409. A profile keeps its newest 20 runs. Vell
 
 `GET /api/projects/{projectId}/stress/requirements` and `POST /api/projects/{projectId}/stress/profiles/{profileId}/runs` accept `?branchId=` for a draft or a variant.
 
+`POST /api/projects/{projectId}/stress/profiles/{profileId}/runs` accepts an optional body `{ "fail": "<element ID>" }`. The run adds an outage of that element from 0 s to the duration plus the drain limit, so the element is down for the whole run. The element must serve calls, writes or messages in the flow; otherwise the run is refused with `unknown-target`. The stored profile does not change. The stored run keeps the profile document that it ran, with the outage. Its summary states `failedElementId` and `failedElement`.
+
 A stored run states the versions that pin it: the profile, the model stream and the scenario. `outdated` is true when the model or the scenario changed after the run. `outdatedBecause` lists `model`, `scenario` or both.
 
 ### Refusals
@@ -477,7 +512,7 @@ A refused run gets status 422 with `type`, `title` and `issues`. The type is `st
 | `missing-service-time` | An operation, a store or a handler of the flow has no service time. |
 | `missing-consumers` | A subscription that the flow reaches has no consumers. |
 | `missing-branch-probability` | A branch step has no probability. |
-| `unknown-target` | An override names no operation and no subscription of the flow, or an outage names nothing of the model. |
+| `unknown-target` | An override names no operation and no subscription of the flow, an outage names nothing of the model, or `fail` names no element that serves work in the flow. |
 | `stress-too-large` | The run is over a limit. |
 
 The engine supplies no default for a missing input.

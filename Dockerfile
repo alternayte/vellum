@@ -6,10 +6,9 @@ WORKDIR /src/Vellum.Web
 COPY src/Vellum.Web/package.json src/Vellum.Web/package-lock.json ./
 RUN npm ci
 COPY src/Vellum.Web/ ./
-# The sample project that an empty project offers is bundled from examples/orders, two
-# folders above the web project, as in the repository.
-COPY examples/orders/model.json /examples/orders/
-COPY examples/orders/scenarios/ /examples/orders/scenarios/
+# The templates that an empty project offers are bundled from examples/<name>, two folders
+# above the web project, as in the repository.
+COPY examples/ /examples/
 # The API client (from the committed openapi.json) and the route tree are generated files
 # that are not in the repository, so a clean checkout builds them here. The Vite build
 # writes the route tree and then the bundle to ../Vellum/wwwroot. Type checking is a CI

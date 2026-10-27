@@ -414,10 +414,13 @@ public class StressEndpointTests(IntegrationFixture fixture) : IClassFixture<Int
             var result = JsonNode.Parse(row.Result)!.AsObject();
             result["engineVersion"] = "1";
             result.Remove("limits");
+            result.Remove("traffic");
+            result.Remove("capacity");
             foreach (var resource in result["elements"]!.AsArray().Concat(result["subscriptions"]!.AsArray()))
             {
                 resource!.AsObject().Remove("failedInside");
                 resource.AsObject().Remove("saturation");
+                resource.AsObject().Remove("consumerId");
             }
             var bottleneck = result["bottleneck"]!.AsObject();
             bottleneck.Remove("saturated");
@@ -446,6 +449,10 @@ public class StressEndpointTests(IntegrationFixture fixture) : IClassFixture<Int
              stored["bottleneck"]!["growthPerSecond"]!.GetValue<double>(), stored["bottleneck"]!["meanDepthByQuarter"]!.AsArray().Count));
         // What version 1 did not write reads as no value, not as zero.
         Assert.Null(stored["limits"]);
+        Assert.Null(stored["traffic"]);
+        Assert.Null(stored["capacity"]);
+        Assert.Null(read["run"]!["summary"]!["failedElementId"]);
+        Assert.All(stored["subscriptions"]!.AsArray(), s => Assert.Null(s!["consumerId"]));
         Assert.Null(stored["bottleneck"]!["saturated"]);
         Assert.All(stored["elements"]!.AsArray(), e => Assert.True(e!["saturation"] is null && e["failedInside"] is null));
 
@@ -458,6 +465,54 @@ public class StressEndpointTests(IntegrationFixture fixture) : IClassFixture<Int
         var inputs = comparison["inputs"]!.AsArray().ToDictionary(i => i!["input"]!.GetValue<string>(), i => i!);
         Assert.Equal(("1", StressEngine.Version), (inputs["engineVersion"]["left"]!.GetValue<string>(), inputs["engineVersion"]["right"]!.GetValue<string>()));
         Assert.Equal("not recorded", inputs["limits.maxDrainSeconds"]["left"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task A_run_can_fail_one_element_for_the_whole_run_without_changing_the_profile()
+    {
+        var (factory, owner, workspaceId, orders) = await SeedAsync();
+        var project = orders.ProjectId;
+        var profileId = await CreateAsync(owner, project, Profile(orders));
+        var plain = await RunAsync(owner, project, profileId);
+        // The traffic of the run: the customer calls the API, the API writes its store, and the messages reach both consumers.
+        var traffic = plain["result"]!["traffic"]!.AsArray();
+        Assert.Contains(traffic, t => t!["fromId"]!.GetValue<Guid>() == OrdersReference.OrdersApi && t["toId"]!.GetValue<Guid>() == OrdersReference.OrdersDb && t["kind"]!.GetValue<string>() == "write");
+        Assert.All(traffic, t => Assert.Equal("estimated", t!["label"]!.GetValue<string>()));
+        Assert.True(plain["result"]!["capacity"]!["flowsPerSecond"]!.GetValue<double>() > 0);
+
+        StringContent Fail(Guid id) => OrdersReference.Json(new JsonObject { ["fail"] = id.ToString() });
+        var failed = await Read(owner.PostAsync(Url(project, $"profiles/{profileId}/runs"), Fail(OrdersReference.OrdersDb)), HttpStatusCode.Created);
+        var summary = failed["run"]!["summary"]!;
+        Assert.Equal((OrdersReference.OrdersDb, "Orders DB"), (summary["failedElementId"]!.GetValue<Guid>(), summary["failedElement"]!.GetValue<string>()));
+        // Every order writes to the store first, so every flow fails.
+        Assert.Equal(0, summary["completed"]!.GetValue<long>());
+        Assert.True(summary["failed"]!.GetValue<long>() > 0);
+        Assert.NotEqual(plain["run"]!["hash"]!.GetValue<string>(), failed["run"]!["hash"]!.GetValue<string>());
+        // The stored run keeps the profile it ran, with the outage; the profile itself is as it was.
+        var outage = Assert.Single(failed["profile"]!["outages"]!.AsArray())!;
+        Assert.Equal((OrdersReference.OrdersDb, 0.0, 60 + StressLimits.Default.MaxDrainSeconds),
+            (outage["target"]!.GetValue<Guid>(), outage["fromSeconds"]!.GetValue<double>(), outage["toSeconds"]!.GetValue<double>()));
+        Assert.Contains(failed["result"]!["assumptions"]!.AsArray(), a => a!["group"]!.GetValue<string>() == "outage");
+        var profile = await Read(owner.GetAsync(Url(project, $"profiles/{profileId}")));
+        Assert.Equal(1, profile["version"]!.GetValue<int>());
+        Assert.Empty(profile["profile"]!["outages"]!.AsArray());
+        var read = await Read(owner.GetAsync(Url(project, $"runs/{failed["run"]!["id"]}")));
+        Assert.Single(read["profile"]!["outages"]!.AsArray());
+        Assert.Equal(OrdersReference.OrdersDb, read["run"]!["summary"]!["failedElementId"]!.GetValue<Guid>());
+
+        // The same failure again gives the same result.
+        var again = await Read(owner.PostAsync(Url(project, $"profiles/{profileId}/runs"), Fail(OrdersReference.OrdersDb)), HttpStatusCode.Created);
+        Assert.Equal(failed["run"]!["hash"]!.GetValue<string>(), again["run"]!["hash"]!.GetValue<string>());
+
+        // An element that takes no work in the flow, and an ID that is no element, are refused; nothing is stored.
+        var refused = await Read(owner.PostAsync(Url(project, $"profiles/{profileId}/runs"), Fail(OrdersReference.Shop)), HttpStatusCode.UnprocessableEntity);
+        Assert.Equal("unknown-target", refused["issues"]![0]!["code"]!.GetValue<string>());
+        await Read(owner.PostAsync(Url(project, $"profiles/{profileId}/runs"), Fail(Guid.NewGuid())), HttpStatusCode.UnprocessableEntity);
+        Assert.Equal(3, (await Read(owner.GetAsync(Url(project, $"profiles/{profileId}/runs")))).AsArray().Count);
+
+        // A Viewer reads the runs and cannot fail an element.
+        using var viewer = await TestHost.SignInMemberAsync(factory, owner, workspaceId, "Viewer");
+        await Status(HttpStatusCode.Forbidden, viewer.PostAsync(Url(project, $"profiles/{profileId}/runs"), Fail(OrdersReference.OrdersDb)), "viewer POST failed run");
     }
 
     [Fact]

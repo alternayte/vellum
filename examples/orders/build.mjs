@@ -1,5 +1,6 @@
-// Builds the Orders example in a running Vellum through the HTTP API, plays its scenarios and
-// writes the files of this directory: model.json and scenarios/*.json.
+// Builds the Orders example in a running Vellum through the HTTP API, plays its scenarios, runs
+// its stress profile and writes the files of this directory: model.json, scenarios/*.json and
+// stress-profile.json. ../build-kit.mjs signs in and writes the files.
 //
 //   VELLUM_URL=http://localhost:8080 VELLUM_EMAIL=you@example.com VELLUM_PASSWORD=... node build.mjs
 //
@@ -9,19 +10,11 @@
 // Use a throwaway instance. A schema ID and a scenario ID belong to one project of an
 // instance, so the script fails on an instance that already holds this example.
 
-import { mkdirSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { finishProject, schema, startProject } from '../build-kit.mjs'
 
 const here = dirname(fileURLToPath(import.meta.url))
-const base = (process.env.VELLUM_URL ?? 'http://localhost:8080').replace(/\/$/, '')
-const email = process.env.VELLUM_EMAIL
-const password = process.env.VELLUM_PASSWORD
-const setupCode = process.env.VELLUM_SETUP_CODE
-if (!email || !password) {
-  console.error('Set VELLUM_EMAIL and VELLUM_PASSWORD.')
-  process.exit(2)
-}
 
 // Every ID of the example is fixed, so that the files do not change between builds.
 // A parent element has a lower ID than its children: an import adds elements in ID order.
@@ -61,23 +54,6 @@ const ids = {
   scenario: id(100),
   scenarioInventoryDown: id(101),
 }
-
-let cookie = ''
-
-async function call(method, path, body) {
-  const response = await fetch(base + path, {
-    method,
-    headers: { ...(body === undefined ? {} : { 'content-type': 'application/json' }), ...(cookie ? { cookie } : {}) },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  })
-  const set = response.headers.getSetCookie?.() ?? []
-  if (set.length > 0) cookie = set.map((c) => c.split(';')[0]).join('; ')
-  const text = await response.text()
-  if (!response.ok) throw new Error(`${method} ${path} -> ${response.status} ${text}`)
-  return text ? JSON.parse(text) : null
-}
-
-const schema = (properties, required) => JSON.stringify({ type: 'object', required, properties, additionalProperties: false })
 
 function scenario(scenarioId, name, faults, assertions) {
   return {
@@ -208,24 +184,44 @@ const scenarios = {
   ),
 }
 
-// --- sign in -------------------------------------------------------------------------------
-
-if (setupCode) {
-  await call('POST', '/api/setup', { email, password, displayName: 'Example builder', workspaceName: 'Examples', setupToken: setupCode })
+// The stress profile of "Place an order": a busy hour of a small shop. Every number is declared.
+const profile = {
+  name: 'Busy hour',
+  scenarioId: ids.scenario,
+  seed: '42',
+  arrivals: { kind: 'poisson', ratePerSecond: 25, durationSeconds: 120, warmUpSeconds: 10 },
+  resources: [
+    { elementId: ids.paymentProvider, concurrency: 16, queueCapacity: null },
+    { elementId: ids.ordersApi, concurrency: 8, queueCapacity: 200 },
+    { elementId: ids.ordersDb, concurrency: 4, queueCapacity: null },
+    { elementId: ids.inventory, concurrency: 4, queueCapacity: 200 },
+    { elementId: ids.inventoryDb, concurrency: 4, queueCapacity: null },
+  ],
+  serviceTimes: [
+    { target: ids.placeOrder, time: { kind: 'lognormal', medianMs: 15, p95Ms: 60 } },
+    { target: ids.reserveStock, time: { kind: 'lognormal', medianMs: 10, p95Ms: 40 } },
+    { target: ids.charge, time: { kind: 'lognormal', medianMs: 180, p95Ms: 600 } },
+    { target: ids.ordersDb, time: { kind: 'exponential', meanMs: 4 } },
+    { target: ids.inventoryDb, time: { kind: 'exponential', meanMs: 4 } },
+    { target: ids.inventorySub, time: { kind: 'uniform', minMs: 5, maxMs: 20 } },
+    { target: ids.billingSub, time: { kind: 'fixed', ms: 20 } },
+  ],
+  subscriptions: [
+    { subscriptionId: ids.inventorySub, consumers: 2, queueCapacity: null },
+    { subscriptionId: ids.billingSub, consumers: 8, queueCapacity: 1000 },
+  ],
+  branches: [{ stepId: 'stock-reserved', probability: 0.97 }],
+  overrides: [],
+  outages: [],
 }
-await call('POST', '/api/auth/login', { email, password })
 
-const workspaces = await call('GET', '/api/workspaces')
-const workspace = (workspaces.items ?? workspaces)[0]
-if (!workspace) throw new Error('The account has no workspace.')
+// --- project -------------------------------------------------------------------------------
 
-await call('POST', `/api/workspaces/${workspace.id}/projects`, {
+const { post } = await startProject({
   id: ids.project,
   name: 'Orders',
   description: 'The Orders reference case: an order is placed, stock is reserved, and OrderCreated goes to Inventory and Billing.',
 })
-const p = `/api/projects/${ids.project}`
-const post = (path, body) => call('POST', `${p}/${path}`, body)
 
 // --- schemas -------------------------------------------------------------------------------
 
@@ -275,25 +271,6 @@ await post('subscriptions', { id: ids.billingSub, channelId: ids.billingQueue, c
 
 await post('messages', { id: ids.orderCreatedMessage, name: 'OrderCreated', description: 'An order is accepted and its stock is reserved.', producerId: ids.ordersApi, consumerIds: [ids.inventory, ids.billing], schemaId: ids.orderCreated, tags: [] })
 
-// --- scenarios: save, play, and refuse to write files for a scenario that does not hold --------
+// --- scenarios, the stress profile and the files ------------------------------------------
 
-mkdirSync(join(here, 'scenarios'), { recursive: true })
-for (const [name, document] of Object.entries(scenarios)) {
-  await post('scenarios', document)
-  const run = await call('POST', `${p}/scenarios/${document.id}/run`)
-  if (run.issues.length > 0) throw new Error(`${name} cannot play: ${JSON.stringify(run.issues)}`)
-  const failed = run.assertions.filter((a) => !a.passed)
-  if (failed.length > 0) throw new Error(`${name}: ${JSON.stringify(failed)}`)
-  console.log(`${name}: ${run.events.length} events, ${run.assertions.length} expectations hold, hash ${run.hash}`)
-  writeFileSync(join(here, 'scenarios', `${name}.json`), JSON.stringify(document, null, 2) + '\n')
-}
-
-// --- export --------------------------------------------------------------------------------
-
-const model = await call('GET', `${p}/export`)
-writeFileSync(join(here, 'model.json'), JSON.stringify(model, null, 2) + '\n')
-console.log(
-  `model.json: ${model.elements.length} elements, ${model.relationships.length} relationships, ${model.schemas.length} schemas, ` +
-    `${model.operations.length} operations, ${model.channels.length} channels, ${model.bindings.length} bindings, ` +
-    `${model.subscriptions.length} subscriptions, ${model.messages.length} messages`,
-)
+await finishProject(here, `/api/projects/${ids.project}`, scenarios, profile)

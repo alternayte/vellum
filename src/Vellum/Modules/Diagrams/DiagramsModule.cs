@@ -121,7 +121,9 @@ public static class DiagramsModule
         var lines = (await db.LayoutLines.AsNoTracking().Where(l => viewIds.Contains(l.ViewId)).ToListAsync(ct))
             .GroupBy(l => l.ViewId)
             .ToDictionary(g => g.Key, g => (IReadOnlyList<LayoutLineEntity>)[.. g]);
-        return Results.Text(StructurizrDsl.Write(projectName, model, views, positions, edges, lines), "text/plain", Encoding.UTF8);
+        var visibility = (await db.LineVisibilities.AsNoTracking().Where(l => viewIds.Contains(l.ViewId)).ToListAsync(ct))
+            .ToDictionary(l => l.ViewId, LineVisibility.Of);
+        return Results.Text(StructurizrDsl.Write(projectName, model, views, positions, edges, lines, visibility), "text/plain", Encoding.UTF8);
     }
 
     private static async Task<(ScenarioSequence? Sequence, IResult? Refusal)> LoadScenarioAsync(
@@ -155,6 +157,7 @@ public static class DiagramsModule
         var positions = await db.LayoutPositions.AsNoTracking().Where(p => p.ViewId == viewId).ToListAsync(ct);
         var edges = await db.LayoutEdges.AsNoTracking().Where(e => e.ViewId == viewId).ToListAsync(ct);
         var lines = await db.LayoutLines.AsNoTracking().Where(l => l.ViewId == viewId).ToListAsync(ct);
-        return (ViewDiagram.Project(view, positions, model, edges, lines), null);
+        var visibility = LineVisibility.Of(await db.LineVisibilities.AsNoTracking().FirstOrDefaultAsync(l => l.ViewId == viewId, ct));
+        return (ViewDiagram.Project(view, positions, model, edges, lines, visibility), null);
     }
 }

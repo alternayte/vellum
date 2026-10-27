@@ -1,5 +1,6 @@
 /** Typed access to share links: the member endpoints and the read API for visitors. */
 import { api } from '@/lib/settings-api'
+import type { LineVisibility } from './line-visibility'
 
 export type ShareScope = 'project' | 'view'
 export type ShareMode = 'live' | 'pinned'
@@ -160,6 +161,8 @@ export interface SharedView {
    * and, for one, its label: never the ID or the name of a hidden part.
    */
   hiddenLines?: { fromId: string; toId: string; label: string | null; count: number }[] | null
+  /** Which lines the diagram draws, as the view saved it. Null when the view hides no line. */
+  lineVisibility?: LineVisibility | null
   /** The cards a member hid from the diagram. Null on a page pinned before cards could be hidden. */
   hiddenElementIds?: string[] | null
 }

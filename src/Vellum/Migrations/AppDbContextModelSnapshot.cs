@@ -4013,6 +4013,44 @@ namespace Vellum.Migrations
                     b.ToTable("layout_positions", "views");
                 });
 
+            modelBuilder.Entity("Vellum.Modules.Views.LineVisibilityEntity", b =>
+                {
+                    b.Property<Guid>("ViewId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("view_id");
+
+                    b.Property<bool>("Behavioural")
+                        .HasColumnType("boolean")
+                        .HasColumnName("behavioural");
+
+                    b.Property<bool>("CrossLevel")
+                        .HasColumnType("boolean")
+                        .HasColumnName("cross_level");
+
+                    b.Property<bool>("DerivedLines")
+                        .HasColumnType("boolean")
+                        .HasColumnName("derived_lines");
+
+                    b.Property<JsonDocument>("HiddenDerivedLines")
+                        .IsRequired()
+                        .HasColumnType("jsonb")
+                        .HasColumnName("hidden_derived_lines");
+
+                    b.PrimitiveCollection<Guid[]>("HiddenRelationshipIds")
+                        .IsRequired()
+                        .HasColumnType("uuid[]")
+                        .HasColumnName("hidden_relationship_ids");
+
+                    b.Property<bool>("Structural")
+                        .HasColumnType("boolean")
+                        .HasColumnName("structural");
+
+                    b.HasKey("ViewId")
+                        .HasName("pk_line_visibility");
+
+                    b.ToTable("line_visibility", "views");
+                });
+
             modelBuilder.Entity("Vellum.Modules.Views.ViewEntity", b =>
                 {
                     b.Property<Guid>("Id")
@@ -4451,6 +4489,16 @@ namespace Vellum.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired()
                         .HasConstraintName("fk_layout_positions_views_view_id");
+                });
+
+            modelBuilder.Entity("Vellum.Modules.Views.LineVisibilityEntity", b =>
+                {
+                    b.HasOne("Vellum.Modules.Views.ViewEntity", null)
+                        .WithMany()
+                        .HasForeignKey("ViewId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired()
+                        .HasConstraintName("fk_line_visibility_views_view_id");
                 });
 #pragma warning restore 612, 618
         }

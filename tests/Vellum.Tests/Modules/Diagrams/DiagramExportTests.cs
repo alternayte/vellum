@@ -138,6 +138,53 @@ public class DiagramExportTests
         """);
 
     [Fact]
+    public void Lines_a_view_hides_are_left_out_of_the_svg_mermaid_and_dsl_and_enter_the_fingerprint()
+    {
+        var readsAndWrites = new Guid(1, 0, 0, new byte[8]);
+        var shown = DiagramSvg.Write(ViewDiagram.Project(ShopView(), ShopLayout(), FixedModel()));
+        Assert.Contains("reads and writes", shown);
+        Assert.Contains("publishes OrderPlaced", shown);
+
+        // One relationship hidden by ID and every behavioural one by kind.
+        var hidden = new LineVisibility(true, true, false, true, [readsAndWrites], []);
+        var diagram = ViewDiagram.Project(ShopView(), ShopLayout(), FixedModel(), visibility: hidden);
+        var svg = DiagramSvg.Write(diagram);
+        Assert.DoesNotContain("reads and writes", svg);
+        Assert.DoesNotContain("publishes OrderPlaced", svg);
+        Assert.Contains("updates status", svg);
+        var mermaid = MermaidView.Write(diagram);
+        Assert.DoesNotContain("reads and writes", mermaid);
+        Assert.DoesNotContain("publishes OrderPlaced", mermaid);
+        Assert.Contains("updates status", mermaid);
+
+        // A view that hides nothing keeps the fingerprint it had before line visibility existed.
+        var plain = ViewDiagram.LayoutFingerprint(ShopView(), ShopLayout());
+        Assert.Equal(plain, ViewDiagram.LayoutFingerprint(ShopView(), ShopLayout(), visibility: LineVisibility.AllShown));
+        Assert.NotEqual(plain, diagram.Layout);
+
+        // The derived line from the customer to the shop, hidden by its pair of cards.
+        var landscape = new ViewEntity { Id = Guid.Parse("44444444-4444-4444-4444-444444444444"), Name = "Landscape" };
+        Assert.Contains("places orders", DiagramSvg.Write(ViewDiagram.Project(landscape, [], FixedModel())));
+        var pairHidden = new LineVisibility(true, true, true, true, [], [new HiddenDerivedLine(Customer, Shop)]);
+        Assert.DoesNotContain("places orders", DiagramSvg.Write(ViewDiagram.Project(landscape, [], FixedModel(), visibility: pairHidden)));
+        var noDerived = LineVisibility.AllShown with { DerivedLines = false };
+        Assert.Empty(ViewDiagram.Project(landscape, [], FixedModel(), visibility: noDerived).DerivedLines);
+
+        // The DSL keeps every relationship in the model and excludes the hidden ones from the view.
+        var dsl = StructurizrDsl.Write("P", FixedModel(), [landscape, ShopView()], NoLayout,
+            visibility: new Dictionary<Guid, LineVisibility> { [landscape.Id] = pairHidden, [ShopView().Id] = hidden });
+        AssertWellFormedDsl(dsl);
+        Assert.Contains("rel_orders_api_orders_db = orders_api -> orders_db \"reads and writes\"", dsl);
+        Assert.Contains("rel_orders_api_fulfilment_worker = orders_api -> fulfilment_worker", dsl);
+        Assert.Contains("exclude rel_orders_api_orders_db\n", dsl);
+        Assert.Contains("exclude rel_orders_api_fulfilment_worker\n", dsl);
+        Assert.DoesNotContain("exclude rel_fulfilment_worker", dsl);
+        // The landscape view is the only one that draws the derived line, and it hides it.
+        Assert.DoesNotContain("Derived", dsl);
+        Assert.Contains("\"places orders\"", dsl);
+    }
+
+    [Fact]
     public void A_saved_route_draws_in_the_svg_while_its_cards_stay_and_enters_the_fingerprint()
     {
         var api = new RelationshipId(new Guid(1, 0, 0, new byte[8]));

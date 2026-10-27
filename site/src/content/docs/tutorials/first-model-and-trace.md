@@ -17,9 +17,9 @@ You need no AI provider and no repository.
 2. Select **New project…**.
 3. In **Name**, give `First system`. Select **Create**.
 
-Vellum opens the project. The model has no element, so the project shows three starts: **Choose folder / GitHub URL**, **Describe it / Type it** and **Open the sample**. Below them is the link **Add a system**. This tutorial draws the model by hand. [Start a project](/how-to/start-a-project/) explains the three starts.
+Vellum opens the project. The model has no element, so the project shows three starts: **Choose folder / GitHub URL**, **Describe it / Type it** and **Start from a template**. Below them is the link **Add a system**. This tutorial draws the model by hand. [Start a project](/how-to/start-a-project/) explains the three starts.
 
-![The empty project. The sidebar shows the areas Model, Flows and Sources. The heading reads Start your diagram. Three cards follow: Choose folder / GitHub URL, with the button Choose folder and a field for a GitHub address; Describe it / Type it, with a text box and the buttons Describe it and Type it; Open the sample, with the button Open the sample. Below the cards is the line Or draw it yourself: Add a system. The button Ask the assistant is at the bottom of the canvas.](../../../assets/screenshots/tutorial-empty-project.png)
+![The empty project. The sidebar shows the areas Model, Flows and Sources. The heading reads Start your diagram. Three cards follow: Choose folder / GitHub URL, with the button Choose folder and a field for a GitHub address; Describe it / Type it, with a text box and the buttons Describe it and Type it; Start from a template, with the four templates Orders, URL shortener, Chat service and Payments, each with its number of elements and a one-line description. Below the cards is the line Or draw it yourself: Add a system. The button Ask the assistant is at the bottom of the canvas.](../../../assets/screenshots/tutorial-empty-project.png)
 
 ## Add the elements
 

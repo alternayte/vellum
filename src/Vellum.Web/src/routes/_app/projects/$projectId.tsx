@@ -21,6 +21,7 @@ import { AssistantFlyout } from '@/components/assistant/assistant-flyout'
 import { PromisesFlyout } from '@/components/promises/promises-flyout'
 import { BuildFlyout } from '@/components/build/build-flyout'
 import { StressFlyout } from '@/components/stress/stress-flyout'
+import { StressDock } from '@/components/stress/stress-dock'
 import { CostsFlyout } from '@/components/costs/costs-flyout'
 import { ReviewFlyout } from '@/components/design-review/review-flyout'
 import { ShareLinksPanel } from '@/components/share/share-dialog'
@@ -41,7 +42,8 @@ import { useAddRelationship, useUpdateRelationship, useRemoveRelationship } from
 import { isProjectRefusal, projectErrorBlocks, refuseWrite, useModel, useProject, writeGuard } from '@/hooks/use-model'
 import { useFactLabel } from '@/lib/fact-labels'
 import { toast } from 'sonner'
-import { useViews, useView, useCreateView, useSaveLayout, useSaveEdgeSides, useSetHiddenCards } from '@/hooks/use-views'
+import { useViews, useView, useCreateView, useSaveLayout, useSaveEdgeSides, useSaveLineVisibility, useSetHiddenCards, type ViewDetail } from '@/hooks/use-views'
+import { lineVisibilityOf, type LineVisibility } from '@/lib/line-visibility'
 import { PickDialog } from '@/components/shell/pick-dialog'
 import { TypedDeleteDialog } from '@/components/shell/typed-delete-dialog'
 import { downloadStructurizr, downloadView } from '@/lib/diagram-export'
@@ -205,6 +207,10 @@ function ProjectWorkspace() {
   const factLabel = guard(useFactLabel(projectId, activeDraftStreamId))
   const { saveLayout: writeLayout } = useSaveLayout(projectId, activeViewId)
   const saveLayout = useCallback<typeof writeLayout>((positions, routes) => (readOnly ? refuseWrite() : writeLayout(positions, routes)), [readOnly, writeLayout])
+  // Which lines the open view draws: layout data of the view, saved for everyone.
+  const lineVisibility = useMemo(() => lineVisibilityOf(activeView?.lineVisibility), [activeView])
+  const saveLineVisibility = guard(useSaveLineVisibility(projectId, activeViewId))
+  const handleLineVisibilityChange = (visibility: LineVisibility) => saveLineVisibility.mutate(visibility)
   const saveEdgeSides = guard(useSaveEdgeSides(projectId, activeViewId))
   const setHiddenCards = guard(useSetHiddenCards(projectId, activeViewId))
   const handleEdgeSidesChange = useCallback(
@@ -241,7 +247,8 @@ function ProjectWorkspace() {
   const runLinkedFlow = useRunScenario(projectId, contractBranchId)
 
   // The Add Element dialog, with the parent and the kind it starts with. Null when it is closed.
-  const [addElementRequest, setAddElementRequest] = useState<{ parentId: string | null; kind?: string } | null>(null)
+  // An entry of the Create tab gives its name and tags too, such as an external system.
+  const [addElementRequest, setAddElementRequest] = useState<{ parentId: string | null; kind?: string; label?: string; tags?: string[] } | null>(null)
   const [searchOpen, setSearchOpen] = useState(false)
 
   const fitViewRef = useRef<(() => void) | null>(null)
@@ -300,7 +307,7 @@ function ProjectWorkspace() {
     }))
     const free = visibleCanvasRect()
     // The layout saves the route of each line with the places, so a line passes the cards between its ends.
-    const { positions, routes } = await computeLayout(sized, relationships, free ? { width: free.width, height: free.height } : undefined, useCanvasStore.getState().expandedNodeIds)
+    const { positions, routes } = await computeLayout(sized, relationships, free ? { width: free.width, height: free.height } : undefined, useCanvasStore.getState().expandedNodeIds, lineVisibility)
     saveLayout(positions, routes)
     // The layout moves every node, so show the result: fit once the nodes have their new places.
     requestAnimationFrame(() => requestAnimationFrame(() => fitViewRef.current?.()))
@@ -360,12 +367,7 @@ function ProjectWorkspace() {
     const sized = elements
       .filter((e) => placed.has(e.id) || imported.some((i) => i.id === e.id))
       .map((e) => ({ id: e.id, parentId: e.parentId ?? null, ...cardSize(e.kind) }))
-    const fromOf = new Map(relationships.map((r) => [r.id, r.fromId]))
-    const savedRoutes = [
-      ...activeView.edges.map((e) => ({ fromId: fromOf.get(e.relationshipId), route: parseRoute(e.routePoints) })),
-      ...(activeView.lines ?? []).map((l) => ({ fromId: l.fromId, route: parseRoute(l.route) })),
-    ].filter((r): r is { fromId: string; route: LayoutRoute } => !!r.fromId && r.route !== null)
-    void placeNew(sized, relationships, activeView.positions, free ? { width: free.width, height: free.height } : undefined, useCanvasStore.getState().expandedNodeIds, savedRoutes)
+    void placeNew(sized, relationships, activeView.positions, free ? { width: free.width, height: free.height } : undefined, useCanvasStore.getState().expandedNodeIds, savedRoutesOf(activeView, relationships), lineVisibilityOf(activeView.lineVisibility))
       .then(({ positions: fresh, routes }) => {
         if (fresh.length === 0) return
         // A parent that grows comes back with its new size, in place of its saved row.
@@ -385,11 +387,11 @@ function ProjectWorkspace() {
 
   // The parent is a fact of the model: the command carries it. Showing the parent's inside
   // is view state only, so the new child is on the canvas when the command returns.
-  const handleCreateElement = (name: string, kind: string, parentId: string | null) => {
+  const handleCreateElement = (name: string, kind: string, parentId: string | null, tags?: string[]) => {
     const id = crypto.randomUUID()
     useUndoStore.getState().execute({
       label: `Add ${kind}`,
-      execute: () => addElement.mutate({ id, kind, name, parentId: parentId ?? undefined }),
+      execute: () => addElement.mutate({ id, kind, name, parentId: parentId ?? undefined, tags }),
       undo: () => removeElement.mutate(id),
     })
     if (parentId) {
@@ -400,8 +402,8 @@ function ProjectWorkspace() {
   }
 
   // Without a parent the dialog starts on the level the canvas shows.
-  const handleOpenCreateDialog = (parentId?: string | null, kind?: string) => {
-    setAddElementRequest({ parentId: parentId === undefined ? useCanvasStore.getState().currentRootId : parentId, kind })
+  const handleOpenCreateDialog = (parentId?: string | null, kind?: string, entry?: { label: string; tags: string[] }) => {
+    setAddElementRequest({ parentId: parentId === undefined ? useCanvasStore.getState().currentRootId : parentId, kind, ...entry })
   }
 
   const handleConnect = (source: string, target: string) => {
@@ -567,6 +569,41 @@ function ProjectWorkspace() {
 
   const handleAddElementAtPosition = (kind: string, parentId?: string | null) => {
     handleCreateElement(`New ${kind}`, kind, parentId === undefined ? useCanvasStore.getState().currentRootId : parentId)
+  }
+
+  // A kind dragged from the Create tab and dropped on the canvas. The canvas chose the parent by
+  // the containment rules; the place is relative to the parent's card when it has one. Dropped on
+  // a closed card, the element takes free space inside it, as an imported element does, and the
+  // card grows to hold it.
+  const handleDropElement = (entry: { kind: string; name: string; tags: string[] }, parentId: string | null, position: { x: number; y: number } | null) => {
+    const id = crypto.randomUUID()
+    const view = activeView
+    useUndoStore.getState().execute({
+      label: `Add ${entry.name.toLowerCase()}`,
+      execute: () => {
+        addElement.mutate({ id, kind: entry.kind, name: `New ${entry.name.toLowerCase()}`, parentId: parentId ?? undefined, tags: entry.tags })
+        const positions = view?.positions ?? []
+        if (position) {
+          saveLayout([...positions, { elementId: id, x: position.x, y: position.y }])
+          return
+        }
+        if (!view || !elements || !relationships) return
+        const placed = new Set(positions.map((p) => p.elementId))
+        const sized = [
+          ...elements.filter((e) => placed.has(e.id)).map((e) => ({ id: e.id, parentId: e.parentId ?? null, ...cardSize(e.kind) })),
+          { id, parentId, ...cardSize(entry.kind) },
+        ]
+        const free = visibleCanvasRect()
+        const expanded = new Set(useCanvasStore.getState().expandedNodeIds)
+        if (parentId) expanded.add(parentId)
+        void placeNew(sized, relationships, positions, free ? { width: free.width, height: free.height } : undefined, expanded, savedRoutesOf(view, relationships), lineVisibilityOf(view.lineVisibility))
+          .then(({ positions: fresh }) => {
+            const changed = new Set(fresh.map((p) => p.elementId))
+            saveLayout([...positions.filter((p) => !changed.has(p.elementId)), ...fresh])
+          })
+      },
+      undo: () => removeElement.mutate(id),
+    })
   }
 
   const handleConnectToBlank = (kind: string, position: { x: number; y: number }, sourceId: string) => {
@@ -979,7 +1016,7 @@ function ProjectWorkspace() {
               decisions={hasElements}
               onCreateDiagram={handleCreateDiagram}
               onCreateDoc={handleCreateDoc}
-              onAddElement={() => handleOpenCreateDialog()}
+              onAddElement={(entry) => handleOpenCreateDialog(undefined, entry.kind, { label: entry.name, tags: entry.tags })}
             />
           )}
           {activeFlyout === 'contracts' && (
@@ -1018,7 +1055,7 @@ function ProjectWorkspace() {
               onTypeIt={() => setTypeItOpen(true)}
               onDescribe={handleDescribe}
               onSourceStarted={() => useShellStore.getState().openFlyout('import')}
-              onSampleOpened={() => relayoutAfterStart(true)}
+              onTemplateOpened={() => relayoutAfterStart(true)}
               onAddSystem={() => handleOpenCreateDialog()}
             />
           ) : (
@@ -1053,6 +1090,7 @@ function ProjectWorkspace() {
               onRenameElement={handleRenameElement}
               onConnectToBlank={handleConnectToBlank}
               onAddElementAtFlowPosition={handleAddElementAtFlowPosition}
+              onDropElement={handleDropElement}
               onNodeDoubleClick={(elementId) => {
                 const el = elements?.find((e) => e.id === elementId)
                 if (!el) return
@@ -1079,6 +1117,9 @@ function ProjectWorkspace() {
               onAddRelationshipFrom={setRelationshipFrom}
               onPaste={activeView ? handlePaste : undefined}
               viewActions={viewActions}
+              lineControls={!!activeView}
+              lineVisibility={lineVisibility}
+              onLineVisibilityChange={activeView && !readOnly ? handleLineVisibilityChange : undefined}
             />
           )}
           {!activeDocId && <AssistantCanvasButton />}
@@ -1126,6 +1167,7 @@ function ProjectWorkspace() {
         />
       )}
       {!activeDocId && <TraceDock />}
+      <StressDock projectId={projectId} hidden={!!activeDocId} />
       {activeDocId ? null : (
         isReviewMode ? (
           <ReviewBar projectId={projectId} />
@@ -1190,17 +1232,28 @@ function ProjectWorkspace() {
         <AddElementDialog
           parentId={addElementRequest.parentId}
           kind={addElementRequest.kind}
+          label={addElementRequest.label}
           elements={elements ?? []}
           pending={addElement.isPending}
           onClose={() => setAddElementRequest(null)}
           onAdd={(name, kind, parentId) => {
-            handleCreateElement(name, kind, parentId)
+            // The tags of the Create tab entry belong to its kind, such as `external` to a system.
+            handleCreateElement(name, kind, parentId, kind === addElementRequest.kind ? addElementRequest.tags : undefined)
             setAddElementRequest(null)
           }}
         />
       )}
     </div>
   )
+}
+
+/** The saved routes of a view's lines, each with the element its line starts at, for `placeNew`. */
+function savedRoutesOf(view: ViewDetail, relationships: Relationship[]) {
+  const fromOf = new Map(relationships.map((r) => [r.id, r.fromId]))
+  return [
+    ...view.edges.map((e) => ({ fromId: fromOf.get(e.relationshipId), route: parseRoute(e.routePoints) })),
+    ...(view.lines ?? []).map((l) => ({ fromId: l.fromId, route: parseRoute(l.route) })),
+  ].filter((r): r is { fromId: string; route: LayoutRoute } => !!r.fromId && r.route !== null)
 }
 
 /**

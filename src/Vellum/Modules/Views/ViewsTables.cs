@@ -55,7 +55,38 @@ public static class ViewsTables
                 .HasForeignKey(l => l.ViewId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
+
+        modelBuilder.Entity<LineVisibilityEntity>(b =>
+        {
+            b.ToTable("line_visibility", Schema);
+            b.HasKey(l => l.ViewId);
+            b.Property(l => l.HiddenRelationshipIds).HasColumnType("uuid[]");
+            b.Property(l => l.HiddenDerivedLines).HasColumnType("jsonb");
+            b.HasOne<ViewEntity>()
+                .WithMany()
+                .HasForeignKey(l => l.ViewId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
     }
+}
+
+/// <summary>
+/// Which lines a view draws: layout data, never a model fact. A view without a row draws every
+/// line. Hiding a line removes it from this view only; the model and the other views keep it.
+/// </summary>
+public class LineVisibilityEntity
+{
+    public Guid ViewId { get; set; }
+    public bool DerivedLines { get; set; } = true;
+    public bool Structural { get; set; } = true;
+    public bool Behavioural { get; set; } = true;
+    public bool CrossLevel { get; set; } = true;
+
+    /// <summary>The relationships hidden one at a time in this view.</summary>
+    public Guid[] HiddenRelationshipIds { get; set; } = [];
+
+    /// <summary>The derived lines hidden one at a time, as a JSON array of <c>{ fromId, toId }</c>: a derived line has no ID of its own.</summary>
+    public JsonDocument HiddenDerivedLines { get; set; } = null!;
 }
 
 /// <summary>

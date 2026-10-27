@@ -8,6 +8,8 @@ import {
 import { useCanvasStore } from '@/stores/canvas-store'
 import { cn } from '@/lib/utils'
 import { EdgeLabelCard } from './edge-label-card'
+import { StressRatePill } from '../stress-overlay'
+import { useLineRate } from '../stress-overlay-context'
 import { computeEdgeOffset, computeLabelOffset, getEdgePathFn, labelZ, nodeBoxes, relationshipEnds, routeOnCanvas, type LayoutRoute } from '@/lib/edge-utils'
 import type { DiffState } from '@/stores/draft-store'
 
@@ -22,6 +24,8 @@ export interface C4EdgeData extends Record<string, unknown> {
   totalParallel?: number
   /** A trace event runs along this relationship now; its label goes below the path. */
   labelBelow?: boolean
+  /** The view hides this relationship; it is drawn faint because the person asked to see hidden lines. */
+  hiddenInView?: boolean
   /** The saved side of each end in this view: top, right, bottom or left. Null is auto. */
   sourceSide?: string | null
   targetSide?: string | null
@@ -55,6 +59,7 @@ export const C4Edge = memo(function C4Edge({
   const d = data ?? { label: null, technology: null }
   const activeLens = useCanvasStore((s) => s.activeLens)
   const [hovered, setHovered] = useState(false)
+  const rate = useLineRate(id)
 
   const edgeIndex = d.edgeIndex ?? 0
   const totalParallel = d.totalParallel ?? 1
@@ -129,8 +134,14 @@ export const C4Edge = memo(function C4Edge({
             x={labelX}
             y={labelY}
             below={d.labelBelow}
+            faint={d.hiddenInView}
             zIndex={labelZ(sourceBoxes, targetBoxes)}
           />
+        </EdgeLabelRenderer>
+      )}
+      {rate !== null && (
+        <EdgeLabelRenderer>
+          <StressRatePill rate={rate} x={labelX} y={labelY} zIndex={labelZ(sourceBoxes, targetBoxes)} />
         </EdgeLabelRenderer>
       )}
     </>

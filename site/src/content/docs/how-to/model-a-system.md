@@ -70,10 +70,23 @@ Use one of these methods.
 - Double-click an empty part of the canvas. Select a kind.
 - Right-click an empty part of the canvas. Below **Add here**, select **Add actor** or **Add system** (at the top level), or the kinds that the level permits. Vellum adds the element at the pointer.
 - Press `N`. In **Add Element**, select the kind, enter a **Name** and select **Add**.
+- Select **Model** in the sidebar, then the **Create** tab. Below **Elements**, each kind has a one-line description. Drag a kind onto the canvas, or select it to open **Add Element** with that kind.
 - Open the command palette with `Ctrl+K` or `Cmd+K`. Select **Add element**.
 - Drag from the handle of an element to an empty part of the canvas. Select a kind. Vellum adds the element and a relationship from the first element to it.
 
 Except for the **Add Element** dialog, a new element has the name `New <kind>`. Rename it in the detail panel.
+
+### Drag a kind from the Create tab
+
+The **Create** tab also lists **External system**: a system with the tag `external`, for a service that you do not own, such as a payment provider.
+
+When you drop a kind on the canvas, Vellum chooses the parent from the cards under the pointer:
+
+1. The innermost card under the pointer that can hold the kind. An external system holds nothing. An open card keeps the element at the drop point. A closed card opens, and the element goes into free space inside it.
+2. Otherwise, the level that the canvas shows, at the drop point, when the level permits the kind.
+3. Otherwise, Vellum adds nothing and shows the rule, for example `A store goes inside a system. Drop it on a system card.`
+
+Undo removes the element.
 
 ## Go into a system or an app
 
@@ -222,6 +235,20 @@ A diagram is a saved view of the model. It has a name and a position for each el
 5. To open a diagram, select **Model** in the sidebar, then the **Files** tab and select the diagram.
 
 Each diagram shows the same model. An element that you delete is gone from each diagram.
+
+## Hide lines in a diagram
+
+A busy diagram can hide lines. The diagram keeps the hidden lines for each person who opens it. The model keeps each relationship. You must be an Editor to hide or show a line.
+
+1. Right-click the canvas. In the **Lines** group, clear **Derived lines**, **Structural lines**, **Behavioural lines** or **Cross-level lines**.
+2. To hide one relationship, right-click it and select **Hide from this view**.
+3. To hide one derived line, right-click it and select **Hide this line**. To hide each derived line, select **Hide all derived lines**.
+4. To see what the diagram hides, select the chip **N lines hidden** at the bottom left of the canvas. Select **Show** next to a line to show it again.
+5. To look at the hidden lines without a change to the diagram, select **Show hidden lines** in the canvas menu or in the chip. The hidden lines show faint for you only, until you clear it.
+
+**Tidy layout** does not use the hidden lines to arrange the diagram. The exports and the share links do not draw them. See [Views, levels and derived lines](/concepts/views-levels-and-derived-lines/#hidden-lines).
+
+The API calls are `GET /api/projects/{projectId}/views/{viewId}`, which returns `lineVisibility`, and `PUT /api/projects/{projectId}/views/{viewId}/layout/visibility`, which replaces it.
 
 ## Rename or delete a diagram
 

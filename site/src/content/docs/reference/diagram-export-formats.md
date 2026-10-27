@@ -37,6 +37,8 @@ A view shows one level of the model.
 
 An export shows the level with every card collapsed. The order of the elements is the ordinal order of the names, then of the IDs.
 
+An export does not draw the lines that the view hides. See [Hidden lines](#hidden-lines).
+
 ## Derived lines
 
 A derived line joins two shown elements for the relationships between the parts inside them. The canvas and the exports use the same rules. [Views, levels and derived lines](/concepts/views-levels-and-derived-lines/) explains them.
@@ -48,6 +50,29 @@ A derived line joins two shown elements for the relationships between the parts 
 5. The label of a derived line with one relationship is the label of that relationship. A derived line with more relationships has the label "N relationships".
 
 The relationships of a derived line are in the ordinal order of their IDs. The derived lines are in the ordinal order of the ID of the source element, then of the target element. A derived line is not stored and does not change the layout fingerprint.
+
+## Hidden lines
+
+A view can hide lines. The SVG, the PNG, the Mermaid file and the views of the Structurizr DSL file do not draw them:
+
+1. A relationship that the view hides one at a time, or whose kind (structural or behavioural) the view hides, draws nothing. It is not part of a derived line.
+2. A cross-level line draws nothing when the view hides cross-level lines. A cross-level line is a direct relationship whose two ends sit at different nesting depths. An export shows one level with every card collapsed, so its direct relationships are never cross-level.
+3. No derived line draws when the view hides derived lines. A derived line that the view hides one at a time, by its pair of cards in one direction, draws nothing.
+
+The rules apply first, then the derived lines merge. A derived line can then have fewer relationships than without the hidden lines.
+
+`GET /api/projects/{projectId}/views/{viewId}` returns `lineVisibility`. `PUT /api/projects/{projectId}/views/{viewId}/layout/visibility` replaces it. An Editor can call it.
+
+| Field | Type | Meaning |
+|---|---|---|
+| `derivedLines` | boolean | `true` draws the derived lines. |
+| `structural` | boolean | `true` draws the structural relationships. |
+| `behavioural` | boolean | `true` draws the behavioural relationships. |
+| `crossLevel` | boolean | `true` draws the cross-level lines. |
+| `hiddenRelationshipIds` | array of IDs | The relationships hidden one at a time. At most 10000. |
+| `hiddenDerivedLines` | array of `{ fromId, toId }` | The derived lines hidden one at a time. The two cards must differ. At most 10000. |
+
+A view that hides nothing has each switch `true` and two empty lists.
 
 ## Positions
 
@@ -68,6 +93,8 @@ Each export names the layout it was drawn from as a layout fingerprint: `sha256:
 4. each relationship with a saved side (`side`, relationship ID, source side, target side), in the order of the relationship IDs. An auto end is an empty word.
 
 A view with no saved side has no part 4. Its fingerprint is the same as before Vellum saved sides.
+
+After the parts of the saved routes, a view that hides a line has one more part: `visibility`, the four switches as `0` or `1`, the hidden relationships in the order of their IDs, then the hidden derived lines in the order of the source ID and the target ID. A view that hides no line has no such part. Its fingerprint is the same as before Vellum hid lines.
 
 The SVG has the fingerprint in `<desc>`. The Mermaid file has it in the second comment line. The Structurizr DSL file has one comment line for each view.
 
@@ -175,6 +202,8 @@ The Structurizr DSL export is a workspace with the whole model and the views.
 | View whose root is a container | `component` view |
 
 Each view has `include *` and `autoLayout`. A view with another root is named in a comment and not written.
+
+A relationship or a derived line that a view hides gets an identifier, such as `rel_orders_api_orders_db = orders_api -> orders_db`. The view then has `exclude rel_orders_api_orders_db` after `include *`. The model keeps each relationship. A derived line that no written view draws is not written.
 
 The `model` block starts with `!impliedRelationships false`. Structurizr then shows the relationships that Vellum holds and the derived lines that the file writes.
 

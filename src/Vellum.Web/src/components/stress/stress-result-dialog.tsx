@@ -6,6 +6,8 @@ import {
   type LatencySummary, type ResourceStats, type StressComparison, type StressResult, type StressRun, type StressRunSummary,
 } from '@/lib/stress-api'
 import { LineChart, type ChartSeries } from './line-chart'
+import { Layers } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 
 interface Props {
   projectId: string
@@ -14,6 +16,8 @@ interface Props {
   /** The stored runs of the same profile, newest first, for the comparison. */
   runs: StressRunSummary[]
   onClose: () => void
+  /** Draws this run on the canvas. Absent where the canvas is not beside the dialog. */
+  onShowOnCanvas?: () => void
 }
 
 /** The six series colours, in a fixed order. A resource keeps its colour whatever else is shown. */
@@ -246,7 +250,7 @@ function Comparison({ comparison }: { comparison: StressComparison }) {
  * One stored run. Every number is an estimate from a model of the declared flow, and the
  * view says so next to each group of numbers. What the model leaves out is always on screen.
  */
-export function StressResultDialog({ projectId, profileName, run, runs, onClose }: Props) {
+export function StressResultDialog({ projectId, profileName, run, runs, onClose, onShowOnCanvas }: Props) {
   const { result, run: pin } = run
   const [other, setOther] = useState('')
   const comparison = useQuery({
@@ -283,7 +287,14 @@ export function StressResultDialog({ projectId, profileName, run, runs, onClose 
     <Dialog open onOpenChange={(open) => { if (!open) onClose() }}>
       <DialogContent className="flex max-h-[94vh] flex-col gap-3 sm:max-w-5xl">
         <DialogHeader>
-          <DialogTitle className="flex flex-wrap items-center gap-2">{profileName} <Estimated /></DialogTitle>
+          <DialogTitle className="flex flex-wrap items-center gap-2">
+            {profileName} <Estimated />
+            {onShowOnCanvas && (
+              <Button variant="outline" size="sm" className="ml-auto mr-6 h-7 gap-1.5 text-xs" onClick={onShowOnCanvas}>
+                <Layers className="h-3.5 w-3.5" aria-hidden="true" /> Show on the canvas
+              </Button>
+            )}
+          </DialogTitle>
           <DialogDescription>
             A simulation of the declared flow under the declared load. It is not a measurement of a running system.
             <span className="mt-1 block font-mono text-[11px]">
@@ -293,6 +304,11 @@ export function StressResultDialog({ projectId, profileName, run, runs, onClose 
         </DialogHeader>
 
         <div className="min-h-0 flex-1 space-y-5 overflow-y-auto pr-1">
+          {pin.summary.failedElement && (
+            <p role="status" className="rounded-md border border-[var(--trace-failure)]/60 px-3 py-2 text-xs text-foreground">
+              {pin.summary.failedElement} is down for the whole run: an outage on top of the profile. The profile itself does not have it.
+            </p>
+          )}
           {(pin.outdated || pin.profileVersion !== pin.currentProfileVersion) && (
             <p role="status" className="rounded-md border border-[var(--trace-retry)]/60 px-3 py-2 text-xs text-foreground">
               {pin.outdated && <>Outdated: the {pin.outdatedBecause.join(' and the ')} changed after this run. </>}
@@ -321,6 +337,16 @@ export function StressResultDialog({ projectId, profileName, run, runs, onClose 
           <Section id="stress-bottleneck" title="Bottleneck" rule={[bottleneck.rule, bottleneck.growthRule].filter(Boolean).join(' ')}>
             <BottleneckStatement result={result} resources={resources} />
           </Section>
+
+          {result.capacity && (
+            <Section id="stress-limit" title="Estimated limit" rule={result.capacity.rule}>
+              <p className="rounded-md border border-border px-3 py-2 text-sm text-foreground">
+                {result.capacity.flowsPerSecond === null
+                  ? <>No resource served work in the measured window, so the run gives no limit.</>
+                  : <>At about <span className="font-mono">{formatNumber(result.capacity.flowsPerSecond, 1)}</span> flows a second, <span className="font-medium">{result.capacity.name}</span> ({result.capacity.kind}) has every worker busy all the time. It runs out first.</>}
+              </p>
+            </Section>
+          )}
 
           <Section id="stress-latency" title="Latency" note={`${result.methods.percentiles} ${result.flow.latency.reservoir || resources.some((r) => r.latency.reservoir) ? `* ${result.methods.sampling}` : ''}`}>
             <div className="overflow-x-auto rounded-md border border-border">

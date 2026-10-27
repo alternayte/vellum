@@ -1,5 +1,6 @@
 using System.Globalization;
 using Vellum.Modules.Modelling;
+using Vellum.Modules.Views;
 
 namespace Vellum.Modules.Diagrams;
 
@@ -73,5 +74,35 @@ public static class DerivedLines
                 [.. g.Value.OrderBy(r => r.Id.Value.ToString(), StringComparer.Ordinal)]))
             .ToList();
         return (direct, derived);
+    }
+
+    /// <summary>
+    /// The lines a view draws under its <see cref="LineVisibility"/>, the same as
+    /// <c>applyLineVisibility</c> in the web client (lib/line-visibility.ts): a relationship hidden
+    /// by ID or by kind is left out before the lines are projected, then a cross-level direct line
+    /// and a hidden derived line are left out.
+    /// </summary>
+    public static (IReadOnlyList<RelationshipState> Direct, IReadOnlyList<DerivedLine> Derived) Project(
+        IReadOnlyDictionary<ElementId, ElementState> elements, IEnumerable<RelationshipState> relationships, IReadOnlySet<ElementId> visible,
+        LineVisibility visibility)
+    {
+        if (!visibility.HidesAnything) return Project(elements, relationships, visible);
+        var hiddenIds = visibility.HiddenRelationshipIds.ToHashSet();
+        var (direct, derived) = Project(elements,
+            relationships.Where(r => !hiddenIds.Contains(r.Id.Value) && visibility.Shows(r.Kind)), visible);
+        var hiddenPairs = visibility.HiddenDerivedLines.Select(l => (l.FromId, l.ToId)).ToHashSet();
+        return (
+            visibility.CrossLevel ? direct : [.. direct.Where(r => Depth(elements, r.FromId) == Depth(elements, r.ToId))],
+            visibility.DerivedLines ? [.. derived.Where(l => !hiddenPairs.Contains((l.FromId.Value, l.ToId.Value)))] : []);
+    }
+
+    /// <summary>How many ancestors an element has in the model. A cycle of parents stops the count.</summary>
+    public static int Depth(IReadOnlyDictionary<ElementId, ElementState> elements, ElementId id)
+    {
+        var depth = 0;
+        var seen = new HashSet<ElementId> { id };
+        for (var at = elements.GetValueOrDefault(id)?.ParentId; at is { } parent && elements.ContainsKey(parent) && seen.Add(parent); at = elements[parent].ParentId)
+            depth++;
+        return depth;
     }
 }

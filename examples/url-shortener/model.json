@@ -1,0 +1,325 @@
+{
+  "version": "1.0",
+  "project": {
+    "name": "URL shortener"
+  },
+  "elements": [
+    {
+      "id": "e0a1d5c0-15ed-4000-8001-000000000010",
+      "kind": "system",
+      "name": "Shortener",
+      "description": "Makes short links and redirects visitors to the long URL.",
+      "technology": null,
+      "status": "current",
+      "parentId": null,
+      "tags": [],
+      "icon": null,
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    },
+    {
+      "id": "e0a1d5c0-15ed-4000-8001-000000000011",
+      "kind": "actor",
+      "name": "Creator",
+      "description": "A person who makes a short link.",
+      "technology": null,
+      "status": "current",
+      "parentId": null,
+      "tags": [],
+      "icon": null,
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    },
+    {
+      "id": "e0a1d5c0-15ed-4000-8001-000000000012",
+      "kind": "actor",
+      "name": "Visitor",
+      "description": "A person who opens a short link.",
+      "technology": null,
+      "status": "current",
+      "parentId": null,
+      "tags": [],
+      "icon": null,
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    },
+    {
+      "id": "e0a1d5c0-15ed-4000-8001-000000000020",
+      "kind": "app",
+      "name": "Links API",
+      "description": "Creates short links and answers each visit with a redirect.",
+      "technology": "Go",
+      "status": "current",
+      "parentId": "e0a1d5c0-15ed-4000-8001-000000000010",
+      "tags": [],
+      "icon": null,
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    },
+    {
+      "id": "e0a1d5c0-15ed-4000-8001-000000000021",
+      "kind": "store",
+      "name": "Links DB",
+      "description": "Holds each link and when it was last visited.",
+      "technology": "PostgreSQL",
+      "status": "current",
+      "parentId": "e0a1d5c0-15ed-4000-8001-000000000010",
+      "tags": [],
+      "icon": null,
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    },
+    {
+      "id": "e0a1d5c0-15ed-4000-8001-000000000022",
+      "kind": "store",
+      "name": "Link cache",
+      "description": "Holds recent links in memory.",
+      "technology": "Redis",
+      "status": "current",
+      "parentId": "e0a1d5c0-15ed-4000-8001-000000000010",
+      "tags": [],
+      "icon": null,
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    },
+    {
+      "id": "e0a1d5c0-15ed-4000-8001-000000000023",
+      "kind": "app",
+      "name": "Analytics",
+      "description": "Counts the clicks of each link.",
+      "technology": "Go",
+      "status": "current",
+      "parentId": "e0a1d5c0-15ed-4000-8001-000000000010",
+      "tags": [],
+      "icon": null,
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    },
+    {
+      "id": "e0a1d5c0-15ed-4000-8001-000000000024",
+      "kind": "store",
+      "name": "Clicks DB",
+      "description": "Holds one row for each click.",
+      "technology": "ClickHouse",
+      "status": "current",
+      "parentId": "e0a1d5c0-15ed-4000-8001-000000000010",
+      "tags": [],
+      "icon": null,
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    }
+  ],
+  "relationships": [
+    {
+      "id": "e0a1d5c0-15ed-4000-8001-000000000090",
+      "fromId": "e0a1d5c0-15ed-4000-8001-000000000011",
+      "toId": "e0a1d5c0-15ed-4000-8001-000000000020",
+      "label": "creates short links",
+      "technology": "HTTPS",
+      "kind": "structural",
+      "lineShape": null,
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    },
+    {
+      "id": "e0a1d5c0-15ed-4000-8001-000000000091",
+      "fromId": "e0a1d5c0-15ed-4000-8001-000000000012",
+      "toId": "e0a1d5c0-15ed-4000-8001-000000000020",
+      "label": "follows short links",
+      "technology": "HTTPS",
+      "kind": "structural",
+      "lineShape": null,
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    },
+    {
+      "id": "e0a1d5c0-15ed-4000-8001-000000000092",
+      "fromId": "e0a1d5c0-15ed-4000-8001-000000000020",
+      "toId": "e0a1d5c0-15ed-4000-8001-000000000021",
+      "label": "reads and writes",
+      "technology": "SQL",
+      "kind": "structural",
+      "lineShape": null,
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    },
+    {
+      "id": "e0a1d5c0-15ed-4000-8001-000000000093",
+      "fromId": "e0a1d5c0-15ed-4000-8001-000000000020",
+      "toId": "e0a1d5c0-15ed-4000-8001-000000000022",
+      "label": "caches links",
+      "technology": "RESP",
+      "kind": "structural",
+      "lineShape": null,
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    },
+    {
+      "id": "e0a1d5c0-15ed-4000-8001-000000000094",
+      "fromId": "e0a1d5c0-15ed-4000-8001-000000000020",
+      "toId": "e0a1d5c0-15ed-4000-8001-000000000023",
+      "label": "sends clicks",
+      "technology": "AMQP",
+      "kind": "structural",
+      "lineShape": null,
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    },
+    {
+      "id": "e0a1d5c0-15ed-4000-8001-000000000095",
+      "fromId": "e0a1d5c0-15ed-4000-8001-000000000023",
+      "toId": "e0a1d5c0-15ed-4000-8001-000000000024",
+      "label": "writes clicks",
+      "technology": "SQL",
+      "kind": "structural",
+      "lineShape": null,
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    }
+  ],
+  "messages": [
+    {
+      "id": "e0a1d5c0-15ed-4000-8001-000000000080",
+      "name": "LinkClicked",
+      "description": "A visitor opened a short link.",
+      "producerId": "e0a1d5c0-15ed-4000-8001-000000000020",
+      "consumerIds": [
+        "e0a1d5c0-15ed-4000-8001-000000000023"
+      ],
+      "schemaId": "e0a1d5c0-15ed-4000-8001-000000000034",
+      "tags": [],
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    }
+  ],
+  "schemas": [
+    {
+      "id": "e0a1d5c0-15ed-4000-8001-000000000030",
+      "name": "CreateLink",
+      "description": "The body of POST /links.",
+      "content": "{\"type\":\"object\",\"required\":[\"url\"],\"properties\":{\"url\":{\"type\":\"string\",\"pattern\":\"^https?://\"}},\"additionalProperties\":false}",
+      "version": 1,
+      "factStatus": "declared",
+      "provenance": null
+    },
+    {
+      "id": "e0a1d5c0-15ed-4000-8001-000000000031",
+      "name": "LinkCreated",
+      "description": "The answer of POST /links.",
+      "content": "{\"type\":\"object\",\"required\":[\"code\",\"shortUrl\"],\"properties\":{\"code\":{\"type\":\"string\",\"pattern\":\"^[a-z0-9-]{3,32}$\"},\"shortUrl\":{\"type\":\"string\",\"pattern\":\"^https?://\"}},\"additionalProperties\":false}",
+      "version": 1,
+      "factStatus": "declared",
+      "provenance": null
+    },
+    {
+      "id": "e0a1d5c0-15ed-4000-8001-000000000032",
+      "name": "RedirectRequest",
+      "description": "The path parameter of GET /{code}.",
+      "content": "{\"type\":\"object\",\"required\":[\"code\"],\"properties\":{\"code\":{\"type\":\"string\",\"pattern\":\"^[a-z0-9-]{3,32}$\"}},\"additionalProperties\":false}",
+      "version": 1,
+      "factStatus": "declared",
+      "provenance": null
+    },
+    {
+      "id": "e0a1d5c0-15ed-4000-8001-000000000033",
+      "name": "Redirect",
+      "description": "The answer of GET /{code}: a 301 to the long URL.",
+      "content": "{\"type\":\"object\",\"required\":[\"location\"],\"properties\":{\"location\":{\"type\":\"string\",\"pattern\":\"^https?://\"}},\"additionalProperties\":false}",
+      "version": 1,
+      "factStatus": "declared",
+      "provenance": null
+    },
+    {
+      "id": "e0a1d5c0-15ed-4000-8001-000000000034",
+      "name": "LinkClicked",
+      "description": "One visit of a short link.",
+      "content": "{\"type\":\"object\",\"required\":[\"code\",\"at\"],\"properties\":{\"code\":{\"type\":\"string\",\"pattern\":\"^[a-z0-9-]{3,32}$\"},\"at\":{\"type\":\"string\",\"minLength\":20}},\"additionalProperties\":false}",
+      "version": 1,
+      "factStatus": "declared",
+      "provenance": null
+    }
+  ],
+  "operations": [
+    {
+      "id": "e0a1d5c0-15ed-4000-8001-000000000040",
+      "ownerId": "e0a1d5c0-15ed-4000-8001-000000000020",
+      "name": "POST /links",
+      "transport": "http",
+      "requestSchemaId": "e0a1d5c0-15ed-4000-8001-000000000030",
+      "responseSchemaId": "e0a1d5c0-15ed-4000-8001-000000000031",
+      "timeoutMs": 2000,
+      "retry": {
+        "maxAttempts": 1,
+        "backoffMs": 0
+      },
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    },
+    {
+      "id": "e0a1d5c0-15ed-4000-8001-000000000041",
+      "ownerId": "e0a1d5c0-15ed-4000-8001-000000000020",
+      "name": "GET /{code}",
+      "transport": "http",
+      "requestSchemaId": "e0a1d5c0-15ed-4000-8001-000000000032",
+      "responseSchemaId": "e0a1d5c0-15ed-4000-8001-000000000033",
+      "timeoutMs": 500,
+      "retry": {
+        "maxAttempts": 1,
+        "backoffMs": 0
+      },
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    }
+  ],
+  "channels": [
+    {
+      "id": "e0a1d5c0-15ed-4000-8001-000000000050",
+      "name": "link-clicks",
+      "kind": "queue",
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    },
+    {
+      "id": "e0a1d5c0-15ed-4000-8001-000000000051",
+      "name": "link-clicks.dlq",
+      "kind": "queue",
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    }
+  ],
+  "subscriptions": [
+    {
+      "id": "e0a1d5c0-15ed-4000-8001-000000000060",
+      "channelId": "e0a1d5c0-15ed-4000-8001-000000000050",
+      "consumerId": "e0a1d5c0-15ed-4000-8001-000000000023",
+      "retry": {
+        "maxAttempts": 3,
+        "backoffMs": 200
+      },
+      "deadLetterChannelId": "e0a1d5c0-15ed-4000-8001-000000000051",
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    }
+  ],
+  "bindings": []
+}

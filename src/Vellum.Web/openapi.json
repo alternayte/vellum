@@ -11615,6 +11615,22 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/StressRunRequest"
+                  }
+                ]
+              }
+            }
+          }
+        },
         "responses": {
           "201": {
             "description": "Created",
@@ -12962,6 +12978,48 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/SaveEdgeSidesRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/projects/{projectId}/views/{viewId}/layout/visibility": {
+      "put": {
+        "tags": [
+          "Views"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "viewId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LineVisibilityDto"
               }
             }
           },
@@ -18237,6 +18295,53 @@
           }
         }
       },
+      "CapacityEstimate": {
+        "required": [
+          "label",
+          "flowsPerSecond",
+          "id",
+          "name",
+          "kind",
+          "rule"
+        ],
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "flowsPerSecond": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "null",
+              "number",
+              "string"
+            ],
+            "format": "double"
+          },
+          "id": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "name": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "kind": {
+            "type": [
+              "null",
+              "string"
+            ]
+          },
+          "rule": {
+            "type": "string"
+          }
+        }
+      },
       "CategoryDelta": {
         "required": [
           "category",
@@ -23232,6 +23337,23 @@
           }
         }
       },
+      "HiddenDerivedLineDto": {
+        "required": [
+          "fromId",
+          "toId"
+        ],
+        "type": "object",
+        "properties": {
+          "fromId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "toId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
       "ImpactChangeDto": {
         "required": [
           "id",
@@ -24895,6 +25017,44 @@
               "string"
             ],
             "format": "double"
+          }
+        }
+      },
+      "LineVisibilityDto": {
+        "required": [
+          "derivedLines",
+          "structural",
+          "behavioural",
+          "crossLevel",
+          "hiddenRelationshipIds",
+          "hiddenDerivedLines"
+        ],
+        "type": "object",
+        "properties": {
+          "derivedLines": {
+            "type": "boolean"
+          },
+          "structural": {
+            "type": "boolean"
+          },
+          "behavioural": {
+            "type": "boolean"
+          },
+          "crossLevel": {
+            "type": "boolean"
+          },
+          "hiddenRelationshipIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "hiddenDerivedLines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HiddenDerivedLineDto"
+            }
           }
         }
       },
@@ -30090,6 +30250,13 @@
                 "$ref": "#/components/schemas/Saturation"
               }
             ]
+          },
+          "consumerId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
           }
         }
       },
@@ -33216,6 +33383,23 @@
           }
         }
       },
+      "SharedHiddenPair": {
+        "required": [
+          "fromId",
+          "toId"
+        ],
+        "type": "object",
+        "properties": {
+          "fromId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "toId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
       "SharedLineRoute": {
         "required": [
           "fromId",
@@ -33234,6 +33418,44 @@
           },
           "route": {
             "$ref": "#/components/schemas/SharedRoute"
+          }
+        }
+      },
+      "SharedLineVisibility": {
+        "required": [
+          "derivedLines",
+          "structural",
+          "behavioural",
+          "crossLevel",
+          "hiddenRelationshipIds",
+          "hiddenDerivedLines"
+        ],
+        "type": "object",
+        "properties": {
+          "derivedLines": {
+            "type": "boolean"
+          },
+          "structural": {
+            "type": "boolean"
+          },
+          "behavioural": {
+            "type": "boolean"
+          },
+          "crossLevel": {
+            "type": "boolean"
+          },
+          "hiddenRelationshipIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "hiddenDerivedLines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SharedHiddenPair"
+            }
           }
         }
       },
@@ -34050,6 +34272,16 @@
             "items": {
               "$ref": "#/components/schemas/SharedHiddenLine"
             }
+          },
+          "lineVisibility": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SharedLineVisibility"
+              }
+            ]
           },
           "hiddenElementIds": {
             "type": [
@@ -35836,6 +36068,25 @@
           },
           "hash": {
             "type": "string"
+          },
+          "traffic": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/TrafficStats"
+            }
+          },
+          "capacity": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/CapacityEstimate"
+              }
+            ]
           }
         }
       },
@@ -35855,6 +36106,21 @@
           },
           "result": {
             "$ref": "#/components/schemas/StressResult"
+          }
+        }
+      },
+      "StressRunRequest": {
+        "required": [
+          "fail"
+        ],
+        "type": "object",
+        "properties": {
+          "fail": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
           }
         }
       },
@@ -35947,6 +36213,19 @@
           },
           "drained": {
             "type": "boolean"
+          },
+          "failedElementId": {
+            "type": [
+              "null",
+              "string"
+            ],
+            "format": "uuid"
+          },
+          "failedElement": {
+            "type": [
+              "null",
+              "string"
+            ]
           }
         }
       },
@@ -36909,6 +37188,49 @@
           },
           "format": {
             "type": "string"
+          }
+        }
+      },
+      "TrafficStats": {
+        "required": [
+          "label",
+          "fromId",
+          "toId",
+          "kind",
+          "sent",
+          "perSecond"
+        ],
+        "type": "object",
+        "properties": {
+          "label": {
+            "type": "string"
+          },
+          "fromId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "toId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "kind": {
+            "type": "string"
+          },
+          "sent": {
+            "pattern": "^-?(?:0|[1-9]\\d*)$",
+            "type": [
+              "integer",
+              "string"
+            ],
+            "format": "int64"
+          },
+          "perSecond": {
+            "pattern": "^-?(?:0|[1-9]\\d*)(?:\\.\\d+)?(?:[eE][+-]?\\d+)?$",
+            "type": [
+              "number",
+              "string"
+            ],
+            "format": "double"
           }
         }
       },

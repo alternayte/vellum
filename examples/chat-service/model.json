@@ -1,0 +1,373 @@
+{
+  "version": "1.0",
+  "project": {
+    "name": "Chat service"
+  },
+  "elements": [
+    {
+      "id": "e0a1d5c0-15ed-4000-8002-000000000010",
+      "kind": "system",
+      "name": "Chat",
+      "description": "Carries messages between the members of a conversation.",
+      "technology": null,
+      "status": "current",
+      "parentId": null,
+      "tags": [],
+      "icon": null,
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    },
+    {
+      "id": "e0a1d5c0-15ed-4000-8002-000000000011",
+      "kind": "actor",
+      "name": "Member",
+      "description": "A person in a conversation.",
+      "technology": null,
+      "status": "current",
+      "parentId": null,
+      "tags": [],
+      "icon": null,
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    },
+    {
+      "id": "e0a1d5c0-15ed-4000-8002-000000000012",
+      "kind": "system",
+      "name": "Push service",
+      "description": "An external service that delivers a notification to a phone, such as APNs or FCM.",
+      "technology": null,
+      "status": "current",
+      "parentId": null,
+      "tags": [
+        "external"
+      ],
+      "icon": null,
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    },
+    {
+      "id": "e0a1d5c0-15ed-4000-8002-000000000020",
+      "kind": "app",
+      "name": "Chat gateway",
+      "description": "Holds the WebSocket of each member and takes the messages they send.",
+      "technology": "Node.js",
+      "status": "current",
+      "parentId": "e0a1d5c0-15ed-4000-8002-000000000010",
+      "tags": [],
+      "icon": null,
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    },
+    {
+      "id": "e0a1d5c0-15ed-4000-8002-000000000021",
+      "kind": "app",
+      "name": "Messages service",
+      "description": "Stores each message and publishes MessageSent.",
+      "technology": "Go",
+      "status": "current",
+      "parentId": "e0a1d5c0-15ed-4000-8002-000000000010",
+      "tags": [],
+      "icon": null,
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    },
+    {
+      "id": "e0a1d5c0-15ed-4000-8002-000000000022",
+      "kind": "store",
+      "name": "Messages DB",
+      "description": "Holds the messages of each conversation.",
+      "technology": "Cassandra",
+      "status": "current",
+      "parentId": "e0a1d5c0-15ed-4000-8002-000000000010",
+      "tags": [],
+      "icon": null,
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    },
+    {
+      "id": "e0a1d5c0-15ed-4000-8002-000000000023",
+      "kind": "store",
+      "name": "Presence cache",
+      "description": "Holds which members are online and on which device.",
+      "technology": "Redis",
+      "status": "current",
+      "parentId": "e0a1d5c0-15ed-4000-8002-000000000010",
+      "tags": [],
+      "icon": null,
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    },
+    {
+      "id": "e0a1d5c0-15ed-4000-8002-000000000024",
+      "kind": "app",
+      "name": "Notifier",
+      "description": "Sends a push notification to each member who is offline.",
+      "technology": "Go",
+      "status": "current",
+      "parentId": "e0a1d5c0-15ed-4000-8002-000000000010",
+      "tags": [],
+      "icon": null,
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    }
+  ],
+  "relationships": [
+    {
+      "id": "e0a1d5c0-15ed-4000-8002-000000000090",
+      "fromId": "e0a1d5c0-15ed-4000-8002-000000000011",
+      "toId": "e0a1d5c0-15ed-4000-8002-000000000020",
+      "label": "sends and reads messages",
+      "technology": "WebSocket",
+      "kind": "structural",
+      "lineShape": null,
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    },
+    {
+      "id": "e0a1d5c0-15ed-4000-8002-000000000091",
+      "fromId": "e0a1d5c0-15ed-4000-8002-000000000020",
+      "toId": "e0a1d5c0-15ed-4000-8002-000000000021",
+      "label": "stores messages",
+      "technology": "gRPC",
+      "kind": "structural",
+      "lineShape": null,
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    },
+    {
+      "id": "e0a1d5c0-15ed-4000-8002-000000000092",
+      "fromId": "e0a1d5c0-15ed-4000-8002-000000000021",
+      "toId": "e0a1d5c0-15ed-4000-8002-000000000022",
+      "label": "reads and writes",
+      "technology": "CQL",
+      "kind": "structural",
+      "lineShape": null,
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    },
+    {
+      "id": "e0a1d5c0-15ed-4000-8002-000000000093",
+      "fromId": "e0a1d5c0-15ed-4000-8002-000000000020",
+      "toId": "e0a1d5c0-15ed-4000-8002-000000000023",
+      "label": "records who is online",
+      "technology": "RESP",
+      "kind": "structural",
+      "lineShape": null,
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    },
+    {
+      "id": "e0a1d5c0-15ed-4000-8002-000000000094",
+      "fromId": "e0a1d5c0-15ed-4000-8002-000000000021",
+      "toId": "e0a1d5c0-15ed-4000-8002-000000000024",
+      "label": "sends MessageSent",
+      "technology": "AMQP",
+      "kind": "structural",
+      "lineShape": null,
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    },
+    {
+      "id": "e0a1d5c0-15ed-4000-8002-000000000095",
+      "fromId": "e0a1d5c0-15ed-4000-8002-000000000024",
+      "toId": "e0a1d5c0-15ed-4000-8002-000000000023",
+      "label": "reads who is online",
+      "technology": "RESP",
+      "kind": "structural",
+      "lineShape": null,
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    },
+    {
+      "id": "e0a1d5c0-15ed-4000-8002-000000000096",
+      "fromId": "e0a1d5c0-15ed-4000-8002-000000000024",
+      "toId": "e0a1d5c0-15ed-4000-8002-000000000012",
+      "label": "sends notifications",
+      "technology": "HTTPS",
+      "kind": "structural",
+      "lineShape": null,
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    }
+  ],
+  "messages": [
+    {
+      "id": "e0a1d5c0-15ed-4000-8002-000000000080",
+      "name": "MessageSent",
+      "description": "A message is stored and its recipients can be told.",
+      "producerId": "e0a1d5c0-15ed-4000-8002-000000000021",
+      "consumerIds": [
+        "e0a1d5c0-15ed-4000-8002-000000000024"
+      ],
+      "schemaId": "e0a1d5c0-15ed-4000-8002-000000000033",
+      "tags": [],
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    }
+  ],
+  "schemas": [
+    {
+      "id": "e0a1d5c0-15ed-4000-8002-000000000030",
+      "name": "SendMessage",
+      "description": "The body of POST /messages.",
+      "content": "{\"type\":\"object\",\"required\":[\"conversationId\",\"text\"],\"properties\":{\"conversationId\":{\"type\":\"string\",\"pattern\":\"^[a-z]-[0-9]+$\"},\"text\":{\"type\":\"string\",\"minLength\":1}},\"additionalProperties\":false}",
+      "version": 1,
+      "factStatus": "declared",
+      "provenance": null
+    },
+    {
+      "id": "e0a1d5c0-15ed-4000-8002-000000000031",
+      "name": "MessageAccepted",
+      "description": "The answer of POST /messages.",
+      "content": "{\"type\":\"object\",\"required\":[\"messageId\",\"status\"],\"properties\":{\"messageId\":{\"type\":\"string\",\"pattern\":\"^[a-z]-[0-9]+$\"},\"status\":{\"enum\":[\"accepted\"]}},\"additionalProperties\":false}",
+      "version": 1,
+      "factStatus": "declared",
+      "provenance": null
+    },
+    {
+      "id": "e0a1d5c0-15ed-4000-8002-000000000032",
+      "name": "StoreMessage",
+      "description": "The request of StoreMessage.",
+      "content": "{\"type\":\"object\",\"required\":[\"conversationId\",\"messageId\",\"senderId\",\"text\"],\"properties\":{\"conversationId\":{\"type\":\"string\",\"pattern\":\"^[a-z]-[0-9]+$\"},\"messageId\":{\"type\":\"string\",\"pattern\":\"^[a-z]-[0-9]+$\"},\"senderId\":{\"type\":\"string\",\"pattern\":\"^[a-z]-[0-9]+$\"},\"text\":{\"type\":\"string\",\"minLength\":1}},\"additionalProperties\":false}",
+      "version": 1,
+      "factStatus": "declared",
+      "provenance": null
+    },
+    {
+      "id": "e0a1d5c0-15ed-4000-8002-000000000033",
+      "name": "MessageSent",
+      "description": "A message is stored in its conversation.",
+      "content": "{\"type\":\"object\",\"required\":[\"conversationId\",\"messageId\",\"recipientIds\"],\"properties\":{\"conversationId\":{\"type\":\"string\",\"pattern\":\"^[a-z]-[0-9]+$\"},\"messageId\":{\"type\":\"string\",\"pattern\":\"^[a-z]-[0-9]+$\"},\"recipientIds\":{\"type\":\"array\",\"items\":{\"type\":\"string\",\"pattern\":\"^[a-z]-[0-9]+$\"},\"minItems\":1}},\"additionalProperties\":false}",
+      "version": 1,
+      "factStatus": "declared",
+      "provenance": null
+    },
+    {
+      "id": "e0a1d5c0-15ed-4000-8002-000000000034",
+      "name": "PushRequest",
+      "description": "The body of POST /push.",
+      "content": "{\"type\":\"object\",\"required\":[\"deviceTokens\",\"title\",\"body\"],\"properties\":{\"deviceTokens\":{\"type\":\"array\",\"items\":{\"type\":\"string\",\"minLength\":1},\"minItems\":1},\"title\":{\"type\":\"string\",\"minLength\":1},\"body\":{\"type\":\"string\",\"minLength\":1}},\"additionalProperties\":false}",
+      "version": 1,
+      "factStatus": "declared",
+      "provenance": null
+    }
+  ],
+  "operations": [
+    {
+      "id": "e0a1d5c0-15ed-4000-8002-000000000040",
+      "ownerId": "e0a1d5c0-15ed-4000-8002-000000000020",
+      "name": "POST /messages",
+      "transport": "http",
+      "requestSchemaId": "e0a1d5c0-15ed-4000-8002-000000000030",
+      "responseSchemaId": "e0a1d5c0-15ed-4000-8002-000000000031",
+      "timeoutMs": 3000,
+      "retry": {
+        "maxAttempts": 1,
+        "backoffMs": 0
+      },
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    },
+    {
+      "id": "e0a1d5c0-15ed-4000-8002-000000000041",
+      "ownerId": "e0a1d5c0-15ed-4000-8002-000000000021",
+      "name": "StoreMessage",
+      "transport": "grpc",
+      "requestSchemaId": "e0a1d5c0-15ed-4000-8002-000000000032",
+      "responseSchemaId": null,
+      "timeoutMs": 1000,
+      "retry": {
+        "maxAttempts": 2,
+        "backoffMs": 50
+      },
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    },
+    {
+      "id": "e0a1d5c0-15ed-4000-8002-000000000042",
+      "ownerId": "e0a1d5c0-15ed-4000-8002-000000000012",
+      "name": "POST /push",
+      "transport": "http",
+      "requestSchemaId": "e0a1d5c0-15ed-4000-8002-000000000034",
+      "responseSchemaId": null,
+      "timeoutMs": 2000,
+      "retry": {
+        "maxAttempts": 2,
+        "backoffMs": 500
+      },
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    }
+  ],
+  "channels": [
+    {
+      "id": "e0a1d5c0-15ed-4000-8002-000000000050",
+      "name": "message-events",
+      "kind": "topic",
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    },
+    {
+      "id": "e0a1d5c0-15ed-4000-8002-000000000051",
+      "name": "notifier.message-sent",
+      "kind": "queue",
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    },
+    {
+      "id": "e0a1d5c0-15ed-4000-8002-000000000052",
+      "name": "message-events.dlq",
+      "kind": "queue",
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    }
+  ],
+  "subscriptions": [
+    {
+      "id": "e0a1d5c0-15ed-4000-8002-000000000060",
+      "channelId": "e0a1d5c0-15ed-4000-8002-000000000051",
+      "consumerId": "e0a1d5c0-15ed-4000-8002-000000000024",
+      "retry": {
+        "maxAttempts": 3,
+        "backoffMs": 1000
+      },
+      "deadLetterChannelId": "e0a1d5c0-15ed-4000-8002-000000000052",
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    }
+  ],
+  "bindings": [
+    {
+      "id": "e0a1d5c0-15ed-4000-8002-000000000070",
+      "sourceChannelId": "e0a1d5c0-15ed-4000-8002-000000000050",
+      "targetChannelId": "e0a1d5c0-15ed-4000-8002-000000000051",
+      "routingKey": "message.sent",
+      "factStatus": "declared",
+      "provenance": null,
+      "stale": null
+    }
+  ]
+}

@@ -420,6 +420,65 @@ public class ShareLinkTests(IntegrationFixture fixture) : IClassFixture<Integrat
     }
 
     [Fact]
+    public async Task A_share_link_leaves_out_the_lines_its_view_hides()
+    {
+        var owner = await TestHost.SignInAsync(fixture.Factory);
+        var (_, projectId) = await TestHost.CreateProjectAsync(owner);
+        var shop = await AddElementAsync(owner, projectId, "Shop");
+        var bank = await AddElementAsync(owner, projectId, "Bank");
+        async Task<Guid> Relate(string label, string kind)
+        {
+            var id = Guid.NewGuid();
+            await TestHost.Created(owner.PostAsJsonAsync($"/api/projects/{projectId}/relationships",
+                new { id, fromId = shop, toId = bank, label, kind }));
+            return id;
+        }
+        var kept = await Relate("Kept label", "structural");
+        var byId = await Relate("Hidden by id label", "structural");
+        var byKind = await Relate("Hidden by kind label", "behavioural");
+
+        var view = Guid.NewGuid();
+        await TestHost.Created(owner.PostAsJsonAsync($"/api/projects/{projectId}/views", new { id = view, name = "Clean" }));
+        var layout = await owner.PutAsJsonAsync($"/api/projects/{projectId}/views/{view}/layout", new
+        {
+            positions = new[] { new { elementId = shop, x = 0.0, y = 0.0 }, new { elementId = bank, x = 500.0, y = 0.0 } },
+        });
+        Assert.True(layout.IsSuccessStatusCode, await layout.Content.ReadAsStringAsync());
+        var visibility = await owner.PutAsJsonAsync($"/api/projects/{projectId}/views/{view}/layout/visibility", new
+        {
+            derivedLines = true, structural = true, behavioural = false, crossLevel = true,
+            hiddenRelationshipIds = new[] { byId }, hiddenDerivedLines = Array.Empty<object>(),
+        });
+        Assert.True(visibility.IsSuccessStatusCode, await visibility.Content.ReadAsStringAsync());
+
+        foreach (var mode in new[] { "live", "pinned" })
+        {
+            Guid? revision = null;
+            if (mode == "pinned")
+            {
+                revision = Guid.NewGuid();
+                await TestHost.Created(owner.PostAsJsonAsync($"/api/projects/{projectId}/revisions", new { id = revision, name = "r1" }));
+            }
+            var (_, token) = await CreateLinkAsync(owner, projectId, new { scope = "view", viewId = view, mode, revisionId = revision });
+            using var visitor = Anonymous();
+            var body = await visitor.GetStringAsync($"/api/share/{token}");
+            Assert.Contains("Kept label", body);
+            Assert.Contains(kept.ToString(), body);
+            foreach (var hidden in new[] { "Hidden by id label", "Hidden by kind label", byId.ToString(), byKind.ToString() })
+                Assert.DoesNotContain(hidden, body, StringComparison.OrdinalIgnoreCase);
+            Assert.False(JsonNode.Parse(body)!["views"]![0]!["lineVisibility"]!["behavioural"]!.GetValue<bool>());
+        }
+
+        // A project link shares the model of every view, so it names what this view hides and the page leaves it out.
+        var (_, projectToken) = await CreateLinkAsync(owner, projectId, ProjectLink());
+        using var reader = Anonymous();
+        var page = JsonNode.Parse(await reader.GetStringAsync($"/api/share/{projectToken}"))!;
+        var shared = page["views"]!.AsArray().Single(v => v!["id"]!.GetValue<Guid>() == view)!["lineVisibility"]!;
+        Assert.Equal(byId, Assert.Single(shared["hiddenRelationshipIds"]!.AsArray())!.GetValue<Guid>());
+        Assert.False(shared["behavioural"]!.GetValue<bool>());
+    }
+
+    [Fact]
     public void A_flow_that_names_a_hidden_fact_is_not_shared_and_a_shared_flow_carries_no_payload()
     {
         var (caller, operation) = (Guid.NewGuid(), Guid.NewGuid());

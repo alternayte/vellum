@@ -40,9 +40,34 @@ A derived line is not a fact. Vellum computes it again from the model each time 
 
 A derived line has no saved sides. Each end attaches to the side that faces the other card. You cannot drag its ends, delete it or change its kind. To change a fact under it, open the relationship.
 
+## Hidden lines
+
+A view can hide lines to clean up a busy diagram. Hidden lines are layout data of the view. They are not model facts. The view keeps the choice for each person who opens it. The model and the other views keep each relationship.
+
+A view has these controls:
+
+| Control | What it hides |
+|---|---|
+| **Derived lines** | Each derived line. |
+| **Structural lines** | Each structural relationship. |
+| **Behavioural lines** | Each behavioural relationship. |
+| **Cross-level lines** | Each cross-level line. |
+| **Hide from this view** | One relationship. |
+| **Hide this line** | One derived line. |
+
+A cross-level line is a direct relationship whose two visible ends sit at different nesting depths. For example, a line from a top-level system to a child inside an expanded card is a cross-level line.
+
+A relationship that the view hides by its kind or one at a time is not drawn at all in this view. It is not drawn as itself and it is not part of a derived line.
+
+A derived line has no ID of its own. Vellum keeps a hidden derived line by its pair of cards, in one direction. A derived line between two other cards shows. When the relationships under a hidden pair change, the line stays hidden. When you collapse or expand a card, the pair can change and the new line shows.
+
+The chip **N lines hidden** shows on the canvas when the view does not draw a line of the level. Select the chip to open the controls and the list of lines hidden one at a time. Select **Show** to show a line again. **Show hidden lines** draws the hidden lines faint for you only. Vellum does not save it.
+
 ## Exports and share links
 
 The SVG, PNG, Mermaid and Structurizr DSL exports draw the same derived lines as the canvas with every card collapsed. The rules are the same in the canvas and on the server. See [Diagram export formats](/reference/diagram-export-formats/#derived-lines).
+
+The exports and the share links do not draw the lines that the view hides. See [Hidden lines](/reference/diagram-export-formats/#hidden-lines).
 
 A share link draws the derived lines of the facts that it shares. A view link shares the elements that the view places, with their parents. A relationship with an end that the view does not place is not shared, so a view link does not draw a derived line for it. See [Share and embed a read-only page](/how-to/share-and-embed/).
 
