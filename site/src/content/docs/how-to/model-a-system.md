@@ -155,6 +155,20 @@ A diagram is a saved view of the model. It has a name and a position for each el
 
 Each diagram shows the same model. An element that you delete is gone from each diagram.
 
+## Hide lines in a diagram
+
+A busy diagram can hide lines. The diagram keeps the hidden lines for each person who opens it. The model keeps each relationship. You must be an Editor to hide or show a line.
+
+1. Right-click the canvas. In the **Lines** group, clear **Derived lines**, **Structural lines**, **Behavioural lines** or **Cross-level lines**.
+2. To hide one relationship, right-click it and select **Hide from this view**.
+3. To hide one derived line, right-click it and select **Hide this line**. To hide each derived line, select **Hide all derived lines**.
+4. To see what the diagram hides, select the chip **N lines hidden** at the bottom left of the canvas. Select **Show** next to a line to show it again.
+5. To look at the hidden lines without a change to the diagram, select **Show hidden lines** in the canvas menu or in the chip. The hidden lines show faint for you only, until you clear it.
+
+**Tidy layout** does not use the hidden lines to arrange the diagram. The exports and the share links do not draw them. See [Views, levels and derived lines](/concepts/views-levels-and-derived-lines/#hidden-lines).
+
+The API calls are `GET /api/projects/{projectId}/views/{viewId}`, which returns `lineVisibility`, and `PUT /api/projects/{projectId}/views/{viewId}/layout/visibility`, which replaces it.
+
 ## Rename or delete a diagram
 
 1. Select **Model** in the sidebar, then the **Files** tab.

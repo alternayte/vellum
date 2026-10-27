@@ -7,6 +7,7 @@ import {
   postApiProjectsByProjectIdViews,
   putApiProjectsByProjectIdViewsByViewIdLayout,
   putApiProjectsByProjectIdViewsByViewIdLayoutEdgesByRelationshipId,
+  putApiProjectsByProjectIdViewsByViewIdLayoutVisibility,
   patchApiProjectsByProjectIdViewsByViewId,
   deleteApiProjectsByProjectIdViewsByViewId,
 } from '@/api/generated'
@@ -14,6 +15,7 @@ import '@/api/client' // ensure client is configured
 import { unwrap } from '@/hooks/use-contracts'
 import { shownInline } from '@/lib/mutation-errors'
 import type { LineRoute } from '@/lib/layout'
+import type { LineVisibility } from '@/lib/line-visibility'
 
 export interface View {
   id: string
@@ -33,6 +35,8 @@ export interface ViewDetail extends View {
   edges: { relationshipId: string; routePoints: unknown; sourceSide?: string | null; targetSide?: string | null }[]
   /** The saved route of each derived line that has one in this view, by its two cards. */
   lines: LayoutLine[]
+  /** Which lines the view draws. A view that hides nothing has every switch on and no hidden line. */
+  lineVisibility?: LineVisibility
 }
 
 /** The route of the derived line from one card to another. A route that does not parse draws nothing. */
@@ -216,6 +220,37 @@ export function useSaveEdgeSides(projectId: string, viewId: string | null) {
         const keep = sourceSide !== null || targetSide !== null || routePoints !== null
         return { ...old, edges: keep ? [...rest, { relationshipId, routePoints, sourceSide, targetSide }] : rest }
       })
+      return { previous }
+    },
+    onError: (error, _vars, context) => {
+      if (context?.previous) queryClient.setQueryData(key, context.previous)
+      toast.error(error.message)
+    },
+  })
+}
+
+/**
+ * Saves which lines a view draws, for everyone who opens it. The canvas shows the change at once;
+ * a failed save puts the saved visibility back.
+ */
+export function useSaveLineVisibility(projectId: string, viewId: string | null) {
+  const queryClient = useQueryClient()
+  const key = ['projects', projectId, 'views', viewId]
+
+  return useMutation({
+    // Saves run one after another, so the last change a person made is the one that stays.
+    scope: { id: `line-visibility-${viewId}` },
+    mutationFn: async (visibility: LineVisibility) => {
+      if (!viewId) throw new Error('No diagram is open.')
+      unwrap(
+        await putApiProjectsByProjectIdViewsByViewIdLayoutVisibility({ path: { projectId, viewId }, body: visibility }),
+        'The hidden lines of the diagram were not saved.',
+      )
+    },
+    onMutate: async (visibility) => {
+      await queryClient.cancelQueries({ queryKey: key })
+      const previous = queryClient.getQueryData<ViewDetail>(key)
+      queryClient.setQueryData<ViewDetail>(key, (old) => (old ? { ...old, lineVisibility: visibility } : old))
       return { previous }
     },
     onError: (error, _vars, context) => {

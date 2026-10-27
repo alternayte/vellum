@@ -17,6 +17,8 @@ export interface DerivedEdgeData extends Record<string, unknown> {
   forward?: boolean
   /** The route of the auto layout. It holds while both cards stay. */
   route?: LayoutRoute | null
+  /** The view hides this line; it is drawn faint because the person asked to see hidden lines. */
+  hiddenInView?: boolean
 }
 
 export type DerivedEdgeType = Edge<DerivedEdgeData, 'derived-edge'>
@@ -77,6 +79,7 @@ export const DerivedEdge = memo(function DerivedEdge({
             'nodrag nopan absolute flex max-w-56 items-center gap-1.5 rounded-full border border-dashed bg-card/95 py-0.5 pl-0.5 pr-2 shadow-sm backdrop-blur-sm focus-visible:outline-2 focus-visible:outline-primary',
             selected ? 'border-primary' : 'border-border',
             count === 1 && 'pl-2',
+            data.hiddenInView && 'opacity-40',
           )}
           style={{ transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`, pointerEvents: 'all', zIndex: labelZ(sourceBoxes, targetBoxes) }}
           onMouseEnter={() => setHovered(true)}

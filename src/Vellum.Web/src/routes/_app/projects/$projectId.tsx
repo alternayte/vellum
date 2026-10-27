@@ -41,7 +41,8 @@ import { useAddRelationship, useUpdateRelationship, useRemoveRelationship } from
 import { isProjectRefusal, projectErrorBlocks, refuseWrite, useModel, useProject, writeGuard } from '@/hooks/use-model'
 import { useFactLabel } from '@/lib/fact-labels'
 import { toast } from 'sonner'
-import { useViews, useView, useCreateView, useSaveLayout, useSaveEdgeSides } from '@/hooks/use-views'
+import { useViews, useView, useCreateView, useSaveLayout, useSaveEdgeSides, useSaveLineVisibility } from '@/hooks/use-views'
+import { lineVisibilityOf, type LineVisibility } from '@/lib/line-visibility'
 import { useDocs, useCreateDoc } from '@/hooks/use-docs'
 import { useSpaces } from '@/hooks/use-spaces'
 import { useSchemas } from '@/hooks/use-schemas'
@@ -197,6 +198,10 @@ function ProjectWorkspace() {
   const factLabel = guard(useFactLabel(projectId, activeDraftStreamId))
   const { saveLayout: writeLayout } = useSaveLayout(projectId, activeViewId)
   const saveLayout = useCallback<typeof writeLayout>((positions, routes) => (readOnly ? refuseWrite() : writeLayout(positions, routes)), [readOnly, writeLayout])
+  // Which lines the open view draws: layout data of the view, saved for everyone.
+  const lineVisibility = useMemo(() => lineVisibilityOf(activeView?.lineVisibility), [activeView])
+  const saveLineVisibility = guard(useSaveLineVisibility(projectId, activeViewId))
+  const handleLineVisibilityChange = (visibility: LineVisibility) => saveLineVisibility.mutate(visibility)
   const saveEdgeSides = guard(useSaveEdgeSides(projectId, activeViewId))
   const handleEdgeSidesChange = useCallback(
     (relationshipId: string, sides: { sourceSide: string | null; targetSide: string | null }) => saveEdgeSides.mutate({ relationshipId, ...sides }),
@@ -281,7 +286,7 @@ function ProjectWorkspace() {
     }))
     const free = visibleCanvasRect()
     // The layout saves the route of each line with the places, so a line passes the cards between its ends.
-    const { positions, routes } = await computeLayout(sized, relationships, free ? { width: free.width, height: free.height } : undefined, useCanvasStore.getState().expandedNodeIds)
+    const { positions, routes } = await computeLayout(sized, relationships, free ? { width: free.width, height: free.height } : undefined, useCanvasStore.getState().expandedNodeIds, lineVisibility)
     saveLayout(positions, routes)
     // The layout moves every node, so show the result: fit once the nodes have their new places.
     requestAnimationFrame(() => requestAnimationFrame(() => fitViewRef.current?.()))
@@ -346,7 +351,7 @@ function ProjectWorkspace() {
       ...activeView.edges.map((e) => ({ fromId: fromOf.get(e.relationshipId), route: parseRoute(e.routePoints) })),
       ...(activeView.lines ?? []).map((l) => ({ fromId: l.fromId, route: parseRoute(l.route) })),
     ].filter((r): r is { fromId: string; route: LayoutRoute } => !!r.fromId && r.route !== null)
-    void placeNew(sized, relationships, activeView.positions, free ? { width: free.width, height: free.height } : undefined, useCanvasStore.getState().expandedNodeIds, savedRoutes)
+    void placeNew(sized, relationships, activeView.positions, free ? { width: free.width, height: free.height } : undefined, useCanvasStore.getState().expandedNodeIds, savedRoutes, lineVisibilityOf(activeView.lineVisibility))
       .then(({ positions: fresh, routes }) => {
         if (fresh.length === 0) return
         // A parent that grows comes back with its new size, in place of its saved row.
@@ -909,6 +914,9 @@ function ProjectWorkspace() {
               edgeSides={activeView?.edges}
               lineRoutes={activeView?.lines}
               onEdgeSidesChange={activeView ? handleEdgeSidesChange : undefined}
+              lineControls={!!activeView}
+              lineVisibility={lineVisibility}
+              onLineVisibilityChange={activeView && !readOnly ? handleLineVisibilityChange : undefined}
             />
           )}
           {!activeDocId && <AssistantCanvasButton />}

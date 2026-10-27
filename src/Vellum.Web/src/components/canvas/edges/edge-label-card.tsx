@@ -1,4 +1,6 @@
 interface EdgeLabelCardProps {
+  /** The line is hidden in the view and drawn only because the person asked to see hidden lines. */
+  faint?: boolean
   label: string | null
   technology: string | null
   showTechnology: boolean
@@ -10,7 +12,7 @@ interface EdgeLabelCardProps {
   zIndex?: number
 }
 
-export function EdgeLabelCard({ label, technology, showTechnology, x, y, below = false, zIndex }: EdgeLabelCardProps) {
+export function EdgeLabelCard({ label, technology, showTechnology, x, y, below = false, zIndex, faint = false }: EdgeLabelCardProps) {
   if (!label && !technology) return null
 
   return (
@@ -20,6 +22,7 @@ export function EdgeLabelCard({ label, technology, showTechnology, x, y, below =
         transform: below ? `translate(-50%, 0) translate(${x}px, ${y + 6}px)` : `translate(-50%, -50%) translate(${x}px, ${y}px)`,
         pointerEvents: 'all',
         zIndex,
+        ...(faint ? { opacity: 0.4 } : {}),
       }}
     >
       {label && (

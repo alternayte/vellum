@@ -12974,6 +12974,48 @@
         }
       }
     },
+    "/api/projects/{projectId}/views/{viewId}/layout/visibility": {
+      "put": {
+        "tags": [
+          "Views"
+        ],
+        "parameters": [
+          {
+            "name": "projectId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "viewId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LineVisibilityDto"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
     "/api/setup": {
       "post": {
         "tags": [
@@ -23232,6 +23274,23 @@
           }
         }
       },
+      "HiddenDerivedLineDto": {
+        "required": [
+          "fromId",
+          "toId"
+        ],
+        "type": "object",
+        "properties": {
+          "fromId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "toId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
       "ImpactChangeDto": {
         "required": [
           "id",
@@ -24895,6 +24954,44 @@
               "string"
             ],
             "format": "double"
+          }
+        }
+      },
+      "LineVisibilityDto": {
+        "required": [
+          "derivedLines",
+          "structural",
+          "behavioural",
+          "crossLevel",
+          "hiddenRelationshipIds",
+          "hiddenDerivedLines"
+        ],
+        "type": "object",
+        "properties": {
+          "derivedLines": {
+            "type": "boolean"
+          },
+          "structural": {
+            "type": "boolean"
+          },
+          "behavioural": {
+            "type": "boolean"
+          },
+          "crossLevel": {
+            "type": "boolean"
+          },
+          "hiddenRelationshipIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "hiddenDerivedLines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/HiddenDerivedLineDto"
+            }
           }
         }
       },
@@ -33216,6 +33313,23 @@
           }
         }
       },
+      "SharedHiddenPair": {
+        "required": [
+          "fromId",
+          "toId"
+        ],
+        "type": "object",
+        "properties": {
+          "fromId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "toId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      },
       "SharedLineRoute": {
         "required": [
           "fromId",
@@ -33234,6 +33348,44 @@
           },
           "route": {
             "$ref": "#/components/schemas/SharedRoute"
+          }
+        }
+      },
+      "SharedLineVisibility": {
+        "required": [
+          "derivedLines",
+          "structural",
+          "behavioural",
+          "crossLevel",
+          "hiddenRelationshipIds",
+          "hiddenDerivedLines"
+        ],
+        "type": "object",
+        "properties": {
+          "derivedLines": {
+            "type": "boolean"
+          },
+          "structural": {
+            "type": "boolean"
+          },
+          "behavioural": {
+            "type": "boolean"
+          },
+          "crossLevel": {
+            "type": "boolean"
+          },
+          "hiddenRelationshipIds": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          "hiddenDerivedLines": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SharedHiddenPair"
+            }
           }
         }
       },
@@ -34050,6 +34202,16 @@
             "items": {
               "$ref": "#/components/schemas/SharedHiddenLine"
             }
+          },
+          "lineVisibility": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/SharedLineVisibility"
+              }
+            ]
           }
         }
       },

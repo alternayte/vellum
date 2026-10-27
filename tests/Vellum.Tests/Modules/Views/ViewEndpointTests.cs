@@ -214,4 +214,51 @@ public class ViewEndpointTests : IClassFixture<IntegrationFixture>
         edge = Assert.Single((await client.GetFromJsonAsync<ViewDetailDto>(view))!.Edges);
         Assert.Equal(("bottom", "right"), (edge.SourceSide, edge.TargetSide));
     }
+
+    [Fact]
+    public async Task Line_visibility_round_trips_with_the_view_and_hiding_nothing_clears_it()
+    {
+        using var client = await CreateAuthenticatedClientAsync(_fixture.Factory);
+        var projectId = await SetupProjectAsync(client);
+        var viewId = Guid.NewGuid();
+        await client.PostAsJsonAsync($"/api/projects/{projectId}/views", new { id = viewId, name = "Busy" });
+        var view = $"/api/projects/{projectId}/views/{viewId}";
+
+        var fresh = (await client.GetFromJsonAsync<ViewDetailDto>(view))!.LineVisibility;
+        Assert.True(fresh.DerivedLines && fresh.Structural && fresh.Behavioural && fresh.CrossLevel);
+        Assert.Empty(fresh.HiddenRelationshipIds);
+        Assert.Empty(fresh.HiddenDerivedLines);
+
+        var (relationship, from, to) = (Guid.NewGuid(), Guid.NewGuid(), Guid.NewGuid());
+        var saved = await client.PutAsJsonAsync($"{view}/layout/visibility", new
+        {
+            derivedLines = false, structural = true, behavioural = false, crossLevel = false,
+            hiddenRelationshipIds = new[] { relationship, relationship },
+            hiddenDerivedLines = new[] { new { fromId = from, toId = to } },
+        });
+        Assert.Equal(HttpStatusCode.OK, saved.StatusCode);
+
+        // A save of the layout keeps the visibility.
+        await client.PutAsJsonAsync($"{view}/layout", new { positions = new[] { new { elementId = from, x = 1.0, y = 2.0 } } });
+        var read = (await client.GetFromJsonAsync<ViewDetailDto>(view))!.LineVisibility;
+        Assert.Equal((false, true, false, false), (read.DerivedLines, read.Structural, read.Behavioural, read.CrossLevel));
+        Assert.Equal([relationship], read.HiddenRelationshipIds);
+        Assert.Equal([new HiddenDerivedLineDto(from, to)], read.HiddenDerivedLines);
+
+        var refused = await client.PutAsJsonAsync($"{view}/layout/visibility", new
+        {
+            derivedLines = true, structural = true, behavioural = true, crossLevel = true,
+            hiddenRelationshipIds = Array.Empty<Guid>(),
+            hiddenDerivedLines = new[] { new { fromId = from, toId = from } },
+        });
+        Assert.Equal(HttpStatusCode.BadRequest, refused.StatusCode);
+
+        await client.PutAsJsonAsync($"{view}/layout/visibility", new
+        {
+            derivedLines = true, structural = true, behavioural = true, crossLevel = true,
+            hiddenRelationshipIds = Array.Empty<Guid>(), hiddenDerivedLines = Array.Empty<object>(),
+        });
+        using (var scope = _fixture.Factory.Services.CreateScope())
+            Assert.False(await scope.ServiceProvider.GetRequiredService<AppDbContext>().LineVisibilities.AnyAsync(l => l.ViewId == viewId));
+    }
 }

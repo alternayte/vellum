@@ -20,7 +20,8 @@ public sealed record RelationshipSides(CardSide? Source, CardSide? Target);
 /// One view of a model as the canvas shows it with every card closed: the elements of the view's
 /// level, the frame of the element whose inside the level is, the relationships between two shown
 /// elements, and the derived lines of the relationships whose ends are hidden inside shown
-/// elements (<see cref="Vellum.Modules.Diagrams.DerivedLines"/>). Every list has a fixed order, so the same model and the
+/// elements (<see cref="Vellum.Modules.Diagrams.DerivedLines"/>), less the lines the view hides
+/// (<see cref="LineVisibility"/>). Every list has a fixed order, so the same model and the
 /// same layout give the same diagram.
 /// </summary>
 public sealed record ViewDiagram(
@@ -68,8 +69,9 @@ public sealed record ViewDiagram(
     /// </summary>
     public static ViewDiagram Project(
         ViewEntity view, IEnumerable<LayoutPositionEntity> positions, PinnedModel model, IEnumerable<LayoutEdgeEntity>? edges = null,
-        IEnumerable<LayoutLineEntity>? lines = null)
+        IEnumerable<LayoutLineEntity>? lines = null, LineVisibility? visibility = null)
     {
+        visibility ??= LineVisibility.AllShown;
         var edgeList = edges?.ToList() ?? [];
         var lineList = lines?.ToList() ?? [];
         var state = model.State;
@@ -109,7 +111,7 @@ public sealed record ViewDiagram(
         }
 
         var ids = shown.Select(e => e.Element.Id).ToHashSet();
-        var (direct, derived) = Diagrams.DerivedLines.Project(state.Elements, state.Relationships.Values, ids);
+        var (direct, derived) = Diagrams.DerivedLines.Project(state.Elements, state.Relationships.Values, ids, visibility);
         var relationships = direct.OrderBy(rel => rel.Id.Value).ToList();
 
         var sides = new Dictionary<RelationshipId, RelationshipSides>();
@@ -129,7 +131,7 @@ public sealed record ViewDiagram(
             if (LayoutRoute.Read(line.Route) is { } route)
                 lineRoutes[(new ElementId(line.FromId), new ElementId(line.ToId))] = route;
 
-        return new ViewDiagram(view.Name, root, shown, relationships, model.Pin, LayoutFingerprint(view, placed.Values, edgeList, lineList),
+        return new ViewDiagram(view.Name, root, shown, relationships, model.Pin, LayoutFingerprint(view, placed.Values, edgeList, lineList, visibility),
             sides, derived, routes, lineRoutes);
     }
 
@@ -140,13 +142,14 @@ public sealed record ViewDiagram(
     /// side, target side, an empty word for auto) in order of relationship ID, then each
     /// relationship with a saved route (<c>route</c>, relationship ID, <see cref="LayoutRoute.Text"/>)
     /// in order of relationship ID, then each derived line with a saved route (<c>line</c>, from ID,
-    /// to ID, the route) in order of from ID and to ID. A view without a saved side or route has
-    /// the fingerprint it had before sides and routes existed. The same revision and the same
+    /// to ID, the route) in order of from ID and to ID, then, when the view hides a line,
+    /// <c>visibility</c> and <see cref="LineVisibility.Text"/>. A view without a saved side, route or
+    /// hidden line has the fingerprint it had before those existed. The same revision and the same
     /// fingerprint give the same bytes.
     /// </summary>
     public static string LayoutFingerprint(
         ViewEntity view, IEnumerable<LayoutPositionEntity> positions, IEnumerable<LayoutEdgeEntity>? edges = null,
-        IEnumerable<LayoutLineEntity>? lines = null)
+        IEnumerable<LayoutLineEntity>? lines = null, LineVisibility? visibility = null)
     {
         var text = new StringBuilder();
         text.Append(view.Name).Append('\n').Append(view.RootElementId?.ToString() ?? "").Append('\n');
@@ -159,6 +162,8 @@ public sealed record ViewDiagram(
             text.Append("route,").Append(id).Append(',').Append(route!.Text()).Append('\n');
         foreach (var (from, to, route) in (lines ?? []).Select(l => (l.FromId, l.ToId, Route: LayoutRoute.Read(l.Route))).Where(l => l.Route is not null).OrderBy(l => l.FromId).ThenBy(l => l.ToId))
             text.Append("line,").Append(from).Append(',').Append(to).Append(',').Append(route!.Text()).Append('\n');
+        if (visibility is { HidesAnything: true })
+            text.Append("visibility,").Append(visibility.Text()).Append('\n');
         return "sha256:" + Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(text.ToString())));
     }
 

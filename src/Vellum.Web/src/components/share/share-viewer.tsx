@@ -13,6 +13,7 @@ import { canContain } from '@/lib/containment-rules'
 import { factStatusColor, factStatusLabel } from '@/lib/fact-status'
 import { cn } from '@/lib/utils'
 import { readShare, unlockShare, type SharedPage, type SharedStep } from '@/lib/share-api'
+import { lineVisibilityOf } from '@/lib/line-visibility'
 
 type Tab = 'diagram' | 'contracts' | 'flows' | 'docs' | 'decisions' | 'promises' | 'costs'
 
@@ -196,6 +197,8 @@ function Diagram({ page, view, views, onView }: { page: SharedPage; view: Shared
   })), [view])
   const lineRoutes = useMemo(() => view?.lines ?? undefined, [view])
   const hiddenLines = useMemo(() => view?.hiddenLines ?? undefined, [view])
+  // The page draws the view as its editors curated it: the lines it hides are not drawn.
+  const lineVisibility = useMemo(() => lineVisibilityOf(view?.lineVisibility), [view])
   const selectedElementId = useShellStore((s) => s.selectedElementId)
   const selectedRelationshipId = useShellStore((s) => s.selectedRelationshipId)
   const selectedDerivedLine = useShellStore((s) => s.selectedDerivedLine)
@@ -219,6 +222,7 @@ function Diagram({ page, view, views, onView }: { page: SharedPage; view: Shared
           edgeSides={edgeSides}
           lineRoutes={lineRoutes}
           hiddenLines={hiddenLines}
+          lineVisibility={lineVisibility}
           messages={page.model.messages}
           onNodeDoubleClick={(id) => {
             const el = page.model.elements.find((e) => e.id === id)

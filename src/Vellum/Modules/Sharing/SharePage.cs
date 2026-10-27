@@ -96,16 +96,36 @@ public sealed record SharedLineRoute(Guid FromId, Guid ToId, SharedRoute Route);
 /// <param name="Label">The label of the one relationship. Null for more than one.</param>
 public sealed record SharedHiddenLine(Guid FromId, Guid ToId, string? Label, int Count);
 
+/// <summary>A derived line the view does not draw, by its two shared cards.</summary>
+public sealed record SharedHiddenPair(Guid FromId, Guid ToId);
+
+/// <summary>
+/// Which lines the diagram draws, as the view saved it (LineVisibility.cs): each switch is true
+/// when its lines are drawn. A relationship hidden by ID or by kind draws neither as itself nor
+/// inside a derived line; a cross-level line is a direct relationship whose two drawn ends sit at
+/// different nesting depths. Only IDs of the page are here.
+/// </summary>
+public sealed record SharedLineVisibility(
+    bool DerivedLines, bool Structural, bool Behavioural, bool CrossLevel,
+    IReadOnlyList<Guid> HiddenRelationshipIds, IReadOnlyList<SharedHiddenPair> HiddenDerivedLines)
+{
+    /// <summary>True when the diagram draws this relationship: it is not hidden by ID or by kind.</summary>
+    public bool Draws(SharedRelationship r) =>
+        !HiddenRelationshipIds.Contains(r.Id) && (r.Kind == "behavioural" ? Behavioural : Structural);
+}
+
 /// <summary>
 /// A saved diagram: the place of each element on it, the saved sides and routes of its
 /// relationships and the saved routes of its derived lines. Presentation only.
 /// <paramref name="Edges"/> is null on a page pinned before sides existed, and
 /// <paramref name="Lines"/> on a page pinned before routes existed: the lines then take auto
 /// curves. <paramref name="HiddenLines"/> is set on a view link only.
+/// <paramref name="LineVisibility"/> is null when the view hides no line.
 /// </summary>
 public sealed record SharedView(
     Guid Id, string Name, IReadOnlyList<SharedPosition> Positions, IReadOnlyList<SharedEdgeSides>? Edges = null,
-    IReadOnlyList<SharedLineRoute>? Lines = null, IReadOnlyList<SharedHiddenLine>? HiddenLines = null);
+    IReadOnlyList<SharedLineRoute>? Lines = null, IReadOnlyList<SharedHiddenLine>? HiddenLines = null,
+    SharedLineVisibility? LineVisibility = null);
 
 /// <summary>A payload schema: a JSON Schema document.</summary>
 public sealed record SharedSchema(Guid Id, string Name, string? Description, string Content, int Version);
@@ -246,27 +266,39 @@ public sealed record SharedPage(
     /// One diagram and the details of what is on it: the elements the view places and their
     /// parents, the facts between them, the schemas those facts name and their cost lines. A
     /// view that places no element shows the whole model, as the canvas does. Flows, docs,
-    /// decisions and promises belong to a project link: a promise can name any fact.
+    /// decisions and promises belong to a project link: a promise can name any fact. A
+    /// relationship the view hides by ID or by kind is not on the page at all.
     /// </summary>
     private SharedPage OnlyView(SharedView view)
     {
-        var model = Model;
-        view = view with { HiddenLines = [] };
+        var visibility = view.LineVisibility;
+        var source = visibility is null ? Model : Model with { Relationships = [.. Model.Relationships.Where(visibility.Draws)] };
+        var drawn = source.Relationships.Select(r => r.Id).ToHashSet();
+        var model = source;
+        view = view with
+        {
+            HiddenLines = [],
+            Edges = view.Edges?.Where(e => drawn.Contains(e.RelationshipId)).ToList(),
+            LineVisibility = visibility is null ? null : visibility with { HiddenRelationshipIds = [] },
+        };
         if (view.Positions.Count > 0)
         {
-            var parents = Model.Elements.ToDictionary(e => e.Id, e => e.ParentId);
+            var parents = source.Elements.ToDictionary(e => e.Id, e => e.ParentId);
             var kept = new HashSet<Guid>();
             foreach (var position in view.Positions)
             {
                 for (Guid? id = position.ElementId; id is { } at && kept.Add(at);)
                     id = parents.GetValueOrDefault(at);
             }
-            var keptRelationships = Model.Relationships.Where(r => kept.Contains(r.FromId) && kept.Contains(r.ToId)).Select(r => r.Id).ToHashSet();
+            var keptRelationships = source.Relationships.Where(r => kept.Contains(r.FromId) && kept.Contains(r.ToId)).Select(r => r.Id).ToHashSet();
             view = view with
             {
                 Edges = view.Edges?.Where(e => keptRelationships.Contains(e.RelationshipId)).ToList(),
                 Lines = view.Lines?.Where(l => kept.Contains(l.FromId) && kept.Contains(l.ToId)).ToList(),
-                HiddenLines = HiddenLines(parents, kept),
+                HiddenLines = HiddenLines(source.Relationships, parents, kept),
+                LineVisibility = view.LineVisibility is { } v
+                    ? v with { HiddenDerivedLines = [.. v.HiddenDerivedLines.Where(l => kept.Contains(l.FromId) && kept.Contains(l.ToId))] }
+                    : null,
             };
 
             var messages = Model.Messages.Where(m => kept.Contains(m.ProducerId))
@@ -276,7 +308,7 @@ public sealed record SharedPage(
             var channelIds = subscriptions.Select(s => s.ChannelId).ToHashSet();
             model = new SharedModel(
                 [.. Model.Elements.Where(e => kept.Contains(e.Id))],
-                [.. Model.Relationships.Where(r => kept.Contains(r.FromId) && kept.Contains(r.ToId))
+                [.. source.Relationships.Where(r => kept.Contains(r.FromId) && kept.Contains(r.ToId))
                     .Select(r => r.MessageId is { } m && !messageIds.Contains(m) ? r with { MessageId = null } : r)],
                 messages,
                 [.. Model.Operations.Where(o => kept.Contains(o.OwnerId))],
@@ -310,7 +342,7 @@ public sealed record SharedPage(
     /// these into the derived line of the cards it draws and the lines are the same as in the app.
     /// An inferred relationship is not on the page, so it is not counted.
     /// </summary>
-    private List<SharedHiddenLine> HiddenLines(IReadOnlyDictionary<Guid, Guid?> parents, IReadOnlySet<Guid> kept)
+    private static List<SharedHiddenLine> HiddenLines(IReadOnlyList<SharedRelationship> relationships, IReadOnlyDictionary<Guid, Guid?> parents, IReadOnlySet<Guid> kept)
     {
         var resolved = new Dictionary<Guid, Guid?>();
         Guid? NearestKept(Guid id)
@@ -331,7 +363,7 @@ public sealed record SharedPage(
         }
 
         var groups = new Dictionary<(Guid From, Guid To), List<SharedRelationship>>();
-        foreach (var r in Model.Relationships)
+        foreach (var r in relationships)
         {
             if (kept.Contains(r.FromId) && kept.Contains(r.ToId)) continue;
             if (NearestKept(r.FromId) is not { } from || NearestKept(r.ToId) is not { } to || from == to) continue;
@@ -401,11 +433,20 @@ public sealed partial class SharePageReader(IServiceProvider services, AppDbCont
             .Select(l => (l.ViewId, Route: SharedRoute.Of(l.Route) is { } route ? new SharedLineRoute(l.FromId, l.ToId, route) : null))
             .Where(l => l.Route is not null)
             .ToLookup(l => l.ViewId, l => l.Route!);
+        // Only the IDs of the page: a hidden relationship that is not shared is not named.
+        var visibility = (await db.LineVisibilities.AsNoTracking().Where(l => viewIds.Contains(l.ViewId)).ToListAsync(ct))
+            .Select(l => (l.ViewId, Visibility: LineVisibility.Of(l)))
+            .ToDictionary(l => l.ViewId, l => new SharedLineVisibility(
+                l.Visibility.DerivedLines, l.Visibility.Structural, l.Visibility.Behavioural, l.Visibility.CrossLevel,
+                [.. l.Visibility.HiddenRelationshipIds.Where(shownRelationships.Contains).Distinct().Order()],
+                [.. l.Visibility.HiddenDerivedLines.Where(p => shown.Contains(p.FromId) && shown.Contains(p.ToId))
+                    .Distinct().OrderBy(p => p.FromId).ThenBy(p => p.ToId).Select(p => new SharedHiddenPair(p.FromId, p.ToId))]));
         var sharedViews = views
             .Select(v => new SharedView(v.Id, v.Name,
                 [.. positions[v.Id].OrderBy(p => p.ElementId).Select(p => new SharedPosition(p.ElementId, p.X, p.Y, p.Width, p.Height))],
                 [.. edges[v.Id].OrderBy(e => e.RelationshipId)],
-                [.. lines[v.Id].OrderBy(l => l.FromId).ThenBy(l => l.ToId)]))
+                [.. lines[v.Id].OrderBy(l => l.FromId).ThenBy(l => l.ToId)],
+                LineVisibility: visibility.GetValueOrDefault(v.Id)))
             .ToList();
 
         var schemas = input.Schemas.OrderBy(s => s.Name, StringComparer.Ordinal).ThenBy(s => s.Id)

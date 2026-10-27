@@ -39,13 +39,30 @@ public sealed record LayoutPositionDto(Guid ElementId, double X, double Y, doubl
 public sealed record LayoutEdgeDto(Guid RelationshipId, object? RoutePoints, string? SourceSide = null, string? TargetSide = null);
 public sealed record LayoutLineDto(Guid FromId, Guid ToId, object Route);
 
+/// <summary>A derived line hidden in a view, by its two cards.</summary>
+public sealed record HiddenDerivedLineDto(Guid FromId, Guid ToId);
+
+/// <summary>
+/// Which lines a view draws (<see cref="LineVisibility"/>). Each switch is true when its lines
+/// are drawn. The hidden relationships and derived lines are hidden one at a time.
+/// </summary>
+public sealed record LineVisibilityDto(
+    bool DerivedLines, bool Structural, bool Behavioural, bool CrossLevel,
+    IReadOnlyList<Guid> HiddenRelationshipIds, IReadOnlyList<HiddenDerivedLineDto> HiddenDerivedLines)
+{
+    public static LineVisibilityDto Of(LineVisibility v) => new(
+        v.DerivedLines, v.Structural, v.Behavioural, v.CrossLevel,
+        [.. v.HiddenRelationshipIds], [.. v.HiddenDerivedLines.Select(l => new HiddenDerivedLineDto(l.FromId, l.ToId))]);
+}
+
 public sealed record ViewDetailDto(
     Guid Id, Guid ProjectId, string Name, Guid? RootElementId,
     Guid[] VisibleElementIds, string? ActiveLens, Guid? ActiveFlowId,
     DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt,
     IReadOnlyList<LayoutPositionDto> Positions,
     IReadOnlyList<LayoutEdgeDto> Edges,
-    IReadOnlyList<LayoutLineDto> Lines);
+    IReadOnlyList<LayoutLineDto> Lines,
+    LineVisibilityDto LineVisibility);
 
 /// <summary>
 /// The saved views of a project and their canvas layouts. A layout is presentation data: the
@@ -68,6 +85,8 @@ public static class ViewEndpoints
         group.MapPut("/{viewId}/layout", SaveLayout).WithBodyLimit(RequestBodyLimit.Document);
         // The sides of one relationship in this view. The relationship's ends in the model stay.
         group.MapPut("/{viewId}/layout/edges/{relationshipId}", SaveEdgeSides);
+        // Which lines the view draws. The model keeps every relationship.
+        group.MapPut("/{viewId}/layout/visibility", SaveLineVisibility);
 
         return app;
     }
@@ -149,11 +168,12 @@ public static class ViewEndpoints
             .OrderBy(l => l.FromId).ThenBy(l => l.ToId)
             .Select(l => new LayoutLineDto(l.FromId, l.ToId, JsonSerializer.Deserialize<object>(l.Route.RootElement.GetRawText())!))
             .ToList();
+        var visibility = LineVisibility.Of(await db.LineVisibilities.AsNoTracking().FirstOrDefaultAsync(l => l.ViewId == viewId, ct));
 
         return Results.Ok(new ViewDetailDto(
             view.Id, view.ProjectId, view.Name, view.RootElementId,
             view.VisibleElementIds, view.ActiveLens, view.ActiveFlowId,
-            view.CreatedAt, view.UpdatedAt, positions, edges, lines));
+            view.CreatedAt, view.UpdatedAt, positions, edges, lines, LineVisibilityDto.Of(visibility)));
     }
 
     private static async Task<IResult> Update(
@@ -330,6 +350,64 @@ public static class ViewEndpoints
         view.UpdatedAt = time.GetUtcNow();
         await db.SaveChangesAsync(ct);
         return Results.Ok(ToDto(edge));
+    }
+
+    /// <summary>
+    /// Replaces which lines the view draws. A visibility that hides nothing removes the saved row,
+    /// so the view is as one that never hid a line. The same relationship or derived line named
+    /// twice is kept once.
+    /// </summary>
+    private static async Task<IResult> SaveLineVisibility(
+        Guid projectId, Guid viewId,
+        LineVisibilityDto request,
+        ClaimsPrincipal user,
+        AppDbContext db,
+        WorkspaceAuthorizationService auth,
+        TimeProvider time,
+        CancellationToken ct)
+    {
+        await auth.RequireProjectRoleAsync(projectId, user.UserId(), WorkspaceRole.Editor, ct);
+
+        var relationships = request.HiddenRelationshipIds ?? [];
+        var lines = request.HiddenDerivedLines ?? [];
+        if (Refusal(
+                relationships.Count > LineVisibility.MaxHidden ? new ValidationError("hiddenRelationshipIds", $"must hold at most {LineVisibility.MaxHidden} relationships") : null,
+                lines.Count > LineVisibility.MaxHidden ? new ValidationError("hiddenDerivedLines", $"must hold at most {LineVisibility.MaxHidden} lines") : null,
+                lines.Select((l, i) => l is null || l.FromId == l.ToId ? new ValidationError($"hiddenDerivedLines[{i}]", "must name two different cards") : null)
+                    .FirstOrDefault(e => e is not null)) is { } refusal)
+            return refusal;
+
+        var view = await db.Views.FindAsync([viewId], ct);
+        if (view is null || view.ProjectId != projectId)
+            return NotFound("View");
+
+        var visibility = new LineVisibility(
+            request.DerivedLines, request.Structural, request.Behavioural, request.CrossLevel,
+            [.. relationships.Distinct()], [.. lines.Select(l => new HiddenDerivedLine(l.FromId, l.ToId)).Distinct()]);
+
+        var row = await db.LineVisibilities.FirstOrDefaultAsync(l => l.ViewId == viewId, ct);
+        if (!visibility.HidesAnything)
+        {
+            if (row is not null) db.LineVisibilities.Remove(row);
+        }
+        else
+        {
+            if (row is null)
+            {
+                row = new LineVisibilityEntity { ViewId = viewId };
+                db.LineVisibilities.Add(row);
+            }
+            row.DerivedLines = visibility.DerivedLines;
+            row.Structural = visibility.Structural;
+            row.Behavioural = visibility.Behavioural;
+            row.CrossLevel = visibility.CrossLevel;
+            row.HiddenRelationshipIds = [.. visibility.HiddenRelationshipIds];
+            row.HiddenDerivedLines = LineVisibility.WritePairs(visibility.HiddenDerivedLines);
+        }
+
+        view.UpdatedAt = time.GetUtcNow();
+        await db.SaveChangesAsync(ct);
+        return Results.Ok(LineVisibilityDto.Of(visibility));
     }
 
     private static ValidationError? SideError(string field, string? side) =>
