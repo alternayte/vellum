@@ -12,6 +12,10 @@ interface TypedDeleteDialogProps {
   items: ReactNode[]
   /** What stays, shown after the list. */
   note?: ReactNode
+  /** Replaces the title "Delete {noun} “{name}”". */
+  title?: ReactNode
+  /** Replaces the line above the list. */
+  description?: ReactNode
   pending?: boolean
   error?: string | null
   onConfirm: () => void
@@ -19,10 +23,10 @@ interface TypedDeleteDialogProps {
 }
 
 /**
- * The delete of a project or a workspace. It cannot be undone and removes data from every
+ * The delete of a project, a workspace or several elements. It cannot be undone and removes data from every
  * module, so the dialog lists what goes and the button stays off until the name is typed.
  */
-export function TypedDeleteDialog({ noun, name, items, note, pending, error, onConfirm, onClose }: TypedDeleteDialogProps) {
+export function TypedDeleteDialog({ noun, name, items, note, title, description, pending, error, onConfirm, onClose }: TypedDeleteDialogProps) {
   const [typed, setTyped] = useState('')
   const matches = typed.trim() === name
 
@@ -30,8 +34,8 @@ export function TypedDeleteDialog({ noun, name, items, note, pending, error, onC
     <Dialog open onOpenChange={(open) => { if (!open && !pending) onClose() }}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Delete {noun} “{name}”</DialogTitle>
-          <DialogDescription>This cannot be undone. These go with the {noun}:</DialogDescription>
+          <DialogTitle>{title ?? <>Delete {noun} “{name}”</>}</DialogTitle>
+          <DialogDescription>{description ?? <>This cannot be undone. These go with the {noun}:</>}</DialogDescription>
         </DialogHeader>
         <ul className="max-h-72 list-disc space-y-1 overflow-y-auto pl-5 text-xs text-muted-foreground">
           {items.map((item, i) => <li key={i}>{item}</li>)}

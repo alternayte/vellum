@@ -18,9 +18,14 @@ import { SecretControl } from '@/components/settings/secret-control'
 import { PriceBook } from '@/components/settings/price-book'
 import { Members } from '@/components/settings/members'
 import { WorkspaceGeneral } from '@/components/settings/workspace-general'
+import { AccountMenu } from '@/components/shell/account-menu'
 
+/** `section` opens one section, such as `instance` from the account menu. */
 export const Route = createFileRoute('/_app/workspaces/$workspaceId/settings')({
   component: SettingsPage,
+  validateSearch: (search: Record<string, unknown>): { section?: string } => ({
+    section: typeof search.section === 'string' ? search.section : undefined,
+  }),
 })
 
 type SectionId = SettingsSection | 'general' | 'prices' | 'members' | 'agents' | 'audit' | 'instance'
@@ -91,7 +96,15 @@ function SettingsPage() {
   })
   const instance = useQuery({ queryKey: ['instance'], queryFn: () => api<InstanceInfo>('GET', '/api/instance') })
 
-  const [section, setSection] = useState<SectionId>('general')
+  const { section: linkedSection } = Route.useSearch()
+  const sectionOf = (id: string | undefined): SectionId => SECTIONS.find((s) => s.id === id)?.id ?? 'general'
+  const [section, setSection] = useState<SectionId>(() => sectionOf(linkedSection))
+  // The account menu can name a section while this page is open.
+  const [shownLink, setShownLink] = useState(linkedSection)
+  if (linkedSection !== shownLink) {
+    setShownLink(linkedSection)
+    if (linkedSection) setSection(sectionOf(linkedSection))
+  }
   // Edits live in `edited` until they are saved; without edits the form shows what is stored.
   const [edited, setEdited] = useState<SettingsOverrides | null>(null)
   const saved = settings.data?.overrides
@@ -144,9 +157,10 @@ function SettingsPage() {
           <ArrowLeft className="h-4 w-4" />
         </Link>
         <h1 className="font-heading text-base font-medium">Workspace settings</h1>
-        <span className="text-xs text-muted-foreground">
+        <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
           {countOverrides(draft)} {countOverrides(draft) === 1 ? 'value differs' : 'values differ'} from the instance defaults
         </span>
+        <AccountMenu workspaceId={workspaceId} />
       </header>
 
       <div className="flex min-h-0 flex-1 flex-col md:flex-row">

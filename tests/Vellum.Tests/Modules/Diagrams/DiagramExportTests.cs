@@ -112,6 +112,24 @@ public class DiagramExportTests
         Assert.DoesNotContain("d=\"M264,64 C", svg);
     }
 
+    [Fact]
+    public void A_card_hidden_from_the_view_leaves_every_export_and_changes_the_fingerprint()
+    {
+        var hidden = ShopView();
+        hidden.HiddenElementIds = [Worker];
+
+        var diagram = ViewDiagram.Project(hidden, ShopLayout(), FixedModel());
+        Assert.DoesNotContain(diagram.Elements, e => e.Element.Id.Value == Worker);
+        Assert.DoesNotContain("Fulfilment worker", DiagramSvg.Write(diagram));
+        Assert.DoesNotContain("Fulfilment worker", MermaidView.Write(diagram));
+        Assert.NotEqual(ViewDiagram.LayoutFingerprint(ShopView(), ShopLayout()), ViewDiagram.LayoutFingerprint(hidden, ShopLayout()));
+
+        // The model keeps the element; the view of the DSL leaves it out.
+        var dsl = StructurizrDsl.Write("P", FixedModel(), [hidden], NoLayout);
+        Assert.Contains("fulfilment_worker = container", dsl);
+        Assert.Contains("exclude fulfilment_worker", dsl);
+    }
+
     // The route Tidy saved for "reads and writes": from the right side of the Orders API (0,0) to
     // the left side of the Orders DB (420.5,260.25), around a corner, its label on the way down.
     private static System.Text.Json.JsonDocument ApiDbRoute() => System.Text.Json.JsonDocument.Parse("""

@@ -17,7 +17,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog'
-import { useAuth } from '@/hooks/use-auth'
+import { AccountMenu } from '@/components/shell/account-menu'
 import { MyInvitations } from '@/components/settings/my-invitations'
 import { pendingInvitation } from '@/lib/invitation-link'
 import { branchesApi } from '@/lib/branches-api'
@@ -35,15 +35,25 @@ interface Project {
   description: string | null
 }
 
+/** `workspace` opens the list with that workspace chosen, from the account menu. */
 export const Route = createFileRoute('/_app/')({
   component: WorkspacePicker,
+  validateSearch: (search: Record<string, unknown>): { workspace?: string } => ({
+    workspace: typeof search.workspace === 'string' ? search.workspace : undefined,
+  }),
 })
 
 function WorkspacePicker() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const { logout } = useAuth()
-  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(null)
+  const { workspace: linkedWorkspaceId } = Route.useSearch()
+  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string | null>(linkedWorkspaceId ?? null)
+  // A switch from the account menu while this page is open chooses the workspace it names.
+  const [shownLink, setShownLink] = useState(linkedWorkspaceId)
+  if (linkedWorkspaceId !== shownLink) {
+    setShownLink(linkedWorkspaceId)
+    if (linkedWorkspaceId) setSelectedWorkspaceId(linkedWorkspaceId)
+  }
   const [showCreateWorkspace, setShowCreateWorkspace] = useState(false)
   const [showCreateProject, setShowCreateProject] = useState(false)
   const [workspaceName, setWorkspaceName] = useState('')
@@ -120,19 +130,9 @@ function WorkspacePicker() {
     <div className="flex min-h-screen flex-col bg-background">
       <header className="flex h-12 items-center justify-between border-b border-border bg-card px-4">
         <span className="font-display text-sm font-bold text-primary">Vellum</span>
-        <span className="flex items-center gap-1">
-        <InboxButton />
-        <Button
-          variant="ghost"
-          size="sm"
-          className="text-xs text-muted-foreground"
-          onClick={async () => {
-            await logout()
-            navigate({ to: '/login' })
-          }}
-        >
-          Log out
-        </Button>
+        <span className="flex items-center gap-2">
+          <InboxButton />
+          <AccountMenu workspaceId={selectedWorkspaceId} />
         </span>
       </header>
 

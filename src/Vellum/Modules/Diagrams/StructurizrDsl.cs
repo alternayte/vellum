@@ -214,8 +214,11 @@ public static class StructurizrDsl
                 continue;
             }
             text.Append("        ").Append(opening).Append(" {\n")
-                .Append("            include *\n")
-                .Append("            autoLayout\n")
+                .Append("            include *\n");
+            // A card hidden from the view is left out of it, as on the canvas.
+            foreach (var hidden in view.HiddenElementIds.Distinct().Where(ids.ContainsKey).Select(h => ids[h]).Order(StringComparer.Ordinal))
+                text.Append("            exclude ").Append(hidden).Append('\n');
+            text.Append("            autoLayout\n")
                 .Append("        }\n");
         }
         text.Append("\n        styles {\n")

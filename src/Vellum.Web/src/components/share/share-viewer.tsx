@@ -196,6 +196,7 @@ function Diagram({ page, view, views, onView }: { page: SharedPage; view: Shared
   })), [view])
   const lineRoutes = useMemo(() => view?.lines ?? undefined, [view])
   const hiddenLines = useMemo(() => view?.hiddenLines ?? undefined, [view])
+  const hiddenElementIds = useMemo(() => view?.hiddenElementIds ?? undefined, [view])
   const selectedElementId = useShellStore((s) => s.selectedElementId)
   const selectedRelationshipId = useShellStore((s) => s.selectedRelationshipId)
   const selectedDerivedLine = useShellStore((s) => s.selectedDerivedLine)
@@ -219,6 +220,7 @@ function Diagram({ page, view, views, onView }: { page: SharedPage; view: Shared
           edgeSides={edgeSides}
           lineRoutes={lineRoutes}
           hiddenLines={hiddenLines}
+          hiddenElementIds={hiddenElementIds}
           messages={page.model.messages}
           onNodeDoubleClick={(id) => {
             const el = page.model.elements.find((e) => e.id === id)

@@ -101,11 +101,13 @@ public sealed record SharedHiddenLine(Guid FromId, Guid ToId, string? Label, int
 /// relationships and the saved routes of its derived lines. Presentation only.
 /// <paramref name="Edges"/> is null on a page pinned before sides existed, and
 /// <paramref name="Lines"/> on a page pinned before routes existed: the lines then take auto
-/// curves. <paramref name="HiddenLines"/> is set on a view link only.
+/// curves. <paramref name="HiddenLines"/> is set on a view link only. <paramref name="HiddenElementIds"/>
+/// are the shared cards a person hid from the diagram; null on a page pinned before cards could be hidden.
 /// </summary>
 public sealed record SharedView(
     Guid Id, string Name, IReadOnlyList<SharedPosition> Positions, IReadOnlyList<SharedEdgeSides>? Edges = null,
-    IReadOnlyList<SharedLineRoute>? Lines = null, IReadOnlyList<SharedHiddenLine>? HiddenLines = null);
+    IReadOnlyList<SharedLineRoute>? Lines = null, IReadOnlyList<SharedHiddenLine>? HiddenLines = null,
+    IReadOnlyList<Guid>? HiddenElementIds = null);
 
 /// <summary>A payload schema: a JSON Schema document.</summary>
 public sealed record SharedSchema(Guid Id, string Name, string? Description, string Content, int Version);
@@ -256,7 +258,9 @@ public sealed record SharedPage(
         {
             var parents = Model.Elements.ToDictionary(e => e.Id, e => e.ParentId);
             var kept = new HashSet<Guid>();
-            foreach (var position in view.Positions)
+            // A card hidden from the view is not shared through it, unless a shown card sits inside it.
+            var hiddenCards = (view.HiddenElementIds ?? []).ToHashSet();
+            foreach (var position in view.Positions.Where(p => !hiddenCards.Contains(p.ElementId)))
             {
                 for (Guid? id = position.ElementId; id is { } at && kept.Add(at);)
                     id = parents.GetValueOrDefault(at);
@@ -267,6 +271,7 @@ public sealed record SharedPage(
                 Edges = view.Edges?.Where(e => keptRelationships.Contains(e.RelationshipId)).ToList(),
                 Lines = view.Lines?.Where(l => kept.Contains(l.FromId) && kept.Contains(l.ToId)).ToList(),
                 HiddenLines = HiddenLines(parents, kept),
+                HiddenElementIds = [.. hiddenCards.Where(kept.Contains).Order()],
             };
 
             var messages = Model.Messages.Where(m => kept.Contains(m.ProducerId))
@@ -375,7 +380,7 @@ public sealed partial class SharePageReader(IServiceProvider services, AppDbCont
         var viewsQuery = db.Views.AsNoTracking().Where(v => v.ProjectId == projectId);
         if (request.ViewId is { } viewId)
             viewsQuery = viewsQuery.Where(v => v.Id == viewId);
-        var views = await viewsQuery.OrderBy(v => v.Name).ThenBy(v => v.Id).Select(v => new { v.Id, v.Name }).ToListAsync(ct);
+        var views = await viewsQuery.OrderBy(v => v.Name).ThenBy(v => v.Id).Select(v => new { v.Id, v.Name, v.HiddenElementIds }).ToListAsync(ct);
         var viewIds = views.Select(v => v.Id).ToList();
         var shown = model.Elements.Select(e => e.Id).ToHashSet();
         var positions = (await db.LayoutPositions.AsNoTracking()
@@ -405,7 +410,8 @@ public sealed partial class SharePageReader(IServiceProvider services, AppDbCont
             .Select(v => new SharedView(v.Id, v.Name,
                 [.. positions[v.Id].OrderBy(p => p.ElementId).Select(p => new SharedPosition(p.ElementId, p.X, p.Y, p.Width, p.Height))],
                 [.. edges[v.Id].OrderBy(e => e.RelationshipId)],
-                [.. lines[v.Id].OrderBy(l => l.FromId).ThenBy(l => l.ToId)]))
+                [.. lines[v.Id].OrderBy(l => l.FromId).ThenBy(l => l.ToId)],
+                HiddenElementIds: [.. v.HiddenElementIds.Where(shown.Contains).Distinct().Order()]))
             .ToList();
 
         var schemas = input.Schemas.OrderBy(s => s.Name, StringComparer.Ordinal).ThenBy(s => s.Id)

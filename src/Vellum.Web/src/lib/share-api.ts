@@ -160,6 +160,8 @@ export interface SharedView {
    * and, for one, its label: never the ID or the name of a hidden part.
    */
   hiddenLines?: { fromId: string; toId: string; label: string | null; count: number }[] | null
+  /** The cards a member hid from the diagram. Null on a page pinned before cards could be hidden. */
+  hiddenElementIds?: string[] | null
 }
 export interface SharedSchema { id: string; name: string; description: string | null; content: string; version: number }
 /** One step of a flow. Payloads, headers and write changes are not shared. */

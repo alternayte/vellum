@@ -11,9 +11,7 @@ vi.mock('@tanstack/react-router', () => ({
 // The inbox reads the server; this file tests the bar's own controls.
 vi.mock('../../../src/components/comments/inbox-button', () => ({ InboxButton: () => null }))
 
-vi.mock('../../../src/hooks/use-auth', () => ({
-  useAuth: () => ({ logout: vi.fn(), user: null }),
-}))
+vi.mock('../../../src/components/shell/account-menu', () => ({ AccountMenu: () => null }))
 
 beforeEach(() => {
   useCanvasStore.getState().reset()
@@ -46,10 +44,5 @@ describe('TopBar', () => {
   it('renders the strata breadcrumb with Context link', () => {
     render(<TopBar />)
     expect(screen.getByText('Context')).toBeTruthy()
-  })
-
-  it('renders the avatar/logout button', () => {
-    render(<TopBar />)
-    expect(screen.getByTitle('Log out')).toBeTruthy()
   })
 })

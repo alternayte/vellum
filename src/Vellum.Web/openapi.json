@@ -34050,6 +34050,16 @@
             "items": {
               "$ref": "#/components/schemas/SharedHiddenLine"
             }
+          },
+          "hiddenElementIds": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
           }
         }
       },
@@ -37706,6 +37716,16 @@
           "setActiveLens": {
             "type": "boolean",
             "default": false
+          },
+          "hiddenElementIds": {
+            "type": [
+              "null",
+              "array"
+            ],
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            }
           }
         }
       },

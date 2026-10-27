@@ -12,7 +12,7 @@ public sealed record CreateViewRequest(Guid Id, string Name, Guid? RootElementId
 public sealed record UpdateViewRequest(
     string? Name, Guid? RootElementId, Guid[]? VisibleElementIds,
     string? ActiveLens, DateTimeOffset? UpdatedAt,
-    bool SetRootElementId = false, bool SetActiveLens = false);
+    bool SetRootElementId = false, bool SetActiveLens = false, Guid[]? HiddenElementIds = null);
 
 public sealed record SaveLayoutPosition(Guid ElementId, double X, double Y, double? Width = null, double? Height = null);
 /// <param name="RoutePoints">A route from the auto layout (<see cref="LayoutRoute"/>), or null.</param>
@@ -33,7 +33,7 @@ public sealed record SaveLayoutRequest(
 public sealed record ViewDto(
     Guid Id, Guid ProjectId, string Name, Guid? RootElementId,
     Guid[] VisibleElementIds, string? ActiveLens, Guid? ActiveFlowId,
-    DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt);
+    DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt, Guid[]? HiddenElementIds = null);
 
 public sealed record LayoutPositionDto(Guid ElementId, double X, double Y, double? Width = null, double? Height = null);
 public sealed record LayoutEdgeDto(Guid RelationshipId, object? RoutePoints, string? SourceSide = null, string? TargetSide = null);
@@ -45,7 +45,8 @@ public sealed record ViewDetailDto(
     DateTimeOffset CreatedAt, DateTimeOffset UpdatedAt,
     IReadOnlyList<LayoutPositionDto> Positions,
     IReadOnlyList<LayoutEdgeDto> Edges,
-    IReadOnlyList<LayoutLineDto> Lines);
+    IReadOnlyList<LayoutLineDto> Lines,
+    Guid[]? HiddenElementIds = null);
 
 /// <summary>
 /// The saved views of a project and their canvas layouts. A layout is presentation data: the
@@ -117,7 +118,7 @@ public static class ViewEndpoints
             .Where(v => v.ProjectId == projectId)
             .OrderBy(v => v.Name)
             .Select(v => new ViewDto(v.Id, v.ProjectId, v.Name, v.RootElementId,
-                v.VisibleElementIds, v.ActiveLens, v.ActiveFlowId, v.CreatedAt, v.UpdatedAt))
+                v.VisibleElementIds, v.ActiveLens, v.ActiveFlowId, v.CreatedAt, v.UpdatedAt, v.HiddenElementIds))
             .ToListAsync(ct);
 
         return Results.Ok(views);
@@ -153,7 +154,7 @@ public static class ViewEndpoints
         return Results.Ok(new ViewDetailDto(
             view.Id, view.ProjectId, view.Name, view.RootElementId,
             view.VisibleElementIds, view.ActiveLens, view.ActiveFlowId,
-            view.CreatedAt, view.UpdatedAt, positions, edges, lines));
+            view.CreatedAt, view.UpdatedAt, positions, edges, lines, view.HiddenElementIds));
     }
 
     private static async Task<IResult> Update(
@@ -184,6 +185,8 @@ public static class ViewEndpoints
         if (request.Name is not null) view.Name = request.Name;
         if (request.SetRootElementId || request.RootElementId.HasValue) view.RootElementId = request.RootElementId;
         if (request.VisibleElementIds is not null) view.VisibleElementIds = request.VisibleElementIds;
+        // A hidden card is view data: the list replaces the saved one, without repeats.
+        if (request.HiddenElementIds is not null) view.HiddenElementIds = [.. request.HiddenElementIds.Distinct()];
         if (request.SetActiveLens || request.ActiveLens is not null) view.ActiveLens = request.ActiveLens;
         view.UpdatedAt = time.GetUtcNow();
 
@@ -342,5 +345,5 @@ public static class ViewEndpoints
 
     private static ViewDto ToDto(ViewEntity v) =>
         new(v.Id, v.ProjectId, v.Name, v.RootElementId, v.VisibleElementIds,
-            v.ActiveLens, v.ActiveFlowId, v.CreatedAt, v.UpdatedAt);
+            v.ActiveLens, v.ActiveFlowId, v.CreatedAt, v.UpdatedAt, v.HiddenElementIds);
 }

@@ -139,8 +139,8 @@ When you remove yourself, you lose access to the workspace. An owner must invite
 
 Only the instance administrator can do this.
 
-1. Open the workspace settings.
-2. Select **Instance**.
+1. Select your avatar at the right end of the top bar, then select **Instance settings**.
+2. Make sure that **Instance** is selected.
 3. Switch on **Let people register themselves**.
 4. Ask the person to open the sign-in screen, to select **Register** and to create the account.
 5. Switch off **Let people register themselves**.
