@@ -163,6 +163,8 @@ export interface SharedView {
   hiddenLines?: { fromId: string; toId: string; label: string | null; count: number }[] | null
   /** Which lines the diagram draws, as the view saved it. Null when the view hides no line. */
   lineVisibility?: LineVisibility | null
+  /** The cards a member hid from the diagram. Null on a page pinned before cards could be hidden. */
+  hiddenElementIds?: string[] | null
 }
 export interface SharedSchema { id: string; name: string; description: string | null; content: string; version: number }
 /** One step of a flow. Payloads, headers and write changes are not shared. */

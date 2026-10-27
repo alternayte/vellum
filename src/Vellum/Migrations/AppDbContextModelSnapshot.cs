@@ -4072,6 +4072,13 @@ namespace Vellum.Migrations
                         .HasColumnName("created_at")
                         .HasDefaultValueSql("now()");
 
+                    b.PrimitiveCollection<Guid[]>("HiddenElementIds")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid[]")
+                        .HasColumnName("hidden_element_ids")
+                        .HasDefaultValueSql("'{}'::uuid[]");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasColumnType("text")

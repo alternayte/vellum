@@ -199,6 +199,7 @@ function Diagram({ page, view, views, onView }: { page: SharedPage; view: Shared
   const hiddenLines = useMemo(() => view?.hiddenLines ?? undefined, [view])
   // The page draws the view as its editors curated it: the lines it hides are not drawn.
   const lineVisibility = useMemo(() => lineVisibilityOf(view?.lineVisibility), [view])
+  const hiddenElementIds = useMemo(() => view?.hiddenElementIds ?? undefined, [view])
   const selectedElementId = useShellStore((s) => s.selectedElementId)
   const selectedRelationshipId = useShellStore((s) => s.selectedRelationshipId)
   const selectedDerivedLine = useShellStore((s) => s.selectedDerivedLine)
@@ -223,6 +224,7 @@ function Diagram({ page, view, views, onView }: { page: SharedPage; view: Shared
           lineRoutes={lineRoutes}
           hiddenLines={hiddenLines}
           lineVisibility={lineVisibility}
+          hiddenElementIds={hiddenElementIds}
           messages={page.model.messages}
           onNodeDoubleClick={(id) => {
             const el = page.model.elements.find((e) => e.id === id)

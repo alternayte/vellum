@@ -85,7 +85,7 @@ export function ContextMenu({
         aria-label={label}
         aria-orientation="vertical"
         onKeyDown={onKeyDown}
-        className="fixed z-50 min-w-[180px] rounded-lg border border-border bg-popover p-1 shadow-lg"
+        className="fixed z-50 max-h-[calc(100dvh-8px)] min-w-[180px] max-w-[calc(100vw-8px)] overflow-y-auto rounded-lg border border-border bg-popover p-1 shadow-lg"
         style={{ left: position.x, top: position.y }}
       >
         {children}

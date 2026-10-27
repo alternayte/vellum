@@ -264,6 +264,13 @@
   stroke-width: 1.5px;
 }
 
+/* The cards of a selection of two or more, so the person sees what a selection menu acts on. */
+.react-flow__node-c4-element.selected > div,
+.react-flow__node-c4-label-chip.selected > div {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
 /* Trace playback: the nodes taking part in the current event. The dock states the event in
    words, so the ring adds position, not meaning. */
 .react-flow__node.vellum-trace-node {

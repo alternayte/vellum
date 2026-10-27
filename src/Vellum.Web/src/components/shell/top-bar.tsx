@@ -3,7 +3,7 @@ import { StrataBreadcrumb } from './strata-breadcrumb'
 import { Button } from '@/components/ui/button'
 import { BranchSwitcher } from '@/components/branch/branch-switcher'
 import type { ProjectDetail } from '@/lib/branches-api'
-import { useAuth } from '@/hooks/use-auth'
+import { AccountMenu } from './account-menu'
 import { useNavigate } from '@tanstack/react-router'
 import { Menu } from 'lucide-react'
 import { ProjectMenu } from './project-menu'
@@ -21,22 +21,7 @@ interface TopBarProps {
 
 export function TopBar({ projectId, projectName, project, activeDoc }: TopBarProps) {
   const { toggleCommandPalette } = useShellStore()
-  const { logout, user } = useAuth()
   const navigate = useNavigate()
-
-  const handleLogout = async () => {
-    await logout()
-    navigate({ to: '/login' })
-  }
-
-  const initials = user?.displayName
-    ? user.displayName
-        .split(' ')
-        .map((w: string) => w[0])
-        .join('')
-        .toUpperCase()
-        .slice(0, 2)
-    : '?'
 
   return (
     <header className="flex h-12 items-center gap-2 border-b border-border bg-card px-3 sm:gap-3">
@@ -97,14 +82,7 @@ export function TopBar({ projectId, projectName, project, activeDoc }: TopBarPro
 
       <InboxButton project={projectId && project ? { id: projectId, name: project.name } : undefined} />
 
-      <button
-        className="flex h-7 w-7 items-center justify-center rounded-full bg-primary text-[10px] font-medium text-primary-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-        onClick={handleLogout}
-        aria-label={`Log out (signed in as ${initials})`}
-        title="Log out"
-      >
-        {initials}
-      </button>
+      <AccountMenu workspaceId={project?.workspaceId} />
     </header>
   )
 }

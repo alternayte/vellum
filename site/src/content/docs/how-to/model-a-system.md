@@ -36,6 +36,15 @@ The sidebar on the left has five areas. An area with more than one tool shows it
 
 The assistant opens from **Ask the assistant** at the bottom of the canvas. The comments open from the bell in the top bar, on the **Comments** tab. The command palette (`Ctrl+K` or `Cmd+K`) opens each of these tools.
 
+Your avatar is at the right end of the top bar. Select it to open the account menu. The menu shows your name and email and has these items:
+
+- **Account**: your name, your email, your workspaces and your open invitations.
+- **Workspace settings**: the settings of the workspace of the open project.
+- **All projects**: the project list of that workspace.
+- **Switch workspace**: your other workspaces. Select one to see its projects. The list shows when you are a member of two or more workspaces.
+- **Instance settings**: the settings of the instance. Only the instance administrator sees this item.
+- **Log out**: ends your session.
+
 ## Know the element kinds
 
 A model has five kinds of element. Each kind has one permitted parent.
@@ -59,7 +68,7 @@ Use one of these methods.
 - Select **Model** in the sidebar, then the **Catalog** tab. Below **Elements**, select a kind.
 - Press the shortcut of the kind.
 - Double-click an empty part of the canvas. Select a kind.
-- Right-click an empty part of the canvas. Select **Add Actor** or **Add System** (at the top level), or the kinds that the level permits.
+- Right-click an empty part of the canvas. Below **Add here**, select **Add actor** or **Add system** (at the top level), or the kinds that the level permits. Vellum adds the element at the pointer.
 - Press `N`. In **Add Element**, select the kind, enter a **Name** and select **Add**.
 - Select **Model** in the sidebar, then the **Create** tab. Below **Elements**, each kind has a one-line description. Drag a kind onto the canvas, or select it to open **Add Element** with that kind.
 - Open the command palette with `Ctrl+K` or `Cmd+K`. Select **Add element**.
@@ -81,7 +90,7 @@ Undo removes the element.
 
 ## Go into a system or an app
 
-1. Double-click a system or an app. As an alternative, right-click it and select **Drill into**.
+1. Double-click a system or an app. As an alternative, right-click it and select **Open inside**.
 2. Add the elements of that level. A frame with the name of the system or the app holds them.
 3. Select **Context** or a name in the breadcrumb to go up.
 
@@ -117,6 +126,65 @@ To delete an element, select the **⋯** button in the header of the detail pane
 To change more than one element, select two or more elements. The toolbar at the top shows the count as **selected**. Set the **Status**, enter a tag in **Add tag…** and press `Enter`, or select **Delete selected**.
 
 `Ctrl+Z` or `Cmd+Z` reverses the last canvas action. Add `Shift` to do it again.
+
+## Right-click menus
+
+The canvas has a menu for the empty canvas, for one element and for a selection of two or more elements. Open a menu with a right-click. Use the arrow keys to move in a menu, `Enter` to select an item and `Escape` to close it. A menu shows only the items that you can use: on a revision, or with the Viewer or Commenter role, the items that change the model or the diagram do not show.
+
+### The canvas menu
+
+Right-click an empty part of the canvas.
+
+| Item | What it does |
+|---|---|
+| **Add here** | Adds an element of the kind at the pointer. The menu lists the kinds that the level permits. |
+| **Paste** | Adds a copy of the elements that you copied with **Copy**, at the pointer. A pasted element has the name of the original with `(copy)`. The elements inside it and the relationships between the copied elements come with it. The item shows only when the level permits the kind. |
+| **Select all** | Selects each element of the level. |
+| **Tidy layout** | Arranges the diagram, as `T` does. |
+| **Zoom to fit** | Shows the full diagram. |
+| **Show hidden cards** | Shows again the elements that you hid from this diagram on this level. |
+| **Export this view** | Downloads the diagram as **SVG**, **PNG** or **Mermaid**, or the whole model as **Structurizr DSL**. |
+| **Copy link to this view** | Copies the address of this diagram. A member of the workspace who opens it sees this diagram. To share with a person who has no account, use a share link: see [Share and embed](/how-to/share-and-embed/). |
+
+### The element menu
+
+Right-click an element.
+
+| Item | What it does |
+|---|---|
+| **Edit details** | Opens the element in the detail panel. |
+| **Open inside** | Shows the level inside a system or an app. |
+| **Expand** or **Collapse** | Shows or hides the elements inside, in place. |
+| **Add … inside** | Adds an element inside. On an expanded element, Vellum adds it at the pointer. |
+| **Add a relationship from here** | Opens a list of the elements of the model. Select the target and select **Add relationship**. |
+| **Select connected** | Selects the element and each element that a line on the canvas connects to it. |
+| **Hide from this view** | Removes the element from this diagram. See [Hide an element from a diagram](#hide-an-element-from-a-diagram). |
+| **Copy** | Copies the element, with the elements inside it, for **Paste**. |
+| **Copy ID** | Copies the ID of the element. |
+| **Duplicate** | Adds a copy next to the element. |
+| **Delete** | Deletes the element from the model, after you confirm. |
+
+### The selection menu
+
+Select two or more elements: hold `Shift` and select each element, or hold `Shift` and drag a box around them. Then right-click one of the selected elements.
+
+| Item | What it does |
+|---|---|
+| **Align** | Moves the elements to one line: **Left**, **Centre** or **Right** edges, or **Top**, **Middle** or **Bottom** edges. The line is on the box around the selection. |
+| **Distribute** | Makes the gaps between the elements equal, **across** or **down**. The first and the last element stay. This shows for three or more elements. |
+| **Tidy the selection** | Arranges only the selected elements and the lines between them. The other elements stay. |
+| **Hide from this view** | Removes the elements from this diagram. |
+| **Delete** | Opens a confirmation. Type the number of elements and select **Delete elements**. The elements inside them and their relationships go too. |
+
+`Ctrl+Z` or `Cmd+Z` reverses each of these actions.
+
+### Hide an element from a diagram
+
+**Hide from this view** removes an element from one diagram only. The element stays in the model and in each other diagram. The relationships of a hidden element do not show on that diagram. The SVG, PNG and Mermaid exports of the diagram leave the element out. The Structurizr DSL export excludes it from the view. A share link of the diagram does not show it.
+
+To show the hidden elements again, right-click an empty part of the canvas and select **Show hidden cards**. When a diagram hides each element of a level, the canvas shows the button **Show hidden cards**.
+
+In the API, the view has the field `hiddenElementIds`. To change it, send `PATCH /api/projects/{projectId}/views/{viewId}` with the full list, for example `{ "hiddenElementIds": ["…"] }`.
 
 ## Add a relationship
 
@@ -161,7 +229,7 @@ The command palette opens every tool of the sidebar, **Ask the assistant** and *
 A diagram is a saved view of the model. It has a name and a position for each element. Positions are layout. They are not part of the model and they carry no meaning.
 
 1. Drag the elements. Vellum saves each position in the diagram.
-2. To let Vellum arrange the diagram, press `T`, or right-click the canvas and select **Tidy layout**.
+2. To let Vellum arrange the diagram, press `T`, or right-click the canvas and select **Tidy layout**. To line up some elements, select them and use the [selection menu](#the-selection-menu).
 3. To see the full diagram, right-click the canvas and select **Zoom to fit**.
 4. To add a diagram, select **Model** in the sidebar, then the **Create** tab, select **New Diagram**, enter a **Diagram name** and select **Create**.
 5. To open a diagram, select **Model** in the sidebar, then the **Files** tab and select the diagram.

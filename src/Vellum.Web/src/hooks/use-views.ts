@@ -27,6 +27,8 @@ export interface View {
   activeFlowId: string | null
   createdAt: string
   updatedAt: string
+  /** The cards a person hid from this view. The model keeps the elements. */
+  hiddenElementIds?: string[] | null
 }
 
 export interface ViewDetail extends View {
@@ -220,6 +222,39 @@ export function useSaveEdgeSides(projectId: string, viewId: string | null) {
         const keep = sourceSide !== null || targetSide !== null || routePoints !== null
         return { ...old, edges: keep ? [...rest, { relationshipId, routePoints, sourceSide, targetSide }] : rest }
       })
+      return { previous }
+    },
+    onError: (error, _vars, context) => {
+      if (context?.previous) queryClient.setQueryData(key, context.previous)
+      toast.error(error.message)
+    },
+  })
+}
+
+/**
+ * Sets the cards hidden from a view. Hiding a card is view data: the element stays in the model
+ * and in every other view. The canvas shows the change at once; a failed save puts the saved
+ * list back.
+ */
+export function useSetHiddenCards(projectId: string, viewId: string | null) {
+  const queryClient = useQueryClient()
+  const key = ['projects', projectId, 'views', viewId]
+
+  return useMutation({
+    mutationFn: async (hiddenElementIds: string[]) => {
+      if (!viewId) throw new Error('No diagram is open.')
+      unwrap(
+        await patchApiProjectsByProjectIdViewsByViewId({
+          path: { projectId, viewId },
+          body: { name: null, rootElementId: null, visibleElementIds: null, activeLens: null, updatedAt: null, hiddenElementIds },
+        }),
+        'The diagram did not save which cards it hides.',
+      )
+    },
+    onMutate: async (hiddenElementIds) => {
+      await queryClient.cancelQueries({ queryKey: key })
+      const previous = queryClient.getQueryData<ViewDetail>(key)
+      queryClient.setQueryData<ViewDetail>(key, (old) => (old ? { ...old, hiddenElementIds } : old))
       return { previous }
     },
     onError: (error, _vars, context) => {

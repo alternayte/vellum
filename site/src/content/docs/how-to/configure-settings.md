@@ -5,7 +5,7 @@ description: Change settings in the app, store credentials, set the start values
 
 This guide shows you how to change the settings of a workspace. You need the owner role in the workspace to change them. Any member can read them.
 
-Open the workspace on the home screen and select **Settings**.
+Select your avatar at the right end of the top bar, then select **Workspace settings**. As an alternative, open the workspace on the home screen and select **Settings**.
 
 ## Defaults and workspace values
 

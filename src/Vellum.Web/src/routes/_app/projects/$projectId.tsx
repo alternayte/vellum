@@ -42,8 +42,13 @@ import { useAddRelationship, useUpdateRelationship, useRemoveRelationship } from
 import { isProjectRefusal, projectErrorBlocks, refuseWrite, useModel, useProject, writeGuard } from '@/hooks/use-model'
 import { useFactLabel } from '@/lib/fact-labels'
 import { toast } from 'sonner'
-import { useViews, useView, useCreateView, useSaveLayout, useSaveEdgeSides, useSaveLineVisibility, type ViewDetail } from '@/hooks/use-views'
+import { useViews, useView, useCreateView, useSaveLayout, useSaveEdgeSides, useSaveLineVisibility, useSetHiddenCards, type ViewDetail } from '@/hooks/use-views'
 import { lineVisibilityOf, type LineVisibility } from '@/lib/line-visibility'
+import { PickDialog } from '@/components/shell/pick-dialog'
+import { TypedDeleteDialog } from '@/components/shell/typed-delete-dialog'
+import { downloadStructurizr, downloadView } from '@/lib/diagram-export'
+import { pasteSet, useClipboardStore } from '@/stores/clipboard-store'
+import type { ViewExport } from '@/components/canvas/context-menus/canvas-context-menu'
 import { useDocs, useCreateDoc } from '@/hooks/use-docs'
 import { useSpaces } from '@/hooks/use-spaces'
 import { useSchemas } from '@/hooks/use-schemas'
@@ -69,8 +74,10 @@ import { useGhostStore } from '@/stores/ghost-store'
 /**
  * `thread` opens one comment thread, from the inbox or a webhook link; `draft` is the draft it is on.
  * `proposal` opens additions as the ghost layer, and `flowProposal` a proposed flow, from the inbox.
+ * `view` opens one view, from a copied link to it.
  */
 interface ProjectSearch {
+  view?: string
   thread?: string
   draft?: string
   proposal?: string
@@ -80,6 +87,7 @@ interface ProjectSearch {
 export const Route = createFileRoute('/_app/projects/$projectId')({
   component: ProjectPage,
   validateSearch: (search: Record<string, unknown>): ProjectSearch => ({
+    view: typeof search.view === 'string' ? search.view : undefined,
     thread: typeof search.thread === 'string' ? search.thread : undefined,
     draft: typeof search.draft === 'string' ? search.draft : undefined,
     proposal: typeof search.proposal === 'string' ? search.proposal : undefined,
@@ -204,12 +212,23 @@ function ProjectWorkspace() {
   const saveLineVisibility = guard(useSaveLineVisibility(projectId, activeViewId))
   const handleLineVisibilityChange = (visibility: LineVisibility) => saveLineVisibility.mutate(visibility)
   const saveEdgeSides = guard(useSaveEdgeSides(projectId, activeViewId))
+  const setHiddenCards = guard(useSetHiddenCards(projectId, activeViewId))
   const handleEdgeSidesChange = useCallback(
     (relationshipId: string, sides: { sourceSide: string | null; targetSide: string | null }) => saveEdgeSides.mutate({ relationshipId, ...sides }),
     [saveEdgeSides],
   )
   const createView = useCreateView(projectId)
   const autoViewRef = useRef(false)
+  const { view: linkedViewId } = Route.useSearch()
+  const navigate = useNavigate()
+
+  // A link to a view opens that view. The address loses the parameter after.
+  useEffect(() => {
+    if (!linkedViewId || !views) return
+    if (views.some((v) => v.id === linkedViewId)) useShellStore.getState().setActiveView(linkedViewId)
+    else toast.error('The view of this link is not in the project any more.')
+    navigate({ to: '/projects/$projectId', params: { projectId }, search: {}, replace: true })
+  }, [linkedViewId, views, navigate, projectId])
 
   // An accepted ghost keeps its place: the layer saves it in the open view, with the sizes of
   // the cards that it opened. A layer belongs to its project.
@@ -245,7 +264,7 @@ function ProjectWorkspace() {
   }, [])
 
   useEffect(() => {
-    if (activeViewId || activeDocId || autoViewRef.current) return
+    if (activeViewId || activeDocId || autoViewRef.current || linkedViewId) return
     if (!views) return
     if (views.length > 0) {
       useShellStore.getState().setActiveView(views[0].id)
@@ -257,7 +276,7 @@ function ProjectWorkspace() {
       })
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeViewId, activeDocId, views])
+  }, [activeViewId, activeDocId, views, linkedViewId])
 
   // Build a map from entityId -> DiffState for canvas diff colouring
   const diffStateMap = useMemo<Map<string, DiffState>>(() => {
@@ -615,8 +634,8 @@ function ProjectWorkspace() {
     })
   }
 
-  const handleAddElementAtFlowPosition = (kind: string, position: { x: number; y: number }) => {
-    const { currentRootId } = useCanvasStore.getState()
+  const handleAddElementAtFlowPosition = (kind: string, position: { x: number; y: number }, parentId?: string | null) => {
+    const currentRootId = parentId === undefined ? useCanvasStore.getState().currentRootId : parentId
     const id = crypto.randomUUID()
     useUndoStore.getState().execute({
       label: `Add ${kind}`,
@@ -633,6 +652,150 @@ function ProjectWorkspace() {
       undo: () => removeElement.mutate(id),
     })
   }
+
+  // Hiding a card is view data: the element stays in the model and in every other view.
+  const hiddenElementIds = useMemo(() => activeView?.hiddenElementIds ?? [], [activeView])
+  const handleHideCards = (ids: string[]) => {
+    const before = hiddenElementIds
+    const after = [...new Set([...before, ...ids])]
+    if (after.length === before.length) return
+    const shell = useShellStore.getState()
+    if (shell.selectedElementId && ids.includes(shell.selectedElementId)) shell.selectElement(null)
+    useUndoStore.getState().execute({
+      label: ids.length === 1 ? 'Hide a card' : `Hide ${ids.length} cards`,
+      execute: () => setHiddenCards.mutate(after),
+      undo: () => setHiddenCards.mutate(before),
+    })
+  }
+  const handleShowCards = (ids: string[]) => {
+    const before = hiddenElementIds
+    const shown = new Set(ids)
+    const after = before.filter((id) => !shown.has(id))
+    if (after.length === before.length) return
+    useUndoStore.getState().execute({
+      label: ids.length === 1 ? 'Show a hidden card' : `Show ${ids.length} hidden cards`,
+      execute: () => setHiddenCards.mutate(after),
+      undo: () => setHiddenCards.mutate(before),
+    })
+  }
+
+  // Align, distribute and tidy of a selection: one step to undo. A card without a saved place
+  // before has none again after an undo.
+  const handleMoveCards = (moves: { elementId: string; x: number; y: number }[], label: string) => {
+    const saved = activeView?.positions ?? []
+    const moved = new Set(moves.map((m) => m.elementId))
+    const old = saved.filter((p) => moved.has(p.elementId))
+    const write = (places: { elementId: string; x: number; y: number }[], drop: Set<string>) => {
+      const current = (queryClient.getQueryData<typeof activeView>(['projects', projectId, 'views', activeViewId]) ?? activeView)?.positions ?? []
+      const byId = new Map(places.map((p) => [p.elementId, p]))
+      const kept = current.filter((p) => !drop.has(p.elementId)).map((p) => (byId.has(p.elementId) ? { ...p, x: byId.get(p.elementId)!.x, y: byId.get(p.elementId)!.y } : p))
+      const added = places.filter((p) => !current.some((c) => c.elementId === p.elementId))
+      saveLayout([...kept, ...added])
+    }
+    useUndoStore.getState().execute({
+      label,
+      execute: () => write(moves, new Set()),
+      undo: () => write(old, new Set([...moved].filter((id) => !old.some((p) => p.elementId === id)))),
+    })
+  }
+
+  // Several writes that depend on each other, one after the other: a parent before its child,
+  // an element before its relationships.
+  const inOrder = async (steps: (() => Promise<unknown>)[]) => {
+    try {
+      for (const step of steps) await step()
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'A change was not saved.')
+    }
+  }
+
+  // The delete of two or more selected elements asks for the count to be typed first.
+  const [deleteRequest, setDeleteRequest] = useState<string[] | null>(null)
+  const handleConfirmDeleteSelection = (ids: string[]) => {
+    const all = elements ?? []
+    const byId = new Map(all.map((e) => [e.id, e]))
+    const chosen = new Set(ids)
+    const inChosen = (id: string) => {
+      for (let at = byId.get(id)?.parentId; at; at = byId.get(at)?.parentId) if (chosen.has(at)) return true
+      return false
+    }
+    const roots = ids.filter((id) => byId.has(id) && !inChosen(id))
+    // What goes with them, parents first, so an undo adds a parent before its children.
+    const gone: Element[] = []
+    const queue = roots.map((id) => byId.get(id)!)
+    while (queue.length > 0) {
+      const el = queue.shift()!
+      gone.push(el)
+      queue.push(...all.filter((e) => e.parentId === el.id))
+    }
+    const goneIds = new Set(gone.map((e) => e.id))
+    const lines = (relationships ?? []).filter((r) => goneIds.has(r.fromId) || goneIds.has(r.toId))
+    if (readOnly) return refuseWrite()
+    useUndoStore.getState().execute({
+      label: `Delete ${roots.length} elements`,
+      execute: () => void inOrder(roots.map((id) => () => removeElement.mutateAsync(id))),
+      undo: () => void inOrder([
+        ...gone.map((el) => () => addElement.mutateAsync({
+          id: el.id, kind: el.kind, name: el.name, description: el.description ?? undefined, technology: el.technology ?? undefined,
+          parentId: el.parentId ?? undefined, status: el.status, tags: el.tags,
+        })),
+        ...lines.map((r) => () => addRelationship.mutateAsync({ id: r.id, fromId: r.fromId, toId: r.toId, label: r.label ?? undefined, technology: r.technology ?? undefined })),
+      ]),
+    })
+  }
+
+  // A relationship from one element to one the person picks from the model.
+  const [relationshipFrom, setRelationshipFrom] = useState<string | null>(null)
+
+  // A paste adds new elements from the copied cards, with what is inside them and the
+  // relationships between them, at the pointer.
+  const handlePaste = (parentId: string | null, at: { x: number; y: number }) => {
+    const clip = useClipboardStore.getState().clip
+    if (!clip || readOnly) return
+    const parentKind = parentId ? elements?.find((e) => e.id === parentId)?.kind ?? null : null
+    const kinds = validKindsForContext(parentKind)
+    const set = pasteSet(clip, parentId, at, (kind) => kinds.includes(kind))
+    if (set.elements.length === 0) return
+    const newIds = set.elements.map((e) => e.newId)
+    const newLines = set.relationships.map((r) => r.newId)
+    useUndoStore.getState().execute({
+      label: `Paste ${set.elements.length} element${set.elements.length === 1 ? '' : 's'}`,
+      execute: () => {
+        const current = (queryClient.getQueryData<typeof activeView>(['projects', projectId, 'views', activeViewId]) ?? activeView)?.positions ?? []
+        saveLayout([...current.filter((p) => !newIds.includes(p.elementId)), ...set.positions])
+        void inOrder([
+          ...set.elements.map((el) => () => addElement.mutateAsync({
+            id: el.newId, kind: el.kind, name: el.name, description: el.description ?? undefined, technology: el.technology ?? undefined,
+            parentId: el.parentId ?? undefined, status: el.status, tags: el.tags,
+          })),
+          ...set.relationships.map((r) => () => addRelationship.mutateAsync({ id: r.newId, fromId: r.fromId, toId: r.toId, label: r.label ?? undefined, technology: r.technology ?? undefined })),
+        ])
+      },
+      undo: () => void inOrder([
+        ...newLines.map((id) => () => removeRelationship.mutateAsync(id)),
+        // Removing a pasted card removes what is inside it.
+        ...set.elements.filter((e) => !newIds.includes(e.parentId ?? '')).map((e) => () => removeElement.mutateAsync(e.newId)),
+      ]),
+    })
+  }
+
+  const viewActions = activeView
+    ? {
+        onExport: (format: ViewExport) => {
+          const job = format === 'dsl'
+            ? downloadStructurizr(projectId, projectName, openRevision?.id)
+            : downloadView(projectId, activeView.id, activeView.name, format, openRevision?.id)
+          job.catch((error: unknown) => toast.error(error instanceof Error ? error.message : 'The export did not complete.'))
+        },
+        onCopyLink: () => {
+          const url = `${window.location.origin}/projects/${projectId}?view=${encodeURIComponent(activeView.id)}`
+          navigator.clipboard.writeText(url).then(
+            () => toast.success(`Copied a link to ${activeView.name}. Members of the workspace can open it.`),
+            () => toast.error('The browser did not allow the copy.'),
+          )
+        },
+      }
+    : undefined
 
   const handleNodeDragStop = (id: string, x: number, y: number) => {
     const current = activeView?.positions ?? []
@@ -923,7 +1086,6 @@ function ProjectWorkspace() {
               onReverseRelationship={handleReverseRelationship}
               onDeleteRelationship={handleDeleteRelationship}
               onUpdateRelationship={(id, fields) => updateRelationship.mutate({ id, ...fields })}
-              onAddElementAtPosition={handleAddElementAtPosition}
               onTidy={handleTidy}
               onRenameElement={handleRenameElement}
               onConnectToBlank={handleConnectToBlank}
@@ -947,6 +1109,14 @@ function ProjectWorkspace() {
               edgeSides={activeView?.edges}
               lineRoutes={activeView?.lines}
               onEdgeSidesChange={activeView ? handleEdgeSidesChange : undefined}
+              hiddenElementIds={hiddenElementIds}
+              onHideCards={activeView ? handleHideCards : undefined}
+              onShowCards={activeView ? handleShowCards : undefined}
+              onMoveCards={activeView ? handleMoveCards : undefined}
+              onDeleteSelection={setDeleteRequest}
+              onAddRelationshipFrom={setRelationshipFrom}
+              onPaste={activeView ? handlePaste : undefined}
+              viewActions={viewActions}
               lineControls={!!activeView}
               lineVisibility={lineVisibility}
               onLineVisibilityChange={activeView && !readOnly ? handleLineVisibilityChange : undefined}
@@ -1012,6 +1182,51 @@ function ProjectWorkspace() {
         onTidy={handleTidy}
         onZoomToFit={() => fitViewRef.current?.()}
       />
+
+      {deleteRequest && (() => {
+        const chosen = deleteRequest.map((id) => elements?.find((e) => e.id === id)).filter((e): e is Element => !!e)
+        const inside = (id: string): number => (elements ?? []).filter((e) => e.parentId === id).reduce((n, e) => n + 1 + inside(e.id), 0)
+        return (
+          <TypedDeleteDialog
+            noun="elements"
+            name={String(chosen.length)}
+            title={`Delete ${chosen.length} elements`}
+            description="These leave the model, with every element inside them and every relationship to them:"
+            items={chosen.map((e) => {
+              const n = inside(e.id)
+              return n > 0 ? `${e.name} and ${n} ${n === 1 ? 'element' : 'elements'} inside` : e.name
+            })}
+            note="Undo puts the elements and their relationships back. A message they produce or consume does not come back."
+            onConfirm={() => {
+              handleConfirmDeleteSelection(chosen.map((e) => e.id))
+              setDeleteRequest(null)
+            }}
+            onClose={() => setDeleteRequest(null)}
+          />
+        )
+      })()}
+
+      {relationshipFrom && (() => {
+        const from = elements?.find((e) => e.id === relationshipFrom)
+        if (!from) return null
+        const nameOf = (id: string | null) => (id ? elements?.find((e) => e.id === id)?.name : undefined)
+        return (
+          <PickDialog
+            title={`Add a relationship from ${from.name}`}
+            options={(elements ?? [])
+              .filter((e) => e.id !== from.id)
+              .sort((a, b) => a.name.localeCompare(b.name))
+              .map((e) => ({ value: e.id, label: nameOf(e.parentId ?? null) ? `${e.name} · in ${nameOf(e.parentId ?? null)}` : e.name, hint: e.kind }))}
+            current={null}
+            submitLabel="Add relationship"
+            onSubmit={(to) => {
+              if (to) handleConnect(from.id, to)
+              setRelationshipFrom(null)
+            }}
+            onClose={() => setRelationshipFrom(null)}
+          />
+        )
+      })()}
 
       {addElementRequest && (
         <AddElementDialog

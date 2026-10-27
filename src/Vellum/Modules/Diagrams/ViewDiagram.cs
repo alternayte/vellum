@@ -84,8 +84,10 @@ public sealed record ViewDiagram(
             .GroupBy(e => e.ParentId!.Value)
             .ToDictionary(g => g.Key, g => g.Count());
 
+        // A card hidden from the view is not drawn; its relationships attach to no shown card.
+        var hidden = view.HiddenElementIds.ToHashSet();
         var level = state.Elements.Values
-            .Where(e => e.ParentId == rootId)
+            .Where(e => e.ParentId == rootId && !hidden.Contains(e.Id.Value))
             .OrderBy(e => e.Name, StringComparer.Ordinal).ThenBy(e => e.Id.Value)
             .ToList();
 
@@ -142,9 +144,10 @@ public sealed record ViewDiagram(
     /// side, target side, an empty word for auto) in order of relationship ID, then each
     /// relationship with a saved route (<c>route</c>, relationship ID, <see cref="LayoutRoute.Text"/>)
     /// in order of relationship ID, then each derived line with a saved route (<c>line</c>, from ID,
-    /// to ID, the route) in order of from ID and to ID, then, when the view hides a line,
-    /// <c>visibility</c> and <see cref="LineVisibility.Text"/>. A view without a saved side, route or
-    /// hidden line has the fingerprint it had before those existed. The same revision and the same
+    /// to ID, the route) in order of from ID and to ID, then each hidden card (<c>hidden</c>,
+    /// element ID) in order of element ID, then, when the view hides a line, <c>visibility</c> and
+    /// <see cref="LineVisibility.Text"/>. A view without a saved side, route, hidden card or hidden
+    /// line has the fingerprint it had before those existed. The same revision and the same
     /// fingerprint give the same bytes.
     /// </summary>
     public static string LayoutFingerprint(
@@ -162,6 +165,8 @@ public sealed record ViewDiagram(
             text.Append("route,").Append(id).Append(',').Append(route!.Text()).Append('\n');
         foreach (var (from, to, route) in (lines ?? []).Select(l => (l.FromId, l.ToId, Route: LayoutRoute.Read(l.Route))).Where(l => l.Route is not null).OrderBy(l => l.FromId).ThenBy(l => l.ToId))
             text.Append("line,").Append(from).Append(',').Append(to).Append(',').Append(route!.Text()).Append('\n');
+        foreach (var id in view.HiddenElementIds.Distinct().Order())
+            text.Append("hidden,").Append(id).Append('\n');
         if (visibility is { HidesAnything: true })
             text.Append("visibility,").Append(visibility.Text()).Append('\n');
         return "sha256:" + Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(text.ToString())));

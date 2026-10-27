@@ -141,7 +141,8 @@ public static class StructurizrDsl
             ElementId? root = view.RootElementId is { } r ? new ElementId(r) : null;
             if (root is { } at && (!types.TryGetValue(at, out var type) || type is not (DslType.SoftwareSystem or DslType.Container)))
                 continue;
-            var level = state.Elements.Values.Where(e => e.ParentId == root).Select(e => e.Id).ToHashSet();
+            var hiddenCards = view.HiddenElementIds.ToHashSet();
+            var level = state.Elements.Values.Where(e => e.ParentId == root && !hiddenCards.Contains(e.Id.Value)).Select(e => e.Id).ToHashSet();
             var shown = DerivedLines.Project(state.Elements, state.Relationships.Values, level,
                 visibility?.GetValueOrDefault(view.Id) ?? LineVisibility.AllShown);
             foreach (var line in shown.Derived)
@@ -250,6 +251,9 @@ public static class StructurizrDsl
             }
             text.Append("        ").Append(opening).Append(" {\n")
                 .Append("            include *\n");
+            // A card hidden from the view is left out of it, as on the canvas.
+            foreach (var hidden in view.HiddenElementIds.Distinct().Where(ids.ContainsKey).Select(h => ids[h]).Order(StringComparer.Ordinal))
+                text.Append("            exclude ").Append(hidden).Append('\n');
             if (excluded.TryGetValue(view.Id, out var hiddenHere))
             {
                 foreach (var id in hiddenHere.Relationships.OrderBy(id => id.Value))

@@ -27,9 +27,14 @@ import { CommentMarkers, type CommentMarker } from './comment-markers'
 import { labelAction } from '@/lib/fact-labels'
 import { NodeContextMenu } from './context-menus/node-context-menu'
 import { EdgeContextMenu } from './context-menus/edge-context-menu'
-import { CanvasContextMenu } from './context-menus/canvas-context-menu'
+import { CanvasContextMenu, type ViewExport } from './context-menus/canvas-context-menu'
+import { SelectionContextMenu } from './context-menus/selection-context-menu'
 import { DerivedLineContextMenu } from './context-menus/derived-line-context-menu'
 import { LineControlsChip, type LineControls } from './line-controls'
+import { align, distribute, type AlignEdge, type Box, type DistributeAxis, type Move } from '@/lib/arrange'
+import { computeLayout } from '@/lib/layout'
+import { useClipboardStore } from '@/stores/clipboard-store'
+import { toast } from 'sonner'
 import { CreatePopover } from './create-popover'
 import '@xyflow/react/dist/style.css'
 import { nodeTypes } from './nodes/node-types'
@@ -48,8 +53,7 @@ import type { DiffState } from '@/stores/draft-store'
 import type { Provenance, StaleMark } from '@/lib/fact-status'
 import { elementColor, isExternal } from '@/lib/kind-colors'
 import { dropPlace, PALETTE, PALETTE_DRAG_TYPE, type PaletteEntry } from '@/lib/element-palette'
-import { toast } from 'sonner'
-import { CONTAINMENT_RULES, canContain } from '@/lib/containment-rules'
+import { CONTAINMENT_RULES, canContain, validKindsForContext } from '@/lib/containment-rules'
 import { prefersReducedMotion } from '@/lib/utils'
 import { traceEdgeLabel, traceFamily } from '@/lib/trace'
 import { currentTraceEvent, useTraceStore } from '@/stores/trace-store'
@@ -158,11 +162,11 @@ interface CanvasViewProps {
   onReverseRelationship?: (id: string) => void
   onDeleteRelationship?: (id: string) => void
   onUpdateRelationship?: (id: string, fields: Record<string, unknown>) => void
-  onAddElementAtPosition?: (kind: string) => void
   onTidy?: () => void
   onRenameElement?: (id: string, newName: string) => void
   onConnectToBlank?: (kind: string, position: { x: number; y: number }, sourceId: string) => void
-  onAddElementAtFlowPosition?: (kind: string, position: { x: number; y: number }) => void
+  /** Adds an element at a point of the canvas: inside `parentId`, or on the level the canvas shows. The point is relative to the parent's card when the parent is open on the canvas. */
+  onAddElementAtFlowPosition?: (kind: string, position: { x: number; y: number }, parentId?: string | null) => void
   /**
    * A kind dragged from the Create tab was dropped: add it inside `parentId` (null is the top
    * level) at `position`, which is relative to the parent's card when the drop was on it. A
@@ -198,6 +202,21 @@ interface CanvasViewProps {
    * side of the same card. The relationship's source and target in the model do not change.
    */
   onEdgeSidesChange?: (relationshipId: string, sides: { sourceSide: CardSide | null; targetSide: CardSide | null }) => void
+  /** The cards a person hid from this view. They are not drawn; the model keeps them. */
+  hiddenElementIds?: string[]
+  /** Hides cards from this view, or shows them again. View data only. */
+  onHideCards?: (ids: string[]) => void
+  onShowCards?: (ids: string[]) => void
+  /** Saves new places of cards, relative to the card each sits in, as one step to undo. */
+  onMoveCards?: (moves: { elementId: string; x: number; y: number }[], label: string) => void
+  /** Asks to delete several elements; the caller confirms. */
+  onDeleteSelection?: (ids: string[]) => void
+  /** Asks for the element a new relationship from this one goes to. */
+  onAddRelationshipFrom?: (id: string) => void
+  /** Adds the copied cards inside `parentId` with their top-left card at `position`. */
+  onPaste?: (parentId: string | null, position: { x: number; y: number }) => void
+  /** The open view: export it, and copy a link to it. */
+  viewActions?: { onExport: (format: ViewExport) => void; onCopyLink: () => void }
   /** Which lines the view draws. Without it every line is drawn. */
   lineVisibility?: LineVisibility
   /** Saves which lines the view draws, for everyone. Without it the line controls only look. */
@@ -250,6 +269,7 @@ export function CanvasView(props: CanvasViewProps) {
         onViewportCenterReady: props.onViewportCenterReady, onSelectionChange: props.onSelectionChange,
         searchOpen: props.searchOpen, onSearchClose: props.onSearchClose, readOnly: true,
         commentMarkers: props.commentMarkers, edgeSides: props.edgeSides, lineRoutes: props.lineRoutes, hiddenLines: props.hiddenLines,
+        hiddenElementIds: props.hiddenElementIds, viewActions: props.viewActions,
         lineVisibility: props.lineVisibility, lineControls: props.lineControls,
       }
     : props
@@ -261,10 +281,11 @@ export function CanvasView(props: CanvasViewProps) {
 }
 
 type ContextMenuState =
-  | { type: 'node'; nodeId: string; position: { x: number; y: number } }
+  | { type: 'node'; nodeId: string; position: { x: number; y: number }; flowPosition: { x: number; y: number } }
   | { type: 'edge'; edgeId: string; position: { x: number; y: number } }
   | { type: 'derived'; line: DerivedEdgeData; position: { x: number; y: number } }
-  | { type: 'canvas'; position: { x: number; y: number } }
+  | { type: 'canvas'; position: { x: number; y: number }; flowPosition: { x: number; y: number } }
+  | { type: 'selection'; ids: string[]; position: { x: number; y: number } }
   | null
 
 function CanvasViewInner({
@@ -288,7 +309,6 @@ function CanvasViewInner({
   onReverseRelationship,
   onDeleteRelationship,
   onUpdateRelationship,
-  onAddElementAtPosition,
   onTidy,
   onRenameElement,
   onConnectToBlank,
@@ -306,12 +326,21 @@ function CanvasViewInner({
   lineRoutes,
   hiddenLines,
   onEdgeSidesChange,
+  hiddenElementIds,
+  onHideCards,
+  onShowCards,
+  onMoveCards,
+  onDeleteSelection,
+  onAddRelationshipFrom,
+  onPaste,
+  viewActions,
   lineVisibility = ALL_LINES_SHOWN,
   onLineVisibilityChange,
   lineControls = false,
 }: CanvasViewProps) {
   const { currentRootId, zoomLevel, setZoom, activeLens, setLens, expandedNodeIds, toggleExpand } = useCanvasStore()
   const { fitView, screenToFlowPosition, getViewport, setViewport, getInternalNode, getIntersectingNodes } = useReactFlow()
+  const hiddenCards = useMemo(() => new Set(hiddenElementIds ?? []), [hiddenElementIds])
   // The zoom is read from the viewport itself: a fit or a programmatic move changes it with no
   // move event of the pane. It is stored once the viewport has settled, so an animated fit
   // does not change the level of detail on every frame.
@@ -370,12 +399,11 @@ function CanvasViewInner({
   }, [getViewportCenter])
   const tier = useLod(zoomLevel)
 
-  const visibleElements = useMemo(() => {
-    if (currentRootId === null) {
-      return elements.filter((e) => e.parentId === null)
-    }
-    return elements.filter((e) => e.parentId === currentRootId)
-  }, [elements, currentRootId])
+  // A card hidden from the view is not drawn: its relationships attach to the card around it, or to none.
+  const visibleElements = useMemo(
+    () => elements.filter((e) => (e.parentId ?? null) === currentRootId && !hiddenCards.has(e.id)),
+    [elements, currentRootId, hiddenCards],
+  )
 
   // The ghost layer: the pending items of an open proposal, drawn over this level.
   const ghostProposal = useGhostStore((s) => s.proposal)
@@ -457,14 +485,14 @@ function CanvasViewInner({
     for (const el of visibleElements) {
       if (expandedNodeIds.has(el.id)) {
         for (const child of elements) {
-          if (child.parentId === el.id) {
+          if (child.parentId === el.id && !hiddenCards.has(child.id)) {
             ids.add(child.id)
           }
         }
       }
     }
     return ids
-  }, [visibleElements, elements, expandedNodeIds])
+  }, [visibleElements, elements, expandedNodeIds, hiddenCards])
 
   // A relationship with both ends on the canvas draws as itself. The rest attach to the nearest
   // card on the canvas that holds each end and merge into derived lines, a projection of this
@@ -534,18 +562,23 @@ function CanvasViewInner({
     const addInside = (el: ElementModel) =>
       onAddChild && !isReviewMode && canContain(el.kind) ? () => onAddChild(el.id) : undefined
 
-    for (const [index, el] of visibleElements.entries()) {
+    // A card without a saved place keeps the grid cell it has with no card hidden, so a hide
+    // or a show moves no other card.
+    const cellOf = new Map(elements.filter((e) => (e.parentId ?? null) === currentRootId).map((e, i) => [e.id, i]))
+    for (const el of visibleElements) {
+      const index = cellOf.get(el.id) ?? 0
       const isExpanded = expandedNodeIds.has(el.id)
       const savedPos = positionMap.get(el.id)
       const position = savedPos ? { x: savedPos.x, y: savedPos.y } : defaultCardPosition(index)
       const entityDiffState = diffStateMap?.get(el.id) ?? (isReviewMode ? 'unchanged' : undefined)
 
       if (isExpanded) {
-        const children = elements.filter((child) => child.parentId === el.id)
+        const allChildren = elements.filter((child) => child.parentId === el.id)
+        const children = allChildren.filter((child) => !hiddenCards.has(child.id))
         // Without a saved size the boundary is as large as the default grid of its children,
         // so a child is not pushed onto its neighbour by the boundary's edge. Around ghosts it
         // takes the room they need.
-        const grid = defaultContainerSize(children.length)
+        const grid = defaultContainerSize(allChildren.length)
         const roomForGhosts = ghostHostSizes?.get(el.id)
         // Render as container boundary
         result.push({
@@ -568,7 +601,8 @@ function CanvasViewInner({
         })
 
         // Add children inside the container
-        children.forEach((child, ci) => {
+        children.forEach((child) => {
+          const ci = allChildren.indexOf(child)
           const savedChildPos = positionMap.get(child.id)
           const childPos = savedChildPos ? { x: savedChildPos.x, y: savedChildPos.y } : defaultChildPosition(ci)
           const childDiffState = diffStateMap?.get(child.id) ?? (isReviewMode ? 'unchanged' : undefined)
@@ -631,7 +665,7 @@ function CanvasViewInner({
     }
 
     return result
-  }, [visibleElements, elements, positionMap, tier, diffStateMap, isReviewMode, expandedNodeIds, ghostHostSizes, onRenameElement, onNodeResize, onAddChild])
+  }, [visibleElements, elements, positionMap, tier, diffStateMap, isReviewMode, expandedNodeIds, ghostHostSizes, onRenameElement, onNodeResize, onAddChild, hiddenCards, currentRootId])
 
   const edges: Edge[] = useMemo(() => {
     // Count parallel edges between each pair of nodes (ignoring direction): the relationships,
@@ -1037,7 +1071,11 @@ function CanvasViewInner({
   )
 
   useEffect(() => {
-    setRfNodes(derivedNodes)
+    // The selection is React Flow's: an align or a move of the selected cards keeps it.
+    setRfNodes((previous) => {
+      const selected = new Set(previous.filter((n) => n.selected).map((n) => n.id))
+      return selected.size === 0 ? derivedNodes : derivedNodes.map((n) => (selected.has(n.id) ? { ...n, selected: true } : n))
+    })
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [derivedNodeFingerprint, setRfNodes])
 
@@ -1390,14 +1428,125 @@ function CanvasViewInner({
     (event: React.MouseEvent, node: Node) => {
       event.preventDefault()
       // A ghost has its decisions on its card and in the detail panel; it has no menu.
-      if (isGhostNodeId(node.id)) return
-      setContextMenu({ type: 'node', nodeId: node.id, position: { x: event.clientX, y: event.clientY } })
+      if (isGhostNodeId(node.id) || node.id.startsWith('msg-')) return
+      const position = { x: event.clientX, y: event.clientY }
+      // A right-click on one of two or more selected cards acts on all of them.
+      if (!readOnly && node.selected && selectedNodeIds.length >= 2 && selectedNodeIds.includes(node.id)) {
+        setContextMenu({ type: 'selection', ids: selectedNodeIds, position })
+        return
+      }
+      setContextMenu({ type: 'node', nodeId: node.id, position, flowPosition: screenToFlowPosition(position) })
     },
-    [],
+    [readOnly, selectedNodeIds, screenToFlowPosition],
   )
-  // The edge menu and the canvas menu hold actions that write and nothing else that the
-  // canvas does not already offer, so a read-only canvas opens neither. The node menu
-  // stays, without its actions that write: it shows the details, expands and drills in.
+  const handleSelectionContextMenu = useCallback(
+    (event: React.MouseEvent, nodes: Node[]) => {
+      event.preventDefault()
+      const ids = nodes.map((n) => n.id).filter((id) => !id.startsWith('msg-') && !isGhostNodeId(id))
+      if (readOnly || ids.length < 2) return
+      setContextMenu({ type: 'selection', ids, position: { x: event.clientX, y: event.clientY } })
+    },
+    [readOnly],
+  )
+
+  // Selection, as React Flow keeps it: the canvas selects cards, and the selection change
+  // reports them as for a click.
+  const selectCards = useCallback((ids: Set<string>) => {
+    setRfNodes((nds) => nds.map((n) => {
+      const want = ids.has(n.id)
+      return !!n.selected === want ? n : { ...n, selected: want }
+    }))
+    setRfEdges((eds) => (eds as Edge[]).map((e) => (e.selected ? { ...e, selected: false } : e)))
+  }, [setRfNodes, setRfEdges])
+  const selectAll = useCallback(() => {
+    selectCards(new Set(rfNodes.filter((n) => ELEMENT_NODE_TYPES.has(n.type ?? '') && !isGhostNodeId(n.id)).map((n) => n.id)))
+  }, [rfNodes, selectCards])
+  // A card and each card a drawn line joins it to: its relationships and its derived lines.
+  const selectConnected = useCallback((id: string) => {
+    const ids = new Set([id])
+    for (const e of edges) {
+      if (e.source === id) ids.add(e.target)
+      if (e.target === id) ids.add(e.source)
+    }
+    selectCards(ids)
+  }, [edges, selectCards])
+
+  // The box of each card on the canvas, in canvas coordinates. A card not yet measured is left out.
+  const boxesOf = useCallback((ids: string[]): Box[] => ids.flatMap((id) => {
+    const node = getInternalNode(id)
+    if (!node?.measured.width || !node.measured.height) return []
+    const { x, y } = node.internals.positionAbsolute
+    return [{ id, x, y, width: node.measured.width, height: node.measured.height }]
+  }), [getInternalNode])
+  // New places in canvas coordinates become places inside the card each one sits in, as saved.
+  const moveCards = useCallback((moves: Move[], label: string) => {
+    if (!onMoveCards || moves.length === 0) return
+    onMoveCards(moves.map((m) => {
+      const node = getInternalNode(m.id)
+      const parent = node?.parentId ? getInternalNode(node.parentId) : undefined
+      const origin = parent?.internals.positionAbsolute ?? { x: 0, y: 0 }
+      return { elementId: m.id, x: m.x - origin.x, y: m.y - origin.y }
+    }), label)
+  }, [onMoveCards, getInternalNode])
+  const alignCards = useCallback((ids: string[], edge: AlignEdge) => moveCards(align(boxesOf(ids), edge), `Align ${ids.length} cards`), [boxesOf, moveCards])
+  const distributeCards = useCallback((ids: string[], axis: DistributeAxis) => moveCards(distribute(boxesOf(ids), axis), `Space ${ids.length} cards`), [boxesOf, moveCards])
+  // Tidy of a selection: the auto layout of the selected cards and the lines between them, in the
+  // place the selection takes now. The other cards stay.
+  const tidyCards = useCallback(async (ids: string[]) => {
+    const boxes = boxesOf(ids)
+    if (boxes.length < 2) return
+    const inside = new Set(boxes.map((b) => b.id))
+    const between = edges
+      .filter((e) => inside.has(e.source) && inside.has(e.target) && e.source !== e.target)
+      .map((e) => ({ id: e.id, fromId: e.source, toId: e.target, label: (e.data as { label?: string | null } | undefined)?.label ?? null }))
+    const free = visibleCanvasRect()
+    const { positions: laid } = await computeLayout(
+      boxes.map((b) => ({ id: b.id, parentId: null, width: b.width, height: b.height })),
+      between,
+      free ? { width: free.width, height: free.height } : undefined,
+    )
+    if (laid.length === 0) return
+    const dx = Math.min(...boxes.map((b) => b.x)) - Math.min(...laid.map((p) => p.x))
+    const dy = Math.min(...boxes.map((b) => b.y)) - Math.min(...laid.map((p) => p.y))
+    const before = new Map(boxes.map((b) => [b.id, b]))
+    const moves = laid
+      .map((p) => ({ id: p.elementId, x: Math.round(p.x + dx), y: Math.round(p.y + dy) }))
+      .filter((m) => before.get(m.id)?.x !== m.x || before.get(m.id)?.y !== m.y)
+    moveCards(moves, `Tidy ${ids.length} cards`)
+  }, [boxesOf, edges, moveCards])
+
+  // The cards of this level that the view hides, inside the open cards too.
+  const hiddenHere = useMemo(() => {
+    if (hiddenCards.size === 0) return []
+    const open = new Set(visibleElements.filter((e) => expandedNodeIds.has(e.id)).map((e) => e.id))
+    return elements
+      .filter((e) => hiddenCards.has(e.id) && ((e.parentId ?? null) === currentRootId || (e.parentId !== null && open.has(e.parentId))))
+      .map((e) => e.id)
+  }, [elements, hiddenCards, visibleElements, expandedNodeIds, currentRootId])
+
+  // What a paste adds on this level: the copied cards whose kind this level can hold.
+  const clip = useClipboardStore((s) => s.clip)
+  const levelKind = currentRootId ? elements.find((e) => e.id === currentRootId)?.kind ?? null : null
+  const pasteLabel = useMemo(() => {
+    if (!clip || !onPaste || readOnly) return null
+    const kinds = validKindsForContext(levelKind)
+    const roots = clip.elements.filter((e) => clip.rootIds.includes(e.id) && kinds.includes(e.kind))
+    if (roots.length === 0) return null
+    return roots.length === 1 ? `Paste ${roots[0].name}` : `Paste ${roots.length} cards`
+  }, [clip, onPaste, readOnly, levelKind])
+
+  const copyCards = useCallback((ids: string[]) => {
+    useClipboardStore.getState().copy(ids, elements, relationships, positions)
+    const one = ids.length === 1 ? elements.find((e) => e.id === ids[0])?.name : null
+    toast.success(one ? `Copied ${one}. Right-click the canvas to paste it.` : `Copied ${ids.length} cards. Right-click the canvas to paste them.`)
+  }, [elements, relationships, positions])
+  const copyText = useCallback((text: string, done: string) => {
+    navigator.clipboard.writeText(text).then(() => toast.success(done), () => toast.error('The browser did not allow the copy.'))
+  }, [])
+
+  // The edge menu holds actions that write and nothing else that the canvas does not already
+  // offer, so a read-only canvas does not open it. The node menu and the canvas menu stay,
+  // without their actions that write.
   const noMenu = useCallback((event: React.MouseEvent | MouseEvent) => event.preventDefault(), [])
 
   const handleEdgeContextMenu = useCallback(
@@ -1425,9 +1574,10 @@ function CanvasViewInner({
   const handlePaneContextMenu = useCallback(
     (event: React.MouseEvent | MouseEvent) => {
       event.preventDefault()
-      setContextMenu({ type: 'canvas', position: { x: (event as MouseEvent).clientX, y: (event as MouseEvent).clientY } })
+      const position = { x: (event as MouseEvent).clientX, y: (event as MouseEvent).clientY }
+      setContextMenu({ type: 'canvas', position, flowPosition: screenToFlowPosition(position) })
     },
-    [],
+    [screenToFlowPosition],
   )
 
   // With a ghost layer open the canvas shows, even on a level that has no element yet.
@@ -1439,10 +1589,17 @@ function CanvasViewInner({
           <p className="text-sm text-muted-foreground">
             {readOnly
               ? 'This model has no element here. It is read-only.'
-              : isTopLevel
-                ? 'Start with a system. Draw a connection to add the next one.'
-                : 'Nothing here yet. Add an element to get started.'}
+              : hiddenHere.length > 0
+                ? `This view hides every card of this level (${hiddenHere.length}).`
+                : isTopLevel
+                  ? 'Start with a system. Draw a connection to add the next one.'
+                  : 'Nothing here yet. Add an element to get started.'}
           </p>
+          {!readOnly && hiddenHere.length > 0 && onShowCards && (
+            <Button variant="outline" size="sm" className="mt-3 mr-2" onClick={() => onShowCards(hiddenHere)}>
+              Show hidden cards
+            </Button>
+          )}
           {!readOnly && (
             <Button
               variant="outline"
@@ -1487,8 +1644,9 @@ function CanvasViewInner({
         onPaneClick={handlePaneClick}
         onSelectionChange={handleSelectionChange}
         onNodeContextMenu={handleNodeContextMenu}
+        onSelectionContextMenu={handleSelectionContextMenu}
         onEdgeContextMenu={readOnly ? noMenu : handleEdgeContextMenu}
-        onPaneContextMenu={readOnly ? noMenu : handlePaneContextMenu}
+        onPaneContextMenu={handlePaneContextMenu}
         nodesDraggable={!readOnly}
         nodesConnectable={!readOnly}
         // A node that cannot be dragged has no `nopan` class, so the zoom of the pane takes its
@@ -1598,22 +1756,32 @@ function CanvasViewInner({
         const el = elements.find((e) => e.id === nodeId)
         if (!el) return null
         const children = elements.filter((e) => e.parentId === nodeId)
+        const isOpen = rfNodes.some((n) => n.id === nodeId && n.type === 'c4-container')
         return (
           <NodeContextMenu
-            open
             position={contextMenu.position}
             hasChildren={children.length > 0}
             isExpanded={expandedNodeIds.has(nodeId)}
             childKinds={onAddChild && !isReviewMode ? CONTAINMENT_RULES[el.kind] ?? [] : []}
             canExpand={(el.parentId ?? null) === currentRootId}
-            onAddChild={(kind) => onAddChild?.(nodeId, kind)}
+            canOpenInside={canContain(el.kind)}
+            onAddChild={(kind) => {
+              // An open card takes the new element at the pointer; a closed one asks for its name.
+              const container = isOpen ? getInternalNode(nodeId) : undefined
+              if (container && onAddElementAtFlowPosition) {
+                const origin = container.internals.positionAbsolute
+                onAddElementAtFlowPosition(kind, { x: contextMenu.flowPosition.x - origin.x, y: contextMenu.flowPosition.y - origin.y }, nodeId)
+              } else onAddChild?.(nodeId, kind)
+            }}
             onClose={() => setContextMenu(null)}
             onEditDetails={() => selectElement(nodeId)}
             onExpand={() => toggleExpand(nodeId)}
-            onDrillInto={() => {
-              const { drillInto } = useCanvasStore.getState()
-              drillInto({ elementId: el.id, name: el.name, kind: el.kind })
-            }}
+            onOpenInside={() => useCanvasStore.getState().drillInto({ elementId: el.id, name: el.name, kind: el.kind })}
+            onSelectConnected={() => selectConnected(nodeId)}
+            onCopyId={() => copyText(nodeId, `Copied the ID of ${el.name}.`)}
+            onCopy={readOnly ? undefined : () => copyCards([nodeId])}
+            onHide={onHideCards && !isReviewMode ? () => onHideCards([nodeId]) : undefined}
+            onAddRelationship={onAddRelationshipFrom && !isReviewMode ? () => onAddRelationshipFrom(nodeId) : undefined}
             readOnly={readOnly}
             onDuplicate={() => onDuplicateElement?.(nodeId)}
             onDelete={() => onDeleteElement?.(nodeId)}
@@ -1622,6 +1790,19 @@ function CanvasViewInner({
           />
         )
       })()}
+
+      {contextMenu?.type === 'selection' && (
+        <SelectionContextMenu
+          position={contextMenu.position}
+          count={contextMenu.ids.length}
+          onClose={() => setContextMenu(null)}
+          onAlign={(edge) => alignCards(contextMenu.ids, edge)}
+          onDistribute={(axis) => distributeCards(contextMenu.ids, axis)}
+          onTidy={() => void tidyCards(contextMenu.ids)}
+          onHide={onHideCards && !isReviewMode ? () => onHideCards(contextMenu.ids) : undefined}
+          onDelete={() => (onDeleteSelection ?? onBulkDelete)?.(contextMenu.ids)}
+        />
+      )}
 
       {contextMenu?.type === 'edge' && (
         <EdgeContextMenu
@@ -1657,14 +1838,20 @@ function CanvasViewInner({
 
       {contextMenu?.type === 'canvas' && (
         <CanvasContextMenu
-          open
           position={contextMenu.position}
-          parentKind={currentRootId ? elements.find((e) => e.id === currentRootId)?.kind ?? null : null}
+          addKinds={readOnly || isReviewMode || !onAddElementAtFlowPosition ? [] : validKindsForContext(levelKind)}
           onClose={() => setContextMenu(null)}
-          onAddElement={(kind) => onAddElementAtPosition?.(kind)}
-          onTidy={() => onTidy?.()}
+          onAddElement={(kind) => onAddElementAtFlowPosition?.(kind, contextMenu.flowPosition, currentRootId)}
+          pasteLabel={pasteLabel}
+          onPaste={() => onPaste?.(currentRootId, contextMenu.flowPosition)}
+          onSelectAll={selectAll}
+          onTidy={readOnly ? undefined : onTidy}
           onZoomToFit={() => fitView(fitAll())}
           lines={lineControlsState}
+          hiddenCardCount={hiddenHere.length}
+          onShowHiddenCards={onShowCards && !readOnly ? () => onShowCards(hiddenHere) : undefined}
+          onExport={viewActions?.onExport}
+          onCopyLink={viewActions?.onCopyLink}
         />
       )}
 

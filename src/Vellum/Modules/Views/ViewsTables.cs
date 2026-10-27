@@ -18,6 +18,7 @@ public static class ViewsTables
             b.Property(v => v.CreatedAt).HasDefaultValueSql("now()");
             b.Property(v => v.UpdatedAt).HasDefaultValueSql("now()");
             b.Property(v => v.VisibleElementIds).HasColumnType("uuid[]");
+            b.Property(v => v.HiddenElementIds).HasColumnType("uuid[]").HasDefaultValueSql("'{}'::uuid[]");
         });
 
         modelBuilder.Entity<LayoutPositionEntity>(b =>
@@ -116,6 +117,12 @@ public class ViewEntity
     public string Name { get; set; } = null!;
     public Guid? RootElementId { get; set; }
     public Guid[] VisibleElementIds { get; set; } = [];
+
+    /// <summary>
+    /// The elements a person hid from this view. A hidden card is not drawn on the canvas, in the
+    /// exports or on a share link of the view; the model keeps the element. Presentation only.
+    /// </summary>
+    public Guid[] HiddenElementIds { get; set; } = [];
     public string? ActiveLens { get; set; }
     public Guid? ActiveFlowId { get; set; }
     public DateTimeOffset CreatedAt { get; set; }

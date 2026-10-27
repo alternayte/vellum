@@ -26,6 +26,8 @@ interface LayoutPosition {
 
 export interface DuplicateElement {
   newId: string
+  /** The element this one is a copy of. */
+  sourceId: string
   kind: string
   name: string
   description: string | null
@@ -95,6 +97,7 @@ export function buildDuplicateSet(
       : el.parentId
     elements.push({
       newId: idMap.get(el.id)!,
+      sourceId: el.id,
       kind: el.kind,
       name: `${el.name} (copy)`,
       description: el.description,
